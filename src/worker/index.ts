@@ -3,102 +3,248 @@ import { Env } from '../types';
 export { SSHSessionDO } from './durable-object';
 
 const HTML = `<!DOCTYPE html>
-<html lang="zh-CN">
+<html class="dark" lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CloudSSH</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #e0e0e0; min-height: 100vh; }
-    #app { max-width: 1200px; margin: 0 auto; padding: 2rem; }
-    #auth-section { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; }
-    .auth-header { text-align: center; margin-bottom: 2rem; }
-    .auth-header h1 { font-size: 3rem; font-weight: 600; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-    .auth-header p { color: #8892b0; font-size: 1.1rem; margin-top: 0.5rem; }
-    #connection-form { background: rgba(255,255,255,0.05); border-radius: 12px; padding: 2rem; width: 100%; max-width: 400px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
-    .form-group { margin-bottom: 1.5rem; }
-    .form-group label { display: block; margin-bottom: 0.5rem; color: #a8b2d1; font-size: 0.9rem; font-weight: 500; }
-    .form-group input { width: 100%; padding: 0.75rem 1rem; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #e0e0e0; font-size: 1rem; transition: all 0.3s ease; }
-    .form-group input:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,0.3); }
-    .form-group input::placeholder { color: #5a6a8a; }
-    .btn-connect { width: 100%; padding: 0.75rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease; }
-    .btn-connect:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(102,126,234,0.4); }
-    #toolbar { display: none; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; background: rgba(0,0,0,0.3); border-radius: 8px 8px 0 0; border: 1px solid rgba(255,255,255,0.1); border-bottom: none; }
-    #connection-info { color: #a8b2d1; font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; }
-    #disconnect-btn { padding: 0.5rem 1rem; background: rgba(234,108,115,0.2); color: #ea6c73; border: 1px solid rgba(234,108,115,0.3); border-radius: 6px; font-size: 0.85rem; cursor: pointer; transition: all 0.3s ease; }
-    #disconnect-btn:hover { background: rgba(234,108,115,0.3); }
-    #terminal-container { display: none; background: #0a0e14; border-radius: 0 0 8px 8px; border: 1px solid rgba(255,255,255,0.1); border-top: none; padding: 0.5rem; min-height: 500px; }
-    .xterm { height: 500px; }
-    @media (max-width: 768px) { #app { padding: 1rem; } .auth-header h1 { font-size: 2rem; } .xterm { height: 400px; } }
-  </style>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>CloudSSH - Connect</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"><\/script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "background": "#131313",
+        "on-surface": "#e5e2e1",
+        "on-surface-variant": "#bbccb0",
+        "outline": "#86957d",
+        "outline-variant": "#3c4b36",
+        "primary-container": "#4af626",
+        "on-primary-fixed": "#022100",
+        "surface": "#131313",
+        "surface-variant": "#353534",
+        "secondary-container": "#14d1ff",
+        "error": "#ffb4ab",
+        "error-container": "#93000a"
+      },
+      fontFamily: {
+        "body": ["JetBrains Mono"],
+        "headline": ["JetBrains Mono"],
+        "label": ["JetBrains Mono"],
+        "code": ["JetBrains Mono"]
+      }
+    }
+  }
+}
+<\/script>
+<style>
+body {
+  background-color: #0a0a0a;
+  color: #4af626;
+}
+.scanlines {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.1));
+  background-size: 100% 4px;
+  pointer-events: none;
+  z-index: 50;
+}
+.flicker {
+  animation: flicker 0.15s infinite;
+  pointer-events: none;
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(74, 246, 38, 0.02);
+  z-index: 49;
+}
+@keyframes flicker {
+  0% { opacity: 0.8; }
+  50% { opacity: 1; }
+  100% { opacity: 0.9; }
+}
+.terminal-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #3c4b36;
+  color: #4af626;
+  font-family: 'JetBrains Mono', monospace;
+  padding: 8px 0;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.terminal-input:focus {
+  border-bottom: 1px solid #4af626;
+  box-shadow: none;
+}
+.terminal-input::placeholder {
+  color: #3c4b36;
+}
+.blinking-cursor::after {
+  content: '\\2588';
+  color: #14d1ff;
+  animation: blink 1s step-end infinite;
+  margin-left: 4px;
+  font-size: 0.9em;
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.cyber-box {
+  background-color: #121212;
+  border: 1px solid #1f1f1f;
+}
+.cyber-button {
+  border: 1px solid #4af626;
+  color: #4af626;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+.cyber-button:hover {
+  background-color: #4af626;
+  color: #0a0a0a;
+}
+#terminal-container .xterm { height: 500px; }
+@media (max-width: 768px) { #terminal-container .xterm { height: 400px; } }
+</style>
 </head>
-<body>
-  <div id="app">
-    <div id="auth-section">
-      <div class="auth-header">
-        <h1>CloudSSH</h1>
-        <p>纯 Cloudflare 驱动的 Web SSH 终端</p>
-      </div>
-      <div id="connection-form">
-        <div class="form-group"><label>主机地址</label><input type="text" id="host" placeholder="192.168.1.100" required /></div>
-        <div class="form-group"><label>端口</label><input type="number" id="port" value="22" min="1" max="65535" /></div>
-        <div class="form-group"><label>用户名</label><input type="text" id="username" placeholder="root" required /></div>
-        <div class="form-group"><label>密码</label><input type="password" id="password" required /></div>
-        <button type="button" class="btn-connect" onclick="connect()">连接</button>
-      </div>
+<body class="min-h-screen flex items-center justify-center p-6 relative overflow-hidden font-body text-sm">
+<div class="scanlines"></div>
+<div class="flicker"></div>
+
+<!-- Login Form -->
+<main id="auth-section" class="w-full max-w-md relative z-10">
+  <div class="mb-8 text-center">
+    <div class="text-3xl font-bold text-[#4af626] tracking-tighter mb-2">
+      CloudSSH<span class="blinking-cursor"></span>
     </div>
-    <div id="toolbar"><span id="connection-info"></span><button id="disconnect-btn" onclick="disconnect()">断开连接</button></div>
-    <div id="terminal-container"></div>
   </div>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
-  <script>
-    let term, ws;
-    function connect() {
-      const host = document.getElementById('host').value;
-      const port = document.getElementById('port').value || '22';
-      const user = document.getElementById('username').value;
-      const pass = document.getElementById('password').value;
-      if (!host || !user || !pass) { alert('请填写所有必填字段'); return; }
-      document.getElementById('auth-section').style.display = 'none';
-      document.getElementById('toolbar').style.display = 'flex';
-      document.getElementById('terminal-container').style.display = 'block';
-      document.getElementById('connection-info').textContent = user + '@' + host + ':' + port;
-      term = new Terminal({ cursorBlink: true, fontSize: 14, fontFamily: '"JetBrains Mono", monospace', theme: { background: '#0a0e14', foreground: '#b3b1ad' } });
-      const fitAddon = new FitAddon.FitAddon();
-      term.loadAddon(fitAddon);
-      term.loadAddon(new WebLinksAddon.WebLinksAddon());
-      term.open(document.getElementById('terminal-container'));
-      fitAddon.fit();
-      window.addEventListener('resize', () => fitAddon.fit());
-      term.writeln('\\x1b[1;33m正在连接 ' + user + '@' + host + ':' + port + '...\\x1b[0m');
-      const wsUrl = 'wss://' + window.location.host + '/api/ssh?host=' + encodeURIComponent(host) + '&port=' + port + '&user=' + encodeURIComponent(user) + '&pass=' + encodeURIComponent(pass);
-      ws = new WebSocket(wsUrl);
-      ws.onopen = () => term.writeln('\\x1b[32mWebSocket 已连接\\x1b[0m');
-      ws.onmessage = (e) => {
-        if (typeof e.data === 'string') {
-          try { const m = JSON.parse(e.data); if (m.type === 'status') term.writeln('\\x1b[32m[系统] ' + m.message + '\\x1b[0m'); else if (m.type === 'error') term.writeln('\\x1b[31m[错误] ' + m.message + '\\x1b[0m'); } catch { term.write(e.data); }
-        } else {
-          const r = new FileReader(); r.onload = () => term.write(new Uint8Array(r.result)); r.readAsArrayBuffer(e.data);
-        }
-      };
-      ws.onclose = (e) => term.writeln('\\x1b[33m[连接关闭] code=' + e.code + '\\x1b[0m');
-      ws.onerror = () => term.writeln('\\x1b[31m[连接错误]\\x1b[0m');
-      term.onData((d) => { if (ws?.readyState === 1) ws.send(d); });
-      term.onResize(({cols, rows}) => { if (ws?.readyState === 1) ws.send(JSON.stringify({type:'resize',cols,rows})); });
+  <div class="cyber-box p-6 shadow-2xl relative">
+    <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[#4af626] to-transparent opacity-50"></div>
+    <div class="flex items-center justify-between mb-8 pb-4 border-b border-[#3c4b36]">
+      <span class="text-xs font-bold tracking-[0.1em] text-[#14d1ff]">CONNECTION_PARAMETERS</span>
+      <span class="material-symbols-outlined text-[#14d1ff]" style="font-variation-settings: 'FILL' 0;">terminal</span>
+    </div>
+    <form class="space-y-6" id="connection-form">
+      <div class="grid grid-cols-4 gap-4">
+        <div class="col-span-3">
+          <label class="block text-xs font-bold tracking-[0.1em] text-[#bbccb0] mb-2">HOST_ADDRESS</label>
+          <div class="flex items-center">
+            <span class="text-[#bbccb0] mr-2">&gt;</span>
+            <input id="host" class="terminal-input text-[13px]" placeholder="192.168.1.1" type="text" required>
+          </div>
+        </div>
+        <div class="col-span-1">
+          <label class="block text-xs font-bold tracking-[0.1em] text-[#bbccb0] mb-2">PORT</label>
+          <div class="flex items-center">
+            <span class="text-[#bbccb0] mr-2">:</span>
+            <input id="port" class="terminal-input text-[13px]" placeholder="22" type="text" value="22">
+          </div>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-bold tracking-[0.1em] text-[#bbccb0] mb-2">AUTH_USER</label>
+        <div class="flex items-center">
+          <span class="material-symbols-outlined text-[#bbccb0] mr-2" style="font-size: 16px;">person</span>
+          <input id="username" class="terminal-input text-[13px]" placeholder="admin" type="text" required>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-bold tracking-[0.1em] text-[#bbccb0] mb-2">AUTH_KEY</label>
+        <div class="flex items-center">
+          <span class="material-symbols-outlined text-[#bbccb0] mr-2" style="font-size: 16px;">key</span>
+          <input id="password" class="terminal-input text-[13px]" placeholder="••••••••" type="password" required>
+        </div>
+      </div>
+      <div class="pt-6">
+        <button id="connect-btn" class="cyber-button w-full py-3 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-2 bg-[#4af626] text-[#022100]" type="button">
+          <span class="material-symbols-outlined" style="font-size: 18px;">power_settings_new</span>
+          Execute_Connection
+        </button>
+      </div>
+      <div class="flex justify-between items-center mt-4">
+        <span id="status-text" class="text-[13px] text-[#bbccb0] flex items-center gap-1">
+          <span class="w-2 h-2 bg-[#353534] inline-block"></span> STATUS: OFFLINE
+        </span>
+      </div>
+    </form>
+  </div>
+  <div class="mt-8 text-center text-[13px] text-[#bbccb0] opacity-60">
+    SYSTEM READY. WAITING FOR INPUT.
+  </div>
+  <div class="mt-4 text-center">
+    <a href="https://github.com/newbietan/CloudSSH" class="text-[13px] text-[#4af626] opacity-60 hover:opacity-100 transition-colors tracking-widest uppercase">[ GitHub Open Source ]</a>
+  </div>
+</main>
+
+<!-- Terminal -->
+<div id="toolbar" class="hidden fixed top-0 left-0 right-0 z-40 justify-between items-center px-4 py-3 bg-[#121212] border-b border-[#1f1f1f]">
+  <span id="connection-info" class="text-[13px] text-[#14d1ff] font-code"></span>
+  <button id="disconnect-btn" class="text-xs text-[#ffb4ab] border border-[#ffb4ab] px-3 py-1 hover:bg-[#ffb4ab] hover:text-[#0a0a0a] transition-all">DISCONNECT</button>
+</div>
+<div id="terminal-container" class="hidden fixed inset-0 pt-12 bg-[#0a0a0a] z-30 p-2"></div>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"><\/script>
+<script>
+let term, ws;
+document.getElementById('connect-btn').addEventListener('click', connect);
+document.getElementById('disconnect-btn').addEventListener('click', disconnect);
+document.getElementById('connection-form').addEventListener('keypress', (e) => { if (e.key === 'Enter') connect(); });
+
+function connect() {
+  const host = document.getElementById('host').value;
+  const port = document.getElementById('port').value || '22';
+  const user = document.getElementById('username').value;
+  const pass = document.getElementById('password').value;
+  if (!host || !user || !pass) { alert('请填写所有必填字段'); return; }
+  document.getElementById('auth-section').style.display = 'none';
+  document.getElementById('toolbar').style.display = 'flex';
+  document.getElementById('terminal-container').style.display = 'block';
+  document.getElementById('connection-info').textContent = user + '@' + host + ':' + port;
+  document.getElementById('status-text').innerHTML = '<span class="w-2 h-2 bg-[#4af626] inline-block animate-pulse"></span> STATUS: CONNECTING';
+  term = new Terminal({ cursorBlink: true, fontSize: 14, fontFamily: '"JetBrains Mono", monospace', theme: { background: '#0a0a0a', foreground: '#4af626', cursor: '#14d1ff' } });
+  const fitAddon = new FitAddon.FitAddon();
+  term.loadAddon(fitAddon);
+  term.loadAddon(new WebLinksAddon.WebLinksAddon());
+  term.open(document.getElementById('terminal-container'));
+  fitAddon.fit();
+  window.addEventListener('resize', () => fitAddon.fit());
+  term.writeln('\\x1b[1;33m[*] Connecting to ' + user + '@' + host + ':' + port + '...\\x1b[0m');
+  const wsUrl = 'wss://' + window.location.host + '/api/ssh?host=' + encodeURIComponent(host) + '&port=' + port + '&user=' + encodeURIComponent(user) + '&pass=' + encodeURIComponent(pass);
+  ws = new WebSocket(wsUrl);
+  ws.onopen = () => { term.writeln('\\x1b[32m[+] WebSocket connected\\x1b[0m'); };
+  ws.onmessage = (e) => {
+    if (typeof e.data === 'string') {
+      try { const m = JSON.parse(e.data); if (m.type === 'status') term.writeln('\\x1b[32m[*] ' + m.message + '\\x1b[0m'); else if (m.type === 'error') term.writeln('\\x1b[31m[!] ' + m.message + '\\x1b[0m'); } catch { term.write(e.data); }
+    } else {
+      const r = new FileReader(); r.onload = () => term.write(new Uint8Array(r.result)); r.readAsArrayBuffer(e.data);
     }
-    function disconnect() {
-      ws?.close(); ws = null; term?.dispose();
-      document.getElementById('auth-section').style.display = 'flex';
-      document.getElementById('toolbar').style.display = 'none';
-      document.getElementById('terminal-container').style.display = 'none';
-    }
-  </script>
+  };
+  ws.onclose = (e) => { term.writeln('\\x1b[33m[*] Connection closed (code=' + e.code + ')\\x1b[0m'); document.getElementById('status-text').innerHTML = '<span class="w-2 h-2 bg-[#93000a] inline-block"></span> STATUS: DISCONNECTED'; };
+  ws.onerror = () => term.writeln('\\x1b[31m[!] Connection error\\x1b[0m');
+  term.onData((d) => { if (ws?.readyState === 1) ws.send(d); });
+  term.onResize(({cols, rows}) => { if (ws?.readyState === 1) ws.send(JSON.stringify({type:'resize',cols,rows})); });
+}
+
+function disconnect() {
+  ws?.close(); ws = null; term?.dispose();
+  document.getElementById('auth-section').style.display = 'block';
+  document.getElementById('toolbar').style.display = 'none';
+  document.getElementById('terminal-container').style.display = 'none';
+  document.getElementById('status-text').innerHTML = '<span class="w-2 h-2 bg-[#353534] inline-block"></span> STATUS: OFFLINE';
+}
+<\/script>
 </body>
 </html>`;
 
