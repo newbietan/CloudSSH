@@ -6,7 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 workers_dev = false
 
 [[routes]]
-pattern = "ssh.newbietan.cn"
+pattern = "ssh.ssrs.de5.net"
 custom_domain = true
 
 [[durable_objects.bindings]]
