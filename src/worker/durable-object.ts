@@ -1,4 +1,4 @@
-import { Env, SSHConnectionConfig } from '../types';
+import { Env, SSHConnectionConfig, TerminalSize } from '../types';
 import { SSHSession } from './ssh-session';
 
 /**
@@ -38,6 +38,7 @@ export class SSHSessionDO {
   private env: Env;
   private sessions: Map<WebSocket, SSHSession> = new Map();
   private _pendingTimeouts: Map<WebSocket, ReturnType<typeof setTimeout>> = new Map();
+  private pendingTerminalSizes: Map<WebSocket, TerminalSize> = new Map();
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -105,26 +106,43 @@ export class SSHSessionDO {
       return;
     }
 
+    if (typeof message !== 'string') {
+      return;
+    }
+
+    let msg: any;
+    try {
+      msg = JSON.parse(message);
+    } catch {
+      ws.send(JSON.stringify({ type: 'error', message: 'Invalid credentials format' }));
+      ws.close(1011, 'Invalid format');
+      return;
+    }
+
+    if (msg.type === 'resize') {
+      this.rememberTerminalSize(ws, msg.cols, msg.rows);
+      return;
+    }
+    if (msg.type === 'ping') {
+      ws.send(JSON.stringify({ type: 'pong' }));
+      return;
+    }
+
     const timeout = this._pendingTimeouts.get(ws);
     if (timeout) {
       clearTimeout(timeout);
       this._pendingTimeouts.delete(ws);
     }
 
-    try {
-      const config = JSON.parse(message as string) as SSHConnectionConfig;
+    const config = msg as SSHConnectionConfig;
 
-      if (!config.host || !config.username || (!config.password && !config.privateKey)) {
-        ws.send(JSON.stringify({ type: 'error', message: 'Missing credentials' }));
-        ws.close(1011, 'Invalid credentials');
-        return;
-      }
-
-      await this.initSSHSession(ws, config);
-    } catch (e) {
-      ws.send(JSON.stringify({ type: 'error', message: 'Invalid credentials format' }));
-      ws.close(1011, 'Invalid format');
+    if (!config.host || !config.username || (!config.password && !config.privateKey)) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Missing credentials' }));
+      ws.close(1011, 'Invalid credentials');
+      return;
     }
+
+    await this.initSSHSession(ws, config);
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean): Promise<void> {
@@ -138,6 +156,7 @@ export class SSHSessionDO {
       clearTimeout(timeout);
       this._pendingTimeouts.delete(ws);
     }
+    this.pendingTerminalSizes.delete(ws);
   }
 
   async webSocketError(ws: WebSocket, error: unknown): Promise<void> {
@@ -165,8 +184,14 @@ export class SSHSessionDO {
       await socket.opened;
 
       const strictVerify = this.env.STRICT_HOST_KEY_VERIFY !== 'false';
+      const pendingSize = this.pendingTerminalSizes.get(ws);
+      if (pendingSize) {
+        config.cols = pendingSize.cols;
+        config.rows = pendingSize.rows;
+      }
       const session = new SSHSession(ws, socket, config, strictVerify);
       this.sessions.set(ws, session);
+      this.pendingTerminalSizes.delete(ws);
 
       await session.startHandshake();
 
@@ -178,5 +203,32 @@ export class SSHSessionDO {
         ws.close(1011, 'SSH connection failed');
       } catch {}
     }
+  }
+
+  private rememberTerminalSize(ws: WebSocket, cols: unknown, rows: unknown): void {
+    const size = this.normalizeTerminalSize(cols, rows);
+    if (size) this.pendingTerminalSizes.set(ws, size);
+  }
+
+  private normalizeTerminalSize(cols: unknown, rows: unknown): TerminalSize | null {
+    if (
+      typeof cols !== 'number' ||
+      typeof rows !== 'number' ||
+      !Number.isFinite(cols) ||
+      !Number.isFinite(rows)
+    ) {
+      return null;
+    }
+
+    const size = {
+      cols: Math.floor(cols),
+      rows: Math.floor(rows),
+    };
+
+    if (size.cols < 10 || size.cols > 1000 || size.rows < 5 || size.rows > 1000) {
+      return null;
+    }
+
+    return size;
   }
 }

@@ -46,6 +46,13 @@ export interface SSHConnectionConfig {
   password: string;
   authMethod?: 'password' | 'publickey';
   privateKey?: string;
+  cols?: number;
+  rows?: number;
+}
+
+export interface TerminalSize {
+  cols: number;
+  rows: number;
 }
 
 export interface Env {

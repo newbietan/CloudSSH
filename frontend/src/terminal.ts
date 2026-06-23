@@ -152,6 +152,7 @@ export class SSHTerminal {
           password: config.password,
           authMethod: config.authMethod,
           privateKey: config.privateKey,
+          ...this.getTerminalSize(),
         }));
         
         this.startHeartbeat();
@@ -188,8 +189,13 @@ export class SSHTerminal {
 
     ws.onopen = () => {
       this.terminal.writeln('\x1b[32m[+] WebSocket connected, authenticating...\x1b[0m');
+      this.sendResize();
       this.startHeartbeat();
     };
+
+    if (ws.readyState === WebSocket.OPEN) {
+      this.sendResize();
+    }
 
     this.setupWebSocketHandlers();
   }
@@ -284,13 +290,7 @@ export class SSHTerminal {
     // Terminal resize: send to server + update trzsz column count
     this.disposables.push(
       this.terminal.onResize(({ cols, rows }) => {
-        if (this.ws?.readyState === WebSocket.OPEN) {
-          this.ws.send(JSON.stringify({
-            type: 'resize',
-            cols,
-            rows,
-          }));
-        }
+        this.sendResize({ cols, rows });
         this.trzszFilter?.setTerminalColumns(cols);
       })
     );
@@ -307,6 +307,22 @@ export class SSHTerminal {
         this.ws.send(JSON.stringify({ type: 'ping' }));
       }
     }, 30000);
+  }
+
+  private getTerminalSize(): { cols: number; rows: number } {
+    return {
+      cols: this.terminal.cols,
+      rows: this.terminal.rows,
+    };
+  }
+
+  private sendResize(size = this.getTerminalSize()): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'resize',
+        ...size,
+      }));
+    }
   }
 
   private stopHeartbeat(): void {

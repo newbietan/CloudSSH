@@ -1,4 +1,4 @@
-import { SSHConnectionConfig, SessionKeys, SSHPacket } from '../types';
+import { SSHConnectionConfig, SessionKeys, SSHPacket, TerminalSize } from '../types';
 import {
   SSH_MSG_KEXINIT,
   SSH_MSG_NEWKEYS,
@@ -83,6 +83,7 @@ export class SSHSession {
 
   private keepaliveInterval: ReturnType<typeof setInterval> | null = null;
   private shellReadyTimeout: ReturnType<typeof setTimeout> | null = null;
+  private terminalSize: TerminalSize = { cols: 120, rows: 40 };
 
   constructor(
     ws: WebSocket,
@@ -98,6 +99,7 @@ export class SSHSession {
     this.transport = new SSHTransport();
     this.packetParser = new SSHPacketParser();
     this.channel = new SSHChannel();
+    this.updateTerminalSize(config.cols, config.rows);
   }
 
   async startHandshake(): Promise<void> {
@@ -842,7 +844,7 @@ export class SSHSession {
     switch (msgType) {
       case SSH_MSG_CHANNEL_OPEN_CONFIRMATION:
         this.channel.handleOpenConfirmation(payload);
-        const ptyReq = this.channel.buildPTYRequest(120, 40);
+        const ptyReq = this.channel.buildPTYRequest(this.terminalSize.cols, this.terminalSize.rows);
         await this.sendEncrypted(ptyReq);
         break;
 
@@ -922,36 +924,68 @@ export class SSHSession {
   }
 
   async handleWebSocketMessage(data: string | ArrayBuffer): Promise<void> {
-    if (this.state !== 'ready') return;
-
     if (typeof data === 'string') {
-      if (data === '{"type":"ping"}') {
-        this.ws.send(JSON.stringify({ type: 'pong' }));
-        return;
-      }
-      
-      if (data.startsWith('{"type":"resize"')) {
+      if (data.startsWith('{"type"')) {
         try {
           const msg = JSON.parse(data);
+          if (msg.type === 'ping') {
+            this.ws.send(JSON.stringify({ type: 'pong' }));
+            return;
+          }
           if (msg.type === 'resize') {
             await this.handleResize(msg.cols, msg.rows);
             return;
           }
         } catch {}
       }
+
+      if (this.state !== 'ready') return;
       
       const encoded = new TextEncoder().encode(data);
       const channelData = this.channel.buildChannelData(encoded);
       await this.sendEncrypted(channelData);
     } else {
+      if (this.state !== 'ready') return;
+
       const channelData = this.channel.buildChannelData(new Uint8Array(data));
       await this.sendEncrypted(channelData);
     }
   }
 
-  private async handleResize(cols: number, rows: number): Promise<void> {
-    const resizeMsg = this.channel.buildWindowChange(cols, rows);
+  private async handleResize(cols: unknown, rows: unknown): Promise<void> {
+    if (!this.updateTerminalSize(cols, rows)) return;
+    if (this.state !== 'ready') return;
+
+    const resizeMsg = this.channel.buildWindowChange(this.terminalSize.cols, this.terminalSize.rows);
     await this.sendEncrypted(resizeMsg);
+  }
+
+  private updateTerminalSize(cols: unknown, rows: unknown): boolean {
+    if (
+      typeof cols !== 'number' ||
+      typeof rows !== 'number' ||
+      !Number.isFinite(cols) ||
+      !Number.isFinite(rows)
+    ) {
+      return false;
+    }
+
+    const nextSize = {
+      cols: Math.floor(cols),
+      rows: Math.floor(rows),
+    };
+
+    if (
+      nextSize.cols < 10 ||
+      nextSize.cols > 1000 ||
+      nextSize.rows < 5 ||
+      nextSize.rows > 1000
+    ) {
+      return false;
+    }
+
+    this.terminalSize = nextSize;
+    return true;
   }
 
   private async sendEncrypted(payload: Uint8Array): Promise<void> {
