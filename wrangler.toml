@@ -13,7 +13,6 @@ watch_dir = "."
 
 # 下述注释的配置推荐采用环境变量的形式在 Cloudflare Dashboard 中直接添加：
 # - GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET（GitHub OAuth）
-# - SESSION_SECRET（凭据加密密钥）
 # - TURNSTILE_SECRET / TURNSTILE_SITEKEY（Bot 验证）
 # - BASE_URL（OAuth 回调地址，需与实际域名一致）
 

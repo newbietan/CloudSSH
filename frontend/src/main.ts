@@ -20,10 +20,26 @@ function isTerminalTab(): boolean {
   return params.has('wsUrl');
 }
 
+function validateWsUrl(wsUrl: string): boolean {
+  try {
+    const url = new URL(wsUrl);
+    if (url.protocol !== 'wss:' && url.protocol !== 'ws:') return false;
+    return url.origin === window.location.origin ||
+           url.origin === window.location.origin.replace(/^http/, 'ws');
+  } catch {
+    return false;
+  }
+}
+
 function initTerminalTab(): void {
   const params = new URLSearchParams(window.location.search);
   const wsUrl = params.get('wsUrl')!;
   const serverName = params.get('name') || 'Server';
+
+  if (!validateWsUrl(wsUrl)) {
+    document.body.innerHTML = '<div style="color:red;padding:2em;font-family:monospace;">Error: Invalid or untrusted WebSocket URL.</div>';
+    return;
+  }
 
   // 隐藏所有非终端元素
   document.getElementById('auth-section')!.classList.add('hidden');
@@ -102,6 +118,11 @@ function showOfflineUI(): void {
 }
 
 function showTerminalFromServer(wsUrl: string, serverName: string): void {
+  if (!validateWsUrl(wsUrl)) {
+    alert('Invalid WebSocket URL');
+    return;
+  }
+
   document.getElementById('auth-section')!.classList.add('hidden');
   document.getElementById('user-space-section')!.classList.add('hidden');
   document.getElementById('user-space-section')!.classList.remove('flex');

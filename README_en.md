@@ -237,7 +237,7 @@ With GitHub OAuth enabled, users can log in with their GitHub account and save/m
 
 > **Environment Variable Type Recommendation**: It is recommended to set all environment variables as **Secret** type. Secrets are stored in Cloudflare's encrypted storage, separate from code deployments, and will not be overwritten or lost during redeployments. When adding variables in the Dashboard, simply select the "Secret" type.
 
-> **Note**: Server credentials (passwords/private keys) are encrypted with AES-256-GCM before storage. The local encryption key is automatically generated and safely stored in the database (you can also manually override it by setting `SESSION_SECRET` in environment variables). During connection, credentials never pass through the frontend — they are securely transmitted via a one-time-token mechanism.
+> **Note**: Server credentials (passwords/private keys) are encrypted with AES-256-GCM before storage. The encryption key is automatically generated on first use and securely stored in the database. During connection, credentials never pass through the frontend — they are securely transmitted via a one-time-token mechanism.
 
 > **Important**: Enabling this feature for the first time requires a clean deployment (delete the old Worker first, then redeploy) to initialize the new Durable Object. Use `npx wrangler delete cloudssh` to remove the old Worker, then run `pnpm run deploy` to redeploy.
 

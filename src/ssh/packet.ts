@@ -3,6 +3,7 @@ import { readUint32, writeUint32 } from './utils';
 
 const EMPTY_BUFFER = new Uint8Array(0);
 const COMPACT_CHUNKS_THRESHOLD = 32;
+const MAX_PACKET_SIZE = 256 * 1024; // 256KB — RFC 4253 §6.1 requires at least 35000 bytes
 
 export class SSHPacketParser {
   private chunks: Uint8Array[] = [];
@@ -119,6 +120,9 @@ export class SSHPacketParser {
       if (!lengthBytes) return null;
 
       const packetLength = readUint32(lengthBytes, 0);
+      if (packetLength > MAX_PACKET_SIZE) {
+        throw new Error(`Packet length ${packetLength} exceeds maximum allowed size ${MAX_PACKET_SIZE}`);
+      }
       const expectedSize = 4 + packetLength + 16;
 
       if (this.bufferedLength < expectedSize) return null;
@@ -153,6 +157,9 @@ export class SSHPacketParser {
     if (!header) return null;
 
     const packetLength = readUint32(header, 0);
+    if (packetLength > MAX_PACKET_SIZE) {
+      throw new Error(`Packet length ${packetLength} exceeds maximum allowed size ${MAX_PACKET_SIZE}`);
+    }
 
     const totalBlocks = Math.ceil((4 + packetLength) / blockSize);
     const totalSize = totalBlocks * blockSize;

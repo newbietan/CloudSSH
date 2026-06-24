@@ -52,10 +52,16 @@ export class ServerList {
     const container = document.getElementById('user-info');
     if (!container) return;
 
-    container.innerHTML = `
-      <img src="${this.user.avatar_url}" alt="${this.user.username}" class="user-avatar w-8 h-8" />
-      <span class="text-xs font-bold tracking-[0.1em] text-[#bbccb0]">${this.user.username}</span>
-    `;
+    container.innerHTML = '';
+    const img = document.createElement('img');
+    img.src = this.user.avatar_url;
+    img.alt = this.user.username;
+    img.className = 'user-avatar w-8 h-8';
+    container.appendChild(img);
+    const span = document.createElement('span');
+    span.className = 'text-xs font-bold tracking-[0.1em] text-[#bbccb0]';
+    span.textContent = this.user.username;
+    container.appendChild(span);
   }
 
   // ==================== 事件绑定 ====================

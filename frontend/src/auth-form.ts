@@ -19,15 +19,16 @@ async function encryptCredentials(data: object): Promise<string> {
   const key = await deriveKey(salt);
   const encoded = new TextEncoder().encode(JSON.stringify(data));
   const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded));
-  // Format: base64(salt + iv + ciphertext)
   const combined = new Uint8Array(salt.length + iv.length + encrypted.length);
   combined.set(salt, 0);
   combined.set(iv, salt.length);
   combined.set(encrypted, salt.length + iv.length);
-  return btoa(String.fromCharCode(...combined));
+  let binary = '';
+  for (let i = 0; i < combined.length; i++) binary += String.fromCharCode(combined[i]);
+  return btoa(binary);
 }
 
-async function decryptCredentials(stored: string): Promise<{ host: string; port: string; username: string; password: string } | null> {
+async function decryptCredentials(stored: string): Promise<{ host: string; port: string; username: string; password: string; privateKey?: string; authMethod?: string } | null> {
   try {
     const raw = Uint8Array.from(atob(stored), c => c.charCodeAt(0));
     const salt = raw.slice(0, 16);
@@ -250,10 +251,10 @@ export class ConnectionForm {
     (document.getElementById('port') as HTMLInputElement).value = cred.port || '22';
     (document.getElementById('username') as HTMLInputElement).value = cred.username || '';
     (document.getElementById('password') as HTMLInputElement).value = cred.password || '';
-    (document.getElementById('private-key') as HTMLTextAreaElement).value = (cred as any).privateKey || '';
+    (document.getElementById('private-key') as HTMLTextAreaElement).value = cred.privateKey || '';
     (document.getElementById('remember-me') as HTMLInputElement).checked = true;
-    
-    if ((cred as any).authMethod === 'key') {
+
+    if (cred.authMethod === 'publickey') {
       this.setAuthMode('key');
     } else {
       this.setAuthMode('password');
@@ -294,7 +295,14 @@ export class ConnectionForm {
 
     // Save or clear credentials
     if (remember) {
-      const encrypted = await encryptCredentials({ host, port: port.toString(), username, password, privateKey, authMethod: this.authMode === 'key' ? 'publickey' : 'password' });
+      const encrypted = await encryptCredentials({
+        host,
+        port: port.toString(),
+        username,
+        password,
+        privateKey: this.authMode === 'key' ? privateKey : undefined,
+        authMethod: this.authMode === 'key' ? 'publickey' : 'password',
+      });
       localStorage.setItem('cloudssh_cred', encrypted);
     } else {
       localStorage.removeItem('cloudssh_cred');

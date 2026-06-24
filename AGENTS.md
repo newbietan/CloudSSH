@@ -99,7 +99,6 @@ Two Durable Objects handle state:
 Required for optional features (configured in `wrangler.toml` or Cloudflare Dashboard):
 
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` - GitHub OAuth
-- `SESSION_SECRET` - Encryption key for stored credentials
 - `TURNSTILE_SECRET` / `TURNSTILE_SITEKEY` - Bot verification
 - `BASE_URL` - OAuth callback URL
 
@@ -202,7 +201,6 @@ npm run deploy:test     # 部署 test 环境
 
 通过 Cloudflare Dashboard 或 wrangler CLI 设置：
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` - GitHub OAuth
-- `SESSION_SECRET` - 凭据加密密钥
 - `TURNSTILE_SECRET` / `TURNSTILE_SITEKEY` - Bot 验证
 - `BASE_URL` - OAuth 回调地址（需与实际域名一致）
 

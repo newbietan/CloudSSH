@@ -68,6 +68,9 @@ export class SSHAuth {
     // Parse OpenSSH format: "openssh-key-v1\0" magic
     const magic = 'openssh-key-v1\0';
     const magicBytes = new TextEncoder().encode(magic);
+    if (raw.length < magicBytes.length) {
+      throw new Error('私钥数据太短');
+    }
     for (let i = 0; i < magicBytes.length; i++) {
       if (raw[i] !== magicBytes[i]) {
         throw new Error('不支持的私钥格式，仅支持 OpenSSH Ed25519 密钥');
@@ -76,42 +79,64 @@ export class SSHAuth {
     let offset = magicBytes.length;
 
     // ciphername
+    if (offset + 4 > raw.length) throw new Error('私钥格式损坏：cipherLen 越界');
     const cipherLen = readUint32(raw, offset); offset += 4;
+    if (offset + cipherLen > raw.length) throw new Error('私钥格式损坏：cipher 越界');
     const cipher = new TextDecoder().decode(raw.slice(offset, offset + cipherLen)); offset += cipherLen;
     if (cipher !== 'none') throw new Error('不支持加密的私钥，请使用 ssh-keygen -p 移除密码');
 
     // kdfname
-    const kdfLen = readUint32(raw, offset); offset += 4; offset += kdfLen;
+    if (offset + 4 > raw.length) throw new Error('私钥格式损坏：kdfLen 越界');
+    const kdfLen = readUint32(raw, offset); offset += 4;
+    if (offset + kdfLen > raw.length) throw new Error('私钥格式损坏：kdf 越界');
+    offset += kdfLen;
     // kdfoptions
-    const kdfOptLen = readUint32(raw, offset); offset += 4; offset += kdfOptLen;
+    if (offset + 4 > raw.length) throw new Error('私钥格式损坏：kdfOptLen 越界');
+    const kdfOptLen = readUint32(raw, offset); offset += 4;
+    if (offset + kdfOptLen > raw.length) throw new Error('私钥格式损坏：kdfoptions 越界');
+    offset += kdfOptLen;
     // number of keys
+    if (offset + 4 > raw.length) throw new Error('私钥格式损坏：numKeys 越界');
     const numKeys = readUint32(raw, offset); offset += 4;
     if (numKeys !== 1) throw new Error('仅支持单密钥文件');
 
     // public key section
-    const pubSecLen = readUint32(raw, offset); offset += 4; offset += pubSecLen;
+    if (offset + 4 > raw.length) throw new Error('私钥格式损坏：pubSecLen 越界');
+    const pubSecLen = readUint32(raw, offset); offset += 4;
+    if (offset + pubSecLen > raw.length) throw new Error('私钥格式损坏：pubSection 越界');
+    offset += pubSecLen;
 
     // private key section
+    if (offset + 4 > raw.length) throw new Error('私钥格式损坏：privSecLen 越界');
     const privSecLen = readUint32(raw, offset); offset += 4;
+    if (offset + privSecLen > raw.length) throw new Error('私钥格式损坏：privSection 越界');
     const privSection = raw.slice(offset, offset + privSecLen);
 
     // Parse private section: checkint1, checkint2, keytype, pubkey, privkey, comment
     let po = 0;
+    if (privSection.length < 8) throw new Error('私钥格式损坏：checkints 越界');
     po += 4; // checkint1
     po += 4; // checkint2
 
     // key type
+    if (po + 4 > privSection.length) throw new Error('私钥格式损坏：keyTypeLen 越界');
     const ktLen = readUint32(privSection, po); po += 4;
+    if (po + ktLen > privSection.length) throw new Error('私钥格式损坏：keyType 越界');
     const keyType = new TextDecoder().decode(privSection.slice(po, po + ktLen)); po += ktLen;
     if (keyType !== 'ssh-ed25519') throw new Error(`不支持的密钥类型: ${keyType}，仅支持 ssh-ed25519`);
 
     // public key (32 bytes)
+    if (po + 4 > privSection.length) throw new Error('私钥格式损坏：pubKeyLen 越界');
     const pubKeyLen = readUint32(privSection, po); po += 4;
+    if (po + pubKeyLen > privSection.length) throw new Error('私钥格式损坏：pubKey 越界');
     const pubKeyRaw = privSection.slice(po, po + pubKeyLen); po += pubKeyLen;
 
     // private key (64 bytes = 32 bytes seed + 32 bytes pubkey)
+    if (po + 4 > privSection.length) throw new Error('私钥格式损坏：privKeyLen 越界');
     const privKeyLen = readUint32(privSection, po); po += 4;
+    if (po + privKeyLen > privSection.length) throw new Error('私钥格式损坏：privKey 越界');
     const privKeyRaw = privSection.slice(po, po + privKeyLen);
+    if (privKeyRaw.length < 32) throw new Error('私钥格式损坏：种子长度不足 32 字节');
     // Ed25519 seed is first 32 bytes
     const seed = privKeyRaw.slice(0, 32);
 

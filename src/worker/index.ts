@@ -369,19 +369,16 @@ async function handleTokenSSHConnection(request: Request, env: Env, token: strin
 
   const config = await tokenRes.json<SSHConnectionConfig>();
 
-  // 将凭据编码后通过 URL 参数传给 SSHSessionDO（内部通信，不经过前端）
-  const configBase64 = btoa(JSON.stringify(config));
-
   const doId = env.SSH_SESSION.idFromName(`session:${Date.now()}:${Math.random()}`);
   const doStub = env.SSH_SESSION.get(doId);
 
-  // 构建新的请求 URL，附加预填充配置
   const doUrl = new URL(request.url);
   doUrl.searchParams.delete('token');
-  doUrl.searchParams.set('config', configBase64);
 
   const doRequest = new Request(doUrl.toString(), {
+    method: 'POST',
     headers: request.headers,
+    body: JSON.stringify(config),
   });
 
   return doStub.fetch(doRequest);

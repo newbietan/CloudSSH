@@ -52,14 +52,22 @@ export class SSHSessionDO {
     }
 
     const url = new URL(request.url);
-    const configParam = url.searchParams.get('config');
     let prefilledConfig: SSHConnectionConfig | null = null;
 
-    if (configParam) {
+    if (request.method === 'POST') {
       try {
-        prefilledConfig = JSON.parse(atob(configParam)) as SSHConnectionConfig;
+        prefilledConfig = await request.json<SSHConnectionConfig>();
       } catch {
-        return new Response('Invalid config parameter', { status: 400 });
+        return new Response('Invalid request body', { status: 400 });
+      }
+    } else {
+      const configParam = url.searchParams.get('config');
+      if (configParam) {
+        try {
+          prefilledConfig = JSON.parse(atob(configParam)) as SSHConnectionConfig;
+        } catch {
+          return new Response('Invalid config parameter', { status: 400 });
+        }
       }
     }
 
