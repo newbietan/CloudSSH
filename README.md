@@ -306,11 +306,12 @@ pnpm run dev
 
 #### 提交 PR 的流程
 
-1. 基于 `main` 分支创建你的特性分支：`git checkout -b feat/your-feature`
+1. 基于 `test` 分支创建你的特性分支：`git checkout -b feat/your-feature`
 2. 进行开发并本地测试
-3. 提交 PR 到 `main` 分支
+3. 提交 PR 到 `test` 分支
+4. 测试通过后，维护者会将 `test` 分支合并到 `main` 分支
 
-> **说明**：`test` 分支为预发布分支，用于部署测试环境，普通开发请基于 `main` 分支工作。
+> **说明**：`main` 分支设置了保护规则，禁止直接推送和外部 PR。所有变更必须先提交到 `test` 分支进行测试。
 
 ### 技术栈
 

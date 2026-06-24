@@ -306,11 +306,12 @@ After the dev server starts, visit the local address shown in the terminal (usua
 
 #### Submitting a PR
 
-1. Create your feature branch from `main`: `git checkout -b feat/your-feature`
+1. Create your feature branch from `test`: `git checkout -b feat/your-feature`
 2. Develop and test locally
-3. Submit a PR to the `main` branch
+3. Submit a PR to the `test` branch
+4. After testing passes, the maintainer will merge the `test` branch into `main`
 
-> **Note**: The `test` branch is a pre-release branch for deploying the test environment. For regular development, work based on the `main` branch.
+> **Note**: The `main` branch has protection rules that prevent direct pushes and external PRs. All changes must be submitted to the `test` branch for testing first.
 
 ### Tech Stack
 
