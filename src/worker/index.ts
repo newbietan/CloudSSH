@@ -380,11 +380,10 @@ async function handleTokenSSHConnection(request: Request, env: Env, token: strin
 
   const doUrl = new URL(request.url);
   doUrl.searchParams.delete('token');
+  doUrl.searchParams.set('config', encodeURIComponent(JSON.stringify(config)));
 
   const doRequest = new Request(doUrl.toString(), {
-    method: 'POST',
     headers: request.headers,
-    body: JSON.stringify(config),
   });
 
   return doStub.fetch(doRequest);

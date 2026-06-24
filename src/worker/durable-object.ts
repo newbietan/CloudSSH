@@ -64,7 +64,7 @@ export class SSHSessionDO {
       const configParam = url.searchParams.get('config');
       if (configParam) {
         try {
-          prefilledConfig = JSON.parse(atob(configParam)) as SSHConnectionConfig;
+          prefilledConfig = JSON.parse(decodeURIComponent(configParam)) as SSHConnectionConfig;
         } catch {
           return new Response('Invalid config parameter', { status: 400 });
         }
