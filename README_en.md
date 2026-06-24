@@ -209,9 +209,11 @@ To prevent malicious bot abuse, it is recommended to enable Cloudflare Turnstile
 1. **Create Turnstile Widget**: Log in to [Cloudflare Dashboard](https://dash.cloudflare.com/), go to the Turnstile page and create a new Widget.
 2. **Get Keys**: After creation, you will receive a **Site Key** (public) and a **Secret Key** (private).
 3. **Configure Environment Variables**: In the Cloudflare Dashboard Workers settings, go to "Settings" → "Variables and Secrets", add the following environment variables:
-   - `TURNSTILE_SECRET` = your Secret Key (Type: Secret)
-   - `TURNSTILE_SITEKEY` = your Site Key (Type: Text)
+   - `TURNSTILE_SECRET` = your Secret Key
+   - `TURNSTILE_SITEKEY` = your Site Key
 4. **Redeploy**: Run the deployment command to apply the configuration.
+
+> **Environment Variable Type Recommendation**: It is recommended to set all environment variables as **Secret** type. Secrets are stored in Cloudflare's encrypted storage, separate from code deployments, and will not be overwritten or lost during redeployments. When adding variables in the Dashboard, simply select the "Secret" type.
 
 > **Note**: Turnstile verification is session-level. After verification, all features are available for the current session. Closing the browser will require re-verification.
 
@@ -227,11 +229,13 @@ With GitHub OAuth enabled, users can log in with their GitHub account and save/m
    - After creation, note the **Client ID**, then click **Generate a new client secret** to get the **Client Secret** (shown only once, save it immediately)
 
 2. **Configure Environment Variables**: In the Cloudflare Dashboard Workers settings, go to "Settings" → "Variables and Secrets", add the following environment variables:
-   - `GITHUB_CLIENT_ID` = your Client ID (Type: Text)
-   - `BASE_URL` = `https://your-domain.com` (your deployed domain, Type: Text)
-   - `GITHUB_CLIENT_SECRET` = your Client Secret (Type: Secret)
+   - `GITHUB_CLIENT_ID` = your Client ID
+   - `BASE_URL` = `https://your-domain.com` (your deployed domain)
+   - `GITHUB_CLIENT_SECRET` = your Client Secret
 
 3. **Redeploy**: If you just added the variables and are enabling the feature for the first time, you must delete the old deployment and redeploy to initialize the database.
+
+> **Environment Variable Type Recommendation**: It is recommended to set all environment variables as **Secret** type. Secrets are stored in Cloudflare's encrypted storage, separate from code deployments, and will not be overwritten or lost during redeployments. When adding variables in the Dashboard, simply select the "Secret" type.
 
 > **Note**: Server credentials (passwords/private keys) are encrypted with AES-256-GCM before storage. The local encryption key is automatically generated and safely stored in the database (you can also manually override it by setting `SESSION_SECRET` in environment variables). During connection, credentials never pass through the frontend — they are securely transmitted via a one-time-token mechanism.
 

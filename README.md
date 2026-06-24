@@ -209,9 +209,11 @@ flowchart TB
 1. **创建 Turnstile Widget**：登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)，进入 Turnstile 页面创建一个新的 Widget。
 2. **获取密钥**：创建后会获得一个 **Site Key**（公开）和一个 **Secret Key**（保密）。
 3. **配置环境变量**：在 Cloudflare Dashboard 的 Workers 设置中，进入 "Settings" → "Variables and Secrets"，添加以下环境变量：
-   - `TURNSTILE_SECRET` = 你的 Secret Key（类型选择 Secret）
-   - `TURNSTILE_SITEKEY` = 你的 Site Key（类型选择 Text）
+   - `TURNSTILE_SECRET` = 你的 Secret Key
+   - `TURNSTILE_SITEKEY` = 你的 Site Key
 4. **重新部署**：运行部署命令使配置生效。
+
+> **环境变量类型建议**：建议将所有环境变量都设置为 **Secret** 类型。Secrets 存储在 Cloudflare 加密存储中，与代码部署分离，重新部署时不会被覆盖或丢失。在 Dashboard 添加变量时，选择 "Secret" 类型即可。
 
 > **说明**：Turnstile 验证为会话级别，用户通过验证后当前会话内所有功能可用，关闭浏览器后需重新验证。
 
@@ -227,11 +229,13 @@ flowchart TB
    - 创建后获得 **Client ID**，点击 **Generate a new client secret** 生成 **Client Secret**（仅显示一次，请立即保存）
 
 2. **配置环境变量**：在 Cloudflare Dashboard 的 Workers 设置中，进入 "Settings" → "Variables and Secrets"，添加以下环境变量：
-   - `GITHUB_CLIENT_ID` = 你的 Client ID（类型选择 Text）
-   - `BASE_URL` = `https://your-domain.com`（你的部署域名，类型选择 Text）
-   - `GITHUB_CLIENT_SECRET` = 你的 Client Secret（类型选择 Secret）
+   - `GITHUB_CLIENT_ID` = 你的 Client ID
+   - `BASE_URL` = `https://your-domain.com`（你的部署域名）
+   - `GITHUB_CLIENT_SECRET` = 你的 Client Secret
 
 3. **重新部署**：如果你是刚刚修改了环境变量，且是首次启用该功能，请务必删除旧版并全新部署以初始化数据库。
+
+> **环境变量类型建议**：建议将所有环境变量都设置为 **Secret** 类型。Secrets 存储在 Cloudflare 加密存储中，与代码部署分离，重新部署时不会被覆盖或丢失。在 Dashboard 添加变量时，选择 "Secret" 类型即可。
 
 > **说明**：服务器凭据（密码/私钥）在数据库中使用 AES-256-GCM 加密存储，本地加密密钥将自动生成并安全地存储在数据库中（也可在环境变量中手动设置 `SESSION_SECRET` 来指定）。连接时凭据不经过前端，通过 one-time-token 机制安全传递。
 
