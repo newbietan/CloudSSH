@@ -314,14 +314,21 @@ pnpm run dev
 | `pnpm run build:frontend` | 仅构建前端（输出到 `frontend/dist/`） |
 | `pnpm test` | 运行测试 |
 
-#### 提交 PR 的流程
+#### 提交变更的流程
 
-1. 基于 `test` 分支创建你的特性分支：`git checkout -b feat/your-feature`
-2. 进行开发并本地测试
-3. 提交 PR 到 `test` 分支
-4. 测试通过后，维护者会将 `test` 分支合并到 `main` 分支
+**禁止创建特性分支（feature branch）。** 所有变更必须直接提交到 `test` 分支，保持仓库分支结构整洁。
 
-> **说明**：`main` 分支设置了保护规则，禁止直接推送和外部 PR。所有变更必须先提交到 `test` 分支进行测试。
+```
+test 分支（开发/测试）  ──合并──>  main 分支（生产）
+```
+
+1. 切换到 `test` 分支：`git checkout test`
+2. 拉取最新代码：`git pull origin test`
+3. 进行开发并本地测试
+4. 直接提交并推送：`git push origin test`
+5. 测试通过后，维护者会将 `test` 分支合并到 `main` 分支
+
+> **说明**：`main` 分支设置了保护规则，禁止直接推送。所有变更必须先提交到 `test` 分支进行测试。请勿创建 `feat/xxx`、`fix/xxx` 等特性分支，直接在 `test` 分支上提交即可。
 
 ### 技术栈
 

@@ -314,14 +314,21 @@ After the dev server starts, visit the local address shown in the terminal (usua
 | `pnpm run build:frontend` | Build frontend only (output to `frontend/dist/`) |
 | `pnpm test` | Run tests |
 
-#### Submitting a PR
+#### Submitting Changes
 
-1. Create your feature branch from `test`: `git checkout -b feat/your-feature`
-2. Develop and test locally
-3. Submit a PR to the `test` branch
-4. After testing passes, the maintainer will merge the `test` branch into `main`
+**Do NOT create feature branches.** All changes must be committed directly to the `test` branch to keep the repository clean.
 
-> **Note**: The `main` branch has protection rules that prevent direct pushes and external PRs. All changes must be submitted to the `test` branch for testing first.
+```
+test branch (dev/test)  ──merge──>  main branch (production)
+```
+
+1. Switch to the `test` branch: `git checkout test`
+2. Pull the latest code: `git pull origin test`
+3. Develop and test locally
+4. Commit and push directly: `git push origin test`
+5. After testing passes, the maintainer will merge `test` into `main`
+
+> **Note**: The `main` branch has protection rules that prevent direct pushes. All changes must be committed to the `test` branch first. Do NOT create `feat/xxx`, `fix/xxx` or any other feature branches — commit directly to `test`.
 
 ### Tech Stack
 
