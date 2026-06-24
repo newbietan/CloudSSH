@@ -465,10 +465,17 @@ export class UserDBDO {
       if (rows.length > 0) {
         this.encryptionSecret = rows[0].value as string;
       } else {
-        const bytes = new Uint8Array(32);
-        crypto.getRandomValues(bytes);
-        this.encryptionSecret = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
-        this.db.exec("INSERT INTO system_config (key, value) VALUES ('encryption_secret', ?)", this.encryptionSecret);
+        // 兼容旧版：检查 session_secret 并迁移到 encryption_secret
+        const oldRows = this.db.exec("SELECT value FROM system_config WHERE key = 'session_secret'").toArray();
+        if (oldRows.length > 0) {
+          this.encryptionSecret = oldRows[0].value as string;
+          this.db.exec("INSERT INTO system_config (key, value) VALUES ('encryption_secret', ?)", this.encryptionSecret);
+        } else {
+          const bytes = new Uint8Array(32);
+          crypto.getRandomValues(bytes);
+          this.encryptionSecret = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+          this.db.exec("INSERT INTO system_config (key, value) VALUES ('encryption_secret', ?)", this.encryptionSecret);
+        }
       }
     }
 

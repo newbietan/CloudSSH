@@ -115,6 +115,7 @@ function getUserDBStub(env: Env): DurableObjectStub {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    try {
     const url = new URL(request.url);
 
     // ==================== Auth Routes ====================
@@ -230,6 +231,11 @@ export default {
         'Strict-Transport-Security': 'max-age=31536000; includeSubDomains'
       }
     });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('Unhandled error in fetch handler:', msg);
+      return Response.json({ error: msg }, { status: 500 });
+    }
   },
 };
 

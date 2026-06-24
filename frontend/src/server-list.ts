@@ -205,8 +205,12 @@ export class ServerList {
       });
 
       if (!res.ok) {
-        const err = await res.json() as { error?: string };
-        throw new Error(err.error || 'Connection failed');
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const err = await res.json() as { error?: string };
+          throw new Error(err.error || 'Connection failed');
+        }
+        throw new Error(`服务器错误 (${res.status})`);
       }
 
       const { wsUrl } = await res.json() as { wsUrl: string };
