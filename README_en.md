@@ -283,6 +283,16 @@ CloudSSH/
    ```
    > **Note**: When using Wrangler Dev for local development, it connects to your Cloudflare account to access Durable Objects and TCP Sockets. Real SSH TCP traffic is forwarded through Cloudflare's infrastructure.
 
+4. **Configure GitHub Actions** (Optional, for automatic deployment)
+   
+   If you want to deploy to your own Cloudflare account via GitHub Actions, modify the repository owner in `.github/workflows/deploy.yml`:
+   ```yaml
+   if: github.repository_owner == 'your-github-username'
+   ```
+   Also configure the following Secrets in your repository Settings → Secrets and variables → Actions:
+   - `CLOUDFLARE_API_TOKEN`: Your Cloudflare API Token
+   - `CLOUDFLARE_ACCOUNT_ID`: Your Cloudflare Account ID
+
 #### Start Development Server
 
 ```bash

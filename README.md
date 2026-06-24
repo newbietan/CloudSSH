@@ -283,6 +283,16 @@ CloudSSH/
    ```
    > **说明**：本地开发使用 Wrangler Dev 时，会连接到你的 Cloudflare 账号以使用 Durable Objects 和 TCP Sockets。SSH 连接的真实 TCP 流量会通过 Cloudflare 的基础设施转发。
 
+4. **配置 GitHub Actions**（可选，如需自动部署）
+   
+   如果你希望通过 GitHub Actions 自动部署到自己的 Cloudflare 账号，需要修改 `.github/workflows/deploy.yml` 中的仓库所有者名称：
+   ```yaml
+   if: github.repository_owner == '你的GitHub用户名'
+   ```
+   同时在仓库的 Settings → Secrets and variables → Actions 中配置以下 Secrets：
+   - `CLOUDFLARE_API_TOKEN`：Cloudflare API Token
+   - `CLOUDFLARE_ACCOUNT_ID`：Cloudflare 账号 ID
+
 #### 启动开发服务器
 
 ```bash
