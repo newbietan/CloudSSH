@@ -131,7 +131,7 @@ Test files should be in `tests/` directory with `.test.ts` extension.
 | Production | `cloudssh` | `main` | `<name>.workers.dev` + 自定义域名 |
 | Test | `cloudssh-test` | `test` | `<name>-test.workers.dev` + 自定义域名 |
 
-两个环境共享相同的 Durable Objects（SSHSessionDO、UserDBDO），数据完全互通。
+两个环境的 Durable Objects（SSHSessionDO、UserDBDO）数据完全隔离。
 
 ### 部署方式
 
@@ -173,4 +173,4 @@ CLI: `npx wrangler secret set <SECRET_NAME>`
 ### 首次部署注意
 
 - 新 Durable Objects 首次部署：先删除旧 worker 再重新部署（`npx wrangler delete <worker-name>`）
-- Test 环境 DO 绑定与 production 相同的 class_name，确保数据共享
+- Test 环境 DO 绑定与 production 相同的 class_name，但因 Worker 名称不同，数据完全隔离

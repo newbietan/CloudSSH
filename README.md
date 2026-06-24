@@ -163,7 +163,7 @@ flowchart TB
 4. **访问应用**：部署成功后，可通过默认域名 `https://cloudssh.<你的子域>.workers.dev` 访问。
 5. **绑定自定义域名**（可选）：进入 Worker 的 Settings → Domains & Routes → Add，输入你的域名并确认。
 
-> **说明**：如需部署 test 环境，可 Fork 后在 `test` 分支上重复上述步骤，创建独立的 Worker（如 `cloudssh-test`），两个 Worker 共享相同的 DO 类名即可实现数据互通。
+> **说明**：如需部署 test 环境，可 Fork 后在 `test` 分支上重复上述步骤，创建独立的 Worker（如 `cloudssh-test`）。两个环境的 Durable Objects 数据完全隔离，各自独立。
 
 #### 方式二：本地命令行部署
 
@@ -198,9 +198,9 @@ flowchart TB
 | 环境 | 命令 | 默认域名 | 说明 |
 |------|------|---------|------|
 | Production | `pnpm run deploy` | `cloudssh.<子域>.workers.dev` | main 分支代码 |
-| Test | `pnpm run deploy:test` | `cloudssh-test.<子域>.workers.dev` | test 分支代码，与生产环境共享 DO 数据 |
+| Test | `pnpm run deploy:test` | `cloudssh-test.<子域>.workers.dev` | test 分支代码，与生产环境 DO 数据隔离 |
 
-> **说明**：两个环境的 Durable Objects 绑定相同的 class_name，数据完全共享。部署完成后可在 Cloudflare Dashboard 中分别绑定不同的自定义域名（Settings → Domains & Routes）。
+> **说明**：两个环境的 Durable Objects 虽然绑定相同的 class_name，但因 Worker 名称不同，数据完全隔离。部署完成后可在 Cloudflare Dashboard 中分别绑定不同的自定义域名（Settings → Domains & Routes）。
 
 #### 可选：配置 Turnstile 人机验证
 

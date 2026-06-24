@@ -163,7 +163,7 @@ This project implements a complete SSH-2.0 protocol stack:
 4. **Access the App**: After successful deployment, access via the default domain `https://cloudssh.<your-subdomain>.workers.dev`.
 5. **Bind Custom Domain** (Optional): Go to Worker Settings → Domains & Routes → Add, enter your domain and confirm.
 
-> **Note**: To deploy a test environment, repeat the above steps on the `test` branch to create a separate Worker (e.g., `cloudssh-test`). Both Workers share the same DO class names for data synchronization.
+> **Note**: To deploy a test environment, repeat the above steps on the `test` branch to create a separate Worker (e.g., `cloudssh-test`). The Durable Objects data between both environments is completely isolated.
 
 #### Method 2: Local CLI Deployment
 
@@ -198,7 +198,7 @@ This project implements a complete SSH-2.0 protocol stack:
 | Environment | Command | Default Domain | Description |
 |-------------|---------|---------------|-------------|
 | Production | `pnpm run deploy` | `cloudssh.<subdomain>.workers.dev` | main branch code |
-| Test | `pnpm run deploy:test` | `cloudssh-test.<subdomain>.workers.dev` | test branch code, shares DO data with production |
+| Test | `pnpm run deploy:test` | `cloudssh-test.<subdomain>.workers.dev` | test branch code, DO data isolated from production |
 
 > **Note**: Both environments bind to Durable Objects with the same `class_name`, sharing data completely. After deployment, you can bind different custom domains for each environment in the Cloudflare Dashboard (Settings → Domains & Routes).
 
