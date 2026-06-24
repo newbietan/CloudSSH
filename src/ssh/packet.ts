@@ -98,6 +98,8 @@ export class SSHPacketParser {
       return;
     }
 
+    // Discard fully consumed chunks (Array.slice creates a new reference array,
+    // not a Uint8Array copy — this is intentional to free old chunk objects)
     if (
       this.chunkIndex > COMPACT_CHUNKS_THRESHOLD &&
       this.chunkIndex * 2 >= this.chunks.length

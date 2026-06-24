@@ -1,4 +1,4 @@
-import { SSHConnectionConfig, SessionKeys, SSHPacket, TerminalSize } from '../types';
+import { SSHConnectionConfig, SessionKeys, SSHPacket, TerminalSize, normalizeTerminalSize } from '../types';
 import {
   SSH_MSG_KEXINIT,
   SSH_MSG_NEWKEYS,
@@ -913,18 +913,20 @@ export class SSHSession {
 
   async handleWebSocketMessage(data: string | ArrayBuffer): Promise<void> {
     if (typeof data === 'string') {
-      if (data.startsWith('{"type"')) {
-        try {
-          const msg = JSON.parse(data);
-          if (msg.type === 'ping') {
-            this.ws.send(JSON.stringify({ type: 'pong' }));
-            return;
-          }
-          if (msg.type === 'resize') {
-            await this.handleResize(msg.cols, msg.rows);
-            return;
-          }
-        } catch {}
+      let parsed: any = undefined;
+      try {
+        parsed = JSON.parse(data);
+      } catch {}
+
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.type === 'ping') {
+          this.ws.send(JSON.stringify({ type: 'pong' }));
+          return;
+        }
+        if (parsed.type === 'resize') {
+          await this.handleResize(parsed.cols, parsed.rows);
+          return;
+        }
       }
 
       if (this.state !== 'ready') return;
@@ -949,30 +951,10 @@ export class SSHSession {
   }
 
   private updateTerminalSize(cols: unknown, rows: unknown): boolean {
-    if (
-      typeof cols !== 'number' ||
-      typeof rows !== 'number' ||
-      !Number.isFinite(cols) ||
-      !Number.isFinite(rows)
-    ) {
-      return false;
-    }
+    const size = normalizeTerminalSize(cols, rows);
+    if (!size) return false;
 
-    const nextSize = {
-      cols: Math.floor(cols),
-      rows: Math.floor(rows),
-    };
-
-    if (
-      nextSize.cols < 10 ||
-      nextSize.cols > 1000 ||
-      nextSize.rows < 5 ||
-      nextSize.rows > 1000
-    ) {
-      return false;
-    }
-
-    this.terminalSize = nextSize;
+    this.terminalSize = size;
     return true;
   }
 

@@ -55,6 +55,28 @@ export interface TerminalSize {
   rows: number;
 }
 
+export function normalizeTerminalSize(cols: unknown, rows: unknown): TerminalSize | null {
+  if (
+    typeof cols !== 'number' ||
+    typeof rows !== 'number' ||
+    !Number.isFinite(cols) ||
+    !Number.isFinite(rows)
+  ) {
+    return null;
+  }
+
+  const size = {
+    cols: Math.floor(cols),
+    rows: Math.floor(rows),
+  };
+
+  if (size.cols < 10 || size.cols > 2000 || size.rows < 5 || size.rows > 2000) {
+    return null;
+  }
+
+  return size;
+}
+
 export interface Env {
   SSH_SESSION: DurableObjectNamespace;
   USER_DB: DurableObjectNamespace;

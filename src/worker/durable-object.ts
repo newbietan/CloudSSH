@@ -1,4 +1,4 @@
-import { Env, SSHConnectionConfig, TerminalSize } from '../types';
+import { Env, SSHConnectionConfig, TerminalSize, normalizeTerminalSize } from '../types';
 import { SSHSession } from './ssh-session';
 
 /**
@@ -206,29 +206,7 @@ export class SSHSessionDO {
   }
 
   private rememberTerminalSize(ws: WebSocket, cols: unknown, rows: unknown): void {
-    const size = this.normalizeTerminalSize(cols, rows);
+    const size = normalizeTerminalSize(cols, rows);
     if (size) this.pendingTerminalSizes.set(ws, size);
-  }
-
-  private normalizeTerminalSize(cols: unknown, rows: unknown): TerminalSize | null {
-    if (
-      typeof cols !== 'number' ||
-      typeof rows !== 'number' ||
-      !Number.isFinite(cols) ||
-      !Number.isFinite(rows)
-    ) {
-      return null;
-    }
-
-    const size = {
-      cols: Math.floor(cols),
-      rows: Math.floor(rows),
-    };
-
-    if (size.cols < 10 || size.cols > 1000 || size.rows < 5 || size.rows > 1000) {
-      return null;
-    }
-
-    return size;
   }
 }

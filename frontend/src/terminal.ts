@@ -358,7 +358,7 @@ export class SSHTerminal {
         if (this.hasAltScreenExitParam(params)) {
           this.restoreCursorBlinkAfterAltScreenExit = true;
         }
-        return false;
+        return true;
       })
     );
 
