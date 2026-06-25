@@ -59,7 +59,6 @@ export class SSHTerminal {
   private lastConfig: SSHConnectionConfig | null = null;
   private onSessionClosed?: (event: CloseEvent) => void;
   private restoreCursorBlinkAfterAltScreenExit: boolean = false;
-  private needsLeadingNewline: boolean = false;
 
   constructor(containerId: string) {
     this.container = document.getElementById(containerId)!;
@@ -224,45 +223,14 @@ export class SSHTerminal {
     // Trzsz file transfer support
     this.trzszFilter = new TrzszFilter({
       writeToTerminal: (data: string | ArrayBuffer | Uint8Array | Blob) => {
-        const writeData = () => {
-          if (this.needsLeadingNewline && this.terminal.buffer.active.cursorX > 0) {
-            this.terminal.write('\r\n');
-          }
-          this.needsLeadingNewline = false;
-        };
-
-        const isInputEcho = ((): boolean => {
-          if (typeof data === 'string') {
-            return data.length === 1 || (data.length <= 4 && !data.includes('\n'));
-          }
-          if (data instanceof Uint8Array) {
-            return data.length === 1 || (data.length <= 4 && !data.includes(0x0a));
-          }
-          return false;
-        })();
-
         if (typeof data === 'string') {
-          this.terminal.write(data, writeData);
+          this.terminal.write(data);
         } else if (data instanceof Uint8Array) {
-          this.terminal.write(data, writeData);
+          this.terminal.write(data);
         } else if (data instanceof ArrayBuffer) {
-          this.terminal.write(new Uint8Array(data), writeData);
+          this.terminal.write(new Uint8Array(data));
         } else if (data instanceof Blob) {
-          data.arrayBuffer().then(buf => {
-            this.terminal.write(new Uint8Array(buf), writeData);
-          });
-        }
-
-        if (!isInputEcho) {
-          const endsWithoutNewline = ((): boolean => {
-            if (typeof data === 'string') return data.length > 0 && !data.endsWith('\n');
-            if (data instanceof Uint8Array) return data.length > 0 && data[data.length - 1] !== 0x0a;
-            if (data instanceof ArrayBuffer) return data.byteLength > 0 && new Uint8Array(data)[data.byteLength - 1] !== 0x0a;
-            return false;
-          })();
-          if (endsWithoutNewline) {
-            this.needsLeadingNewline = true;
-          }
+          data.arrayBuffer().then(buf => this.terminal.write(new Uint8Array(buf)));
         }
       },
       sendToServer: (data: string | Uint8Array) => {
@@ -448,10 +416,6 @@ export class SSHTerminal {
     this.stopHeartbeat();
     this.clearReconnectTimeout();
     this.disposeConnectionDisposables();
-
-    if (this.needsLeadingNewline) {
-      this.needsLeadingNewline = false;
-    }
 
     const socket = this.ws;
     this.ws = null;
