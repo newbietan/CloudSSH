@@ -84,6 +84,8 @@ export class SSHSession {
   private keepaliveInterval: ReturnType<typeof setInterval> | null = null;
   private keepaliveFailCount: number = 0;
   private readonly maxKeepaliveFails: number = 3;
+  private keepalivePending: boolean = false;
+  private keepaliveTimeout: ReturnType<typeof setTimeout> | null = null;
   private shellReadyTimeout: ReturnType<typeof setTimeout> | null = null;
   private terminalSize: TerminalSize = { cols: 120, rows: 40 };
   private debugMode: boolean = false;
@@ -321,6 +323,16 @@ export class SSHSession {
       await this.handleGlobalRequest(packet.payload);
       return;
     }
+    if (msgType === SSH_MSG_REQUEST_SUCCESS || msgType === SSH_MSG_REQUEST_FAILURE) {
+      // Response to our global request (e.g., keepalive)
+      this.keepalivePending = false;
+      this.keepaliveFailCount = 0;
+      if (this.keepaliveTimeout) {
+        clearTimeout(this.keepaliveTimeout);
+        this.keepaliveTimeout = null;
+      }
+      return;
+    }
 
     switch (this.state) {
       case 'kex':
@@ -371,11 +383,41 @@ export class SSHSession {
 
   private startKeepalive(): void {
     this.keepaliveFailCount = 0;
+    this.keepalivePending = false;
     this.keepaliveInterval = setInterval(async () => {
+      if (this.keepalivePending) {
+        this.keepaliveFailCount++;
+        this.sendDebug(`Keepalive timeout (${this.keepaliveFailCount}/${this.maxKeepaliveFails})`);
+        if (this.keepaliveFailCount >= this.maxKeepaliveFails) {
+          this.sendError('SSH 连接超时，保活失败');
+          this.close();
+          return;
+        }
+      }
+
       try {
-        const ignoreMsg = new Uint8Array([SSH_MSG_IGNORE, 0, 0, 0, 0]);
-        await this.sendEncrypted(ignoreMsg);
-        this.keepaliveFailCount = 0;
+        const requestName = new TextEncoder().encode('keepalive@openssh.com');
+        const payload = new Uint8Array(1 + 4 + requestName.length + 1);
+        payload[0] = SSH_MSG_GLOBAL_REQUEST;
+        new DataView(payload.buffer).setUint32(1, requestName.length, false);
+        payload.set(requestName, 5);
+        payload[5 + requestName.length] = 1; // want_reply = true
+
+        await this.sendEncrypted(payload);
+        this.keepalivePending = true;
+
+        if (this.keepaliveTimeout) clearTimeout(this.keepaliveTimeout);
+        this.keepaliveTimeout = setTimeout(() => {
+          if (this.keepalivePending) {
+            this.keepaliveFailCount++;
+            this.sendDebug(`Keepalive response timeout (${this.keepaliveFailCount}/${this.maxKeepaliveFails})`);
+            this.keepalivePending = false;
+            if (this.keepaliveFailCount >= this.maxKeepaliveFails) {
+              this.sendError('SSH 连接超时，保活失败');
+              this.close();
+            }
+          }
+        }, 10000);
       } catch (e) {
         this.keepaliveFailCount++;
         this.sendDebug(`Keepalive send failed (${this.keepaliveFailCount}/${this.maxKeepaliveFails}): ${e instanceof Error ? e.message : String(e)}`);
@@ -1000,6 +1042,10 @@ export class SSHSession {
     if (this.keepaliveInterval) {
       clearInterval(this.keepaliveInterval);
       this.keepaliveInterval = null;
+    }
+    if (this.keepaliveTimeout) {
+      clearTimeout(this.keepaliveTimeout);
+      this.keepaliveTimeout = null;
     }
     if (this.shellReadyTimeout) {
       clearTimeout(this.shellReadyTimeout);
