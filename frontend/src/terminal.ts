@@ -231,6 +231,16 @@ export class SSHTerminal {
           this.needsLeadingNewline = false;
         };
 
+        const isInputEcho = ((): boolean => {
+          if (typeof data === 'string') {
+            return data.length === 1 || (data.length <= 4 && !data.includes('\n'));
+          }
+          if (data instanceof Uint8Array) {
+            return data.length === 1 || (data.length <= 4 && !data.includes(0x0a));
+          }
+          return false;
+        })();
+
         if (typeof data === 'string') {
           this.terminal.write(data, writeData);
         } else if (data instanceof Uint8Array) {
@@ -243,14 +253,16 @@ export class SSHTerminal {
           });
         }
 
-        const endsWithoutNewline = ((): boolean => {
-          if (typeof data === 'string') return data.length > 0 && !data.endsWith('\n');
-          if (data instanceof Uint8Array) return data.length > 0 && data[data.length - 1] !== 0x0a;
-          if (data instanceof ArrayBuffer) return data.byteLength > 0 && new Uint8Array(data)[data.byteLength - 1] !== 0x0a;
-          return false;
-        })();
-        if (endsWithoutNewline) {
-          this.needsLeadingNewline = true;
+        if (!isInputEcho) {
+          const endsWithoutNewline = ((): boolean => {
+            if (typeof data === 'string') return data.length > 0 && !data.endsWith('\n');
+            if (data instanceof Uint8Array) return data.length > 0 && data[data.length - 1] !== 0x0a;
+            if (data instanceof ArrayBuffer) return data.byteLength > 0 && new Uint8Array(data)[data.byteLength - 1] !== 0x0a;
+            return false;
+          })();
+          if (endsWithoutNewline) {
+            this.needsLeadingNewline = true;
+          }
         }
       },
       sendToServer: (data: string | Uint8Array) => {
