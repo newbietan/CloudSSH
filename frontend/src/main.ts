@@ -1,4 +1,4 @@
-import { SSHTerminal } from './terminal';
+import { SSHTerminal, THEMES } from './terminal';
 import { ConnectionForm } from './auth-form';
 import { ServerList } from './server-list';
 
@@ -114,7 +114,7 @@ function showOfflineUI(): void {
     showAuthSection();
   }
 
-  document.getElementById('status-text')!.innerHTML = '<span class="w-2 h-2 bg-[#353534] inline-block"></span> STATUS: OFFLINE';
+  document.getElementById('status-text')!.innerHTML = '<span class="w-2 h-2 bg-surface-dot inline-block"></span> STATUS: OFFLINE';
 }
 
 function showTerminalFromServer(wsUrl: string, serverName: string): void {
@@ -151,14 +151,25 @@ document.getElementById('disconnect-btn')?.addEventListener('click', () => {
 
 // ==================== 主题切换 ====================
 
-document.getElementById('theme-selector')?.addEventListener('change', (e) => {
-  const theme = (e.target as HTMLSelectElement).value as any;
+const themeSelector = document.getElementById('theme-selector') as HTMLSelectElement | null;
+
+themeSelector?.addEventListener('change', (e) => {
+  const theme = (e.target as HTMLSelectElement).value as keyof typeof THEMES;
   terminal.setTheme(theme);
 });
+
+function restoreTheme(): void {
+  const saved = localStorage.getItem('cloudssh_theme') as keyof typeof THEMES | null;
+  if (saved && THEMES[saved]) {
+    terminal.setTheme(saved);
+    if (themeSelector) themeSelector.value = saved;
+  }
+}
 
 // ==================== 初始化 ====================
 
 async function init(): Promise<void> {
+  restoreTheme();
   // 设置版权年份
   const copyrightYearSpan = document.getElementById('copyright-year');
   if (copyrightYearSpan) {

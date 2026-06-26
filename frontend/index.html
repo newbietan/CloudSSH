@@ -50,19 +50,19 @@
       <div class="flicker"></div>
       <main class="w-full max-w-md relative z-10">
         <div class="mb-8 text-center">
-          <div class="text-3xl font-bold text-[#4af626] tracking-tighter mb-2">CloudSSH<span class="blinking-cursor"></span></div>
+          <div class="text-3xl font-bold text-primary tracking-tighter mb-2">CloudSSH<span class="blinking-cursor"></span></div>
         </div>
         <div class="cyber-box p-6 shadow-2xl relative">
-          <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[#4af626] to-transparent opacity-50"></div>
-          <div class="flex items-center justify-between mb-8 pb-4 border-b border-[#3c4b36]">
-            <span class="text-xs font-bold tracking-[0.1em] text-[#14d1ff]">CONNECTION_PARAMETERS</span>
-            <span class="material-symbols-outlined text-[#14d1ff]" style="font-variation-settings: 'FILL' 0;">terminal</span>
+          <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent opacity-50"></div>
+          <div class="flex items-center justify-between mb-8 pb-4 border-b border-dim">
+            <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]">CONNECTION_PARAMETERS</span>
+            <span class="material-symbols-outlined text-[var(--accent-secondary)]" style="font-variation-settings: 'FILL' 0;">terminal</span>
           </div>
           <div id="connection-form-container"></div>
         </div>
-        <div class="mt-8 text-center text-[13px] text-[#bbccb0] opacity-60">SYSTEM READY. WAITING FOR INPUT.</div>
+        <div class="mt-8 text-center text-[13px] text-muted opacity-60">SYSTEM READY. WAITING FOR INPUT.</div>
         <div class="mt-4 text-center">
-          <a href="https://github.com/newbietan/CloudSSH" class="text-[13px] text-[#4af626] opacity-60 hover:opacity-100 transition-colors tracking-widest uppercase">[ GitHub Open Source ]</a>
+          <a href="https://github.com/newbietan/CloudSSH" class="text-[13px] text-primary opacity-60 hover:opacity-100 transition-colors tracking-widest uppercase">[ GitHub Open Source ]</a>
         </div>
       </main>
     </div>
@@ -78,7 +78,7 @@
           <div id="user-info" class="flex items-center gap-3">
             <!-- 动态渲染：头像 + 用户名 -->
           </div>
-          <button id="logout-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center text-[#ffb4ab]" title="Logout">
+          <button id="logout-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center text-error" title="Logout">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">logout</span>
           </button>
         </div>
@@ -91,8 +91,8 @@
           <!-- 顶部操作栏 -->
           <div class="flex justify-between items-center mb-6">
             <div>
-              <h2 class="text-lg font-bold text-[#4af626] tracking-[0.1em]">SERVER_LIST</h2>
-              <p class="text-xs text-[#bbccb0] opacity-60 mt-1">Manage your SSH connections</p>
+              <h2 class="text-lg font-bold text-primary tracking-[0.1em]">SERVER_LIST</h2>
+              <p class="text-xs text-muted opacity-60 mt-1">Manage your SSH connections</p>
             </div>
             <button id="add-server-btn" class="cyber-button py-2 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center gap-2">
               <span class="material-symbols-outlined" style="font-size: 16px;">add</span>
@@ -105,9 +105,9 @@
           </div>
           <!-- 空状态 -->
           <div id="empty-state" class="hidden flex-col items-center justify-center py-20">
-            <span class="material-symbols-outlined text-[#3c4b36] mb-4" style="font-size: 64px; font-variation-settings: 'FILL' 0;">dns</span>
-            <p class="text-[#bbccb0] text-sm tracking-[0.1em] mb-2">NO_SERVERS_CONFIGURED</p>
-            <p class="text-[#3c4b36] text-xs mb-6">Add a server to get started</p>
+            <span class="material-symbols-outlined text-dim mb-4" style="font-size: 64px; font-variation-settings: 'FILL' 0;">dns</span>
+            <p class="text-muted text-sm tracking-[0.1em] mb-2">NO_SERVERS_CONFIGURED</p>
+            <p class="text-dim text-xs mb-6">Add a server to get started</p>
             <button id="empty-add-btn" class="cyber-button py-2 px-6 text-xs font-bold tracking-[0.1em] uppercase flex items-center gap-2">
               <span class="material-symbols-outlined" style="font-size: 16px;">add</span>
               ADD_FIRST_SERVER
@@ -129,62 +129,62 @@
     <div id="server-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center">
       <div class="modal-overlay absolute inset-0" id="modal-backdrop"></div>
       <div class="cyber-box p-6 shadow-2xl relative z-10 w-full max-w-md mx-4">
-        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[#14d1ff] to-transparent opacity-50"></div>
-        <div class="flex items-center justify-between mb-6 pb-4 border-b border-[#3c4b36]">
-          <span id="modal-title" class="text-xs font-bold tracking-[0.1em] text-[#14d1ff]">ADD_SERVER</span>
-          <button id="modal-close-btn" class="text-[#bbccb0] hover:text-[#4af626] transition-colors cursor-pointer">
+        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent-secondary)] to-transparent opacity-50"></div>
+        <div class="flex items-center justify-between mb-6 pb-4 border-b border-dim">
+          <span id="modal-title" class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]">ADD_SERVER</span>
+          <button id="modal-close-btn" class="text-muted hover:text-primary transition-colors cursor-pointer">
             <span class="material-symbols-outlined" style="font-size: 20px;">close</span>
           </button>
         </div>
         <form id="server-form" class="space-y-4">
           <div>
-            <label class="block text-xs font-bold tracking-[0.1em] text-[#bbccb0] mb-2">SERVER_NAME</label>
+            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">SERVER_NAME</label>
             <div class="flex items-center">
-              <span class="material-symbols-outlined text-[#bbccb0] mr-2" style="font-size: 16px;">label</span>
+              <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px;">label</span>
               <input id="server-name" class="terminal-input text-[13px]" placeholder="My Server" type="text" required>
             </div>
           </div>
           <div class="grid grid-cols-4 gap-4">
             <div class="col-span-3">
-              <label class="block text-xs font-bold tracking-[0.1em] text-[#bbccb0] mb-2">HOST_ADDRESS</label>
+              <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">HOST_ADDRESS</label>
               <div class="flex items-center">
-                <span class="text-[#bbccb0] mr-2">&gt;</span>
+                <span class="text-muted mr-2">&gt;</span>
                 <input id="server-host" class="terminal-input text-[13px]" placeholder="192.168.1.1" type="text" required>
               </div>
             </div>
             <div class="col-span-1">
-              <label class="block text-xs font-bold tracking-[0.1em] text-[#bbccb0] mb-2">PORT</label>
+              <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">PORT</label>
               <div class="flex items-center">
-                <span class="text-[#bbccb0] mr-2">:</span>
+                <span class="text-muted mr-2">:</span>
                 <input id="server-port" class="terminal-input text-[13px]" placeholder="22" type="text" value="22">
               </div>
             </div>
           </div>
           <div>
-            <label class="block text-xs font-bold tracking-[0.1em] text-[#bbccb0] mb-2">AUTH_USER</label>
+            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">AUTH_USER</label>
             <div class="flex items-center">
-              <span class="material-symbols-outlined text-[#bbccb0] mr-2" style="font-size: 16px;">person</span>
+              <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px;">person</span>
               <input id="server-username" class="terminal-input text-[13px]" placeholder="root" type="text" required>
             </div>
           </div>
           <div>
-            <label class="block text-xs font-bold tracking-[0.1em] text-[#bbccb0] mb-2">AUTH_METHOD</label>
+            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">AUTH_METHOD</label>
             <div class="flex gap-2 mb-3">
-              <button type="button" id="modal-auth-tab-password" class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] border border-[#4af626] text-[#4af626] bg-transparent cursor-pointer transition-all" style="background:#4af626;color:#0a0a0a;">PASSWORD</button>
-              <button type="button" id="modal-auth-tab-key" class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] border border-[#3c4b36] text-[#bbccb0] bg-transparent cursor-pointer transition-all">PRIVATE_KEY</button>
+              <button type="button" id="modal-auth-tab-password" class="auth-tab auth-tab-active px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all">PASSWORD</button>
+              <button type="button" id="modal-auth-tab-key" class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all">PRIVATE_KEY</button>
             </div>
             <div id="modal-password-section">
               <div class="flex items-center">
-                <span class="material-symbols-outlined text-[#bbccb0] mr-2" style="font-size: 16px;">key</span>
+                <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px;">key</span>
                 <input id="server-password" class="terminal-input text-[13px]" placeholder="••••••••" type="password">
               </div>
             </div>
             <div id="modal-key-section" style="display:none;">
-              <textarea id="server-private-key" class="terminal-input text-[11px] w-full" rows="4" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...粘贴私钥内容...&#10;-----END OPENSSH PRIVATE KEY-----" style="resize:vertical;border:1px solid #3c4b36;padding:8px;"></textarea>
+              <textarea id="server-private-key" class="terminal-input text-[11px] w-full" rows="4" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...粘贴私钥内容...&#10;-----END OPENSSH PRIVATE KEY-----" style="resize:vertical;border:1px solid var(--border-strong);padding:8px;"></textarea>
             </div>
           </div>
           <div class="pt-2">
-            <button id="server-submit-btn" class="cyber-button w-full py-3 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-2 bg-[#4af626] text-[#022100]" type="button">
+            <button id="server-submit-btn" class="cyber-button w-full py-3 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-2 bg-primary text-on-primary" type="button">
               <span class="material-symbols-outlined" style="font-size: 18px;">save</span>
               SAVE_SERVER
             </button>
@@ -215,7 +215,7 @@
       <!-- Main Terminal -->
       <main class="flex-1 p-6 pb-14 relative bg-surface-container-lowest overflow-hidden">
         <div class="absolute inset-0 scanline pointer-events-none z-10 opacity-30"></div>
-        <div id="terminal-wrapper" class="h-full w-full border border-outline-variant bg-[#0a0a0a] p-4 overflow-hidden font-code text-[13px] text-primary-container relative z-0 flex flex-col">
+        <div id="terminal-wrapper" class="h-full w-full border border-outline-variant bg-[var(--bg)] p-4 overflow-hidden font-code text-[13px] text-primary-container relative z-0 flex flex-col">
           <!-- Status Bar -->
           <div class="flex justify-between items-center border-b border-surface-variant pb-2 mb-4 text-on-surface-variant opacity-80 text-[11px]">
             <div class="flex gap-6">

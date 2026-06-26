@@ -83,7 +83,7 @@ export class ConnectionForm {
     if (!placeholder) return;
 
     placeholder.innerHTML = `
-      <button type="button" id="github-login-btn" class="github-login-btn text-[11px] font-bold tracking-[0.1em] text-[#bbccb0] hover:text-[#4af626] transition-all cursor-pointer flex items-center gap-1.5 bg-transparent border border-[#3c4b36] px-3 py-1 hover:border-[#4af626]">
+      <button type="button" id="github-login-btn" class="github-login-btn text-[11px] font-bold tracking-[0.1em] text-muted hover:text-primary transition-all cursor-pointer flex items-center gap-1.5 bg-transparent border border-dim px-3 py-1 hover:border-[var(--accent)]">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
         LOGIN
       </button>
@@ -139,59 +139,59 @@ export class ConnectionForm {
       <form class="space-y-6" id="connection-form">
         <div class="grid grid-cols-4 gap-4">
           <div class="col-span-3">
-            <label class="block text-xs font-bold tracking-[0.1em] text-[#bbccb0] mb-2">HOST_ADDRESS</label>
+            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">HOST_ADDRESS</label>
             <div class="flex items-center">
-              <span class="text-[#bbccb0] mr-2">&gt;</span>
+              <span class="text-muted mr-2">&gt;</span>
                <input id="host" class="terminal-input text-[13px]" placeholder="192.168.1.1 or 2001:db8::1" type="text" required>
             </div>
           </div>
           <div class="col-span-1">
-            <label class="block text-xs font-bold tracking-[0.1em] text-[#bbccb0] mb-2">PORT</label>
+            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">PORT</label>
             <div class="flex items-center">
-              <span class="text-[#bbccb0] mr-2">:</span>
+              <span class="text-muted mr-2">:</span>
               <input id="port" class="terminal-input text-[13px]" placeholder="22" type="text" value="22">
             </div>
           </div>
         </div>
         <div>
-          <label class="block text-xs font-bold tracking-[0.1em] text-[#bbccb0] mb-2">AUTH_USER</label>
+          <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">AUTH_USER</label>
           <div class="flex items-center">
-            <span class="material-symbols-outlined text-[#bbccb0] mr-2" style="font-size: 16px;">person</span>
+            <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px;">person</span>
             <input id="username" class="terminal-input text-[13px]" placeholder="admin" type="text" required>
           </div>
         </div>
         <div>
-          <label class="block text-xs font-bold tracking-[0.1em] text-[#bbccb0] mb-2">AUTH_METHOD</label>
+          <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">AUTH_METHOD</label>
           <div class="flex gap-2 mb-3">
-            <button type="button" id="auth-tab-password" class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] border border-[#4af626] text-[#4af626] bg-transparent cursor-pointer transition-all" style="background:#4af626;color:#0a0a0a;">PASSWORD</button>
-            <button type="button" id="auth-tab-key" class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] border border-[#3c4b36] text-[#bbccb0] bg-transparent cursor-pointer transition-all">PRIVATE_KEY</button>
+            <button type="button" id="auth-tab-password" class="auth-tab auth-tab-active px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all">PASSWORD</button>
+            <button type="button" id="auth-tab-key" class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all">PRIVATE_KEY</button>
           </div>
           <div id="auth-password-section">
             <div class="flex items-center">
-              <span class="material-symbols-outlined text-[#bbccb0] mr-2" style="font-size: 16px;">key</span>
+              <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px;">key</span>
               <input id="password" class="terminal-input text-[13px]" placeholder="••••••••" type="password">
             </div>
           </div>
           <div id="auth-key-section" style="display:none;">
-            <textarea id="private-key" class="terminal-input text-[11px] w-full" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...粘贴 Ed25519 私钥内容...&#10;-----END OPENSSH PRIVATE KEY-----" style="resize:vertical;border:1px solid #3c4b36;padding:8px;"></textarea>
+            <textarea id="private-key" class="terminal-input text-[11px] w-full" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...粘贴 Ed25519 私钥内容...&#10;-----END OPENSSH PRIVATE KEY-----" style="resize:vertical;border:1px solid var(--border-strong);padding:8px;"></textarea>
           </div>
         </div>
         <div id="turnstile-container" style="display:none;">
           <div id="turnstile-widget" class="flex justify-center"></div>
         </div>
         <div class="flex items-center gap-2 mt-2">
-          <input type="checkbox" id="remember-me" class="accent-[#4af626] w-4 h-4 cursor-pointer">
-          <label for="remember-me" class="text-xs text-[#bbccb0] cursor-pointer select-none">REMEMBER_CONNECTION</label>
+          <input type="checkbox" id="remember-me" class="accent-[var(--accent)] w-4 h-4 cursor-pointer">
+          <label for="remember-me" class="text-xs text-muted cursor-pointer select-none">REMEMBER_CONNECTION</label>
         </div>
         <div class="pt-4">
-          <button id="connect-btn" class="cyber-button w-full py-3 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-2 bg-[#4af626] text-[#022100]" type="button">
+          <button id="connect-btn" class="cyber-button w-full py-3 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-2 bg-primary text-on-primary" type="button">
             <span class="material-symbols-outlined" style="font-size: 18px;">power_settings_new</span>
             Execute_Connection
           </button>
         </div>
         <div class="flex justify-between items-center mt-4">
-          <span id="status-text" class="text-[13px] text-[#bbccb0] flex items-center gap-1">
-            <span class="w-2 h-2 bg-[#353534] inline-block"></span> STATUS: OFFLINE
+          <span id="status-text" class="text-[13px] text-muted flex items-center gap-1">
+            <span class="w-2 h-2 bg-surface-dot inline-block"></span> STATUS: OFFLINE
           </span>
           <span id="github-login-placeholder"></span>
         </div>
@@ -224,19 +224,10 @@ export class ConnectionForm {
     const pwSection = document.getElementById('auth-password-section')!;
     const keySection = document.getElementById('auth-key-section')!;
 
-    if (mode === 'password') {
-      pwTab.style.background = '#4af626'; pwTab.style.color = '#0a0a0a';
-      pwTab.style.borderColor = '#4af626';
-      keyTab.style.background = 'transparent'; keyTab.style.color = '#bbccb0';
-      keyTab.style.borderColor = '#3c4b36';
-      pwSection.style.display = ''; keySection.style.display = 'none';
-    } else {
-      keyTab.style.background = '#4af626'; keyTab.style.color = '#0a0a0a';
-      keyTab.style.borderColor = '#4af626';
-      pwTab.style.background = 'transparent'; pwTab.style.color = '#bbccb0';
-      pwTab.style.borderColor = '#3c4b36';
-      keySection.style.display = ''; pwSection.style.display = 'none';
-    }
+    pwTab.classList.toggle('auth-tab-active', mode === 'password');
+    keyTab.classList.toggle('auth-tab-active', mode === 'key');
+    pwSection.style.display = mode === 'password' ? '' : 'none';
+    keySection.style.display = mode === 'key' ? '' : 'none';
   }
 
   private async loadSavedCredentials(): Promise<void> {
@@ -334,7 +325,7 @@ export class ConnectionForm {
       termSection.classList.add('hidden');
       termSection.classList.remove('flex');
       authSection.classList.remove('hidden');
-      document.getElementById('status-text')!.innerHTML = '<span class="w-2 h-2 bg-[#353534] inline-block"></span> STATUS: OFFLINE';
+      document.getElementById('status-text')!.innerHTML = '<span class="w-2 h-2 bg-surface-dot inline-block"></span> STATUS: OFFLINE';
     }
   }
 }

@@ -59,7 +59,7 @@ export class ServerList {
     img.className = 'user-avatar w-8 h-8';
     container.appendChild(img);
     const span = document.createElement('span');
-    span.className = 'text-xs font-bold tracking-[0.1em] text-[#bbccb0]';
+    span.className = 'text-xs font-bold tracking-[0.1em] text-muted';
     span.textContent = this.user.username;
     container.appendChild(span);
   }
@@ -144,31 +144,31 @@ export class ServerList {
 
     return `
       <div class="server-card p-5 relative group" id="card-${server.id}">
-        <div class="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-[#3c4b36] to-transparent group-hover:via-[#4af626] transition-all duration-300"></div>
+        <div class="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-[var(--border-strong)] to-transparent group-hover:via-[var(--accent)] transition-all duration-300"></div>
         
         <div class="flex items-start justify-between mb-3">
           <div class="flex items-center gap-2">
-            <span class="material-symbols-outlined text-[#4af626]" style="font-size: 20px; font-variation-settings: 'FILL' 0;">dns</span>
-            <h3 class="text-sm font-bold text-[#4af626] tracking-[0.05em]">${this.escapeHtml(server.name)}</h3>
+            <span class="material-symbols-outlined text-primary" style="font-size: 20px; font-variation-settings: 'FILL' 0;">dns</span>
+            <h3 class="text-sm font-bold text-primary tracking-[0.05em]">${this.escapeHtml(server.name)}</h3>
           </div>
-          <span class="text-[10px] font-bold tracking-[0.1em] text-[#bbccb0] border border-[#3c4b36] px-2 py-0.5 flex items-center gap-1">
+          <span class="text-[10px] font-bold tracking-[0.1em] text-muted border border-dim px-2 py-0.5 flex items-center gap-1">
             <span class="material-symbols-outlined" style="font-size: 12px;">${authIcon}</span>
             ${authLabel}
           </span>
         </div>
 
-        <div class="space-y-1.5 text-xs text-[#bbccb0] mb-4">
+        <div class="space-y-1.5 text-xs text-muted mb-4">
           <div class="flex items-center gap-2">
-            <span class="text-[#3c4b36]">HOST</span>
-            <span class="text-[#e5e2e1]">${this.escapeHtml(server.host)}:${server.port}</span>
+            <span class="text-dim">HOST</span>
+            <span class="text-on-surface">${this.escapeHtml(server.host)}:${server.port}</span>
           </div>
           <div class="flex items-center gap-2">
-            <span class="text-[#3c4b36]">USER</span>
-            <span class="text-[#e5e2e1]">${this.escapeHtml(server.username)}</span>
+            <span class="text-dim">USER</span>
+            <span class="text-on-surface">${this.escapeHtml(server.username)}</span>
           </div>
         </div>
 
-        <div class="flex gap-2 pt-3 border-t border-[#1f1f1f]">
+        <div class="flex gap-2 pt-3 border-t border-[var(--border)]">
           <button id="connect-${server.id}" class="cyber-button flex-1 py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-1" title="Connect">
             <span class="material-symbols-outlined" style="font-size: 14px;">power_settings_new</span>
             CONNECT
@@ -176,7 +176,7 @@ export class ServerList {
           <button id="edit-${server.id}" class="cyber-button py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] flex items-center justify-center" title="Edit">
             <span class="material-symbols-outlined" style="font-size: 14px;">edit</span>
           </button>
-          <button id="delete-${server.id}" class="cyber-button py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] flex items-center justify-center text-[#ffb4ab] border-[#ffb4ab] hover:bg-[#ffb4ab] hover:text-[#0a0a0a]" title="Delete">
+          <button id="delete-${server.id}" class="cyber-button py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] flex items-center justify-center text-error border-[var(--error)] hover:bg-[var(--error)] hover:text-[var(--bg)]" title="Delete">
             <span class="material-symbols-outlined" style="font-size: 14px;">delete</span>
           </button>
         </div>
@@ -332,19 +332,10 @@ export class ServerList {
     const pwSection = document.getElementById('modal-password-section')!;
     const keySection = document.getElementById('modal-key-section')!;
 
-    if (mode === 'password') {
-      pwTab.style.background = '#4af626'; pwTab.style.color = '#0a0a0a';
-      pwTab.style.borderColor = '#4af626';
-      keyTab.style.background = 'transparent'; keyTab.style.color = '#bbccb0';
-      keyTab.style.borderColor = '#3c4b36';
-      pwSection.style.display = ''; keySection.style.display = 'none';
-    } else {
-      keyTab.style.background = '#4af626'; keyTab.style.color = '#0a0a0a';
-      keyTab.style.borderColor = '#4af626';
-      pwTab.style.background = 'transparent'; pwTab.style.color = '#bbccb0';
-      pwTab.style.borderColor = '#3c4b36';
-      keySection.style.display = ''; pwSection.style.display = 'none';
-    }
+    pwTab.classList.toggle('auth-tab-active', mode === 'password');
+    keyTab.classList.toggle('auth-tab-active', mode === 'key');
+    pwSection.style.display = mode === 'password' ? '' : 'none';
+    keySection.style.display = mode === 'key' ? '' : 'none';
   }
 
   private async handleSubmit(): Promise<void> {
