@@ -219,8 +219,8 @@ importThemeInput?.addEventListener('change', async (e) => {
       if (themeSelector) themeSelector.value = CUSTOM_THEME_VALUE;
       localStorage.setItem('cloudssh_theme_selection', CUSTOM_THEME_VALUE);
 
-      // 刷新页面生效
-      location.reload();
+      // 直接应用主题，不刷新页面（避免断开 WebSocket）
+      terminal.applyImportedTheme(data);
     } catch {
       alert('无效的 JSON 文件');
     }
