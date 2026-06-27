@@ -215,30 +215,50 @@ export class SSHPacketBuilder {
     hasAuthTag: boolean = false,
     mac?: (packet: Uint8Array, seq: number) => Uint8Array | Promise<Uint8Array>
   ): Promise<Uint8Array> {
-    const packetLength = 1 + payload.length;
+    return SSHPacketBuilder.buildWithPayloadWriter(
+      payload.length,
+      (packet, offset) => packet.set(payload, offset),
+      blockSize,
+      encrypt,
+      seqNum,
+      hasAuthTag,
+      mac
+    );
+  }
+
+  static async buildWithPayloadWriter(
+    payloadLength: number,
+    writePayload: (packet: Uint8Array, offset: number) => void,
+    blockSize: number,
+    encrypt: ((data: Uint8Array, seq: number, aad?: Uint8Array) => Uint8Array | Promise<Uint8Array>) | null,
+    seqNum: number,
+    hasAuthTag: boolean = false,
+    mac?: (packet: Uint8Array, seq: number) => Uint8Array | Promise<Uint8Array>
+  ): Promise<Uint8Array> {
+    const packetLength = 1 + payloadLength;
     // For AES-GCM (hasAuthTag), padding aligns the encrypted portion
     // (padding_length + payload + padding) to blockSize.
     // The 4-byte packet_length is AAD, NOT part of the encrypted data.
     // For non-GCM, padding aligns the full packet (4 + data) to blockSize.
     const alignBase = hasAuthTag
-      ? (1 + payload.length) % blockSize      // encrypted portion only
+      ? (1 + payloadLength) % blockSize      // encrypted portion only
       : (4 + packetLength) % blockSize;        // full packet including length
     const paddingNeeded = blockSize - (alignBase || blockSize);
     const paddingLength = paddingNeeded < 4
       ? paddingNeeded + blockSize
       : paddingNeeded;
 
-    const totalLength = 4 + 1 + payload.length + paddingLength;
+    const totalLength = 4 + 1 + payloadLength + paddingLength;
     const packet = new Uint8Array(totalLength);
 
-    const pl = 1 + payload.length + paddingLength;
+    const pl = 1 + payloadLength + paddingLength;
     writeUint32(packet, 0, pl);
 
     packet[4] = paddingLength;
 
-    packet.set(payload, 5);
+    writePayload(packet, 5);
 
-    crypto.getRandomValues(packet.subarray(5 + payload.length));
+    crypto.getRandomValues(packet.subarray(5 + payloadLength));
 
     if (encrypt) {
       if (hasAuthTag) {

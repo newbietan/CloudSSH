@@ -5,6 +5,8 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { TrzszFilter } from 'trzsz';
 import '@xterm/xterm/css/xterm.css';
 
+const TRZSZ_MAX_DATA_CHUNK_SIZE = 2 * 1024 * 1024;
+
 export interface SSHConnectionConfig {
   host: string;
   port: number;
@@ -336,6 +338,7 @@ export class SSHTerminal {
         }
       },
       terminalColumns: this.terminal.cols,
+      maxDataChunkSize: TRZSZ_MAX_DATA_CHUNK_SIZE,
     });
 
     this.ws.onmessage = (event) => {

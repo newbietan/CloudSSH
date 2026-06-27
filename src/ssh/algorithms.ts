@@ -7,11 +7,11 @@ export const SUPPORTED_KEX_ALGORITHMS = [
 ];
 
 export const SUPPORTED_ENCRYPTION_ALGORITHMS = [
-  'aes256-gcm@openssh.com',
   'aes128-gcm@openssh.com',
-  'aes256-ctr',
-  'aes192-ctr',
+  'aes256-gcm@openssh.com',
   'aes128-ctr',
+  'aes192-ctr',
+  'aes256-ctr',
 ];
 
 export const SUPPORTED_MAC_ALGORITHMS = [

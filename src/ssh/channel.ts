@@ -14,9 +14,11 @@ const WINDOW_CHANGE_FIELD = encodeString('window-change');
 const EMPTY_TERMINAL_MODES_FIELD = encodeString(new Uint8Array([0]));
 const UINT32_MAX = 0xffffffff;
 
-export interface ChannelDataPacket {
-  payload: Uint8Array;
+export interface ChannelDataChunk {
+  source: Uint8Array;
+  sourceOffset: number;
   bytesConsumed: number;
+  payloadLength: number;
 }
 
 function writeBytes(target: Uint8Array, offset: number, source: Uint8Array): number {
@@ -93,7 +95,7 @@ export class SSHChannel {
     return payload;
   }
 
-  takeChannelData(data: Uint8Array, offset: number = 0): ChannelDataPacket | null {
+  takeChannelDataChunk(data: Uint8Array, offset: number = 0): ChannelDataChunk | null {
     const bytesAvailable = data.length - offset;
     if (bytesAvailable <= 0) {
       return null;
@@ -106,18 +108,24 @@ export class SSHChannel {
 
     this.remoteWindowSize -= bytesToSend;
     return {
-      payload: this.buildChannelDataPacket(data.subarray(offset, offset + bytesToSend)),
+      source: data,
+      sourceOffset: offset,
       bytesConsumed: bytesToSend,
+      payloadLength: 9 + bytesToSend,
     };
   }
 
-  private buildChannelDataPacket(data: Uint8Array): Uint8Array {
-    const payload = new Uint8Array(9 + data.length);
-    payload[0] = SSH_MSG_CHANNEL_DATA;
-    writeUint32(payload, 1, this.remoteChannelID);
-    writeUint32(payload, 5, data.length);
-    payload.set(data, 9);
-    return payload;
+  writeChannelDataPayload(
+    target: Uint8Array,
+    offset: number,
+    source: Uint8Array,
+    sourceOffset: number,
+    sourceLength: number
+  ): void {
+    target[offset] = SSH_MSG_CHANNEL_DATA;
+    writeUint32(target, offset + 1, this.remoteChannelID);
+    writeUint32(target, offset + 5, sourceLength);
+    target.set(source.subarray(sourceOffset, sourceOffset + sourceLength), offset + 9);
   }
 
   handleWindowAdjust(payload: Uint8Array): number {

@@ -42,7 +42,9 @@ import { Curve25519KeyExchange, Curve25519KeyPair } from '../ssh/kex-curve25519'
 import { KeyDerivation } from '../ssh/keys';
 import { SSHAESCTRCipher, SSHAESGCMCipher, SSHHMAC } from '../ssh/crypto';
 import { SSHAuth } from '../ssh/auth';
-import { SSHChannel } from '../ssh/channel';
+import { SSHChannel, type ChannelDataChunk } from '../ssh/channel';
+
+const LOCAL_WINDOW_ADJUST_THRESHOLD = 512 * 1024;
 
 export class SSHSession {
   private readonly textEncoder = new TextEncoder();
@@ -62,11 +64,13 @@ export class SSHSession {
 
   private seqNumSend: number = 0;
   private sessionID: Uint8Array | null = null;
+  private socketWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
   private sendMutex: Promise<void> = Promise.resolve();
   private channelDataQueue: Uint8Array[] = [];
   private channelDataQueueHead: number = 0;
   private channelDataQueueOffset: number = 0;
   private channelDataFlushInProgress: boolean = false;
+  private pendingLocalWindowAdjustBytes: number = 0;
 
   private kexInitLocal: Uint8Array | null = null;
   private kexInitRemote: Uint8Array | null = null;
@@ -81,8 +85,8 @@ export class SSHSession {
   private hostKeyFingerprint: string = '';
 
   private versionRawBuffer: Uint8Array = new Uint8Array(0);
-  private negotiatedCipherC2S: string = 'aes256-gcm@openssh.com';
-  private negotiatedCipherS2C: string = 'aes256-gcm@openssh.com';
+  private negotiatedCipherC2S: string = 'aes128-gcm@openssh.com';
+  private negotiatedCipherS2C: string = 'aes128-gcm@openssh.com';
   private negotiatedMacC2S: string = 'none';
   private negotiatedMacS2C: string = 'none';
 
@@ -118,9 +122,7 @@ export class SSHSession {
     this.sendStatus('正在交换版本信息...');
     this.state = 'version';
 
-    const writer = this.socket.writable.getWriter();
-    await writer.write(new TextEncoder().encode('SSH-2.0-CloudSSH_1.0\r\n'));
-    writer.releaseLock();
+    await this.writeSocket(new TextEncoder().encode('SSH-2.0-CloudSSH_1.0\r\n'));
 
     this.startReading();
   }
@@ -250,9 +252,10 @@ export class SSHSession {
   }
 
   private async writeSocket(data: Uint8Array): Promise<void> {
-    const writer = this.socket.writable.getWriter();
-    await writer.write(data);
-    writer.releaseLock();
+    if (!this.socketWriter) {
+      this.socketWriter = this.socket.writable.getWriter();
+    }
+    await this.socketWriter!.write(data);
   }
 
   private async buildEncryptedPacket(payload: Uint8Array): Promise<Uint8Array> {
@@ -263,6 +266,31 @@ export class SSHSession {
     const cipher = getCipherSpec(this.negotiatedCipherC2S);
     return SSHPacketBuilder.build(
       payload,
+      cipher.blockSize,
+      (data, seq, aad) => this.encryptCipher!.encrypt(data, seq, aad),
+      this.seqNumSend++,
+      cipher.aead,
+      this.encryptMac
+        ? (packetData, seq) => this.encryptMac!.sign(packetData, seq)
+        : undefined
+    );
+  }
+
+  private async buildEncryptedChannelDataPacket(chunk: ChannelDataChunk): Promise<Uint8Array> {
+    if (!this.encryptCipher) {
+      throw new Error('Encryption not initialized');
+    }
+
+    const cipher = getCipherSpec(this.negotiatedCipherC2S);
+    return SSHPacketBuilder.buildWithPayloadWriter(
+      chunk.payloadLength,
+      (packet, offset) => this.channel.writeChannelDataPayload(
+        packet,
+        offset,
+        chunk.source,
+        chunk.sourceOffset,
+        chunk.bytesConsumed
+      ),
       cipher.blockSize,
       (data, seq, aad) => this.encryptCipher!.encrypt(data, seq, aad),
       this.seqNumSend++,
@@ -941,8 +969,7 @@ export class SSHSession {
         }
         const outputData = this.channel.handleChannelData(payload);
         this.ws.send(outputData);
-        const adjustMsg = this.channel.buildWindowAdjust(outputData.length);
-        await this.sendEncrypted(adjustMsg);
+        this.queueLocalWindowAdjust(outputData.length);
         break;
       }
 
@@ -1011,11 +1038,11 @@ export class SSHSession {
     try {
       while (this.channelDataQueueHead < this.channelDataQueue.length) {
         const current = this.channelDataQueue[this.channelDataQueueHead];
-        const packet = this.channel.takeChannelData(current, this.channelDataQueueOffset);
-        if (!packet) break;
+        const chunk = this.channel.takeChannelDataChunk(current, this.channelDataQueueOffset);
+        if (!chunk) break;
 
-        await this.sendEncrypted(packet.payload);
-        this.channelDataQueueOffset += packet.bytesConsumed;
+        await this.sendEncryptedChannelData(chunk);
+        this.channelDataQueueOffset += chunk.bytesConsumed;
 
         if (this.channelDataQueueOffset >= current.length) {
           this.channelDataQueueHead++;
@@ -1054,13 +1081,43 @@ export class SSHSession {
   }
 
   private async sendEncrypted(payload: Uint8Array): Promise<void> {
+    await this.sendEncryptedPacket(() => this.buildEncryptedPacket(payload));
+  }
+
+  private async sendEncryptedChannelData(chunk: ChannelDataChunk): Promise<void> {
+    await this.sendEncryptedPacket(() => this.buildEncryptedChannelDataPacket(chunk));
+  }
+
+  private async sendEncryptedPacket(buildPacket: () => Promise<Uint8Array>): Promise<void> {
     const operation = this.sendMutex.then(async () => {
-      const encrypted = await this.buildEncryptedPacket(payload);
+      const encrypted = await buildPacket();
       await this.writeSocket(encrypted);
     });
 
     this.sendMutex = operation.then(() => {}, () => {});
     await operation;
+  }
+
+  private queueLocalWindowAdjust(bytesToAdd: number): void {
+    this.pendingLocalWindowAdjustBytes += bytesToAdd;
+    if (this.pendingLocalWindowAdjustBytes < LOCAL_WINDOW_ADJUST_THRESHOLD) {
+      return;
+    }
+
+    const adjustBytes = this.pendingLocalWindowAdjustBytes;
+    this.pendingLocalWindowAdjustBytes = 0;
+    void this.sendLocalWindowAdjust(adjustBytes);
+  }
+
+  private async sendLocalWindowAdjust(bytesToAdd: number): Promise<void> {
+    try {
+      await this.sendEncrypted(this.channel.buildWindowAdjust(bytesToAdd));
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      this.sendDebug(`sendLocalWindowAdjust ERROR: ${errMsg}`);
+      this.sendError('发送窗口调整失败: ' + errMsg);
+      this.close();
+    }
   }
 
   private sendStatus(message: string): void {
@@ -1098,6 +1155,9 @@ export class SSHSession {
     this.channelDataQueue = [];
     this.channelDataQueueHead = 0;
     this.channelDataQueueOffset = 0;
+    this.pendingLocalWindowAdjustBytes = 0;
+    try { this.socketWriter?.releaseLock(); } catch {}
+    this.socketWriter = null;
     try { this.socket.close(); } catch {}
     try { this.ws.close(normal ? 1000 : 1011); } catch {}
   }

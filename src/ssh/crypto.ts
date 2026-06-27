@@ -41,15 +41,24 @@ export class SSHAESGCMCipher {
     }
   }
 
+  private getAlgorithm(aad?: Uint8Array): Record<string, unknown> {
+    const algorithm: Record<string, unknown> = {
+      name: 'AES-GCM',
+      iv: this.iv,
+      tagLength: 128,
+    };
+    if (aad) {
+      algorithm.additionalData = aad;
+    }
+    return algorithm;
+  }
+
   async encrypt(plaintext: Uint8Array, _seqNum?: number, aad?: Uint8Array, _commit: boolean = true): Promise<Uint8Array> {
     if (!this.key) throw new Error('Cipher not initialized');
-    const nonce = new Uint8Array(this.iv);
-
-    const alg: Record<string, unknown> = { name: 'AES-GCM', iv: nonce, tagLength: 128 };
-    if (aad) alg.additionalData = aad;
+    const algorithm = this.getAlgorithm(aad);
 
     const encrypted = new Uint8Array(
-      await crypto.subtle.encrypt(alg as unknown as SubtleCryptoEncryptAlgorithm, this.key, plaintext)
+      await crypto.subtle.encrypt(algorithm as unknown as SubtleCryptoEncryptAlgorithm, this.key, plaintext)
     );
 
     this.incIV();
@@ -58,14 +67,11 @@ export class SSHAESGCMCipher {
 
   async decrypt(ciphertext: Uint8Array, _seqNum?: number, aad?: Uint8Array, _commit: boolean = true): Promise<Uint8Array | null> {
     if (!this.key) throw new Error('Cipher not initialized');
-    const nonce = new Uint8Array(this.iv);
-
-    const alg: Record<string, unknown> = { name: 'AES-GCM', iv: nonce, tagLength: 128 };
-    if (aad) alg.additionalData = aad;
+    const algorithm = this.getAlgorithm(aad);
 
     try {
       const decrypted = new Uint8Array(
-        await crypto.subtle.decrypt(alg as unknown as SubtleCryptoEncryptAlgorithm, this.key, ciphertext)
+        await crypto.subtle.decrypt(algorithm as unknown as SubtleCryptoEncryptAlgorithm, this.key, ciphertext)
       );
       this.incIV();
       return decrypted;
