@@ -14,20 +14,20 @@
     theme: {
       extend: {
         colors: {
-          "background": "#131313",
-          "on-surface": "#e5e2e1",
-          "on-surface-variant": "#bbccb0",
-          "outline": "#86957d",
-          "outline-variant": "#3c4b36",
-          "primary-container": "#4af626",
-          "on-primary-fixed": "#022100",
-          "surface": "#131313",
-          "surface-variant": "#353534",
-          "secondary-container": "#14d1ff",
-          "secondary-fixed": "#b7eaff",
-          "error": "#ffb4ab",
-          "error-container": "#93000a",
-          "surface-container-lowest": "#0e0e0e"
+          "background": "var(--bg)",
+          "elevated": "var(--bg-elevated)",
+          "on-surface": "var(--on-surface)",
+          "on-surface-variant": "var(--on-surface-variant)",
+          "outline-variant": "var(--border-strong)",
+          "primary-container": "var(--accent)",
+          "on-primary-fixed": "var(--on-accent)",
+          "surface": "var(--bg-surface)",
+          "surface-variant": "var(--surface-dot)",
+          "secondary-container": "var(--accent-secondary)",
+          "secondary-fixed": "var(--accent-secondary-light)",
+          "error": "var(--error)",
+          "error-container": "var(--error-bg)",
+          "surface-container-lowest": "var(--bg-terminal)"
         },
         fontFamily: {
           "body": ["JetBrains Mono"],
@@ -68,9 +68,9 @@
     </div>
 
     <!-- User Space Page (登录后) -->
-    <div id="user-space-section" class="hidden min-h-screen flex-col bg-background text-on-surface">
+    <div id="user-space-section" class="hidden min-h-screen flex-col bg-elevated text-on-surface">
       <!-- TopAppBar -->
-      <header class="flex justify-between items-center w-full px-6 h-16 bg-background border-b border-outline-variant z-50">
+      <header class="flex justify-between items-center w-full px-6 h-16 bg-elevated border-b border-outline-variant z-50">
         <div class="flex items-center gap-6">
           <h1 class="text-2xl font-bold text-primary-container tracking-tighter cursor-pointer" id="user-space-logo">CloudSSH</h1>
         </div>
@@ -117,7 +117,7 @@
       </main>
 
       <!-- Footer -->
-      <footer class="px-6 py-2 flex justify-between items-center z-50 bg-background/80 backdrop-blur-md border-t border-outline-variant text-xs h-12">
+      <footer class="px-6 py-2 flex justify-between items-center z-50 bg-elevated border-t border-outline-variant text-xs h-12">
         <div class="text-secondary-container opacity-60">© <span id="user-copyright-year"></span> CLOUD_SSH_TERMINAL - https://github.com/newbietan/CloudSSH</div>
         <div class="flex gap-4">
           <a class="text-on-surface-variant opacity-60 hover:opacity-100 transition-opacity" href="https://github.com/newbietan/CloudSSH">Documentation</a>
@@ -221,7 +221,7 @@
         <div class="absolute inset-0 scanline pointer-events-none z-10 opacity-30"></div>
         <div id="terminal-wrapper" class="h-full w-full border border-outline-variant bg-[var(--bg)] p-4 overflow-hidden font-code text-[13px] text-primary-container relative z-0 flex flex-col">
           <!-- Status Bar -->
-          <div class="flex justify-between items-center border-b border-surface-variant pb-2 mb-4 text-on-surface-variant opacity-80 text-[11px]">
+          <div class="flex justify-between items-center border-b border-[var(--border)] pb-2 mb-4 text-on-surface-variant opacity-80 text-[11px]">
             <div class="flex gap-6">
               <span id="term-status" class="flex items-center gap-1"><div class="w-2 h-2 bg-primary-container"></div> Connected</span>
               <span id="term-host">Host: -</span>
@@ -238,7 +238,7 @@
       </main>
 
       <!-- Footer -->
-      <footer class="fixed bottom-0 left-0 w-full px-6 py-2 flex justify-between items-center z-50 bg-background/80 backdrop-blur-md border-t border-outline-variant text-xs h-12">
+      <footer class="fixed bottom-0 left-0 w-full px-6 py-2 flex justify-between items-center z-50 bg-elevated border-t border-outline-variant text-xs h-12">
         <div class="text-secondary-container opacity-60">© <span id="copyright-year"></span> CLOUD_SSH_TERMINAL - https://github.com/newbietan/CloudSSH</div>
         <div class="flex gap-4">
           <a class="text-on-surface-variant opacity-60 hover:opacity-100 transition-opacity" href="https://github.com/newbietan/CloudSSH">Documentation</a>

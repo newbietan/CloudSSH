@@ -66,6 +66,8 @@ export const UI_THEMES: Record<keyof typeof THEMES, Record<string, string>> = {
     '--scanline-tint': 'rgba(74, 246, 38, 0.02)',
     '--accent-glow': 'rgba(74, 246, 38, 0.08)',
     '--modal-overlay': 'rgba(0, 0, 0, 0.8)',
+    '--on-surface': '#e5e2e1',
+    '--on-surface-variant': '#bbccb0',
   },
   glacier: {
     '--bg': '#0a192f',
@@ -90,6 +92,8 @@ export const UI_THEMES: Record<keyof typeof THEMES, Record<string, string>> = {
     '--scanline-tint': 'rgba(100, 255, 218, 0.02)',
     '--accent-glow': 'rgba(100, 255, 218, 0.08)',
     '--modal-overlay': 'rgba(0, 0, 0, 0.85)',
+    '--on-surface': '#e6f1ff',
+    '--on-surface-variant': '#8892b0',
   },
   gruvbox: {
     '--bg': '#282828',
@@ -114,6 +118,8 @@ export const UI_THEMES: Record<keyof typeof THEMES, Record<string, string>> = {
     '--scanline-tint': 'rgba(184, 187, 38, 0.02)',
     '--accent-glow': 'rgba(184, 187, 38, 0.08)',
     '--modal-overlay': 'rgba(0, 0, 0, 0.75)',
+    '--on-surface': '#ebdbb2',
+    '--on-surface-variant': '#a89984',
   },
 };
 

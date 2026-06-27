@@ -184,7 +184,7 @@ export class ConnectionForm {
           <label for="remember-me" class="text-xs text-muted cursor-pointer select-none">REMEMBER_CONNECTION</label>
         </div>
         <div class="pt-4">
-          <button id="connect-btn" class="cyber-button w-full py-3 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-2 bg-primary text-on-primary" type="button">
+          <button id="connect-btn" class="connect-btn w-full py-3 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-2" type="button">
             <span class="material-symbols-outlined" style="font-size: 18px;">power_settings_new</span>
             Execute_Connection
           </button>

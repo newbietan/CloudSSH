@@ -21,6 +21,8 @@
   --error-bg: #93000a;
   --on-accent: #022100;
   --surface-dot: #353534;
+  --on-surface: #e5e2e1;
+  --on-surface-variant: #bbccb0;
   --scrollbar-track: rgba(28, 27, 27, 0.5);
   --scrollbar-thumb: rgba(60, 75, 54, 0.8);
   --scrollbar-thumb-hover: rgba(134, 149, 125, 0.8);
@@ -109,6 +111,20 @@ body {
 .cyber-button:hover {
   background-color: var(--accent);
   color: var(--on-accent);
+}
+
+.connect-btn {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.connect-btn:hover {
+  background: var(--accent-secondary-light);
+  border-color: var(--accent-secondary-light);
+  color: var(--bg);
 }
 
 .cursor-blink {
