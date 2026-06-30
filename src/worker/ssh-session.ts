@@ -59,7 +59,7 @@ export class SSHSession {
   private packetParser: SSHPacketParser;
   private channels: Map<number, SSHChannel> = new Map();
   private shellChannel: SSHChannel;
-  private nextChannelID: number = 0;
+  private nextChannelID: number = 1; // Start from 1, shellChannel uses 0
   private sftpHandler: SFTPHandler | null = null;
   private sftpUploadActive: boolean = false;
   private encryptCipher: SSHAESGCMCipher | SSHAESCTRCipher | null = null;
