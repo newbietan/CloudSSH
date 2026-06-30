@@ -200,8 +200,16 @@ export class SFTPHandler {
 
     try {
       this.sendDebug(`[SFTP] listDirectory: path="${path}"`);
+
+      // Handle ~ as home directory - use realpath(".") to get current dir
+      let resolvePath = path;
+      if (path === '~' || path === '~/') {
+        resolvePath = '.';
+        this.sendDebug(`[SFTP] ~ detected, using "." to get home dir`);
+      }
+
       // Resolve absolute path first
-      const realPathResp = await this.sftp.realpath(path);
+      const realPathResp = await this.sftp.realpath(resolvePath);
       const realPathType = realPathResp[0];
       let resolvedPath = path;
       if (realPathType === SSH_FXP_NAME) {
