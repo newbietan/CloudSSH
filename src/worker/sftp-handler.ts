@@ -199,15 +199,21 @@ export class SFTPHandler {
     }
 
     try {
+      this.sendDebug(`[SFTP] listDirectory: path="${path}"`);
       // Resolve absolute path first
       const realPathResp = await this.sftp.realpath(path);
       const realPathType = realPathResp[0];
       let resolvedPath = path;
       if (realPathType === SSH_FXP_NAME) {
         const entries = this.sftp.parseNameResponse(realPathResp);
+        this.sendDebug(`[SFTP] realpath entries: ${JSON.stringify(entries.map(e => e.filename))}`);
         if (entries.length > 0) {
           resolvedPath = entries[0].filename;
+          this.sendDebug(`[SFTP] resolved path: "${resolvedPath}"`);
         }
+      } else if (realPathType === SSH_FXP_STATUS) {
+        const status = this.sftp.parseStatusResponse(realPathResp);
+        this.sendDebug(`[SFTP] realpath failed: code=${status.code}, msg=${status.message}`);
       }
 
       // Open directory
