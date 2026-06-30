@@ -199,7 +199,7 @@
     .preview-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      grid-template-rows: auto auto auto;
+      grid-template-rows: auto auto;
       gap: 16px;
     }
 
@@ -805,12 +805,24 @@
       color: var(--error);
     }
 
+    /* ===== Terminal + SFTP Layout ===== */
+    .terminal-sftp-preview {
+      display: flex;
+      min-height: 280px;
+    }
+
+    .terminal-sftp-preview .terminal-preview {
+      flex: 1;
+      min-width: 0;
+    }
+
     /* ===== SFTP Preview ===== */
     .sftp-preview {
+      width: 320px;
+      min-width: 320px;
       background: var(--bg-surface);
       display: flex;
       flex-direction: column;
-      min-height: 100%;
       border-left: 1px solid var(--border-strong);
     }
 
@@ -1172,117 +1184,114 @@
           </div>
         </div>
 
-        <!-- SFTP File Manager (Bottom Left) -->
-        <div class="preview-section">
-          <div class="preview-label">SFTP FILE MANAGER</div>
+        <!-- Terminal + SFTP (Bottom, Full Width) -->
+        <div class="preview-section col-terminal">
+          <div class="preview-label">TERMINAL + SFTP</div>
           <div class="preview-frame">
-            <div class="sftp-preview">
-              <div class="sftp-header">
-                <div class="title">
-                  <span class="material-symbols-outlined icon" style="font-variation-settings:'FILL' 1">folder_open</span>
-                  <span>SFTP_FILE_MANAGER</span>
+            <div class="terminal-sftp-preview">
+              <!-- Terminal Area -->
+              <div class="terminal-preview">
+                <div class="scanline"></div>
+                <div class="terminal-statusbar">
+                  <span class="connected"><span class="dot-green"></span> Connected</span>
+                  <span>Host: 192.168.1.1</span>
+                  <span>User: root</span>
+                  <span>Port: 22</span>
                 </div>
-                <span class="material-symbols-outlined close-icon">close</span>
-              </div>
-              <div class="sftp-toolbar">
-                <span class="material-symbols-outlined nav-icon">arrow_back</span>
-                <span class="material-symbols-outlined nav-icon">home</span>
-                <span class="material-symbols-outlined nav-icon">refresh</span>
-                <input class="path-input" value="/home/admin" readonly>
-                <span class="material-symbols-outlined nav-icon" style="color:var(--accent)">arrow_forward</span>
-              </div>
-              <div class="sftp-actions">
-                <button class="sftp-action-btn"><span class="material-symbols-outlined">upload_file</span>UPLOAD</button>
-                <button class="sftp-action-btn secondary"><span class="material-symbols-outlined">create_new_folder</span>MKDIR</button>
-                <button class="sftp-action-btn" style="opacity:0.3"><span class="material-symbols-outlined">download</span>DOWNLOAD</button>
-                <button class="sftp-action-btn" style="opacity:0.3;color:var(--error)"><span class="material-symbols-outlined">delete</span>DELETE</button>
-              </div>
-              <div class="sftp-file-list">
-                <div class="sftp-file-item">
-                  <span class="material-symbols-outlined file-icon dir" style="font-variation-settings:'FILL' 1">folder</span>
-                  <span class="file-name dir">.ssh</span>
-                  <span class="file-size">-</span>
-                  <span class="file-perms">drwx------</span>
-                  <span class="file-date">Jan 10 09:15</span>
-                </div>
-                <div class="sftp-file-item">
-                  <span class="material-symbols-outlined file-icon dir" style="font-variation-settings:'FILL' 1">folder</span>
-                  <span class="file-name dir">projects</span>
-                  <span class="file-size">-</span>
-                  <span class="file-perms">drwxr-xr-x</span>
-                  <span class="file-date">Jan 14 16:30</span>
-                </div>
-                <div class="sftp-file-item selected">
-                  <span class="material-symbols-outlined file-icon dir" style="font-variation-settings:'FILL' 1">folder</span>
-                  <span class="file-name dir">config</span>
-                  <span class="file-size">-</span>
-                  <span class="file-perms">drwxr-xr-x</span>
-                  <span class="file-date">Jan 15 10:23</span>
-                </div>
-                <div class="sftp-file-item">
-                  <span class="material-symbols-outlined file-icon file">draft</span>
-                  <span class="file-name">.bashrc</span>
-                  <span class="file-size">4.2 KB</span>
-                  <span class="file-perms">-rw-r--r--</span>
-                  <span class="file-date">Jan 10 09:00</span>
-                </div>
-                <div class="sftp-file-item">
-                  <span class="material-symbols-outlined file-icon file">terminal</span>
-                  <span class="file-name">deploy.sh</span>
-                  <span class="file-size">1.0 KB</span>
-                  <span class="file-perms">-rwxr-xr-x</span>
-                  <span class="file-date">Jan 15 10:23</span>
-                </div>
-                <div class="sftp-file-item">
-                  <span class="material-symbols-outlined file-icon file">description</span>
-                  <span class="file-name">README.md</span>
-                  <span class="file-size">512 B</span>
-                  <span class="file-perms">-rw-r--r--</span>
-                  <span class="file-date">Jan 12 14:20</span>
-                </div>
-                <div class="sftp-file-item">
-                  <span class="material-symbols-outlined file-icon link">link</span>
-                  <span class="file-name">logs -> /var/log/app</span>
-                  <span class="file-size">-</span>
-                  <span class="file-perms">lrwxrwxrwx</span>
-                  <span class="file-date">Jan 08 11:00</span>
+                <div class="terminal-body">
+                  <div class="line green">[+] WebSocket connected, sending credentials...</div>
+                  <div class="line green">[*] Authenticating...</div>
+                  <div class="line green">[*] Authentication successful</div>
+                  <div class="line white">Welcome to Ubuntu 22.04.3 LTS</div>
+                  <div class="line white"> </div>
+                  <div class="line"><span class="prompt">root@server</span><span class="white">:</span><span class="path">~</span><span class="white">$ ls -la</span></div>
+                  <div class="line white">drwxr-xr-x 5 root root 4096 Jan 15 10:23 .</div>
+                  <div class="line white">drwxr-xr-x 3 root root 4096 Jan 15 10:20 ..</div>
+                  <div class="line cyan">-rw-r--r-- 1 root root  220 Jan 15 10:20 .bashrc</div>
+                  <div class="line cyan">drwxr-xr-x 2 root root 4096 Jan 15 10:23 config</div>
+                  <div class="line cyan">-rwxr-xr-x 1 root root 1024 Jan 15 10:23 deploy.sh</div>
+                  <div class="line yellow">-rw-r--r-- 1 root root  512 Jan 15 10:22 README.md</div>
+                  <div class="line white"> </div>
+                  <div class="line"><span class="prompt">root@server</span><span class="white">:</span><span class="path">~</span><span class="white">$ </span><span class="cursor-block"></span></div>
                 </div>
               </div>
-              <div class="sftp-statusbar">
-                <span>Ready</span>
-                <span>2 dirs, 4 files</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Terminal (Bottom Right) -->
-        <div class="preview-section">
-          <div class="preview-label">TERMINAL</div>
-          <div class="preview-frame">
-            <div class="terminal-preview">
-              <div class="scanline"></div>
-              <div class="terminal-statusbar">
-                <span class="connected"><span class="dot-green"></span> Connected</span>
-                <span>Host: 192.168.1.1</span>
-                <span>User: root</span>
-                <span>Port: 22</span>
-              </div>
-              <div class="terminal-body">
-                <div class="line green">[+] WebSocket connected, sending credentials...</div>
-                <div class="line green">[*] Authenticating...</div>
-                <div class="line green">[*] Authentication successful</div>
-                <div class="line white">Welcome to Ubuntu 22.04.3 LTS</div>
-                <div class="line white"> </div>
-                <div class="line"><span class="prompt">root@server</span><span class="white">:</span><span class="path">~</span><span class="white">$ ls -la</span></div>
-                <div class="line white">drwxr-xr-x 5 root root 4096 Jan 15 10:23 .</div>
-                <div class="line white">drwxr-xr-x 3 root root 4096 Jan 15 10:20 ..</div>
-                <div class="line cyan">-rw-r--r-- 1 root root  220 Jan 15 10:20 .bashrc</div>
-                <div class="line cyan">drwxr-xr-x 2 root root 4096 Jan 15 10:23 config</div>
-                <div class="line cyan">-rwxr-xr-x 1 root root 1024 Jan 15 10:23 deploy.sh</div>
-                <div class="line yellow">-rw-r--r-- 1 root root  512 Jan 15 10:22 README.md</div>
-                <div class="line white"> </div>
-                <div class="line"><span class="prompt">root@server</span><span class="white">:</span><span class="path">~</span><span class="white">$ </span><span class="cursor-block"></span></div>
+              <!-- SFTP Panel (Right Side) -->
+              <div class="sftp-preview">
+                <div class="sftp-header">
+                  <div class="title">
+                    <span class="material-symbols-outlined icon" style="font-variation-settings:'FILL' 1">folder_open</span>
+                    <span>SFTP_FILE_MANAGER</span>
+                  </div>
+                  <span class="material-symbols-outlined close-icon">close</span>
+                </div>
+                <div class="sftp-toolbar">
+                  <span class="material-symbols-outlined nav-icon">arrow_back</span>
+                  <span class="material-symbols-outlined nav-icon">home</span>
+                  <span class="material-symbols-outlined nav-icon">refresh</span>
+                  <input class="path-input" value="/home/admin" readonly>
+                  <span class="material-symbols-outlined nav-icon" style="color:var(--accent)">arrow_forward</span>
+                </div>
+                <div class="sftp-actions">
+                  <button class="sftp-action-btn"><span class="material-symbols-outlined">upload_file</span>UPLOAD</button>
+                  <button class="sftp-action-btn secondary"><span class="material-symbols-outlined">create_new_folder</span>MKDIR</button>
+                  <button class="sftp-action-btn" style="opacity:0.3"><span class="material-symbols-outlined">download</span>DOWNLOAD</button>
+                  <button class="sftp-action-btn" style="opacity:0.3;color:var(--error)"><span class="material-symbols-outlined">delete</span>DELETE</button>
+                </div>
+                <div class="sftp-file-list">
+                  <div class="sftp-file-item">
+                    <span class="material-symbols-outlined file-icon dir" style="font-variation-settings:'FILL' 1">folder</span>
+                    <span class="file-name dir">.ssh</span>
+                    <span class="file-size">-</span>
+                    <span class="file-perms">drwx------</span>
+                    <span class="file-date">Jan 10 09:15</span>
+                  </div>
+                  <div class="sftp-file-item">
+                    <span class="material-symbols-outlined file-icon dir" style="font-variation-settings:'FILL' 1">folder</span>
+                    <span class="file-name dir">projects</span>
+                    <span class="file-size">-</span>
+                    <span class="file-perms">drwxr-xr-x</span>
+                    <span class="file-date">Jan 14 16:30</span>
+                  </div>
+                  <div class="sftp-file-item selected">
+                    <span class="material-symbols-outlined file-icon dir" style="font-variation-settings:'FILL' 1">folder</span>
+                    <span class="file-name dir">config</span>
+                    <span class="file-size">-</span>
+                    <span class="file-perms">drwxr-xr-x</span>
+                    <span class="file-date">Jan 15 10:23</span>
+                  </div>
+                  <div class="sftp-file-item">
+                    <span class="material-symbols-outlined file-icon file">draft</span>
+                    <span class="file-name">.bashrc</span>
+                    <span class="file-size">4.2 KB</span>
+                    <span class="file-perms">-rw-r--r--</span>
+                    <span class="file-date">Jan 10 09:00</span>
+                  </div>
+                  <div class="sftp-file-item">
+                    <span class="material-symbols-outlined file-icon file">terminal</span>
+                    <span class="file-name">deploy.sh</span>
+                    <span class="file-size">1.0 KB</span>
+                    <span class="file-perms">-rwxr-xr-x</span>
+                    <span class="file-date">Jan 15 10:23</span>
+                  </div>
+                  <div class="sftp-file-item">
+                    <span class="material-symbols-outlined file-icon file">description</span>
+                    <span class="file-name">README.md</span>
+                    <span class="file-size">512 B</span>
+                    <span class="file-perms">-rw-r--r--</span>
+                    <span class="file-date">Jan 12 14:20</span>
+                  </div>
+                  <div class="sftp-file-item">
+                    <span class="material-symbols-outlined file-icon link">link</span>
+                    <span class="file-name">logs -> /var/log/app</span>
+                    <span class="file-size">-</span>
+                    <span class="file-perms">lrwxrwxrwx</span>
+                    <span class="file-date">Jan 08 11:00</span>
+                  </div>
+                </div>
+                <div class="sftp-statusbar">
+                  <span>Ready</span>
+                  <span>2 dirs, 4 files</span>
+                </div>
               </div>
             </div>
           </div>
