@@ -26,6 +26,7 @@ export class SFTPPanel {
   private downloadChunks: Uint8Array[] = [];
   private downloadFilename: string = '';
   private downloadSize: number = 0;
+  private onClosedCallback: (() => void) | null = null;
 
   constructor(
     sendJSON: SendSFTPMessageFn,
@@ -148,6 +149,10 @@ export class SFTPPanel {
         this.hide();
       }
     });
+  }
+
+  setOnClosedCallback(callback: () => void): void {
+    this.onClosedCallback = callback;
   }
 
   bindEvents(): void {
@@ -292,6 +297,7 @@ export class SFTPPanel {
         if (this.visible) {
           this.showError('SFTP connection closed');
         }
+        this.onClosedCallback?.();
         break;
       case 'sftp_error':
         this.showError(msg.message);

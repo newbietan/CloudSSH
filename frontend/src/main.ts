@@ -175,6 +175,11 @@ function initSFTPPanel(): void {
   );
   sftpPanel.bindEvents();
 
+  sftpPanel.setOnClosedCallback(() => {
+    terminal.setSFTPMessageHandler(() => {});
+    terminal.setSFTPBinaryHandler(() => {});
+  });
+
   terminal.setSFTPMessageHandler((msg) => sftpPanel?.handleMessage(msg));
   terminal.setSFTPBinaryHandler((data) => sftpPanel?.handleBinaryData(data));
 }
