@@ -147,6 +147,7 @@ export class SSHTerminal {
   private restoreCursorBlinkAfterAltScreenExit: boolean = false;
   private sftpMessageHandler: SFTPMessageHandler | null = null;
   private sftpBinaryHandler: SFTPBinaryHandler | null = null;
+  private sftpDownloadActive: boolean = false;
 
   constructor(containerId: string) {
     this.container = document.getElementById(containerId)!;
@@ -243,6 +244,10 @@ export class SSHTerminal {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(data);
     }
+  }
+
+  resetSFTPDownloadActive(): void {
+    this.sftpDownloadActive = false;
   }
 
   mount(): void {
@@ -364,6 +369,12 @@ export class SSHTerminal {
       if (typeof event.data === 'string') {
         try {
           const msg = JSON.parse(event.data);
+          // Track SFTP download state for binary routing
+          if (msg.type === 'sftp_download_start') {
+            this.sftpDownloadActive = true;
+          } else if (msg.type === 'sftp_download_done') {
+            this.sftpDownloadActive = false;
+          }
           // Route SFTP messages to the SFTP panel handler
           if (msg.type && (msg.type.startsWith('sftp_'))) {
             this.sftpMessageHandler?.(msg);
@@ -392,12 +403,12 @@ export class SSHTerminal {
           this.trzszFilter!.processServerOutput(event.data);
         }
       } else {
-        // Binary data — check if SFTP download is active
-        if (this.sftpBinaryHandler) {
+        // Binary data — route to SFTP only during active download
+        if (this.sftpDownloadActive && this.sftpBinaryHandler) {
           this.sftpBinaryHandler(event.data);
           return;
         }
-        // Binary data — pass through trzsz filter
+        // Binary data — pass through trzsz filter (terminal output)
         this.trzszFilter!.processServerOutput(event.data);
       }
     };

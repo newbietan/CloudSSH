@@ -176,8 +176,7 @@ function initSFTPPanel(): void {
   sftpPanel.bindEvents();
 
   sftpPanel.setOnClosedCallback(() => {
-    terminal.setSFTPMessageHandler(() => {});
-    terminal.setSFTPBinaryHandler(() => {});
+    terminal.resetSFTPDownloadActive();
   });
 
   terminal.setSFTPMessageHandler((msg) => sftpPanel?.handleMessage(msg));
