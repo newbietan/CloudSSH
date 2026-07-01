@@ -179,6 +179,10 @@ export default {
 
     // ==================== SSH WebSocket ====================
 
+    if (url.pathname === '/api/ssh/sftp') {
+      return handleSFTPAttachConnection(request, env);
+    }
+
     if (url.pathname === '/api/ssh') {
       // Apply rate limiting (distributed via Durable Object)
       const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
@@ -372,10 +376,14 @@ async function handleSSHConnection(request: Request, env: Env): Promise<Response
     }
   }
 
-  const doId = env.SSH_SESSION.idFromName(`session:${Date.now()}:${Math.random()}`);
+  const sessionName = `session:${Date.now()}:${Math.random()}`;
+  const doId = env.SSH_SESSION.idFromName(sessionName);
   const stub = env.SSH_SESSION.get(doId);
 
-  return stub.fetch(request);
+  const doUrl = new URL(request.url);
+  doUrl.searchParams.set('session', sessionName);
+
+  return stub.fetch(new Request(doUrl.toString(), { headers: request.headers }));
 }
 
 /**
@@ -411,16 +419,44 @@ async function handleTokenSSHConnection(request: Request, env: Env, token: strin
 
   const config = await tokenRes.json<SSHConnectionConfig>();
 
-  const doId = env.SSH_SESSION.idFromName(`session:${Date.now()}:${Math.random()}`);
+  const sessionName = `session:${Date.now()}:${Math.random()}`;
+  const doId = env.SSH_SESSION.idFromName(sessionName);
   const doStub = env.SSH_SESSION.get(doId);
 
   const doUrl = new URL(request.url);
   doUrl.searchParams.delete('token');
   doUrl.searchParams.set('config', encodeURIComponent(JSON.stringify(config)));
+  doUrl.searchParams.set('session', sessionName);
 
   const doRequest = new Request(doUrl.toString(), {
     headers: request.headers,
   });
 
   return doStub.fetch(doRequest);
+}
+
+async function handleSFTPAttachConnection(request: Request, env: Env): Promise<Response> {
+  const upgradeHeader = request.headers.get('Upgrade');
+  if (upgradeHeader !== 'websocket') {
+    return Response.json({ error: 'Expected WebSocket upgrade' }, { status: 426 });
+  }
+
+  const origin = request.headers.get('Origin');
+  if (origin) {
+    const url = new URL(request.url);
+    if (origin !== url.origin) {
+      return new Response('Forbidden', { status: 403 });
+    }
+  }
+
+  const url = new URL(request.url);
+  const sessionName = url.searchParams.get('session');
+  const token = url.searchParams.get('token');
+  if (!sessionName || !token) {
+    return Response.json({ error: 'Missing SFTP attach token' }, { status: 403 });
+  }
+
+  const doId = env.SSH_SESSION.idFromName(sessionName);
+  const stub = env.SSH_SESSION.get(doId);
+  return stub.fetch(request);
 }

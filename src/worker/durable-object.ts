@@ -37,8 +37,11 @@ export class SSHSessionDO {
   private state: DurableObjectState;
   private env: Env;
   private sessions: Map<WebSocket, SSHSession> = new Map();
+  private sftpSessions: Map<WebSocket, SSHSession> = new Map();
+  private sftpAttachTokens: Map<string, SSHSession> = new Map();
   private _pendingTimeouts: Map<WebSocket, ReturnType<typeof setTimeout>> = new Map();
   private pendingTerminalSizes: Map<WebSocket, TerminalSize> = new Map();
+  private pendingAttachUrls: Map<WebSocket, string> = new Map();
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -52,7 +55,12 @@ export class SSHSessionDO {
     }
 
     const url = new URL(request.url);
+    if (url.pathname === '/api/ssh/sftp') {
+      return this.handleSFTPAttach(request, url);
+    }
+
     let prefilledConfig: SSHConnectionConfig | null = null;
+    const sessionName = url.searchParams.get('session') || `session:${Date.now()}:${Math.random()}`;
 
     if (request.method === 'POST') {
       try {
@@ -75,12 +83,15 @@ export class SSHSessionDO {
     const [client, server] = [pair[0], pair[1]];
 
     this.state.acceptWebSocket(server);
+    const attachToken = crypto.randomUUID();
+    const sftpAttachUrl = this.buildSFTPAttachUrl(url, sessionName, attachToken);
+    this.pendingAttachUrls.set(server, sftpAttachUrl);
 
     if (prefilledConfig) {
       server.serializeAttachment({ state: 'prefilled' });
       queueMicrotask(async () => {
         try {
-          await this.initSSHSession(server, prefilledConfig!);
+          await this.initSSHSession(server, prefilledConfig!, attachToken);
         } catch (e) {
           const errMsg = e instanceof Error ? e.message : String(e);
           try {
@@ -111,6 +122,12 @@ export class SSHSessionDO {
     const session = this.sessions.get(ws);
     if (session) {
       await session.handleWebSocketMessage(message);
+      return;
+    }
+
+    const sftpSession = this.sftpSessions.get(ws);
+    if (sftpSession) {
+      await sftpSession.handleSFTPWebSocketMessage(message);
       return;
     }
 
@@ -158,6 +175,12 @@ export class SSHSessionDO {
     if (session) {
       session.close();
       this.sessions.delete(ws);
+      this.deleteAttachTokensForSession(session);
+    }
+    const sftpSession = this.sftpSessions.get(ws);
+    if (sftpSession) {
+      sftpSession.detachSFTPWebSocket(ws);
+      this.sftpSessions.delete(ws);
     }
     const timeout = this._pendingTimeouts.get(ws);
     if (timeout) {
@@ -165,6 +188,7 @@ export class SSHSessionDO {
       this._pendingTimeouts.delete(ws);
     }
     this.pendingTerminalSizes.delete(ws);
+    this.pendingAttachUrls.delete(ws);
   }
 
   async webSocketError(ws: WebSocket, error: unknown): Promise<void> {
@@ -173,7 +197,8 @@ export class SSHSessionDO {
 
   private async initSSHSession(
     ws: WebSocket,
-    config: SSHConnectionConfig
+    config: SSHConnectionConfig,
+    attachToken?: string
   ): Promise<void> {
     try {
       // --- SSRF Protection ---
@@ -198,9 +223,17 @@ export class SSHSessionDO {
         config.cols = pendingSize.cols;
         config.rows = pendingSize.rows;
       }
-      const session = new SSHSession(ws, socket, config, strictVerify, debugMode);
+      const sftpAttachUrl = this.pendingAttachUrls.get(ws);
+      const session = new SSHSession(ws, socket, config, strictVerify, debugMode, sftpAttachUrl);
       this.sessions.set(ws, session);
+      if (attachToken) {
+        this.sftpAttachTokens.set(attachToken, session);
+      } else if (sftpAttachUrl) {
+        const token = new URL(sftpAttachUrl).searchParams.get('token');
+        if (token) this.sftpAttachTokens.set(token, session);
+      }
       this.pendingTerminalSizes.delete(ws);
+      this.pendingAttachUrls.delete(ws);
 
       await session.startHandshake();
 
@@ -216,5 +249,42 @@ export class SSHSessionDO {
   private rememberTerminalSize(ws: WebSocket, cols: unknown, rows: unknown): void {
     const size = normalizeTerminalSize(cols, rows);
     if (size) this.pendingTerminalSizes.set(ws, size);
+  }
+
+  private handleSFTPAttach(request: Request, url: URL): Response {
+    const token = url.searchParams.get('token');
+    const session = token ? this.sftpAttachTokens.get(token) : null;
+    if (!session) {
+      return new Response('Invalid SFTP attach token', { status: 403 });
+    }
+
+    const pair = new WebSocketPair();
+    const [client, server] = [pair[0], pair[1]];
+    this.state.acceptWebSocket(server);
+    this.sftpSessions.set(server, session);
+    session.attachSFTPWebSocket(server);
+
+    return new Response(null, {
+      status: 101,
+      webSocket: client,
+    } as any);
+  }
+
+  private buildSFTPAttachUrl(baseUrl: URL, sessionName: string, token: string): string {
+    const attachUrl = new URL(baseUrl.toString());
+    attachUrl.protocol = baseUrl.protocol === 'https:' || baseUrl.protocol === 'wss:' ? 'wss:' : 'ws:';
+    attachUrl.pathname = '/api/ssh/sftp';
+    attachUrl.search = '';
+    attachUrl.searchParams.set('session', sessionName);
+    attachUrl.searchParams.set('token', token);
+    return attachUrl.toString();
+  }
+
+  private deleteAttachTokensForSession(session: SSHSession): void {
+    for (const [token, tokenSession] of this.sftpAttachTokens) {
+      if (tokenSession === session) {
+        this.sftpAttachTokens.delete(token);
+      }
+    }
   }
 }

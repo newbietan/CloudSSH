@@ -35,6 +35,7 @@ export class SSHChannel {
   private localWindowSize: number = 2097152;
   private remoteWindowSize: number = 0;
   private maxPacketSize: number = 32768;
+  private pendingLocalWindowAdjustBytes: number = 0;
   private eofSent: boolean = false;
   private closed: boolean = false;
 
@@ -76,7 +77,6 @@ export class SSHChannel {
     if (serverMaxPacket > 0) {
       this.maxPacketSize = Math.min(this.maxPacketSize, serverMaxPacket);
     }
-    console.log(`[SSHChannel] handleOpenConfirmation: localChannelID=${this.localChannelID}, remoteChannelID=${this.remoteChannelID}, remoteWindowSize=${this.remoteWindowSize}, maxPacketSize=${this.maxPacketSize}`);
   }
 
   buildPTYRequest(cols: number, rows: number): Uint8Array {
@@ -218,5 +218,16 @@ export class SSHChannel {
     writeUint32(payload, 1, this.remoteChannelID);
     writeUint32(payload, 5, bytesToAdd);
     return payload;
+  }
+
+  queueLocalWindowAdjust(bytesToAdd: number, threshold: number): number | null {
+    this.pendingLocalWindowAdjustBytes += bytesToAdd;
+    if (this.pendingLocalWindowAdjustBytes < threshold) {
+      return null;
+    }
+
+    const adjustBytes = this.pendingLocalWindowAdjustBytes;
+    this.pendingLocalWindowAdjustBytes = 0;
+    return adjustBytes;
   }
 }

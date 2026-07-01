@@ -1,4 +1,4 @@
-import { readUint32, writeUint32, encodeString, concat } from './utils';
+import { readUint32, writeUint32, encodeString } from './utils';
 import {
   SSH_FXP_INIT,
   SSH_FXP_VERSION,
@@ -19,55 +19,43 @@ import {
   SSH_FXP_DATA,
   SSH_FXP_NAME,
   SSH_FXP_ATTRS,
-  SSH_FX_OK,
   SSH_FX_EOF,
-  SSH_FXF_READ,
-  SSH_FXF_WRITE,
-  SSH_FXF_CREAT,
-  SSH_FXF_TRUNC,
   SSH_FILEXFER_ATTR_SIZE,
   SSH_FILEXFER_ATTR_UIDGID,
   SSH_FILEXFER_ATTR_PERMISSIONS,
   SSH_FILEXFER_ATTR_ACMODTIME,
-  SSH_S_IFDIR,
   type SFTPFileAttributes,
   type SFTPFileEntry,
   type SFTPPendingRequest,
   getStatusMessage,
-  getFileTypeFromPermissions,
-  formatPermissions,
-  formatTimestamp,
 } from './sftp-types';
 
 const SFTP_VERSION = 3;
-const DEFAULT_READ_SIZE = 32768;
 const REQUEST_TIMEOUT_MS = 60000; // 60 seconds for SFTP operations
 
 export class SFTPClient {
+  private readonly textDecoder = new TextDecoder();
   private requestId: number = 0;
   private pendingRequests: Map<number, SFTPPendingRequest> = new Map();
   private recvBuffer: Uint8Array = new Uint8Array(0);
+  private recvOffset: number = 0;
   private version: number = 0;
   private sendData: ((data: Uint8Array) => void) | null = null;
   private debugFn: ((message: string) => void) | null = null;
-  private versionResolve: ((data: Uint8Array) => void) | null = null;
-  private versionTimedOut: boolean = false;
-  private versionCallback: ((version: number) => void) | null = null;
+  private debugEnabled: boolean = false;
 
   setSendCallback(fn: (data: Uint8Array) => void): void {
     this.sendData = fn;
   }
 
-  setDebugCallback(fn: (message: string) => void): void {
+  setDebugCallback(fn: (message: string) => void, enabled: boolean = true): void {
     this.debugFn = fn;
+    this.debugEnabled = enabled;
   }
 
-  setVersionCallback(fn: (version: number) => void): void {
-    this.versionCallback = fn;
-  }
-
-  private debug(message: string): void {
-    if (this.debugFn) this.debugFn(message);
+  private debug(message: string | (() => string)): void {
+    if (!this.debugEnabled || !this.debugFn) return;
+    this.debugFn(typeof message === 'function' ? message() : message);
   }
 
   dispose(): void {
@@ -77,6 +65,7 @@ export class SFTPClient {
     }
     this.pendingRequests.clear();
     this.recvBuffer = new Uint8Array(0);
+    this.recvOffset = 0;
   }
 
   // Build SFTP init packet
@@ -90,62 +79,67 @@ export class SFTPClient {
 
   // Feed incoming channel data into the SFTP receive buffer
   feed(data: Uint8Array): void {
-    const merged = new Uint8Array(this.recvBuffer.length + data.length);
-    merged.set(this.recvBuffer);
-    merged.set(data, this.recvBuffer.length);
+    if (this.recvOffset >= this.recvBuffer.length) {
+      this.recvBuffer = data;
+      this.recvOffset = 0;
+      return;
+    }
+
+    const remaining = this.recvBuffer.length - this.recvOffset;
+    const merged = new Uint8Array(remaining + data.length);
+    merged.set(this.recvBuffer.subarray(this.recvOffset));
+    merged.set(data, remaining);
     this.recvBuffer = merged;
+    this.recvOffset = 0;
   }
 
   // Try to extract and dispatch complete SFTP packets from the buffer
   processReceivedPackets(): void {
-    this.debug(`[SFTP] processReceived: bufLen=${this.recvBuffer.length}`);
-    while (this.recvBuffer.length >= 4) {
-      const packetLen = readUint32(this.recvBuffer, 0);
+    this.debug(() => `[SFTP] processReceived: bufLen=${this.recvBuffer.length - this.recvOffset}`);
+    while (this.recvBuffer.length - this.recvOffset >= 4) {
+      const packetLen = readUint32(this.recvBuffer, this.recvOffset);
       const totalLen = 4 + packetLen;
 
-      this.debug(`[SFTP] Found packet: len=${packetLen}, total=${totalLen}, buf=${this.recvBuffer.length}`);
+      this.debug(() => `[SFTP] Found packet: len=${packetLen}, total=${totalLen}, buf=${this.recvBuffer.length - this.recvOffset}`);
 
-      if (this.recvBuffer.length < totalLen) {
-        this.debug(`[SFTP] Incomplete, waiting`);
+      if (this.recvBuffer.length - this.recvOffset < totalLen) {
+        this.debug('[SFTP] Incomplete, waiting');
         break; // incomplete packet
       }
 
-      const packetData = this.recvBuffer.subarray(4, totalLen);
-      this.recvBuffer = this.recvBuffer.slice(totalLen);
+      const packetData = this.recvBuffer.subarray(this.recvOffset + 4, this.recvOffset + totalLen);
+      this.recvOffset += totalLen;
 
-      this.debug(`[SFTP] Processing: type=${packetData[0]}, len=${packetData.length}`);
+      this.debug(() => `[SFTP] Processing: type=${packetData[0]}, len=${packetData.length}`);
       this.handleSFTPPacket(packetData);
+    }
+
+    if (this.recvOffset >= this.recvBuffer.length) {
+      this.recvBuffer = new Uint8Array(0);
+      this.recvOffset = 0;
+    } else if (this.recvOffset > 64 * 1024 && this.recvOffset * 2 > this.recvBuffer.length) {
+      this.recvBuffer = this.recvBuffer.slice(this.recvOffset);
+      this.recvOffset = 0;
     }
   }
 
   private handleSFTPPacket(data: Uint8Array): void {
     const type = data[0];
-    this.debug(`[SFTP] handlePacket: type=${type}, len=${data.length}`);
+    this.debug(() => `[SFTP] handlePacket: type=${type}, len=${data.length}`);
 
     if (type === SSH_FXP_VERSION) {
       this.version = readUint32(data, 1);
-      this.debug(`[SFTP] VERSION: ${this.version}`);
-
-      // Call version callback if set
-      if (this.versionCallback) {
-        this.debug(`[SFTP] Calling version callback`);
-        this.versionCallback(this.version);
-      }
+      this.debug(() => `[SFTP] VERSION: ${this.version}`);
 
       // Resolve the init request
       const req = this.pendingRequests.get(0);
       if (req) {
-        this.debug(`[SFTP] Resolving init (id=0)`);
+        this.debug('[SFTP] Resolving init (id=0)');
         if (req.timeout) clearTimeout(req.timeout);
         this.pendingRequests.delete(0);
         req.resolve(data);
-      } else if (this.versionResolve) {
-        // Late VERSION response after timeout - still resolve
-        this.debug(`[SFTP] Late VERSION response, resolving`);
-        this.versionResolve(data);
-        this.versionResolve = null;
       } else {
-        this.debug(`[SFTP] No pending request for id=0`);
+        this.debug('[SFTP] No pending request for id=0');
       }
       return;
     }
@@ -169,6 +163,11 @@ export class SFTPClient {
 
   private sendRequest(requestId: number, type: number, payload: Uint8Array): Promise<Uint8Array> {
     return new Promise((resolve, reject) => {
+      if (!this.sendData) {
+        reject(new Error('SFTP send callback not set'));
+        return;
+      }
+
       const packetLen = 1 + 4 + payload.length; // type + requestId + payload
       const packet = new Uint8Array(4 + packetLen);
       writeUint32(packet, 0, packetLen);
@@ -182,38 +181,26 @@ export class SFTPClient {
       }, REQUEST_TIMEOUT_MS);
 
       this.pendingRequests.set(requestId, { requestId, type, resolve, reject, timeout });
-
-      if (this.sendData) {
-        this.sendData(packet);
-      } else {
-        reject(new Error('SFTP send callback not set'));
-      }
+      this.sendData(packet);
     });
   }
 
   // Wait for init/version exchange
   async waitForVersion(): Promise<number> {
-    this.debug(`[SFTP] waitForVersion: pending=${this.pendingRequests.size}`);
-    this.versionTimedOut = false;
+    this.debug(() => `[SFTP] waitForVersion: pending=${this.pendingRequests.size}`);
 
     const data = await new Promise<Uint8Array>((resolve, reject) => {
-      // Store resolve for late VERSION responses
-      this.versionResolve = resolve;
-
       const timeout = setTimeout(() => {
-        this.debug(`[SFTP] waitForVersion TIMEOUT ${REQUEST_TIMEOUT_MS}ms`);
+        this.debug(() => `[SFTP] waitForVersion TIMEOUT ${REQUEST_TIMEOUT_MS}ms`);
         this.pendingRequests.delete(0);
-        this.versionTimedOut = true;
-        // Don't clear versionResolve - allow late response to resolve
         reject(new Error('SFTP version timeout'));
       }, REQUEST_TIMEOUT_MS);
       this.pendingRequests.set(0, { requestId: 0, type: SSH_FXP_INIT, resolve, reject, timeout });
-      this.debug(`[SFTP] waitForVersion: registered`);
+      this.debug('[SFTP] waitForVersion: registered');
     });
 
     this.version = readUint32(data, 1);
-    this.debug(`[SFTP] waitForVersion: version=${this.version}`);
-    this.versionResolve = null;
+    this.debug(() => `[SFTP] waitForVersion: version=${this.version}`);
     return this.version;
   }
 
@@ -226,9 +213,11 @@ export class SFTPClient {
     pos += 4;
 
     if (flags & SSH_FILEXFER_ATTR_SIZE) {
-      attrs.size = readUint32(data, pos); // Note: SFTP v3 uses uint64, but we read uint32 for simplicity
+      const sizeHigh = readUint32(data, pos);
       pos += 4;
-      pos += 4; // skip high 32 bits
+      const sizeLow = readUint32(data, pos);
+      pos += 4;
+      attrs.size = sizeHigh * 0x100000000 + sizeLow;
     }
 
     if (flags & SSH_FILEXFER_ATTR_UIDGID) {
@@ -399,7 +388,7 @@ export class SFTPClient {
     let offset = 9;
     const msgLen = readUint32(data, offset);
     offset += 4;
-    const message = new TextDecoder().decode(data.slice(offset, offset + msgLen));
+    const message = this.textDecoder.decode(data.subarray(offset, offset + msgLen));
     return { code, message: message || getStatusMessage(code) };
   }
 
@@ -408,7 +397,7 @@ export class SFTPClient {
     let offset = 5; // skip type(1) + requestId(4)
     const handleLen = readUint32(data, offset);
     offset += 4;
-    return data.slice(offset, offset + handleLen);
+    return data.subarray(offset, offset + handleLen);
   }
 
   // Parse SSH_FXP_DATA response
@@ -416,7 +405,7 @@ export class SFTPClient {
     let offset = 5; // skip type(1) + requestId(4)
     const dataLen = readUint32(data, offset);
     offset += 4;
-    return data.slice(offset, offset + dataLen);
+    return data.subarray(offset, offset + dataLen);
   }
 
   // Parse SSH_FXP_NAME response for directory listing
@@ -429,12 +418,12 @@ export class SFTPClient {
     for (let i = 0; i < count; i++) {
       const filenameLen = readUint32(data, offset);
       offset += 4;
-      const filename = new TextDecoder().decode(data.slice(offset, offset + filenameLen));
+      const filename = this.textDecoder.decode(data.subarray(offset, offset + filenameLen));
       offset += filenameLen;
 
       const longnameLen = readUint32(data, offset);
       offset += 4;
-      const longname = new TextDecoder().decode(data.slice(offset, offset + longnameLen));
+      const longname = this.textDecoder.decode(data.subarray(offset, offset + longnameLen));
       offset += longnameLen;
 
       const { attrs, consumed } = this.parseAttributes(data, offset);

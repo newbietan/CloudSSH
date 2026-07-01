@@ -14,6 +14,9 @@ let sftpPanel: SFTPPanel | null = null;
 terminal.setSessionClosedHandler(() => {
   showOfflineUI();
 });
+terminal.setSessionReadyHandler(() => {
+  sftpPanel?.handleSSHReady();
+});
 
 // ==================== 独立终端标签页模式 ====================
 
@@ -107,8 +110,6 @@ function showOfflineUI(): void {
   if (sftpPanel) {
     sftpPanel.dispose();
     sftpPanel = null;
-    terminal.setSFTPMessageHandler(() => {});
-    terminal.setSFTPBinaryHandler(() => {});
   }
 
   const termSection = document.getElementById('terminal-section');
@@ -169,18 +170,8 @@ function initSFTPPanel(): void {
     sftpPanel.dispose();
   }
 
-  sftpPanel = new SFTPPanel(
-    (msg) => terminal.sendSFTPMessage(msg),
-    (data) => terminal.sendSFTPBinary(data),
-  );
+  sftpPanel = new SFTPPanel(() => terminal.getSFTPWebSocketUrl());
   sftpPanel.bindEvents();
-
-  sftpPanel.setOnClosedCallback(() => {
-    terminal.resetSFTPDownloadActive();
-  });
-
-  terminal.setSFTPMessageHandler((msg) => sftpPanel?.handleMessage(msg));
-  terminal.setSFTPBinaryHandler((data) => sftpPanel?.handleBinaryData(data));
 }
 
 document.getElementById('sftp-toggle-btn')?.addEventListener('click', () => {

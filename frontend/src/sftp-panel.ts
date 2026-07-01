@@ -11,29 +11,138 @@ export interface SFTPFileEntry {
   isLink: boolean;
 }
 
-export type SendSFTPMessageFn = (msg: any) => void;
-export type SendBinaryFn = (data: ArrayBuffer) => void;
+export type GetSFTPWebSocketUrlFn = () => string | null;
+
+const UPLOAD_CHUNK_SIZE = 128 * 1024;
+const UPLOAD_CONCURRENCY = 8;
+const DOWNLOAD_URL_REVOKE_DELAY_MS = 1000;
+
+class Deferred<T> {
+  promise: Promise<T>;
+  resolve!: (value: T | PromiseLike<T>) => void;
+  reject!: (reason?: unknown) => void;
+
+  constructor() {
+    this.promise = new Promise<T>((resolve, reject) => {
+      this.resolve = resolve;
+      this.reject = reject;
+    });
+  }
+}
+
+class UploadWaiter {
+  private ready: Deferred<void> | null = null;
+  private progress: Deferred<number> | null = null;
+  private complete: Deferred<void> | null = null;
+  private progressQueue: number[] = [];
+  private progressQueueHead = 0;
+
+  waitReady(): Promise<void> {
+    this.ready = new Deferred<void>();
+    return this.ready.promise;
+  }
+
+  resolveReady(): void {
+    this.ready?.resolve();
+    this.ready = null;
+  }
+
+  waitProgress(): Promise<number> {
+    const queued = this.progressQueue[this.progressQueueHead];
+    if (queued !== undefined) {
+      this.progressQueueHead++;
+      this.compactProgressQueue();
+      return Promise.resolve(queued);
+    }
+
+    this.progress = new Deferred<number>();
+    return this.progress.promise;
+  }
+
+  resolveProgress(loaded: number): void {
+    if (this.progress) {
+      this.progress.resolve(loaded);
+      this.progress = null;
+      return;
+    }
+
+    this.progressQueue.push(loaded);
+  }
+
+  waitComplete(): Promise<void> {
+    this.complete = new Deferred<void>();
+    return this.complete.promise;
+  }
+
+  resolveComplete(): void {
+    this.complete?.resolve();
+    this.reset();
+  }
+
+  reject(message: string): void {
+    const error = new Error(message);
+    this.ready?.reject(error);
+    this.progress?.reject(error);
+    this.complete?.reject(error);
+    this.reset();
+  }
+
+  reset(): void {
+    this.ready = null;
+    this.progress = null;
+    this.complete = null;
+    this.progressQueue = [];
+    this.progressQueueHead = 0;
+  }
+
+  private compactProgressQueue(): void {
+    if (this.progressQueueHead > 32 && this.progressQueueHead * 2 > this.progressQueue.length) {
+      this.progressQueue = this.progressQueue.slice(this.progressQueueHead);
+      this.progressQueueHead = 0;
+    }
+  }
+}
 
 export class SFTPPanel {
   private container: HTMLElement;
   private currentPath: string = '/';
   private entries: SFTPFileEntry[] = [];
   private selectedEntry: SFTPFileEntry | null = null;
-  private sendJSON: SendSFTPMessageFn;
-  private sendBinary: SendBinaryFn;
+  private getWebSocketUrl: GetSFTPWebSocketUrlFn;
+  private ws: WebSocket | null = null;
+  private connectingPromise: Promise<void> | null = null;
+  private pendingSends: (string | ArrayBuffer | Uint8Array)[] = [];
+  private closedByPanel: WeakSet<WebSocket> = new WeakSet();
   private visible: boolean = false;
   private initializing: boolean = false;
+  private sftpReady: boolean = false;
   private downloadChunks: Uint8Array[] = [];
   private downloadFilename: string = '';
   private downloadSize: number = 0;
-  private onClosedCallback: (() => void) | null = null;
+  private uploadCancelRequested: boolean = false;
+  private uploadCancelConfirmed: boolean = false;
+  private uploadCancelWaiter: Deferred<void> | null = null;
+  private uploadWaiter = new UploadWaiter();
+  private uploadQueueTail: Promise<void> = Promise.resolve();
+  private uploadQueuePending: number = 0;
+  private uploadQueuedFiles: number = 0;
+  private uploadActive: boolean = false;
+  private uploadQueueGeneration: number = 0;
+  private downloadWaiter: Deferred<void> | null = null;
+  private downloadQueueTail: Promise<void> = Promise.resolve();
+  private downloadQueuePending: number = 0;
+  private downloadQueuedFiles: number = 0;
+  private downloadActive: boolean = false;
+  private downloadCancelRequested: boolean = false;
+  private downloadQueueGeneration: number = 0;
+  private readonly keydownHandler = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape' && this.visible) {
+      this.hide();
+    }
+  };
 
-  constructor(
-    sendJSON: SendSFTPMessageFn,
-    sendBinary: SendBinaryFn,
-  ) {
-    this.sendJSON = sendJSON;
-    this.sendBinary = sendBinary;
+  constructor(getWebSocketUrl: GetSFTPWebSocketUrlFn) {
+    this.getWebSocketUrl = getWebSocketUrl;
     this.container = this.createPanel();
     document.body.appendChild(this.container);
     this.bindKeyboard();
@@ -105,7 +214,12 @@ export class SFTPPanel {
         <div id="sftp-progress-container" class="hidden px-3 py-1.5 border-b border-outline-variant bg-surface shrink-0">
           <div class="flex items-center justify-between text-[11px] mb-1">
             <span id="sftp-progress-text" class="text-on-surface-variant truncate"></span>
-            <span id="sftp-progress-percent" class="text-primary-container font-bold"></span>
+            <div class="flex items-center gap-2 shrink-0">
+              <span id="sftp-progress-percent" class="text-primary-container font-bold"></span>
+              <button id="sftp-transfer-cancel-btn" class="text-error hover:opacity-80 cursor-pointer flex items-center justify-center" title="Cancel transfer">
+                <span class="material-symbols-outlined" style="font-size: 14px;">close</span>
+              </button>
+            </div>
           </div>
           <div class="w-full h-1.5 bg-surface-variant rounded-full overflow-hidden">
             <div id="sftp-progress-bar" class="h-full bg-primary-container rounded-full transition-all duration-200" style="width: 0%"></div>
@@ -144,15 +258,7 @@ export class SFTPPanel {
   }
 
   private bindKeyboard(): void {
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && this.visible) {
-        this.hide();
-      }
-    });
-  }
-
-  setOnClosedCallback(callback: () => void): void {
-    this.onClosedCallback = callback;
+    document.addEventListener('keydown', this.keydownHandler);
   }
 
   bindEvents(): void {
@@ -166,6 +272,7 @@ export class SFTPPanel {
     const downloadBtn = this.container.querySelector('#sftp-download-btn')!;
     const deleteBtn = this.container.querySelector('#sftp-delete-btn')!;
     const renameBtn = this.container.querySelector('#sftp-rename-btn')!;
+    const cancelTransferBtn = this.container.querySelector('#sftp-transfer-cancel-btn')!;
     const fileInput = this.container.querySelector('#sftp-file-input') as HTMLInputElement;
     const pathInput = this.container.querySelector('#sftp-path-input') as HTMLInputElement;
 
@@ -183,11 +290,12 @@ export class SFTPPanel {
     downloadBtn.addEventListener('click', () => this.downloadSelected());
     deleteBtn.addEventListener('click', () => this.deleteSelected());
     renameBtn.addEventListener('click', () => this.showRenameDialog());
+    cancelTransferBtn.addEventListener('click', () => this.cancelCurrentTransfer());
 
     fileInput.addEventListener('change', (e) => {
       const files = (e.target as HTMLInputElement).files;
       if (files && files.length > 0) {
-        this.uploadFiles(Array.from(files));
+        this.queueUploadFiles(Array.from(files));
       }
       fileInput.value = '';
     });
@@ -210,7 +318,7 @@ export class SFTPPanel {
       fileList.classList.remove('bg-surface-variant');
       const files = de.dataTransfer?.files;
       if (files && files.length > 0) {
-        this.uploadFiles(Array.from(files));
+        this.queueUploadFiles(Array.from(files));
       }
     });
   }
@@ -220,7 +328,7 @@ export class SFTPPanel {
     this.visible = true;
     this.container.style.transform = 'translateX(0)';
 
-    if (!this.initializing) {
+    if (!this.sftpReady && !this.initializing) {
       this.initializing = true;
       this.sendJSON({ type: 'sftp_init' });
       this.showLoading();
@@ -228,10 +336,14 @@ export class SFTPPanel {
   }
 
   hide(): void {
+    this.resetUploadQueue();
+    this.resetDownloadQueue();
     this.visible = false;
     this.container.style.transform = 'translateX(100%)';
     this.sendJSON({ type: 'sftp_close' });
+    this.closeWebSocket(1000, 'SFTP panel hidden');
     this.initializing = false;
+    this.sftpReady = false;
   }
 
   toggle(): void {
@@ -246,11 +358,155 @@ export class SFTPPanel {
     return this.visible;
   }
 
+  handleSSHReady(): void {
+    this.closeWebSocket(1000, 'SSH session refreshed');
+    this.resetUploadQueue();
+    this.resetDownloadQueue();
+    this.uploadWaiter.reset();
+    this.sftpReady = false;
+    this.downloadChunks = [];
+    this.downloadFilename = '';
+    this.downloadSize = 0;
+    this.hideProgress();
+    this.hideError();
+
+    if (!this.visible) {
+      this.initializing = false;
+      return;
+    }
+
+    this.initializing = true;
+    this.showLoading();
+    this.setStatus('Reconnecting SFTP...');
+    this.sendJSON({ type: 'sftp_init' });
+  }
+
+  private sendJSON(msg: any): void {
+    this.sendRaw(JSON.stringify(msg));
+  }
+
+  private sendBinary(data: ArrayBuffer | Uint8Array): void {
+    this.sendRaw(data);
+  }
+
+  private sendRaw(data: string | ArrayBuffer | Uint8Array): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(data);
+      return;
+    }
+
+    this.pendingSends.push(data);
+    void this.ensureWebSocket();
+  }
+
+  private async ensureWebSocket(): Promise<void> {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.flushPendingSends();
+      return;
+    }
+    if (this.connectingPromise) {
+      return this.connectingPromise;
+    }
+
+    const wsUrl = this.getWebSocketUrl();
+    if (!wsUrl) {
+      this.pendingSends = [];
+      this.showError('SFTP WebSocket is not ready yet');
+      this.initializing = false;
+      this.sftpReady = false;
+      return;
+    }
+
+    this.connectingPromise = new Promise((resolve, reject) => {
+      const ws = new WebSocket(wsUrl);
+      this.ws = ws;
+      ws.binaryType = 'arraybuffer';
+
+      ws.onopen = () => {
+        this.connectingPromise = null;
+        this.flushPendingSends();
+        resolve();
+      };
+
+      ws.onmessage = (event) => {
+        if (typeof event.data === 'string') {
+          try {
+            this.handleMessage(JSON.parse(event.data));
+          } catch {
+            this.showError('Invalid SFTP response');
+          }
+          return;
+        }
+
+        if (event.data instanceof ArrayBuffer) {
+          this.handleBinaryData(new Uint8Array(event.data));
+        }
+      };
+
+      ws.onerror = () => {
+        this.connectingPromise = null;
+        this.initializing = false;
+        this.sftpReady = false;
+        this.pendingSends = [];
+        this.rejectUploadWaiter('SFTP WebSocket error');
+        this.rejectDownloadWaiter('SFTP WebSocket error');
+        this.showError('SFTP WebSocket error');
+        reject(new Error('SFTP WebSocket error'));
+      };
+
+      ws.onclose = () => {
+        if (this.ws === ws) {
+          this.ws = null;
+        }
+        this.connectingPromise = null;
+
+        if (!this.closedByPanel.has(ws)) {
+          this.initializing = false;
+          this.sftpReady = false;
+          this.pendingSends = [];
+          this.rejectUploadWaiter('SFTP connection closed');
+          this.rejectDownloadWaiter('SFTP connection closed');
+          if (this.visible) this.showError('SFTP connection closed');
+        }
+      };
+    });
+
+    try {
+      await this.connectingPromise;
+    } catch {
+      // The error is already reflected in the panel UI.
+    }
+  }
+
+  private flushPendingSends(): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+
+    const pending = this.pendingSends;
+    this.pendingSends = [];
+    for (const item of pending) {
+      this.ws.send(item);
+    }
+  }
+
+  private closeWebSocket(code?: number, reason?: string): void {
+    const ws = this.ws;
+    this.ws = null;
+    this.connectingPromise = null;
+    this.pendingSends = [];
+    this.sftpReady = false;
+
+    if (ws && ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {
+      this.closedByPanel.add(ws);
+      try { ws.close(code, reason); } catch {}
+    }
+  }
+
   // Handle messages from the backend
   handleMessage(msg: any): void {
     switch (msg.type) {
       case 'sftp_ready':
-        this.initializing = true;
+        this.initializing = false;
+        this.sftpReady = true;
         this.navigate('~');
         break;
       case 'sftp_list_result':
@@ -267,6 +523,9 @@ export class SFTPPanel {
       case 'sftp_download_done':
         this.onDownloadDone(msg.filename);
         break;
+      case 'sftp_download_cancelled':
+        this.onDownloadCancelled();
+        break;
       case 'sftp_upload_ready':
         this.onUploadReady();
         break;
@@ -277,8 +536,7 @@ export class SFTPPanel {
         this.onUploadComplete(msg.path);
         break;
       case 'sftp_upload_cancelled':
-        this.hideProgress();
-        this.setStatus('Upload cancelled');
+        this.onUploadCancelled();
         break;
       case 'sftp_delete_result':
         this.onDeleteResult(msg.path);
@@ -294,22 +552,48 @@ export class SFTPPanel {
         break;
       case 'sftp_closed':
         this.initializing = false;
+        this.sftpReady = false;
+        this.rejectUploadWaiter('SFTP connection closed');
+        this.rejectDownloadWaiter('SFTP connection closed');
         if (this.visible) {
           this.showError('SFTP connection closed');
         }
-        this.onClosedCallback?.();
         break;
       case 'sftp_error':
-        this.showError(msg.message);
-        this.hideProgress();
+        this.handleSFTPError(msg);
         break;
     }
   }
 
+  private handleSFTPError(msg: any): void {
+    const operation = typeof msg.operation === 'string' ? msg.operation : '';
+
+    if (operation === 'init' || !this.sftpReady) {
+      this.initializing = false;
+      if (operation === 'init') {
+        this.sftpReady = false;
+      }
+    }
+
+    if (operation === 'upload') {
+      this.rejectUploadWaiter(msg.message);
+    }
+
+    if (operation === 'download') {
+      this.rejectDownloadWaiter(msg.message);
+    }
+
+    this.showError(msg.message);
+
+    if (operation === 'upload' || operation === 'download' || operation === 'init') {
+      this.hideProgress();
+    }
+  }
+
   // Handle binary data (download chunks)
-  handleBinaryData(data: ArrayBuffer): void {
+  handleBinaryData(data: Uint8Array): void {
     if (this.downloadFilename) {
-      this.downloadChunks.push(new Uint8Array(data));
+      this.downloadChunks.push(data);
     }
   }
 
@@ -321,6 +605,14 @@ export class SFTPPanel {
   }
 
   private refresh(): void {
+    if (!this.sftpReady) {
+      if (this.initializing) return;
+      this.initializing = true;
+      this.sendJSON({ type: 'sftp_init' });
+      this.showLoading();
+      return;
+    }
+
     this.navigate(this.currentPath);
   }
 
@@ -342,7 +634,7 @@ export class SFTPPanel {
     this.renderEntries();
     this.hideLoading();
     this.hideError();
-    this.setStatus(`${entries.length} items`);
+    this.setIdleStatus(this.getItemsStatus());
     this.updateItemCount(entries.length);
   }
 
@@ -501,44 +793,156 @@ export class SFTPPanel {
   }
 
   // File upload
-  private async uploadFiles(files: File[]): Promise<void> {
-    for (const file of files) {
-      await this.uploadSingleFile(file);
+  private queueUploadFiles(files: File[]): void {
+    const batch = files.slice();
+    if (batch.length === 0) return;
+
+    const targetPath = this.currentPath;
+    const generation = this.uploadQueueGeneration;
+    let queuedFilesAdded = 0;
+
+    for (const file of batch) {
+      const queuedBehindExistingWork = this.uploadQueuePending > 0;
+      this.uploadQueuePending++;
+
+      if (queuedBehindExistingWork) {
+        this.uploadQueuedFiles++;
+        queuedFilesAdded++;
+      }
+
+      const run = this.uploadQueueTail.then(async () => {
+        if (queuedBehindExistingWork) {
+          this.uploadQueuedFiles = Math.max(0, this.uploadQueuedFiles - 1);
+          this.setQueueStatus();
+        }
+        if (generation !== this.uploadQueueGeneration || !this.visible) return;
+        await this.uploadSingleFile(file, targetPath);
+      });
+
+      this.uploadQueueTail = run
+        .catch((e) => {
+          this.showError('Upload failed: ' + (e instanceof Error ? e.message : String(e)));
+        })
+        .finally(() => {
+          if (generation === this.uploadQueueGeneration) {
+            this.uploadQueuePending = Math.max(0, this.uploadQueuePending - 1);
+          }
+        });
     }
+
+    if (queuedFilesAdded > 0) {
+      this.setQueueStatus();
+    }
+
+    void this.uploadQueueTail;
   }
 
-  private async uploadSingleFile(file: File): Promise<void> {
-    const path = this.currentPath === '/' ? `/${file.name}` : `${this.currentPath}/${file.name}`;
+  private resetUploadQueue(): void {
+    const cancelActiveUpload = this.uploadActive;
+    this.uploadQueueGeneration++;
+    this.uploadQueuePending = 0;
+    this.uploadQueuedFiles = 0;
+    this.uploadActive = false;
+    this.uploadCancelRequested = cancelActiveUpload;
+    this.uploadCancelConfirmed = true;
+    this.uploadWaiter.reject('Upload cancelled');
+    this.resolveUploadCancelWaiter();
+    this.uploadQueueTail = Promise.resolve();
+  }
 
-    // Send upload start
-    this.sendJSON({ type: 'sftp_upload_start', path, size: file.size });
-    this.showProgress('Uploading: ' + file.name, 0);
+  private async uploadSingleFile(file: File, targetPath: string): Promise<void> {
+    const path = targetPath === '/' ? `/${file.name}` : `${targetPath}/${file.name}`;
 
-    // Read and send file in chunks
-    const CHUNK_SIZE = 32768;
-    let offset = 0;
-
+    let sendOffset = 0;
+    let acknowledged = 0;
+    const maxBufferedBytes = UPLOAD_CHUNK_SIZE * UPLOAD_CONCURRENCY;
     const reader = file.stream().getReader();
+    let pendingChunk: Uint8Array | null = null;
+    let pendingChunkOffset = 0;
+
+    this.uploadActive = true;
+    this.uploadCancelRequested = false;
+    this.uploadCancelConfirmed = false;
+    this.uploadCancelWaiter = null;
+    this.setQueueStatus();
 
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        // Send binary chunk
-        this.sendBinary(value.buffer);
-        offset += value.length;
-
-        this.updateProgress(offset, file.size);
+      const readyPromise = this.uploadWaiter.waitReady();
+      this.sendJSON({ type: 'sftp_upload_start', path, size: file.size });
+      this.showProgress('Uploading: ' + file.name, 0);
+      await readyPromise;
+      if (this.uploadCancelRequested) {
+        await this.waitForUploadCancel();
+        return;
       }
-    } catch (e) {
-      this.sendJSON({ type: 'sftp_upload_cancel' });
-      this.showError('Upload failed: ' + (e instanceof Error ? e.message : String(e)));
-      return;
-    }
 
-    // Send upload end
-    this.sendJSON({ type: 'sftp_upload_end' });
+      const readNextChunk = async (): Promise<Uint8Array | null> => {
+        while (!pendingChunk || pendingChunkOffset >= pendingChunk.length) {
+          const { done, value } = await reader.read();
+          if (done) return null;
+          pendingChunk = value;
+          pendingChunkOffset = 0;
+        }
+
+        const end = Math.min(pendingChunkOffset + UPLOAD_CHUNK_SIZE, pendingChunk.length);
+        const chunk = pendingChunk.subarray(pendingChunkOffset, end);
+        pendingChunkOffset = end;
+        return chunk;
+      };
+
+      const sendNextChunk = async (): Promise<boolean> => {
+        if (this.uploadCancelRequested) {
+          throw new Error('Upload cancelled');
+        }
+        const value = await readNextChunk();
+        if (!value) return false;
+        this.sendBinary(value);
+        sendOffset += value.length;
+        return true;
+      };
+
+      while (sendOffset < file.size && sendOffset - acknowledged < maxBufferedBytes) {
+        if (this.uploadCancelRequested) {
+          await this.waitForUploadCancel();
+          return;
+        }
+        if (!await sendNextChunk()) {
+          throw new Error('File stream ended before upload completed');
+        }
+      }
+
+      while (acknowledged < file.size) {
+        acknowledged = await this.uploadWaiter.waitProgress();
+        if (this.uploadCancelRequested) {
+          await this.waitForUploadCancel();
+          return;
+        }
+        while (sendOffset < file.size && sendOffset - acknowledged < maxBufferedBytes) {
+          if (!await sendNextChunk()) {
+            throw new Error('File stream ended before upload completed');
+          }
+        }
+      }
+
+      const completePromise = this.uploadWaiter.waitComplete();
+      this.sendJSON({ type: 'sftp_upload_end' });
+      await completePromise;
+    } catch (e) {
+      if (this.uploadCancelRequested) {
+        await this.waitForUploadCancel();
+      } else {
+        this.sendJSON({ type: 'sftp_upload_cancel' });
+        this.showError('Upload failed: ' + (e instanceof Error ? e.message : String(e)));
+      }
+      this.uploadWaiter.reset();
+      return;
+    } finally {
+      this.uploadActive = false;
+      this.uploadCancelRequested = false;
+      this.uploadCancelConfirmed = false;
+      this.uploadCancelWaiter = null;
+      reader.releaseLock();
+    }
   }
 
   // File download
@@ -546,11 +950,69 @@ export class SFTPPanel {
     if (!this.selectedEntry || this.selectedEntry.isDir) return;
 
     const path = this.currentPath === '/' ? `/${this.selectedEntry.name}` : `${this.currentPath}/${this.selectedEntry.name}`;
+    this.queueDownloadFile(path, this.selectedEntry.name);
+  }
+
+  private queueDownloadFile(path: string, filename: string): void {
+    const generation = this.downloadQueueGeneration;
+    const queuedBehindExistingWork = this.downloadQueuePending > 0;
+    this.downloadQueuePending++;
+
+    if (queuedBehindExistingWork) {
+      this.downloadQueuedFiles++;
+      this.setQueueStatus();
+    }
+
+    const run = this.downloadQueueTail.then(async () => {
+      if (queuedBehindExistingWork) {
+        this.downloadQueuedFiles = Math.max(0, this.downloadQueuedFiles - 1);
+        this.setQueueStatus();
+      }
+      if (generation !== this.downloadQueueGeneration || !this.visible) return;
+      await this.downloadFile(path, filename);
+    });
+
+    this.downloadQueueTail = run
+      .catch((e) => {
+        this.showError('Download failed: ' + (e instanceof Error ? e.message : String(e)));
+      })
+      .finally(() => {
+        if (generation === this.downloadQueueGeneration) {
+          this.downloadQueuePending = Math.max(0, this.downloadQueuePending - 1);
+        }
+      });
+
+    void this.downloadQueueTail;
+  }
+
+  private resetDownloadQueue(): void {
+    this.downloadQueueGeneration++;
+    this.downloadQueuePending = 0;
+    this.downloadQueuedFiles = 0;
+    this.downloadActive = false;
+    this.downloadCancelRequested = false;
+    this.downloadQueueTail = Promise.resolve();
+    this.rejectDownloadWaiter('Download cancelled');
+  }
+
+  private async downloadFile(path: string, filename: string): Promise<void> {
+    this.downloadActive = true;
+    this.downloadCancelRequested = false;
+    this.setQueueStatus();
+    this.downloadWaiter = new Deferred<void>();
     this.downloadChunks = [];
-    this.downloadFilename = this.selectedEntry.name;
+    this.downloadFilename = filename;
     this.downloadSize = 0;
     this.sendJSON({ type: 'sftp_download', path });
-    this.showProgress('Downloading: ' + this.selectedEntry.name, 0);
+    this.showProgress('Downloading: ' + filename, 0);
+    try {
+      await this.downloadWaiter.promise;
+    } catch {
+      // The triggering SFTP error/close handler already updated the UI.
+    } finally {
+      this.downloadActive = false;
+      this.downloadCancelRequested = false;
+    }
   }
 
   private onDownloadStart(filename: string, size: number): void {
@@ -565,45 +1027,127 @@ export class SFTPPanel {
   }
 
   private onDownloadDone(filename: string): void {
-    // Combine chunks and trigger download
-    const totalSize = this.downloadChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-    const combined = new Uint8Array(totalSize);
-    let offset = 0;
-    for (const chunk of this.downloadChunks) {
-      combined.set(chunk, offset);
-      offset += chunk.length;
+    if (this.downloadCancelRequested || !this.downloadWaiter) {
+      this.downloadChunks = [];
+      this.downloadFilename = '';
+      this.downloadActive = false;
+      this.downloadCancelRequested = false;
+      this.hideProgress();
+      this.setIdleStatus('Download cancelled');
+      this.resolveDownloadWaiter();
+      return;
     }
 
-    const blob = new Blob([combined]);
+    const blob = new Blob(this.downloadChunks, { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
+    a.style.display = 'none';
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_REVOKE_DELAY_MS);
 
     this.downloadChunks = [];
     this.downloadFilename = '';
+    this.downloadActive = false;
     this.hideProgress();
-    this.setStatus('Downloaded: ' + filename);
-    this.refresh();
+    this.setIdleStatus(this.getItemsStatus());
+    this.resolveDownloadWaiter();
+  }
+
+  private onDownloadCancelled(): void {
+    this.downloadChunks = [];
+    this.downloadFilename = '';
+    this.downloadActive = false;
+    this.downloadCancelRequested = false;
+    this.hideProgress();
+    this.setIdleStatus('Download cancelled');
+    this.resolveDownloadWaiter();
+  }
+
+  private resolveDownloadWaiter(): void {
+    this.downloadWaiter?.resolve();
+    this.downloadWaiter = null;
+  }
+
+  private rejectDownloadWaiter(message: string): void {
+    this.downloadWaiter?.reject(new Error(message));
+    this.downloadWaiter = null;
+  }
+
+  private cancelCurrentTransfer(): void {
+    if (this.uploadActive) {
+      this.uploadCancelRequested = true;
+      this.uploadCancelConfirmed = false;
+      if (!this.uploadCancelWaiter) {
+        this.uploadCancelWaiter = new Deferred<void>();
+      }
+      this.sendJSON({ type: 'sftp_upload_cancel' });
+      this.hideProgress();
+      this.setIdleStatus('Upload cancelled');
+      return;
+    }
+
+    if (this.downloadActive) {
+      this.downloadCancelRequested = true;
+      this.sendJSON({ type: 'sftp_download_cancel' });
+      this.downloadChunks = [];
+      this.downloadFilename = '';
+      this.hideProgress();
+      this.setIdleStatus('Download cancelled');
+    }
   }
 
   // Upload callbacks
-  private pendingUploads: string[] = [];
-
   private onUploadReady(): void {
-    // Ready to receive chunks - chunks are already being sent
+    this.uploadWaiter.resolveReady();
   }
 
   private onUploadProgress(loaded: number, total: number): void {
     this.updateProgress(loaded, total);
+    this.uploadWaiter.resolveProgress(loaded);
   }
 
   private onUploadComplete(path: string): void {
+    this.uploadWaiter.resolveComplete();
+    this.uploadActive = false;
+    this.uploadCancelRequested = false;
+    this.uploadCancelConfirmed = false;
+    this.uploadCancelWaiter = null;
     this.hideProgress();
-    this.setStatus('Uploaded: ' + path.split('/').pop());
+    this.setIdleStatus(this.getItemsStatus());
     this.refresh();
+  }
+
+  private onUploadCancelled(): void {
+    this.uploadCancelConfirmed = true;
+    this.uploadActive = false;
+    this.uploadWaiter.reject('Upload cancelled');
+    this.hideProgress();
+    this.setIdleStatus('Upload cancelled');
+    this.resolveUploadCancelWaiter();
+  }
+
+  private rejectUploadWaiter(message: string): void {
+    this.uploadCancelConfirmed = true;
+    this.uploadWaiter.reject(message);
+    this.resolveUploadCancelWaiter();
+  }
+
+  private waitForUploadCancel(): Promise<void> {
+    if (this.uploadCancelConfirmed) {
+      return Promise.resolve();
+    }
+    if (!this.uploadCancelWaiter) {
+      this.uploadCancelWaiter = new Deferred<void>();
+    }
+    return this.uploadCancelWaiter.promise;
+  }
+
+  private resolveUploadCancelWaiter(): void {
+    this.uploadCancelWaiter?.resolve();
+    this.uploadCancelWaiter = null;
   }
 
   // Delete
@@ -718,6 +1262,35 @@ export class SFTPPanel {
     this.container.querySelector('#sftp-progress-container')!.classList.add('hidden');
   }
 
+  private setIdleStatus(fallback: string): void {
+    if (this.setQueueStatus()) return;
+    this.setStatus(fallback);
+  }
+
+  private setQueueStatus(): boolean {
+    if (this.uploadQueuedFiles > 0) {
+      this.setStatus(`Queued upload: ${this.uploadQueuedFiles} file(s)`);
+      return true;
+    }
+
+    if (this.downloadQueuedFiles > 0) {
+      this.setStatus(`Queued download: ${this.downloadQueuedFiles} file(s)`);
+      return true;
+    }
+
+    if (this.uploadActive) {
+      this.setStatus('Uploading files');
+      return true;
+    }
+
+    if (this.downloadActive) {
+      this.setStatus('Downloading files');
+      return true;
+    }
+
+    return false;
+  }
+
   private setStatus(text: string): void {
     (this.container.querySelector('#sftp-status-text') as HTMLElement).textContent = text;
   }
@@ -727,6 +1300,10 @@ export class SFTPPanel {
     const files = this.entries.filter(e => !e.isDir).length;
     (this.container.querySelector('#sftp-item-count') as HTMLElement).textContent =
       `${dirs} dirs, ${files} files`;
+  }
+
+  private getItemsStatus(): string {
+    return `${this.entries.length} items`;
   }
 
   private getFileIcon(filename: string): string {
@@ -769,6 +1346,10 @@ export class SFTPPanel {
   }
 
   dispose(): void {
+    this.resetUploadQueue();
+    this.resetDownloadQueue();
+    this.closeWebSocket(1000, 'SFTP panel disposed');
+    document.removeEventListener('keydown', this.keydownHandler);
     this.container.remove();
   }
 }
