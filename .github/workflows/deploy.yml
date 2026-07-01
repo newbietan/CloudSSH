@@ -11,6 +11,7 @@ on:
       - '*.png'
       - '*.jpg'
       - '*.gif'
+      - '*.svg'
       - 'AGENTS.md'
 
 jobs:
