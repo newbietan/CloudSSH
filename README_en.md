@@ -124,10 +124,10 @@ flowchart TB
 | **UserDBDO** | `src/worker/user-db.ts` | User data, server configs, rate limiting (SQLite) |
 | **SSHSession** | `src/worker/ssh-session.ts` | SSH protocol state machine (connect→version→kex→auth→interactive) |
 | **SSH Protocol Stack** | `src/ssh/*.ts` | Pure TypeScript SSH-2.0 implementation (transport, crypto, auth, channels) |
-| **SFTP Handler** | `src/worker/sftp-handler.ts` | SFTP WebSocket message bridge |
+| **SFTP Handler** | `src/worker/sftp-handler.ts` | SFTP protocol operations, task queue, concurrent downloads, upload tracking and cancellation |
 | **SFTP Protocol** | `src/ssh/sftp.ts` / `sftp-types.ts` | SFTP v3 protocol client, packet parsing and type definitions |
 | **Frontend Terminal** | `frontend/src/terminal.ts` | xterm.js wrapper, trzsz integration, WebSocket management |
-| **SFTP Panel** | `frontend/src/sftp-panel.ts` | Graphical file manager UI component |
+| **SFTP Panel** | `frontend/src/sftp-panel.ts` | Graphical file manager UI with upload/download queue and cancellation support |
 
 ### SSH Protocol Implementation
 

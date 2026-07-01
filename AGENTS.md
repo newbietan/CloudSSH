@@ -28,7 +28,7 @@ src/
 │   ├── index.ts      # Main worker entry (request routing)
 │   ├── durable-object.ts  # SSHSessionDO - manages SSH sessions
 │   ├── ssh-session.ts     # SSH session logic, multi-channel routing, SFTP handling
-│   ├── sftp-handler.ts    # SFTP WebSocket message bridge
+│   ├── sftp-handler.ts    # SFTP protocol ops, task queue, concurrent download, upload tracking
 │   ├── user-db.ts    # UserDBDO - user/server storage
 │   ├── auth.ts       # GitHub OAuth handling
 │   └── html.ts       # Auto-generated - DO NOT EDIT
@@ -44,7 +44,7 @@ frontend/
 ├── src/
 │   ├── main.ts       # Frontend entry point
 │   ├── terminal.ts   # xterm.js terminal setup
-│   ├── sftp-panel.ts # SFTP file manager UI component
+│   ├── sftp-panel.ts # SFTP file manager UI (queue, cancel support)
 │   ├── auth-form.ts  # Authentication form component
 │   ├── server-list.ts # Server management UI
 │   ├── style.css     # Global styles

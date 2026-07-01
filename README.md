@@ -124,10 +124,10 @@ flowchart TB
 | **UserDBDO** | `src/worker/user-db.ts` | 用户数据、服务器配置、速率限制（SQLite） |
 | **SSHSession** | `src/worker/ssh-session.ts` | SSH 协议状态机（连接→版本→密钥交换→认证→交互） |
 | **SSH 协议栈** | `src/ssh/*.ts` | 纯 TypeScript SSH-2.0 实现（传输层、加密、认证、通道） |
-| **SFTP 处理器** | `src/worker/sftp-handler.ts` | SFTP WebSocket 消息桥接 |
+| **SFTP 处理器** | `src/worker/sftp-handler.ts` | SFTP 协议操作、任务队列、并发下载、上传跟踪与取消支持 |
 | **SFTP 协议实现** | `src/ssh/sftp.ts` / `sftp-types.ts` | SFTP v3 协议客户端、包解析与类型定义 |
 | **前端终端** | `frontend/src/terminal.ts` | xterm.js 封装、trzsz 集成、WebSocket 管理 |
-| **SFTP 面板** | `frontend/src/sftp-panel.ts` | 图形化文件管理器 UI 组件 |
+| **SFTP 面板** | `frontend/src/sftp-panel.ts` | 图形化文件管理器 UI，支持上传/下载队列和取消操作 |
 
 ### SSH 协议实现
 
