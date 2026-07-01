@@ -8,35 +8,54 @@
       <stop offset="0%" stop-color="#0a0a0a"/>
       <stop offset="100%" stop-color="#aaaaaa"/>
     </linearGradient>
+    <linearGradient id="sshTextGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00b8c4"/>
+      <stop offset="100%" stop-color="#6b4fef"/>
+    </linearGradient>
     <filter id="glow">
-      <feGaussianBlur stdDeviation="1.5" result="blur"/>
+      <feGaussianBlur stdDeviation="2" result="blur"/>
       <feMerge>
         <feMergeNode in="blur"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
+    <filter id="iconShadow">
+      <feDropShadow dx="0" dy="1" stdDeviation="3" flood-color="#6b4fef" flood-opacity="0.35"/>
+    </filter>
   </defs>
 
   <!-- Cloud icon -->
-  <g transform="translate(28, 15)">
-    <path d="M70 65 C70 65 30 65 30 42 C30 25 42 15 55 15 C58 8 68 3 80 8 C88 3 100 5 105 16 C115 12 128 18 125 30 C135 32 140 42 132 52 C135 58 130 65 120 65 Z"
-          fill="url(#cloudGrad)" opacity="0.9"/>
-    <!-- Terminal cursor inside cloud -->
-    <rect x="62" y="30" width="8" height="20" rx="1" fill="#00ffcc" opacity="0.9">
-      <animate attributeName="opacity" values="0.9;0.3;0.9" dur="1.2s" repeatCount="indefinite"/>
-    </rect>
-    <path d="M76 35 L86 40 L76 45" stroke="#00ffcc" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <g transform="translate(45, 12)" filter="url(#iconShadow)">
+    <!-- Main cloud body - smooth modern shape -->
+    <path d="M108 68 H28 C14.7 68 4 57.3 4 44 s10.7-24 24-24 c1.3 0 2.6.1 3.9.3
+             C35.5 10.6 44.8 4 56 4 c9.8 0 18.2 5.2 22.7 12.9
+             C82.2 14.6 87.2 13 92.5 13 c14.1 0 25.5 11.4 25.5 25.5
+             c0 .9-.1 1.8-.2 2.6 C122.3 43.5 126 49.8 126 57 c0 6.6-4 12.2-10 14.5
+             l-.2.1 C115 72 112.5 70 108 68Z"
+          fill="url(#cloudGrad)" opacity="0.92"/>
+    <!-- Inner highlight for depth -->
+    <path d="M96 60 H30 C18 60 8 50 8 38 s10-22 22-22 c1 0 2 .1 3 .2
+             C36 8.5 44.5 3 55 3 c8.5 0 16 4.2 20.2 10.6
+             C78.3 11.4 83 10 88 10 c12.5 0 22.7 10 23 22.4
+             C115 34.5 118 40 118 46.5 c0 5-3 9.5-7.5 11.8"
+          fill="none" stroke="white" stroke-width="1.2" opacity="0.15"/>
+    <!-- Terminal cursor >_ inside cloud -->
+    <g transform="translate(52, 30)">
+      <rect x="0" y="2" width="5" height="16" rx="1" fill="#00ffcc">
+        <animate attributeName="opacity" values="1;0.2;1" dur="1s" repeatCount="indefinite"/>
+      </rect>
+      <polyline points="10,4 18,10 10,16" fill="none" stroke="#00ffcc" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
   </g>
 
-  <!-- "Cloud" text: dark-to-gray gradient -->
-  <text x="178" y="72" font-family="'SF Pro Display','Helvetica Neue','Segoe UI',sans-serif" font-size="52" font-weight="700" fill="url(#textGrad)" filter="url(#glow)">Cloud</text>
+  <!-- CloudSSH text - continuous, no gap -->
+  <text x="180" y="76" font-family="'SF Pro Display','Helvetica Neue','Segoe UI',sans-serif" font-size="52" font-weight="700" letter-spacing="-0.5">
+    <tspan fill="url(#textGrad)">Cloud</tspan><tspan fill="url(#sshTextGrad)">SSH</tspan>
+  </text>
 
-  <!-- "SSH" text: cyan-purple gradient -->
-  <text x="370" y="72" font-family="'SF Pro Display','Helvetica Neue','Segoe UI',sans-serif" font-size="52" font-weight="700" fill="url(#cloudGrad)" filter="url(#glow)">SSH</text>
-
-  <!-- Subtle underline accent -->
-  <line x1="178" y1="82" x2="460" y2="82" stroke="url(#cloudGrad)" stroke-width="2" opacity="0.4"/>
+  <!-- Underline accent -->
+  <line x1="180" y1="85" x2="452" y2="85" stroke="url(#cloudGrad)" stroke-width="1.5" opacity="0.25"/>
 
   <!-- Subtitle -->
-  <text x="178" y="100" font-family="'SF Mono','Fira Code','Consolas',monospace" font-size="11" fill="#6b7b9a" letter-spacing="2">SERVERLESS WEB SSH TERMINAL</text>
+  <text x="180" y="102" font-family="'SF Mono','Fira Code','Consolas',monospace" font-size="11" fill="#6b7b9a" letter-spacing="2">SERVERLESS WEB SSH TERMINAL</text>
 </svg>
