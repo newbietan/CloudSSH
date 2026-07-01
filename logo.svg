@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 120" width="480" height="120">
   <defs>
     <linearGradient id="cloudGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#00d4ff"/>
-      <stop offset="100%" stop-color="#7c3aed"/>
+      <stop offset="0%" stop-color="#00b8c4"/>
+      <stop offset="100%" stop-color="#6b4fef"/>
     </linearGradient>
-    <linearGradient id="sshGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#00ffcc"/>
-      <stop offset="100%" stop-color="#00d4ff"/>
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0a0a0a"/>
+      <stop offset="100%" stop-color="#aaaaaa"/>
     </linearGradient>
     <filter id="glow">
       <feGaussianBlur stdDeviation="1.5" result="blur"/>
@@ -18,7 +18,7 @@
   </defs>
 
   <!-- Cloud icon -->
-  <g transform="translate(20, 15)">
+  <g transform="translate(28, 15)">
     <path d="M70 65 C70 65 30 65 30 42 C30 25 42 15 55 15 C58 8 68 3 80 8 C88 3 100 5 105 16 C115 12 128 18 125 30 C135 32 140 42 132 52 C135 58 130 65 120 65 Z"
           fill="url(#cloudGrad)" opacity="0.9"/>
     <!-- Terminal cursor inside cloud -->
@@ -28,15 +28,15 @@
     <path d="M76 35 L86 40 L76 45" stroke="#00ffcc" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
   </g>
 
-  <!-- "Cloud" text -->
-  <text x="170" y="72" font-family="'SF Pro Display','Helvetica Neue','Segoe UI',sans-serif" font-size="52" font-weight="700" fill="url(#sshGrad)" filter="url(#glow)">Cloud</text>
+  <!-- "Cloud" text: dark-to-gray gradient -->
+  <text x="178" y="72" font-family="'SF Pro Display','Helvetica Neue','Segoe UI',sans-serif" font-size="52" font-weight="700" fill="url(#textGrad)" filter="url(#glow)">Cloud</text>
 
-  <!-- "SSH" text -->
-  <text x="365" y="72" font-family="'SF Pro Display','Helvetica Neue','Segoe UI',sans-serif" font-size="52" font-weight="700" fill="white" filter="url(#glow)">SSH</text>
+  <!-- "SSH" text: cyan-purple gradient -->
+  <text x="370" y="72" font-family="'SF Pro Display','Helvetica Neue','Segoe UI',sans-serif" font-size="52" font-weight="700" fill="url(#cloudGrad)" filter="url(#glow)">SSH</text>
 
   <!-- Subtle underline accent -->
-  <line x1="170" y1="82" x2="465" y2="82" stroke="url(#cloudGrad)" stroke-width="2" opacity="0.4"/>
+  <line x1="178" y1="82" x2="460" y2="82" stroke="url(#cloudGrad)" stroke-width="2" opacity="0.4"/>
 
   <!-- Subtitle -->
-  <text x="170" y="100" font-family="'SF Mono','Fira Code','Consolas',monospace" font-size="11" fill="#8b9dc3" letter-spacing="2">SERVERLESS WEB SSH TERMINAL</text>
+  <text x="178" y="100" font-family="'SF Mono','Fira Code','Consolas',monospace" font-size="11" fill="#6b7b9a" letter-spacing="2">SERVERLESS WEB SSH TERMINAL</text>
 </svg>
