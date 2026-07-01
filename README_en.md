@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>CloudSSH</h1>
+  <img src="./logo.svg" alt="CloudSSH" width="480">
   <p>A Serverless Web SSH Terminal built on Cloudflare Workers: Connect and manage your servers directly from the browser.</p>
   <p><b>Ultra-lightweight · Out-of-the-box · Cyberpunk UI</b></p>
   <p>

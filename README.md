@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>CloudSSH</h1>
+  <img src="./logo.svg" alt="CloudSSH" width="480">
   <p>一个基于 Cloudflare Workers 的 Serverless Web SSH 终端：通过浏览器直接连接和管理你的服务器。</p>
   <p><b>极致轻量 · 开箱即用 · 赛博朋克 UI</b></p>
   <p>
