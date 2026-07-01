@@ -10,13 +10,14 @@
 
 ## Project Overview
 
-CloudSSH is a serverless Web SSH terminal built on Cloudflare Workers. Users connect to SSH servers through a browser-based terminal UI.
+CloudSSH is a serverless Web SSH terminal built on Cloudflare Workers. Users connect to SSH servers through a browser-based terminal UI with integrated SFTP file management.
 
 ## Architecture
 
 - **Frontend** (`frontend/`): TypeScript + Vite + xterm.js + Tailwind CSS
 - **Backend** (`src/`): Cloudflare Workers + Durable Objects
 - **SSH Protocol**: Pure TypeScript implementation in `src/ssh/` (no external SSH library)
+- **SFTP Protocol**: SFTP v3 subsystem implementation in `src/ssh/sftp.ts` for file management
 - **Build Process**: `scripts/build-html.js` builds frontend and inlines it into `src/worker/html.ts`
 
 ## Key Directories
@@ -26,7 +27,8 @@ src/
 ├── worker/           # Cloudflare Worker entry and Durable Objects
 │   ├── index.ts      # Main worker entry (request routing)
 │   ├── durable-object.ts  # SSHSessionDO - manages SSH sessions
-│   ├── ssh-session.ts     # SSH session logic and WebSocket handling
+│   ├── ssh-session.ts     # SSH session logic, multi-channel routing, SFTP handling
+│   ├── sftp-handler.ts    # SFTP WebSocket message bridge
 │   ├── user-db.ts    # UserDBDO - user/server storage
 │   ├── auth.ts       # GitHub OAuth handling
 │   └── html.ts       # Auto-generated - DO NOT EDIT
@@ -34,12 +36,15 @@ src/
     ├── transport.ts  # SSH transport layer
     ├── kex*.ts       # Key exchange algorithms
     ├── auth.ts       # Authentication methods
-    └── channel.ts    # SSH channels
+    ├── channel.ts    # SSH channels (session + SFTP subsystem)
+    ├── sftp.ts       # SFTP v3 client implementation
+    └── sftp-types.ts # SFTP protocol constants and types
 
 frontend/
 ├── src/
 │   ├── main.ts       # Frontend entry point
 │   ├── terminal.ts   # xterm.js terminal setup
+│   ├── sftp-panel.ts # SFTP file manager UI component
 │   ├── auth-form.ts  # Authentication form component
 │   ├── server-list.ts # Server management UI
 │   ├── style.css     # Global styles

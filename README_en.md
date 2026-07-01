@@ -80,6 +80,7 @@
 - **MitM Protection (TOFU)**: Automatically extracts and prints the server's Host Key (SHA-256 fingerprint) on the first connection, supporting Ed25519/ECDSA/RSA signature verification.
 - **Geek Terminal Experience**: Powered by `@xterm/xterm` and the `@xterm/addon-webgl` hardware acceleration rendering engine, ensuring silky smooth scrolling even with massive log outputs.
 - **Customizable UI**: All colors are powered by a CSS variable system, with built-in Cyberpunk, Glacier, and Gruvbox themes switchable in one click. Supports importing custom JSON theme files (auto-synced to the cloud for logged-in users, working across browsers), with a companion [Visual Theme Editor](https://newbietan.github.io/CloudSSH/) for live color customization and export. Fully optimized for mobile devices.
+- **SFTP Graphical File Manager**: Integrated with a complete SFTP v3 file transfer protocol, providing a graphical file browser interface. Supports directory browsing, file upload/download, creating new folders, file renaming, and deletion. Built on SSH subsystem, running in parallel with terminal sessions without interference.
 - **Native File Transfer**: Integrated with [trzsz.js](https://github.com/trzsz/trzsz.js), supporting `trz` (upload) / `tsz` (download) commands for file transfer, fully compatible with tmux sessions. Also supports drag-and-drop file upload to the terminal, directory transfer, and resumable transfers. (Requires [trzsz](https://trzsz.github.io/) installed on the remote server)
 - **GitHub OAuth Integration**: Supports GitHub login, allowing users to save and manage frequently used SSH servers for one-click connections.
 
@@ -92,6 +93,7 @@
 flowchart TB
     subgraph "Browser Client"
         UI["Frontend UI<br/>TypeScript + xterm.js"]
+        SFTP["SFTP File Manager"]
         Trzsz["trzsz File Transfer"]
     end
     
@@ -106,6 +108,7 @@ flowchart TB
     end
 
     UI <-->|"WebSocket<br/>Terminal I/O"| Worker
+    SFTP <-->|"WebSocket<br/>SFTP Data"| Worker
     Trzsz <-->|"trzsz Protocol"| UI
     Worker <-->|"WebSocket"| SSH_DO
     Worker <-->|"Internal API"| User_DO
@@ -121,7 +124,10 @@ flowchart TB
 | **UserDBDO** | `src/worker/user-db.ts` | User data, server configs, rate limiting (SQLite) |
 | **SSHSession** | `src/worker/ssh-session.ts` | SSH protocol state machine (connect→version→kex→auth→interactive) |
 | **SSH Protocol Stack** | `src/ssh/*.ts` | Pure TypeScript SSH-2.0 implementation (transport, crypto, auth, channels) |
+| **SFTP Handler** | `src/worker/sftp-handler.ts` | SFTP WebSocket message bridge |
+| **SFTP Protocol** | `src/ssh/sftp.ts` / `sftp-types.ts` | SFTP v3 protocol client, packet parsing and type definitions |
 | **Frontend Terminal** | `frontend/src/terminal.ts` | xterm.js wrapper, trzsz integration, WebSocket management |
+| **SFTP Panel** | `frontend/src/sftp-panel.ts` | Graphical file manager UI component |
 
 ### SSH Protocol Implementation
 
@@ -134,7 +140,8 @@ This project implements a complete SSH-2.0 protocol stack:
 | **Integrity** | `crypto.ts` | hmac-sha2-256, hmac-sha2-512, hmac-sha1 |
 | **Host Keys** | `ssh-session.ts` | Ed25519, ECDSA P-256, RSA |
 | **User Auth** | `auth.ts` | Password authentication, Ed25519 public key authentication |
-| **Channel Management** | `channel.ts` | Session channel, PTY, shell, window-change |
+| **Channel Management** | `channel.ts` | Session channel, SFTP subsystem, PTY, shell, window-change |
+| **SFTP Protocol** | `sftp.ts` / `sftp-types.ts` | SFTP v3 file transfer protocol (directory browsing, upload, download, delete, rename) |
 
 ### Data Flow
 
@@ -143,6 +150,7 @@ This project implements a complete SSH-2.0 protocol stack:
 3. SSHSessionDO receives the credentials and establishes a TCP connection with the target SSH server using `@cloudflare/sockets`.
 4. SSHSession executes the complete SSH protocol negotiation (version exchange → key exchange → authentication → channel open → PTY → Shell).
 5. Encrypted terminal data is bidirectionally forwarded between the frontend and SSH server via WebSocket.
+6. SFTP file management runs on a separate SSH subsystem channel, supporting directory browsing, file upload/download, and other operations.
 
 <a id="quick-start"></a>
 ## Quick Deployment
