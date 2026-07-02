@@ -111,6 +111,7 @@ export class SFTPPanel {
   private getWebSocketUrl: GetSFTPWebSocketUrlFn;
   private ws: WebSocket | null = null;
   private connectingPromise: Promise<void> | null = null;
+  private sftpWsRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingSends: (string | ArrayBuffer | Uint8Array)[] = [];
   private closedByPanel: WeakSet<WebSocket> = new WeakSet();
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
@@ -411,10 +412,13 @@ export class SFTPPanel {
 
     const wsUrl = this.getWebSocketUrl();
     if (!wsUrl) {
-      this.pendingSends = [];
-      this.showError('SFTP WebSocket is not ready yet');
-      this.initializing = false;
-      this.sftpReady = false;
+      this.setStatus('Waiting for SFTP WebSocket...');
+      if (!this.sftpWsRetryTimer) {
+        this.sftpWsRetryTimer = setTimeout(() => {
+          this.sftpWsRetryTimer = null;
+          void this.ensureWebSocket();
+        }, 200);
+      }
       return;
     }
 
@@ -510,6 +514,10 @@ export class SFTPPanel {
 
   private closeWebSocket(code?: number, reason?: string): void {
     this.stopHeartbeat();
+    if (this.sftpWsRetryTimer) {
+      clearTimeout(this.sftpWsRetryTimer);
+      this.sftpWsRetryTimer = null;
+    }
     const ws = this.ws;
     this.ws = null;
     this.connectingPromise = null;

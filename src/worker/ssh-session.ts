@@ -1177,11 +1177,7 @@ export class SSHSession {
           return;
         }
 
-        // SFTP control messages
-        if (parsed.type && parsed.type.startsWith('sftp_')) {
-          this.enqueueSFTPTask(this.getSFTPOperation(parsed.type), () => this.handleSFTPMessage(parsed));
-          return;
-        }
+        // NOTE: SFTP control messages are handled over the dedicated SFTP WebSocket.
       }
 
       if (this.state !== 'ready') return;
