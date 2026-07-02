@@ -218,18 +218,9 @@ export class ServerList {
       // 在新标签页打开终端
       const terminalUrl = `/?wsUrl=${encodeURIComponent(wsUrl)}&name=${encodeURIComponent(server.name)}`;
       window.open(terminalUrl, '_blank');
-
-      // 恢复按钮状态
-      if (connectBtn) {
-        connectBtn.innerHTML = `
-          <span class="material-symbols-outlined" style="font-size: 14px;">power_settings_new</span>
-          CONNECT
-        `;
-        (connectBtn as HTMLButtonElement).disabled = false;
-      }
     } catch (e) {
       alert(`连接失败: ${e instanceof Error ? e.message : String(e)}`);
-      // 恢复按钮状态
+    } finally {
       if (connectBtn) {
         connectBtn.innerHTML = `
           <span class="material-symbols-outlined" style="font-size: 14px;">power_settings_new</span>
