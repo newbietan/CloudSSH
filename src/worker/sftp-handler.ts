@@ -15,7 +15,6 @@ import {
   getFileTypeFromPermissions,
   formatPermissions,
   formatFileSize,
-  formatTimestamp,
   type SFTPFileEntry,
   type SFTPFileAttributes,
 } from '../ssh/sftp-types';
@@ -795,7 +794,6 @@ export class SFTPHandler {
       permissions: entry.attrs.permissions !== undefined ? formatPermissions(entry.attrs.permissions) : '---------',
       permissionsRaw: entry.attrs.permissions || 0,
       modifiedTime: entry.attrs.mtime || 0,
-      modifiedTimeFormatted: entry.attrs.mtime ? formatTimestamp(entry.attrs.mtime) : '',
       isDir: type === 'dir',
       isLink: type === 'link',
     };
@@ -812,7 +810,6 @@ export class SFTPHandler {
       sizeFormatted: formatFileSize(attrs.size || 0),
       permissions: attrs.permissions !== undefined ? formatPermissions(attrs.permissions) : '---------',
       modifiedTime: attrs.mtime || 0,
-      modifiedTimeFormatted: attrs.mtime ? formatTimestamp(attrs.mtime) : '',
     };
   }
 }

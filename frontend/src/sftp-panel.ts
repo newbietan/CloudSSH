@@ -6,7 +6,6 @@ export interface SFTPFileEntry {
   permissions: string;
   permissionsRaw: number;
   modifiedTime: number;
-  modifiedTimeFormatted: string;
   isDir: boolean;
   isLink: boolean;
 }
@@ -16,6 +15,7 @@ export type GetSFTPWebSocketUrlFn = () => string | null;
 const UPLOAD_CHUNK_SIZE = 128 * 1024;
 const UPLOAD_CONCURRENCY = 8;
 const DOWNLOAD_URL_REVOKE_DELAY_MS = 1000;
+const SFTP_HEARTBEAT_INTERVAL_MS = 30000;
 
 class Deferred<T> {
   promise: Promise<T>;
@@ -113,6 +113,7 @@ export class SFTPPanel {
   private connectingPromise: Promise<void> | null = null;
   private pendingSends: (string | ArrayBuffer | Uint8Array)[] = [];
   private closedByPanel: WeakSet<WebSocket> = new WeakSet();
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private visible: boolean = false;
   private initializing: boolean = false;
   private sftpReady: boolean = false;
@@ -424,6 +425,7 @@ export class SFTPPanel {
 
       ws.onopen = () => {
         this.connectingPromise = null;
+        this.startHeartbeat();
         this.flushPendingSends();
         resolve();
       };
@@ -444,6 +446,7 @@ export class SFTPPanel {
       };
 
       ws.onerror = () => {
+        this.stopHeartbeat();
         this.connectingPromise = null;
         this.initializing = false;
         this.sftpReady = false;
@@ -455,6 +458,7 @@ export class SFTPPanel {
       };
 
       ws.onclose = () => {
+        this.stopHeartbeat();
         if (this.ws === ws) {
           this.ws = null;
         }
@@ -478,6 +482,22 @@ export class SFTPPanel {
     }
   }
 
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.heartbeatInterval = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, SFTP_HEARTBEAT_INTERVAL_MS);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+  }
+
   private flushPendingSends(): void {
     if (this.ws?.readyState !== WebSocket.OPEN) return;
 
@@ -489,6 +509,7 @@ export class SFTPPanel {
   }
 
   private closeWebSocket(code?: number, reason?: string): void {
+    this.stopHeartbeat();
     const ws = this.ws;
     this.ws = null;
     this.connectingPromise = null;
@@ -513,6 +534,8 @@ export class SFTPPanel {
         this.onListResult(msg.path, msg.entries);
         break;
       case 'sftp_stat_result':
+        break;
+      case 'pong':
         break;
       case 'sftp_download_start':
         this.onDownloadStart(msg.filename, msg.size);
@@ -672,7 +695,7 @@ export class SFTPPanel {
         </span>
         <span class="text-on-surface-variant text-[11px] w-16 text-right shrink-0">${entry.isDir ? '-' : entry.sizeFormatted}</span>
         <span class="text-on-surface-variant text-[10px] w-20 text-right shrink-0 hidden md:block">${entry.permissions}</span>
-        <span class="text-on-surface-variant text-[10px] w-24 text-right shrink-0 hidden lg:block">${entry.modifiedTimeFormatted}</span>
+        <span class="text-on-surface-variant text-[10px] w-24 text-right shrink-0 hidden lg:block">${this.formatTimestamp(entry.modifiedTime)}</span>
       </div>
     `).join('');
 
@@ -1339,6 +1362,23 @@ export class SFTPPanel {
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+  }
+
+  private formatTimestamp(unixTime: number): string {
+    if (!unixTime) return '';
+
+    const date = new Date(unixTime * 1000);
+    const now = new Date();
+    const sixMonthsAgo = new Date(now);
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+    const pad = (n: number) => n.toString().padStart(2, '0');
+
+    if (date > sixMonthsAgo) {
+      return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${date.getFullYear()}`;
   }
 
   private escapeHtml(str: string): string {

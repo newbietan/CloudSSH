@@ -8,16 +8,16 @@
     "deploy": "node scripts/build-html.js && wrangler deploy",
     "deploy:test": "node scripts/build-html.js && wrangler deploy --env test",
     "build:frontend": "node scripts/build-html.js",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "keywords": ["ssh", "cloudflare", "web-terminal"],
   "author": "",
   "license": "Apache-2.0",
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20241230.0",
+    "@cloudflare/workers-types": "^4.20260630.1",
     "typescript": "^5.7.0",
-    "wrangler": "3.80.0",
-    "vitest": "^3.0.0"
+    "wrangler": "^4.106.0",
+    "vitest": "^4.1.9"
   },
   "dependencies": {}
 }

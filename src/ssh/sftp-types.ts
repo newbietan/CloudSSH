@@ -130,18 +130,3 @@ export function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
 }
-
-export function formatTimestamp(unixTime: number): string {
-  const date = new Date(unixTime * 1000);
-  const now = new Date();
-  const sixMonthsAgo = new Date(now);
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-
-  const pad = (n: number) => n.toString().padStart(2, '0');
-
-  if (date > sixMonthsAgo) {
-    return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  } else {
-    return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${date.getFullYear()}`;
-  }
-}
