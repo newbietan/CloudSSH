@@ -216,7 +216,7 @@ export class ServerList {
       const { wsUrl } = await res.json() as { wsUrl: string };
 
       // 在新标签页打开终端
-      const terminalUrl = `/?wsUrl=${encodeURIComponent(wsUrl)}&name=${encodeURIComponent(server.name)}`;
+      const terminalUrl = `/?wsUrl=${encodeURIComponent(wsUrl)}&name=${encodeURIComponent(server.name)}&host=${encodeURIComponent(server.host)}&port=${server.port}`;
       window.open(terminalUrl, '_blank');
     } catch (e) {
       alert(`连接失败: ${e instanceof Error ? e.message : String(e)}`);

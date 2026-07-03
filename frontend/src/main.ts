@@ -40,6 +40,8 @@ function initTerminalTab(): void {
   const params = new URLSearchParams(window.location.search);
   const wsUrl = params.get('wsUrl')!;
   const serverName = params.get('name') || 'Server';
+  const host = params.get('host') || '';
+  const port = parseInt(params.get('port') || '0') || 0;
 
   if (!validateWsUrl(wsUrl)) {
     document.body.innerHTML = '<div style="color:var(--error);padding:2em;font-family:monospace;">Error: Invalid or untrusted WebSocket URL.</div>';
@@ -62,7 +64,8 @@ function initTerminalTab(): void {
 
   const ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
-  terminal.connectWithWebSocket(ws);
+  const hostInfo = host && port ? { host, port } : undefined;
+  terminal.connectWithWebSocket(ws, hostInfo);
 }
 
 // ==================== 页面切换 ====================
@@ -128,7 +131,7 @@ function showOfflineUI(): void {
   document.getElementById('status-text')!.innerHTML = '<span class="w-2 h-2 bg-surface-dot inline-block"></span> STATUS: OFFLINE';
 }
 
-function showTerminalFromServer(wsUrl: string, serverName: string): void {
+function showTerminalFromServer(wsUrl: string, serverName: string, hostInfo?: { host: string; port: number }): void {
   if (!validateWsUrl(wsUrl)) {
     alert('Invalid WebSocket URL');
     return;
@@ -150,7 +153,7 @@ function showTerminalFromServer(wsUrl: string, serverName: string): void {
   // 通过 wsUrl（含 one-time-token）建立连接
   const ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
-  terminal.connectWithWebSocket(ws);
+  terminal.connectWithWebSocket(ws, hostInfo);
 }
 
 // ==================== 断开连接处理 ====================
@@ -179,6 +182,12 @@ document.getElementById('sftp-toggle-btn')?.addEventListener('click', () => {
     initSFTPPanel();
   }
   sftpPanel?.toggle();
+});
+
+// ==================== 终端搜索 ====================
+
+document.getElementById('search-btn')?.addEventListener('click', () => {
+  terminal.toggleSearch();
 });
 
 // ==================== 主题切换 ====================

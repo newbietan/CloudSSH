@@ -2,6 +2,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { WebglAddon } from '@xterm/addon-webgl';
+import { SearchAddon } from '@xterm/addon-search';
 import { TrzszFilter } from 'trzsz';
 import '@xterm/xterm/css/xterm.css';
 
@@ -14,6 +15,7 @@ export interface SSHConnectionConfig {
   password?: string;
   authMethod?: 'password' | 'publickey';
   privateKey?: string;
+  expectedFingerprint?: string;
 }
 
 interface ConnectOptions {
@@ -129,6 +131,7 @@ export class SSHTerminal {
   private terminal: Terminal;
   private fitAddon: FitAddon;
   private webglAddon!: WebglAddon;
+  private searchAddon: SearchAddon;
   private ws: WebSocket | null = null;
   private container: HTMLElement;
   private disposables: { dispose(): void }[] = [];
@@ -144,6 +147,9 @@ export class SSHTerminal {
   private onSessionClosed?: (event: CloseEvent) => void;
   private onSessionReady?: () => void;
   private sftpAttachUrl: string | null = null;
+  private searchBox: HTMLElement | null = null;
+  private searchInput: HTMLInputElement | null = null;
+  private searchVisible: boolean = false;
 
   constructor(containerId: string) {
     this.container = document.getElementById(containerId)!;
@@ -161,7 +167,23 @@ export class SSHTerminal {
     this.fitAddon = new FitAddon();
     this.terminal.loadAddon(this.fitAddon);
     this.terminal.loadAddon(new WebLinksAddon());
+    this.searchAddon = new SearchAddon();
+    this.terminal.loadAddon(this.searchAddon);
     this.registerCursorRestoreHandlers();
+
+    // Ctrl+Shift+F to toggle search bar
+    this.terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && (e.key === 'F' || e.key === 'f')) {
+        e.preventDefault();
+        this.toggleSearch();
+        return false;
+      }
+      if (e.key === 'Escape' && this.searchVisible) {
+        this.hideSearch();
+        return false;
+      }
+      return true;
+    });
 
     window.addEventListener('resize', () => this.fit());
 
@@ -254,6 +276,115 @@ export class SSHTerminal {
     this.fit();
   }
 
+  private createSearchBox(): void {
+    if (this.searchBox) return;
+
+    const box = document.createElement('div');
+    box.className = 'cloudssh-search-box';
+    box.style.display = 'none';
+    box.innerHTML = `
+      <input type="text" class="cloudssh-search-input" placeholder="Search..." />
+      <button class="cloudssh-search-btn cloudssh-search-prev" title="Previous (Shift+Enter)">
+        <span class="material-symbols-outlined" style="font-size:16px;">arrow_upward</span>
+      </button>
+      <button class="cloudssh-search-btn cloudssh-search-next" title="Next (Enter)">
+        <span class="material-symbols-outlined" style="font-size:16px;">arrow_downward</span>
+      </button>
+      <button class="cloudssh-search-btn cloudssh-search-close" title="Close (Esc)">
+        <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+      </button>
+    `;
+
+    this.container.style.position = 'relative';
+    this.container.appendChild(box);
+    this.searchBox = box;
+    this.searchInput = box.querySelector('.cloudssh-search-input') as HTMLInputElement;
+
+    // Search on input
+    this.searchInput.addEventListener('input', () => {
+      const term = this.searchInput!.value;
+      if (term) {
+        this.searchAddon.findNext(term, { incremental: true });
+      }
+    });
+
+    // Enter = next, Shift+Enter = previous
+    this.searchInput.addEventListener('keydown', (e: KeyboardEvent) => {
+      const term = this.searchInput!.value;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          this.searchAddon.findPrevious(term);
+        } else {
+          this.searchAddon.findNext(term);
+        }
+      }
+    });
+
+    // Button handlers
+    box.querySelector('.cloudssh-search-prev')!.addEventListener('click', () => {
+      const term = this.searchInput!.value;
+      if (term) this.searchAddon.findPrevious(term);
+    });
+    box.querySelector('.cloudssh-search-next')!.addEventListener('click', () => {
+      const term = this.searchInput!.value;
+      if (term) this.searchAddon.findNext(term);
+    });
+    box.querySelector('.cloudssh-search-close')!.addEventListener('click', () => {
+      this.hideSearch();
+    });
+  }
+
+  toggleSearch(): void {
+    if (this.searchVisible) {
+      this.hideSearch();
+    } else {
+      this.showSearch();
+    }
+  }
+
+  showSearch(): void {
+    this.createSearchBox();
+    if (!this.searchBox) return;
+    this.searchBox.style.display = 'flex';
+    this.searchVisible = true;
+    this.searchInput?.focus();
+    this.searchInput?.select();
+  }
+
+  hideSearch(): void {
+    if (!this.searchBox) return;
+    this.searchBox.style.display = 'none';
+    this.searchVisible = false;
+    this.terminal.focus();
+  }
+
+  // ==================== known_hosts (TOFU) ====================
+
+  private handleHostKey(fingerprint: string): void {
+    if (!this.lastConfig) return;
+    const key = `${this.lastConfig.host}:${this.lastConfig.port}`;
+
+    // 存储到 localStorage（匿名用户）
+    try {
+      const raw = localStorage.getItem('cloudssh_known_hosts');
+      const map = raw ? JSON.parse(raw) : {};
+      map[key] = fingerprint;
+      localStorage.setItem('cloudssh_known_hosts', JSON.stringify(map));
+    } catch { /* ignore */ }
+
+    // 尝试存储到云端（登录用户）
+    fetch('/api/known-hosts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        host: this.lastConfig.host,
+        port: this.lastConfig.port,
+        fingerprint,
+      }),
+    }).catch(() => { /* 未登录或网络错误，忽略 */ });
+  }
+
   async connect(config: SSHConnectionConfig, options: ConnectOptions = {}): Promise<void> {
     this.resetActiveConnection();
     this.lastConfig = config;
@@ -281,6 +412,7 @@ export class SSHTerminal {
           password: config.password,
           authMethod: config.authMethod,
           privateKey: config.privateKey,
+          expectedFingerprint: config.expectedFingerprint,
           ...this.getTerminalSize(),
         }));
         
@@ -296,9 +428,9 @@ export class SSHTerminal {
     });
   }
 
-  connectWithWebSocket(ws: WebSocket): void {
+  connectWithWebSocket(ws: WebSocket, hostInfo?: { host: string; port: number }): void {
     this.resetActiveConnection();
-    this.lastConfig = null;
+    this.lastConfig = hostInfo ? { host: hostInfo.host, port: hostInfo.port, username: '' } : null;
     this.ws = ws;
     ws.binaryType = 'arraybuffer';
     this.showConnectingBanner();
@@ -371,6 +503,9 @@ export class SSHTerminal {
               break;
             case 'debug':
               this.terminal.writeln(`\x1b[90m[DEBUG] ${msg.message}\x1b[0m`);
+              break;
+            case 'host_key':
+              this.handleHostKey(msg.fingerprint);
               break;
             case 'pong':
               break;
@@ -565,4 +700,56 @@ export class SSHTerminal {
     this.terminalDisposables = [];
     this.terminal.dispose();
   }
+}
+
+// ==================== known_hosts 辅助函数 ====================
+
+/**
+ * 加载已知主机指纹（TOFU 验证用）
+ * 优先从云端（登录用户）加载，回退到 localStorage（匿名用户）
+ */
+export async function loadKnownFingerprint(host: string, port: number): Promise<string | null> {
+  // 先尝试云端（登录用户）
+  try {
+    const res = await fetch(`/api/known-hosts?host=${encodeURIComponent(host)}&port=${port}`);
+    if (res.ok) {
+      const data = await res.json() as { fingerprint: string | null };
+      if (data.fingerprint) return data.fingerprint;
+    }
+  } catch { /* 未登录或网络错误 */ }
+
+  // 回退到 localStorage
+  try {
+    const raw = localStorage.getItem('cloudssh_known_hosts');
+    if (raw) {
+      const map = JSON.parse(raw) as Record<string, string>;
+      return map[`${host}:${port}`] || null;
+    }
+  } catch { /* ignore */ }
+
+  return null;
+}
+
+/**
+ * 清除已知主机指纹（用于主机密钥变更后重新信任）
+ */
+export async function clearKnownFingerprint(host: string, port: number): Promise<void> {
+  // 清除 localStorage
+  try {
+    const raw = localStorage.getItem('cloudssh_known_hosts');
+    if (raw) {
+      const map = JSON.parse(raw) as Record<string, string>;
+      delete map[`${host}:${port}`];
+      localStorage.setItem('cloudssh_known_hosts', JSON.stringify(map));
+    }
+  } catch { /* ignore */ }
+
+  // 清除云端
+  try {
+    await fetch('/api/known-hosts', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ host, port }),
+    });
+  } catch { /* 未登录或网络错误 */ }
 }

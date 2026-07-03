@@ -75,6 +75,19 @@ export class UserDBDO {
         reset_time  TEXT NOT NULL,
         created_at  TEXT DEFAULT (datetime('now'))
       );
+
+      CREATE TABLE IF NOT EXISTS known_hosts (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL REFERENCES users(id),
+        host        TEXT NOT NULL,
+        port        INTEGER NOT NULL,
+        fingerprint TEXT NOT NULL,
+        created_at  TEXT DEFAULT (datetime('now')),
+        updated_at  TEXT DEFAULT (datetime('now')),
+        UNIQUE(user_id, host, port)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_known_hosts_user ON known_hosts(user_id);
     `);
   }
 
@@ -141,6 +154,19 @@ export class UserDBDO {
       // --- 速率限制检查 ---
       if (path === '/internal/rate-limit/check' && request.method === 'POST') {
         return this.handleRateLimitCheck(request);
+      }
+
+      // --- known_hosts 管理 ---
+      if (path === '/internal/known-hosts' && request.method === 'GET') {
+        const userId = url.searchParams.get('user_id');
+        if (!userId) return Response.json({ error: 'Missing user_id' }, { status: 400 });
+        return this.handleGetKnownHosts(parseInt(userId), url.searchParams.get('host'), url.searchParams.get('port'));
+      }
+      if (path === '/internal/known-hosts' && request.method === 'POST') {
+        return this.handleUpsertKnownHost(request);
+      }
+      if (path === '/internal/known-hosts' && request.method === 'DELETE') {
+        return this.handleDeleteKnownHost(request);
       }
 
       return Response.json({ error: 'Not Found' }, { status: 404 });
@@ -417,6 +443,16 @@ export class UserDBDO {
     // 解密凭据
     const credential = await this.decryptCredential(server.credential, body.user_id);
 
+    // 查询已知主机指纹（TOFU 验证）
+    let expectedFingerprint: string | undefined;
+    const khRows = this.db.exec(
+      'SELECT fingerprint FROM known_hosts WHERE user_id = ? AND host = ? AND port = ?',
+      body.user_id, server.host, server.port
+    ).toArray();
+    if (khRows.length > 0) {
+      expectedFingerprint = (khRows[0] as unknown as { fingerprint: string }).fingerprint;
+    }
+
     // 生成 one-time-token
     const token = crypto.randomUUID();
     const config: SSHConnectionConfig = {
@@ -426,6 +462,7 @@ export class UserDBDO {
       password: server.auth_method === 'password' ? credential : '',
       authMethod: server.auth_method === 'publickey' ? 'publickey' : 'password',
       privateKey: server.auth_method === 'publickey' ? credential : '',
+      expectedFingerprint,
     };
 
     // 防止 token 数量无限增长
@@ -598,5 +635,65 @@ export class UserDBDO {
     );
 
     return Response.json({ limited: newCount > maxRequests });
+  }
+
+  // ==================== known_hosts 管理 ====================
+
+  private handleGetKnownHosts(userId: number, host: string | null, port: string | null): Response {
+    if (host && port) {
+      // 查询特定 host:port 的指纹
+      const rows = this.db.exec(
+        'SELECT fingerprint FROM known_hosts WHERE user_id = ? AND host = ? AND port = ?',
+        userId, host, parseInt(port)
+      ).toArray();
+      if (rows.length === 0) {
+        return Response.json({ fingerprint: null });
+      }
+      return Response.json({ fingerprint: (rows[0] as unknown as { fingerprint: string }).fingerprint });
+    }
+
+    // 列出所有已知主机
+    const rows = this.db.exec(
+      'SELECT id, host, port, fingerprint, created_at, updated_at FROM known_hosts WHERE user_id = ? ORDER BY updated_at DESC',
+      userId
+    ).toArray();
+    return Response.json(rows);
+  }
+
+  private async handleUpsertKnownHost(request: Request): Promise<Response> {
+    const { user_id, host, port, fingerprint } = await request.json<{
+      user_id: number;
+      host: string;
+      port: number;
+      fingerprint: string;
+    }>();
+
+    if (!host || !port || !fingerprint) {
+      return Response.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
+    this.db.exec(
+      `INSERT INTO known_hosts (user_id, host, port, fingerprint, created_at, updated_at)
+       VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+       ON CONFLICT(user_id, host, port) DO UPDATE SET fingerprint = excluded.fingerprint, updated_at = datetime('now')`,
+      user_id, host, port, fingerprint
+    );
+
+    return Response.json({ success: true });
+  }
+
+  private async handleDeleteKnownHost(request: Request): Promise<Response> {
+    const { user_id, host, port } = await request.json<{
+      user_id: number;
+      host: string;
+      port: number;
+    }>();
+
+    this.db.exec(
+      'DELETE FROM known_hosts WHERE user_id = ? AND host = ? AND port = ?',
+      user_id, host, port
+    );
+
+    return Response.json({ success: true });
   }
 }

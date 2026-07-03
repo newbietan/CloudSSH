@@ -230,3 +230,57 @@ body {
   color: var(--on-accent) !important;
   border-color: var(--accent) !important;
 }
+
+/* ==================== Terminal Search Box ==================== */
+
+.cloudssh-search-box {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 4px 6px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+}
+
+.cloudssh-search-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  width: 200px;
+  padding: 2px 4px;
+}
+
+.cloudssh-search-input::placeholder {
+  color: var(--text-dim);
+}
+
+.cloudssh-search-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  transition: all 0.15s;
+}
+
+.cloudssh-search-btn:hover {
+  color: var(--accent);
+  background: var(--surface-dot);
+}
+
+.cloudssh-search-close:hover {
+  color: var(--error);
+}

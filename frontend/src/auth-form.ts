@@ -1,4 +1,4 @@
-import { SSHTerminal } from './terminal';
+import { SSHTerminal, loadKnownFingerprint } from './terminal';
 
 // --- Credential encryption helpers ---
 async function deriveKey(salt: Uint8Array): Promise<CryptoKey> {
@@ -313,6 +313,9 @@ export class ConnectionForm {
     this.terminal.mount();
 
     try {
+      // 加载已知主机指纹（TOFU 验证）
+      const expectedFingerprint = await loadKnownFingerprint(host, port);
+
       await this.terminal.connect({
         host,
         port,
@@ -320,6 +323,7 @@ export class ConnectionForm {
         password,
         authMethod: this.authMode === 'key' ? 'publickey' : 'password',
         privateKey,
+        expectedFingerprint: expectedFingerprint || undefined,
       });
     } catch (error) {
       termSection.classList.add('hidden');

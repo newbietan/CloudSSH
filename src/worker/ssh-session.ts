@@ -617,8 +617,30 @@ export class SSHSession {
     // Compute host key fingerprint (SHA-256)
     const fpHash = new Uint8Array(await crypto.subtle.digest('SHA-256', hostKey));
     this.hostKeyFingerprint = 'SHA256:' + btoa(String.fromCharCode(...fpHash)).replace(/=+$/, '');
-    this.sendStatus(`服务器指纹: ${this.hostKeyFingerprint}`);
     this.sendDebug(`Host key fingerprint: ${this.hostKeyFingerprint}`);
+
+    // --- known_hosts verification (TOFU) ---
+    // Send fingerprint to frontend for storage
+    try {
+      this.ws.send(JSON.stringify({ type: 'host_key', fingerprint: this.hostKeyFingerprint }));
+    } catch (e) { /* ws closed */ }
+
+    // Compare against expected fingerprint if provided
+    if (this.config.expectedFingerprint) {
+      if (this.config.expectedFingerprint !== this.hostKeyFingerprint) {
+        this.sendError(
+          `主机密钥指纹不匹配！可能存在中间人攻击。\n` +
+          `已知指纹: ${this.config.expectedFingerprint}\n` +
+          `实际指纹: ${this.hostKeyFingerprint}\n` +
+          `连接已阻断。如需信任新密钥，请清除该服务器的 known_hosts 记录后重试。`
+        );
+        this.close();
+        return;
+      }
+      this.sendStatus(`主机密钥验证通过 ✓`);
+    } else {
+      this.sendStatus(`服务器指纹: ${this.hostKeyFingerprint}（首次连接，已记录）`);
+    }
 
     // Verify host key signature to confirm exchange hash is correct
     let sigVerified: boolean | null = false;

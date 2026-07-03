@@ -48,6 +48,7 @@ export interface SSHConnectionConfig {
   privateKey?: string;
   cols?: number;
   rows?: number;
+  expectedFingerprint?: string;
 }
 
 export interface TerminalSize {
