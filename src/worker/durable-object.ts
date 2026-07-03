@@ -10,6 +10,7 @@ function isBlockedHost(host: string): boolean {
 
   // 特殊主机名
   if (h === 'localhost' || h === 'ip6-localhost' || h === 'ip6-loopback') return true;
+  if (h === '0.0.0.0' || h === '255.255.255.255' || h === 'broadcasthost') return true;
 
   // IPv4 私有 / 保留地址
   if (/^(127\.|10\.|0\.|192\.168\.|169\.254\.)/.test(h)) return true;
@@ -97,7 +98,7 @@ export class SSHSessionDO {
           try {
             server.send(JSON.stringify({ type: 'error', message: `连接失败: ${errMsg}` }));
             server.close(1011, 'SSH connection failed');
-          } catch {}
+          } catch (e) { console.error('Failed to notify client of connection error:', e); }
         }
       });
     } else {
@@ -105,7 +106,7 @@ export class SSHSessionDO {
         try {
           server.send(JSON.stringify({ type: 'error', message: 'Connection timeout' }));
           server.close(1011, 'Timeout');
-        } catch {}
+        } catch (e) { console.error('Failed to notify client of timeout:', e); }
       }, 10000);
 
       server.serializeAttachment({ state: 'waiting', timeout: null });
@@ -205,7 +206,10 @@ export class SSHSessionDO {
       if (isBlockedHost(config.host)) {
         throw new Error('禁止连接内网或保留地址 (SSRF 防护)');
       }
-      const BLOCKED_PORTS = [80, 443, 25, 465, 587, 3306, 6379, 27017, 11211];
+      const BLOCKED_PORTS = [
+        23, 80, 443, 25, 465, 587, 110, 143, 993, 995,
+        3306, 5432, 6379, 9200, 11211, 27017, 5060,
+      ];
       if (BLOCKED_PORTS.includes(config.port)) {
         throw new Error(`端口 ${config.port} 存在安全风险，已被禁止连接`);
       }
@@ -242,7 +246,7 @@ export class SSHSessionDO {
       try {
         ws.send(JSON.stringify({ type: 'error', message: `连接失败: ${errMsg}` }));
         ws.close(1011, 'SSH connection failed');
-      } catch {}
+      } catch (e) { console.error('Failed to notify client of SSH error:', e); }
     }
   }
 
