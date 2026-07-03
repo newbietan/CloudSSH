@@ -43,10 +43,6 @@ export class KeyDerivation {
 
     const XBytes = new TextEncoder().encode(X);
 
-    if (X === 'A') {
-      console.log('[KDF] Input lengths: K=' + K.length + ' H=' + H.length + ' X=' + XBytes.length + ' sessionId=' + sessionId.length);
-    }
-
     // K1 = HASH(K || H || X || sessionId)
     let currentHash = new Uint8Array(
       await crypto.subtle.digest('SHA-256',
