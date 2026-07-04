@@ -201,6 +201,11 @@ export class ConnectionForm {
           </span>
           <span id="github-login-placeholder"></span>
         </div>
+        <!-- Recent Connections Section -->
+        <div id="recent-connections-section" class="mt-6 pt-4 border-t border-dim hidden">
+          <label class="block text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)] mb-3">RECENT_CONNECTIONS</label>
+          <div id="recent-connections-list" class="space-y-2 max-h-[160px] overflow-y-auto custom-scrollbar pr-1"></div>
+        </div>
       </form>
     `;
 
@@ -236,25 +241,142 @@ export class ConnectionForm {
     keySection.style.display = mode === 'key' ? '' : 'none';
   }
 
-  private async loadSavedCredentials(): Promise<void> {
-    const stored = localStorage.getItem('cloudssh_cred');
-    if (!stored) return;
-    const cred = await decryptCredentials(stored);
-    if (!cred) {
-      localStorage.removeItem('cloudssh_cred');
+  private renderRecentConnections(): void {
+    const section = document.getElementById('recent-connections-section');
+    const list = document.getElementById('recent-connections-list');
+    if (!section || !list) return;
+
+    const raw = localStorage.getItem('cloudssh_recent_connections');
+    let recent: any[] = [];
+    try {
+      recent = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(recent)) recent = [];
+    } catch {
+      recent = [];
+    }
+
+    if (recent.length === 0) {
+      section.classList.add('hidden');
       return;
     }
-    (document.getElementById('host') as HTMLInputElement).value = cred.host || '';
-    (document.getElementById('port') as HTMLInputElement).value = cred.port || '22';
-    (document.getElementById('username') as HTMLInputElement).value = cred.username || '';
-    (document.getElementById('password') as HTMLInputElement).value = cred.password || '';
-    (document.getElementById('private-key') as HTMLTextAreaElement).value = cred.privateKey || '';
-    (document.getElementById('remember-me') as HTMLInputElement).checked = true;
 
-    if (cred.authMethod === 'publickey') {
+    section.classList.remove('hidden');
+    list.innerHTML = '';
+
+    recent.forEach((item, index) => {
+      const itemEl = document.createElement('div');
+      itemEl.className = 'flex justify-between items-center text-xs p-2 border border-dim bg-surface/50 hover:bg-surface hover:border-[var(--accent)] transition-all cursor-pointer group relative';
+      
+      const authLabel = item.authMethod === 'publickey' ? 'KEY' : 'PWD';
+      const labelText = `${item.username}@${item.host}:${item.port}`;
+
+      itemEl.innerHTML = `
+        <div class="flex items-center gap-2 overflow-hidden mr-2 select-none flex-1">
+          <span class="material-symbols-outlined text-muted" style="font-size: 14px;">history</span>
+          <span class="text-on-surface truncate" title="${labelText}">${labelText}</span>
+          <span class="text-[9px] font-bold tracking-[0.05em] text-muted border border-dim px-1.5 py-0.2 shrink-0">${authLabel}</span>
+        </div>
+        <button class="delete-history-btn text-muted hover:text-error flex items-center justify-center p-0.5" title="Remove from history">
+          <span class="material-symbols-outlined" style="font-size: 14px;">close</span>
+        </button>
+      `;
+
+      // 点击填入
+      itemEl.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('.delete-history-btn')) return;
+        this.fillConnection(item);
+      });
+
+      // 删除单条
+      itemEl.querySelector('.delete-history-btn')!.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.deleteConnection(index);
+      });
+
+      list.appendChild(itemEl);
+    });
+  }
+
+  private async fillConnection(item: { host: string; port: number; username: string; authMethod: 'password' | 'publickey'; encryptedCred?: string }): Promise<void> {
+    (document.getElementById('host') as HTMLInputElement).value = item.host || '';
+    (document.getElementById('port') as HTMLInputElement).value = (item.port || 22).toString();
+    (document.getElementById('username') as HTMLInputElement).value = item.username || '';
+
+    if (item.authMethod === 'publickey') {
       this.setAuthMode('key');
     } else {
       this.setAuthMode('password');
+    }
+
+    if (item.encryptedCred) {
+      const cred = await decryptCredentials(item.encryptedCred);
+      if (cred) {
+        (document.getElementById('password') as HTMLInputElement).value = cred.password || '';
+        (document.getElementById('private-key') as HTMLTextAreaElement).value = cred.privateKey || '';
+        (document.getElementById('remember-me') as HTMLInputElement).checked = true;
+      } else {
+        (document.getElementById('password') as HTMLInputElement).value = '';
+        (document.getElementById('private-key') as HTMLTextAreaElement).value = '';
+        (document.getElementById('remember-me') as HTMLInputElement).checked = false;
+      }
+    } else {
+      (document.getElementById('password') as HTMLInputElement).value = '';
+      (document.getElementById('private-key') as HTMLTextAreaElement).value = '';
+      (document.getElementById('remember-me') as HTMLInputElement).checked = false;
+    }
+  }
+
+  private deleteConnection(index: number): void {
+    const raw = localStorage.getItem('cloudssh_recent_connections');
+    let recent: any[] = [];
+    try {
+      recent = raw ? JSON.parse(raw) : [];
+    } catch {}
+    
+    if (index >= 0 && index < recent.length) {
+      recent.splice(index, 1);
+      localStorage.setItem('cloudssh_recent_connections', JSON.stringify(recent));
+      this.renderRecentConnections();
+    }
+  }
+
+  private async loadSavedCredentials(): Promise<void> {
+    const recentRaw = localStorage.getItem('cloudssh_recent_connections');
+    let recent: any[] = [];
+    try {
+      recent = recentRaw ? JSON.parse(recentRaw) : [];
+      if (!Array.isArray(recent)) recent = [];
+    } catch {
+      recent = [];
+    }
+
+    // 兼容性迁移：如果无 recent_connections 但存在老版单条 cloudssh_cred，则自动将其迁移并存入历史记录
+    const oldCred = localStorage.getItem('cloudssh_cred');
+    if (recent.length === 0 && oldCred) {
+      const cred = await decryptCredentials(oldCred);
+      if (cred) {
+        const item = {
+          id: `${cred.username}@${cred.host}:${cred.port}`,
+          host: cred.host,
+          port: parseInt(cred.port) || 22,
+          username: cred.username,
+          authMethod: cred.authMethod === 'publickey' ? 'publickey' : 'password',
+          timestamp: Date.now(),
+          encryptedCred: oldCred,
+        };
+        recent.push(item);
+        localStorage.setItem('cloudssh_recent_connections', JSON.stringify(recent));
+        // 清理老旧单项
+        localStorage.removeItem('cloudssh_cred');
+      }
+    }
+
+    // 渲染历史列表
+    this.renderRecentConnections();
+
+    // 默认自动填入最近使用的一条（即第一条）
+    if (recent.length > 0) {
+      this.fillConnection(recent[0]);
     }
   }
 
@@ -290,9 +412,10 @@ export class ConnectionForm {
       return;
     }
 
-    // Save or clear credentials
+    // 保存连接历史与凭据
+    let encryptedCred: string | undefined = undefined;
     if (remember) {
-      const encrypted = await encryptCredentials({
+      encryptedCred = await encryptCredentials({
         host,
         port: port.toString(),
         username,
@@ -300,10 +423,39 @@ export class ConnectionForm {
         privateKey: this.authMode === 'key' ? privateKey : undefined,
         authMethod: this.authMode === 'key' ? 'publickey' : 'password',
       });
-      localStorage.setItem('cloudssh_cred', encrypted);
-    } else {
-      localStorage.removeItem('cloudssh_cred');
     }
+
+    // 更新最近连接列表
+    const recentRaw = localStorage.getItem('cloudssh_recent_connections');
+    let recent: any[] = [];
+    try {
+      recent = recentRaw ? JSON.parse(recentRaw) : [];
+      if (!Array.isArray(recent)) recent = [];
+    } catch {}
+
+    const id = `${username}@${host}:${port}`;
+    const newRecord = {
+      id,
+      host,
+      port,
+      username,
+      authMethod: this.authMode === 'key' ? 'publickey' : 'password',
+      timestamp: Date.now(),
+      ...(encryptedCred ? { encryptedCred } : {}),
+    };
+
+    // 去重：如果已有相同 id 记录，先删除
+    recent = recent.filter(r => r.id !== id);
+    // 插入头部
+    recent.unshift(newRecord);
+    // 限制最近 5 条
+    if (recent.length > 5) {
+      recent = recent.slice(0, 5);
+    }
+    localStorage.setItem('cloudssh_recent_connections', JSON.stringify(recent));
+
+    // 重新渲染历史列表
+    this.renderRecentConnections();
 
     // 通过 TabManager 创建新标签并切换到终端视图
     const tm = this.options.getTabManager();
@@ -339,3 +491,4 @@ export class ConnectionForm {
     }
   }
 }
+
