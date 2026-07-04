@@ -43,6 +43,7 @@ export class SSHSessionDO {
   private _pendingTimeouts: Map<WebSocket, ReturnType<typeof setTimeout>> = new Map();
   private pendingTerminalSizes: Map<WebSocket, TerminalSize> = new Map();
   private pendingAttachUrls: Map<WebSocket, string> = new Map();
+  private websocketColos: Map<WebSocket, string> = new Map();
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -82,6 +83,9 @@ export class SSHSessionDO {
 
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
+
+    const colo = request.headers.get('x-cloudflare-colo') || 'UNKNOWN';
+    this.websocketColos.set(server, colo);
 
     this.state.acceptWebSocket(server);
     const attachToken = crypto.randomUUID();
@@ -190,6 +194,7 @@ export class SSHSessionDO {
     }
     this.pendingTerminalSizes.delete(ws);
     this.pendingAttachUrls.delete(ws);
+    this.websocketColos.delete(ws);
   }
 
   async webSocketError(ws: WebSocket, error: unknown): Promise<void> {
@@ -216,9 +221,14 @@ export class SSHSessionDO {
 
       const { connect } = await import('cloudflare:sockets');
       const hostname = config.host.includes(':') ? `[${config.host}]` : config.host;
+      
+      const startTime = Date.now();
       const socket = connect({ hostname, port: config.port });
-
       await socket.opened;
+      const latency = Date.now() - startTime;
+
+      const colo = this.websocketColos.get(ws) || 'UNKNOWN';
+      this.websocketColos.delete(ws);
 
       const strictVerify = this.env.STRICT_HOST_KEY_VERIFY !== 'false';
       const debugMode = this.env.DEBUG_MODE === 'true';
@@ -230,6 +240,11 @@ export class SSHSessionDO {
       const sftpAttachUrl = this.pendingAttachUrls.get(ws);
       const session = new SSHSession(ws, socket, config, strictVerify, debugMode, sftpAttachUrl);
       this.sessions.set(ws, session);
+
+      // 向前端发送双段延迟的物理基准延迟
+      try {
+        ws.send(JSON.stringify({ type: 'rtt', latency, colo }));
+      } catch {}
       if (attachToken) {
         this.sftpAttachTokens.set(attachToken, session);
       } else if (sftpAttachUrl) {

@@ -11,6 +11,9 @@ export interface TabInfo {
   containerEl: HTMLElement;
   hostInfo?: { host: string; port: number; username?: string };
   state: TabState;
+  cfLatency?: number;
+  cfColo?: string;
+  wsLatency?: number;
 }
 
 /**
@@ -81,6 +84,19 @@ export class TabManager {
           tab.sftpPanel.bindEvents();
         }
         tab.sftpPanel.handleSSHReady();
+      }
+    });
+
+    // 设置延迟监测更新回调
+    terminal.setLatencyUpdatedHandler((cfLatency, cfColo, wsLatency) => {
+      const t = this.tabs.get(id);
+      if (t) {
+        t.cfLatency = cfLatency ?? undefined;
+        t.cfColo = cfColo ?? undefined;
+        t.wsLatency = wsLatency ?? undefined;
+        if (this.activeTabId === id) {
+          this.updateStatusBar(t);
+        }
       }
     });
 
@@ -275,6 +291,22 @@ export class TabManager {
     } else {
       if (termStatus) termStatus.innerHTML = '<div class="w-2 h-2 bg-[var(--error)]"></div> Disconnected';
       if (statusText) statusText.innerHTML = '<span class="w-2 h-2 bg-surface-dot inline-block"></span> STATUS: OFFLINE';
+    }
+
+    // 更新状态栏显示延迟信息
+    const termInfo = document.getElementById('term-info');
+    if (termInfo) {
+      if (tab.state === 'connected') {
+        const cfText = tab.cfLatency !== undefined ? `CF-${tab.cfColo || 'UNK'}: ${tab.cfLatency}ms` : '';
+        const wsText = tab.wsLatency !== undefined ? ` | RTT: ${tab.wsLatency}ms` : '';
+        if (cfText || wsText) {
+          termInfo.textContent = `⚡ ${cfText}${wsText}`;
+        } else {
+          termInfo.textContent = '';
+        }
+      } else {
+        termInfo.textContent = '';
+      }
     }
   }
 

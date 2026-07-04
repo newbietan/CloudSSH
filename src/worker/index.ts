@@ -437,7 +437,10 @@ async function handleSSHConnection(request: Request, env: Env): Promise<Response
   const doUrl = new URL(request.url);
   doUrl.searchParams.set('session', sessionName);
 
-  return stub.fetch(new Request(doUrl.toString(), { headers: request.headers }));
+  const headers = new Headers(request.headers);
+  headers.set('x-cloudflare-colo', (request as any).cf?.colo || 'UNKNOWN');
+
+  return stub.fetch(new Request(doUrl.toString(), { headers }));
 }
 
 /**
@@ -482,8 +485,11 @@ async function handleTokenSSHConnection(request: Request, env: Env, token: strin
   doUrl.searchParams.set('config', encodeURIComponent(JSON.stringify(config)));
   doUrl.searchParams.set('session', sessionName);
 
+  const headers = new Headers(request.headers);
+  headers.set('x-cloudflare-colo', (request as any).cf?.colo || 'UNKNOWN');
+
   const doRequest = new Request(doUrl.toString(), {
-    headers: request.headers,
+    headers: headers,
   });
 
   return doStub.fetch(doRequest);

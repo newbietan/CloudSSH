@@ -150,6 +150,11 @@ export class SSHTerminal {
   private searchBox: HTMLElement | null = null;
   private searchInput: HTMLInputElement | null = null;
   private searchVisible: boolean = false;
+  private cfLatency: number | null = null;
+  private cfColo: string | null = null;
+  private lastPingTime: number | null = null;
+  private wsLatency: number | null = null;
+  private onLatencyUpdated?: (cfLatency: number | null, cfColo: string | null, wsLatency: number | null) => void;
 
   constructor(containerId: string) {
     this.container = document.getElementById(containerId)!;
@@ -246,6 +251,13 @@ export class SSHTerminal {
 
   setSessionReadyHandler(handler: () => void): void {
     this.onSessionReady = handler;
+  }
+
+  setLatencyUpdatedHandler(handler: (cfLatency: number | null, cfColo: string | null, wsLatency: number | null) => void): void {
+    this.onLatencyUpdated = handler;
+    if (this.cfLatency !== null || this.cfColo !== null || this.wsLatency !== null) {
+      handler(this.cfLatency, this.cfColo, this.wsLatency);
+    }
   }
 
   getSFTPWebSocketUrl(): string | null {
@@ -508,6 +520,16 @@ export class SSHTerminal {
               this.handleHostKey(msg.fingerprint);
               break;
             case 'pong':
+              if (this.lastPingTime !== null) {
+                this.wsLatency = Math.round(performance.now() - this.lastPingTime);
+                this.lastPingTime = null;
+                this.onLatencyUpdated?.(this.cfLatency, this.cfColo, this.wsLatency);
+              }
+              break;
+            case 'rtt':
+              this.cfLatency = msg.latency;
+              this.cfColo = msg.colo;
+              this.onLatencyUpdated?.(this.cfLatency, this.cfColo, this.wsLatency);
               break;
           }
         } catch {
@@ -577,6 +599,7 @@ export class SSHTerminal {
     this.stopHeartbeat();
     this.heartbeatInterval = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
+        this.lastPingTime = performance.now();
         this.ws.send(JSON.stringify({ type: 'ping' }));
       }
     }, 30000);
@@ -660,6 +683,11 @@ export class SSHTerminal {
     this.ws = null;
     this.sftpAttachUrl = null;
     this.trzszFilter = null;
+
+    this.cfLatency = null;
+    this.cfColo = null;
+    this.lastPingTime = null;
+    this.wsLatency = null;
 
     if (socket && socket.readyState !== WebSocket.CLOSED && socket.readyState !== WebSocket.CLOSING) {
       socket.close(1000);
