@@ -24,15 +24,18 @@ export class ServerList {
   private user: UserInfo;
   private servers: ServerConfig[] = [];
   private onLogout: () => void;
+  private onConnect: (wsUrl: string, serverName: string, hostInfo?: { host: string; port: number }) => void;
   private editingServerId: number | null = null;
   private modalAuthMode: 'password' | 'key' = 'password';
 
   constructor(
     user: UserInfo,
-    onLogout: () => void
+    onLogout: () => void,
+    onConnect: (wsUrl: string, serverName: string, hostInfo?: { host: string; port: number }) => void
   ) {
     this.user = user;
     this.onLogout = onLogout;
+    this.onConnect = onConnect;
     this.init();
   }
 
@@ -215,9 +218,8 @@ export class ServerList {
 
       const { wsUrl } = await res.json() as { wsUrl: string };
 
-      // 在新标签页打开终端
-      const terminalUrl = `/?wsUrl=${encodeURIComponent(wsUrl)}&name=${encodeURIComponent(server.name)}&host=${encodeURIComponent(server.host)}&port=${server.port}`;
-      window.open(terminalUrl, '_blank');
+      // 在当前页面内创建新标签并连接
+      this.onConnect(wsUrl, server.name, { host: server.host, port: server.port });
     } catch (e) {
       alert(`连接失败: ${e instanceof Error ? e.message : String(e)}`);
     } finally {

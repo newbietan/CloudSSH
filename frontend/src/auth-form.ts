@@ -1,4 +1,5 @@
-import { SSHTerminal, loadKnownFingerprint } from './terminal';
+import { loadKnownFingerprint } from './terminal';
+import type { TabManager } from './tab-manager';
 
 // --- Credential encryption helpers ---
 async function deriveKey(salt: Uint8Array): Promise<CryptoKey> {
@@ -42,15 +43,20 @@ async function decryptCredentials(stored: string): Promise<{ host: string; port:
   }
 }
 
+export interface ConnectionFormOptions {
+  /** 获取 TabManager 实例 */
+  getTabManager: () => TabManager;
+}
+
 export class ConnectionForm {
-  private terminal: SSHTerminal;
+  private options: ConnectionFormOptions;
   private turnstileEnabled = false;
   private turnstileVerified = false;
   private turnstileWidgetId: string | null = null;
   private turnstileSitekey = '';
 
-  constructor(terminal: SSHTerminal) {
-    this.terminal = terminal;
+  constructor(options: ConnectionFormOptions) {
+    this.options = options;
     this.render();
     this.loadSavedCredentials();
     this.checkTurnstileConfig();
@@ -299,24 +305,25 @@ export class ConnectionForm {
       localStorage.removeItem('cloudssh_cred');
     }
 
-    const authSection = document.getElementById('auth-section')!;
-    const termSection = document.getElementById('terminal-section')!;
+    // 通过 TabManager 创建新标签并切换到终端视图
+    const tm = this.options.getTabManager();
+    const displayLabel = `${username}@${host}`;
 
-    authSection.classList.add('hidden');
-    termSection.classList.remove('hidden');
-    termSection.classList.add('flex');
+    // 切换到终端视图
+    document.getElementById('auth-section')!.classList.add('hidden');
+    document.getElementById('terminal-section')!.classList.remove('hidden');
+    document.getElementById('terminal-section')!.classList.add('flex');
 
-    document.getElementById('term-host')!.textContent = 'Host: ' + host;
-    document.getElementById('term-user')!.textContent = 'User: ' + username;
-    document.getElementById('term-port')!.textContent = 'Port: ' + port;
+    const tab = tm.createTab(displayLabel, { host, port, username });
+    const terminal = tab.terminal;
 
-    this.terminal.mount();
+    terminal.mount();
 
     try {
       // 加载已知主机指纹（TOFU 验证）
       const expectedFingerprint = await loadKnownFingerprint(host, port);
 
-      await this.terminal.connect({
+      await terminal.connect({
         host,
         port,
         username,
@@ -326,11 +333,9 @@ export class ConnectionForm {
         expectedFingerprint: expectedFingerprint || undefined,
       });
     } catch (error) {
-      termSection.classList.add('hidden');
-      termSection.classList.remove('flex');
-      authSection.classList.remove('hidden');
+      // 连接失败时关闭该标签
+      tm.closeTab(tab.id);
       document.getElementById('status-text')!.innerHTML = '<span class="w-2 h-2 bg-surface-dot inline-block"></span> STATUS: OFFLINE';
     }
   }
 }
-

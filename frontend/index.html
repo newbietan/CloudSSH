@@ -222,6 +222,15 @@
         </div>
       </header>
 
+      <!-- Tab Bar（标签栏） -->
+      <div id="tab-bar" class="flex items-center bg-background border-b border-outline-variant px-2 h-9 overflow-x-auto custom-scrollbar gap-0.5"
+           style="scrollbar-width: thin;">
+        <!-- 由 TabManager 动态渲染标签 -->
+        <button id="new-tab-btn" class="tab-new-btn" title="New Connection">
+          <span class="material-symbols-outlined" style="font-size:16px;">add</span>
+        </button>
+      </div>
+
       <!-- Main Terminal -->
       <main class="flex-1 p-6 pb-14 relative bg-surface-container-lowest overflow-hidden">
         <div class="absolute inset-0 scanline pointer-events-none z-10 opacity-30"></div>
@@ -238,8 +247,8 @@
               <span id="term-info"></span>
             </div>
           </div>
-          <!-- Terminal Output -->
-          <div id="terminal-container" class="flex-1 overflow-hidden"></div>
+          <!-- Terminal Area (TabManager 在此动态创建每个标签的容器) -->
+          <div id="terminal-area" class="flex-1 overflow-hidden relative"></div>
         </div>
       </main>
 

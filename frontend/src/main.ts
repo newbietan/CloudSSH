@@ -1,22 +1,39 @@
-import { SSHTerminal, THEMES } from './terminal';
+import { THEMES } from './terminal';
+import type { SSHTerminal } from './terminal';
 import { ConnectionForm } from './auth-form';
 import { ServerList } from './server-list';
-import { SFTPPanel } from './sftp-panel';
+import { TabManager } from './tab-manager';
 
 // ==================== 全局状态 ====================
 
-const terminal = new SSHTerminal('terminal-container');
+let tabManager: TabManager | null = null;
 let connectionForm: ConnectionForm | null = null;
 let serverList: ServerList | null = null;
 let isLoggedIn = false;
-let sftpPanel: SFTPPanel | null = null;
 
-terminal.setSessionClosedHandler(() => {
-  showOfflineUI();
-});
-terminal.setSessionReadyHandler(() => {
-  sftpPanel?.handleSSHReady();
-});
+/** 获取或初始化 TabManager 单例 */
+function getTabManager(): TabManager {
+  if (!tabManager) {
+    tabManager = new TabManager('tab-bar', 'terminal-area');
+    tabManager.setAllTabsClosedHandler(() => {
+      showOfflineUI();
+    });
+
+    // 绑定 new-tab-btn
+    bindNewTabButton();
+  }
+  return tabManager;
+}
+
+function bindNewTabButton(): void {
+  // 使用事件委托，因为 TabManager.renderTabBar() 会重建按钮
+  document.getElementById('tab-bar')?.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest('#new-tab-btn');
+    if (!btn) return;
+    // 点击 + 按钮：回到连接页面以创建新连接
+    showConnectionPage();
+  });
+}
 
 // ==================== 独立终端标签页模式 ====================
 
@@ -55,17 +72,17 @@ function initTerminalTab(): void {
   document.getElementById('terminal-section')!.classList.remove('hidden');
   document.getElementById('terminal-section')!.classList.add('flex');
 
-  // 更新终端状态栏
-  document.getElementById('term-host')!.textContent = `Server: ${serverName}`;
-  document.getElementById('term-user')!.textContent = '';
-  document.getElementById('term-port')!.textContent = '';
+  // 隐藏标签栏（URL 直连模式只有一个标签，不需要标签栏）
+  const tabBar = document.getElementById('tab-bar');
+  if (tabBar) tabBar.style.display = 'none';
 
-  terminal.mount();
+  const tm = getTabManager();
+  const tab = tm.createTab(serverName, host && port ? { host, port } : undefined);
 
   const ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
   const hostInfo = host && port ? { host, port } : undefined;
-  terminal.connectWithWebSocket(ws, hostInfo);
+  tab.terminal.connectWithWebSocket(ws, hostInfo);
 }
 
 // ==================== 页面切换 ====================
@@ -80,7 +97,9 @@ function showAuthSection(): void {
   document.getElementById('server-modal')!.classList.remove('flex');
 
   if (!connectionForm) {
-    connectionForm = new ConnectionForm(terminal);
+    connectionForm = new ConnectionForm({
+      getTabManager,
+    });
   }
 }
 
@@ -99,8 +118,28 @@ function showUserSpace(user: { id: number; github_id: number; username: string; 
       isLoggedIn = false;
       serverList = null;
       showAuthSection();
+    },
+    // onConnect 回调 — 在当前页面创建新标签
+    (wsUrl: string, serverName: string, hostInfo?: { host: string; port: number }) => {
+      showTerminalFromServer(wsUrl, serverName, hostInfo);
     }
   );
+}
+
+/** 显示连接页面（匿名 → auth-form，登录 → 服务器列表） */
+function showConnectionPage(): void {
+  // 如果还有活跃标签，不需要隐藏终端区域；只需要覆盖显示连接页面
+  // 但为了简单起见，我们先切回对应的入口页面
+  if (isLoggedIn) {
+    document.getElementById('terminal-section')!.classList.add('hidden');
+    document.getElementById('terminal-section')!.classList.remove('flex');
+    document.getElementById('user-space-section')!.classList.remove('hidden');
+    document.getElementById('user-space-section')!.classList.add('flex');
+  } else {
+    document.getElementById('terminal-section')!.classList.add('hidden');
+    document.getElementById('terminal-section')!.classList.remove('flex');
+    showAuthSection();
+  }
 }
 
 function showOfflineUI(): void {
@@ -109,10 +148,9 @@ function showOfflineUI(): void {
     return;
   }
 
-  // Clean up SFTP panel
-  if (sftpPanel) {
-    sftpPanel.dispose();
-    sftpPanel = null;
+  // 如果还有其他标签，不回到连接页
+  if (tabManager && tabManager.hasAnyTab()) {
+    return;
   }
 
   const termSection = document.getElementById('terminal-section');
@@ -131,22 +169,35 @@ function showOfflineUI(): void {
   document.getElementById('status-text')!.innerHTML = '<span class="w-2 h-2 bg-surface-dot inline-block"></span> STATUS: OFFLINE';
 }
 
-function showTerminalFromServer(wsUrl: string, serverName: string, hostInfo?: { host: string; port: number }): void {
-  if (!validateWsUrl(wsUrl)) {
-    alert('Invalid WebSocket URL');
-    return;
-  }
-
+/** 在终端页面创建新标签并显示终端视图 */
+function showTerminalWithNewTab(
+  label: string,
+  displayLabel: string,
+  hostInfo?: { host: string; port: number; username?: string }
+): { tab: ReturnType<TabManager['createTab']>; terminal: SSHTerminal } {
   document.getElementById('auth-section')!.classList.add('hidden');
   document.getElementById('user-space-section')!.classList.add('hidden');
   document.getElementById('user-space-section')!.classList.remove('flex');
   document.getElementById('terminal-section')!.classList.remove('hidden');
   document.getElementById('terminal-section')!.classList.add('flex');
 
-  // 更新终端状态栏
-  document.getElementById('term-host')!.textContent = `Server: ${serverName}`;
-  document.getElementById('term-user')!.textContent = '';
-  document.getElementById('term-port')!.textContent = '';
+  const tm = getTabManager();
+  const tab = tm.createTab(displayLabel, hostInfo);
+
+  return { tab, terminal: tab.terminal };
+}
+
+function showTerminalFromServer(wsUrl: string, serverName: string, hostInfo?: { host: string; port: number }): void {
+  if (!validateWsUrl(wsUrl)) {
+    alert('Invalid WebSocket URL');
+    return;
+  }
+
+  const { terminal } = showTerminalWithNewTab(
+    serverName,
+    serverName,
+    hostInfo
+  );
 
   terminal.mount();
 
@@ -159,35 +210,35 @@ function showTerminalFromServer(wsUrl: string, serverName: string, hostInfo?: { 
 // ==================== 断开连接处理 ====================
 
 document.getElementById('disconnect-btn')?.addEventListener('click', () => {
-  if (sftpPanel) {
-    sftpPanel.hide();
-  }
-  terminal.disconnect();
-  showOfflineUI();
+  const tm = tabManager;
+  if (!tm) return;
+
+  const tab = tm.getActiveTab();
+  if (!tab) return;
+
+  tab.sftpPanel?.hide();
+  tab.terminal.disconnect();
+  tm.closeActiveTab();
 });
 
 // ==================== SFTP 面板 ====================
 
-function initSFTPPanel(): void {
-  if (sftpPanel) {
-    sftpPanel.dispose();
-  }
-
-  sftpPanel = new SFTPPanel(() => terminal.getSFTPWebSocketUrl());
-  sftpPanel.bindEvents();
-}
-
 document.getElementById('sftp-toggle-btn')?.addEventListener('click', () => {
-  if (!sftpPanel) {
-    initSFTPPanel();
+  const tab = tabManager?.getActiveTab();
+  if (!tab) return;
+
+  if (!tab.sftpPanel) {
+    // SFTP 面板由 TabManager 的 sessionReady 回调初始化
+    // 如果还没有初始化，说明 SSH 还没就绪
+    return;
   }
-  sftpPanel?.toggle();
+  tab.sftpPanel.toggle();
 });
 
 // ==================== 终端搜索 ====================
 
 document.getElementById('search-btn')?.addEventListener('click', () => {
-  terminal.toggleSearch();
+  tabManager?.getActiveTab()?.terminal.toggleSearch();
 });
 
 // ==================== 主题切换 ====================
@@ -195,17 +246,22 @@ document.getElementById('search-btn')?.addEventListener('click', () => {
 const CUSTOM_THEME_VALUE = '__custom__';
 const themeSelector = document.getElementById('theme-selector') as HTMLSelectElement | null;
 
+/** 获取一个可用于主题操作的终端实例（当前活跃标签的终端） */
+function getThemeTerminal(): SSHTerminal | null {
+  return tabManager?.getActiveTab()?.terminal || null;
+}
+
 themeSelector?.addEventListener('change', (e) => {
   const value = (e.target as HTMLSelectElement).value;
   if (value === CUSTOM_THEME_VALUE) {
     const importedRaw = localStorage.getItem('cloudssh_imported_theme');
     if (importedRaw) {
       try {
-        terminal.applyImportedTheme(JSON.parse(importedRaw));
+        getThemeTerminal()?.applyImportedTheme(JSON.parse(importedRaw));
       } catch { /* ignore */ }
     }
   } else {
-    terminal.setTheme(value as keyof typeof THEMES);
+    getThemeTerminal()?.setTheme(value as keyof typeof THEMES);
     localStorage.removeItem('cloudssh_imported_theme');
   }
   localStorage.setItem('cloudssh_theme_selection', value);
@@ -261,7 +317,7 @@ importThemeInput?.addEventListener('change', async (e) => {
       localStorage.setItem('cloudssh_theme_selection', CUSTOM_THEME_VALUE);
 
       // 直接应用主题，不刷新页面（避免断开 WebSocket）
-      terminal.applyImportedTheme(data);
+      getThemeTerminal()?.applyImportedTheme(data);
     } catch {
       alert('无效的 JSON 文件');
     }
@@ -272,6 +328,7 @@ importThemeInput?.addEventListener('change', async (e) => {
 
 // ==================== 主题恢复 ====================
 
+/** 恢复主题（在 init 时调用，此时还没有终端实例，只设置 UI 变量） */
 async function restoreTheme(): Promise<void> {
   const selection = localStorage.getItem('cloudssh_theme_selection');
 
@@ -303,12 +360,19 @@ async function restoreTheme(): Promise<void> {
     }
   }
 
-  // 恢复选择
+  // 恢复选择：应用 UI 变量（终端主题在创建标签时应用）
   if (selection === CUSTOM_THEME_VALUE) {
     const raw = localStorage.getItem('cloudssh_imported_theme');
     if (raw) {
       try {
-        terminal.applyImportedTheme(JSON.parse(raw));
+        const data = JSON.parse(raw);
+        // 应用 UI 变量
+        if (data.ui) {
+          const root = document.documentElement;
+          Object.entries(data.ui).forEach(([prop, val]) => {
+            root.style.setProperty(prop, val as string);
+          });
+        }
         if (themeSelector) themeSelector.value = CUSTOM_THEME_VALUE;
         return;
       } catch { /* ignore */ }
@@ -316,13 +380,28 @@ async function restoreTheme(): Promise<void> {
   }
 
   if (selection && THEMES[selection as keyof typeof THEMES]) {
-    terminal.setTheme(selection as keyof typeof THEMES);
+    // 应用 UI 变量（不需要终端实例）
+    const { UI_THEMES } = await import('./terminal');
+    const uiVars = UI_THEMES[selection as keyof typeof THEMES];
+    if (uiVars) {
+      const root = document.documentElement;
+      Object.entries(uiVars).forEach(([prop, val]) => {
+        root.style.setProperty(prop, val);
+      });
+    }
     if (themeSelector) themeSelector.value = selection;
     return;
   }
 
-  // 默认主题
-  terminal.setTheme('cyberpunk');
+  // 默认主题：只设置 UI 变量
+  const { UI_THEMES } = await import('./terminal');
+  const uiVars = UI_THEMES.cyberpunk;
+  if (uiVars) {
+    const root = document.documentElement;
+    Object.entries(uiVars).forEach(([prop, val]) => {
+      root.style.setProperty(prop, val);
+    });
+  }
   if (themeSelector) themeSelector.value = 'cyberpunk';
 }
 
@@ -357,5 +436,8 @@ async function init(): Promise<void> {
   // 未登录 → 显示匿名连接表单
   showAuthSection();
 }
+
+// 导出供 auth-form 和 server-list 使用
+export { getTabManager, showTerminalWithNewTab, validateWsUrl };
 
 init();
