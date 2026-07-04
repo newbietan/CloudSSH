@@ -477,7 +477,8 @@
 
     .terminal-statusbar {
       display: flex;
-      gap: 20px;
+      justify-content: space-between;
+      align-items: center;
       font-size: 10px;
       color: var(--on-surface-variant);
       padding-bottom: 10px;
@@ -1350,11 +1351,16 @@
               <!-- Terminal Area -->
               <div class="terminal-preview">
                 <div class="scanline"></div>
-                <div class="terminal-statusbar">
-                  <span class="connected"><span class="dot-green"></span> Connected</span>
-                  <span>Host: 192.168.1.1</span>
-                  <span>User: root</span>
-                  <span>Port: 22</span>
+                <div class="terminal-statusbar" style="display:flex;justify-content:space-between;">
+                  <div style="display:flex;gap:20px;">
+                    <span class="connected"><span class="dot-green"></span> Connected</span>
+                    <span>Host: 192.168.1.1</span>
+                    <span>User: root</span>
+                    <span>Port: 22</span>
+                  </div>
+                  <div>
+                    <span>⚡ CF-HKG: 34ms | RTT: 12ms</span>
+                  </div>
                 </div>
                 <div class="terminal-body">
                   <div class="line green">[+] WebSocket connected, sending credentials...</div>
