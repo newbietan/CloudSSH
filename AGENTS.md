@@ -43,9 +43,10 @@ src/
 frontend/
 ├── src/
 │   ├── main.ts       # Frontend entry point
-│   ├── terminal.ts   # xterm.js terminal setup
+│   ├── terminal.ts   # xterm.js terminal setup (search, dynamic RTT latency)
+│   ├── tab-manager.ts # Tab manager (multi-session terminal/SFTP coordinator)
 │   ├── sftp-panel.ts # SFTP file manager UI (queue, cancel support)
-│   ├── auth-form.ts  # Authentication form component
+│   ├── auth-form.ts  # Auth form & encrypted anonymous credentials storage/autofill
 │   ├── server-list.ts # Server management UI
 │   ├── style.css     # Global styles
 │   └── turnstile.d.ts # Turnstile type declarations
