@@ -241,6 +241,12 @@ document.getElementById('search-btn')?.addEventListener('click', () => {
   tabManager?.getActiveTab()?.terminal.toggleSearch();
 });
 
+// ==================== 导出终端日志 ====================
+
+document.getElementById('export-btn')?.addEventListener('click', () => {
+  tabManager?.getActiveTab()?.terminal.exportToFile();
+});
+
 // ==================== 主题切换 ====================
 
 const CUSTOM_THEME_VALUE = '__custom__';

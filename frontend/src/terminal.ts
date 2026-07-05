@@ -730,6 +730,37 @@ export class SSHTerminal {
     this.terminalDisposables = [];
     this.terminal.dispose();
   }
+
+  exportToFile(filename?: string): void {
+    const buffer = this.terminal.buffer.active;
+    const lines: string[] = [];
+    for (let i = 0; i < buffer.length; i++) {
+      const line = buffer.getLine(i);
+      if (line) {
+        lines.push(line.translateToString(true));
+      }
+    }
+    const text = lines.join('\n');
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    
+    let actualFilename = filename;
+    if (!actualFilename) {
+      const host = this.lastConfig?.host || 'terminal';
+      const port = this.lastConfig?.port || '';
+      const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
+      actualFilename = `${host}_${port}_${dateStr}.txt`;
+    }
+    
+    a.download = actualFilename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
 }
 
 // ==================== known_hosts 辅助函数 ====================

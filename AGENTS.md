@@ -43,7 +43,7 @@ src/
 frontend/
 ├── src/
 │   ├── main.ts       # Frontend entry point
-│   ├── terminal.ts   # xterm.js terminal setup (search, dynamic RTT latency)
+│   ├── terminal.ts   # xterm.js terminal setup (search, dynamic RTT latency, log export)
 │   ├── tab-manager.ts # Tab manager (multi-session terminal/SFTP coordinator)
 │   ├── sftp-panel.ts # SFTP file manager UI (queue, cancel support)
 │   ├── auth-form.ts  # Auth form & encrypted anonymous credentials storage/autofill
