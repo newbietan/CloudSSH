@@ -130,7 +130,8 @@ flowchart TB
 | **SSH 协议栈** | `src/ssh/*.ts` | 纯 TypeScript SSH-2.0 实现（传输层、加密、认证、通道） |
 | **SFTP 处理器** | `src/worker/sftp-handler.ts` | SFTP 协议操作、任务队列、并发下载、上传跟踪与取消支持 |
 | **SFTP 协议实现** | `src/ssh/sftp.ts` / `sftp-types.ts` | SFTP v3 协议客户端、包解析与类型定义 |
-| **前端终端** | `frontend/src/terminal.ts` | xterm.js 封装、trzsz 集成、WebSocket 管理 |
+| **前端终端** | `frontend/src/terminal.ts` | xterm.js 封装、实时双段延迟心跳、终端搜索及 WebSocket 交互 |
+| **标签管理器** | `frontend/src/tab-manager.ts` | 单页面多会话标签页管理器，协调不同标签页内的终端与 SFTP 实例 |
 | **SFTP 面板** | `frontend/src/sftp-panel.ts` | 图形化文件管理器 UI，支持上传/下载队列和取消操作 |
 
 ### SSH 协议实现
