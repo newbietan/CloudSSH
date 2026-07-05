@@ -597,12 +597,14 @@ export class SSHTerminal {
 
   private startHeartbeat(): void {
     this.stopHeartbeat();
-    this.heartbeatInterval = setInterval(() => {
+    const sendPing = () => {
       if (this.ws?.readyState === WebSocket.OPEN) {
         this.lastPingTime = performance.now();
         this.ws.send(JSON.stringify({ type: 'ping' }));
       }
-    }, 30000);
+    };
+    sendPing();
+    this.heartbeatInterval = setInterval(sendPing, 30000);
   }
 
   private getTerminalSize(): { cols: number; rows: number } {
