@@ -62,6 +62,9 @@ export class TabManager {
       if (tab) {
         tab.state = 'disconnected';
         this.renderTabBar();
+        if (this.activeTabId === id) {
+          this.updateStatusBar(tab);
+        }
 
         // 清理该标签的 SFTP 面板
         if (tab.sftpPanel) {
@@ -77,6 +80,9 @@ export class TabManager {
       if (tab) {
         tab.state = 'connected';
         this.renderTabBar();
+        if (this.activeTabId === id) {
+          this.updateStatusBar(tab);
+        }
 
         // 初始化 SFTP 面板
         if (!tab.sftpPanel) {
