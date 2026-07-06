@@ -49,6 +49,11 @@ export class AgentCore {
   }
 
   async handleAgentStart(userId: string, userMessage: string): Promise<void> {
+    // Guard: abort previous run if still active
+    if (this.state.status === 'running' || this.state.status === 'waiting_confirmation') {
+      this.abortController.abort('new_request');
+    }
+
     this.state = { status: 'running', messages: [], iteration: 0 };
     this.abortController = new AbortController();
 

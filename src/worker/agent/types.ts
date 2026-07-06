@@ -7,7 +7,6 @@ export interface ChatMessage {
   content: string | null;
   tool_calls?: ToolCall[];
   tool_call_id?: string;
-  name?: string;
 }
 
 export interface ToolDefinition {
@@ -34,15 +33,6 @@ export interface ToolCall {
     name: string;
     arguments: string;
   };
-}
-
-export interface ChatCompletionRequest {
-  model: string;
-  messages: ChatMessage[];
-  tools?: ToolDefinition[];
-  tool_choice?: 'auto' | 'none';
-  max_tokens?: number;
-  temperature?: number;
 }
 
 export interface ChatCompletionResponse {
@@ -73,7 +63,7 @@ export interface AgentConfig {
   timeout: number;
 }
 
-export type AgentStatus = 'idle' | 'running' | 'waiting_confirmation' | 'error';
+export type AgentStatus = 'idle' | 'running' | 'waiting_confirmation';
 
 export interface AgentState {
   status: AgentStatus;
