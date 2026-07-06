@@ -6,7 +6,6 @@ import type {
   AIConfig,
   ChatCompletionResponse,
   ChatMessage,
-  ToolCall,
 } from './types';
 import { AGENT_TOOLS_PHASE1 } from './tools';
 import { getSystemPrompt } from './prompt';
@@ -170,8 +169,6 @@ export class AgentCore {
             tool_calls: choice.message.tool_calls,
           });
 
-          let shouldReturn = false;
-
           for (const toolCall of choice.message.tool_calls) {
             if (signal.aborted) break;
 
@@ -291,12 +288,13 @@ export class AgentCore {
   }
 
   private trimMessages(): void {
-    // Keep system message + last N messages, drop older ones to prevent context overflow
+    // Keep: system message + first user message (env/terminal context) + last N messages
     const maxMessages = 40;
     if (this.state.messages.length > maxMessages) {
       const system = this.state.messages[0];
-      const kept = this.state.messages.slice(-(maxMessages - 1));
-      this.state.messages = [system, ...kept];
+      const firstUser = this.state.messages[1]; // contains [ENVIRONMENT] and [TERMINAL]
+      const kept = this.state.messages.slice(-(maxMessages - 2));
+      this.state.messages = [system, firstUser, ...kept];
     }
   }
 }
