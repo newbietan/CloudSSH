@@ -45,6 +45,8 @@ export class AgentPanel {
   private isAgentRunning: boolean = false;
   private wsSend: ((data: string) => void) | null = null;
   private onLayoutChange?: () => void;
+  private streamingEl: HTMLElement | null = null;
+  private streamingText: string = '';
 
   constructor(
     private parentEl: HTMLElement,
@@ -143,6 +145,14 @@ export class AgentPanel {
       case 'executing':
         this.showExecuting(msg.tool, msg.args);
         break;
+      case 'stream_chunk':
+        this.handleStreamChunk(msg.content);
+        break;
+      case 'stream_end':
+        this.handleStreamEnd(msg.content);
+        this.isAgentRunning = false;
+        this.updateInputState();
+        break;
       case 'response':
         this.addAgentResponse(msg.content);
         this.isAgentRunning = false;
@@ -163,6 +173,10 @@ export class AgentPanel {
     const text = this.inputEl?.value.trim();
     if (!text) return;
     if (this.isAgentRunning) return;
+
+    // Reset streaming state
+    this.streamingEl = null;
+    this.streamingText = '';
 
     this.addUserMessage(text);
     this.inputEl!.value = '';
@@ -223,6 +237,53 @@ export class AgentPanel {
   private addAgentResponse(content: string): void {
     this.removeThinkingIndicator();
     this.appendMessage('response', content);
+  }
+
+  private handleStreamChunk(content: string): void {
+    this.removeThinkingIndicator();
+
+    // First chunk: create the streaming message element
+    if (!this.streamingEl) {
+      this.streamingText = '';
+      const el = document.createElement('div');
+      el.className = 'agent-message agent-response';
+
+      const themeColor = 'var(--agent-agent-color)';
+      const roleIcon = `<span class="material-symbols-outlined text-[14px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">smart_toy</span>`;
+
+      el.innerHTML = `
+        <div class="flex gap-2 items-start">
+          <div class="shrink-0 mt-0.5">${roleIcon}</div>
+          <div class="flex-1 min-w-0 text-[13px] agent-md-content"></div>
+        </div>
+      `;
+
+      this.streamingEl = el;
+      this.messagesEl?.appendChild(el);
+    }
+
+    // Append plain text as it arrives
+    this.streamingText += content;
+    const contentEl = this.streamingEl.querySelector('.agent-md-content');
+    if (contentEl) {
+      contentEl.textContent = this.streamingText;
+    }
+    this.scrollToBottom();
+  }
+
+  private handleStreamEnd(content: string): void {
+    if (this.streamingEl) {
+      // Replace plain text with rendered Markdown
+      const contentEl = this.streamingEl.querySelector('.agent-md-content');
+      if (contentEl) {
+        contentEl.innerHTML = this.renderMarkdown(content || this.streamingText);
+      }
+      this.streamingEl = null;
+      this.streamingText = '';
+    } else {
+      // Fallback: no streaming element (e.g., empty response)
+      this.addAgentResponse(content);
+    }
   }
 
   private showError(message: string): void {

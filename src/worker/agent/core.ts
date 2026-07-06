@@ -266,7 +266,6 @@ export class AgentCore {
     const maxRetries = 2;
     const retryableStatuses = [429, 500, 502, 503, 504];
 
-    // Trim messages if context gets too large
     this.trimMessages();
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -284,25 +283,121 @@ export class AgentCore {
           tools: AGENT_TOOLS_PHASE1,
           tool_choice: 'auto',
           max_tokens: 4096,
+          stream: true,
         }),
         signal,
       });
 
       if (res.ok) {
-        return res.json() as Promise<ChatCompletionResponse>;
+        return this.handleStreamingResponse(res, signal);
       }
 
-      // Don't retry on non-retryable errors or last attempt
       if (!retryableStatuses.includes(res.status) || attempt === maxRetries) {
         const err = await res.text().catch(() => 'Unknown error');
         throw new Error(`LLM API error ${res.status}: ${err.slice(0, 500)}`);
       }
 
-      // Wait before retry (exponential backoff: 1s, 2s)
       await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
     }
 
     throw new Error('LLM API: max retries exceeded');
+  }
+
+  private async handleStreamingResponse(
+    res: Response,
+    signal: AbortSignal,
+  ): Promise<ChatCompletionResponse> {
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error('No response body');
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let contentText = '';
+    const toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map();
+    let hasToolCalls = false;
+
+    try {
+      while (true) {
+        if (signal.aborted) break;
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data:')) continue;
+          const data = trimmed.slice(5).trim();
+          if (data === '[DONE]') break;
+
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta;
+            if (!delta) continue;
+
+            if (delta.content) {
+              contentText += delta.content;
+              // Only stream text to frontend if no tool calls so far
+              if (!hasToolCalls) {
+                this.sendToFrontend({
+                  type: 'agent_frame',
+                  subType: 'stream_chunk',
+                  content: delta.content,
+                });
+              }
+            }
+
+            if (delta.tool_calls) {
+              hasToolCalls = true;
+              for (const tc of delta.tool_calls) {
+                const idx = tc.index ?? 0;
+                if (!toolCalls.has(idx)) {
+                  toolCalls.set(idx, { id: tc.id || '', name: '', arguments: '' });
+                }
+                const existing = toolCalls.get(idx)!;
+                if (tc.id) existing.id = tc.id;
+                if (tc.function?.name) existing.name = tc.function.name;
+                if (tc.function?.arguments) existing.arguments += tc.function.arguments;
+              }
+            }
+          } catch { /* skip malformed SSE lines */ }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    // If no tool calls, finalize streaming
+    if (!hasToolCalls) {
+      this.sendToFrontend({
+        type: 'agent_frame',
+        subType: 'stream_end',
+        content: contentText,
+      });
+    }
+
+    // Build response object for caller
+    const assembledToolCalls = Array.from(toolCalls.values())
+      .filter(tc => tc.name)
+      .map(tc => ({
+        id: tc.id,
+        type: 'function' as const,
+        function: { name: tc.name, arguments: tc.arguments },
+      }));
+
+    return {
+      id: '',
+      choices: [{
+        message: {
+          role: 'assistant' as const,
+          content: contentText || null,
+          tool_calls: assembledToolCalls.length > 0 ? assembledToolCalls : undefined,
+        },
+        finish_reason: assembledToolCalls.length > 0 ? 'tool_calls' : 'stop',
+      }],
+    };
   }
 
   private trimMessages(): void {
