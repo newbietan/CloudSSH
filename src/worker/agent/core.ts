@@ -14,7 +14,6 @@ import { TerminalContext } from './terminal-context';
 
 const DEFAULT_CONFIG: AgentConfig = {
   maxIterations: 20,
-  maxContextTokens: 8000,
   timeout: 120_000,
 };
 
@@ -259,32 +258,46 @@ export class AgentCore {
 
   private async callLLM(signal: AbortSignal): Promise<ChatCompletionResponse> {
     const config = this.agentConfig!;
+    const maxRetries = 2;
+    const retryableStatuses = [429, 500, 502, 503, 504];
 
     // Trim messages if context gets too large
     this.trimMessages();
 
-    const res = await fetch(`${config.base_url}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.api_key}`,
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages: this.state.messages,
-        tools: AGENT_TOOLS_PHASE1,
-        tool_choice: 'auto',
-        max_tokens: 4096,
-      }),
-      signal,
-    });
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (signal.aborted) throw new Error('Aborted');
 
-    if (!res.ok) {
-      const err = await res.text().catch(() => 'Unknown error');
-      throw new Error(`LLM API error ${res.status}: ${err.slice(0, 500)}`);
+      const res = await fetch(`${config.base_url}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.api_key}`,
+        },
+        body: JSON.stringify({
+          model: config.model,
+          messages: this.state.messages,
+          tools: AGENT_TOOLS_PHASE1,
+          tool_choice: 'auto',
+          max_tokens: 4096,
+        }),
+        signal,
+      });
+
+      if (res.ok) {
+        return res.json() as Promise<ChatCompletionResponse>;
+      }
+
+      // Don't retry on non-retryable errors or last attempt
+      if (!retryableStatuses.includes(res.status) || attempt === maxRetries) {
+        const err = await res.text().catch(() => 'Unknown error');
+        throw new Error(`LLM API error ${res.status}: ${err.slice(0, 500)}`);
+      }
+
+      // Wait before retry (exponential backoff: 1s, 2s)
+      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
     }
 
-    return res.json() as Promise<ChatCompletionResponse>;
+    throw new Error('LLM API: max retries exceeded');
   }
 
   private trimMessages(): void {

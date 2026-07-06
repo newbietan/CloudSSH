@@ -70,7 +70,6 @@ export interface ExecResult {
 
 export interface AgentConfig {
   maxIterations: number;
-  maxContextTokens: number;
   timeout: number;
 }
 
