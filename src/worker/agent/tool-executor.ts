@@ -1,7 +1,7 @@
 // Tool call execution engine — dispatches tool calls to their implementations
 
 import { TerminalContext } from './terminal-context';
-import { needsConfirmation } from './safety';
+import { needsConfirmation, isBlockedCommand } from './safety';
 import type { ExecResult } from './types';
 
 export type ExecCommandFn = (command: string, timeout: number, signal?: AbortSignal) => Promise<ExecResult>;
@@ -19,6 +19,12 @@ export class ToolExecutor {
         return this.handleExec(args.command, args.timeout_ms ?? 10000, signal);
       case 'read_terminal_context':
         return this.terminalContext.snapshot(args.last_lines ?? 200);
+      case 'list_processes':
+        return this.handleListProcesses(signal);
+      case 'service_manage':
+        return this.handleServiceManage(args.action, args.service, signal);
+      case 'docker_manage':
+        return this.handleDockerManage(args.action, args.target, args.options, signal);
       case 'detect_environment':
         return this.handleDetectEnvironment(signal);
       case 'ask_user_confirmation':
@@ -31,6 +37,17 @@ export class ToolExecutor {
   }
 
   private async handleExec(command: string, timeout: number, signal?: AbortSignal): Promise<string> {
+    // Check if this command is blocked (never execute)
+    const blocked = isBlockedCommand(command);
+    if (blocked.blocked) {
+      return JSON.stringify({
+        stdout: '',
+        stderr: `命令被安全策略拦截：${blocked.reason}`,
+        exit_code: -1,
+        blocked: true,
+      });
+    }
+
     // Check if this command needs user confirmation
     const confirm = needsConfirmation(command);
     if (confirm.required) {
@@ -64,6 +81,80 @@ export class ToolExecutor {
     }
   }
 
+  private async handleListProcesses(signal?: AbortSignal): Promise<string> {
+    try {
+      const result = await this.execCommand(
+        'ps aux --sort=-%mem | head -30',
+        10000,
+        signal,
+      );
+      return JSON.stringify({
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exit_code: result.exitCode,
+      });
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      return JSON.stringify({ stdout: '', stderr: errMsg, exit_code: -1 });
+    }
+  }
+
+  private async handleServiceManage(action: string, service: string, signal?: AbortSignal): Promise<string> {
+    const safeActions = ['status', 'start', 'restart', 'enable'];
+    if (!safeActions.includes(action)) {
+      const reason = action === 'stop'
+        ? `即将停止服务 ${service}，请确认`
+        : `即将禁用服务 ${service}，请确认`;
+      const approved = await this.askConfirmation(`systemctl ${action} ${service}`, reason);
+      if (!approved) {
+        return JSON.stringify({ stdout: '', stderr: '用户拒绝执行此操作', exit_code: -1, user_rejected: true });
+      }
+    }
+    return this.handleExec(`systemctl ${action} ${service}`, 15000, signal);
+  }
+
+  private async handleDockerManage(action: string, target?: string, options?: string, signal?: AbortSignal): Promise<string> {
+    const safeActions = ['ps', 'logs', 'inspect', 'images'];
+    const cmd = this.buildDockerCommand(action, target, options);
+
+    if (!safeActions.includes(action)) {
+      const reasons: Record<string, string> = {
+        stop: `即将停止容器 ${target}，请确认`,
+        rm: `即将删除容器 ${target}，此操作不可逆，请确认`,
+        rmi: `即将删除镜像 ${target}，此操作不可逆，请确认`,
+        restart: `即将重启容器 ${target}，请确认`,
+      };
+      const approved = await this.askConfirmation(cmd, reasons[action] || `即将执行: ${cmd}`);
+      if (!approved) {
+        return JSON.stringify({ stdout: '', stderr: '用户拒绝执行此操作', exit_code: -1, user_rejected: true });
+      }
+    }
+
+    return this.handleExec(cmd, action === 'logs' ? 15000 : 10000, signal);
+  }
+
+  private buildDockerCommand(action: string, target?: string, options?: string): string {
+    const opts = options ? ` ${options.trim()}` : '';
+    switch (action) {
+      case 'ps': return `docker ps${opts || ' -a'}`;
+      case 'logs': return `docker logs${opts} ${target || ''}`.trim();
+      case 'inspect': return `docker inspect ${target || ''}`.trim();
+      case 'images': return `docker images${opts}`;
+      case 'stop': return `docker stop ${target}`;
+      case 'rm': return `docker rm ${target}`;
+      case 'rmi': return `docker rmi ${target}`;
+      case 'restart': return `docker restart ${target}`;
+      default: return `docker ${action}`;
+    }
+  }
+
+  private async handleConfirmation(command: string, reason: string): Promise<string> {
+    const approved = await this.askConfirmation(command, reason);
+    return approved
+      ? 'User approved'
+      : 'User rejected the command. Do not retry without user approval.';
+  }
+
   private async handleDetectEnvironment(signal?: AbortSignal): Promise<string> {
     const cmd = [
       'echo "PWD:$(pwd)"',
@@ -92,12 +183,5 @@ export class ToolExecutor {
       const errMsg = e instanceof Error ? e.message : String(e);
       return JSON.stringify({ environment: '', stderr: errMsg, exit_code: -1 });
     }
-  }
-
-  private async handleConfirmation(command: string, reason: string): Promise<string> {
-    const approved = await this.askConfirmation(command, reason);
-    return approved
-      ? 'User approved'
-      : 'User rejected the command. Do not retry without user approval.';
   }
 }

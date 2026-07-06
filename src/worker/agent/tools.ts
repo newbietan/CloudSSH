@@ -64,6 +64,65 @@ export const AGENT_TOOLS_PHASE1: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'list_processes',
+      description: '列出当前服务器进程列表（按内存排序，前 30 条）。返回 PID、用户、CPU%、内存%、命令。用于快速了解系统运行状况。',
+      parameters: {
+        type: 'object',
+        properties: {},
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'service_manage',
+      description: '管理 systemd 服务。可执行 status、start、stop、restart、enable、disable 操作。stop/disable 需用户确认。',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            description: '操作类型',
+            enum: ['status', 'start', 'stop', 'restart', 'enable', 'disable'],
+          },
+          service: {
+            type: 'string',
+            description: '服务名称，例如 "nginx"、"docker"、"mysql"',
+          },
+        },
+        required: ['action', 'service'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'docker_manage',
+      description: '管理 Docker 容器和镜像。支持 ps（列出容器）、logs（查看日志）、inspect（详情）、images（列出镜像）、stop（停止容器）、rm（删除容器）、rmi（删除镜像）、restart（重启容器）。stop/rm/rmi 需用户确认。',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            description: '操作类型',
+            enum: ['ps', 'logs', 'inspect', 'images', 'stop', 'rm', 'rmi', 'restart'],
+          },
+          target: {
+            type: 'string',
+            description: '容器名/ID 或镜像名/ID（stop/rm/rmi/inspect/logs/restart 必填）',
+          },
+          options: {
+            type: 'string',
+            description: '额外参数，例如 logs 的 "-n 50"、ps 的 "-a"',
+          },
+        },
+        required: ['action'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'detect_environment',
       description: '探测当前服务器环境信息：工作目录、用户、Shell、PATH、关键环境变量（JAVA_HOME/NODE_ENV 等）、alias、主机名、内核版本。Agent 启动时已自动探测一次，如需刷新可再次调用。',
       parameters: {
