@@ -1013,6 +1013,7 @@ export class SSHSession {
           // Exec channel: send exec request
           const execCh = this.activeExecChannels.get(channelID);
           if (execCh) {
+            execCh.onOpenConfirmation();
             this.sendDebug(`Exec channel confirmed: channelID=${channelID}`);
           }
         }
@@ -1730,11 +1731,18 @@ export class SSHSession {
     const openMsg = channel.buildOpenSession(channelID);
     await this.sendEncrypted(openMsg);
 
-    // Wait for channel open confirmation — exec request is sent after confirmation
-    // The server may take some time to confirm; we poll/wait
-    await this.waitForChannelOpen(channelID, 5000);
+    // Wait for channel open confirmation (via execCh state flags, not this.channels map)
+    const opened = await this.waitForExecChannelOpen(execCh, channel, command);
 
-    // Send exec request
+    if (!opened) {
+      // Open rejected — closedPromise already resolved with error struct; await it
+      const result = await execCh.getClosedPromise();
+      this.activeExecChannels.delete(channelID);
+      this.channels.delete(channelID);
+      return result;
+    }
+
+    // Open succeeded — send exec request
     const execReq = channel.buildExecRequest(command);
     await this.sendEncrypted(execReq);
 
@@ -1757,25 +1765,33 @@ export class SSHSession {
     return result;
   }
 
-  private waitForChannelOpen(channelID: number, timeout: number): Promise<void> {
+  private waitForExecChannelOpen(execCh: AgentExecChannel, channel: SSHChannel, command: string): Promise<boolean> {
     return new Promise((resolve, reject) => {
       const start = Date.now();
+      const timeout = 5000;
+
       const check = () => {
-        const channel = this.channels.get(channelID);
-        if (!channel) {
-          reject(new Error('Channel removed before open'));
+        // Open rejected by server — return false, caller will await closedPromise
+        if (execCh.isOpenFailed()) {
+          resolve(false);
           return;
         }
-        if (channel.getRemoteChannelID() !== 0) {
-          resolve();
+
+        // Open succeeded — return true, caller will send exec request
+        if (execCh.isOpenConfirmed() || channel.getRemoteChannelID() !== 0) {
+          resolve(true);
           return;
         }
+
+        // Timeout — reject with error
         if (Date.now() - start > timeout) {
-          reject(new Error('Channel open timeout'));
+          reject(new Error(`Exec channel open timeout (5s) for command: ${command}`));
           return;
         }
+
         setTimeout(check, 50);
       };
+
       check();
     });
   }

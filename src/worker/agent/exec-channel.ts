@@ -12,6 +12,8 @@ export class AgentExecChannel {
   private closed: boolean = false;
   private closedResolve!: (result: ExecResult) => void;
   private closedPromise: Promise<ExecResult>;
+  private openConfirmed: boolean = false;
+  private openFailed: boolean = false;
 
   constructor(channelID: number, channel: SSHChannel) {
     this.channelID = channelID;
@@ -33,6 +35,14 @@ export class AgentExecChannel {
     return this.closedPromise;
   }
 
+  isOpenConfirmed(): boolean {
+    return this.openConfirmed;
+  }
+
+  isOpenFailed(): boolean {
+    return this.openFailed;
+  }
+
   onData(data: Uint8Array): void {
     this.stdout.push(new Uint8Array(data));
   }
@@ -43,6 +53,22 @@ export class AgentExecChannel {
 
   onExitStatus(exitCode: number): void {
     this.exitCode = exitCode;
+  }
+
+  onOpenConfirmation(): void {
+    this.openConfirmed = true;
+  }
+
+  onChannelOpenFailure(reasonCode: number, description: string): void {
+    if (!this.closed) {
+      this.openFailed = true;
+      this.closed = true;
+      this.closedResolve({
+        stdout: '',
+        stderr: `Channel open failed (reason=${reasonCode}): ${description}`,
+        exitCode: -1,
+      });
+    }
   }
 
   onClose(): void {
@@ -59,17 +85,6 @@ export class AgentExecChannel {
 
   onEof(): void {
     // EOF received but channel not closed yet — wait for close
-  }
-
-  onChannelOpenFailure(reasonCode: number, description: string): void {
-    if (!this.closed) {
-      this.closed = true;
-      this.closedResolve({
-        stdout: '',
-        stderr: `Channel open failed (reason=${reasonCode}): ${description}`,
-        exitCode: -1,
-      });
-    }
   }
 
   private concat(chunks: Uint8Array[]): Uint8Array {
