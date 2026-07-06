@@ -33,10 +33,10 @@ src/
 │   ├── auth.ts       # GitHub OAuth handling
 │   ├── agent/        # AI Agent system
 │   │   ├── core.ts       # Agent control loop (LLM calls, tool execution)
-│   │   ├── tools.ts      # Tool definitions (execute_command, read_terminal_context, etc.)
-│   │   ├── tool-executor.ts  # Tool dispatch and execution
+│   │   ├── tools.ts      # 8 tool definitions (execute_command, detect_environment, list_processes, service_manage, docker_manage, etc.)
+│   │   ├── tool-executor.ts  # Tool dispatch, execution, and blocked command rejection
 │   │   ├── prompt.ts     # System prompt for the agent
-│   │   ├── safety.ts     # Dangerous command detection
+│   │   ├── safety.ts     # Two-layer security: blocked patterns + confirmation patterns
 │   │   ├── ssrf.ts       # SSRF protection for AI base_url
 │   │   ├── terminal-context.ts  # Terminal output ring buffer
 │   │   ├── exec-channel.ts  # SSH exec channel lifecycle
@@ -67,7 +67,7 @@ frontend/
 │   ├── auth-form.ts  # Auth form & encrypted anonymous credentials storage/autofill
 │   ├── server-list.ts # Server management UI (card grid, add/edit/delete/connect)
 │   ├── agent/
-│   │   └── agent-panel.ts  # AI assistant sidebar (Markdown rendering, confirm dialogs)
+│   │   └── agent-panel.ts  # AI assistant sidebar (streaming output, Markdown rendering, confirm dialogs)
 │   ├── ai-config.ts  # AI model configuration modal
 │   ├── style.css     # Global styles (CSS variable theme system)
 │   └── turnstile.d.ts # Turnstile type declarations
@@ -206,7 +206,7 @@ ci: CI/CD 变更
 4. **Local dev proxy** - Frontend dev server proxies `/api` to `localhost:8787` (wrangler)
 5. **TypeScript config** - Root `tsconfig.json` excludes `frontend/` (has its own config)
 6. **AI Agent runs in DO** - The agent control loop (`agent/core.ts`) executes inside the Durable Object, not the Worker itself, to access the SSH session directly
-7. **Agent tool confirmations** - Dangerous commands (rm -rf, shutdown, etc.) require user confirmation via `agent_confirm` WebSocket message before execution
+7. **Agent tool confirmations** - Dangerous commands (rm -rf, shutdown, etc.) require user confirmation via `agent_confirm` WebSocket message before execution. Blocked commands (rm -rf /, fork bomb, etc.) are rejected outright without prompting.
 
 ## Deployment Notes
 

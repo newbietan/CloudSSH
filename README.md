@@ -88,7 +88,7 @@
 - **双段延迟与 Colo 展示**：状态栏即时且周期性地展示当前 RTT（客户端至 Cloudflare）、物理延迟（Cloudflare 至主机）以及 Cloudflare 当前服务的数据中心代码（如 `CF-LAX`）。
 - **终端文本检索**：支持使用快捷键 `Ctrl+Shift+F` 呼出搜索框，实时检索终端历史日志。
 - **终端日志一键导出**：支持通过顶栏的下载按钮，将当前活跃会话终端的完整屏幕历史 buffer 一键导出并下载为 `.txt` 文本文件，解决长日志在浏览器下鼠标选取容易卡顿的痛点。
-- **AI 智能助手**：内置 AI Agent 侧边栏，支持 BYOK（自带 API Key）接入 OpenAI 兼容接口（如 DeepSeek）。Agent 通过 SSH exec 通道执行命令、读取终端上下文，可进行智能运维诊断、日志分析等操作。危险命令需用户确认后方可执行。
+- **AI 智能助手**：内置 AI Agent 侧边栏，支持 BYOK（自带 API Key）接入 OpenAI 兼容接口（如 DeepSeek）。提供 8 个专业运维工具：执行命令、读取终端上下文、探测服务器环境、进程列表、systemctl 服务管理、Docker 容器管理、用户确认、结构化报告输出。支持 LLM 流式输出（逐字显示），危险命令自动拦截或弹窗确认。
 - **可视化主题编辑器**：配套独立的[可视化主题编辑器](https://newbietan.github.io/CloudSSH/)，支持实时调色、导出 JSON 主题文件，登录用户可一键同步至云端，跨浏览器生效。
 
 <a id="architecture"></a>
@@ -141,10 +141,10 @@ flowchart TB
 | **前端终端** | `frontend/src/terminal.ts` | xterm.js 封装、实时双段延迟心跳、终端搜索及 WebSocket 交互 |
 | **标签管理器** | `frontend/src/tab-manager.ts` | 单页面多会话标签页管理器，协调不同标签页内的终端与 SFTP 实例 |
 | **SFTP 面板** | `frontend/src/sftp-panel.ts` | 图形化文件管理器 UI，支持上传/下载队列和取消操作 |
-| **AI Agent** | `src/worker/agent/core.ts` | AI 控制循环：LLM 调用、工具执行、终端上下文读取、危险命令确认 |
-| **Agent 工具** | `src/worker/agent/tools.ts` | Agent 可调用工具定义（执行命令、读取终端、确认操作、响应用户） |
-| **Agent 安全** | `src/worker/agent/safety.ts` | 危险命令检测与拦截（rm -rf /、mkfs、shutdown 等） |
-| **Agent 面板** | `frontend/src/agent/agent-panel.ts` | AI 助手侧边栏 UI，支持 Markdown 渲染、思考/执行状态展示、确认对话框 |
+| **AI Agent** | `src/worker/agent/core.ts` | AI 控制循环：LLM 流式调用、工具执行、环境探测、终端上下文读取 |
+| **Agent 工具** | `src/worker/agent/tools.ts` | 8 个运维工具定义（执行命令、终端上下文、环境探测、进程列表、服务管理、Docker 管理、用户确认、报告输出） |
+| **Agent 安全** | `src/worker/agent/safety.ts` | 两层安全策略：直接拦截（rm -rf /、fork bomb 等）+ 弹窗确认（rm、shutdown、iptables 等） |
+| **Agent 面板** | `frontend/src/agent/agent-panel.ts` | AI 助手侧边栏 UI，支持流式输出、Markdown 渲染、思考/执行状态展示、确认对话框 |
 | **AI 配置** | `frontend/src/ai-config.ts` | AI 模型配置弹窗，支持 Base URL / API Key / 模型选择 |
 
 ### SSH 协议实现

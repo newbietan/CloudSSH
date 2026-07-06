@@ -88,7 +88,7 @@
 - **Dual-Segment Latency & Colo Display**: Instantly and periodically monitor WebSocket RTT (client to CF), physical latency (CF to SSH host), and the current Cloudflare datacenter code (e.g. `CF-LAX`) on the status bar.
 - **In-Terminal Text Search**: Real-time log search support via `Ctrl+Shift+F`.
 - **Terminal Log Export**: Download the entire screen buffer of the active terminal session as a `.txt` file with a single click on the header download button, avoiding browser freezes when selecting long logs.
-- **AI Agent Assistant**: Built-in AI Agent sidebar with BYOK (Bring Your Own Key) support for OpenAI-compatible APIs (e.g., DeepSeek). The Agent executes commands via SSH exec channels, reads terminal context, and assists with intelligent operations like log analysis and diagnostics. Dangerous commands require user confirmation before execution.
+- **AI Agent Assistant**: Built-in AI Agent sidebar with BYOK (Bring Your Own Key) support for OpenAI-compatible APIs (e.g., DeepSeek). Provides 8 specialized operations tools: execute commands, read terminal context, detect server environment, list processes, manage systemctl services, manage Docker containers, user confirmation, and structured report output. Supports LLM streaming output (character-by-character display). Dangerous commands are automatically blocked or require user confirmation.
 - **Visual Theme Editor**: Companion [Visual Theme Editor](https://newbietan.github.io/CloudSSH/) for live color customization and JSON theme export. Logged-in users can sync themes to the cloud, working across browsers.
 
 <a id="architecture"></a>
@@ -141,10 +141,10 @@ flowchart TB
 | **Frontend Terminal** | `frontend/src/terminal.ts` | xterm.js wrapper, dynamic RTT heartbeats, terminal search, and WebSocket management |
 | **Tab Manager** | `frontend/src/tab-manager.ts` | Single-page tab and session coordinator for independent terminals and SFTP panels |
 | **SFTP Panel** | `frontend/src/sftp-panel.ts` | Graphical file manager UI with upload/download queue and cancellation support |
-| **AI Agent** | `src/worker/agent/core.ts` | AI control loop: LLM calls, tool execution, terminal context reading, dangerous command confirmation |
-| **Agent Tools** | `src/worker/agent/tools.ts` | Agent-callable tool definitions (execute command, read terminal, confirm action, respond to user) |
-| **Agent Safety** | `src/worker/agent/safety.ts` | Dangerous command detection and blocking (rm -rf /, mkfs, shutdown, etc.) |
-| **Agent Panel** | `frontend/src/agent/agent-panel.ts` | AI assistant sidebar UI with Markdown rendering, thinking/executing status, and confirmation dialogs |
+| **AI Agent** | `src/worker/agent/core.ts` | AI control loop: LLM streaming calls, tool execution, environment detection, terminal context reading |
+| **Agent Tools** | `src/worker/agent/tools.ts` | 8 operations tools (execute command, terminal context, environment detection, process list, service management, Docker management, user confirmation, report output) |
+| **Agent Safety** | `src/worker/agent/safety.ts` | Two-layer security: direct blocking (rm -rf /, fork bomb, etc.) + confirmation prompts (rm, shutdown, iptables, etc.) |
+| **Agent Panel** | `frontend/src/agent/agent-panel.ts` | AI assistant sidebar UI with streaming output, Markdown rendering, thinking/executing status, and confirmation dialogs |
 | **AI Config** | `frontend/src/ai-config.ts` | AI model configuration modal for Base URL / API Key / model selection |
 
 ### SSH Protocol Implementation
@@ -234,7 +234,7 @@ This project implements a complete SSH-2.0 protocol stack:
 | Production | `pnpm run deploy` | `cloudssh.<subdomain>.workers.dev` | main branch code |
 | Test | `pnpm run deploy:test` | `cloudssh-test.<subdomain>.workers.dev` | test branch code, DO data isolated from production |
 
-> **Note**: Both environments bind to Durable Objects with the same `class_name`, sharing data completely. After deployment, you can bind different custom domains for each environment in the Cloudflare Dashboard (Settings → Domains & Routes).
+> **Note**: Both environments bind to Durable Objects with the same `class_name`, but data is completely isolated due to different Worker names. After deployment, you can bind different custom domains for each environment in the Cloudflare Dashboard (Settings → Domains & Routes).
 
 #### Optional: Configure Turnstile Human Verification
 
