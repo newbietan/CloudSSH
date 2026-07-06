@@ -66,16 +66,27 @@ export class AgentCore {
       return;
     }
 
-    // 2. Read terminal context as initial observation
+    // 2. Read terminal context + detect environment as initial observation
     const terminalSnapshot = this.terminalContext.snapshot(200);
+    const envSnapshot = await this.toolExecutor.execute('detect_environment', {}, this.abortController.signal).catch(() => '');
+
+    let userContent = '';
+    if (envSnapshot) {
+      try {
+        const parsed = JSON.parse(envSnapshot);
+        if (parsed.environment) {
+          userContent += `[ENVIRONMENT]\n${parsed.environment}\n[/ENVIRONMENT]\n\n`;
+        }
+      } catch { /* ignore parse error */ }
+    }
+    if (terminalSnapshot) {
+      userContent += `[TERMINAL]\n${terminalSnapshot}\n[/TERMINAL]\n\n`;
+    }
+    userContent += `用户请求: ${userMessage}`;
+
     this.state.messages = [
-      { role: 'system', content: getSystemPrompt(1) },
-      {
-        role: 'user',
-        content: terminalSnapshot
-          ? `[TERMINAL]\n${terminalSnapshot}\n[/TERMINAL]\n\n用户请求: ${userMessage}`
-          : `用户请求: ${userMessage}`,
-      },
+      { role: 'system', content: getSystemPrompt() },
+      { role: 'user', content: userContent },
     ];
 
     // 3. Run agent loop

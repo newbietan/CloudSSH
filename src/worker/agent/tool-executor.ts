@@ -19,14 +19,12 @@ export class ToolExecutor {
         return this.handleExec(args.command, args.timeout_ms ?? 10000, signal);
       case 'read_terminal_context':
         return this.terminalContext.snapshot(args.last_lines ?? 200);
+      case 'detect_environment':
+        return this.handleDetectEnvironment(signal);
       case 'ask_user_confirmation':
         return this.handleConfirmation(args.command, args.reason);
       case 'respond_to_user':
         return `RESPOND:${args.message}`;
-      case 'sftp_list':
-        return 'SFTP 功能暂未启用（Phase 3 将支持）';
-      case 'sftp_read':
-        return 'SFTP 功能暂未启用（Phase 3 将支持）';
       default:
         return `Unknown tool: ${toolName}`;
     }
@@ -63,6 +61,36 @@ export class ToolExecutor {
         stderr: errMsg,
         exit_code: -1,
       });
+    }
+  }
+
+  private async handleDetectEnvironment(signal?: AbortSignal): Promise<string> {
+    const cmd = [
+      'echo "PWD:$(pwd)"',
+      'echo "USER:$(whoami)"',
+      'echo "HOME:$HOME"',
+      'echo "SHELL:$SHELL"',
+      'echo "LANG:${LANG:-not set}"',
+      'echo "PATH:$PATH"',
+      'echo "---ENV---"',
+      'env | grep -E "^(NODE_ENV|JAVA_HOME|PYTHONPATH|GOPATH|CARGO_HOME|RUSTUP_HOME|NVM_DIR|PYENV_VERSION|RBENV_VERSION|DJANGO_SETTINGS_MODULE|RAILS_ENV|DOTNET_ROOT|ANDROID_HOME|M2_HOME|GRADLE_HOME)=" | head -10',
+      'echo "---ALIASES---"',
+      'alias 2>/dev/null | head -15',
+      'echo "---HOSTNAME---"',
+      'hostname 2>/dev/null',
+      'echo "---KERNEL---"',
+      'uname -sr 2>/dev/null',
+    ].join(' && ');
+
+    try {
+      const result = await this.execCommand(cmd, 10000, signal);
+      return JSON.stringify({
+        environment: result.stdout.trim(),
+        exit_code: result.exitCode,
+      });
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      return JSON.stringify({ environment: '', stderr: errMsg, exit_code: -1 });
     }
   }
 

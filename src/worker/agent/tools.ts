@@ -64,6 +64,17 @@ export const AGENT_TOOLS_PHASE1: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'detect_environment',
+      description: '探测当前服务器环境信息：工作目录、用户、Shell、PATH、关键环境变量（JAVA_HOME/NODE_ENV 等）、alias、主机名、内核版本。Agent 启动时已自动探测一次，如需刷新可再次调用。',
+      parameters: {
+        type: 'object',
+        properties: {},
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'respond_to_user',
       description: '当任务完成或需要向用户报告结果时调用此工具。只有在你已经收集了足够信息并准备好最终回复时才调用。',
       parameters: {
@@ -80,39 +91,4 @@ export const AGENT_TOOLS_PHASE1: ToolDefinition[] = [
   },
 ];
 
-// Phase 3 will add sftp_list and sftp_read tools
-export const AGENT_TOOLS_PHASE3_EXTRA: ToolDefinition[] = [
-  {
-    type: 'function',
-    function: {
-      name: 'sftp_list',
-      description: '通过 SFTP 列出远程服务器目录内容。返回文件名、大小、时间、权限。',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: {
-            type: 'string',
-            description: '目录路径，默认为当前用户家目录',
-          },
-        },
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'sftp_read',
-      description: '通过 SFTP 读取远程服务器文件内容（适合读取配置文件、日志片段）。',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: {
-            type: 'string',
-            description: '要读取的文件绝对路径',
-          },
-        },
-        required: ['path'],
-      },
-    },
-  },
-];
+
