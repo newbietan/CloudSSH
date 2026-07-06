@@ -3,7 +3,7 @@
 export class AgentPanel {
   private panelEl: HTMLElement | null = null;
   private messagesEl: HTMLElement | null = null;
-  private inputEl: HTMLInputElement | null = null;
+  private inputEl: HTMLTextAreaElement | null = null;
   private sendBtn: HTMLElement | null = null;
   private isVisible: boolean = false;
   private isAgentRunning: boolean = false;
@@ -28,22 +28,25 @@ export class AgentPanel {
 
     this.panelEl = document.createElement('div');
     this.panelEl.id = 'agent-panel';
-    this.panelEl.className = 'w-80 border-l border-[var(--border)] flex flex-col bg-[var(--bg)] overflow-hidden';
+    this.panelEl.className = 'w-[420px] shrink-0 border-l border-[var(--border)] flex flex-col bg-[var(--bg)] overflow-hidden';
     this.panelEl.style.display = 'none';
 
     this.panelEl.innerHTML = `
-      <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] bg-[var(--bg-elevated)]">
+      <div class="flex items-center justify-between px-4 py-2.5 border-b border-[var(--border)] bg-[var(--bg-elevated)]">
         <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]">AI_AGENT</span>
         <button id="agent-close-btn" class="text-muted hover:text-primary transition-colors cursor-pointer">
           <span class="material-symbols-outlined" style="font-size:18px;">close</span>
         </button>
       </div>
-      <div id="agent-messages" class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar text-[13px]"></div>
-      <div class="p-3 border-t border-[var(--border)]">
-        <div class="flex gap-2">
-          <input id="agent-input" type="text" placeholder="描述你想做的事..."
-            class="terminal-input flex-1 text-[13px]" autocomplete="off">
-          <button id="agent-send-btn" class="cyber-button px-3 py-1 text-[11px] font-bold tracking-[0.1em] uppercase bg-[var(--accent)] text-[var(--on-accent)]" title="Send">
+      <div id="agent-messages" class="flex-1 overflow-y-auto px-4 py-3 space-y-3 custom-scrollbar text-[13px]"></div>
+      <div class="px-3 py-2.5 border-t border-[var(--border)] bg-[var(--bg-elevated)]">
+        <div class="flex gap-2 items-end">
+          <textarea id="agent-input" placeholder="描述你想做的事... (Enter 发送, Shift+Enter 换行)"
+            rows="1"
+            class="terminal-input flex-1 text-[13px] resize-none overflow-y-auto"
+            style="max-height: 140px; line-height: 1.5; padding: 6px 10px;"
+            autocomplete="off"></textarea>
+          <button id="agent-send-btn" class="cyber-button px-3 py-1.5 text-[11px] font-bold tracking-[0.1em] uppercase bg-[var(--accent)] text-[var(--on-accent)] shrink-0" title="Send (Enter)">
             <span class="material-symbols-outlined" style="font-size:16px;">send</span>
           </button>
         </div>
@@ -52,7 +55,7 @@ export class AgentPanel {
 
     this.parentEl.appendChild(this.panelEl);
     this.messagesEl = this.panelEl.querySelector('#agent-messages');
-    this.inputEl = this.panelEl.querySelector('#agent-input');
+    this.inputEl = this.panelEl.querySelector('#agent-input') as HTMLTextAreaElement;
     this.sendBtn = this.panelEl.querySelector('#agent-send-btn');
     this.bindEvents();
   }
@@ -67,6 +70,12 @@ export class AgentPanel {
         e.preventDefault();
         this.handleSend();
       }
+    });
+
+    this.inputEl?.addEventListener('input', () => {
+      const el = this.inputEl!;
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 140) + 'px';
     });
   }
 
@@ -121,6 +130,7 @@ export class AgentPanel {
 
     this.addUserMessage(text);
     this.inputEl!.value = '';
+    this.inputEl!.style.height = 'auto';
     this.isAgentRunning = true;
     this.updateInputState();
 
@@ -147,10 +157,15 @@ export class AgentPanel {
   private showThinking(iteration: number): void {
     this.removeThinkingIndicator();
     const el = document.createElement('div');
-    el.className = 'agent-thinking flex items-center gap-2 text-[var(--on-surface-variant)] opacity-70 text-[12px]';
+    el.className = 'agent-thinking flex items-center gap-2 opacity-80 text-[12px]';
     el.innerHTML = `
-      <span class="thinking-dot animate-pulse"></span>
-      <span>Thinking${iteration > 0 ? ` (${iteration})` : ''}...</span>
+      <span class="material-symbols-outlined text-[16px]" style="color:var(--agent-agent-color);font-variation-settings:'FILL' 1;">smart_toy</span>
+      <span style="color:var(--agent-agent-color);">Thinking${iteration > 0 ? ` (${iteration})` : ''}...</span>
+      <span class="inline-flex gap-0.5">
+        <span class="w-1 h-1 rounded-full bg-[var(--agent-agent-color)] animate-bounce" style="animation-delay:0ms;"></span>
+        <span class="w-1 h-1 rounded-full bg-[var(--agent-agent-color)] animate-bounce" style="animation-delay:150ms;"></span>
+        <span class="w-1 h-1 rounded-full bg-[var(--agent-agent-color)] animate-bounce" style="animation-delay:300ms;"></span>
+      </span>
     `;
     this.messagesEl?.appendChild(el);
     this.scrollToBottom();
@@ -209,43 +224,178 @@ export class AgentPanel {
     const el = document.createElement('div');
     el.className = `agent-message agent-${role}`;
 
-    const roleIcon = {
-      user: '<span class="material-symbols-outlined text-[14px] text-[var(--accent)]" style="font-variation-settings:\'FILL\'1;">person</span>',
-      response: '<span class="material-symbols-outlined text-[14px] text-[var(--accent-secondary)]" style="font-variation-settings:\'FILL\'1;">smart_toy</span>',
-      executing: '<span class="material-symbols-outlined text-[14px] text-[var(--on-surface-variant)]" style="font-variation-settings:\'FILL\'0;">terminal</span>',
-      error: '<span class="material-symbols-outlined text-[14px] text-[var(--error)]" style="font-variation-settings:\'FILL\'1;">error</span>',
-    }[role] || '';
+    const isUser = role === 'user';
+    const isAgent = role === 'response';
+    const isExecuting = role === 'executing';
+    const isError = role === 'error';
 
-    const renderedContent = role === 'response'
-      ? this.renderMarkdown(content)
-      : this.escapeHtml(content);
+    const themeColor = isUser ? 'var(--agent-user-color)'
+      : isAgent ? 'var(--agent-agent-color)'
+      : isError ? 'var(--error)'
+      : 'var(--on-surface-variant)';
 
-    el.innerHTML = `
-      <div class="flex gap-2 items-start">
-        <div class="shrink-0 mt-0.5">${roleIcon}</div>
-        <div class="flex-1 min-w-0 ${role === 'executing' ? 'font-code text-[11px] text-[var(--on-surface-variant)]' : ''} ${role === 'error' ? 'text-[var(--error)]' : ''}">${renderedContent}</div>
-      </div>
-    `;
+    const roleIcon = isUser
+      ? `<span class="material-symbols-outlined text-[14px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">person</span>`
+      : isAgent
+      ? `<span class="material-symbols-outlined text-[14px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">smart_toy</span>`
+      : isExecuting
+      ? `<span class="material-symbols-outlined text-[14px]" style="color:${themeColor};font-variation-settings:'FILL' 0;">terminal</span>`
+      : `<span class="material-symbols-outlined text-[14px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">error</span>`;
+
+    let renderedContent: string;
+    if (isAgent) {
+      renderedContent = this.renderMarkdown(content);
+    } else if (isUser) {
+      renderedContent = `<div style="color:${themeColor};white-space:pre-wrap;word-break:break-word;">${this.escapeHtml(content)}</div>`;
+    } else if (isExecuting) {
+      renderedContent = `<div class="font-code text-[11px]" style="color:${themeColor};white-space:pre-wrap;word-break:break-all;">${this.escapeHtml(content)}</div>`;
+    } else {
+      renderedContent = `<div style="color:${themeColor};word-break:break-word;">${this.escapeHtml(content)}</div>`;
+    }
+
+    // User messages: bubble on right. Agent/others: full width on left.
+    if (isUser) {
+      el.innerHTML = `
+        <div class="flex justify-end">
+          <div class="max-w-[85%] px-3 py-2 rounded-lg" style="background: color-mix(in srgb, ${themeColor} 12%, transparent); border: 1px solid color-mix(in srgb, ${themeColor} 30%, transparent);">
+            <div class="flex gap-2 items-start">
+              <div class="flex-1 min-w-0 text-[13px]">${renderedContent}</div>
+              <div class="shrink-0 mt-0.5">${roleIcon}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    } else {
+      el.innerHTML = `
+        <div class="flex gap-2 items-start">
+          <div class="shrink-0 mt-0.5">${roleIcon}</div>
+          <div class="flex-1 min-w-0 text-[13px]">${renderedContent}</div>
+        </div>
+      `;
+    }
 
     this.messagesEl?.appendChild(el);
     this.scrollToBottom();
   }
 
   private renderMarkdown(text: string): string {
-    // Simple markdown: bold, code blocks, inline code, line breaks
-    let html = this.escapeHtml(text);
-    // Code blocks
-    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="bg-black/30 p-2 rounded text-[11px] font-code my-1 overflow-x-auto"><code>$2</code></pre>');
-    // Inline code
-    html = html.replace(/`([^`]+)`/g, '<code class="bg-black/20 px-1 rounded text-[11px]">$1</code>');
-    // Bold
-    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    // Headers
-    html = html.replace(/^### (.+)$/gm, '<div class="font-bold text-[13px] mt-2 mb-1">$1</div>');
-    html = html.replace(/^## (.+)$/gm, '<div class="font-bold text-[14px] mt-2 mb-1">$1</div>');
-    // Line breaks
-    html = html.replace(/\n/g, '<br>');
-    return `<div class="agent-md-content">${html}</div>`;
+    const agentColor = 'var(--agent-agent-color)';
+    const codeBlocks: string[] = [];
+    const inlineCodes: string[] = [];
+
+    // 1. Extract fenced code blocks so they don't get re-escaped
+    let processed = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+      const langLabel = lang ? `<div class="text-[10px] opacity-60 mb-1 font-code">${this.escapeHtml(lang)}</div>` : '';
+      const idx = codeBlocks.length;
+      codeBlocks.push(`${langLabel}<pre class="bg-black/30 p-2 rounded text-[11px] font-code overflow-x-auto whitespace-pre-wrap break-words" style="color:${agentColor};"><code>${this.escapeHtml(code.replace(/\n$/, ''))}</code></pre>`);
+      return `\x00CODEBLOCK${idx}\x00`;
+    });
+
+    // 2. Extract inline code
+    processed = processed.replace(/`([^`\n]+)`/g, (_, code) => {
+      const idx = inlineCodes.length;
+      inlineCodes.push(`<code class="bg-black/30 px-1.5 py-0.5 rounded text-[11px] font-code break-all" style="color:${agentColor};">${this.escapeHtml(code)}</code>`);
+      return `\x00INLINE${idx}\x00`;
+    });
+
+    // 3. Escape remaining HTML
+    processed = this.escapeHtml(processed);
+
+    // 4. Process block-level elements (by line)
+    const lines = processed.split('\n');
+    const out: string[] = [];
+    let inList: string | null = null;
+
+    const closeList = () => {
+      if (!inList) return;
+      out.push(inList === 'ol' ? '</ol>' : '</ul>');
+      inList = null;
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // Headings (need to decode the escaped # back — escapeHtml doesn't touch #)
+      const h6 = line.match(/^######\s+(.+)$/);
+      if (h6) { out.push(`<h6 class="font-bold text-[12px] mt-3 mb-1" style="color:${agentColor};">${h6[1]}</h6>`); continue; }
+      const h5 = line.match(/^#####\s+(.+)$/);
+      if (h5) { out.push(`<h5 class="font-bold text-[12px] mt-3 mb-1" style="color:${agentColor};">${h5[1]}</h5>`); continue; }
+      const h4 = line.match(/^####\s+(.+)$/);
+      if (h4) { out.push(`<h4 class="font-bold text-[13px] mt-3 mb-1" style="color:${agentColor};">${h4[1]}</h4>`); continue; }
+      const h3 = line.match(/^###\s+(.+)$/);
+      if (h3) { out.push(`<h3 class="font-bold text-[14px] mt-3 mb-1" style="color:${agentColor};">${h3[1]}</h3>`); continue; }
+      const h2 = line.match(/^##\s+(.+)$/);
+      if (h2) { out.push(`<h2 class="font-bold text-[15px] mt-3 mb-1" style="color:${agentColor};">${h2[1]}</h2>`); continue; }
+      const h1 = line.match(/^#\s+(.+)$/);
+      if (h1) { out.push(`<h1 class="font-bold text-[16px] mt-3 mb-1" style="color:${agentColor};">${h1[1]}</h1>`); continue; }
+
+      // Horizontal rule
+      if (/^(-{3,}|_{3,}|\*{3,})$/.test(line.trim())) {
+        out.push(`<hr class="my-2 border-t border-[var(--border)]">`);
+        continue;
+      }
+
+      // Blockquote
+      if (line.match(/^&gt;\s?(.*)$/)) {
+        const quoteContent = line.replace(/^&gt;\s?/, '');
+        out.push(`<blockquote class="border-l-2 pl-2 my-1 italic text-[12px]" style="border-color:${agentColor};color:color-mix(in srgb, ${agentColor} 80%, var(--on-surface));">${quoteContent}</blockquote>`);
+        continue;
+      }
+
+      // Unordered list item (- or *)
+      const ulMatch = line.match(/^[\s]*[-*]\s+(.+)$/);
+      if (ulMatch) {
+        if (inList !== 'ul') {
+          closeList();
+          out.push('<ul class="list-disc pl-5 my-1 space-y-0.5">');
+          inList = 'ul';
+        }
+        out.push(`<li>${ulMatch[1]}</li>`);
+        continue;
+      }
+
+      // Ordered list item
+      const olMatch = line.match(/^[\s]*\d+\.\s+(.+)$/);
+      if (olMatch) {
+        if (inList !== 'ol') {
+          closeList();
+          out.push('<ol class="list-decimal pl-5 my-1 space-y-0.5">');
+          inList = 'ol';
+        }
+        out.push(`<li>${olMatch[1]}</li>`);
+        continue;
+      }
+
+      // Close pending list on non-list line
+      closeList();
+
+      // Empty line -> paragraph break
+      if (line.trim() === '') {
+        out.push('<div class="h-2"></div>');
+        continue;
+      }
+
+      // Regular paragraph
+      out.push(`<p class="my-0.5 leading-relaxed">${line}</p>`);
+    }
+
+    closeList();
+
+    let html = out.join('\n');
+
+    // 5. Inline formatting (on the already-escaped text)
+    html = html.replace(/\*\*(.+?)\*\*/g, `<strong style="color:${agentColor};">$1</strong>`);
+    html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+    html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
+    // Links: [text](url)  — escapeHtml escaped them as &#91;text&#93;(url) — restore bracket pair
+    html = html.replace(/\[(.+?)\]\((.+?)\)/g,
+      `<a href="$2" target="_blank" rel="noopener noreferrer" class="underline" style="color:${agentColor};">$1</a>`);
+
+    // 6. Restore inline code and code blocks
+    html = html.replace(/\x00INLINE(\d+)\x00/g, (_, i) => inlineCodes[+i]);
+    html = html.replace(/\x00CODEBLOCK(\d+)\x00/g, (_, i) => codeBlocks[+i]);
+
+    return `<div class="agent-md-content break-words" style="color: ${agentColor};">${html}</div>`;
   }
 
   private escapeHtml(text: string): string {

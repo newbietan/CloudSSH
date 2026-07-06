@@ -72,6 +72,8 @@ export const UI_THEMES: Record<keyof typeof THEMES, Record<string, string>> = {
     '--modal-overlay': 'rgba(0, 0, 0, 0.8)',
     '--on-surface': '#e5e2e1',
     '--on-surface-variant': '#bbccb0',
+    '--agent-user-color': '#4af626',
+    '--agent-agent-color': '#14d1ff',
   },
   glacier: {
     '--bg': '#0a192f',
@@ -98,6 +100,8 @@ export const UI_THEMES: Record<keyof typeof THEMES, Record<string, string>> = {
     '--modal-overlay': 'rgba(0, 0, 0, 0.85)',
     '--on-surface': '#e6f1ff',
     '--on-surface-variant': '#8892b0',
+    '--agent-user-color': '#64ffda',
+    '--agent-agent-color': '#e6f1ff',
   },
   gruvbox: {
     '--bg': '#282828',
@@ -124,6 +128,8 @@ export const UI_THEMES: Record<keyof typeof THEMES, Record<string, string>> = {
     '--modal-overlay': 'rgba(0, 0, 0, 0.75)',
     '--on-surface': '#ebdbb2',
     '--on-surface-variant': '#a89984',
+    '--agent-user-color': '#b8bb26',
+    '--agent-agent-color': '#83a598',
   },
 };
 

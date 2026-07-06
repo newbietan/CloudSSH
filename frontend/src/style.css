@@ -416,3 +416,54 @@ body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
+
+/* ========== Agent Panel ========== */
+
+#agent-panel {
+  min-width: 320px;
+}
+
+.agent-md-content {
+  word-break: break-word;
+  line-height: 1.6;
+}
+
+.agent-md-content pre {
+  margin: 6px 0;
+}
+
+.agent-md-content ul,
+.agent-md-content ol {
+  margin: 4px 0;
+}
+
+.agent-md-content li {
+  margin: 1px 0;
+}
+
+.agent-md-content h1,
+.agent-md-content h2,
+.agent-md-content h3,
+.agent-md-content h4,
+.agent-md-content h5,
+.agent-md-content h6 {
+  margin-top: 10px;
+  margin-bottom: 4px;
+}
+
+.agent-md-content p {
+  margin: 2px 0;
+}
+
+.agent-md-content blockquote {
+  margin: 6px 0;
+}
+
+/* Auto-resizing textarea for agent input */
+#agent-input {
+  font-family: inherit;
+}
+
+#agent-input::placeholder {
+  opacity: 0.5;
+}
