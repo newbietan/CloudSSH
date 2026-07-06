@@ -66,7 +66,7 @@ export class AgentPanel {
 
     this.panelEl = document.createElement('div');
     this.panelEl.id = 'agent-panel';
-    this.panelEl.className = 'w-[480px] shrink-0 border-l border-[var(--border)] flex flex-col bg-[var(--bg)] overflow-hidden';
+    this.panelEl.className = 'w-[560px] shrink-0 border-l border-[var(--border)] flex flex-col bg-[var(--bg)] overflow-hidden';
     this.panelEl.style.display = 'none';
 
     this.panelEl.innerHTML = `
@@ -77,15 +77,15 @@ export class AgentPanel {
         </button>
       </div>
       <div id="agent-messages" class="flex-1 overflow-y-auto px-4 py-3 space-y-3 custom-scrollbar text-[13px]"></div>
-      <div class="px-3 py-2.5 border-t border-[var(--border)] bg-[var(--bg-elevated)]">
-        <div class="flex gap-2 items-end">
+      <div class="px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-elevated)]">
+        <div class="flex gap-2.5 items-end">
           <textarea id="agent-input" placeholder="描述你想做的事... (Enter 发送, Shift+Enter 换行)"
             rows="1"
             class="terminal-input flex-1 text-[13px] resize-none overflow-y-auto"
-            style="max-height: 140px; line-height: 1.5; padding: 6px 10px;"
+            style="max-height: 140px; line-height: 1.5; padding: 8px 12px; border-radius: 8px;"
             autocomplete="off"></textarea>
-          <button id="agent-send-btn" class="cyber-button px-3 py-1.5 text-[11px] font-bold tracking-[0.1em] uppercase bg-[var(--accent)] text-[var(--on-accent)] shrink-0" title="Send (Enter)">
-            <span class="material-symbols-outlined" style="font-size:16px;">send</span>
+          <button id="agent-send-btn" class="agent-send-btn shrink-0" title="Send (Enter)">
+            <span class="material-symbols-outlined" style="font-size:20px;">arrow_upward</span>
           </button>
         </div>
       </div>
