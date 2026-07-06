@@ -161,6 +161,12 @@ This project implements a complete SSH-2.0 protocol stack:
 <a id="quick-start"></a>
 ## Quick Deployment
 
+<div align="center">
+  <a href="https://dash.cloudflare.com/?url=https://github.com/newbietan/CloudSSH">
+    <img src="https://img.shields.io/badge/Deploy_to_Cloudflare-FF6633?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Deploy to Cloudflare">
+  </a>
+</div>
+
 ### Prerequisites
 
 - A Cloudflare account.

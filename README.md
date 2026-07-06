@@ -161,6 +161,12 @@ flowchart TB
 <a id="quick-start"></a>
 ## 快速部署
 
+<div align="center">
+  <a href="https://dash.cloudflare.com/?url=https://github.com/newbietan/CloudSSH">
+    <img src="https://img.shields.io/badge/Deploy_to_Cloudflare-FF6633?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Deploy to Cloudflare">
+  </a>
+</div>
+
 ### 前置要求
 
 - 一个 Cloudflare 账号。
