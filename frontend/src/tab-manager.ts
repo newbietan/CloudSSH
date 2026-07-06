@@ -53,15 +53,21 @@ export class TabManager {
   createTab(label: string, hostInfo?: { host: string; port: number; username?: string }): TabInfo {
     const id = `tab-${++this.tabCounter}-${Date.now()}`;
 
-    // 创建终端容器
+    // 创建终端容器（flex 布局，支持 AgentPanel 右侧分栏）
     const containerEl = document.createElement('div');
     containerEl.id = `terminal-container-${id}`;
-    containerEl.className = 'absolute inset-0 overflow-hidden';
+    containerEl.className = 'absolute inset-0 overflow-hidden flex flex-row';
     containerEl.style.display = 'none';
     this.terminalAreaEl.appendChild(containerEl);
 
-    // 创建 SSHTerminal 实例
-    const terminal = new SSHTerminal(containerEl.id);
+    // 内部终端包装器（flex-1 占满剩余空间）
+    const terminalInner = document.createElement('div');
+    terminalInner.id = `terminal-inner-${id}`;
+    terminalInner.className = 'flex-1 min-w-0 relative overflow-hidden';
+    containerEl.appendChild(terminalInner);
+
+    // 创建 SSHTerminal 实例（挂在内部包装器上）
+    const terminal = new SSHTerminal(terminalInner.id);
 
     // 设置会话关闭回调
     terminal.setSessionClosedHandler(() => {
@@ -77,6 +83,11 @@ export class TabManager {
         if (tab.sftpPanel) {
           tab.sftpPanel.dispose();
           tab.sftpPanel = null;
+        }
+        // 清理该标签的 Agent 面板
+        if (tab.agentPanel) {
+          tab.agentPanel.dispose();
+          tab.agentPanel = null;
         }
       }
     });
@@ -106,6 +117,8 @@ export class TabManager {
           tab.terminal.setAgentFrameHandler((msg: any) => {
             tab.agentPanel?.handleAgentFrame(msg);
           });
+          // AgentPanel 展开/收起时触发终端重新适配尺寸
+          tab.agentPanel.setLayoutChangeHandler(() => tab.terminal.fit());
         }
       }
     });

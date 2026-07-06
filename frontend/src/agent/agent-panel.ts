@@ -8,11 +8,16 @@ export class AgentPanel {
   private isVisible: boolean = false;
   private isAgentRunning: boolean = false;
   private wsSend: ((data: string) => void) | null = null;
+  private onLayoutChange?: () => void;
 
   constructor(
     private parentEl: HTMLElement,
     private isLoggedIn: boolean,
   ) {}
+
+  setLayoutChangeHandler(handler: () => void): void {
+    this.onLayoutChange = handler;
+  }
 
   setWebSocketSend(fn: (data: string) => void): void {
     this.wsSend = fn;
@@ -74,11 +79,15 @@ export class AgentPanel {
     this.isVisible = true;
     if (this.panelEl) this.panelEl.style.display = 'flex';
     this.inputEl?.focus();
+    // 触发终端重新适配（面板展开后终端区域缩小，需要 refit）
+    requestAnimationFrame(() => this.onLayoutChange?.());
   }
 
   hide(): void {
     this.isVisible = false;
     if (this.panelEl) this.panelEl.style.display = 'none';
+    // 触发终端重新适配（面板收起后终端区域恢复，需要 refit）
+    requestAnimationFrame(() => this.onLayoutChange?.());
   }
 
   handleAgentFrame(msg: any): void {
