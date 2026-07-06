@@ -1,5 +1,41 @@
 // Agent panel UI — right sidebar for AI Agent interaction
 
+import { marked, type Tokens } from 'marked';
+import DOMPurify from 'dompurify';
+
+// Configure marked once at module load: GFM enabled, custom renderer for theme-aware styling
+marked.use({
+  gfm: true,
+  renderer: {
+    code({ text, lang }: Tokens.Code) {
+      const safeLang = lang && lang.trim()
+        ? `<div class="agent-md-lang">${escapeHtml(lang.trim())}</div>`
+        : '';
+      return `${safeLang}<pre class="agent-md-pre"><code>${escapeHtml(text)}</code></pre>`;
+    },
+    codespan({ text }: Tokens.Codespan) {
+      return `<code class="agent-md-inline-code">${text}</code>`;
+    },
+    link({ href, title, text }: Tokens.Link) {
+      const titleAttr = title ? ` title="${escapeHtml(title)}"` : '';
+      return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer" class="agent-md-link">${text}</a>`;
+    },
+    image({ href, title, text }: Tokens.Image) {
+      const titleAttr = title ? ` title="${escapeHtml(title)}"` : '';
+      return `<img src="${href}"${titleAttr} alt="${escapeHtml(text)}" class="agent-md-img" loading="lazy">`;
+    },
+  },
+});
+
+function escapeHtml(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 export class AgentPanel {
   private panelEl: HTMLElement | null = null;
   private messagesEl: HTMLElement | null = null;
@@ -199,8 +235,8 @@ export class AgentPanel {
     el.className = 'agent-confirm p-3 rounded border border-[var(--error)] bg-[var(--error-bg)]';
     el.innerHTML = `
       <div class="text-[11px] font-bold text-[var(--error)] mb-1">⚠ 危险操作确认</div>
-      <div class="text-[12px] mb-1 font-code bg-black/20 p-1 rounded">$ ${this.escapeHtml(command)}</div>
-      <div class="text-[11px] text-[var(--on-surface-variant)] mb-2">${this.escapeHtml(reason)}</div>
+      <div class="text-[12px] mb-1 font-code bg-black/20 p-1 rounded">$ ${escapeHtml(command)}</div>
+      <div class="text-[11px] text-[var(--on-surface-variant)] mb-2">${escapeHtml(reason)}</div>
       <div class="flex gap-2">
         <button class="agent-confirm-no cyber-button flex-1 py-1 text-[11px] font-bold">取消</button>
         <button class="agent-confirm-yes cyber-button flex-1 py-1 text-[11px] font-bold bg-[var(--error)] text-white">确认执行</button>
@@ -246,11 +282,11 @@ export class AgentPanel {
     if (isAgent) {
       renderedContent = this.renderMarkdown(content);
     } else if (isUser) {
-      renderedContent = `<div style="color:${themeColor};white-space:pre-wrap;word-break:break-word;">${this.escapeHtml(content)}</div>`;
+      renderedContent = `<div style="color:${themeColor};white-space:pre-wrap;word-break:break-word;">${escapeHtml(content)}</div>`;
     } else if (isExecuting) {
-      renderedContent = `<div class="font-code text-[11px]" style="color:${themeColor};white-space:pre-wrap;word-break:break-all;">${this.escapeHtml(content)}</div>`;
+      renderedContent = `<div class="font-code text-[11px]" style="color:${themeColor};white-space:pre-wrap;word-break:break-all;">${escapeHtml(content)}</div>`;
     } else {
-      renderedContent = `<div style="color:${themeColor};word-break:break-word;">${this.escapeHtml(content)}</div>`;
+      renderedContent = `<div style="color:${themeColor};word-break:break-word;">${escapeHtml(content)}</div>`;
     }
 
     // User messages: bubble on right. Agent/others: full width on left.
@@ -279,184 +315,21 @@ export class AgentPanel {
   }
 
   private renderMarkdown(text: string): string {
-    const agentColor = 'var(--agent-agent-color)';
-    const codeBlocks: string[] = [];
-    const inlineCodes: string[] = [];
-
-    // 1. Extract fenced code blocks so they don't get re-escaped
-    let processed = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
-      const langLabel = lang ? `<div class="text-[10px] opacity-60 mb-1 font-code">${this.escapeHtml(lang)}</div>` : '';
-      const idx = codeBlocks.length;
-      codeBlocks.push(`${langLabel}<pre class="bg-black/30 p-2 rounded text-[11px] font-code overflow-x-auto whitespace-pre-wrap break-words" style="color:${agentColor};"><code>${this.escapeHtml(code.replace(/\n$/, ''))}</code></pre>`);
-      return `\x00CODEBLOCK${idx}\x00`;
-    });
-
-    // 2. Extract inline code
-    processed = processed.replace(/`([^`\n]+)`/g, (_, code) => {
-      const idx = inlineCodes.length;
-      inlineCodes.push(`<code class="bg-black/30 px-1.5 py-0.5 rounded text-[11px] font-code break-all" style="color:${agentColor};">${this.escapeHtml(code)}</code>`);
-      return `\x00INLINE${idx}\x00`;
-    });
-
-    // 3. Escape remaining HTML
-    processed = this.escapeHtml(processed);
-
-    // 4. Process block-level elements (by line)
-    const lines = processed.split('\n');
-    const out: string[] = [];
-    let inList: string | null = null;
-
-    const closeList = () => {
-      if (!inList) return;
-      out.push(inList === 'ol' ? '</ol>' : '</ul>');
-      inList = null;
-    };
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
-      // Headings (need to decode the escaped # back — escapeHtml doesn't touch #)
-      const h6 = line.match(/^######\s+(.+)$/);
-      if (h6) { out.push(`<h6 class="font-bold text-[12px] mt-3 mb-1" style="color:${agentColor};">${h6[1]}</h6>`); continue; }
-      const h5 = line.match(/^#####\s+(.+)$/);
-      if (h5) { out.push(`<h5 class="font-bold text-[12px] mt-3 mb-1" style="color:${agentColor};">${h5[1]}</h5>`); continue; }
-      const h4 = line.match(/^####\s+(.+)$/);
-      if (h4) { out.push(`<h4 class="font-bold text-[13px] mt-3 mb-1" style="color:${agentColor};">${h4[1]}</h4>`); continue; }
-      const h3 = line.match(/^###\s+(.+)$/);
-      if (h3) { out.push(`<h3 class="font-bold text-[14px] mt-3 mb-1" style="color:${agentColor};">${h3[1]}</h3>`); continue; }
-      const h2 = line.match(/^##\s+(.+)$/);
-      if (h2) { out.push(`<h2 class="font-bold text-[15px] mt-3 mb-1" style="color:${agentColor};">${h2[1]}</h2>`); continue; }
-      const h1 = line.match(/^#\s+(.+)$/);
-      if (h1) { out.push(`<h1 class="font-bold text-[16px] mt-3 mb-1" style="color:${agentColor};">${h1[1]}</h1>`); continue; }
-
-      // Horizontal rule
-      if (/^(-{3,}|_{3,}|\*{3,})$/.test(line.trim())) {
-        out.push(`<hr class="my-2 border-t border-[var(--border)]">`);
-        continue;
-      }
-
-      // Blockquote
-      if (line.match(/^&gt;\s?(.*)$/)) {
-        const quoteContent = line.replace(/^&gt;\s?/, '');
-        out.push(`<blockquote class="border-l-2 pl-2 my-1 italic text-[12px]" style="border-color:${agentColor};color:color-mix(in srgb, ${agentColor} 80%, var(--on-surface));">${quoteContent}</blockquote>`);
-        continue;
-      }
-
-      // GFM Table: detect header row + separator on next line
-      if (line.match(/^\|.+\|$/) && i + 1 < lines.length && lines[i + 1].match(/^\|?[\s]*:?[-]+:?[\s]*(\|[\s]*:?[-]+:?[\s]*)*\|?$/)) {
-        const headerLine = line;
-        const sepLine = lines[i + 1];
-        const dataLines: string[] = [];
-        let j = i + 2;
-        while (j < lines.length && lines[j].match(/^\|.+\|$/)) {
-          dataLines.push(lines[j]);
-          j++;
-        }
-        out.push(this.buildTable(headerLine, sepLine, dataLines, agentColor));
-        i = j - 1; // will be incremented by loop
-        continue;
-      }
-
-      // Unordered list item (- or *)
-      const ulMatch = line.match(/^[\s]*[-*]\s+(.+)$/);
-      if (ulMatch) {
-        if (inList !== 'ul') {
-          closeList();
-          out.push('<ul class="list-disc pl-5 my-1 space-y-0.5">');
-          inList = 'ul';
-        }
-        out.push(`<li>${ulMatch[1]}</li>`);
-        continue;
-      }
-
-      // Ordered list item
-      const olMatch = line.match(/^[\s]*\d+\.\s+(.+)$/);
-      if (olMatch) {
-        if (inList !== 'ol') {
-          closeList();
-          out.push('<ol class="list-decimal pl-5 my-1 space-y-0.5">');
-          inList = 'ol';
-        }
-        out.push(`<li>${olMatch[1]}</li>`);
-        continue;
-      }
-
-      // Close pending list on non-list line
-      closeList();
-
-      // Empty line -> paragraph break
-      if (line.trim() === '') {
-        out.push('<div class="h-2"></div>');
-        continue;
-      }
-
-      // Regular paragraph
-      out.push(`<p class="my-0.5 leading-relaxed">${line}</p>`);
+    // marked parses full GFM; renderer hooks inject theme-aware classes.
+    // DOMPurify strips XSS (javascript:/vbscript:/data: URLs, event handlers, etc.).
+    let raw: string;
+    try {
+      raw = marked.parse(text, { async: false }) as string;
+    } catch {
+      // Fallback: escape and return raw as paragraph if parser fails
+      return `<div class="agent-md-content">${escapeHtml(text)}</div>`;
     }
-
-    closeList();
-
-    let html = out.join('\n');
-
-    // 5. Inline formatting (on the already-escaped text)
-    html = html.replace(/\*\*(.+?)\*\*/g, `<strong style="color:${agentColor};">$1</strong>`);
-    html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
-    html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
-    // Links: [text](url)  — escapeHtml escaped them as &#91;text&#93;(url) — restore bracket pair
-    html = html.replace(/\[(.+?)\]\((.+?)\)/g,
-      `<a href="$2" target="_blank" rel="noopener noreferrer" class="underline" style="color:${agentColor};">$1</a>`);
-
-    // 6. Restore inline code and code blocks
-    html = html.replace(/\x00INLINE(\d+)\x00/g, (_, i) => inlineCodes[+i]);
-    html = html.replace(/\x00CODEBLOCK(\d+)\x00/g, (_, i) => codeBlocks[+i]);
-
-    return `<div class="agent-md-content break-words" style="color: ${agentColor};">${html}</div>`;
-  }
-
-  private buildTable(headerLine: string, sepLine: string, dataLines: string[], agentColor: string): string {
-    const parseCells = (line: string): string[] => {
-      // Strip leading/trailing `|`, split by `|`, trim each cell
-      const stripped = line.replace(/^\|/, '').replace(/\|$/, '');
-      return stripped.split('|').map(c => c.trim());
-    };
-
-    const headerCells = parseCells(headerLine);
-    const sepCells = parseCells(sepLine);
-
-    // Determine alignment per column
-    const aligns: string[] = sepCells.map(cell => {
-      const c = cell.trim();
-      if (c.startsWith(':') && c.endsWith(':')) return 'center';
-      if (c.endsWith(':')) return 'right';
-      return 'left';
+    const clean = DOMPurify.sanitize(raw, {
+      ADD_ATTR: ['target', 'rel', 'class', 'loading'],
+      ALLOW_UNKNOWN_PROTOCOLS: false,
+      USE_PROFILES: { html: true },
     });
-
-    const cellStyle = (i: number) => `text-align:${aligns[i] || 'left'};padding:4px 8px;border-bottom:1px solid var(--border);`;
-    const cellContent = (s: string) => {
-      let h = this.escapeHtml(s);
-      h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-      h = h.replace(/`([^`\n]+)`/g, '<code class="bg-black/30 px-1 rounded text-[11px]">$1</code>');
-      return h;
-    };
-
-    const headRow = '<tr>' + headerCells.map((c, i) =>
-      `<th style="${cellStyle(i)}font-weight:bold;color:${agentColor};">${cellContent(c)}</th>`
-    ).join('') + '</tr>';
-
-    const bodyRows = dataLines.map(line => {
-      const cells = parseCells(line);
-      return '<tr>' + cells.map((c, i) =>
-        `<td style="${cellStyle(i)}">${cellContent(c)}</td>`
-      ).join('') + '</tr>';
-    }).join('');
-
-    return `<table class="agent-table w-full text-[12px] my-2" style="border-collapse:collapse;border-top:2px solid ${agentColor};"><thead>${headRow}</thead><tbody>${bodyRows}</tbody></table>`;
-  }
-
-  private escapeHtml(text: string): string {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return `<div class="agent-md-content">${clean}</div>`;
   }
 
   private scrollToBottom(): void {

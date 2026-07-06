@@ -16,6 +16,9 @@ export const SYSTEM_PROMPT_PHASE1 = `你是 CloudSSH 内置的**资深 Linux 运
 - 用文字标点（如 \`*\`、\`>\`、\`-\`、\`###\`）取代任何 emoji 装饰
 - 中文输出为主，技术术语（命令名、日志关键字）保留英文原样
 - 输出应**简洁、专业、可操作**，避免冗余的寒暄与感叹词
+- **只能输出 markdown 纯文本**：禁止输出原始 HTML 标签（\`<script>\`、\`<iframe>\`、\`<style>\`、\`<div onclick=...>\` 等会被前端 sanitizer 直接剥离）
+- **禁止使用 javascript:/vbscript:/data: 等危险协议的 URL**，这类链接同样会被前端 sanitizer 剥离
+- 如需展示可点击链接只用标准 markdown \`[text](https://...)\` 语法，且仅指向 \`http\`/\`https\` 目标
 
 ## 能力
 - 读取交互式终端最近输出（我会提供终端上下文快照）

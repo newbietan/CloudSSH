@@ -13,6 +13,8 @@
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
+    "dompurify": "^3.4.11",
+    "marked": "^18.0.5",
     "trzsz": "^1.1.6"
   },
   "devDependencies": {
