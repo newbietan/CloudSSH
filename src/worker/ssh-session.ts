@@ -1034,6 +1034,14 @@ export class SSHSession {
           this.sendDebug(`SFTP channel open failed: reason=${reasonCode}, desc=${description}`);
           this.sendSFTPError('init', '服务器不支持 SFTP: ' + description);
           this.sftpHandler = null;
+        } else if (this.isExecChannel(channelID)) {
+          // Exec channel open failed - reject just this command, keep SSH session alive
+          const execCh = this.activeExecChannels.get(channelID);
+          if (execCh) {
+            execCh.onChannelOpenFailure(reasonCode, description);
+            this.activeExecChannels.delete(channelID);
+          }
+          this.sendDebug(`Exec channel open failed: channelID=${channelID}, reason=${reasonCode}, desc=${description}`);
         } else {
           // Shell channel failed - close connection
           this.sendError('通道打开被拒绝');
@@ -1782,6 +1790,10 @@ export class SSHSession {
       });
       this.confirmationResolve = resolve;
     });
+  }
+
+  private isExecChannel(channelID: number): boolean {
+    return this.activeExecChannels.has(channelID);
   }
 
   private sendAgentFrame(msg: any): void {

@@ -153,6 +153,16 @@ body {
   background: var(--scrollbar-thumb-hover);
 }
 
+/* Hide scrollbar for Agent input textarea */
+#agent-input {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+#agent-input::-webkit-scrollbar {
+  display: none; /* WebKit (Chrome/Safari) */
+}
+
 /* ==================== User Space Styles ==================== */
 
 /* 服务器卡片 */

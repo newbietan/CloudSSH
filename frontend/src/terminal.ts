@@ -149,6 +149,7 @@ export class SSHTerminal {
   private maxReconnectAttempts: number = 5;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private lastConfig: SSHConnectionConfig | null = null;
+  private canReconnect: boolean = true;
   private restoreCursorBlinkAfterReturnPrompt: boolean = false;
   private onSessionClosed?: (event: CloseEvent) => void;
   private onSessionReady?: () => void;
@@ -417,6 +418,7 @@ export class SSHTerminal {
   async connect(config: SSHConnectionConfig, options: ConnectOptions = {}): Promise<void> {
     this.resetActiveConnection();
     this.lastConfig = config;
+    this.canReconnect = true;
     if (options.resetDisplay !== false) {
       this.showConnectingBanner();
     }
@@ -460,6 +462,7 @@ export class SSHTerminal {
   connectWithWebSocket(ws: WebSocket, hostInfo?: { host: string; port: number }): void {
     this.resetActiveConnection();
     this.lastConfig = hostInfo ? { host: hostInfo.host, port: hostInfo.port, username: '' } : null;
+    this.canReconnect = false;
     this.ws = ws;
     ws.binaryType = 'arraybuffer';
     this.showConnectingBanner();
@@ -580,7 +583,7 @@ export class SSHTerminal {
         return;
       }
 
-      if (this.lastConfig && this.reconnectAttempts < this.maxReconnectAttempts) {
+      if (this.canReconnect && this.lastConfig && this.reconnectAttempts < this.maxReconnectAttempts) {
         this.scheduleReconnect();
       }
     };

@@ -61,6 +61,17 @@ export class AgentExecChannel {
     // EOF received but channel not closed yet — wait for close
   }
 
+  onChannelOpenFailure(reasonCode: number, description: string): void {
+    if (!this.closed) {
+      this.closed = true;
+      this.closedResolve({
+        stdout: '',
+        stderr: `Channel open failed (reason=${reasonCode}): ${description}`,
+        exitCode: -1,
+      });
+    }
+  }
+
   private concat(chunks: Uint8Array[]): Uint8Array {
     if (chunks.length === 0) return new Uint8Array(0);
     const total = chunks.reduce((sum, c) => sum + c.length, 0);
