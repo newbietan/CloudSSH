@@ -10,7 +10,7 @@
 
 ## Project Overview
 
-CloudSSH is a serverless Web SSH terminal built on Cloudflare Workers. Users connect to SSH servers through a browser-based terminal UI with integrated SFTP file management.
+CloudSSH is a serverless Web SSH terminal built on Cloudflare Workers. Users connect to SSH servers through a browser-based terminal UI with integrated SFTP file management and AI Agent assistant.
 
 ## Architecture
 
@@ -31,24 +31,45 @@ src/
 │   ├── sftp-handler.ts    # SFTP protocol ops, task queue, concurrent download, upload tracking
 │   ├── user-db.ts    # UserDBDO - user/server storage
 │   ├── auth.ts       # GitHub OAuth handling
+│   ├── agent/        # AI Agent system
+│   │   ├── core.ts       # Agent control loop (LLM calls, tool execution)
+│   │   ├── tools.ts      # Tool definitions (execute_command, read_terminal_context, etc.)
+│   │   ├── tool-executor.ts  # Tool dispatch and execution
+│   │   ├── prompt.ts     # System prompt for the agent
+│   │   ├── safety.ts     # Dangerous command detection
+│   │   ├── ssrf.ts       # SSRF protection for AI base_url
+│   │   ├── terminal-context.ts  # Terminal output ring buffer
+│   │   ├── exec-channel.ts  # SSH exec channel lifecycle
+│   │   └── types.ts      # Agent type definitions
 │   └── html.ts       # Auto-generated - DO NOT EDIT
-└── ssh/              # SSH protocol implementation
-    ├── transport.ts  # SSH transport layer
-    ├── kex*.ts       # Key exchange algorithms
-    ├── auth.ts       # Authentication methods
-    ├── channel.ts    # SSH channels (session + SFTP subsystem)
-    ├── sftp.ts       # SFTP v3 client implementation
-    └── sftp-types.ts # SFTP protocol constants and types
+├── ssh/              # SSH protocol implementation
+│   ├── transport.ts  # SSH transport layer
+│   ├── packet.ts     # SSH packet parser and builder
+│   ├── kex.ts        # Key exchange init and negotiation
+│   ├── kex-curve25519.ts  # Curve25519-SHA256 key exchange
+│   ├── kex-ecdh.ts   # ECDH-NISTP256 key exchange
+│   ├── algorithms.ts # Supported algorithm definitions
+│   ├── auth.ts       # Authentication methods (password, Ed25519 public key)
+│   ├── channel.ts    # SSH channels (session + SFTP subsystem + exec)
+│   ├── crypto.ts     # AES-GCM/CTR cipher, HMAC implementations
+│   ├── keys.ts       # Key derivation per RFC 4253
+│   ├── utils.ts      # Binary utilities
+│   ├── sftp.ts       # SFTP v3 client implementation
+│   └── sftp-types.ts # SFTP protocol constants and types
+└── types.ts          # Shared TypeScript type definitions
 
 frontend/
 ├── src/
-│   ├── main.ts       # Frontend entry point
+│   ├── main.ts       # Frontend entry point (routing, theme, event handlers)
 │   ├── terminal.ts   # xterm.js terminal setup (search, dynamic RTT latency, log export)
-│   ├── tab-manager.ts # Tab manager (multi-session terminal/SFTP coordinator)
+│   ├── tab-manager.ts # Tab manager (multi-session terminal/SFTP/Agent coordinator)
 │   ├── sftp-panel.ts # SFTP file manager UI (queue, cancel support)
 │   ├── auth-form.ts  # Auth form & encrypted anonymous credentials storage/autofill
-│   ├── server-list.ts # Server management UI
-│   ├── style.css     # Global styles
+│   ├── server-list.ts # Server management UI (card grid, add/edit/delete/connect)
+│   ├── agent/
+│   │   └── agent-panel.ts  # AI assistant sidebar (Markdown rendering, confirm dialogs)
+│   ├── ai-config.ts  # AI model configuration modal
+│   ├── style.css     # Global styles (CSS variable theme system)
 │   └── turnstile.d.ts # Turnstile type declarations
 └── vite.config.ts    # Dev proxy to localhost:8787
 ```
@@ -108,6 +129,27 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 - `TURNSTILE_SECRET` / `TURNSTILE_SITEKEY` - Bot verification
 - `BASE_URL` - OAuth callback URL
 
+## API Routes
+
+| Route | Method | Auth | Description |
+|-------|--------|------|-------------|
+| `/api/auth/github` | GET | No | GitHub OAuth redirect |
+| `/api/auth/callback` | GET | No | OAuth callback, creates user + session |
+| `/api/auth/logout` | POST | No | Logout, clears session |
+| `/api/auth/me` | GET | Yes | Returns current user info |
+| `/api/servers` | GET/POST | Yes | List or create saved servers |
+| `/api/servers/:id` | PUT/DELETE | Yes | Update or delete a server |
+| `/api/servers/:id/connect` | POST | Yes | Generate one-time-token, return WebSocket URL |
+| `/api/user/theme` | GET/PUT | Yes | Get or save user custom theme |
+| `/api/known-hosts` | GET/POST/DELETE | Yes | Known host fingerprint CRUD (TOFU) |
+| `/api/ai/config` | GET/PUT | Yes | Get or save AI LLM config |
+| `/api/ai/models` | POST | Yes | Proxy model list from user's LLM provider |
+| `/api/verify` | POST | No | Turnstile bot verification |
+| `/api/ssh` | WebSocket | Conditional | SSH terminal WebSocket connection |
+| `/api/ssh/sftp` | WebSocket | Token | SFTP data WebSocket (attaches to existing session) |
+| `/api/health` | GET | No | Health check |
+| `/api/config` | GET | No | Feature flags (turnstile, GitHub auth enabled) |
+
 ## Testing
 
 Tests use Vitest. Run with:
@@ -163,6 +205,8 @@ ci: CI/CD 变更
 3. **Durable Object migrations** - New DO classes require migration tags in `wrangler.toml`
 4. **Local dev proxy** - Frontend dev server proxies `/api` to `localhost:8787` (wrangler)
 5. **TypeScript config** - Root `tsconfig.json` excludes `frontend/` (has its own config)
+6. **AI Agent runs in DO** - The agent control loop (`agent/core.ts`) executes inside the Durable Object, not the Worker itself, to access the SSH session directly
+7. **Agent tool confirmations** - Dangerous commands (rm -rf, shutdown, etc.) require user confirmation via `agent_confirm` WebSocket message before execution
 
 ## Deployment Notes
 

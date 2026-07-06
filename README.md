@@ -88,6 +88,8 @@
 - **双段延迟与 Colo 展示**：状态栏即时且周期性地展示当前 RTT（客户端至 Cloudflare）、物理延迟（Cloudflare 至主机）以及 Cloudflare 当前服务的数据中心代码（如 `CF-LAX`）。
 - **终端文本检索**：支持使用快捷键 `Ctrl+Shift+F` 呼出搜索框，实时检索终端历史日志。
 - **终端日志一键导出**：支持通过顶栏的下载按钮，将当前活跃会话终端的完整屏幕历史 buffer 一键导出并下载为 `.txt` 文本文件，解决长日志在浏览器下鼠标选取容易卡顿的痛点。
+- **AI 智能助手**：内置 AI Agent 侧边栏，支持 BYOK（自带 API Key）接入 OpenAI 兼容接口（如 DeepSeek）。Agent 通过 SSH exec 通道执行命令、读取终端上下文，可进行智能运维诊断、日志分析等操作。危险命令需用户确认后方可执行。
+- **可视化主题编辑器**：配套独立的[可视化主题编辑器](https://newbietan.github.io/CloudSSH/)，支持实时调色、导出 JSON 主题文件，登录用户可一键同步至云端，跨浏览器生效。
 
 <a id="architecture"></a>
 ## 架构说明
@@ -99,25 +101,30 @@ flowchart TB
     subgraph "浏览器客户端"
         UI["前端 UI<br/>TypeScript + xterm.js"]
         SFTP["SFTP 文件管理器"]
+        Agent["AI 智能助手"]
         Trzsz["trzsz 文件传输"]
     end
-    
+
     subgraph "Cloudflare Edge Network"
         Worker["Worker<br/>路由 + API"]
         SSH_DO["SSHSessionDO<br/>SSH 会话管理"]
         User_DO["UserDBDO<br/>用户数据管理"]
+        AgentCore["AgentCore<br/>AI 控制循环"]
     end
-    
+
     subgraph "目标服务器"
         SSH["SSH 服务器<br/>(OpenSSH/Dropbear)"]
     end
 
     UI <-->|"WebSocket<br/>终端 I/O"| Worker
     SFTP <-->|"WebSocket<br/>SFTP 数据"| Worker
+    Agent <-->|"WebSocket<br/>Agent 消息"| Worker
     Trzsz <-->|"trzsz 协议"| UI
     Worker <-->|"WebSocket"| SSH_DO
     Worker <-->|"Internal API"| User_DO
     SSH_DO <-->|"TCP Socket<br/>@cloudflare/sockets"| SSH
+    SSH_DO <-->|"Exec Channel"| AgentCore
+    AgentCore <-->|"LLM API"| External["外部 LLM 服务"]
 ```
 
 ### 核心组件
@@ -134,6 +141,11 @@ flowchart TB
 | **前端终端** | `frontend/src/terminal.ts` | xterm.js 封装、实时双段延迟心跳、终端搜索及 WebSocket 交互 |
 | **标签管理器** | `frontend/src/tab-manager.ts` | 单页面多会话标签页管理器，协调不同标签页内的终端与 SFTP 实例 |
 | **SFTP 面板** | `frontend/src/sftp-panel.ts` | 图形化文件管理器 UI，支持上传/下载队列和取消操作 |
+| **AI Agent** | `src/worker/agent/core.ts` | AI 控制循环：LLM 调用、工具执行、终端上下文读取、危险命令确认 |
+| **Agent 工具** | `src/worker/agent/tools.ts` | Agent 可调用工具定义（执行命令、读取终端、确认操作、响应用户） |
+| **Agent 安全** | `src/worker/agent/safety.ts` | 危险命令检测与拦截（rm -rf /、mkfs、shutdown 等） |
+| **Agent 面板** | `frontend/src/agent/agent-panel.ts` | AI 助手侧边栏 UI，支持 Markdown 渲染、思考/执行状态展示、确认对话框 |
+| **AI 配置** | `frontend/src/ai-config.ts` | AI 模型配置弹窗，支持 Base URL / API Key / 模型选择 |
 
 ### SSH 协议实现
 
@@ -157,15 +169,10 @@ flowchart TB
 4. SSHSession 执行完整的 SSH 协议协商（版本交换→密钥交换→认证→打开通道→PTY→Shell）。
 5. 加密的终端数据通过 WebSocket 在前端和 SSH 服务器之间双向转发。
 6. SFTP 文件管理通过独立的 SSH 子系统通道运行，支持目录浏览、文件上传/下载等操作。
+7. AI 助手通过 WebSocket 接收用户消息，AgentCore 调用外部 LLM API，通过 SSH exec 通道执行命令，结果流式返回前端。
 
 <a id="quick-start"></a>
 ## 快速部署
-
-<div align="center">
-  <a href="https://dash.cloudflare.com/?url=https://github.com/newbietan/CloudSSH">
-    <img src="https://img.shields.io/badge/Deploy_to_Cloudflare-FF6633?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Deploy to Cloudflare">
-  </a>
-</div>
 
 ### 前置要求
 
@@ -176,6 +183,13 @@ flowchart TB
 ### 部署步骤
 
 #### 方式一：通过 GitHub 绑定自动部署（推荐）
+
+<div align="center">
+  <a href="https://dash.cloudflare.com/?url=https://github.com/newbietan/CloudSSH">
+    <img src="https://img.shields.io/badge/Deploy_to_Cloudflare-FF6633?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Deploy to Cloudflare">
+  </a>
+  <p>点击按钮跳转至 Cloudflare 控制台，授权 GitHub 后即可自动完成部署（无需本地环境）</p>
+</div>
 
 1. **Fork 本仓库** 到你的 GitHub 账号。
 2. **创建 Worker 应用**：登录 Cloudflare，进入 Workers & Pages，点击创建应用，绑定你的 GitHub 账号，选择 Fork 的仓库。
@@ -271,13 +285,16 @@ flowchart TB
 ```
 CloudSSH/
 ├── src/                    # 后端源码 (Cloudflare Worker)
-│   ├── ssh/                # SSH 协议纯实现层
+│   ├── ssh/                # SSH 协议纯实现层（传输、加密、认证、通道、SFTP）
 │   └── worker/             # Worker 入口和 Durable Objects
+│       └── agent/          # AI Agent 控制循环、工具、安全检测
 ├── frontend/               # 前端源码 (独立 workspace)
 │   └── src/                # TypeScript + xterm.js + trzsz
+│       └── agent/          # AI 助手侧边栏 UI
 ├── docs/                   # GitHub Pages 静态资源
 │   └── theme-editor/       # 可视化主题编辑器
 ├── scripts/                # 构建脚本
+├── .github/workflows/      # CI/CD 自动部署配置
 ├── pnpm-workspace.yaml     # pnpm 工作区配置
 └── wrangler.toml           # Cloudflare 部署配置
 ```
@@ -358,6 +375,7 @@ test 分支（开发/测试）  ──合并──>  main 分支（生产）
 | **前端** | TypeScript + Vite + xterm.js | Web 终端模拟器，WebGL 硬件加速 |
 | **UI 框架** | Tailwind CSS (CDN) + CSS 变量主题系统 | 可切换内置主题，支持自定义 JSON 主题导入与云端同步 |
 | **文件传输** | trzsz.js | 支持 trz/tsz 命令、拖拽上传、断点续传 |
+| **AI 助手** | BYOK + OpenAI 兼容接口 | 自带 API Key，支持 DeepSeek 等兼容模型 |
 | **后端** | Cloudflare Workers | Serverless 边缘计算 |
 | **会话管理** | Durable Objects | SSH 会话隔离、Hibernation API |
 | **数据存储** | Durable Objects SQLite | 用户数据、服务器配置 |

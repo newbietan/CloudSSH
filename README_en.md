@@ -88,6 +88,8 @@
 - **Dual-Segment Latency & Colo Display**: Instantly and periodically monitor WebSocket RTT (client to CF), physical latency (CF to SSH host), and the current Cloudflare datacenter code (e.g. `CF-LAX`) on the status bar.
 - **In-Terminal Text Search**: Real-time log search support via `Ctrl+Shift+F`.
 - **Terminal Log Export**: Download the entire screen buffer of the active terminal session as a `.txt` file with a single click on the header download button, avoiding browser freezes when selecting long logs.
+- **AI Agent Assistant**: Built-in AI Agent sidebar with BYOK (Bring Your Own Key) support for OpenAI-compatible APIs (e.g., DeepSeek). The Agent executes commands via SSH exec channels, reads terminal context, and assists with intelligent operations like log analysis and diagnostics. Dangerous commands require user confirmation before execution.
+- **Visual Theme Editor**: Companion [Visual Theme Editor](https://newbietan.github.io/CloudSSH/) for live color customization and JSON theme export. Logged-in users can sync themes to the cloud, working across browsers.
 
 <a id="architecture"></a>
 ## Architecture
@@ -99,25 +101,30 @@ flowchart TB
     subgraph "Browser Client"
         UI["Frontend UI<br/>TypeScript + xterm.js"]
         SFTP["SFTP File Manager"]
+        Agent["AI Agent Assistant"]
         Trzsz["trzsz File Transfer"]
     end
-    
+
     subgraph "Cloudflare Edge Network"
         Worker["Worker<br/>Routing + API"]
         SSH_DO["SSHSessionDO<br/>SSH Session Management"]
         User_DO["UserDBDO<br/>User Data Management"]
+        AgentCore["AgentCore<br/>AI Control Loop"]
     end
-    
+
     subgraph "Target Server"
-        SSH["SSH Server<br/>(OpenSSH/Dropbear)"
+        SSH["SSH Server<br/>(OpenSSH/Dropbear)"]
     end
 
     UI <-->|"WebSocket<br/>Terminal I/O"| Worker
     SFTP <-->|"WebSocket<br/>SFTP Data"| Worker
+    Agent <-->|"WebSocket<br/>Agent Messages"| Worker
     Trzsz <-->|"trzsz Protocol"| UI
     Worker <-->|"WebSocket"| SSH_DO
     Worker <-->|"Internal API"| User_DO
     SSH_DO <-->|"TCP Socket<br/>@cloudflare/sockets"| SSH
+    SSH_DO <-->|"Exec Channel"| AgentCore
+    AgentCore <-->|"LLM API"| External["External LLM Service"]
 ```
 
 ### Core Components
@@ -134,6 +141,11 @@ flowchart TB
 | **Frontend Terminal** | `frontend/src/terminal.ts` | xterm.js wrapper, dynamic RTT heartbeats, terminal search, and WebSocket management |
 | **Tab Manager** | `frontend/src/tab-manager.ts` | Single-page tab and session coordinator for independent terminals and SFTP panels |
 | **SFTP Panel** | `frontend/src/sftp-panel.ts` | Graphical file manager UI with upload/download queue and cancellation support |
+| **AI Agent** | `src/worker/agent/core.ts` | AI control loop: LLM calls, tool execution, terminal context reading, dangerous command confirmation |
+| **Agent Tools** | `src/worker/agent/tools.ts` | Agent-callable tool definitions (execute command, read terminal, confirm action, respond to user) |
+| **Agent Safety** | `src/worker/agent/safety.ts` | Dangerous command detection and blocking (rm -rf /, mkfs, shutdown, etc.) |
+| **Agent Panel** | `frontend/src/agent/agent-panel.ts` | AI assistant sidebar UI with Markdown rendering, thinking/executing status, and confirmation dialogs |
+| **AI Config** | `frontend/src/ai-config.ts` | AI model configuration modal for Base URL / API Key / model selection |
 
 ### SSH Protocol Implementation
 
@@ -157,15 +169,10 @@ This project implements a complete SSH-2.0 protocol stack:
 4. SSHSession executes the complete SSH protocol negotiation (version exchange → key exchange → authentication → channel open → PTY → Shell).
 5. Encrypted terminal data is bidirectionally forwarded between the frontend and SSH server via WebSocket.
 6. SFTP file management runs on a separate SSH subsystem channel, supporting directory browsing, file upload/download, and other operations.
+7. The AI Agent receives user messages via WebSocket, AgentCore calls the external LLM API, executes commands through SSH exec channels, and streams results back to the frontend.
 
 <a id="quick-start"></a>
 ## Quick Deployment
-
-<div align="center">
-  <a href="https://dash.cloudflare.com/?url=https://github.com/newbietan/CloudSSH">
-    <img src="https://img.shields.io/badge/Deploy_to_Cloudflare-FF6633?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Deploy to Cloudflare">
-  </a>
-</div>
 
 ### Prerequisites
 
@@ -176,6 +183,13 @@ This project implements a complete SSH-2.0 protocol stack:
 ### Steps
 
 #### Method 1: Deploy via GitHub Integration (Recommended)
+
+<div align="center">
+  <a href="https://dash.cloudflare.com/?url=https://github.com/newbietan/CloudSSH">
+    <img src="https://img.shields.io/badge/Deploy_to_Cloudflare-FF6633?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Deploy to Cloudflare">
+  </a>
+  <p>Click the button to jump to the Cloudflare console — authorize your GitHub account and deploy automatically, no local environment required</p>
+</div>
 
 1. **Fork this repository** to your GitHub account.
 2. **Create Worker App**: Log in to Cloudflare, go to Workers & Pages, click Create Application, connect your GitHub account, and select the forked repository.
@@ -358,6 +372,7 @@ test branch (dev/test)  ──merge──>  main branch (production)
 | **Frontend** | TypeScript + Vite + xterm.js | Web terminal emulator, WebGL hardware acceleration |
 | **UI Framework** | Tailwind CSS (CDN) + CSS Variable Theme System | Switchable built-in themes, custom JSON theme import with cloud sync |
 | **File Transfer** | trzsz.js | Supports trz/tsz commands, drag-and-drop upload, resumable transfers |
+| **AI Assistant** | BYOK + OpenAI-compatible API | Bring your own API key, supports DeepSeek and other compatible models |
 | **Backend** | Cloudflare Workers | Serverless edge computing |
 | **Session Management** | Durable Objects | SSH session isolation, Hibernation API |
 | **Data Storage** | Durable Objects SQLite | User data, server configurations |
