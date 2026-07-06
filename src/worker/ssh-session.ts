@@ -1225,6 +1225,17 @@ export class SSHSession {
         } else {
           // Other channel closed
           this.sendDebug(`Non-shell channel closed: channelID=${channelID}`);
+
+          // Reply CLOSE if we haven't sent it yet (RFC 4254 §5.3)
+          const channel = this.channels.get(channelID);
+          if (channel && !channel.isClosed()) {
+            try {
+              await this.sendEncrypted(channel.buildClose());
+            } catch {
+              // Ignore send errors during close
+            }
+          }
+
           this.channels.delete(channelID);
           if (this.sftpHandler && channelID === this.sftpHandler.getChannelID()) {
             this.sftpHandler.onChannelClosed();
@@ -1758,7 +1769,15 @@ export class SSHSession {
       }),
     ]);
 
-    // Cleanup
+    // Cleanup: send EOF + CLOSE to server (RFC 4254 §5.3)
+    if (!channel.isClosed()) {
+      try {
+        await this.sendEncrypted(channel.buildEof());
+        await this.sendEncrypted(channel.buildClose());
+      } catch {
+        // Channel may already be closed by server, ignore
+      }
+    }
     this.activeExecChannels.delete(channelID);
     this.channels.delete(channelID);
 
