@@ -88,6 +88,15 @@ export class UserDBDO {
       );
 
       CREATE INDEX IF NOT EXISTS idx_known_hosts_user ON known_hosts(user_id);
+
+      CREATE TABLE IF NOT EXISTS ai_configs (
+        user_id        INTEGER PRIMARY KEY REFERENCES users(id),
+        base_url       TEXT NOT NULL,
+        model          TEXT NOT NULL,
+        api_key_enc    TEXT NOT NULL,
+        api_key_last4  TEXT,
+        updated_at     TEXT DEFAULT (datetime('now'))
+      );
     `);
   }
 
@@ -167,6 +176,21 @@ export class UserDBDO {
       }
       if (path === '/internal/known-hosts' && request.method === 'DELETE') {
         return this.handleDeleteKnownHost(request);
+      }
+
+      // --- AI 配置管理 ---
+      if (path === '/internal/ai-config' && request.method === 'GET') {
+        const userId = url.searchParams.get('user_id');
+        if (!userId) return Response.json({ error: 'Missing user_id' }, { status: 400 });
+        return this.handleGetAIConfig(parseInt(userId));
+      }
+      if (path === '/internal/ai-config' && request.method === 'PUT') {
+        return this.handlePutAIConfig(request);
+      }
+      if (path === '/internal/ai-config/decrypt' && request.method === 'GET') {
+        const userId = url.searchParams.get('user_id');
+        if (!userId) return Response.json({ error: 'Missing user_id' }, { status: 400 });
+        return this.handleGetAIConfigDecrypted(parseInt(userId));
       }
 
       return Response.json({ error: 'Not Found' }, { status: 404 });
@@ -463,6 +487,7 @@ export class UserDBDO {
       authMethod: server.auth_method === 'publickey' ? 'publickey' : 'password',
       privateKey: server.auth_method === 'publickey' ? credential : '',
       expectedFingerprint,
+      userId: String(body.user_id),
     };
 
     // 防止 token 数量无限增长
@@ -695,5 +720,103 @@ export class UserDBDO {
     );
 
     return Response.json({ success: true });
+  }
+
+  // ==================== AI 配置管理 ====================
+
+  private handleGetAIConfig(userId: number): Response {
+    const rows = this.db.exec(
+      'SELECT base_url, model, api_key_last4, updated_at FROM ai_configs WHERE user_id = ?',
+      userId
+    ).toArray();
+
+    if (rows.length === 0) {
+      return Response.json({ configured: false });
+    }
+
+    const row = rows[0] as unknown as {
+      base_url: string; model: string; api_key_last4: string; updated_at: string;
+    };
+    return Response.json({
+      configured: true,
+      base_url: row.base_url,
+      model: row.model,
+      api_key_last4: row.api_key_last4,
+      updated_at: row.updated_at,
+    });
+  }
+
+  private async handlePutAIConfig(request: Request): Promise<Response> {
+    const body = await request.json<{
+      user_id: number;
+      base_url: string;
+      model: string;
+      api_key?: string;
+    }>();
+
+    if (!body.base_url || !body.model) {
+      return Response.json({ error: 'Missing base_url or model' }, { status: 400 });
+    }
+
+    let encrypted: string | null = null;
+    let last4: string | null = null;
+
+    if (body.api_key) {
+      encrypted = await this.encryptCredential(body.api_key, body.user_id);
+      last4 = body.api_key.slice(-4);
+    }
+
+    if (encrypted !== null) {
+      this.db.exec(
+        `INSERT INTO ai_configs (user_id, base_url, model, api_key_enc, api_key_last4, updated_at)
+         VALUES (?, ?, ?, ?, ?, datetime('now'))
+         ON CONFLICT(user_id) DO UPDATE SET
+           base_url = excluded.base_url,
+           model = excluded.model,
+           api_key_enc = excluded.api_key_enc,
+           api_key_last4 = excluded.api_key_last4,
+           updated_at = excluded.updated_at`,
+        body.user_id, body.base_url, body.model, encrypted, last4
+      );
+    } else {
+      this.db.exec(
+        `INSERT INTO ai_configs (user_id, base_url, model, api_key_enc, api_key_last4, updated_at)
+         VALUES (?, ?, ?, '', '', datetime('now'))
+         ON CONFLICT(user_id) DO UPDATE SET
+           base_url = excluded.base_url,
+           model = excluded.model,
+           updated_at = excluded.updated_at`,
+        body.user_id, body.base_url, body.model
+      );
+    }
+
+    return Response.json({ success: true });
+  }
+
+  private async handleGetAIConfigDecrypted(userId: number): Promise<Response> {
+    const rows = this.db.exec(
+      'SELECT base_url, model, api_key_enc FROM ai_configs WHERE user_id = ?',
+      userId
+    ).toArray();
+
+    if (rows.length === 0) {
+      return Response.json({ error: 'No AI config found' }, { status: 404 });
+    }
+
+    const row = rows[0] as unknown as {
+      base_url: string; model: string; api_key_enc: string;
+    };
+
+    if (!row.api_key_enc) {
+      return Response.json({ error: 'No API key configured' }, { status: 404 });
+    }
+
+    const decrypted = await this.decryptCredential(row.api_key_enc, userId);
+
+    return Response.json({
+      base_url: row.base_url,
+      model: row.model,
+      api_key: decrypted,
+    });
   }
 }

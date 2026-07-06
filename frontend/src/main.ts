@@ -3,6 +3,7 @@ import type { SSHTerminal } from './terminal';
 import { ConnectionForm } from './auth-form';
 import { ServerList } from './server-list';
 import { TabManager } from './tab-manager';
+import { AIConfigPanel } from './ai-config';
 
 // ==================== 全局状态 ====================
 
@@ -18,6 +19,7 @@ function getTabManager(): TabManager {
     tabManager.setAllTabsClosedHandler(() => {
       showOfflineUI();
     });
+    tabManager.setLoggedIn(isLoggedIn);
 
     // 绑定 new-tab-btn
     bindNewTabButton();
@@ -110,6 +112,9 @@ function showUserSpace(user: { id: number; github_id: number; username: string; 
   document.getElementById('user-space-section')!.classList.add('flex');
   document.getElementById('terminal-section')!.classList.add('hidden');
   document.getElementById('terminal-section')!.classList.remove('flex');
+
+  // Show agent toggle button for logged-in users
+  document.getElementById('agent-toggle-btn')?.classList.remove('hidden');
 
   serverList = new ServerList(
     user,
@@ -234,6 +239,21 @@ document.getElementById('sftp-toggle-btn')?.addEventListener('click', () => {
   }
   tab.sftpPanel.toggle();
 });
+
+// ==================== AI Agent 面板 ====================
+
+const aiConfigPanel = new AIConfigPanel();
+
+document.getElementById('agent-toggle-btn')?.addEventListener('click', () => {
+  const tab = tabManager?.getActiveTab();
+  if (!tab?.agentPanel) return;
+  tab.agentPanel.toggle();
+});
+
+/** 显示 AI 配置面板（从 server-list 调用） */
+export function showAIConfig(): void {
+  aiConfigPanel.show();
+}
 
 // ==================== 终端搜索 ====================
 

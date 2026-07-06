@@ -49,6 +49,7 @@ export interface SSHConnectionConfig {
   cols?: number;
   rows?: number;
   expectedFingerprint?: string;
+  userId?: string;
 }
 
 export interface TerminalSize {

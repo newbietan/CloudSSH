@@ -73,6 +73,11 @@ export class ServerList {
     // 退出登录
     document.getElementById('logout-btn')?.addEventListener('click', () => this.logout());
 
+    // AI 配置
+    document.getElementById('ai-config-btn')?.addEventListener('click', () => {
+      import('./main').then(m => m.showAIConfig());
+    });
+
     // 添加服务器按钮
     document.getElementById('add-server-btn')?.addEventListener('click', () => this.showModal('add'));
     document.getElementById('empty-add-btn')?.addEventListener('click', () => this.showModal('add'));

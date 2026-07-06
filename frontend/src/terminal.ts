@@ -146,6 +146,7 @@ export class SSHTerminal {
   private restoreCursorBlinkAfterReturnPrompt: boolean = false;
   private onSessionClosed?: (event: CloseEvent) => void;
   private onSessionReady?: () => void;
+  private onAgentFrameHandler?: (msg: any) => void;
   private sftpAttachUrl: string | null = null;
   private searchBox: HTMLElement | null = null;
   private searchInput: HTMLInputElement | null = null;
@@ -251,6 +252,16 @@ export class SSHTerminal {
 
   setSessionReadyHandler(handler: () => void): void {
     this.onSessionReady = handler;
+  }
+
+  setAgentFrameHandler(handler: (msg: any) => void): void {
+    this.onAgentFrameHandler = handler;
+  }
+
+  sendWebSocketMessage(data: string): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(data);
+    }
   }
 
   setLatencyUpdatedHandler(handler: (cfLatency: number | null, cfColo: string | null, wsLatency: number | null) => void): void {
@@ -495,6 +506,11 @@ export class SSHTerminal {
           const msg = JSON.parse(event.data);
           if (msg.type === 'sftp_attach') {
             this.sftpAttachUrl = msg.url || null;
+            return;
+          }
+
+          if (msg.type === 'agent_frame') {
+            this.onAgentFrameHandler?.(msg);
             return;
           }
 

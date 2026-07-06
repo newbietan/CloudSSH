@@ -154,6 +154,12 @@ export default {
       return handleKnownHostsRoute(request, url, env);
     }
 
+    // ==================== AI Config Routes (需认证) ====================
+
+    if (url.pathname === '/api/ai/config' || url.pathname === '/api/ai/models') {
+      return handleAIRoute(request, url, env);
+    }
+
     // ==================== Turnstile Verify ====================
 
     if (url.pathname === '/api/verify' && request.method === 'POST') {
@@ -405,6 +411,97 @@ async function handleKnownHostsRoute(request: Request, url: URL, env: Env): Prom
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }));
+  }
+
+  return Response.json({ error: 'Method not allowed' }, { status: 405 });
+}
+
+// ==================== AI config routes ====================
+
+async function handleAIRoute(request: Request, url: URL, env: Env): Promise<Response> {
+  const user = await getAuthenticatedUser(request, env);
+  if (!user) {
+    return Response.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
+  const stub = getUserDBStub(env);
+
+  // GET /api/ai/config — return current AI config (masked)
+  if (url.pathname === '/api/ai/config' && request.method === 'GET') {
+    return stub.fetch(new Request(`http://internal/internal/ai-config?user_id=${user.id}`, {
+      method: 'GET',
+    }));
+  }
+
+  // PUT /api/ai/config — save AI config
+  if (url.pathname === '/api/ai/config' && request.method === 'PUT') {
+    const body = await request.json<Record<string, unknown>>();
+    body.user_id = user.id;
+
+    // SSRF validation for base_url
+    if (body.base_url) {
+      const { validateBaseUrl } = await import('./agent/ssrf');
+      const check = validateBaseUrl(body.base_url as string);
+      if (!check.valid) {
+        return Response.json({ error: check.reason }, { status: 400 });
+      }
+    }
+
+    return stub.fetch(new Request('http://internal/internal/ai-config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }));
+  }
+
+  // POST /api/ai/models — proxy model list from user's LLM provider
+  if (url.pathname === '/api/ai/models' && request.method === 'POST') {
+    const { base_url, api_key } = await request.json<{ base_url: string; api_key: string }>();
+
+    if (!base_url || !api_key) {
+      return Response.json({ error: 'Missing base_url or api_key' }, { status: 400 });
+    }
+
+    // SSRF validation
+    const { validateBaseUrl } = await import('./agent/ssrf');
+    const check = validateBaseUrl(base_url);
+    if (!check.valid) {
+      return Response.json({ error: check.reason }, { status: 400 });
+    }
+
+    try {
+      const modelsUrl = `${base_url.replace(/\/$/, '')}/models`;
+      const res = await fetch(modelsUrl, {
+        headers: {
+          'Authorization': `Bearer ${api_key}`,
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          return Response.json({ models: [], fallback: true, reason: 'Provider does not support /models endpoint' });
+        }
+        if (res.status === 401 || res.status === 403) {
+          return Response.json({ error: 'API Key invalid or insufficient permissions' }, { status: res.status });
+        }
+        return Response.json({ error: `Provider returned ${res.status}` }, { status: 502 });
+      }
+
+      const data = await res.json() as any;
+      const models: Array<{ id: string }> = (data.data || [])
+        .filter((m: any) => {
+          const id = m.id || '';
+          return !/embedding|whisper|tts|dall-e|moderation|rerank/i.test(id);
+        })
+        .map((m: any) => ({ id: m.id }))
+        .sort((a: any, b: any) => a.id.localeCompare(b.id));
+
+      return Response.json({ models, fallback: false });
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      return Response.json({ models: [], fallback: true, reason: errMsg });
+    }
   }
 
   return Response.json({ error: 'Method not allowed' }, { status: 405 });
