@@ -163,6 +163,20 @@ body {
   display: none; /* WebKit (Chrome/Safari) */
 }
 
+/* Agent markdown table */
+.agent-table {
+  border-spacing: 0;
+}
+
+.agent-table th,
+.agent-table td {
+  word-break: break-word;
+}
+
+.agent-table tbody tr:hover {
+  background: color-mix(in srgb, var(--agent-agent-color) 8%, transparent);
+}
+
 /* ==================== User Space Styles ==================== */
 
 /* 服务器卡片 */

@@ -28,7 +28,7 @@ export class AgentPanel {
 
     this.panelEl = document.createElement('div');
     this.panelEl.id = 'agent-panel';
-    this.panelEl.className = 'w-[420px] shrink-0 border-l border-[var(--border)] flex flex-col bg-[var(--bg)] overflow-hidden';
+    this.panelEl.className = 'w-[480px] shrink-0 border-l border-[var(--border)] flex flex-col bg-[var(--bg)] overflow-hidden';
     this.panelEl.style.display = 'none';
 
     this.panelEl.innerHTML = `
@@ -342,6 +342,21 @@ export class AgentPanel {
         continue;
       }
 
+      // GFM Table: detect header row + separator on next line
+      if (line.match(/^\|.+\|$/) && i + 1 < lines.length && lines[i + 1].match(/^\|?[\s]*:?[-]+:?[\s]*(\|[\s]*:?[-]+:?[\s]*)*\|?$/)) {
+        const headerLine = line;
+        const sepLine = lines[i + 1];
+        const dataLines: string[] = [];
+        let j = i + 2;
+        while (j < lines.length && lines[j].match(/^\|.+\|$/)) {
+          dataLines.push(lines[j]);
+          j++;
+        }
+        out.push(this.buildTable(headerLine, sepLine, dataLines, agentColor));
+        i = j - 1; // will be incremented by loop
+        continue;
+      }
+
       // Unordered list item (- or *)
       const ulMatch = line.match(/^[\s]*[-*]\s+(.+)$/);
       if (ulMatch) {
@@ -396,6 +411,46 @@ export class AgentPanel {
     html = html.replace(/\x00CODEBLOCK(\d+)\x00/g, (_, i) => codeBlocks[+i]);
 
     return `<div class="agent-md-content break-words" style="color: ${agentColor};">${html}</div>`;
+  }
+
+  private buildTable(headerLine: string, sepLine: string, dataLines: string[], agentColor: string): string {
+    const parseCells = (line: string): string[] => {
+      // Strip leading/trailing `|`, split by `|`, trim each cell
+      const stripped = line.replace(/^\|/, '').replace(/\|$/, '');
+      return stripped.split('|').map(c => c.trim());
+    };
+
+    const headerCells = parseCells(headerLine);
+    const sepCells = parseCells(sepLine);
+
+    // Determine alignment per column
+    const aligns: string[] = sepCells.map(cell => {
+      const c = cell.trim();
+      if (c.startsWith(':') && c.endsWith(':')) return 'center';
+      if (c.endsWith(':')) return 'right';
+      return 'left';
+    });
+
+    const cellStyle = (i: number) => `text-align:${aligns[i] || 'left'};padding:4px 8px;border-bottom:1px solid var(--border);`;
+    const cellContent = (s: string) => {
+      let h = this.escapeHtml(s);
+      h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      h = h.replace(/`([^`\n]+)`/g, '<code class="bg-black/30 px-1 rounded text-[11px]">$1</code>');
+      return h;
+    };
+
+    const headRow = '<tr>' + headerCells.map((c, i) =>
+      `<th style="${cellStyle(i)}font-weight:bold;color:${agentColor};">${cellContent(c)}</th>`
+    ).join('') + '</tr>';
+
+    const bodyRows = dataLines.map(line => {
+      const cells = parseCells(line);
+      return '<tr>' + cells.map((c, i) =>
+        `<td style="${cellStyle(i)}">${cellContent(c)}</td>`
+      ).join('') + '</tr>';
+    }).join('');
+
+    return `<table class="agent-table w-full text-[12px] my-2" style="border-collapse:collapse;border-top:2px solid ${agentColor};"><thead>${headRow}</thead><tbody>${bodyRows}</tbody></table>`;
   }
 
   private escapeHtml(text: string): string {
