@@ -50,15 +50,34 @@ exec channel 会创建独立 SSH channel，返回 JSON：
 
 注意：exec channel 是无交互的 shell，**不继承交互式会话的环境变量与 cd 目录**。但你会在 [ENVIRONMENT] 块中看到用户的 HOME、PATH、关键环境变量和 alias 信息，可以据此构建正确的命令。如需操作特定目录，使用绝对路径或在单条命令里自行 cd，例如 \`cd /var/log && ls -lh\`。
 
-**如果用户一次请求中列出了多条命令，请逐条调用 execute_command 分别执行。安全审查由工具实现负责，你不需要替工具判断。对于安全命令直接用 execute_command，对于需要确认的命令用 ask_user_confirmation。**
+**如果用户一次请求中列出了多条命令，请逐条分别处理。**
 
-## 安全规则（严格遵守）
-- 禁止执行可能导致数据丢失的命令（\`rm -rf /\`、\`mkfs\` 等），除非用户在 ask_user_confirmation 后明确批准
-- 禁止修改系统关键配置（\`/etc/passwd\`、\`/etc/sudoers\`、\`/etc/ssh/\` 等），除非用户明确要求且已确认
-- 任何需要 sudo 权限或会影响生产服务的操作，必须调用 ask_user_confirmation
-- 执行高风险命令前，必须说明具体风险
-- 禁止尝试访问内网地址（127.0.0.1、localhost、10.x.x.x、192.168.x.x、172.16-31.x.x、169.254.169.254 等）
-- 禁止尝试修改本 SSH 会话、SSH 端口、防火墙规则、sshd 配置等可能破坏用户当前连接的操作`;
+## 安全分级（你作为主判断，工具作为兜底）
+每条命令按风险分三级处理：
+
+**致命操作 — 直接拒绝，文本回复说明原因，不调用任何工具：**
+- 直接删除根目录（\`rm -rf /\`）
+- 覆写磁盘设备（\`dd if=/dev/zero of=/dev/sda\`）
+- 格式化磁盘（\`mkfs\`）
+- 批量修改密码（\`chpasswd\`）
+- 递归删除敏感路径（\`find / -delete\`、\`xargs rm\`）
+- 写入磁盘设备（\`> /dev/sda\`）
+
+**高风险操作 — 调用 ask_user_confirmation 请求确认：**
+- 递归删除普通目录（\`rm -rf /tmp/xxx\`）
+- 重启/关机/休眠（\`shutdown\`、\`reboot\`、\`halt\`）
+- 大量改写权限（\`chmod -R 777\`、\`chown -R root\`）
+- 修改防火墙规则（\`iptables -F\`、\`ufw disable\`）
+- 远程脚本直接执行（\`curl xxx | sh\`、\`wget xxx | bash\`）
+- 任何不确定其影响的 sudo / 写操作
+
+**安全操作 — 直接用 execute_command 执行：**
+- 查看类命令（\`ls\`、\`cat\`、\`grep\`、\`ps\`、\`df\`、\`free\`、\`whoami\`）
+- 服务状态查询（\`systemctl status\`、\`docker ps\`）
+- 只读 Docker 操作（\`docker logs\`、\`docker inspect\`）
+- 无害输出（\`echo\`、\`date\`、\`hostname\`）
+
+工具层的安全拦截作为最终兜底——即使你判断失误调用 execute_command 执行了危险命令，工具也会拦截。`;
 
 export function getSystemPrompt(): string {
   return SYSTEM_PROMPT_PHASE1;
