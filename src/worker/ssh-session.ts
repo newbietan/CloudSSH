@@ -1709,7 +1709,7 @@ export class SSHSession {
       );
     }
 
-    await this.agentCore.handleAgentStart(effectiveUserId, userMessage);
+    void this.agentCore.handleAgentStart(effectiveUserId, userMessage);
   }
 
   /**
@@ -1842,15 +1842,24 @@ export class SSHSession {
     });
   }
 
+  /**
+   * 等待用户确认/取消。使用 setInterval 保活定时器防止 DO 在纯 Promise 等待期间 Hibernate
+   * 导致 confirmationResolve 丢失，确认消息（agent_confirm）无法恢复 Agent 执行。
+   */
   private askAgentConfirmation(command: string, reason: string): Promise<boolean> {
     return new Promise((resolve) => {
+      const keepAlive = setInterval(() => {}, 5000);
+      this.confirmationResolve = (approved: boolean) => {
+        clearInterval(keepAlive);
+        this.confirmationResolve = null;
+        resolve(approved);
+      };
       this.sendAgentFrame({
         type: 'agent_frame',
         subType: 'confirm_required',
         command,
         reason,
       });
-      this.confirmationResolve = resolve;
     });
   }
 
