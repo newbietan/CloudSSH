@@ -60,7 +60,10 @@ export class AgentCore {
       this.loopTimeout = null;
     }
 
-    this.state = { status: 'running', messages: [], iteration: 0, summary: undefined };
+    // 判断是否为新会话（首次启动或状态已重置）
+    const isNewSession = this.state.messages.length === 0;
+    this.state.status = 'running';
+    this.state.iteration = 0;
     this.abortController = new AbortController();
 
     // 1. Fetch user AI config from UserDB
@@ -75,35 +78,43 @@ export class AgentCore {
       return;
     }
 
-    // 2. Read terminal context + detect environment as initial observation
-    const terminalSnapshot = this.terminalContext.snapshot(200);
-    const envSnapshot = await this.toolExecutor.execute('detect_environment', {}, this.abortController.signal).catch(() => '');
+    if (isNewSession) {
+      // 2. 首次启动：构建初始上下文（环境 + 终端 + 用户请求）
+      const terminalSnapshot = this.terminalContext.snapshot(200);
+      const envSnapshot = await this.toolExecutor.execute('detect_environment', {}, this.abortController.signal).catch(() => '');
 
-    let userContent = '';
-    if (envSnapshot) {
-      try {
-        const parsed = JSON.parse(envSnapshot);
-        if (parsed.environment) {
-          userContent += `[ENVIRONMENT]\n${parsed.environment}\n[/ENVIRONMENT]\n\n`;
-        }
-      } catch { /* ignore parse error */ }
-    }
-    if (terminalSnapshot) {
-      userContent += `[TERMINAL]\n${terminalSnapshot}\n[/TERMINAL]\n\n`;
-    }
-    userContent += `用户请求: ${userMessage}`;
+      let userContent = '';
+      if (envSnapshot) {
+        try {
+          const parsed = JSON.parse(envSnapshot);
+          if (parsed.environment) {
+            userContent += `[ENVIRONMENT]\n${parsed.environment}\n[/ENVIRONMENT]\n\n`;
+          }
+        } catch { /* ignore parse error */ }
+      }
+      if (terminalSnapshot) {
+        userContent += `[TERMINAL]\n${terminalSnapshot}\n[/TERMINAL]\n\n`;
+      }
+      userContent += `用户请求: ${userMessage}`;
 
-    this.state.messages = [
-      { role: 'system', content: getSystemPrompt() },
-      { role: 'user', content: userContent },
-    ];
+      this.state.messages = [
+        { role: 'system', content: getSystemPrompt() },
+        { role: 'user', content: userContent },
+      ];
+    } else {
+      // 3. 后续请求：追加新用户消息到已有对话历史
+      this.state.messages.push({
+        role: 'user',
+        content: `用户请求: ${userMessage}`,
+      });
+    }
 
     // 3. Run agent loop
     try {
       await this.runLoop();
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
-      if (this.state.status !== 'idle') {
+      if ((this.state.status as string) !== 'idle') {
         this.sendToFrontend({
           type: 'agent_frame',
           subType: 'error',
@@ -230,12 +241,7 @@ export class AgentCore {
           continue;
         }
 
-        // No tool_calls -> direct text response, end loop
-        this.sendToFrontend({
-          type: 'agent_frame',
-          subType: 'response',
-          content: choice.message.content || '',
-        });
+        // No tool_calls -> streaming 已通过 stream_end 发送响应，无需重复发送
         this.state.status = 'idle';
         return;
       }

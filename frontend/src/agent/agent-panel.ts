@@ -292,6 +292,10 @@ export class AgentPanel {
     // Move the previous step into history BEFORE clearing current
     if (this.thinkingCurrentEl.childElementCount > 0) {
       this.thinkingStepsEl.appendChild(this.thinkingCurrentEl.firstElementChild!);
+      // 保留历史中最新的 2 条记录，移除更早的
+      while (this.thinkingStepsEl.children.length > 2) {
+        this.thinkingStepsEl.removeChild(this.thinkingStepsEl.firstChild!);
+      }
     }
     this.thinkingCurrentEl.innerHTML = '';
     this.thinkingStepCount++;
@@ -322,6 +326,13 @@ export class AgentPanel {
       this.thinkingStepsEl?.appendChild(this.thinkingCurrentEl.firstElementChild);
     }
     this.thinkingCurrentEl!.innerHTML = '';
+
+    // 完成时只保留最新的 2 条步骤记录
+    if (this.thinkingStepsEl) {
+      while (this.thinkingStepsEl.children.length > 2) {
+        this.thinkingStepsEl.removeChild(this.thinkingStepsEl.firstChild!);
+      }
+    }
 
     this.thinkingProcessEl.querySelectorAll('.tp-step-active').forEach(el => {
       el.classList.remove('tp-step-active');
