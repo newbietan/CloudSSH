@@ -295,11 +295,12 @@ export class AgentCore {
 
     await this.trimMessages();
 
-    // 构建发送给 LLM 的消息（使用包含摘要的 system prompt）
-    const messagesToSend = [
+    // 校验消息完整性：确保每个 assistant.tool_calls 都有对应的 tool 响应
+    // 剔除不配对的消息，避免 OpenAI API 400 错误
+    const validMessages = this.validateMessages([
       { role: 'system' as const, content: this.buildSystemPromptWithSummary() },
-      ...this.state.messages.slice(1), // 跳过原始 system 消息
-    ];
+      ...this.state.messages.slice(1),
+    ]);
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       if (signal.aborted) throw new Error('Aborted');
@@ -312,7 +313,7 @@ export class AgentCore {
         },
         body: JSON.stringify({
           model: config.model,
-          messages: messagesToSend,
+          messages: validMessages,
           tools: AGENT_TOOLS,
           tool_choice: 'auto',
           max_tokens: 4096,
@@ -441,6 +442,49 @@ export class AgentCore {
     if (terminalSnapshot) {
       this.terminalContextSnapshot = terminalSnapshot;
     }
+  }
+
+  /**
+   * 校验消息完整性：确保每条带 tool_calls 的 assistant 消息之后都有
+   * 足够数量和匹配 ID 的 tool 响应。剔除不配对的消息，防止 LLM API 400 错误。
+   */
+  private validateMessages(msgs: ChatMessage[]): ChatMessage[] {
+    const result: ChatMessage[] = [];
+    let i = 0;
+
+    while (i < msgs.length) {
+      const msg = msgs[i];
+
+      if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+        const expectedIds = new Set(msg.tool_calls.map(tc => tc.id));
+        const matchedTools: ChatMessage[] = [];
+        let j = i + 1;
+
+        // 收集后续匹配的 tool 消息
+        while (j < msgs.length && msgs[j].role === 'tool') {
+          if (expectedIds.has(msgs[j].tool_call_id!)) {
+            matchedTools.push(msgs[j]);
+          }
+          j++;
+        }
+
+        // 仅当所有 tool_calls 都有匹配响应时才保留
+        if (matchedTools.length >= expectedIds.size) {
+          result.push(msg);
+          result.push(...matchedTools);
+        }
+        // 不完整或缺失 → 跳过整组，跳到 tool 消息之后继续
+        i = j;
+      } else if (msg.role === 'tool') {
+        // 孤立 tool 消息（前面没有 assistant.tool_calls）→ 丢弃
+        i++;
+      } else {
+        result.push(msg);
+        i++;
+      }
+    }
+
+    return result;
   }
 
   private async trimMessages(): Promise<void> {
