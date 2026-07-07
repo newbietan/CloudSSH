@@ -280,6 +280,9 @@ export class AgentCore {
     const maxRetries = 2;
     const retryableStatuses = [429, 500, 502, 503, 504];
 
+    // 每次 LLM 调用前刷新终端快照
+    await this.refreshTerminalSnapshot();
+
     await this.trimMessages();
 
     // 构建发送给 LLM 的消息（使用包含摘要的 system prompt）
@@ -420,12 +423,45 @@ export class AgentCore {
     };
   }
 
+  /**
+   * 刷新终端快照，更新 firstUserMsg 中的 [TERMINAL] 块
+   */
+  private async refreshTerminalSnapshot(): Promise<void> {
+    if (this.state.messages.length < 2) return;
+
+    const terminalSnapshot = this.terminalContext.snapshot(200);
+    if (!terminalSnapshot) return;
+
+    const firstUserMsg = this.state.messages[1];
+    if (!firstUserMsg || firstUserMsg.role !== 'user' || !firstUserMsg.content) return;
+
+    // 替换 [TERMINAL] 块
+    const updatedContent = firstUserMsg.content.replace(
+      /\[TERMINAL\][\s\S]*?\[\/TERMINAL\]/,
+      `[TERMINAL]\n${terminalSnapshot}\n[/TERMINAL]`,
+    );
+
+    // 如果没有 [TERMINAL] 块，追加一个
+    if (updatedContent === firstUserMsg.content) {
+      const envEnd = firstUserMsg.content.indexOf('[/ENVIRONMENT]');
+      if (envEnd !== -1) {
+        const insertPos = envEnd + '[/ENVIRONMENT]'.length;
+        firstUserMsg.content =
+          firstUserMsg.content.slice(0, insertPos) +
+          '\n\n[TERMINAL]\n' + terminalSnapshot + '\n[/TERMINAL]' +
+          firstUserMsg.content.slice(insertPos);
+      }
+    } else {
+      firstUserMsg.content = updatedContent;
+    }
+  }
+
   private async trimMessages(): Promise<void> {
     // 摘要式上下文管理：
     // 当消息超过限制时，调用 LLM 将早期消息压缩为摘要
     // 保留最近 N 轮对话（user + assistant），丢弃历史 tool 消息
     const recentRoundsCount = 3; // 保留最近 3 轮对话
-    if (this.state.messages.length <= 10) return; // 消息太少不需要裁剪
+    if (this.state.messages.length <= 20) return; // 消息较少时不需要裁剪
 
     // 1. 分离系统消息和对话消息
     const systemMsg = this.state.messages[0]; // system
@@ -487,6 +523,37 @@ export class AgentCore {
       firstUserMsg,
       ...recentMsgs,
     ];
+
+    // 6. 刷新环境上下文（更新 firstUserMsg 中的 [ENVIRONMENT] 块）
+    await this.refreshEnvironmentContext();
+  }
+
+  /**
+   * 刷新环境上下文，更新 firstUserMsg 中的 [ENVIRONMENT] 块
+   */
+  private async refreshEnvironmentContext(): Promise<void> {
+    if (this.state.messages.length < 2) return;
+
+    const envSnapshot = await this.toolExecutor.execute('detect_environment', {}, this.abortController.signal).catch(() => '');
+    if (!envSnapshot) return;
+
+    try {
+      const parsed = JSON.parse(envSnapshot);
+      if (!parsed.environment) return;
+
+      const firstUserMsg = this.state.messages[1];
+      if (!firstUserMsg || firstUserMsg.role !== 'user' || !firstUserMsg.content) return;
+
+      // 替换 [ENVIRONMENT] 块
+      const updatedContent = firstUserMsg.content.replace(
+        /\[ENVIRONMENT\][\s\S]*?\[\/ENVIRONMENT\]/,
+        `[ENVIRONMENT]\n${parsed.environment}\n[/ENVIRONMENT]`,
+      );
+
+      if (updatedContent !== firstUserMsg.content) {
+        firstUserMsg.content = updatedContent;
+      }
+    } catch { /* ignore parse error */ }
   }
 
   private buildSystemPromptWithSummary(): string {

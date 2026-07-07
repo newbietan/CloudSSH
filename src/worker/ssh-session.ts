@@ -1758,18 +1758,21 @@ export class SSHSession {
     await this.sendEncrypted(execReq);
 
     // Wait for result with timeout + abort
+    let aborted = false;
     const result = await Promise.race([
       execCh.getClosedPromise(),
       new Promise<{ stdout: string; stderr: string; exitCode: number }>((_, reject) => {
         const timer = setTimeout(() => reject(new Error(`Exec timeout after ${timeout}ms`)), timeout);
         signal?.addEventListener('abort', () => {
+          aborted = true;
           clearTimeout(timer);
           reject(new Error('Exec aborted'));
-        });
+        }, { once: true });
       }),
     ]);
 
     // Cleanup: send EOF + CLOSE to server (RFC 4254 §5.3)
+    // Always attempt cleanup, even on abort, to prevent resource leaks
     if (!channel.isClosed()) {
       try {
         await this.sendEncrypted(channel.buildEof());
@@ -1778,6 +1781,12 @@ export class SSHSession {
         // Channel may already be closed by server, ignore
       }
     }
+
+    // If aborted, also close the exec channel to resolve any pending promises
+    if (aborted) {
+      execCh.onClose();
+    }
+
     this.activeExecChannels.delete(channelID);
     this.channels.delete(channelID);
 
