@@ -57,6 +57,8 @@ export class AgentCore {
     // Guard: abort previous run if still active
     if (this.state.status === 'running' || this.state.status === 'waiting_confirmation') {
       this.abortController.abort('new_request');
+      // 清理上一轮未完成的 tool_calls（assistant 已写入但 tool 响应未写入）
+      this.cleanupIncompleteToolCalls();
     }
     // Cancel the previous loop's stale timeout so it can't abort the new controller
     if (this.loopTimeout) {
@@ -133,6 +135,21 @@ export class AgentCore {
         content: 'Agent 已停止。',
       });
       this.state.status = 'idle';
+    }
+  }
+
+  /**
+   * 清理未完成的 tool_calls：移除最后一条 assistant 消息（如果它带有 tool_calls
+   * 且对应的 tool 响应尚未写入），避免 LLM API 因缺少 tool 响应而报 400 错误。
+   */
+  private cleanupIncompleteToolCalls(): void {
+    const msgs = this.state.messages;
+    if (msgs.length === 0) return;
+
+    const last = msgs[msgs.length - 1];
+    // 如果最后一条是 assistant 且带有 tool_calls，说明工具尚未执行完成
+    if (last.role === 'assistant' && last.tool_calls && last.tool_calls.length > 0) {
+      msgs.pop();
     }
   }
 
