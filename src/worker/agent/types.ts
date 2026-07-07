@@ -63,7 +63,7 @@ export interface AgentConfig {
   timeout: number;
 }
 
-export type AgentStatus = 'idle' | 'running' | 'waiting_confirmation';
+export type AgentStatus = 'idle' | 'running';
 
 export interface AgentState {
   status: AgentStatus;

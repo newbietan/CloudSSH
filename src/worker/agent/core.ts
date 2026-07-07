@@ -14,7 +14,7 @@ import { TerminalContext } from './terminal-context';
 
 const DEFAULT_CONFIG: AgentConfig = {
   maxIterations: 20,
-  timeout: 120_000,
+  timeout: 25_000, // 略低于 Cloudflare DO 30s 墙钟限制
 };
 
 export class AgentCore {
@@ -54,11 +54,7 @@ export class AgentCore {
   }
 
   async handleAgentStart(userId: string, userMessage: string): Promise<void> {
-    // Guard: abort previous run if still active
-    if (this.state.status === 'running' || this.state.status === 'waiting_confirmation') {
-      this.abortController.abort('new_request');
-    }
-    // Cancel the previous loop's stale timeout so it can't abort the new controller
+    // Cancel stale timeout from previous loop so it can't abort the new controller
     if (this.loopTimeout) {
       clearTimeout(this.loopTimeout);
       this.loopTimeout = null;
@@ -125,7 +121,7 @@ export class AgentCore {
   }
 
   agentAbort(): void {
-    if (this.state.status === 'running' || this.state.status === 'waiting_confirmation') {
+    if (this.state.status === 'running') {
       this.abortController.abort('user_stop');
       this.sendToFrontend({
         type: 'agent_frame',
