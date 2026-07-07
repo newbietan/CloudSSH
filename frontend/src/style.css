@@ -698,3 +698,125 @@ body {
   vertical-align: text-bottom;
   animation: agent-blink 1s step-end infinite;
 }
+
+/* ─── Thinking Process Container ─────────────────────────────────────────── */
+.agent-thinking-process {
+  border: 1px solid color-mix(in srgb, var(--agent-agent-color) 20%, transparent);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.tp-accordion {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--agent-agent-color) 6%, transparent);
+  border: none;
+  outline: none;
+  width: 100%;
+  cursor: pointer;
+  user-select: none;
+  font: inherit;
+  color: inherit;
+}
+
+.tp-chevron {
+  font-size: 16px;
+  color: var(--on-surface-variant);
+  transition: transform 0.2s ease;
+}
+
+.agent-thinking-process.tp-expanded .tp-chevron {
+  transform: rotate(180deg);
+}
+
+.tp-icon {
+  font-size: 16px;
+  color: var(--agent-agent-color);
+}
+
+.tp-status {
+  flex: 1;
+  font-size: 11px;
+  color: var(--on-surface-variant);
+  font-weight: 600;
+}
+
+/* Thinking dots animation */
+.thinking-dots {
+  display: flex;
+  gap: 2px;
+}
+
+/* Body (collapsible) — hidden by default when done */
+.tp-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease-out;
+}
+
+.agent-thinking-process.tp-expanded .tp-body {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* Steps list */
+.tp-steps {
+  padding: 4px 0;
+}
+
+/* Individual step row */
+.tp-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  transition: opacity 0.2s ease;
+}
+
+.tp-step-icon {
+  font-size: 14px;
+  color: var(--on-surface-variant);
+  flex-shrink: 0;
+}
+
+.tp-step-label {
+  flex: 1;
+  color: var(--on-surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* Current step highlight */
+.tp-step-active {
+  background: color-mix(in srgb, var(--agent-agent-color) 8%, transparent);
+  animation: tp-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes tp-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* Completed step */
+.tp-step-done .tp-step-icon {
+  color: var(--agent-agent-color);
+}
+
+/* Current step container (below history) */
+.tp-current {
+  padding: 4px 0 8px;
+  border-top: 1px solid color-mix(in srgb, var(--agent-agent-color) 10%, transparent);
+  margin-top: 4px;
+}
+
+.tp-current:empty {
+  display: none;
+  border: none;
+  margin: 0;
+  padding: 0;
+}

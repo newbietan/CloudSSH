@@ -47,6 +47,12 @@ export class AgentPanel {
   private onLayoutChange?: () => void;
   private streamingEl: HTMLElement | null = null;
   private streamingText: string = '';
+  private thinkingProcessEl: HTMLElement | null = null;
+  private thinkingStepsEl: HTMLElement | null = null;
+  private thinkingCurrentEl: HTMLElement | null = null;
+  private thinkingStatusEl: HTMLElement | null = null;
+  private thinkingIsDone: boolean = false;
+  private thinkingStepCount: number = 0;
 
   constructor(
     private parentEl: HTMLElement,
@@ -174,9 +180,11 @@ export class AgentPanel {
     if (!text) return;
     if (this.isAgentRunning) return;
 
-    // Reset streaming state
+    // Reset streaming + thinking process state
     this.streamingEl = null;
     this.streamingText = '';
+    this.removeThinkingProcess();
+    this.thinkingStepCount = 0;
 
     this.addUserMessage(text);
     this.inputEl!.value = '';
@@ -205,44 +213,138 @@ export class AgentPanel {
   }
 
   private showThinking(iteration: number): void {
-    this.removeThinkingIndicator();
-    const el = document.createElement('div');
-    el.className = 'agent-thinking flex items-center gap-2 opacity-80 text-[12px]';
-    el.innerHTML = `
-      <span class="material-symbols-outlined text-[16px]" style="color:var(--agent-agent-color);font-variation-settings:'FILL' 1;">smart_toy</span>
-      <span style="color:var(--agent-agent-color);">Thinking${iteration > 0 ? ` (${iteration})` : ''}...</span>
-      <span class="inline-flex gap-0.5">
-        <span class="w-1 h-1 rounded-full bg-[var(--agent-agent-color)] animate-bounce" style="animation-delay:0ms;"></span>
-        <span class="w-1 h-1 rounded-full bg-[var(--agent-agent-color)] animate-bounce" style="animation-delay:150ms;"></span>
-        <span class="w-1 h-1 rounded-full bg-[var(--agent-agent-color)] animate-bounce" style="animation-delay:300ms;"></span>
-      </span>
-    `;
-    this.messagesEl?.appendChild(el);
-    this.scrollToBottom();
-  }
-
-  private removeThinkingIndicator(): void {
-    this.messagesEl?.querySelectorAll('.agent-thinking').forEach(el => el.remove());
+    this.ensureThinkingProcess();
+    const firstIteration = iteration === 0;
+    if (!firstIteration) {
+      this.addThinkingStep('thinking', `正在思考第 ${iteration + 1} 步...`);
+    } else if (!this.thinkingCurrentEl) {
+      this.addThinkingStep('thinking', '正在分析请求...');
+    }
   }
 
   private showExecuting(tool: string, args: any): void {
-    this.removeThinkingIndicator();
+    this.ensureThinkingProcess();
     const cmd = args?.command || '';
-    const text = tool === 'execute_command' && cmd
-      ? `$ ${cmd}`
+    const label = tool === 'respond_to_user' ? '生成回复'
+      : tool === 'ask_user_confirmation' ? '请求用户确认'
+      : tool === 'execute_command' && cmd ? `$ ${cmd}`
       : `${tool}(${JSON.stringify(args || {})})`;
-    this.appendMessage('executing', text);
+    this.addThinkingStep(tool, label);
+  }
+
+  private ensureThinkingProcess(): void {
+    if (this.thinkingProcessEl) return;
+
+    const container = document.createElement('div');
+    container.className = 'agent-thinking-process';
+
+    container.innerHTML = `
+      <button class="tp-accordion" type="button">
+        <span class="tp-chevron material-symbols-outlined">expand_more</span>
+        <span class="tp-icon material-symbols-outlined" style="font-variation-settings:'FILL' 1;">smart_toy</span>
+        <span class="tp-status">正在思考</span>
+        <div class="thinking-dots">
+          <span class="w-1 h-1 rounded-full bg-[var(--agent-agent-color)] animate-bounce" style="animation-delay:0ms;"></span>
+          <span class="w-1 h-1 rounded-full bg-[var(--agent-agent-color)] animate-bounce" style="animation-delay:150ms;"></span>
+          <span class="w-1 h-1 rounded-full bg-[var(--agent-agent-color)] animate-bounce" style="animation-delay:300ms;"></span>
+        </div>
+      </button>
+      <div class="tp-body">
+        <div class="tp-steps"></div>
+        <div class="tp-current"></div>
+      </div>
+    `;
+
+    const accordion = container.querySelector('.tp-accordion') as HTMLElement;
+    accordion?.addEventListener('click', () => {
+      if (!this.thinkingIsDone) return;
+      container.classList.toggle('tp-expanded');
+    });
+
+    this.thinkingProcessEl = container;
+    this.thinkingStepsEl = container.querySelector('.tp-steps') as HTMLElement;
+    this.thinkingStatusEl = container.querySelector('.tp-status') as HTMLElement;
+    this.thinkingCurrentEl = container.querySelector('.tp-current') as HTMLElement;
+    this.thinkingIsDone = false;
+    this.messagesEl?.appendChild(container);
+    this.scrollToBottom();
+  }
+
+  private addThinkingStep(tool: string, label: string): void {
+    if (!this.thinkingStepsEl || !this.thinkingCurrentEl) return;
+
+    this.thinkingCurrentEl.innerHTML = '';
+    this.thinkingStepCount++;
+
+    const stepEl = document.createElement('div');
+    stepEl.className = 'tp-step tp-step-active';
+
+    const icon = tool === 'execute_command' || tool === 'terminal'
+      ? '<span class="material-symbols-outlined tp-step-icon" style="font-variation-settings:\'FILL\' 0;">terminal</span>'
+      : '<span class="material-symbols-outlined tp-step-icon" style="font-variation-settings:\'FILL\' 1;">smart_toy</span>';
+
+    stepEl.innerHTML = `${icon}<span class="tp-step-label">${escapeHtml(label)}</span>`;
+
+    if (this.thinkingCurrentEl.childElementCount > 0) {
+      this.thinkingStepsEl.appendChild(this.thinkingCurrentEl.firstElementChild!);
+    }
+    this.thinkingCurrentEl.appendChild(stepEl);
+
+    if (this.thinkingStatusEl) {
+      const prefix = this.thinkingIsDone ? '已完成' : '处理中';
+      this.thinkingStatusEl.textContent = `${prefix}（${this.thinkingStepCount} 个步骤）`;
+    }
+    this.scrollToBottom();
+  }
+
+  private collapseThinkingProcess(): void {
+    if (!this.thinkingProcessEl || this.thinkingIsDone) return;
+    this.thinkingIsDone = true;
+
+    if (this.thinkingCurrentEl?.firstElementChild) {
+      this.thinkingStepsEl?.appendChild(this.thinkingCurrentEl.firstElementChild);
+    }
+    this.thinkingCurrentEl!.innerHTML = '';
+
+    this.thinkingProcessEl.querySelectorAll('.tp-step-active').forEach(el => {
+      el.classList.remove('tp-step-active');
+      el.classList.add('tp-step-done');
+      const icon = el.querySelector('.tp-step-icon') as HTMLElement | null;
+      if (icon) icon.textContent = 'check_circle';
+    });
+
+    if (this.thinkingStatusEl) {
+      this.thinkingStatusEl.textContent = `已完成 ${this.thinkingStepCount} 个步骤`;
+    }
+
+    const mainIcon = this.thinkingProcessEl.querySelector('.tp-icon') as HTMLElement | null;
+    if (mainIcon) mainIcon.textContent = 'check_circle';
+
+    const dots = this.thinkingProcessEl.querySelector('.thinking-dots') as HTMLElement | null;
+    if (dots) dots.style.display = 'none';
+  }
+
+  private removeThinkingProcess(): void {
+    if (this.thinkingProcessEl) {
+      this.thinkingProcessEl.remove();
+    }
+    this.thinkingProcessEl = null;
+    this.thinkingStepsEl = null;
+    this.thinkingCurrentEl = null;
+    this.thinkingStatusEl = null;
+    this.thinkingIsDone = false;
   }
 
   private addAgentResponse(content: string): void {
-    this.removeThinkingIndicator();
+    this.collapseThinkingProcess();
     this.appendMessage('response', content);
   }
 
   private handleStreamChunk(content: string): void {
-    this.removeThinkingIndicator();
-
-    // First chunk: create the streaming message element
+    // First chunk: collapse thinking, create the streaming message element
+    if (!this.streamingEl) {
+      this.collapseThinkingProcess();
+    }
     if (!this.streamingEl) {
       this.streamingText = '';
       const el = document.createElement('div');
@@ -298,7 +400,7 @@ export class AgentPanel {
   }
 
   private showError(message: string): void {
-    this.removeThinkingIndicator();
+    this.collapseThinkingProcess();
     this.appendMessage('error', message);
   }
 
