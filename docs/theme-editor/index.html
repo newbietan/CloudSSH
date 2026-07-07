@@ -1124,6 +1124,207 @@
       background: var(--bg-elevated);
     }
 
+    /* ===== Agent Panel Preview ===== */
+    .preview-grid .col-agent {
+      grid-column: 1 / -1;
+    }
+
+    .agent-preview {
+      background: var(--bg);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 260px;
+    }
+
+    .agent-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-elevated);
+    }
+
+    .agent-header-title {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      color: var(--accent-secondary);
+    }
+
+    .agent-close-icon {
+      font-size: 14px;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+
+    .agent-messages {
+      flex: 1;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow: hidden;
+    }
+
+    /* User message bubble */
+    .agent-msg-user {
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
+      align-items: flex-start;
+    }
+
+    .agent-msg-user .agent-msg-text {
+      background: color-mix(in srgb, var(--agent-user-color) 12%, transparent);
+      border: 1px solid color-mix(in srgb, var(--agent-user-color) 30%, transparent);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      color: var(--agent-user-color);
+      max-width: 70%;
+    }
+
+    .agent-icon-user {
+      font-size: 14px;
+      color: var(--agent-user-color);
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+
+    /* Agent message */
+    .agent-msg-agent {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    .agent-icon-bot {
+      font-size: 14px;
+      color: var(--agent-agent-color);
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+
+    .agent-response-body {
+      font-size: 11px;
+      color: var(--on-surface);
+      line-height: 1.5;
+    }
+
+    .agent-response-body h3 {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--agent-agent-color);
+      margin-bottom: 6px;
+    }
+
+    .agent-response-body p {
+      margin-top: 6px;
+    }
+
+    .agent-table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 10px;
+      margin: 4px 0;
+    }
+
+    .agent-table th,
+    .agent-table td {
+      padding: 3px 8px;
+      border-bottom: 1px solid color-mix(in srgb, var(--agent-agent-color) 20%, transparent);
+      text-align: left;
+    }
+
+    .agent-table th {
+      font-weight: 700;
+      color: var(--agent-agent-color);
+      background: color-mix(in srgb, var(--agent-agent-color) 10%, transparent);
+    }
+
+    .agent-code {
+      background: color-mix(in srgb, var(--agent-agent-color) 10%, transparent);
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-size: 10px;
+    }
+
+    /* Thinking Process (collapsed) */
+    .tp-container {
+      border: 1px solid color-mix(in srgb, var(--agent-agent-color) 20%, transparent);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .tp-header {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 10px;
+      background: color-mix(in srgb, var(--agent-agent-color) 6%, transparent);
+      font-size: 10px;
+    }
+
+    .tp-header .tp-chevron {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .tp-header .tp-icon {
+      font-size: 14px;
+      color: var(--agent-agent-color);
+    }
+
+    .tp-status-text {
+      color: var(--on-surface-variant);
+      font-weight: 600;
+    }
+
+    /* Input bar */
+    .agent-input-bar {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      padding: 8px 12px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-elevated);
+    }
+
+    .agent-input {
+      flex: 1;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 11px;
+      color: var(--on-surface);
+      resize: none;
+      font-family: inherit;
+      min-height: 32px;
+    }
+
+    .agent-input::placeholder {
+      color: var(--on-surface-variant);
+      opacity: 0.7;
+    }
+
+    .agent-send-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: none;
+      background: var(--accent);
+      color: var(--on-accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
     /* ===== Hidden file input ===== */
     #import-input { display: none; }
   </style>
@@ -1461,6 +1662,58 @@
           </div>
         </div>
 
+      <!-- AI Agent Panel (Below, Full Width) -->
+      <div class="preview-section col-agent">
+        <div class="preview-label">AI AGENT PANEL (THINKING PROGRESS)</div>
+        <div class="preview-frame">
+          <div class="agent-preview">
+            <!-- Agent Panel Header -->
+            <div class="agent-header">
+              <span class="agent-header-title">AI_AGENT</span>
+              <span class="material-symbols-outlined agent-close-icon">close</span>
+            </div>
+            <!-- Message List -->
+            <div class="agent-messages">
+              <!-- User Message -->
+              <div class="agent-msg-user">
+                <span class="agent-msg-text">帮我检查服务器的配置信息</span>
+                <span class="material-symbols-outlined agent-icon-user" style="font-variation-settings:'FILL' 1">person</span>
+              </div>
+              <!-- Thinking Process Container (Collapsed) -->
+              <div class="tp-container">
+                <div class="tp-header">
+                  <span class="material-symbols-outlined tp-chevron">expand_more</span>
+                  <span class="material-symbols-outlined tp-icon" style="font-variation-settings:'FILL' 1">check_circle</span>
+                  <span class="tp-status-text">已完成 5 个步骤</span>
+                </div>
+              </div>
+              <!-- Agent Response (Markdown) -->
+              <div class="agent-msg-agent">
+                <span class="material-symbols-outlined agent-icon-bot" style="font-variation-settings:'FILL' 1">smart_toy</span>
+                <div class="agent-response-body">
+                  <h3>服务器配置信息汇总</h3>
+                  <table class="agent-table">
+                    <tr><th>项目</th><th>值</th></tr>
+                    <tr><td>操作系统</td><td>Ubuntu 24.04.4 LTS</td></tr>
+                    <tr><td>内核版本</td><td>Linux 6.8.0 x86_64</td></tr>
+                    <tr><td>CPU</td><td>1 vCPU @ 2494 MHz</td></tr>
+                    <tr><td>内存</td><td>512 MiB (45% used)</td></tr>
+                  </table>
+                  <p>建议定期执行 <code class="agent-code">apt update && apt upgrade</code></p>
+                </div>
+              </div>
+            </div>
+            <!-- Input Area -->
+            <div class="agent-input-bar">
+              <textarea class="agent-input" placeholder="描述你想做的事..." readonly>描述你想做的事...</textarea>
+              <button class="agent-send-btn">
+                <span class="material-symbols-outlined" style="font-size:14px">arrow_upward</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       </div>
     </div>
   </div>
@@ -1484,6 +1737,7 @@ const PRESETS = {
       '--accent-glow': 'rgba(74, 246, 38, 0.08)',
       '--modal-overlay': 'rgba(0, 0, 0, 0.8)',
       '--on-surface': '#e5e2e1', '--on-surface-variant': '#bbccb0',
+      '--agent-user-color': '#4af626', '--agent-agent-color': '#14d1ff',
     }
   },
   glacier: {
@@ -1500,6 +1754,7 @@ const PRESETS = {
       '--accent-glow': 'rgba(100, 255, 218, 0.08)',
       '--modal-overlay': 'rgba(0, 0, 0, 0.85)',
       '--on-surface': '#e6f1ff', '--on-surface-variant': '#8892b0',
+      '--agent-user-color': '#64ffda', '--agent-agent-color': '#e6f1ff',
     }
   },
   gruvbox: {
@@ -1516,6 +1771,7 @@ const PRESETS = {
       '--accent-glow': 'rgba(184, 187, 38, 0.08)',
       '--modal-overlay': 'rgba(0, 0, 0, 0.75)',
       '--on-surface': '#ebdbb2', '--on-surface-variant': '#a89984',
+      '--agent-user-color': '#b8bb26', '--agent-agent-color': '#83a598',
     }
   }
 };
@@ -1527,6 +1783,7 @@ const VARIABLE_GROUPS = [
   { title: 'BORDERS', vars: ['--border', '--border-strong'] },
   { title: 'ERROR', vars: ['--error', '--error-bg'] },
   { title: 'COMPONENTS', vars: ['--surface-dot'] },
+  { title: 'AI AGENT', vars: ['--agent-user-color', '--agent-agent-color'] },
   { title: 'EFFECTS', vars: ['--scanline-tint', '--accent-glow', '--modal-overlay'] },
 ];
 
@@ -1547,6 +1804,8 @@ const VARIABLE_LABELS = {
   '--error': 'Error Text',
   '--error-bg': 'Error Background',
   '--surface-dot': 'Status Dot',
+  '--agent-user-color': 'Agent User Color',
+  '--agent-agent-color': 'Agent Bot Color',
   '--scanline-tint': 'Scanline Overlay',
   '--accent-glow': 'Accent Glow',
   '--modal-overlay': 'Modal Overlay',
