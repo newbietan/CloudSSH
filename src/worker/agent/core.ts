@@ -241,7 +241,11 @@ export class AgentCore {
           continue;
         }
 
-        // No tool_calls -> streaming 已通过 stream_end 发送响应，无需重复发送
+        // No tool_calls -> 保存 assistant 响应到历史，然后结束
+        this.state.messages.push({
+          role: 'assistant',
+          content: choice.message.content,
+        });
         this.state.status = 'idle';
         return;
       }
