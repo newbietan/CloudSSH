@@ -874,7 +874,7 @@ body {
   text-overflow: ellipsis;
 }
 
-.tp-live-item > span {
+.tp-live-item > span:last-child {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
