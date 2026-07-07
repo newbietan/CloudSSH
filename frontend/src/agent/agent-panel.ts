@@ -43,6 +43,7 @@ export class AgentPanel {
   private sendBtn: HTMLElement | null = null;
   private isVisible: boolean = false;
   private isAgentRunning: boolean = false;
+  private isWaitingConfirmation: boolean = false;
   private wsSend: ((data: string) => void) | null = null;
   private onLayoutChange?: () => void;
   private streamingEl: HTMLElement | null = null;
@@ -181,6 +182,7 @@ export class AgentPanel {
     const text = this.inputEl?.value.trim();
     if (!text) return;
     if (this.isAgentRunning) return;
+    if (this.isWaitingConfirmation) return;
 
     // Reset streaming + thinking process state
     this.streamingEl = null;
@@ -202,12 +204,13 @@ export class AgentPanel {
   }
 
   private updateInputState(): void {
+    const blocked = this.isAgentRunning || this.isWaitingConfirmation;
     if (this.inputEl) {
-      this.inputEl.disabled = this.isAgentRunning;
-      this.inputEl.placeholder = this.isAgentRunning ? 'Agent 运行中...' : '描述你想做的事...';
+      this.inputEl.disabled = blocked;
+      this.inputEl.placeholder = blocked ? 'Agent 运行中...' : '描述你想做的事...';
     }
     if (this.sendBtn) {
-      (this.sendBtn as HTMLButtonElement).disabled = this.isAgentRunning;
+      (this.sendBtn as HTMLButtonElement).disabled = blocked;
     }
   }
 
@@ -441,6 +444,9 @@ export class AgentPanel {
   }
 
   private showConfirmDialog(command: string, reason: string): void {
+    this.isWaitingConfirmation = true;
+    this.updateInputState();
+
     const el = document.createElement('div');
     el.className = 'agent-confirm p-3 rounded border border-[var(--error)] bg-[var(--error-bg)]';
     el.innerHTML = `
@@ -453,13 +459,20 @@ export class AgentPanel {
       </div>
     `;
 
+    const onResolve = () => {
+      this.isWaitingConfirmation = false;
+      this.updateInputState();
+    };
+
     el.querySelector('.agent-confirm-no')?.addEventListener('click', () => {
       this.wsSend?.(JSON.stringify({ type: 'agent_confirm', approved: false, command }));
       el.remove();
+      onResolve();
     });
     el.querySelector('.agent-confirm-yes')?.addEventListener('click', () => {
       this.wsSend?.(JSON.stringify({ type: 'agent_confirm', approved: true, command }));
       el.remove();
+      onResolve();
     });
 
     this.messagesEl?.appendChild(el);
