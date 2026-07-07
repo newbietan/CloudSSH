@@ -557,44 +557,9 @@ ${conversationText}`;
         return data.choices?.[0]?.message?.content || null;
       }
     } catch {
-      // 摘要生成失败时，回退到简单提取
-      return this.generateFallbackSummary(toSummarize);
+      // LLM 调用失败，返回 null（不生成摘要）
     }
 
     return null;
-  }
-
-  /**
-   * 回退摘要：当 LLM 调用失败时，使用简单的规则提取关键信息
-   */
-  private generateFallbackSummary(toSummarize: ChatMessage[]): string {
-    const summaryParts: string[] = [];
-
-    // 提取用户请求
-    const userRequests = toSummarize
-      .filter(m => m.role === 'user')
-      .map(m => m.content?.replace(/用户请求:\s*/, '').trim())
-      .filter(Boolean);
-    if (userRequests.length > 0) {
-      summaryParts.push(`用户请求: ${userRequests.join('; ')}`);
-    }
-
-    // 提取执行的命令
-    const commands = toSummarize
-      .filter(m => m.role === 'tool')
-      .map(m => {
-        try {
-          const result = JSON.parse(m.content || '{}');
-          return result.command || null;
-        } catch {}
-        return null;
-      })
-      .filter(Boolean)
-      .slice(-5);
-    if (commands.length > 0) {
-      summaryParts.push(`执行命令: ${commands.join(', ')}`);
-    }
-
-    return summaryParts.join('\n') || '之前的对话包含运维操作和问题排查。';
   }
 }
