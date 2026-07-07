@@ -217,6 +217,14 @@ export class AgentCore {
               signal,
             );
 
+            // 必须先将 tool 结果加入 messages，否则后续轮次的 LLM 调用会因
+            // assistant.tool_calls 缺少对应的 tool 响应而触发 API 400 错误
+            this.state.messages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: result,
+            });
+
             // If respond_to_user -> end loop
             if (result.startsWith('RESPOND:')) {
               this.sendToFrontend({
@@ -227,13 +235,6 @@ export class AgentCore {
               this.state.status = 'idle';
               return;
             }
-
-            // Add tool result to messages
-            this.state.messages.push({
-              role: 'tool',
-              tool_call_id: toolCall.id,
-              content: result,
-            });
           }
 
           if (signal.aborted) break;
