@@ -53,6 +53,8 @@ export class AgentPanel {
   private thinkingStatusEl: HTMLElement | null = null;
   private thinkingIsDone: boolean = false;
   private thinkingStepCount: number = 0;
+  private thinkingLiveEl: HTMLElement | null = null;
+  private livePreviewCache: string[] = [];
 
   constructor(
     private parentEl: HTMLElement,
@@ -185,6 +187,7 @@ export class AgentPanel {
     this.streamingText = '';
     this.removeThinkingProcess();
     this.thinkingStepCount = 0;
+    this.livePreviewCache = [];
 
     this.addUserMessage(text);
     this.inputEl!.value = '';
@@ -230,6 +233,7 @@ export class AgentPanel {
       : tool === 'execute_command' && cmd ? `$ ${cmd}`
       : `${tool}(${JSON.stringify(args || {})})`;
     this.addThinkingStep(tool, label);
+    this.updateLivePreview(label);
   }
 
   private ensureThinkingProcess(): void {
@@ -249,6 +253,7 @@ export class AgentPanel {
           <span class="w-1 h-1 rounded-full bg-[var(--agent-agent-color)] animate-bounce" style="animation-delay:300ms;"></span>
         </div>
       </button>
+      <div class="tp-live-preview"></div>
       <div class="tp-body">
         <div class="tp-steps"></div>
         <div class="tp-current"></div>
@@ -265,9 +270,20 @@ export class AgentPanel {
     this.thinkingStepsEl = container.querySelector('.tp-steps') as HTMLElement;
     this.thinkingStatusEl = container.querySelector('.tp-status') as HTMLElement;
     this.thinkingCurrentEl = container.querySelector('.tp-current') as HTMLElement;
+    this.thinkingLiveEl = container.querySelector('.tp-live-preview') as HTMLElement;
     this.thinkingIsDone = false;
     this.messagesEl?.appendChild(container);
     this.scrollToBottom();
+  }
+
+  private updateLivePreview(label: string): void {
+    if (!this.thinkingLiveEl) return;
+    this.livePreviewCache.push(label);
+    if (this.livePreviewCache.length > 2) this.livePreviewCache.shift();
+    const icon = '<span class="material-symbols-outlined tp-live-icon" style="font-variation-settings:\'FILL\' 0;">terminal</span>';
+    this.thinkingLiveEl.innerHTML = this.livePreviewCache
+      .map(l => `<div class="tp-live-item">${icon}<span>${escapeHtml(l)}</span></div>`)
+      .join('');
   }
 
   private addThinkingStep(tool: string, label: string): void {
@@ -322,6 +338,12 @@ export class AgentPanel {
 
     const dots = this.thinkingProcessEl.querySelector('.thinking-dots') as HTMLElement | null;
     if (dots) dots.style.display = 'none';
+
+    // Enable expand affordance: show chevron + mark done
+    this.thinkingProcessEl.classList.add('tp-done');
+
+    // Hide live preview when collapsed — historical steps are accessible via expand
+    if (this.thinkingLiveEl) this.thinkingLiveEl.innerHTML = '';
   }
 
   private removeThinkingProcess(): void {
@@ -332,7 +354,9 @@ export class AgentPanel {
     this.thinkingStepsEl = null;
     this.thinkingCurrentEl = null;
     this.thinkingStatusEl = null;
+    this.thinkingLiveEl = null;
     this.thinkingIsDone = false;
+    this.livePreviewCache = [];
   }
 
   private addAgentResponse(content: string): void {

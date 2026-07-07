@@ -759,7 +759,6 @@ body {
 
 .agent-thinking-process.tp-expanded .tp-body {
   max-height: 400px;
-  overflow-y: auto;
 }
 
 /* Steps list */
@@ -807,6 +806,23 @@ body {
   color: var(--agent-agent-color);
 }
 
+/* Expand affordance: hide chevron + disable pointer while thinking is in progress */
+.agent-thinking-process:not(.tp-done) .tp-chevron {
+  display: none;
+}
+
+.agent-thinking-process:not(.tp-done) .tp-accordion {
+  cursor: default;
+}
+
+.tp-accordion:hover {
+  background: color-mix(in srgb, var(--agent-agent-color) 10%, transparent);
+}
+
+.agent-thinking-process:not(.tp-done) .tp-accordion:hover {
+  background: color-mix(in srgb, var(--agent-agent-color) 6%, transparent);
+}
+
 /* Current step container (below history) */
 .tp-current {
   padding: 4px 0 8px;
@@ -819,4 +835,44 @@ body {
   border: none;
   margin: 0;
   padding: 0;
+}
+
+/* ─── Live Preview (latest 1-2 executing commands, shown in header area) ── */
+.tp-live-preview {
+  padding: 0 12px 0 16px;
+  background: color-mix(in srgb, var(--agent-agent-color) 3%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--agent-agent-color) 10%, transparent);
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+.tp-live-preview:empty {
+  display: none;
+  border: none;
+  padding: 0;
+}
+
+.tp-live-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  color: var(--on-surface);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tp-live-item > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.tp-live-icon {
+  font-size: 13px;
+  color: var(--agent-agent-color);
+  flex-shrink: 0;
+  animation: tp-pulse 1.5s ease-in-out infinite;
 }
