@@ -29,9 +29,14 @@
 
 > Imagine opening your browser anytime, anywhere, and connecting to your server with a highly futuristic cyberpunk UI, without installing any SSH client.
 
-![Demo 1](./demo1.png)
-![Demo 2](./demo2.png)
-![Demo 3](./demo3.png)
+<div align="center">
+  <a href="https://www.bilibili.com/video/BV1UgMt6UEdF" target="_blank" title="Click to play video">
+    <img src="https://i1.hdslb.com/bfs/archive/28a55cf05e4b5608e7ee0345b043e7ea97c81ed7.jpg" alt="CloudSSH Demo Video" width="720" />
+    <br/>
+    <img src="https://img.shields.io/badge/%E2%96%B6_Click_to_Play_Video-00A1D6?style=for-the-badge&logo=bilibili&logoColor=white" alt="Play" />
+  </a>
+  <p><sub>Video duration 8:27 · Full CloudSSH walkthrough</sub></p>
+</div>
 
 ## Table of Contents
 
@@ -79,7 +84,7 @@
 - **Multiple Auth Methods**: Supports standard SSH password authentication as well as Ed25519 plaintext private key authentication.
 - **MitM Protection (TOFU)**: Automatically extracts and prints the server's Host Key (SHA-256 fingerprint) on the first connection, supporting Ed25519/ECDSA/RSA signature verification, and caches known host keys locally and via API to prevent MitM on future connections.
 - **Geek Terminal Experience**: Powered by `@xterm/xterm` and the `@xterm/addon-webgl` hardware acceleration rendering engine, ensuring silky smooth scrolling even with massive log outputs.
-- **Customizable UI**: All colors are powered by a CSS variable system, with built-in Cyberpunk, Glacier, and Gruvbox themes switchable in one click. Supports importing custom JSON theme files (auto-synced to the cloud for logged-in users, working across browsers), with a companion [Visual Theme Editor](https://newbietan.github.io/CloudSSH/) for live color customization and export. Fully optimized for mobile devices.
+- **Customizable UI**: All colors are powered by a CSS variable system, with built-in Cyberpunk, Glacier, and Gruvbox themes switchable in one click. The companion [Visual Theme Editor](https://newbietan.github.io/CloudSSH/) provides live color customization with full preview areas (login page, server list, terminal + SFTP, AI Agent panel), JSON theme export, and cloud sync for logged-in users across browsers. Fully optimized for mobile devices.
 - **SFTP Graphical File Manager**: Integrated with a complete SFTP v3 file transfer protocol, providing a graphical file browser interface. Supports directory browsing, file upload/download, creating new folders, file renaming, and deletion. Built on SSH subsystem, running in parallel with terminal sessions without interference, supporting concurrent downloads and upload cancellation.
 - **Native File Transfer**: Integrated with [trzsz.js](https://github.com/trzsz/trzsz.js), supporting `trz` (upload) / `tsz` (download) commands for file transfer, fully compatible with tmux sessions. Also supports drag-and-drop file upload to the terminal, directory transfer, and resumable transfers. (Requires [trzsz](https://trzsz.github.io/) installed on the remote server)
 - **GitHub OAuth Integration**: Supports GitHub login, allowing users to save and manage frequently used SSH servers for one-click connections.
@@ -89,7 +94,6 @@
 - **In-Terminal Text Search**: Real-time log search support via `Ctrl+Shift+F`.
 - **Terminal Log Export**: Download the entire screen buffer of the active terminal session as a `.txt` file with a single click on the header download button, avoiding browser freezes when selecting long logs.
 - **AI Agent Assistant**: Built-in AI Agent sidebar with BYOK (Bring Your Own Key) support for OpenAI-compatible APIs (e.g., DeepSeek). Provides 8 specialized operations tools: execute commands, read terminal context, detect server environment, list processes, manage systemctl services, manage Docker containers, user confirmation, and structured report output. Supports LLM streaming output (character-by-character display). Dangerous commands are automatically blocked or require user confirmation. **Thinking Process Container**: During multi-step tasks, displays the latest 1-2 commands in real-time, auto-collapses with total step count after completion, expands to show full execution history.
-- **Visual Theme Editor**: Companion [Visual Theme Editor](https://newbietan.github.io/CloudSSH/) for live color customization and JSON theme export. Logged-in users can sync themes to the cloud, working across browsers. Provides complete preview areas including login page, server list, terminal + SFTP, and AI Agent panel.
 
 <a id="architecture"></a>
 ## Architecture

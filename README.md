@@ -29,9 +29,14 @@
 
 > 想象一下，随时随地打开浏览器，就能以极具科技感的赛博朋克 UI 连接你的服务器，无需安装任何 SSH 客户端。
 
-![Demo 1](./demo1.png)
-![Demo 2](./demo2.png)
-![Demo 3](./demo3.png)
+<div align="center">
+  <a href="https://www.bilibili.com/video/BV1UgMt6UEdF" target="_blank" title="点击播放视频">
+    <img src="https://i1.hdslb.com/bfs/archive/28a55cf05e4b5608e7ee0345b043e7ea97c81ed7.jpg" alt="CloudSSH 演示视频" width="720" />
+    <br/>
+    <img src="https://img.shields.io/badge/%E2%96%B6_%E7%82%B9%E5%87%BB%E6%92%AD%E6%94%BE%E8%A7%86%E9%A2%91-00A1D6?style=for-the-badge&logo=bilibili&logoColor=white" alt="播放" />
+  </a>
+  <p><sub>视频时长 8:27 · 演示 CloudSSH 完整使用流程</sub></p>
+</div>
 
 ## 目录
 
@@ -79,7 +84,7 @@
 - **多种认证方式**：支持标准 SSH 密码认证以及基于 Ed25519 的纯文本私钥认证。
 - **防范中间人攻击 (TOFU)**：首次连接自动提取服务器 Host Key（SHA-256 指纹）并显示，支持 Ed25519/ECDSA/RSA 签名验证，并在本地及 API 持久化缓存已知主机指纹以防范二次连接的欺骗风险。
 - **全功能极客终端**：基于 `@xterm/xterm` 与 `@xterm/addon-webgl` 硬件加速渲染引擎，保证海量日志输出顺滑不卡顿。
-- **个性化 UI**：全站颜色基于 CSS 变量系统，提供 Cyberpunk、Glacier、Gruvbox 内置主题一键切换。支持导入自定义 JSON 主题文件（登录用户自动云端同步，跨浏览器生效），配套[可视化主题编辑器](https://newbietan.github.io/CloudSSH/)可在线调色并导出。支持移动端适配。
+- **个性化 UI**：全站颜色基于 CSS 变量系统，提供 Cyberpunk、Glacier、Gruvbox 内置主题一键切换。配套[可视化主题编辑器](https://newbietan.github.io/CloudSSH/)支持实时调色预览（覆盖登录页、服务器列表、终端 + SFTP、AI Agent 面板），导出 JSON 主题文件，登录用户可一键同步至云端、跨浏览器生效。支持移动端适配。
 - **SFTP 图形化文件管理**：集成完整的 SFTP v3 文件传输协议，提供图形化文件浏览器界面。支持目录浏览、文件上传/下载、新建文件夹、文件重命名与删除等操作。基于 SSH 子系统实现，与终端会话并行运行，互不干扰，支持并发下载及上传取消。
 - **原生文件传输**：集成 [trzsz.js](https://github.com/trzsz/trzsz.js)，支持 `trz`（上传）/ `tsz`（下载）命令进行文件传输，兼容 tmux 会话。还支持拖拽文件到终端窗口直接上传、目录传输及断点续传等高级功能。（需远程服务器安装 [trzsz](https://trzsz.github.io/)）
 - **GitHub OAuth 集成**：支持 GitHub 登录，用户可保存和管理常用 SSH 服务器，实现一键连接。
@@ -89,7 +94,6 @@
 - **终端文本检索**：支持使用快捷键 `Ctrl+Shift+F` 呼出搜索框，实时检索终端历史日志。
 - **终端日志一键导出**：支持通过顶栏的下载按钮，将当前活跃会话终端的完整屏幕历史 buffer 一键导出并下载为 `.txt` 文本文件，解决长日志在浏览器下鼠标选取容易卡顿的痛点。
 - **AI 智能助手**：内置 AI Agent 侧边栏，支持 BYOK（自带 API Key）接入 OpenAI 兼容接口（如 DeepSeek）。提供 8 个专业运维工具：执行命令、读取终端上下文、探测服务器环境、进程列表、systemctl 服务管理、Docker 容器管理、用户确认、结构化报告输出。支持 LLM 流式输出（逐字显示），危险命令自动拦截或弹窗确认。**思考过程容器**：多步骤任务执行时，实时预览最近 1-2 条命令，完成后自动折叠显示总步骤数，支持展开查看完整执行历史。
-- **可视化主题编辑器**：配套独立的[可视化主题编辑器](https://newbietan.github.io/CloudSSH/)，支持实时调色、导出 JSON 主题文件，登录用户可一键同步至云端，跨浏览器生效。提供登录页、服务器列表、终端 + SFTP、AI Agent 面板等完整预览区域。
 
 <a id="architecture"></a>
 ## 架构说明
