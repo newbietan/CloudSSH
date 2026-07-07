@@ -124,57 +124,65 @@ export class SSHSessionDO {
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
-    const session = this.sessions.get(ws);
-    if (session) {
-      await session.handleWebSocketMessage(message);
-      return;
-    }
-
-    const sftpSession = this.sftpSessions.get(ws);
-    if (sftpSession) {
-      await sftpSession.handleSFTPWebSocketMessage(message);
-      return;
-    }
-
-    if (typeof message !== 'string') {
-      return;
-    }
-
-    let msg: any;
     try {
-      msg = JSON.parse(message);
-    } catch {
-      ws.send(JSON.stringify({ type: 'error', message: 'Invalid credentials format' }));
-      ws.close(1011, 'Invalid format');
-      return;
-    }
+      const session = this.sessions.get(ws);
+      if (session) {
+        await session.handleWebSocketMessage(message);
+        return;
+      }
 
-    if (msg.type === 'resize') {
-      this.rememberTerminalSize(ws, msg.cols, msg.rows);
-      return;
-    }
-    if (msg.type === 'ping') {
-      ws.send(JSON.stringify({ type: 'pong' }));
-      return;
-    }
+      const sftpSession = this.sftpSessions.get(ws);
+      if (sftpSession) {
+        await sftpSession.handleSFTPWebSocketMessage(message);
+        return;
+      }
 
-    const timeout = this._pendingTimeouts.get(ws);
-    if (timeout) {
-      clearTimeout(timeout);
-      this._pendingTimeouts.delete(ws);
+      if (typeof message !== 'string') {
+        return;
+      }
+
+      let msg: any;
+      try {
+        msg = JSON.parse(message);
+      } catch {
+        ws.send(JSON.stringify({ type: 'error', message: 'Invalid credentials format' }));
+        ws.close(1011, 'Invalid format');
+        return;
+      }
+
+      if (msg.type === 'resize') {
+        this.rememberTerminalSize(ws, msg.cols, msg.rows);
+        return;
+      }
+      if (msg.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong' }));
+        return;
+      }
+
+      const timeout = this._pendingTimeouts.get(ws);
+      if (timeout) {
+        clearTimeout(timeout);
+        this._pendingTimeouts.delete(ws);
+      }
+
+      const config = msg as SSHConnectionConfig;
+      // Strip userId from client-supplied config (anonymous flow — userId only set via trusted token flow)
+      delete config.userId;
+
+      if (!config.host || !config.username || (!config.password && !config.privateKey)) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Missing credentials' }));
+        ws.close(1011, 'Invalid credentials');
+        return;
+      }
+
+      await this.initSSHSession(ws, config);
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      try {
+        ws.send(JSON.stringify({ type: 'error', message: `处理消息时出错: ${errMsg}` }));
+        ws.close(1011, 'Internal error');
+      } catch { /* WebSocket may already be closed */ }
     }
-
-    const config = msg as SSHConnectionConfig;
-    // Strip userId from client-supplied config (anonymous flow — userId only set via trusted token flow)
-    delete config.userId;
-
-    if (!config.host || !config.username || (!config.password && !config.privateKey)) {
-      ws.send(JSON.stringify({ type: 'error', message: 'Missing credentials' }));
-      ws.close(1011, 'Invalid credentials');
-      return;
-    }
-
-    await this.initSSHSession(ws, config);
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean): Promise<void> {
