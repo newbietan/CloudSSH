@@ -69,6 +69,7 @@ export interface AgentState {
   status: AgentStatus;
   messages: ChatMessage[];
   iteration: number;
+  summary?: string; // 对话历史摘要（当消息被裁剪时生成）
 }
 
 export interface AgentFrame {

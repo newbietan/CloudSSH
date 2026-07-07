@@ -60,7 +60,7 @@ export class AgentCore {
       this.loopTimeout = null;
     }
 
-    this.state = { status: 'running', messages: [], iteration: 0 };
+    this.state = { status: 'running', messages: [], iteration: 0, summary: undefined };
     this.abortController = new AbortController();
 
     // 1. Fetch user AI config from UserDB
@@ -280,7 +280,13 @@ export class AgentCore {
     const maxRetries = 2;
     const retryableStatuses = [429, 500, 502, 503, 504];
 
-    this.trimMessages();
+    await this.trimMessages();
+
+    // 构建发送给 LLM 的消息（使用包含摘要的 system prompt）
+    const messagesToSend = [
+      { role: 'system' as const, content: this.buildSystemPromptWithSummary() },
+      ...this.state.messages.slice(1), // 跳过原始 system 消息
+    ];
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       if (signal.aborted) throw new Error('Aborted');
@@ -293,7 +299,7 @@ export class AgentCore {
         },
         body: JSON.stringify({
           model: config.model,
-          messages: this.state.messages,
+          messages: messagesToSend,
           tools: AGENT_TOOLS,
           tool_choice: 'auto',
           max_tokens: 4096,
@@ -414,50 +420,181 @@ export class AgentCore {
     };
   }
 
-  private trimMessages(): void {
-    // Keep: system message + first user message (env/terminal context) + last N messages.
-    // CRITICAL: never slice in the middle of an assistant(tool_calls) + tool[] pair —
-    // OpenAI requires each `tool` message to have a preceding assistant with tool_calls.
-    // We trim by whole "turns" (assistant + its tool[] responses) to preserve the pairing.
-    const maxMessages = 40;
-    if (this.state.messages.length <= maxMessages) return;
+  private async trimMessages(): Promise<void> {
+    // 摘要式上下文管理：
+    // 当消息超过限制时，调用 LLM 将早期消息压缩为摘要
+    // 保留最近 N 轮对话（user + assistant），丢弃历史 tool 消息
+    const recentRoundsCount = 3; // 保留最近 3 轮对话
+    if (this.state.messages.length <= 10) return; // 消息太少不需要裁剪
 
-    const head = this.state.messages.slice(0, 2); // [system, first user]
-    const tail = this.state.messages.slice(2);
+    // 1. 分离系统消息和对话消息
+    const systemMsg = this.state.messages[0]; // system
+    const firstUserMsg = this.state.messages[1]; // first user (env context)
+    const conversationMsgs = this.state.messages.slice(2); // 对话消息
 
-    // Build turns from the tail. A turn is either:
-    //   - assistant with tool_calls + following tool[] messages (one per tool_call)
-    //   - assistant without tool_calls (standalone text)
-    //   - any other message (defensive fallback)
-    const turns: Array<{ start: number; end: number }> = [];
-    let i = 0;
-    while (i < tail.length) {
-      const msg = tail[i];
-      if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
-        const n = msg.tool_calls.length;
-        // Consume the N matching tool messages that follow
-        const end = Math.min(i + 1 + n, tail.length);
-        turns.push({ start: i, end });
-        i = end;
-      } else {
-        turns.push({ start: i, end: i + 1 });
-        i++;
+    // 2. 提取轮次：一轮 = user + assistant（可能有 tool_calls）
+    // 历史 tool 消息不计入轮次，仅在当前轮次需要
+    const rounds: Array<{ user: ChatMessage; assistant: ChatMessage; tools: ChatMessage[] }> = [];
+    let currentUser: ChatMessage | null = null;
+    let currentAssistant: ChatMessage | null = null;
+    const currentTools: ChatMessage[] = [];
+
+    for (const msg of conversationMsgs) {
+      if (msg.role === 'user') {
+        // 新的轮次开始，保存上一轮
+        if (currentUser && currentAssistant) {
+          rounds.push({ user: currentUser, assistant: currentAssistant, tools: [] });
+        }
+        currentUser = msg;
+        currentAssistant = null;
+        currentTools.length = 0;
+      } else if (msg.role === 'assistant') {
+        currentAssistant = msg;
+      } else if (msg.role === 'tool') {
+        currentTools.push(msg);
       }
     }
-
-    // Keep turns from the end until adding another would exceed the budget
-    const budget = maxMessages - head.length;
-    let keptFrom = turns.length;
-    let used = 0;
-    for (let t = turns.length - 1; t >= 0; t--) {
-      const size = turns[t].end - turns[t].start;
-      if (used + size > budget) break;
-      used += size;
-      keptFrom = t;
+    // 保存最后一轮
+    if (currentUser && currentAssistant) {
+      rounds.push({ user: currentUser, assistant: currentAssistant, tools: currentTools });
     }
 
-    const firstKeptTurn = turns[keptFrom] ?? turns[turns.length - 1];
-    const keptTail = tail.slice(firstKeptTurn.start);
-    this.state.messages = [...head, ...keptTail];
+    // 3. 分离需要摘要的轮次和保留的轮次
+    if (rounds.length <= recentRoundsCount) return; // 不需要裁剪
+
+    const toSummarizeRounds = rounds.slice(0, -recentRoundsCount);
+    const recentRounds = rounds.slice(-recentRoundsCount);
+
+    // 4. 调用 LLM 生成摘要（只摘要 user + assistant，丢弃 tool 消息）
+    const toSummarize = toSummarizeRounds.flatMap(r => [r.user, r.assistant]);
+    const summary = await this.generateSummaryWithLLM(toSummarize);
+    if (summary) {
+      this.state.summary = summary;
+    }
+
+    // 5. 构建新消息：[system + 摘要] + [first user] + 最近 N 轮（user + assistant + 当前 tools）
+    const recentMsgs = recentRounds.flatMap(r => {
+      const msgs: ChatMessage[] = [r.user, r.assistant];
+      // 只保留最后一轮的 tool 消息（当前轮次需要）
+      if (r === recentRounds[recentRounds.length - 1] && r.tools.length > 0) {
+        msgs.push(...r.tools);
+      }
+      return msgs;
+    });
+
+    this.state.messages = [
+      { role: 'system', content: this.buildSystemPromptWithSummary() },
+      firstUserMsg,
+      ...recentMsgs,
+    ];
+  }
+
+  private buildSystemPromptWithSummary(): string {
+    const basePrompt = getSystemPrompt();
+    if (this.state.summary) {
+      return `${basePrompt}\n\n## 之前的对话摘要\n${this.state.summary}`;
+    }
+    return basePrompt;
+  }
+
+  /**
+   * 调用 LLM 生成对话摘要
+   * 只处理 user 和 assistant 消息，丢弃历史 tool 消息
+   */
+  private async generateSummaryWithLLM(toSummarize: ChatMessage[]): Promise<string | null> {
+    const config = this.agentConfig;
+    if (!config) return null;
+
+    // 将消息转换为可读格式（只处理 user 和 assistant）
+    const conversationText = toSummarize
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .map(m => {
+        if (m.role === 'user') {
+          return `用户: ${m.content}`;
+        } else if (m.role === 'assistant') {
+          if (m.tool_calls) {
+            const cmds = m.tool_calls.map(tc => tc.function.name).join(', ');
+            return `AI: [调用工具: ${cmds}]`;
+          }
+          return `AI: ${m.content}`;
+        }
+        return '';
+      })
+      .filter(Boolean)
+      .join('\n');
+
+    // 如果内容太短，不需要摘要
+    if (conversationText.length < 200) return null;
+
+    const summaryPrompt = `请将以下运维对话压缩为简洁摘要，保留关键信息：
+- 用户的主要请求和目标
+- 已执行的关键操作和命令
+- 当前状态和未完成的任务
+- AI 提出的建议或需要用户确认的选项
+
+要求：摘要控制在 500 字以内，使用要点列表格式。
+
+对话内容：
+${conversationText}`;
+
+    try {
+      const res = await fetch(`${config.base_url}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.api_key}`,
+        },
+        body: JSON.stringify({
+          model: config.model,
+          messages: [{ role: 'user', content: summaryPrompt }],
+          max_tokens: 512,
+          temperature: 0.3,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json<{ choices: Array<{ message: { content: string } }> }>();
+        return data.choices?.[0]?.message?.content || null;
+      }
+    } catch {
+      // 摘要生成失败时，回退到简单提取
+      return this.generateFallbackSummary(toSummarize);
+    }
+
+    return null;
+  }
+
+  /**
+   * 回退摘要：当 LLM 调用失败时，使用简单的规则提取关键信息
+   */
+  private generateFallbackSummary(toSummarize: ChatMessage[]): string {
+    const summaryParts: string[] = [];
+
+    // 提取用户请求
+    const userRequests = toSummarize
+      .filter(m => m.role === 'user')
+      .map(m => m.content?.replace(/用户请求:\s*/, '').trim())
+      .filter(Boolean);
+    if (userRequests.length > 0) {
+      summaryParts.push(`用户请求: ${userRequests.join('; ')}`);
+    }
+
+    // 提取执行的命令
+    const commands = toSummarize
+      .filter(m => m.role === 'tool')
+      .map(m => {
+        try {
+          const result = JSON.parse(m.content || '{}');
+          return result.command || null;
+        } catch {}
+        return null;
+      })
+      .filter(Boolean)
+      .slice(-5);
+    if (commands.length > 0) {
+      summaryParts.push(`执行命令: ${commands.join(', ')}`);
+    }
+
+    return summaryParts.join('\n') || '之前的对话包含运维操作和问题排查。';
   }
 }
