@@ -474,22 +474,21 @@ export class AgentCore {
     const firstUserMsg = this.state.messages[1]; // first user (env context)
     const conversationMsgs = this.state.messages.slice(2); // 对话消息
 
-    // 2. 提取轮次：一轮 = user + assistant（可能有 tool_calls）
-    // 历史 tool 消息不计入轮次，仅在当前轮次需要
+    // 2. 提取轮次：一轮 = user + assistant（可能有 tool_calls）+ 该轮的 tool 响应
     const rounds: Array<{ user: ChatMessage; assistant: ChatMessage; tools: ChatMessage[] }> = [];
     let currentUser: ChatMessage | null = null;
     let currentAssistant: ChatMessage | null = null;
-    const currentTools: ChatMessage[] = [];
+    let currentTools: ChatMessage[] = [];
 
     for (const msg of conversationMsgs) {
       if (msg.role === 'user') {
         // 新的轮次开始，保存上一轮
         if (currentUser && currentAssistant) {
-          rounds.push({ user: currentUser, assistant: currentAssistant, tools: [] });
+          rounds.push({ user: currentUser, assistant: currentAssistant, tools: currentTools });
         }
         currentUser = msg;
         currentAssistant = null;
-        currentTools.length = 0;
+        currentTools = [];
       } else if (msg.role === 'assistant') {
         currentAssistant = msg;
       } else if (msg.role === 'tool') {
@@ -514,11 +513,11 @@ export class AgentCore {
       this.state.summary = summary;
     }
 
-    // 5. 构建新消息：[system + 摘要] + [first user] + 最近 N 轮（user + assistant + 当前 tools）
+    // 5. 构建新消息：[system + 摘要] + [first user] + 最近 N 轮（user + assistant + tool）
+    // 每轮都必须保留 tool 消息，否则 assistant 的 tool_calls 缺少对应响应会触发 API 错误
     const recentMsgs = recentRounds.flatMap(r => {
       const msgs: ChatMessage[] = [r.user, r.assistant];
-      // 只保留最后一轮的 tool 消息（当前轮次需要）
-      if (r === recentRounds[recentRounds.length - 1] && r.tools.length > 0) {
+      if (r.tools.length > 0) {
         msgs.push(...r.tools);
       }
       return msgs;
