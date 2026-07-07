@@ -25,6 +25,10 @@ export class AgentCore {
   private toolExecutor: ToolExecutor;
   private loopTimeout: ReturnType<typeof setTimeout> | null = null;
 
+  // 环境与终端上下文（独立存储，注入到 system prompt 中）
+  private environmentContext: string = '';
+  private terminalContextSnapshot: string = '';
+
   constructor(
     private terminalContext: TerminalContext,
     private sendToFrontend: (msg: any) => void,
@@ -79,33 +83,28 @@ export class AgentCore {
     }
 
     if (isNewSession) {
-      // 2. 首次启动：构建初始上下文（环境 + 终端 + 用户请求）
-      const terminalSnapshot = this.terminalContext.snapshot(200);
+      // 2. 首次启动：采集环境 + 终端上下文（注入 system prompt），用户消息保持干净
+      this.terminalContextSnapshot = this.terminalContext.snapshot(200);
       const envSnapshot = await this.toolExecutor.execute('detect_environment', {}, this.abortController.signal).catch(() => '');
-
-      let userContent = '';
+      this.environmentContext = '';
       if (envSnapshot) {
         try {
           const parsed = JSON.parse(envSnapshot);
           if (parsed.environment) {
-            userContent += `[ENVIRONMENT]\n${parsed.environment}\n[/ENVIRONMENT]\n\n`;
+            this.environmentContext = parsed.environment;
           }
         } catch { /* ignore parse error */ }
       }
-      if (terminalSnapshot) {
-        userContent += `[TERMINAL]\n${terminalSnapshot}\n[/TERMINAL]\n\n`;
-      }
-      userContent += `用户请求: ${userMessage}`;
 
       this.state.messages = [
-        { role: 'system', content: getSystemPrompt() },
-        { role: 'user', content: userContent },
+        { role: 'system', content: this.buildSystemPromptWithSummary() },
+        { role: 'user', content: userMessage },
       ];
     } else {
       // 3. 后续请求：追加新用户消息到已有对话历史
       this.state.messages.push({
         role: 'user',
-        content: `用户请求: ${userMessage}`,
+        content: userMessage,
       });
     }
 
@@ -431,35 +430,12 @@ export class AgentCore {
   }
 
   /**
-   * 刷新终端快照，更新 firstUserMsg 中的 [TERMINAL] 块
+   * 刷新终端快照（更新 system prompt 中的终端上下文）
    */
   private async refreshTerminalSnapshot(): Promise<void> {
-    if (this.state.messages.length < 2) return;
-
     const terminalSnapshot = this.terminalContext.snapshot(200);
-    if (!terminalSnapshot) return;
-
-    const firstUserMsg = this.state.messages[1];
-    if (!firstUserMsg || firstUserMsg.role !== 'user' || !firstUserMsg.content) return;
-
-    // 替换 [TERMINAL] 块
-    const updatedContent = firstUserMsg.content.replace(
-      /\[TERMINAL\][\s\S]*?\[\/TERMINAL\]/,
-      `[TERMINAL]\n${terminalSnapshot}\n[/TERMINAL]`,
-    );
-
-    // 如果没有 [TERMINAL] 块，追加一个
-    if (updatedContent === firstUserMsg.content) {
-      const envEnd = firstUserMsg.content.indexOf('[/ENVIRONMENT]');
-      if (envEnd !== -1) {
-        const insertPos = envEnd + '[/ENVIRONMENT]'.length;
-        firstUserMsg.content =
-          firstUserMsg.content.slice(0, insertPos) +
-          '\n\n[TERMINAL]\n' + terminalSnapshot + '\n[/TERMINAL]' +
-          firstUserMsg.content.slice(insertPos);
-      }
-    } else {
-      firstUserMsg.content = updatedContent;
+    if (terminalSnapshot) {
+      this.terminalContextSnapshot = terminalSnapshot;
     }
   }
 
@@ -470,10 +446,8 @@ export class AgentCore {
     const recentRoundsCount = 3; // 保留最近 3 轮对话
     if (this.state.messages.length <= 20) return; // 消息较少时不需要裁剪
 
-    // 1. 分离系统消息和对话消息
-    const systemMsg = this.state.messages[0]; // system
-    const firstUserMsg = this.state.messages[1]; // first user (env context)
-    const conversationMsgs = this.state.messages.slice(2); // 对话消息
+    // 1. 分离对话消息（跳过 system 消息）
+    const conversationMsgs = this.state.messages.slice(1); // 对话消息
 
     // 2. 提取轮次：一轮 = user + assistant（可能有 tool_calls）+ 该轮的 tool 响应
     const rounds: Array<{ user: ChatMessage; assistant: ChatMessage; tools: ChatMessage[] }> = [];
@@ -514,7 +488,7 @@ export class AgentCore {
       this.state.summary = summary;
     }
 
-    // 5. 构建新消息：[system + 摘要] + [first user] + 最近 N 轮（user + assistant + tool）
+    // 5. 构建新消息：[system + 摘要] + 最近 N 轮（user + assistant + tool）
     // 每轮都必须保留 tool 消息，否则 assistant 的 tool_calls 缺少对应响应会触发 API 错误
     const recentMsgs = recentRounds.flatMap(r => {
       const msgs: ChatMessage[] = [r.user, r.assistant];
@@ -526,48 +500,43 @@ export class AgentCore {
 
     this.state.messages = [
       { role: 'system', content: this.buildSystemPromptWithSummary() },
-      firstUserMsg,
       ...recentMsgs,
     ];
 
-    // 6. 刷新环境上下文（更新 firstUserMsg 中的 [ENVIRONMENT] 块）
+    // 6. 刷新环境上下文
     await this.refreshEnvironmentContext();
   }
 
   /**
-   * 刷新环境上下文，更新 firstUserMsg 中的 [ENVIRONMENT] 块
+   * 刷新环境上下文（更新 system prompt 中的环境信息）
    */
   private async refreshEnvironmentContext(): Promise<void> {
-    if (this.state.messages.length < 2) return;
-
     const envSnapshot = await this.toolExecutor.execute('detect_environment', {}, this.abortController.signal).catch(() => '');
     if (!envSnapshot) return;
 
     try {
       const parsed = JSON.parse(envSnapshot);
-      if (!parsed.environment) return;
-
-      const firstUserMsg = this.state.messages[1];
-      if (!firstUserMsg || firstUserMsg.role !== 'user' || !firstUserMsg.content) return;
-
-      // 替换 [ENVIRONMENT] 块
-      const updatedContent = firstUserMsg.content.replace(
-        /\[ENVIRONMENT\][\s\S]*?\[\/ENVIRONMENT\]/,
-        `[ENVIRONMENT]\n${parsed.environment}\n[/ENVIRONMENT]`,
-      );
-
-      if (updatedContent !== firstUserMsg.content) {
-        firstUserMsg.content = updatedContent;
+      if (parsed.environment) {
+        this.environmentContext = parsed.environment;
       }
     } catch { /* ignore parse error */ }
   }
 
   private buildSystemPromptWithSummary(): string {
     const basePrompt = getSystemPrompt();
-    if (this.state.summary) {
-      return `${basePrompt}\n\n## 之前的对话摘要\n${this.state.summary}`;
+    const parts: string[] = [basePrompt];
+
+    if (this.environmentContext) {
+      parts.push(`## 当前服务器环境\n${this.environmentContext}`);
     }
-    return basePrompt;
+    if (this.terminalContextSnapshot) {
+      parts.push(`## 交互式终端最近输出\n${this.terminalContextSnapshot}`);
+    }
+    if (this.state.summary) {
+      parts.push(`## 之前的对话摘要\n${this.state.summary}`);
+    }
+
+    return parts.join('\n\n');
   }
 
   /**
