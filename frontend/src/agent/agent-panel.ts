@@ -289,6 +289,10 @@ export class AgentPanel {
   private addThinkingStep(tool: string, label: string): void {
     if (!this.thinkingStepsEl || !this.thinkingCurrentEl) return;
 
+    // Move the previous step into history BEFORE clearing current
+    if (this.thinkingCurrentEl.childElementCount > 0) {
+      this.thinkingStepsEl.appendChild(this.thinkingCurrentEl.firstElementChild!);
+    }
     this.thinkingCurrentEl.innerHTML = '';
     this.thinkingStepCount++;
 
@@ -301,9 +305,6 @@ export class AgentPanel {
 
     stepEl.innerHTML = `${icon}<span class="tp-step-label">${escapeHtml(label)}</span>`;
 
-    if (this.thinkingCurrentEl.childElementCount > 0) {
-      this.thinkingStepsEl.appendChild(this.thinkingCurrentEl.firstElementChild!);
-    }
     this.thinkingCurrentEl.appendChild(stepEl);
 
     if (this.thinkingStatusEl) {

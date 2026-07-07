@@ -770,15 +770,26 @@ body {
 .tp-step {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 12px;
+  gap: 5px;
+  padding: 3px 12px;
   transition: opacity 0.2s ease;
 }
 
-.tp-step-icon {
+/* Override Google Fonts default font-size: 24px with higher-specificity selectors */
+.tp-step .material-symbols-outlined {
   font-size: 14px;
-  color: var(--on-surface-variant);
+  line-height: 1;
   flex-shrink: 0;
+}
+
+.tp-live-item .material-symbols-outlined {
+  font-size: 13px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.tp-step-icon {
+  color: var(--on-surface-variant);
 }
 
 .tp-step-label {
@@ -855,8 +866,8 @@ body {
 .tp-live-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 0;
+  gap: 4px;
+  padding: 3px 0;
   color: var(--on-surface);
   overflow: hidden;
   white-space: nowrap;
