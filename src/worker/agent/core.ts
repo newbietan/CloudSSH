@@ -467,7 +467,7 @@ export class AgentCore {
 
     // 4. 调用 LLM 生成摘要（只摘要 user + assistant，丢弃 tool 消息）
     const toSummarize = toSummarizeRounds.flatMap(r => [r.user, r.assistant]);
-    const summary = await this.generateSummaryWithLLM(toSummarize);
+    const summary = await this.generateSummaryWithLLM(toSummarize, this.state.summary);
     if (summary) {
       this.state.summary = summary;
     }
@@ -501,7 +501,7 @@ export class AgentCore {
    * 调用 LLM 生成对话摘要
    * 只处理 user 和 assistant 消息，丢弃历史 tool 消息
    */
-  private async generateSummaryWithLLM(toSummarize: ChatMessage[]): Promise<string | null> {
+  private async generateSummaryWithLLM(toSummarize: ChatMessage[], existingSummary?: string): Promise<string | null> {
     const config = this.agentConfig;
     if (!config) return null;
 
@@ -524,7 +524,11 @@ export class AgentCore {
       .join('\n');
 
     // 如果内容太短，不需要摘要
-    if (conversationText.length < 200) return null;
+    if (conversationText.length < 200 && !existingSummary) return null;
+
+    const previousSection = existingSummary
+      ? `\n\n已有摘要（请在其基础上合并新内容，不要丢失已有关键信息）：\n${existingSummary}`
+      : '';
 
     const summaryPrompt = `请将以下运维对话压缩为简洁摘要，保留关键信息：
 - 用户的主要请求和目标
@@ -532,10 +536,10 @@ export class AgentCore {
 - 当前状态和未完成的任务
 - AI 提出的建议或需要用户确认的选项
 
-要求：摘要控制在 500 字以内，使用要点列表格式。
+要求：摘要控制在 500 字以内，使用要点列表格式。如有已有摘要，请在其基础上合并新内容，确保不丢失旧摘要中的关键信息。
 
 对话内容：
-${conversationText}`;
+${conversationText}${previousSection}`;
 
     try {
       const res = await fetch(`${config.base_url}/chat/completions`, {
