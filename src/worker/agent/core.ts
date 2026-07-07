@@ -415,13 +415,49 @@ export class AgentCore {
   }
 
   private trimMessages(): void {
-    // Keep: system message + first user message (env/terminal context) + last N messages
+    // Keep: system message + first user message (env/terminal context) + last N messages.
+    // CRITICAL: never slice in the middle of an assistant(tool_calls) + tool[] pair —
+    // OpenAI requires each `tool` message to have a preceding assistant with tool_calls.
+    // We trim by whole "turns" (assistant + its tool[] responses) to preserve the pairing.
     const maxMessages = 40;
-    if (this.state.messages.length > maxMessages) {
-      const system = this.state.messages[0];
-      const firstUser = this.state.messages[1]; // contains [ENVIRONMENT] and [TERMINAL]
-      const kept = this.state.messages.slice(-(maxMessages - 2));
-      this.state.messages = [system, firstUser, ...kept];
+    if (this.state.messages.length <= maxMessages) return;
+
+    const head = this.state.messages.slice(0, 2); // [system, first user]
+    const tail = this.state.messages.slice(2);
+
+    // Build turns from the tail. A turn is either:
+    //   - assistant with tool_calls + following tool[] messages (one per tool_call)
+    //   - assistant without tool_calls (standalone text)
+    //   - any other message (defensive fallback)
+    const turns: Array<{ start: number; end: number }> = [];
+    let i = 0;
+    while (i < tail.length) {
+      const msg = tail[i];
+      if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+        const n = msg.tool_calls.length;
+        // Consume the N matching tool messages that follow
+        const end = Math.min(i + 1 + n, tail.length);
+        turns.push({ start: i, end });
+        i = end;
+      } else {
+        turns.push({ start: i, end: i + 1 });
+        i++;
+      }
     }
+
+    // Keep turns from the end until adding another would exceed the budget
+    const budget = maxMessages - head.length;
+    let keptFrom = turns.length;
+    let used = 0;
+    for (let t = turns.length - 1; t >= 0; t--) {
+      const size = turns[t].end - turns[t].start;
+      if (used + size > budget) break;
+      used += size;
+      keptFrom = t;
+    }
+
+    const firstKeptTurn = turns[keptFrom] ?? turns[turns.length - 1];
+    const keptTail = tail.slice(firstKeptTurn.start);
+    this.state.messages = [...head, ...keptTail];
   }
 }
