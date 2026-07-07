@@ -88,8 +88,8 @@
 - **Dual-Segment Latency & Colo Display**: Instantly and periodically monitor WebSocket RTT (client to CF), physical latency (CF to SSH host), and the current Cloudflare datacenter code (e.g. `CF-LAX`) on the status bar.
 - **In-Terminal Text Search**: Real-time log search support via `Ctrl+Shift+F`.
 - **Terminal Log Export**: Download the entire screen buffer of the active terminal session as a `.txt` file with a single click on the header download button, avoiding browser freezes when selecting long logs.
-- **AI Agent Assistant**: Built-in AI Agent sidebar with BYOK (Bring Your Own Key) support for OpenAI-compatible APIs (e.g., DeepSeek). Provides 8 specialized operations tools: execute commands, read terminal context, detect server environment, list processes, manage systemctl services, manage Docker containers, user confirmation, and structured report output. Supports LLM streaming output (character-by-character display). Dangerous commands are automatically blocked or require user confirmation.
-- **Visual Theme Editor**: Companion [Visual Theme Editor](https://newbietan.github.io/CloudSSH/) for live color customization and JSON theme export. Logged-in users can sync themes to the cloud, working across browsers.
+- **AI Agent Assistant**: Built-in AI Agent sidebar with BYOK (Bring Your Own Key) support for OpenAI-compatible APIs (e.g., DeepSeek). Provides 8 specialized operations tools: execute commands, read terminal context, detect server environment, list processes, manage systemctl services, manage Docker containers, user confirmation, and structured report output. Supports LLM streaming output (character-by-character display). Dangerous commands are automatically blocked or require user confirmation. **Thinking Process Container**: During multi-step tasks, displays the latest 1-2 commands in real-time, auto-collapses with total step count after completion, expands to show full execution history.
+- **Visual Theme Editor**: Companion [Visual Theme Editor](https://newbietan.github.io/CloudSSH/) for live color customization and JSON theme export. Logged-in users can sync themes to the cloud, working across browsers. Provides complete preview areas including login page, server list, terminal + SFTP, and AI Agent panel.
 
 <a id="architecture"></a>
 ## Architecture
@@ -144,7 +144,7 @@ flowchart TB
 | **AI Agent** | `src/worker/agent/core.ts` | AI control loop: LLM streaming calls, tool execution, environment detection, terminal context reading |
 | **Agent Tools** | `src/worker/agent/tools.ts` | 8 operations tools (execute command, terminal context, environment detection, process list, service management, Docker management, user confirmation, report output) |
 | **Agent Safety** | `src/worker/agent/safety.ts` | Two-layer security: direct blocking (rm -rf /, fork bomb, etc.) + confirmation prompts (rm, shutdown, iptables, etc.) |
-| **Agent Panel** | `frontend/src/agent/agent-panel.ts` | AI assistant sidebar UI with streaming output, Markdown rendering, thinking/executing status, and confirmation dialogs |
+| **Agent Panel** | `frontend/src/agent/agent-panel.ts` | AI assistant sidebar UI with streaming output, Markdown rendering, collapsible thinking process container, and confirmation dialogs |
 | **AI Config** | `frontend/src/ai-config.ts` | AI model configuration modal for Base URL / API Key / model selection |
 
 ### SSH Protocol Implementation

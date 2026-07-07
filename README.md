@@ -88,8 +88,8 @@
 - **双段延迟与 Colo 展示**：状态栏即时且周期性地展示当前 RTT（客户端至 Cloudflare）、物理延迟（Cloudflare 至主机）以及 Cloudflare 当前服务的数据中心代码（如 `CF-LAX`）。
 - **终端文本检索**：支持使用快捷键 `Ctrl+Shift+F` 呼出搜索框，实时检索终端历史日志。
 - **终端日志一键导出**：支持通过顶栏的下载按钮，将当前活跃会话终端的完整屏幕历史 buffer 一键导出并下载为 `.txt` 文本文件，解决长日志在浏览器下鼠标选取容易卡顿的痛点。
-- **AI 智能助手**：内置 AI Agent 侧边栏，支持 BYOK（自带 API Key）接入 OpenAI 兼容接口（如 DeepSeek）。提供 8 个专业运维工具：执行命令、读取终端上下文、探测服务器环境、进程列表、systemctl 服务管理、Docker 容器管理、用户确认、结构化报告输出。支持 LLM 流式输出（逐字显示），危险命令自动拦截或弹窗确认。
-- **可视化主题编辑器**：配套独立的[可视化主题编辑器](https://newbietan.github.io/CloudSSH/)，支持实时调色、导出 JSON 主题文件，登录用户可一键同步至云端，跨浏览器生效。
+- **AI 智能助手**：内置 AI Agent 侧边栏，支持 BYOK（自带 API Key）接入 OpenAI 兼容接口（如 DeepSeek）。提供 8 个专业运维工具：执行命令、读取终端上下文、探测服务器环境、进程列表、systemctl 服务管理、Docker 容器管理、用户确认、结构化报告输出。支持 LLM 流式输出（逐字显示），危险命令自动拦截或弹窗确认。**思考过程容器**：多步骤任务执行时，实时预览最近 1-2 条命令，完成后自动折叠显示总步骤数，支持展开查看完整执行历史。
+- **可视化主题编辑器**：配套独立的[可视化主题编辑器](https://newbietan.github.io/CloudSSH/)，支持实时调色、导出 JSON 主题文件，登录用户可一键同步至云端，跨浏览器生效。提供登录页、服务器列表、终端 + SFTP、AI Agent 面板等完整预览区域。
 
 <a id="architecture"></a>
 ## 架构说明
@@ -144,7 +144,7 @@ flowchart TB
 | **AI Agent** | `src/worker/agent/core.ts` | AI 控制循环：LLM 流式调用、工具执行、环境探测、终端上下文读取 |
 | **Agent 工具** | `src/worker/agent/tools.ts` | 8 个运维工具定义（执行命令、终端上下文、环境探测、进程列表、服务管理、Docker 管理、用户确认、报告输出） |
 | **Agent 安全** | `src/worker/agent/safety.ts` | 两层安全策略：直接拦截（rm -rf /、fork bomb 等）+ 弹窗确认（rm、shutdown、iptables 等） |
-| **Agent 面板** | `frontend/src/agent/agent-panel.ts` | AI 助手侧边栏 UI，支持流式输出、Markdown 渲染、思考/执行状态展示、确认对话框 |
+| **Agent 面板** | `frontend/src/agent/agent-panel.ts` | AI 助手侧边栏 UI，支持流式输出、Markdown 渲染、可折叠思考过程容器、确认对话框 |
 | **AI 配置** | `frontend/src/ai-config.ts` | AI 模型配置弹窗，支持 Base URL / API Key / 模型选择 |
 
 ### SSH 协议实现

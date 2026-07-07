@@ -67,7 +67,7 @@ frontend/
 │   ├── auth-form.ts  # Auth form & encrypted anonymous credentials storage/autofill
 │   ├── server-list.ts # Server management UI (card grid, add/edit/delete/connect)
 │   ├── agent/
-│   │   └── agent-panel.ts  # AI assistant sidebar (streaming output, Markdown rendering, confirm dialogs)
+│   │   └── agent-panel.ts  # AI assistant sidebar (streaming output, Markdown rendering, thinking process, confirm dialogs)
 │   ├── ai-config.ts  # AI model configuration modal
 │   ├── style.css     # Global styles (CSS variable theme system)
 │   └── turnstile.d.ts # Turnstile type declarations
