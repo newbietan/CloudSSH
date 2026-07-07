@@ -127,6 +127,15 @@ export class SSHSessionDO {
     try {
       const session = this.sessions.get(ws);
       if (session) {
+        // agent_confirm / agent_stop 需要绕过阻塞的 handleAgentStart 处理
+        if (typeof message === 'string') {
+          let msg: any;
+          try { msg = JSON.parse(message); } catch { /* not JSON */ }
+          if (msg && (msg.type === 'agent_confirm' || msg.type === 'agent_stop')) {
+            session.handleAgentControl(msg.type, msg);
+            return;
+          }
+        }
         await session.handleWebSocketMessage(message);
         return;
       }

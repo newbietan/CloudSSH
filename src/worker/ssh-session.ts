@@ -1709,7 +1709,25 @@ export class SSHSession {
       );
     }
 
-    void this.agentCore.handleAgentStart(effectiveUserId, userMessage);
+    await this.agentCore.handleAgentStart(effectiveUserId, userMessage);
+  }
+
+  /**
+   * 处理 Agent 控制消息（confirm/stop），绕过被 handleAgentStart 阻塞的 WebSocket handler。
+   * 这些消息由 durable-object.ts 在调用 handleWebSocketMessage 之前提前路由。
+   */
+  handleAgentControl(type: string, msg: any): void {
+    if (type === 'agent_confirm') {
+      if (this.confirmationResolve) {
+        this.confirmationResolve(msg.approved === true);
+        this.confirmationResolve = null;
+      }
+      return;
+    }
+    if (type === 'agent_stop') {
+      this.agentCore?.agentAbort();
+      return;
+    }
   }
 
   private async fetchAgentAIConfig(userId: string): Promise<{ base_url: string; model: string; api_key: string } | null> {
