@@ -2,7 +2,7 @@
 
 import type { ToolDefinition } from './types';
 
-export const AGENT_TOOLS_PHASE1: ToolDefinition[] = [
+export const AGENT_TOOLS: ToolDefinition[] = [
   {
     type: 'function',
     function: {

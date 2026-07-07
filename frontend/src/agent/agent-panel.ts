@@ -254,7 +254,7 @@ export class AgentPanel {
       el.innerHTML = `
         <div class="flex gap-2 items-start">
           <div class="shrink-0 mt-0.5">${roleIcon}</div>
-          <div class="flex-1 min-w-0 text-[13px] agent-md-content"></div>
+          <div class="flex-1 min-w-0 text-[13px] whitespace-pre-wrap agent-md-content"></div>
         </div>
       `;
 
@@ -262,21 +262,32 @@ export class AgentPanel {
       this.messagesEl?.appendChild(el);
     }
 
-    // Append plain text as it arrives
+    // Append plain text as it arrives; keep a live blinking cursor visible
     this.streamingText += content;
     const contentEl = this.streamingEl.querySelector('.agent-md-content');
     if (contentEl) {
       contentEl.textContent = this.streamingText;
+      if (!contentEl.querySelector('.streaming-cursor')) {
+        const cursor = document.createElement('span');
+        cursor.className = 'streaming-cursor';
+        contentEl.appendChild(cursor);
+      }
     }
     this.scrollToBottom();
   }
 
   private handleStreamEnd(content: string): void {
     if (this.streamingEl) {
-      // Replace plain text with rendered Markdown
+      // Remove raw text + cursor, replace with fully parsed Markdown
       const contentEl = this.streamingEl.querySelector('.agent-md-content');
       if (contentEl) {
-        contentEl.innerHTML = this.renderMarkdown(content || this.streamingText);
+        contentEl.classList.remove('whitespace-pre-wrap');
+        // renderMarkdown() wraps output in its own .agent-md-content div,
+        // so we extract the inner HTML to avoid nesting.
+        const tmp = document.createElement('div');
+        tmp.innerHTML = this.renderMarkdown(content || this.streamingText);
+        const inner = tmp.querySelector('.agent-md-content');
+        contentEl.innerHTML = inner ? inner.innerHTML : (content || this.streamingText);
       }
       this.streamingEl = null;
       this.streamingText = '';

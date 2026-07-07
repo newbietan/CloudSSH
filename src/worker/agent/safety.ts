@@ -3,10 +3,11 @@
 // Directly blocked — never executed regardless of user intent
 const BLOCKED_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
   { pattern: /\brm\s+(-[a-z]*\s+)*\/($|\s)/, label: '删除根目录' },
-  { pattern: /\bdd\s+if=\/dev\/(zero|random|urandom)\s+of=\/dev\/sd/, label: '覆写磁盘' },
+  { pattern: /\bdd\s+if=\/dev\/(zero|random|urandom)\s+of=\/dev\/(sd[a-z]|nvme|vd)/, label: '覆写磁盘' },
   { pattern: /\b:(){:|:&};:/, label: 'fork bomb' },
-  { pattern: /\bmkfs\.\w+\s+\/dev\/sd/, label: '格式化磁盘设备' },
-  { pattern: />\s*\/dev\/sd[a-z]/, label: '写入磁盘设备' },
+  { pattern: /\bmkfs\.\w+\s+\/dev\/(sd[a-z]|nvme|vd)/, label: '格式化磁盘设备' },
+  { pattern: />\s*\/dev\/(sd[a-z]|nvme|vd)/, label: '写入磁盘设备' },
+  { pattern: /\bchpasswd\b/, label: '批量修改密码' },
 ];
 
 // Require user confirmation before execution
@@ -23,6 +24,7 @@ const CONFIRM_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bwget\s.*\|\s*(ba)?sh/, reason: '远程脚本直接执行存在安全风险' },
   { pattern: /\bcurl\s.*\|\s*(ba)?sh/, reason: '远程脚本直接执行存在安全风险' },
   { pattern: /\bchmod\s+(-R\s+)?\+s\b/, reason: '设置 SUID/SGID 位存在安全风险' },
+  { pattern: /\bpasswd\b/, reason: '修改用户密码，请确认' },
 ];
 
 // sudo risk levels: low-risk sudo commands that don't need confirmation
@@ -41,10 +43,9 @@ export function isBlockedCommand(command: string): { blocked: boolean; reason?: 
 }
 
 export function needsConfirmation(command: string): { required: boolean; reason?: string } {
-  // Check blocked first
-  const blocked = isBlockedCommand(command);
-  if (blocked.blocked) {
-    return { required: true, reason: blocked.reason };
+  // Blocked commands are rejected outright by the caller — they don't need confirmation
+  if (isBlockedCommand(command).blocked) {
+    return { required: false };
   }
 
   // Check confirm patterns

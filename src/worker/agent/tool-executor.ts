@@ -100,6 +100,11 @@ export class ToolExecutor {
   }
 
   private async handleServiceManage(action: string, service: string, signal?: AbortSignal): Promise<string> {
+    // Shell-safe whitelist: service names are typically [a-zA-Z0-9_-] with optional '@' instance
+    if (service && !/^[a-zA-Z0-9_\-@.]+$/.test(service)) {
+      return JSON.stringify({ stdout: '', stderr: '非法的服务名称', exit_code: -1 });
+    }
+
     const safeActions = ['status', 'start', 'restart', 'enable'];
     if (!safeActions.includes(action)) {
       const reason = action === 'stop'
@@ -114,6 +119,11 @@ export class ToolExecutor {
   }
 
   private async handleDockerManage(action: string, target?: string, options?: string, signal?: AbortSignal): Promise<string> {
+    // Shell-safe whitelist: docker args may not contain shell metacharacters
+    const safeArgRe = /^[a-zA-Z0-9_\-.\s=:+/@,]*$/;
+    if (target && !safeArgRe.test(target)) target = '';
+    if (options && !safeArgRe.test(options)) options = '';
+
     const safeActions = ['ps', 'logs', 'inspect', 'images'];
     const cmd = this.buildDockerCommand(action, target, options);
 
@@ -156,6 +166,9 @@ export class ToolExecutor {
   }
 
   private async handleDetectEnvironment(signal?: AbortSignal): Promise<string> {
+    // Use ';' to avoid the chain breaking when any single command fails
+    // (e.g. no aliases defined, or head-truncation sending SIGPIPE).
+    // Use '|| true' defensively for commands most likely to exit non-zero.
     const cmd = [
       'echo "PWD:$(pwd)"',
       'echo "USER:$(whoami)"',
@@ -164,14 +177,14 @@ export class ToolExecutor {
       'echo "LANG:${LANG:-not set}"',
       'echo "PATH:$PATH"',
       'echo "---ENV---"',
-      'env | grep -E "^(NODE_ENV|JAVA_HOME|PYTHONPATH|GOPATH|CARGO_HOME|RUSTUP_HOME|NVM_DIR|PYENV_VERSION|RBENV_VERSION|DJANGO_SETTINGS_MODULE|RAILS_ENV|DOTNET_ROOT|ANDROID_HOME|M2_HOME|GRADLE_HOME)=" | head -10',
+      '(env | grep -E "^(NODE_ENV|JAVA_HOME|PYTHONPATH|GOPATH|CARGO_HOME|RUSTUP_HOME|NVM_DIR|PYENV_VERSION|RBENV_VERSION|DJANGO_SETTINGS_MODULE|RAILS_ENV|DOTNET_ROOT|ANDROID_HOME|M2_HOME|GRADLE_HOME)=" | head -10) || true',
       'echo "---ALIASES---"',
-      'alias 2>/dev/null | head -15',
+      '(alias 2>/dev/null | head -15) || true',
       'echo "---HOSTNAME---"',
-      'hostname 2>/dev/null',
+      'hostname 2>/dev/null || true',
       'echo "---KERNEL---"',
-      'uname -sr 2>/dev/null',
-    ].join(' && ');
+      'uname -sr 2>/dev/null || true',
+    ].join('; ');
 
     try {
       const result = await this.execCommand(cmd, 10000, signal);

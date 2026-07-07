@@ -7,7 +7,7 @@ import type {
   ChatCompletionResponse,
   ChatMessage,
 } from './types';
-import { AGENT_TOOLS_PHASE1 } from './tools';
+import { AGENT_TOOLS } from './tools';
 import { getSystemPrompt } from './prompt';
 import { ToolExecutor } from './tool-executor';
 import { TerminalContext } from './terminal-context';
@@ -23,6 +23,7 @@ export class AgentCore {
   private agentConfig: AIConfig | null = null;
   private config: AgentConfig;
   private toolExecutor: ToolExecutor;
+  private loopTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private terminalContext: TerminalContext,
@@ -52,6 +53,11 @@ export class AgentCore {
     // Guard: abort previous run if still active
     if (this.state.status === 'running' || this.state.status === 'waiting_confirmation') {
       this.abortController.abort('new_request');
+    }
+    // Cancel the previous loop's stale timeout so it can't abort the new controller
+    if (this.loopTimeout) {
+      clearTimeout(this.loopTimeout);
+      this.loopTimeout = null;
     }
 
     this.state = { status: 'running', messages: [], iteration: 0 };
@@ -122,11 +128,13 @@ export class AgentCore {
 
   private async runLoop(): Promise<void> {
     const signal = this.abortController.signal;
+    const runController = this.abortController;
     const loopTimeout = setTimeout(() => {
       if (this.state.status === 'running') {
-        this.abortController.abort('loop_timeout');
+        runController.abort('loop_timeout');
       }
     }, this.config.timeout);
+    this.loopTimeout = loopTimeout;
 
     try {
       while (this.state.iteration < this.config.maxIterations) {
@@ -254,8 +262,14 @@ export class AgentCore {
         throw e;
       }
     } finally {
+      // Clear our own timeout; null the instance field if it still points to ours
       clearTimeout(loopTimeout);
-      if (this.state.status !== 'idle') {
+      if (this.loopTimeout === loopTimeout) {
+        this.loopTimeout = null;
+      }
+      // Only the current (not-superseded) loop may transition state to idle,
+      // preventing a stale loop aborted by a newer request from clobbering the new run.
+      if (this.abortController === runController && this.state.status !== 'idle') {
         this.state.status = 'idle';
       }
     }
@@ -280,7 +294,7 @@ export class AgentCore {
         body: JSON.stringify({
           model: config.model,
           messages: this.state.messages,
-          tools: AGENT_TOOLS_PHASE1,
+          tools: AGENT_TOOLS,
           tool_choice: 'auto',
           max_tokens: 4096,
           stream: true,
