@@ -55,6 +55,7 @@ export class AgentPanel {
   private thinkingIsDone: boolean = false;
   private thinkingStepCount: number = 0;
   private thinkingLiveEl: HTMLElement | null = null;
+  private thinkingAllSteps: Array<{ tool: string; label: string }> = [];
   private livePreviewCache: string[] = [];
 
   constructor(
@@ -292,6 +293,9 @@ export class AgentPanel {
   private addThinkingStep(tool: string, label: string): void {
     if (!this.thinkingStepsEl || !this.thinkingCurrentEl) return;
 
+    // 记录全部步骤，供完成时完整展示
+    this.thinkingAllSteps.push({ tool, label });
+
     // Move the previous step into history BEFORE clearing current
     if (this.thinkingCurrentEl.childElementCount > 0) {
       this.thinkingStepsEl.appendChild(this.thinkingCurrentEl.firstElementChild!);
@@ -330,10 +334,17 @@ export class AgentPanel {
     }
     this.thinkingCurrentEl!.innerHTML = '';
 
-    // 完成时只保留最新的 2 条步骤记录
+    // 完成时从完整记录重建，展示所有步骤
     if (this.thinkingStepsEl) {
-      while (this.thinkingStepsEl.children.length > 2) {
-        this.thinkingStepsEl.removeChild(this.thinkingStepsEl.firstChild!);
+      this.thinkingStepsEl.innerHTML = '';
+      for (const step of this.thinkingAllSteps) {
+        const stepEl = document.createElement('div');
+        stepEl.className = 'tp-step tp-step-done';
+        const icon = step.tool === 'execute_command' || step.tool === 'terminal'
+          ? '<span class="material-symbols-outlined tp-step-icon" style="font-variation-settings:\'FILL\' 0;">check_circle</span>'
+          : '<span class="material-symbols-outlined tp-step-icon" style="font-variation-settings:\'FILL\' 1;">check_circle</span>';
+        stepEl.innerHTML = `${icon}<span class="tp-step-label">${escapeHtml(step.label)}</span>`;
+        this.thinkingStepsEl.appendChild(stepEl);
       }
     }
 
@@ -371,6 +382,7 @@ export class AgentPanel {
     this.thinkingStatusEl = null;
     this.thinkingLiveEl = null;
     this.thinkingIsDone = false;
+    this.thinkingAllSteps = [];
     this.livePreviewCache = [];
   }
 
