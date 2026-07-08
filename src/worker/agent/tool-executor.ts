@@ -28,7 +28,7 @@ export class ToolExecutor {
       case 'detect_environment':
         return this.handleDetectEnvironment(signal);
       case 'ask_user_confirmation':
-        return this.handleConfirmation(args.command, args.reason);
+        return this.handleConfirmation(args.command, args.reason, signal);
       case 'respond_to_user':
         return `RESPOND:${args.message}`;
       default:
@@ -51,7 +51,7 @@ export class ToolExecutor {
     // Check if this command needs user confirmation
     const confirm = needsConfirmation(command);
     if (confirm.required) {
-      const approved = await this.askConfirmation(command, confirm.reason!);
+      const approved = await this.askConfirmationWithAbort(command, confirm.reason!, signal);
       if (!approved) {
         return JSON.stringify({
           stdout: '',
@@ -158,11 +158,25 @@ export class ToolExecutor {
     }
   }
 
-  private async handleConfirmation(command: string, reason: string): Promise<string> {
-    const approved = await this.askConfirmation(command, reason);
+  private async handleConfirmation(command: string, reason: string, signal?: AbortSignal): Promise<string> {
+    const approved = await this.askConfirmationWithAbort(command, reason, signal);
     return approved
       ? 'User approved'
       : 'User rejected the command. Do not retry without user approval.';
+  }
+
+  /**
+   * 将 askConfirmation 与 abort signal 竞争，防止超时后 runLoop 永久挂起。
+   * 当 signal 被 abort 时，视为用户拒绝。
+   */
+  private askConfirmationWithAbort(command: string, reason: string, signal?: AbortSignal): Promise<boolean> {
+    if (signal?.aborted) return Promise.resolve(false);
+    return Promise.race([
+      this.askConfirmation(command, reason),
+      new Promise<boolean>((resolve) => {
+        signal?.addEventListener('abort', () => resolve(false), { once: true });
+      }),
+    ]);
   }
 
   private async handleDetectEnvironment(signal?: AbortSignal): Promise<string> {

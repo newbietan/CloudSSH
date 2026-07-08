@@ -252,27 +252,27 @@ export class AgentCore {
         return;
       }
 
-      // Max iterations reached
-      if (!signal.aborted && this.state.status === 'running') {
+      // Loop exited — notify frontend of the reason
+      if (signal.aborted) {
+        // 超时退出（排除用户手动停止，agentAbort 已自行通知）
+        if (!signal.reason?.includes?.('user_stop')) {
+          this.sendToFrontend({
+            type: 'agent_frame',
+            subType: 'response',
+            content: 'Agent 执行超时，已自动停止。请检查终端状态，或发送新消息继续操作。',
+          });
+        }
+      } else if (this.state.status === 'running') {
+        // maxIterations 达到
         this.sendToFrontend({
           type: 'agent_frame',
           subType: 'response',
           content: 'Agent 达到最大迭代次数，请检查终端状态或尝试更简洁的请求。',
         });
-        this.state.status = 'idle';
       }
     } catch (e) {
-      if (signal.aborted) {
-        if (!signal.reason?.includes?.('user_stop')) {
-          this.sendToFrontend({
-            type: 'agent_frame',
-            subType: 'response',
-            content: 'Agent 执行超时。',
-          });
-        }
-      } else {
-        throw e;
-      }
+      // 仅处理非 abort 异常（abort 路径已在 while 退出后处理）
+      if (!signal.aborted) throw e;
     } finally {
       // Clear our own timeout; null the instance field if it still points to ours
       clearTimeout(loopTimeout);
