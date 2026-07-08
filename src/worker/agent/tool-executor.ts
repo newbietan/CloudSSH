@@ -62,7 +62,7 @@ export class ToolExecutor {
       }
     }
 
-    const clampedTimeout = Math.min(Math.max(timeout, 1000), 30000);
+    const clampedTimeout = Math.min(Math.max(timeout, 1000), 60000);
 
     try {
       const result = await this.execCommand(command, clampedTimeout, signal);

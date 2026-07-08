@@ -14,7 +14,7 @@ import { TerminalContext } from './terminal-context';
 
 const DEFAULT_CONFIG: AgentConfig = {
   maxIterations: 20,
-  timeout: 25_000, // 略低于 Cloudflare DO 30s 墙钟限制
+  timeout: 60_000, // 单步最大超时时间提升至 60 秒，匹配看门狗模式
 };
 
 export class AgentCore {
@@ -45,7 +45,14 @@ export class AgentCore {
     this.toolExecutor = new ToolExecutor(
       this.terminalContext,
       this.execCommand.bind(this),
-      this.askConfirmation.bind(this),
+      async (command: string, reason: string) => {
+        this.pauseTimeout();
+        try {
+          return await this.askConfirmation(command, reason);
+        } finally {
+          this.resetTimeout();
+        }
+      },
     );
   }
 
@@ -135,12 +142,7 @@ export class AgentCore {
   private async runLoop(): Promise<void> {
     const signal = this.abortController.signal;
     const runController = this.abortController;
-    const loopTimeout = setTimeout(() => {
-      if (this.state.status === 'running') {
-        runController.abort('loop_timeout');
-      }
-    }, this.config.timeout);
-    this.loopTimeout = loopTimeout;
+    this.resetTimeout();
 
     // 防止 DO Hibernate：整个 runLoop 期间保持 DO 活跃
     // （覆盖命令执行等待、用户确认等待、LLM 流式响应等所有 await 场景）
@@ -163,6 +165,7 @@ export class AgentCore {
         let llmResponse: ChatCompletionResponse;
         try {
           llmResponse = await this.callLLM(signal);
+          this.resetTimeout(); // 看门狗：LLM 响应成功，重置超时时间
         } catch (e) {
           if (signal.aborted) break;
           const errMsg = e instanceof Error ? e.message : String(e);
@@ -217,6 +220,7 @@ export class AgentCore {
               toolArgs,
               signal,
             );
+            this.resetTimeout(); // 看门狗：工具执行成功，重置超时时间
 
             // 必须先将 tool 结果加入 messages，否则后续轮次的 LLM 调用会因
             // assistant.tool_calls 缺少对应的 tool 响应而触发 API 400 错误
@@ -286,6 +290,25 @@ export class AgentCore {
       if (this.abortController === runController && this.state.status !== 'idle') {
         this.state.status = 'idle';
       }
+    }
+  }
+
+  private resetTimeout(): void {
+    if (this.loopTimeout) {
+      clearTimeout(this.loopTimeout);
+    }
+    const currentController = this.abortController;
+    this.loopTimeout = setTimeout(() => {
+      if (this.state.status === 'running') {
+        currentController.abort('loop_timeout');
+      }
+    }, this.config.timeout);
+  }
+
+  private pauseTimeout(): void {
+    if (this.loopTimeout) {
+      clearTimeout(this.loopTimeout);
+      this.loopTimeout = null;
     }
   }
 
