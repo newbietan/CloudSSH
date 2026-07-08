@@ -34,6 +34,7 @@ const CONFIRM_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bcurl\s.*\|\s*(ba)?sh/, reason: '远程脚本直接执行存在安全风险' },
   { pattern: /\bchmod\s+(-R\s+)?\+s\b/, reason: '设置 SUID/SGID 位存在安全风险' },
   { pattern: /\bpasswd\b/, reason: '修改用户密码，请确认' },
+  { pattern: /\b(apt|yum|dnf|apk)\s+(install|remove|purge|update|upgrade)\b/, reason: '安装/卸载/更新软件包将修改系统状态，请确认' },
 ];
 
 // sudo risk levels: low-risk sudo commands that don't need confirmation
@@ -54,7 +55,6 @@ const SUDO_SAFE_READ_PATTERNS: RegExp[] = [
 const SUDO_WRITE_PATTERNS: RegExp[] = [
   /\bsudo\s+(systemctl\s+)?(stop|disable)\b/,
   /\bsudo\s+docker\s+(stop|rm|rmi|restart)\b/,
-  /\bsudo\s+(apt|yum|dnf|apk)\s+(install|remove|purge|update|upgrade)\b/,
   /\bsudo\s+user(add|del|mod)\b/,
   /\bsudo\s+group(add|del|mod)\b/,
   /\bsudo\s+(mount|umount)\b/,
