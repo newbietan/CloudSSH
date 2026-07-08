@@ -138,7 +138,12 @@ export class AIConfigPanel {
 
       const models: Array<{ id: string }> = data.models || [];
       if (modelListEl) {
-        modelListEl.innerHTML = models.map(m => `<option value="${m.id}">`).join('');
+        modelListEl.innerHTML = '';
+        for (const m of models) {
+          const option = document.createElement('option');
+          option.value = m.id;
+          modelListEl.appendChild(option);
+        }
       }
       this.showFetchStatus(`获取到 ${models.length} 个模型`, false);
     } catch (e) {

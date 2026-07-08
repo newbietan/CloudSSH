@@ -1267,12 +1267,20 @@ export class SSHSession {
         offset += reqTypeLen;
         offset += 1; // skip want_reply
 
-        if (reqType === 'exit-status' || reqType === 'exit-signal') {
+        if (reqType === 'exit-status') {
           const execCh = this.activeExecChannels.get(reqChannelID);
           if (execCh) {
             const exitCode = (payload[offset] << 24) | (payload[offset+1] << 16) | (payload[offset+2] << 8) | payload[offset+3];
             execCh.onExitStatus(exitCode);
             this.sendDebug(`Exec channel exit-status: channelID=${reqChannelID}, exitCode=${exitCode}`);
+          }
+        } else if (reqType === 'exit-signal') {
+          const execCh = this.activeExecChannels.get(reqChannelID);
+          if (execCh) {
+            // According to RFC 4254 §6.10, exit-signal contains: string signal name, boolean core dumped, string error message...
+            // We set a non-zero exit code (e.g., 1) to represent abnormal termination, avoiding incorrect 4-byte parsing.
+            execCh.onExitStatus(1);
+            this.sendDebug(`Exec channel exit-signal received: channelID=${reqChannelID}`);
           }
         }
         break;
@@ -1686,7 +1694,14 @@ export class SSHSession {
       return;
     }
 
-    const effectiveUserId = userId || this.userId;
+    // Securely verify userId. Always use the authenticated session userId (this.userId).
+    // Reject requests if client provides a conflicting userId.
+    if (userId && this.userId && userId !== this.userId) {
+      this.sendAgentFrame({ type: 'agent_frame', subType: 'error', message: '用户身份不匹配，越权操作已被拦截' });
+      return;
+    }
+
+    const effectiveUserId = this.userId;
     if (!effectiveUserId) {
       this.sendAgentFrame({ type: 'agent_frame', subType: 'error', message: '需要登录用户才能使用 AI 助手' });
       return;

@@ -14,15 +14,15 @@ marked.use({
       return `${safeLang}<pre class="agent-md-pre"><code>${escapeHtml(text)}</code></pre>`;
     },
     codespan({ text }: Tokens.Codespan) {
-      return `<code class="agent-md-inline-code">${text}</code>`;
+      return `<code class="agent-md-inline-code">${escapeHtml(text)}</code>`;
     },
     link({ href, title, text }: Tokens.Link) {
       const titleAttr = title ? ` title="${escapeHtml(title)}"` : '';
-      return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer" class="agent-md-link">${text}</a>`;
+      return `<a href="${escapeHtml(href)}"${titleAttr} target="_blank" rel="noopener noreferrer" class="agent-md-link">${text}</a>`;
     },
     image({ href, title, text }: Tokens.Image) {
       const titleAttr = title ? ` title="${escapeHtml(title)}"` : '';
-      return `<img src="${href}"${titleAttr} alt="${escapeHtml(text)}" class="agent-md-img" loading="lazy">`;
+      return `<img src="${escapeHtml(href)}"${titleAttr} alt="${escapeHtml(text)}" class="agent-md-img" loading="lazy">`;
     },
   },
 });

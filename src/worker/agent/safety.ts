@@ -3,7 +3,7 @@
 // Directly blocked — never executed regardless of user intent
 const BLOCKED_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
   // rm -rf / or rm -rf // — match after normalization to prevent bypass via variable expansion
-  { pattern: /\brm\s+(-[a-z]*\s+)*\/\s*($|[^\/])/, label: '删除根目录' },
+  { pattern: /\brm\s+(-[a-z]*\s+)*\/\s*($|\s)/, label: '删除根目录' },
   { pattern: /\brm\s+(-[a-z]*\s+)*\/\/\s*($|\s)/, label: '删除根目录' },
   // rm with path variables that could resolve to root
   { pattern: /\brm\s+(-[a-z]*\s+)*(~\/\.\.|\/\.\.)\//, label: '删除根目录（路径遍历）' },

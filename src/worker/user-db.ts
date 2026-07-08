@@ -754,8 +754,19 @@ export class UserDBDO {
       api_key?: string;
     }>();
 
-    if (!body.base_url || !body.model) {
-      return Response.json({ error: 'Missing base_url or model' }, { status: 400 });
+    if (!body.user_id || !body.base_url || !body.model) {
+      return Response.json({ error: 'Missing user_id, base_url or model' }, { status: 400 });
+    }
+
+    // Check if an existing configuration exists with a valid API key
+    const existing = this.db.exec(
+      'SELECT api_key_enc FROM ai_configs WHERE user_id = ?',
+      body.user_id
+    ).toArray();
+    const hasExistingKey = existing.length > 0 && !!(existing[0] as any).api_key_enc;
+
+    if (!body.api_key && !hasExistingKey) {
+      return Response.json({ error: '首次配置必须填写 API Key' }, { status: 400 });
     }
 
     let encrypted: string | null = null;

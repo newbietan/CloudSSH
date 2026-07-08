@@ -11,8 +11,8 @@ const htmlTsFile = path.join(workerDir, 'html.ts');
 console.log('Building frontend...');
 try {
   // 1. Install and build frontend
-  execSync('pnpm install', { cwd: frontendDir, stdio: 'inherit' });
-  execSync('pnpm run build', { cwd: frontendDir, stdio: 'inherit' });
+  execSync('npx pnpm install', { cwd: frontendDir, stdio: 'inherit' });
+  execSync('npx pnpm run build', { cwd: frontendDir, stdio: 'inherit' });
 
   console.log('Inlining assets...');
   // 2. Read dist/index.html
