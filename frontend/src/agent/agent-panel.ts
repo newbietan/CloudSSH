@@ -230,6 +230,9 @@ export class AgentPanel {
   }
 
   private showExecuting(tool: string, args: any): void {
+    if (this.streamingEl) {
+      this.convertStreamToThoughtStep();
+    }
     this.ensureThinkingProcess();
     const cmd = args?.command || '';
     const label = tool === 'respond_to_user' ? '生成回复'
@@ -388,7 +391,7 @@ export class AgentPanel {
 
   private addAgentResponse(content: string): void {
     this.collapseThinkingProcess();
-    this.appendMessage('response', content);
+    this.appendMessage('response', content || '');
   }
 
   private handleStreamChunk(content: string): void {
@@ -438,24 +441,32 @@ export class AgentPanel {
         // renderMarkdown() wraps output in its own .agent-md-content div,
         // so we extract the inner HTML to avoid nesting.
         const tmp = document.createElement('div');
-        tmp.innerHTML = this.renderMarkdown(content || this.streamingText);
+        tmp.innerHTML = this.renderMarkdown(content || this.streamingText || '');
         const inner = tmp.querySelector('.agent-md-content');
-        contentEl.innerHTML = inner ? inner.innerHTML : (content || this.streamingText);
+        contentEl.innerHTML = inner ? inner.innerHTML : (content || this.streamingText || '');
       }
       this.streamingEl = null;
       this.streamingText = '';
     } else {
       // Fallback: no streaming element (e.g., empty response)
-      this.addAgentResponse(content);
+      this.addAgentResponse(content || '');
     }
   }
 
   private showError(message: string): void {
+    if (this.streamingEl) {
+      this.streamingEl.remove();
+      this.streamingEl = null;
+      this.streamingText = '';
+    }
     this.collapseThinkingProcess();
-    this.appendMessage('error', message);
+    this.appendMessage('error', message || '未知错误');
   }
 
   private showConfirmDialog(command: string, reason: string): void {
+    if (this.streamingEl) {
+      this.convertStreamToThoughtStep();
+    }
     this.isWaitingConfirmation = true;
     this.updateInputState();
 
@@ -491,6 +502,30 @@ export class AgentPanel {
     this.scrollToBottom();
   }
 
+  private convertStreamToThoughtStep(): void {
+    if (!this.streamingEl) return;
+
+    const thoughts = this.streamingText.trim();
+    this.streamingEl.remove();
+    this.streamingEl = null;
+    this.streamingText = '';
+
+    if (thoughts && this.thinkingProcessEl) {
+      // 重新激活思考面板
+      this.thinkingIsDone = false;
+      this.thinkingProcessEl.classList.remove('tp-done');
+
+      const mainIcon = this.thinkingProcessEl.querySelector('.tp-icon') as HTMLElement | null;
+      if (mainIcon) mainIcon.textContent = 'smart_toy';
+
+      const dots = this.thinkingProcessEl.querySelector('.thinking-dots') as HTMLElement | null;
+      if (dots) dots.style.display = '';
+
+      // 将思考文本作为一个“规划与思考”步骤加入记录
+      this.addThinkingStep('thought', thoughts);
+    }
+  }
+
   private appendMessage(role: string, content: string): void {
     const el = document.createElement('div');
     el.className = `agent-message agent-${role}`;
@@ -515,7 +550,7 @@ export class AgentPanel {
 
     let renderedContent: string;
     if (isAgent) {
-      renderedContent = this.renderMarkdown(content);
+      renderedContent = this.renderMarkdown(content || '');
     } else if (isUser) {
       renderedContent = `<div style="color:${themeColor};white-space:pre-wrap;word-break:break-word;">${escapeHtml(content)}</div>`;
     } else if (isExecuting) {

@@ -278,9 +278,9 @@ export class AgentCore {
       // 仅处理非 abort 异常（abort 路径已在 while 退出后处理）
       if (!signal.aborted) throw e;
     } finally {
-      // Clear our own timeout; null the instance field if it still points to ours
-      clearTimeout(loopTimeout);
-      if (this.loopTimeout === loopTimeout) {
+      // Clear our own timeout
+      if (this.loopTimeout) {
+        clearTimeout(this.loopTimeout);
         this.loopTimeout = null;
       }
       // 清理 keepAlive 定时器，防止 runLoop 结束后 DO 仍持有无效 timer

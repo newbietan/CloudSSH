@@ -30,7 +30,7 @@ export class ToolExecutor {
       case 'ask_user_confirmation':
         return this.handleConfirmation(args.command, args.reason, signal);
       case 'respond_to_user':
-        return `RESPOND:${args.message}`;
+        return `RESPOND:${args.message ?? args.content ?? ''}`;
       default:
         return `Unknown tool: ${toolName}`;
     }
