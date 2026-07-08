@@ -97,6 +97,7 @@ export class SSHSession {
   private state: 'connecting' | 'version' | 'kex' | 'auth' | 'shell' | 'shell-requested' | 'ready'
     = 'connecting';
   private hostKeyFingerprint: string = '';
+  private hostKeyType: string = 'unknown';
 
   private versionRawBuffer: Uint8Array = new Uint8Array(0);
   private negotiatedCipherC2S: string = 'aes128-gcm@openssh.com';
@@ -632,32 +633,38 @@ export class SSHSession {
     const hHex = Array.from(H).map(b => b.toString(16).padStart(2, '0')).join('');
     this.sendDebug(`Exchange hash H=${hHex}`);
 
+    // Extract host key algorithm type from the blob
+    try {
+      const ktLen = (hostKey[0] << 24) | (hostKey[1] << 16) | (hostKey[2] << 8) | hostKey[3];
+      this.hostKeyType = this.textDecoder.decode(hostKey.subarray(4, 4 + ktLen));
+    } catch {
+      this.hostKeyType = 'unknown';
+    }
+
     // Compute host key fingerprint (SHA-256)
     const fpHash = new Uint8Array(await crypto.subtle.digest('SHA-256', hostKey));
     this.hostKeyFingerprint = 'SHA256:' + btoa(String.fromCharCode(...fpHash)).replace(/=+$/, '');
-    this.sendDebug(`Host key fingerprint: ${this.hostKeyFingerprint}`);
+    this.sendDebug(`Host key fingerprint: ${this.hostKeyFingerprint} (${this.hostKeyType})`);
 
     // --- known_hosts verification (TOFU) ---
-    // Send fingerprint to frontend for storage
+    // Send fingerprint with key type to frontend for storage
     try {
-      this.ws.send(JSON.stringify({ type: 'host_key', fingerprint: this.hostKeyFingerprint }));
+      this.ws.send(JSON.stringify({ type: 'host_key', fingerprint: this.hostKeyFingerprint, keyType: this.hostKeyType }));
     } catch (e) { /* ws closed */ }
 
     // Compare against expected fingerprint if provided
     if (this.config.expectedFingerprint) {
       if (this.config.expectedFingerprint !== this.hostKeyFingerprint) {
-        this.sendError(
-          `主机密钥指纹不匹配！可能存在中间人攻击。\n` +
-          `已知指纹: ${this.config.expectedFingerprint}\n` +
-          `实际指纹: ${this.hostKeyFingerprint}\n` +
-          `连接已阻断。如需信任新密钥，请清除该服务器的 known_hosts 记录后重试。`
-        );
+        this.sendError('主机密钥指纹变更！请确认是否为预期行为。');
+        this.sendError(`已知指纹: ${this.config.expectedFingerprint}`);
+        this.sendError(`实际指纹: ${this.hostKeyFingerprint} (${this.hostKeyType})`);
+        this.sendError('连接已阻断。如需信任新密钥，请在服务器列表中删除该服务器的已知主机记录后重试。');
         this.close();
         return;
       }
-      this.sendStatus(`主机密钥验证通过 ✓`);
+      this.sendStatus(`主机密钥验证通过 (${this.hostKeyType}) ✓`);
     } else {
-      this.sendStatus(`服务器指纹: ${this.hostKeyFingerprint}（首次连接，已记录）`);
+      this.sendStatus(`服务器指纹: ${this.hostKeyFingerprint} (${this.hostKeyType})（首次连接，已记录）`);
     }
 
     // Verify host key signature to confirm exchange hash is correct
