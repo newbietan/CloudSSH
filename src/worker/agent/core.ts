@@ -142,6 +142,12 @@ export class AgentCore {
     }, this.config.timeout);
     this.loopTimeout = loopTimeout;
 
+    // 防止 DO Hibernate：整个 runLoop 期间保持 DO 活跃
+    // （覆盖命令执行等待、用户确认等待、LLM 流式响应等所有 await 场景）
+    // 与 loopTimeout 不同，keepAlive 是 no-op，不会 abort 新 controller，
+    // 无需在 handleAgentStart 中提前清理，用局部变量即可。
+    const keepAlive = setInterval(() => {}, 5000);
+
     try {
       while (this.state.iteration < this.config.maxIterations) {
         if (signal.aborted) break;
@@ -273,6 +279,8 @@ export class AgentCore {
       if (this.loopTimeout === loopTimeout) {
         this.loopTimeout = null;
       }
+      // 清理 keepAlive 定时器，防止 runLoop 结束后 DO 仍持有无效 timer
+      clearInterval(keepAlive);
       // Only the current (not-superseded) loop may transition state to idle,
       // preventing a stale loop aborted by a newer request from clobbering the new run.
       if (this.abortController === runController && this.state.status !== 'idle') {

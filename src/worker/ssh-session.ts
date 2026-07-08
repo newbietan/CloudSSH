@@ -119,7 +119,6 @@ export class SSHSession {
   private agentCore: AgentCore | null = null;
   private activeExecChannels: Map<number, AgentExecChannel> = new Map();
   private confirmationResolve: ((approved: boolean) => void) | null = null;
-  private confirmationKeepAlive: ReturnType<typeof setInterval> | null = null;
   private env: Env | null = null;
   private userId: string | null = null;
 
@@ -1759,55 +1758,56 @@ export class SSHSession {
     const openMsg = channel.buildOpenSession(channelID);
     await this.sendEncrypted(openMsg);
 
-    // Wait for channel open confirmation (via execCh state flags, not this.channels map)
-    const opened = await this.waitForExecChannelOpen(execCh, channel, command);
+    try {
+      // Wait for channel open confirmation (via execCh state flags, not this.channels map)
+      const opened = await this.waitForExecChannelOpen(execCh, channel, command);
 
-    if (!opened) {
-      // Open rejected — closedPromise already resolved with error struct; await it
-      const result = await execCh.getClosedPromise();
+      if (!opened) {
+        // Open rejected — closedPromise already resolved with error struct; await it
+        return await execCh.getClosedPromise();
+      }
+
+      // Open succeeded — send exec request
+      const execReq = channel.buildExecRequest(command);
+      await this.sendEncrypted(execReq);
+
+      // Wait for result with timeout + abort
+      let aborted = false;
+      const result = await Promise.race([
+        execCh.getClosedPromise(),
+        new Promise<{ stdout: string; stderr: string; exitCode: number }>((_, reject) => {
+          const timer = setTimeout(() => reject(new Error(`Exec timeout after ${timeout}ms`)), timeout);
+          signal?.addEventListener('abort', () => {
+            aborted = true;
+            clearTimeout(timer);
+            reject(new Error('Exec aborted'));
+          }, { once: true });
+        }),
+      ]);
+
+      // Cleanup: send EOF + CLOSE to server (RFC 4254 §5.3)
+      // Always attempt cleanup, even on abort, to prevent resource leaks
+      if (!channel.isClosed()) {
+        try {
+          await this.sendEncrypted(channel.buildEof());
+          await this.sendEncrypted(channel.buildClose());
+        } catch {
+          // Channel may already be closed by server, ignore
+        }
+      }
+
+      // If aborted, also close the exec channel to resolve any pending promises
+      if (aborted) {
+        execCh.onClose();
+      }
+
+      return result;
+    } finally {
+      // 无论成功、失败、超时或被中止，都必须清理 channel 引用，防止资源泄漏
+      // （之前 waitForExecChannelOpen 超时 throw 会跳过清理，导致 execCh 残留在 activeExecChannels）
       this.activeExecChannels.delete(channelID);
       this.channels.delete(channelID);
-      return result;
     }
-
-    // Open succeeded — send exec request
-    const execReq = channel.buildExecRequest(command);
-    await this.sendEncrypted(execReq);
-
-    // Wait for result with timeout + abort
-    let aborted = false;
-    const result = await Promise.race([
-      execCh.getClosedPromise(),
-      new Promise<{ stdout: string; stderr: string; exitCode: number }>((_, reject) => {
-        const timer = setTimeout(() => reject(new Error(`Exec timeout after ${timeout}ms`)), timeout);
-        signal?.addEventListener('abort', () => {
-          aborted = true;
-          clearTimeout(timer);
-          reject(new Error('Exec aborted'));
-        }, { once: true });
-      }),
-    ]);
-
-    // Cleanup: send EOF + CLOSE to server (RFC 4254 §5.3)
-    // Always attempt cleanup, even on abort, to prevent resource leaks
-    if (!channel.isClosed()) {
-      try {
-        await this.sendEncrypted(channel.buildEof());
-        await this.sendEncrypted(channel.buildClose());
-      } catch {
-        // Channel may already be closed by server, ignore
-      }
-    }
-
-    // If aborted, also close the exec channel to resolve any pending promises
-    if (aborted) {
-      execCh.onClose();
-    }
-
-    this.activeExecChannels.delete(channelID);
-    this.channels.delete(channelID);
-
-    return result;
   }
 
   private waitForExecChannelOpen(execCh: AgentExecChannel, channel: SSHChannel, command: string): Promise<boolean> {
@@ -1842,20 +1842,12 @@ export class SSHSession {
   }
 
   /**
-   * 等待用户确认/取消。使用 setInterval 保活定时器防止 DO 在纯 Promise 等待期间 Hibernate
-   * 导致 confirmationResolve 丢失，确认消息（agent_confirm）无法恢复 Agent 执行。
+   * 等待用户确认/取消。DO 防 Hibernate 由 AgentCore.runLoopKeepAlive 统一保活，
+   * 此处只需注册 resolve 回调即可。
    */
   private askAgentConfirmation(command: string, reason: string): Promise<boolean> {
     return new Promise((resolve) => {
-      this.confirmationKeepAlive = setInterval(() => {}, 5000);
-      this.confirmationResolve = (approved: boolean) => {
-        if (this.confirmationKeepAlive) {
-          clearInterval(this.confirmationKeepAlive);
-          this.confirmationKeepAlive = null;
-        }
-        this.confirmationResolve = null;
-        resolve(approved);
-      };
+      this.confirmationResolve = resolve;
       this.sendAgentFrame({
         type: 'agent_frame',
         subType: 'confirm_required',
@@ -1901,10 +1893,6 @@ export class SSHSession {
       execCh.onClose();
     }
     this.activeExecChannels.clear();
-    if (this.confirmationKeepAlive) {
-      clearInterval(this.confirmationKeepAlive);
-      this.confirmationKeepAlive = null;
-    }
     if (this.confirmationResolve) {
       this.confirmationResolve(false);
       this.confirmationResolve = null;
