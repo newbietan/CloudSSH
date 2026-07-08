@@ -118,6 +118,7 @@ export class SSHSession {
   private agentCore: AgentCore | null = null;
   private activeExecChannels: Map<number, AgentExecChannel> = new Map();
   private confirmationResolve: ((approved: boolean) => void) | null = null;
+  private confirmationKeepAlive: ReturnType<typeof setInterval> | null = null;
   private env: Env | null = null;
   private userId: string | null = null;
 
@@ -1301,19 +1302,10 @@ export class SSHSession {
         }
 
         // Agent messages
+        // agent_stop / agent_confirm 已由 durable-object.ts 在 webSocketMessage 入口
+        // 提前拦截并通过 handleAgentControl 同步处理，不再到达此处。
         if (parsed.type === 'agent_start') {
           await this.handleAgentStart(parsed.message, parsed.user_id);
-          return;
-        }
-        if (parsed.type === 'agent_stop') {
-          this.agentCore?.agentAbort();
-          return;
-        }
-        if (parsed.type === 'agent_confirm') {
-          if (this.confirmationResolve) {
-            this.confirmationResolve(parsed.approved === true);
-            this.confirmationResolve = null;
-          }
           return;
         }
 
@@ -1848,9 +1840,12 @@ export class SSHSession {
    */
   private askAgentConfirmation(command: string, reason: string): Promise<boolean> {
     return new Promise((resolve) => {
-      const keepAlive = setInterval(() => {}, 5000);
+      this.confirmationKeepAlive = setInterval(() => {}, 5000);
       this.confirmationResolve = (approved: boolean) => {
-        clearInterval(keepAlive);
+        if (this.confirmationKeepAlive) {
+          clearInterval(this.confirmationKeepAlive);
+          this.confirmationKeepAlive = null;
+        }
         this.confirmationResolve = null;
         resolve(approved);
       };
@@ -1899,6 +1894,10 @@ export class SSHSession {
       execCh.onClose();
     }
     this.activeExecChannels.clear();
+    if (this.confirmationKeepAlive) {
+      clearInterval(this.confirmationKeepAlive);
+      this.confirmationKeepAlive = null;
+    }
     if (this.confirmationResolve) {
       this.confirmationResolve(false);
       this.confirmationResolve = null;
