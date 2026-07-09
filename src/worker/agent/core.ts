@@ -13,8 +13,23 @@ import { ToolExecutor } from './tool-executor';
 import { TerminalContext } from './terminal-context';
 
 const DEFAULT_CONFIG: AgentConfig = {
-  maxIterations: 20,
+  maxIterations: 30, // Changed from 20 to 30 as base
   timeout: 60_000, // 单步最大超时时间提升至 60 秒，匹配看门狗模式
+};
+
+interface ProgressTracker {
+  uniqueCommands: Set<string>;
+  recentToolCalls: string[];
+  extensionUsed: number;
+}
+
+const PROGRESS_CONFIG = {
+  baseIterations: 30,
+  maxExtensions: 3,
+  extensionSize: 20,
+  maxTotalIterations: 90,
+  loopDetectionWindow: 5,
+  repetitionThreshold: 0.6,
 };
 
 export class AgentCore {
@@ -24,6 +39,13 @@ export class AgentCore {
   private config: AgentConfig;
   private toolExecutor: ToolExecutor;
   private loopTimeout: ReturnType<typeof setTimeout> | null = null;
+  
+  private progress: ProgressTracker = {
+    uniqueCommands: new Set(),
+    recentToolCalls: [],
+    extensionUsed: 0,
+  };
+  private lastSummaryMessageCount: number = 0;
 
   // 环境与终端上下文（独立存储，注入到 system prompt 中）
   private environmentContext: string = '';
@@ -56,6 +78,62 @@ export class AgentCore {
     );
   }
 
+  private getEffectiveMaxIterations(): number {
+    return PROGRESS_CONFIG.baseIterations + this.progress.extensionUsed * PROGRESS_CONFIG.extensionSize;
+  }
+
+  private recordToolCall(toolName: string, args: any): void {
+    const signature = toolName === 'execute_command'
+      ? `exec:${args.command?.trim()}`
+      : `${toolName}:${JSON.stringify(args)}`;
+
+    this.progress.recentToolCalls.push(signature);
+    if (this.progress.recentToolCalls.length > PROGRESS_CONFIG.loopDetectionWindow) {
+      this.progress.recentToolCalls.shift();
+    }
+
+    if (toolName === 'execute_command' && args.command) {
+      this.progress.uniqueCommands.add(args.command.trim());
+    }
+  }
+
+  private evaluateProgress(): { shouldExtend: boolean; reason: string } {
+    const { recentToolCalls, uniqueCommands, extensionUsed } = this.progress;
+    const { maxExtensions, maxTotalIterations, loopDetectionWindow, repetitionThreshold } = PROGRESS_CONFIG;
+
+    if (this.state.iteration >= maxTotalIterations) {
+      return { shouldExtend: false, reason: '已达绝对上限' };
+    }
+
+    if (extensionUsed >= maxExtensions) {
+      return { shouldExtend: false, reason: '延期次数已用完' };
+    }
+
+    if (recentToolCalls.length >= loopDetectionWindow) {
+      const unique = new Set(recentToolCalls);
+      const repetitionRate = 1 - unique.size / recentToolCalls.length;
+      if (repetitionRate > repetitionThreshold) {
+        return {
+          shouldExtend: false,
+          reason: `检测到循环：最近 ${loopDetectionWindow} 次调用中 ${Math.round(repetitionRate * 100)}% 是重复的`,
+        };
+      }
+    }
+
+    const uniqueCommandRatio = uniqueCommands.size / Math.max(this.state.iteration, 1);
+    if (uniqueCommandRatio < 0.3 && this.state.iteration > 10) {
+      return {
+        shouldExtend: false,
+        reason: `命令多样性过低：${uniqueCommands.size} 条不同命令 / ${this.state.iteration} 次迭代`,
+      };
+    }
+
+    return {
+      shouldExtend: true,
+      reason: `任务仍在推进（${uniqueCommands.size} 条不同命令，无循环迹象）`,
+    };
+  }
+
   getStatus(): string {
     return this.state.status;
   }
@@ -71,6 +149,11 @@ export class AgentCore {
     const isNewSession = this.state.messages.length === 0;
     this.state.status = 'running';
     this.state.iteration = 0;
+    this.progress = {
+      uniqueCommands: new Set(),
+      recentToolCalls: [],
+      extensionUsed: 0,
+    };
     this.abortController = new AbortController();
 
     // 1. Fetch user AI config from UserDB
@@ -150,9 +233,39 @@ export class AgentCore {
     // 无需在 handleAgentStart 中提前清理，用局部变量即可。
     const keepAlive = setInterval(() => {}, 5000);
 
+    this.progress = {
+      uniqueCommands: new Set(),
+      recentToolCalls: [],
+      extensionUsed: 0,
+    };
+
     try {
-      while (this.state.iteration < this.config.maxIterations) {
+      while (true) {
         if (signal.aborted) break;
+
+        const effectiveMax = this.getEffectiveMaxIterations();
+        if (this.state.iteration >= effectiveMax) {
+          const eval_ = this.evaluateProgress();
+          if (eval_.shouldExtend) {
+            this.progress.extensionUsed++;
+            this.sendToFrontend({
+              type: 'agent_frame',
+              subType: 'progress_extend',
+              message: `任务仍在进行中，自动延长迭代上限（+${PROGRESS_CONFIG.extensionSize}）`,
+              currentIteration: this.state.iteration,
+              newMax: this.getEffectiveMaxIterations(),
+              reason: eval_.reason,
+            });
+            continue;
+          } else {
+            this.sendToFrontend({
+              type: 'agent_frame',
+              subType: 'response',
+              content: `Agent 达到迭代上限（${this.state.iteration} 次）。${eval_.reason}。请检查终端状态或发送新消息继续。`,
+            });
+            break;
+          }
+        }
 
         // Notify frontend: thinking
         this.sendToFrontend({
@@ -220,6 +333,7 @@ export class AgentCore {
               toolArgs,
               signal,
             );
+            this.recordToolCall(toolCall.function.name, toolArgs);
             this.resetTimeout(); // 看门狗：工具执行成功，重置超时时间
 
             // 必须先将 tool 结果加入 messages，否则后续轮次的 LLM 调用会因
@@ -266,13 +380,6 @@ export class AgentCore {
             content: 'Agent 执行超时，已自动停止。请检查终端状态，或发送新消息继续操作。',
           });
         }
-      } else if (this.state.status === 'running') {
-        // maxIterations 达到
-        this.sendToFrontend({
-          type: 'agent_frame',
-          subType: 'response',
-          content: 'Agent 达到最大迭代次数，请检查终端状态或尝试更简洁的请求。',
-        });
       }
     } catch (e) {
       // 仅处理非 abort 异常（abort 路径已在 while 退出后处理）
@@ -515,60 +622,60 @@ export class AgentCore {
   }
 
   private async trimMessages(): Promise<void> {
-    // 摘要式上下文管理：
-    // 当消息超过限制时，调用 LLM 将早期消息压缩为摘要
-    // 保留最近 N 轮对话（user + assistant），丢弃历史 tool 消息
-    const recentRoundsCount = 3; // 保留最近 3 轮对话
-    if (this.state.messages.length <= 20) return; // 消息较少时不需要裁剪
+    const recentRoundsCount = 6;
+    if (this.state.messages.length <= 40) return;
 
-    // 1. 分离对话消息（跳过 system 消息）
-    const conversationMsgs = this.state.messages.slice(1); // 对话消息
+    const conversationMsgs = this.state.messages.slice(1);
 
-    // 2. 提取轮次：一轮 = user + assistant（可能有 tool_calls）+ 该轮的 tool 响应
-    const rounds: Array<{ user: ChatMessage; assistant: ChatMessage; tools: ChatMessage[] }> = [];
+    type RoundSegment = { assistant: ChatMessage; tools: ChatMessage[] };
+    type Round = { user: ChatMessage; segments: RoundSegment[] };
+
+    const rounds: Round[] = [];
     let currentUser: ChatMessage | null = null;
-    let currentAssistant: ChatMessage | null = null;
-    let currentTools: ChatMessage[] = [];
+    let currentSegments: RoundSegment[] = [];
 
     for (const msg of conversationMsgs) {
       if (msg.role === 'user') {
-        // 新的轮次开始，保存上一轮
-        if (currentUser && currentAssistant) {
-          rounds.push({ user: currentUser, assistant: currentAssistant, tools: currentTools });
+        if (currentUser && currentSegments.length > 0) {
+          rounds.push({ user: currentUser, segments: [...currentSegments] });
         }
         currentUser = msg;
-        currentAssistant = null;
-        currentTools = [];
+        currentSegments = [];
       } else if (msg.role === 'assistant') {
-        currentAssistant = msg;
+        currentSegments.push({ assistant: msg, tools: [] });
       } else if (msg.role === 'tool') {
-        currentTools.push(msg);
+        if (currentSegments.length > 0) {
+          currentSegments[currentSegments.length - 1].tools.push(msg);
+        }
       }
     }
-    // 保存最后一轮
-    if (currentUser && currentAssistant) {
-      rounds.push({ user: currentUser, assistant: currentAssistant, tools: currentTools });
+    if (currentUser && currentSegments.length > 0) {
+      rounds.push({ user: currentUser, segments: currentSegments });
     }
 
-    // 3. 分离需要摘要的轮次和保留的轮次
-    if (rounds.length <= recentRoundsCount) return; // 不需要裁剪
+    if (rounds.length <= recentRoundsCount) return;
 
     const toSummarizeRounds = rounds.slice(0, -recentRoundsCount);
     const recentRounds = rounds.slice(-recentRoundsCount);
 
-    // 4. 调用 LLM 生成摘要（只摘要 user + assistant，丢弃 tool 消息）
-    const toSummarize = toSummarizeRounds.flatMap(r => [r.user, r.assistant]);
+    const toSummarize = toSummarizeRounds.flatMap(r => {
+      const msgs: ChatMessage[] = [r.user];
+      for (const seg of r.segments) {
+        msgs.push(seg.assistant);
+      }
+      return msgs;
+    });
+
     const summary = await this.generateSummaryWithLLM(toSummarize, this.state.summary);
     if (summary) {
       this.state.summary = summary;
     }
 
-    // 5. 构建新消息：[system + 摘要] + 最近 N 轮（user + assistant + tool）
-    // 每轮都必须保留 tool 消息，否则 assistant 的 tool_calls 缺少对应响应会触发 API 错误
     const recentMsgs = recentRounds.flatMap(r => {
-      const msgs: ChatMessage[] = [r.user, r.assistant];
-      if (r.tools.length > 0) {
-        msgs.push(...r.tools);
+      const msgs: ChatMessage[] = [r.user];
+      for (const seg of r.segments) {
+        msgs.push(seg.assistant);
+        msgs.push(...seg.tools);
       }
       return msgs;
     });
@@ -578,7 +685,6 @@ export class AgentCore {
       ...recentMsgs,
     ];
 
-    // 6. 刷新环境上下文
     await this.refreshEnvironmentContext();
   }
 
@@ -619,6 +725,12 @@ export class AgentCore {
    * 只处理 user 和 assistant 消息，丢弃历史 tool 消息
    */
   private async generateSummaryWithLLM(toSummarize: ChatMessage[], existingSummary?: string): Promise<string | null> {
+    // 消息变化量不足 4 条时跳过摘要生成
+    if (toSummarize.length - this.lastSummaryMessageCount < 4 && existingSummary) {
+      return existingSummary;
+    }
+    this.lastSummaryMessageCount = toSummarize.length;
+
     const config = this.agentConfig;
     if (!config) return null;
 

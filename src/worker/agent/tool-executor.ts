@@ -180,9 +180,6 @@ export class ToolExecutor {
   }
 
   private async handleDetectEnvironment(signal?: AbortSignal): Promise<string> {
-    // Use ';' to avoid the chain breaking when any single command fails
-    // (e.g. no aliases defined, or head-truncation sending SIGPIPE).
-    // Use '|| true' defensively for commands most likely to exit non-zero.
     const cmd = [
       'echo "PWD:$(pwd)"',
       'echo "USER:$(whoami)"',
@@ -190,14 +187,8 @@ export class ToolExecutor {
       'echo "SHELL:$SHELL"',
       'echo "LANG:${LANG:-not set}"',
       'echo "PATH:$PATH"',
-      'echo "---ENV---"',
-      '(env | grep -E "^(NODE_ENV|JAVA_HOME|PYTHONPATH|GOPATH|CARGO_HOME|RUSTUP_HOME|NVM_DIR|PYENV_VERSION|RBENV_VERSION|DJANGO_SETTINGS_MODULE|RAILS_ENV|DOTNET_ROOT|ANDROID_HOME|M2_HOME|GRADLE_HOME)=" | head -10) || true',
-      'echo "---ALIASES---"',
-      '(alias 2>/dev/null | head -15) || true',
-      'echo "---HOSTNAME---"',
-      'hostname 2>/dev/null || true',
-      'echo "---KERNEL---"',
-      'uname -sr 2>/dev/null || true',
+      'echo "HOSTNAME:$(hostname 2>/dev/null || echo unknown)"',
+      'echo "KERNEL:$(uname -sr 2>/dev/null || echo unknown)"',
     ].join('; ');
 
     try {
