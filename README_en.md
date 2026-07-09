@@ -14,6 +14,7 @@
     <a href="#features">Features</a> ·
     <a href="#quick-start">Deployment</a> ·
     <a href="#architecture">Architecture</a> ·
+    <a href="CHANGELOG.md">Changelog</a> ·
     <a href="#license">License</a>
   </p>
   <p>

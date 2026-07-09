@@ -14,6 +14,7 @@
     <a href="#features">功能特性</a> ·
     <a href="#quick-start">部署指南</a> ·
     <a href="#architecture">架构设计</a> ·
+    <a href="CHANGELOG.md">更新日志</a> ·
     <a href="#license">开源协议</a>
   </p>
   <p>

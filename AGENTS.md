@@ -262,3 +262,17 @@ CLI: `npx wrangler secret set <SECRET_NAME>`
 
 - 新 Durable Objects 首次部署：先删除旧 worker 再重新部署（`npx wrangler delete <worker-name>`）
 - Test 环境 DO 绑定与 production 相同的 class_name，但因 Worker 名称不同，数据完全隔离
+
+## AI 版本发布与文档维护规范
+
+在辅助人类进行版本升级和发布时，AI 助手必须严格遵守以下规范：
+
+1. **版本信息流转（由人类主导，AI 辅助更新）**：
+   - 严禁 AI 助手自主决定或递增版本号。
+   - 当需要发布新版本时，根据人类指定的版本号，AI 应在本地修改：
+     - `package.json` 中的 `"version": "X.Y.Z"`。
+     - `CHANGELOG.md` 头部追加最新的更新日志（格式需为 `## [X.Y.Z] - YYYY-MM-DD`）。
+   - 必须遵循 [Keep a Changelog](https://keepachangelog.com/) 规范组织内容。
+2. **README 导航链接维护**：
+   - `README.md` 中的 `更新日志` 链接与 `README_en.md` 中的 `Changelog` 跳转超链接必须保持正常。
+

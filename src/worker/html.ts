@@ -4,7 +4,7 @@ export const HTML = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+DQogIDxyZWN0IHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgcng9IjQiIGZpbGw9IiMxMzEzMTMiLz4NCiAgPHJlY3QgeD0iMiIgeT0iMiIgd2lkdGg9IjI4IiBoZWlnaHQ9IjI4IiByeD0iMyIgZmlsbD0iIzFhMWExYSIgc3Ryb2tlPSIjNGFmNjI2IiBzdHJva2Utd2lkdGg9IjEiLz4NCiAgPHBhdGggZD0iTTggMTFMMTQgMTZMOCAyMSIgc3Ryb2tlPSIjNGFmNjI2IiBzdHJva2Utd2lkdGg9IjIuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBmaWxsPSJub25lIi8+DQogIDxsaW5lIHgxPSIxNiIgeTE9IjIxIiB4Mj0iMjQiIHkyPSIyMSIgc3Ryb2tlPSIjNGFmNjI2IiBzdHJva2Utd2lkdGg9IjIuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+DQo8L3N2Zz4=" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+CiAgPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNCIgZmlsbD0iIzEzMTMxMyIvPgogIDxyZWN0IHg9IjIiIHk9IjIiIHdpZHRoPSIyOCIgaGVpZ2h0PSIyOCIgcng9IjMiIGZpbGw9IiMxYTFhMWEiIHN0cm9rZT0iIzRhZjYyNiIgc3Ryb2tlLXdpZHRoPSIxIi8+CiAgPHBhdGggZD0iTTggMTFMMTQgMTZMOCAyMSIgc3Ryb2tlPSIjNGFmNjI2IiBzdHJva2Utd2lkdGg9IjIuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBmaWxsPSJub25lIi8+CiAgPGxpbmUgeDE9IjE2IiB5MT0iMjEiIHgyPSIyNCIgeTI9IjIxIiBzdHJva2U9IiM0YWY2MjYiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KPC9zdmc+" />
   <title>CloudSSH</title>
   <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
@@ -39,7 +39,7 @@ export const HTML = `<!DOCTYPE html>
       }
     }
   }
-  </script>
+  </script>
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   <script type="module">var dp=Object.defineProperty;var up=(i,e,t)=>e in i?dp(i,e,{enumerable:!0,configurable:!0,writable:!0,value:t}):i[e]=t;var R=(i,e,t)=>up(i,typeof e!="symbol"?e+"":e,t);const fp=function(){const e=typeof document<"u"&&document.createElement("link").relList;return e&&e.supports&&e.supports("modulepreload")?"modulepreload":"preload"}(),_p=function(i){return"/"+i},zh={},Oa=function(e,t,s){let r=Promise.resolve();if(t&&t.length>0){let o=function(l){return Promise.all(l.map(c=>Promise.resolve(c).then(d=>({status:"fulfilled",value:d}),d=>({status:"rejected",reason:d}))))};document.getElementsByTagName("link");const a=document.querySelector("meta[property=csp-nonce]"),h=(a==null?void 0:a.nonce)||(a==null?void 0:a.getAttribute("nonce"));r=o(t.map(l=>{if(l=_p(l),l in zh)return;zh[l]=!0;const c=l.endsWith(".css"),d=c?'[rel="stylesheet"]':"";if(document.querySelector(\`link[href="\${l}"]\${d}\`))return;const u=document.createElement("link");if(u.rel=c?"stylesheet":fp,c||(u.as="script"),u.crossOrigin="",u.href=l,h&&u.setAttribute("nonce",h),document.head.appendChild(u),c)return new Promise((f,_)=>{u.addEventListener("load",f),u.addEventListener("error",()=>_(new Error(\`Unable to preload CSS for \${l}\`)))})}))}function n(o){const a=new Event("vite:preloadError",{cancelable:!0});if(a.payload=o,window.dispatchEvent(a),!a.defaultPrevented)throw o}return r.then(o=>{for(const a of o||[])a.status==="rejected"&&n(a.reason);return e().catch(n)})};/**
  * Copyright (c) 2014-2024 The xterm.js authors. All rights reserved.
@@ -898,7 +898,7 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
         </div>
       </footer>
     </div>
-  </div>
+  </div>
 </body>
 </html>
 `;
