@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-07-09
+
+### Fixed
+- 修复 Agent 在执行复杂多步任务时容易达到 `maxIterations` 上限而被强制终止的问题，引入动态进度追踪（Progress Tracker）与智能延期机制。
+- 修复长对话触发上下文截断时，因分组逻辑缺陷导致部分 `tool` 结果孤立丢失，进而引起 LLM 重复执行已完成步骤的 Bug。
+- 精简 Agent 环境探测命令，并为摘要生成添加防抖，显著降低隐性 LLM 调用与 SSH 开销。
+
 ## [1.0.0] - 2026-07-09
 
 这是 CloudSSH 的首个正式版本（v1.0.0），标志着整个基于 Cloudflare Workers + Durable Objects 边缘 Serverless 架构的 Web SSH 及 SFTP 客户端已达到生产环境交付标准。

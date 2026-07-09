@@ -1,6 +1,6 @@
 {
   "name": "cloudssh",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "纯 Cloudflare 架构 Web SSH 工具",
   "main": "src/worker/index.ts",
   "scripts": {
