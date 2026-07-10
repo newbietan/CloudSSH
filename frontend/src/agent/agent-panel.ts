@@ -76,7 +76,7 @@ export class AgentPanel {
 
     this.panelEl = document.createElement('div');
     this.panelEl.id = 'agent-panel';
-    this.panelEl.className = 'w-[560px] shrink-0 border-l border-[var(--border)] flex flex-col bg-[var(--bg)] overflow-hidden';
+    this.panelEl.className = 'w-[560px] max-w-[calc(100vw-200px)] shrink-0 border-l border-[var(--border)] flex flex-col bg-[var(--bg)] overflow-hidden';
     this.panelEl.style.display = 'none';
 
     this.panelEl.innerHTML = `

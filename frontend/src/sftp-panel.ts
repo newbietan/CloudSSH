@@ -154,7 +154,7 @@ export class SFTPPanel {
     const panel = document.createElement('div');
     panel.id = 'sftp-panel';
     panel.className = 'fixed top-0 right-0 h-full z-[90] flex transition-transform duration-300 ease-in-out';
-    panel.style.width = '420px';
+    panel.style.width = 'min(420px, 100vw)';
     panel.style.transform = 'translateX(100%)';
 
     panel.innerHTML = `
@@ -807,6 +807,15 @@ export class SFTPPanel {
     });
 
     document.body.appendChild(menu);
+
+    // Viewport boundary check: adjust position if menu overflows
+    const menuRect = menu.getBoundingClientRect();
+    if (menuRect.right > window.innerWidth) {
+      menu.style.left = Math.max(0, window.innerWidth - menuRect.width - 4) + 'px';
+    }
+    if (menuRect.bottom > window.innerHeight) {
+      menu.style.top = Math.max(0, window.innerHeight - menuRect.height - 4) + 'px';
+    }
 
     // Close on click outside
     const closeMenu = (e: MouseEvent) => {

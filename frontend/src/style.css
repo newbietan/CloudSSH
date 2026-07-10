@@ -36,6 +36,10 @@ body {
   background-color: var(--bg);
   color: var(--text);
   min-height: 100vh;
+}
+
+/* 终端页面需要禁止页面级滚动，通过 JS 切换此类名 */
+body.terminal-active {
   overflow: hidden;
 }
 
@@ -279,7 +283,7 @@ body {
   color: var(--text);
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
-  width: 200px;
+  width: min(200px, calc(100% - 40px));
   padding: 2px 4px;
 }
 
@@ -444,7 +448,7 @@ body {
 /* ========== Agent Panel ========== */
 
 #agent-panel {
-  min-width: 320px;
+  min-width: 280px;
 }
 
 /* ========== Agent Markdown Content (themed) ==========
@@ -758,7 +762,7 @@ body {
 }
 
 .agent-thinking-process.tp-expanded .tp-body {
-  max-height: 400px;
+  max-height: min(400px, 50vh);
 }
 
 /* Steps list */
@@ -886,4 +890,13 @@ body {
   color: var(--agent-agent-color);
   flex-shrink: 0;
   animation: tp-pulse 1.5s ease-in-out infinite;
+}
+
+/* ==================== Responsive Adaptations ==================== */
+
+@media (max-width: 768px) {
+  /* 终端状态栏信息项缩小间距 */
+  #terminal-wrapper .flex.gap-6 {
+    gap: 8px;
+  }
 }

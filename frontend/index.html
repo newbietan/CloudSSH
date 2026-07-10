@@ -42,10 +42,10 @@
   <link rel="stylesheet" href="/src/style.css" />
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
-<body class="min-h-screen font-body text-sm overflow-hidden">
+<body class="min-h-screen font-body text-sm">
   <div id="app">
     <!-- Login Page (匿名连接) -->
-    <div id="auth-section" class="min-h-screen flex items-center justify-center p-6 relative">
+    <div id="auth-section" class="min-h-screen flex items-center justify-center p-6 relative overflow-y-auto">
       <div class="scanlines"></div>
       <div class="flicker"></div>
       <main class="w-full max-w-md relative z-10">
@@ -74,7 +74,7 @@
         <div class="flex items-center gap-6">
           <h1 class="text-2xl font-bold text-primary-container tracking-tighter cursor-pointer" id="user-space-logo">CloudSSH</h1>
         </div>
-        <div class="flex items-center gap-4">
+        <div class="flex items-center gap-4 flex-wrap">
           <div id="user-info" class="flex items-center gap-3">
             <!-- 动态渲染：头像 + 用户名 -->
           </div>
@@ -147,15 +147,15 @@
               <input id="server-name" class="terminal-input text-[13px]" placeholder="My Server" type="text" required>
             </div>
           </div>
-          <div class="grid grid-cols-4 gap-4">
-            <div class="col-span-3">
+          <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <div class="sm:col-span-3">
               <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">HOST_ADDRESS</label>
               <div class="flex items-center">
                 <span class="text-muted mr-2">&gt;</span>
                 <input id="server-host" class="terminal-input text-[13px]" placeholder="192.168.1.1" type="text" required>
               </div>
             </div>
-            <div class="col-span-1">
+            <div class="sm:col-span-1">
               <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">PORT</label>
               <div class="flex items-center">
                 <span class="text-muted mr-2">:</span>
@@ -203,7 +203,7 @@
         <div class="flex items-center gap-6">
           <h1 class="text-2xl font-bold text-primary-container tracking-tighter cursor-pointer">CloudSSH</h1>
         </div>
-        <div class="flex items-center gap-4 text-primary-container">
+        <div class="flex items-center gap-2 sm:gap-4 text-primary-container flex-wrap">
           <select id="theme-selector" class="bg-surface-variant text-on-surface-variant text-xs py-1 px-2 border-none outline-none cursor-pointer rounded">
             <option value="cyberpunk">Cyberpunk</option>
             <option value="glacier">Glacier</option>
@@ -241,15 +241,15 @@
       </div>
 
       <!-- Main Terminal -->
-      <main class="flex-1 p-6 pb-14 relative bg-surface-container-lowest overflow-hidden">
+      <main class="flex-1 p-2 lg:p-6 relative bg-surface-container-lowest overflow-hidden">
         <div class="absolute inset-0 scanline pointer-events-none z-10 opacity-30"></div>
-        <div id="terminal-wrapper" class="h-full w-full border border-outline-variant bg-[var(--bg)] p-4 overflow-hidden font-code text-[13px] text-primary-container relative z-0 flex flex-col">
+        <div id="terminal-wrapper" class="h-full w-full border border-outline-variant bg-[var(--bg)] p-2 lg:p-4 overflow-hidden font-code text-[13px] text-primary-container relative z-0 flex flex-col">
           <!-- Status Bar -->
           <div class="flex justify-between items-center border-b border-[var(--border)] pb-2 mb-4 text-on-surface-variant opacity-80 text-[11px]">
-            <div class="flex gap-6">
+            <div class="flex gap-2 sm:gap-6 flex-wrap">
               <span id="term-status" class="flex items-center gap-1"><div class="w-2 h-2 bg-primary-container"></div> Connected</span>
-              <span id="term-host">Host: -</span>
-              <span id="term-user">User: -</span>
+              <span id="term-host" class="truncate max-w-[200px]">Host: -</span>
+              <span id="term-user" class="truncate max-w-[120px]">User: -</span>
               <span id="term-port">Port: -</span>
             </div>
             <div>
@@ -262,7 +262,7 @@
       </main>
 
       <!-- Footer -->
-      <footer class="fixed bottom-0 left-0 w-full px-6 py-2 flex justify-between items-center z-50 bg-elevated border-t border-outline-variant text-xs h-12">
+      <footer class="px-6 py-2 flex justify-between items-center z-50 bg-elevated border-t border-outline-variant text-xs h-12 shrink-0">
         <div class="text-secondary-container opacity-60">© <span id="copyright-year"></span> CLOUD_SSH_TERMINAL - https://github.com/newbietan/CloudSSH</div>
         <div class="flex gap-4">
           <a class="text-on-surface-variant opacity-60 hover:opacity-100 transition-opacity" href="https://github.com/newbietan/CloudSSH">Documentation</a>
