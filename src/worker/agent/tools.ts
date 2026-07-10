@@ -17,7 +17,7 @@ export const AGENT_TOOLS: ToolDefinition[] = [
           },
           timeout_ms: {
             type: 'number',
-            description: '命令超时时间（毫秒），默认 10000ms，最长 60000ms',
+            description: '命令超时时间（毫秒），默认 10000ms，最长 180000ms（3分钟）',
           },
         },
         required: ['command'],

@@ -176,6 +176,9 @@ export class AgentPanel {
         this.isAgentRunning = false;
         this.updateInputState();
         break;
+      case 'progress_extend':
+        this.showProgressExtend(msg.message, msg.currentIteration, msg.newMax, msg.reason);
+        break;
     }
   }
 
@@ -461,6 +464,25 @@ export class AgentPanel {
     }
     this.collapseThinkingProcess();
     this.appendMessage('error', message || '未知错误');
+  }
+
+  private showProgressExtend(message: string, currentIteration: number, newMax: number, reason: string): void {
+    const el = document.createElement('div');
+    el.className = 'agent-progress-extend p-2 rounded border border-[var(--accent)] bg-[var(--accent-bg)] text-[11px]';
+    el.innerHTML = `
+      <div class="flex items-center gap-2">
+        <span class="material-symbols-outlined text-[14px]" style="color:var(--accent);font-variation-settings:'FILL' 1;">trending_up</span>
+        <span class="font-bold text-[var(--accent)]">任务进度扩展</span>
+      </div>
+      <div class="mt-1 text-[var(--on-surface-variant)]">
+        ${escapeHtml(message)}（当前：${currentIteration}/${newMax}）
+      </div>
+      <div class="mt-1 text-[11px] text-[var(--on-surface-variant)] opacity-75">
+        原因：${escapeHtml(reason)}
+      </div>
+    `;
+    this.messagesEl?.appendChild(el);
+    this.scrollToBottom();
   }
 
   private showConfirmDialog(command: string, reason: string): void {

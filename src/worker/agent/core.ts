@@ -13,8 +13,8 @@ import { ToolExecutor } from './tool-executor';
 import { TerminalContext } from './terminal-context';
 
 const DEFAULT_CONFIG: AgentConfig = {
-  maxIterations: 30, // Changed from 20 to 30 as base
-  timeout: 60_000, // 单步最大超时时间提升至 60 秒，匹配看门狗模式
+  maxIterations: 50, // 增加到50次，适应复杂部署任务
+  timeout: 300_000, // 增加到5分钟，适应长时间命令（如npm install、build）
 };
 
 interface ProgressTracker {
@@ -24,12 +24,12 @@ interface ProgressTracker {
 }
 
 const PROGRESS_CONFIG = {
-  baseIterations: 30,
-  maxExtensions: 3,
-  extensionSize: 20,
-  maxTotalIterations: 90,
-  loopDetectionWindow: 5,
-  repetitionThreshold: 0.6,
+  baseIterations: 50, // 增加到50次
+  maxExtensions: 5, // 增加到5次扩展机会
+  extensionSize: 25, // 每次扩展增加25次迭代
+  maxTotalIterations: 175, // 最大总迭代次数：50 + 5*25 = 175
+  loopDetectionWindow: 7, // 增加到7次，更宽松的循环检测
+  repetitionThreshold: 0.7, // 增加到70%，适应部署任务（可能重复执行类似命令）
 };
 
 export class AgentCore {
@@ -75,11 +75,12 @@ export class AgentCore {
           this.resetTimeout();
         }
       },
+      () => this.resetTimeout(),
     );
   }
 
   private getEffectiveMaxIterations(): number {
-    return PROGRESS_CONFIG.baseIterations + this.progress.extensionUsed * PROGRESS_CONFIG.extensionSize;
+    return this.config.maxIterations + this.progress.extensionUsed * PROGRESS_CONFIG.extensionSize;
   }
 
   private recordToolCall(toolName: string, args: any): void {
@@ -121,7 +122,7 @@ export class AgentCore {
     }
 
     const uniqueCommandRatio = uniqueCommands.size / Math.max(this.state.iteration, 1);
-    if (uniqueCommandRatio < 0.3 && this.state.iteration > 10) {
+    if (uniqueCommandRatio < 0.2 && this.state.iteration > 15) { // 降低到20%，适应部署任务（可能重复执行类似命令）
       return {
         shouldExtend: false,
         reason: `命令多样性过低：${uniqueCommands.size} 条不同命令 / ${this.state.iteration} 次迭代`,
@@ -261,7 +262,7 @@ export class AgentCore {
             this.sendToFrontend({
               type: 'agent_frame',
               subType: 'response',
-              content: `Agent 达到迭代上限（${this.state.iteration} 次）。${eval_.reason}。请检查终端状态或发送新消息继续。`,
+              content: `Agent 达到迭代上限（${this.state.iteration} 次）。${eval_.reason}。请检查终端状态，或发送新消息继续操作。`,
             });
             break;
           }
@@ -377,7 +378,7 @@ export class AgentCore {
           this.sendToFrontend({
             type: 'agent_frame',
             subType: 'response',
-            content: 'Agent 执行超时，已自动停止。请检查终端状态，或发送新消息继续操作。',
+            content: `Agent 执行超时（已运行 ${this.state.iteration} 步），已自动停止。请检查终端状态，或发送新消息继续操作。`,
           });
         }
       }
@@ -622,8 +623,8 @@ export class AgentCore {
   }
 
   private async trimMessages(): Promise<void> {
-    const recentRoundsCount = 6;
-    if (this.state.messages.length <= 40) return;
+    const recentRoundsCount = 8; // 增加到8轮，保留更多上下文
+    if (this.state.messages.length <= 60) return; // 增加到60条消息，适应复杂部署任务
 
     const conversationMsgs = this.state.messages.slice(1);
 

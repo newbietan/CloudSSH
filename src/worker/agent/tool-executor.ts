@@ -11,6 +11,7 @@ export class ToolExecutor {
     private terminalContext: TerminalContext,
     private execCommand: ExecCommandFn,
     private askConfirmation: (command: string, reason: string) => Promise<boolean>,
+    private resetTimeout?: () => void,
   ) {}
 
   async execute(toolName: string, args: any, signal?: AbortSignal): Promise<string> {
@@ -62,7 +63,15 @@ export class ToolExecutor {
       }
     }
 
-    const clampedTimeout = Math.min(Math.max(timeout, 1000), 60000);
+    const clampedTimeout = Math.min(Math.max(timeout, 1000), 180000);
+
+    // 对于长时间命令（>60秒），定期重置看门狗计时器
+    let watchdogInterval: ReturnType<typeof setInterval> | null = null;
+    if (clampedTimeout > 60000 && this.resetTimeout) {
+      watchdogInterval = setInterval(() => {
+        this.resetTimeout?.();
+      }, 60000); // 每60秒重置一次看门狗
+    }
 
     try {
       const result = await this.execCommand(command, clampedTimeout, signal);
@@ -78,6 +87,10 @@ export class ToolExecutor {
         stderr: errMsg,
         exit_code: -1,
       });
+    } finally {
+      if (watchdogInterval) {
+        clearInterval(watchdogInterval);
+      }
     }
   }
 

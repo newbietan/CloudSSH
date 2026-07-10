@@ -28,6 +28,7 @@
   --scrollbar-thumb-hover: rgba(134, 149, 125, 0.8);
   --scanline-tint: rgba(74, 246, 38, 0.02);
   --accent-glow: rgba(74, 246, 38, 0.08);
+  --accent-bg: rgba(74, 246, 38, 0.1);
   --modal-overlay: rgba(0, 0, 0, 0.8);
 }
 
@@ -899,4 +900,27 @@ body.terminal-active {
   #terminal-wrapper .flex.gap-6 {
     gap: 8px;
   }
+}
+
+/* ==================== Agent Progress Extend ==================== */
+
+.agent-progress-extend {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-bg);
+  font-size: 11px;
+  margin: 4px 0;
+}
+
+.agent-progress-extend .material-symbols-outlined {
+  font-size: 14px;
+  color: var(--accent);
+}
+
+.agent-progress-extend .font-bold {
+  color: var(--accent);
+}
+
+.agent-progress-extend .text-[var(--on-surface-variant)] {
+  color: var(--on-surface-variant);
+  opacity: 0.8;
 }
