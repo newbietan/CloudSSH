@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-07-10
+
+### Improved
+- 优化 AI Agent 超时机制，大幅提升复杂部署任务的执行能力：
+  - 看门狗超时从 60 秒增加到 300 秒（5 分钟），命令执行超时从 60 秒增加到 180 秒（3 分钟）。
+  - 基础迭代次数从 30 次增加到 50 次，扩展机会从 3 次增加到 5 次，最大总迭代次数从 90 次增加到 175 次。
+  - 循环检测窗口从 5 增加到 7，重复率阈值从 60% 放宽到 70%，命令多样性阈值从 30% 放宽到 20%。
+  - 消息裁剪阈值从 40 条增加到 60 条，保留更多对话上下文。
+  - 长时间命令（>60 秒）自动每 60 秒重置看门狗计时器，防止执行期间意外超时。
+  - 前端新增进度扩展提示，自动延期时显示当前进度和延期原因。
+
 ## [1.0.2] - 2026-07-10
 
 ### Fixed
