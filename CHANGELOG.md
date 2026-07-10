@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-07-10
+
+### Fixed
+- 修复多分辨率下前端页面内容被裁切与溢出的系统性问题，全面优化了响应式布局：
+  - 修复了小视口（如小屏或横屏）下登录表单被裁切且无法滚动的问题。
+  - 修复了在窄屏下，终端页面中 AI Agent 面板和 SFTP 面板使用固定宽度导致的溢出或极度挤压终端区域的 Bug。
+  - 优化了 SFTP 右键菜单的边界检测逻辑，防止在屏幕边缘展开时被视口遮挡。
+  - 为终端工具栏、底部状态栏、用户空间顶部导航等区域增补了 flex-wrap 及截断策略，彻底解决了各元素重叠或溢出的情况。
+
 ## [1.0.1] - 2026-07-09
 
 ### Fixed
