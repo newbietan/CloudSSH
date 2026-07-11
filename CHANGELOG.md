@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2026-07-11
+
+### Added
+- 新增 RSA 私钥认证支持：支持 `rsa-sha2-256` 签名算法，兼容 RSA 2048/4096 位密钥。
+- 新增 ECDSA 私钥认证支持：支持 `ecdsa-sha2-nistp256`、`ecdsa-sha2-nistp384`、`ecdsa-sha2-nistp521` 曲线。
+- 前端新增密钥文件上传功能：支持 `.pem`、`.key`、`.txt`、`.pub` 格式的私钥文件直接上传。
+- 新增完整的单元测试套件：基于 Vitest 框架，包含 36 个测试用例，覆盖 SSH 认证、工具函数、类型定义等核心模块。
+
+### Changed
+- 移除测试命令中的 `--passWithNoTests` 选项，确保测试文件存在时必须通过。
+
+### Fixed
+- 修复 RSA 私钥 PKCS#8 结构中 CRT 参数（exponent1、exponent2）使用占位符的问题，现正确计算 `d mod (p-1)` 和 `d mod (q-1)`。
+- 修复 ECDSA 私钥 PKCS#8 结构，使其符合 RFC 5915 和 RFC 5208 标准。
+
 ## [1.0.3] - 2026-07-10
 
 ### Improved
