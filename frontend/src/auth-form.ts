@@ -179,7 +179,15 @@ export class ConnectionForm {
             </div>
           </div>
           <div id="auth-key-section" style="display:none;">
-            <textarea id="private-key" class="terminal-input text-[11px] w-full" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...粘贴 Ed25519 私钥内容...&#10;-----END OPENSSH PRIVATE KEY-----" style="resize:vertical;border:1px solid var(--border-strong);padding:8px;"></textarea>
+            <textarea id="private-key" class="terminal-input text-[11px] w-full" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...粘贴 Ed25519/RSA/ECDSA 私钥内容...&#10;-----END OPENSSH PRIVATE KEY-----" style="resize:vertical;border:1px solid var(--border-strong);padding:8px;"></textarea>
+            <div class="flex items-center gap-2 mt-2">
+              <label for="private-key-file" class="text-[11px] text-muted hover:text-primary cursor-pointer flex items-center gap-1 border border-dim px-2 py-1 hover:border-[var(--accent)] transition-all">
+                <span class="material-symbols-outlined" style="font-size: 14px;">upload_file</span>
+                选择密钥文件
+              </label>
+              <input type="file" id="private-key-file" accept=".pem,.key,.txt,.pub" class="hidden">
+              <span id="file-name" class="text-[10px] text-muted truncate"></span>
+            </div>
           </div>
         </div>
         <div id="turnstile-container" style="display:none;">
@@ -223,6 +231,29 @@ export class ConnectionForm {
     });
     document.getElementById('auth-tab-key')!.addEventListener('click', () => {
       this.setAuthMode('key');
+    });
+
+    // File upload for private key
+    const fileInput = document.getElementById('private-key-file') as HTMLInputElement;
+    const fileNameSpan = document.getElementById('file-name');
+
+    fileInput.addEventListener('change', async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      try {
+        const content = await file.text();
+        const privateKeyTextarea = document.getElementById('private-key') as HTMLTextAreaElement;
+        privateKeyTextarea.value = content;
+        if (fileNameSpan) {
+          fileNameSpan.textContent = file.name;
+        }
+      } catch (error) {
+        alert('读取密钥文件失败: ' + (error instanceof Error ? error.message : '未知错误'));
+      }
+
+      // Reset file input
+      fileInput.value = '';
     });
   }
 
