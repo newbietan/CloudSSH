@@ -5,3 +5,4 @@ dist/
 *.log
 .DS_Store
 *.jsonl
+coverage/
