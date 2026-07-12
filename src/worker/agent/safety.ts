@@ -34,7 +34,9 @@ const CONFIRM_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bcurl\s.*\|\s*(ba)?sh/, reason: '远程脚本直接执行存在安全风险' },
   { pattern: /\bchmod\s+(-R\s+)?\+s\b/, reason: '设置 SUID/SGID 位存在安全风险' },
   { pattern: /\bpasswd\b/, reason: '修改用户密码，请确认' },
-  { pattern: /\b(apt|yum|dnf|apk)\s+(install|remove|purge|update|upgrade)\b/, reason: '安装/卸载/更新软件包将修改系统状态，请确认' },
+  // apt/yum/dnf 用 (install|remove|purge|update|upgrade)；apk 独有的 add/del 等价 install/remove。
+  { pattern: /\b(apt|yum|dnf)\s+(install|remove|purge|update|upgrade)\b/, reason: '安装/卸载/更新软件包将修改系统状态，请确认' },
+  { pattern: /\bapk\s+(add|del|upgrade|update|fix|cache)\b/, reason: '安装/卸载/更新软件包将修改系统状态，请确认' },
 ];
 
 // sudo risk levels: low-risk sudo commands that don't need confirmation

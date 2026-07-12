@@ -8,7 +8,9 @@ export function validateBaseUrl(baseUrl: string): { valid: boolean; reason?: str
       return { valid: false, reason: '仅支持 http/https 协议' };
     }
 
-    const hostname = url.hostname.toLowerCase();
+    // url.hostname 对 IPv6 字面量返回带方括号的形式（如 "[::1]"），
+    // 需剥离方括号再做比较，否则 IPv6 本地地址会绕过校验。
+    const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
 
     if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '0.0.0.0') {
       return { valid: false, reason: '禁止访问 localhost' };
