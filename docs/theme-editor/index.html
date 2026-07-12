@@ -1410,6 +1410,13 @@
                       <span class="placeholder-text">••••••••</span>
                     </div>
                   </div>
+                  <div class="login-field">
+                    <label>REGION_HINT <span style="font-size:8px;opacity:0.6;font-weight:400">(可选)</span></label>
+                    <div class="input-line" style="border-bottom:1px solid var(--border-strong);padding-bottom:6px;justify-content:space-between">
+                      <span class="placeholder-text">自动（保存时由系统推断）</span>
+                      <span class="material-symbols-outlined" style="font-size:12px;color:var(--text-muted)">expand_more</span>
+                    </div>
+                  </div>
                   <div style="display:flex;align-items:center;gap:6px;margin-top:8px;margin-bottom:4px">
                     <span style="width:14px;height:14px;border:1px solid var(--border-strong);border-radius:2px;display:inline-block;background:var(--bg-surface)"></span>
                     <label style="font-size:10px;color:var(--text-muted);cursor:pointer">REMEMBER_CONNECTION</label>
@@ -1513,6 +1520,68 @@
                       <span class="card-btn delete"><span class="material-symbols-outlined">delete</span></span>
                     </div>
                   </div>
+                </div>
+                <!-- Server Modal Preview -->
+                <div class="us-section-header" style="margin-top:16px">
+                  <div>
+                    <h2>ADD_SERVER <span style="font-size:10px;color:var(--text-muted);font-weight:400">(弹窗预览)</span></h2>
+                  </div>
+                </div>
+                <div style="background:var(--bg-surface);border:1px solid var(--border-strong);border-radius:8px;padding:16px;position:relative">
+                  <div style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(to right,transparent,var(--accent-secondary),transparent);opacity:0.5;border-radius:8px 8px 0 0"></div>
+                  <div style="font-size:10px;font-weight:700;letter-spacing:0.1em;color:var(--accent-secondary);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border-strong)">ADD_SERVER</div>
+                  <div class="login-field">
+                    <label>SERVER_NAME</label>
+                    <div class="input-line">
+                      <span class="material-symbols-outlined prefix" style="font-size:14px">label</span>
+                      <span class="placeholder-text">My Server</span>
+                    </div>
+                  </div>
+                  <div style="display:grid;grid-template-columns:3fr 1fr;gap:12px;margin-bottom:12px">
+                    <div class="login-field" style="margin-bottom:0">
+                      <label>HOST_ADDRESS</label>
+                      <div class="input-line">
+                        <span class="prefix">&gt;</span>
+                        <span class="placeholder-text">192.168.1.1</span>
+                      </div>
+                    </div>
+                    <div class="login-field" style="margin-bottom:0">
+                      <label>PORT</label>
+                      <div class="input-line">
+                        <span class="prefix">:</span>
+                        <span class="placeholder-text">22</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="login-field">
+                    <label>AUTH_USER</label>
+                    <div class="input-line">
+                      <span class="material-symbols-outlined prefix" style="font-size:14px">person</span>
+                      <span class="placeholder-text">root</span>
+                    </div>
+                  </div>
+                  <div class="login-field">
+                    <label>AUTH_METHOD</label>
+                    <div class="auth-tabs">
+                      <span class="auth-tab active">PASSWORD</span>
+                      <span class="auth-tab">PRIVATE_KEY</span>
+                    </div>
+                    <div class="input-line" style="border-bottom:1px solid var(--border-strong);padding-bottom:6px">
+                      <span class="material-symbols-outlined prefix" style="font-size:14px">key</span>
+                      <span class="placeholder-text">••••••••</span>
+                    </div>
+                  </div>
+                  <div class="login-field">
+                    <label>REGION_HINT</label>
+                    <div class="input-line" style="border-bottom:1px solid var(--border-strong);padding-bottom:6px;justify-content:space-between">
+                      <span class="placeholder-text">自动（保存时由系统推断）</span>
+                      <span class="material-symbols-outlined" style="font-size:12px;color:var(--text-muted)">expand_more</span>
+                    </div>
+                  </div>
+                  <button class="connect-btn" style="margin-top:12px">
+                    <span class="material-symbols-outlined" style="font-size:14px">save</span>
+                    SAVE_SERVER
+                  </button>
                 </div>
               </div>
               <div class="us-footer">
