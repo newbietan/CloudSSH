@@ -28,12 +28,12 @@ const COUNTRY_TO_HINT: Record<string, string> = {
   'TR': 'eeur', 'GR': 'eeur', 'HU': 'eeur', 'SE': 'eeur', 'FI': 'eeur',
   'NO': 'eeur', 'DK': 'eeur', 'SK': 'eeur', 'BG': 'eeur', 'HR': 'eeur',
   'RS': 'eeur', 'LT': 'eeur', 'LV': 'eeur', 'EE': 'eeur', 'SI': 'eeur',
-  // Asia-Pacific (default)
+  // Asia-Pacific (通用亚太，Cloudflare 建议优先使用 apac 而非 apac-ne/apac-se)
   'IN': 'apac', 'SG': 'apac', 'TH': 'apac', 'VN': 'apac', 'ID': 'apac',
   'PH': 'apac', 'MY': 'apac', 'KH': 'apac', 'LA': 'apac', 'MM': 'apac',
   'BD': 'apac', 'LK': 'apac', 'NP': 'apac',
-  // Asia-Pacific Northeast
-  'CN': 'apac-ne', 'JP': 'apac-ne', 'KR': 'apac-ne', 'TW': 'apac-ne', 'HK': 'apac-ne',
+  // 亚太东北（使用 apac 确保 DO 节点可用性）
+  'CN': 'apac', 'JP': 'apac', 'KR': 'apac', 'TW': 'apac', 'HK': 'apac',
   // Asia-Pacific Southeast (暂并入 apac；可细化时单独取出)
   // Oceania
   'AU': 'oc', 'NZ': 'oc',
