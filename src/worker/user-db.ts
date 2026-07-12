@@ -346,10 +346,6 @@ export class UserDBDO {
       inferredHint = null;
     }
 
-    // console.log 始终输出到 Workers 日志
-    console.log(`[locationHint] host=${body.host}, inferred=${inferredHint}`);
-    inferDebug.forEach(msg => console.log(msg));
-
     this.db.exec(
       'INSERT INTO servers (user_id, name, host, port, username, credential, auth_method, region, inferred_hint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       body.user_id,
@@ -414,9 +410,6 @@ export class UserDBDO {
       try {
         const result = await inferLocationHint(body.host);
         newInferred = result.hint ?? null;
-        // console.log 始终输出到 Workers 日志
-        console.log(`[locationHint] 更新推断 host=${body.host}, inferred=${newInferred}`);
-        result.debug.forEach(msg => console.log(msg));
       } catch {
         newInferred = null;
       }
@@ -538,7 +531,6 @@ export class UserDBDO {
     // 计算 DO locationHint：
     // 优先级：用户手动覆盖 (region) > 系统推断持久化值 (inferred_hint) > 无 hint（Auto）
     const locationHint = server.region || server.inferred_hint || undefined;
-    console.log(`[locationHint] handleConnectServer: server.region=${server.region}, server.inferred_hint=${server.inferred_hint}, locationHint=${locationHint}`);
 
     // 生成 one-time-token
     const token = crypto.randomUUID();
