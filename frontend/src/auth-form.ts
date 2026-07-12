@@ -194,7 +194,7 @@ export class ConnectionForm {
           <div id="turnstile-widget" class="flex justify-center"></div>
         </div>
         <div>
-          <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">REGION_HINT <span class="text-[9px] opacity-60">(匿名路径不自动推断；保存服务器后系统会自动推断)</span></label>
+          <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">REGION_HINT <span class="text-[9px] opacity-60">(可选：请选择距离目标SSH服务器最近的节点)</span></label>
           <select id="anon-region" class="terminal-input text-[13px] bg-background cursor-pointer" style="border:1px solid var(--border-strong);padding:6px 8px;">
             <option value="">自动</option>
           </select>
