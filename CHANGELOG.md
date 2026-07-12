@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2026-07-12
+
+### Fixed
+- 修复 SSRF 防护 IPv6 绕过漏洞：`validateBaseUrl` 未剥离 `[::1]` 方括号，导致用户可将 AI base_url 指向本机 IPv6 回环地址，绕过内网拦截。
+- 修复 Agent 安全确认 `apk` 子命令漏覆盖：`needsConfirmation` 正则缺失 Alpine 系 `apk add/del`，可静默安装/卸载系统包而无需用户确认。
+- 修复 `crypto.ts` 异常路径二次崩溃：catch 块中读取 `ciphertext.length` 在 null 输入时自身 throw，导致 graceful degradation 失效。
+
+### Added
+- 完成 SSH 协议层阶段 1+2 测试覆盖，共 9 个测试文件、347 个用例，覆盖 `safety`、`ssrf`、`algorithms`、`kex`、`crypto`（100%）、`packet`（96%）、`utils`（100%）核心模块。
+- 新增 worker 接缝安全测试套件（`tests/worker/security.test.ts`，12 用例），通过路由入口验证 CSRF、IDOR 越权、SSRF 接缝、签名伪造、CSWSH 五类安全边界。
+
+### Changed
+- 将 `coverage/` 目录加入 `.gitignore`。
+
 ## [1.0.4] - 2026-07-11
 
 ### Added
