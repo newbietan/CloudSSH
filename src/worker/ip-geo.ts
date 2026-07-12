@@ -79,40 +79,59 @@ export async function inferLocationHint(host: string): Promise<InferResult> {
   }
 
   try {
-    const url = `https://ipapi.co/${encodeURIComponent(host)}/json/`;
-    debug.push(`[IP-GEO] 请求 ipapi.co: ${url}`);
+    // 使用 ipinfo.io（免费 50k/月，比 ipapi.co 的 1k/天更宽松）
+    const url = `https://ipinfo.io/${encodeURIComponent(host)}/json`;
+    debug.push(`[IP-GEO] 请求 ipinfo.io: ${url}`);
     const res = await fetch(url, {
       cf: { cacheTtl: 86400, cacheEverything: true }, // CF 边缘缓存 24h
     });
-    debug.push(`[IP-GEO] ipapi.co 响应状态: ${res.status}, CF-Cache-Status: ${res.headers.get('cf-cache-status') || 'N/A'}`);
+    debug.push(`[IP-GEO] ipinfo.io 响应状态: ${res.status}, CF-Cache-Status: ${res.headers.get('cf-cache-status') || 'N/A'}`);
 
     if (!res.ok) {
-      debug.push(`[IP-GEO] ipapi.co 请求失败: HTTP ${res.status}`);
+      debug.push(`[IP-GEO] ipinfo.io 请求失败: HTTP ${res.status}`);
       return { hint: undefined, debug };
     }
 
     const data = await res.json<{
       country?: string;
-      longitude?: number;
-      latitude?: number;
-      error?: boolean;
-      reason?: string;
-      reserved?: boolean;
+      loc?: string; // 格式: "lat,lon"
+      bogon?: boolean;
     }>();
 
-    debug.push(`[IP-GEO] ipapi.co 返回: country=${data.country}, lon=${data.longitude}, lat=${data.latitude}, error=${data.error}, reserved=${data.reserved}`);
-
-    // reserved IP / 私网 IP / 失败响应
-    if (data.error || data.reserved) {
-      debug.push(`[IP-GEO] IP 被识别为 reserved 或查询失败，跳过`);
+    // bogon = 私网/保留 IP
+    if (data.bogon) {
+      debug.push(`[IP-GEO] IP 被识别为 bogon（私网/保留），跳过`);
       return { hint: undefined, debug };
     }
 
-    if (!data.country || !COUNTRY_TO_HINT[data.country]) {
+    // 解析经纬度
+    let latitude: number | undefined;
+    let longitude: number | undefined;
+    if (data.loc && typeof data.loc === 'string') {
+      const parts = data.loc.split(',');
+      if (parts.length === 2) {
+        latitude = parseFloat(parts[0]);
+        longitude = parseFloat(parts[1]);
+      }
+    }
+
+    debug.push(`[IP-GEO] ipinfo.io 返回: country=${data.country}, loc=${data.loc}, bogon=${data.bogon}`);
+
+    if (!data.country) {
+      debug.push(`[IP-GEO] 无国家信息，尝试经纬度 fallback`);
+      if (typeof latitude === 'number' && typeof longitude === 'number') {
+        const hint = fallbackByLatLon(latitude, longitude);
+        debug.push(`[IP-GEO] 经纬度 fallback 结果: ${hint}`);
+        return { hint, debug };
+      }
+      debug.push(`[IP-GEO] 无经纬度信息，无法推断`);
+      return { hint: undefined, debug };
+    }
+
+    if (!COUNTRY_TO_HINT[data.country]) {
       debug.push(`[IP-GEO] 国家 ${data.country} 不在映射表中，尝试经纬度 fallback`);
-      // 国家未命中映射表：用经纬度做粗略 fallback
-      if (typeof data.latitude === 'number' && typeof data.longitude === 'number') {
-        const hint = fallbackByLatLon(data.latitude, data.longitude);
+      if (typeof longitude === 'number') {
+        const hint = fallbackByLatLon(latitude ?? 0, longitude);
         debug.push(`[IP-GEO] 经纬度 fallback 结果: ${hint}`);
         return { hint, debug };
       }
@@ -121,8 +140,8 @@ export async function inferLocationHint(host: string): Promise<InferResult> {
     }
 
     // US/CA 用经度切东西海岸；其他国家直接取映射值
-    const hint = (data.longitude !== undefined)
-      ? refineForUsCanada(data.country, data.longitude)
+    const hint = (longitude !== undefined)
+      ? refineForUsCanada(data.country, longitude)
       : COUNTRY_TO_HINT[data.country];
 
     debug.push(`[IP-GEO] 国家 ${data.country} 映射为: ${hint}`);
