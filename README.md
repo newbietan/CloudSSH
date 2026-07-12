@@ -92,6 +92,7 @@
 - **单页面多标签会话管理**：支持在单个页面内开启与切换多个独立的 SSH 终端与 SFTP 文件管理器，各会话环境和状态完全隔离，并在个性化主题编辑器中进行了联动适配。
 - **安全匿名历史记录**：本地存储最近 5 条匿名连接，且敏感凭证可选使用本地派生的密钥进行 AES-256-GCM 安全加密存储至 `localStorage`，提供一键回填与清除。
 - **双段延迟与 Colo 展示**：状态栏即时且周期性地展示当前 RTT（客户端至 Cloudflare）、物理延迟（Cloudflare 至主机）以及 Cloudflare 当前服务的数据中心代码（如 `CF-LAX`）。
+- **智能区域调度（locationHint）**：保存服务器时自动推断目标主机的地理位置，持久化最优 DO 部署区域。连接时直接读取数据库，零运行时外部调用。支持手动覆盖区域偏好。*注意：locationHint 是 Cloudflare 的 best-effort 特性，当目标区域 DO 容量不足时会 fallback 到最近可用区域。*
 - **终端文本检索**：支持使用快捷键 `Ctrl+Shift+F` 呼出搜索框，实时检索终端历史日志。
 - **终端日志一键导出**：支持通过顶栏的下载按钮，将当前活跃会话终端的完整屏幕历史 buffer 一键导出并下载为 `.txt` 文本文件，解决长日志在浏览器下鼠标选取容易卡顿的痛点。
 - **AI 智能助手**：内置 AI Agent 侧边栏，支持 BYOK（自带 API Key）接入 OpenAI 兼容接口（如 DeepSeek）。提供 8 个专业运维工具：执行命令、读取终端上下文、探测服务器环境、进程列表、systemctl 服务管理、Docker 容器管理、用户确认、结构化报告输出。支持 LLM 流式输出（逐字显示），危险命令自动拦截或弹窗确认。**思考过程容器**：多步骤任务执行时，实时预览最近 1-2 条命令，完成后自动折叠显示总步骤数，支持展开查看完整执行历史。
@@ -139,6 +140,7 @@ flowchart TB
 | **Worker 入口** | `src/worker/index.ts` | HTTP 路由、API 处理、WebSocket 升级 |
 | **SSHSessionDO** | `src/worker/durable-object.ts` | SSH 会话生命周期管理、SSRF 防护 |
 | **UserDBDO** | `src/worker/user-db.ts` | 用户数据、服务器配置、速率限制（SQLite） |
+| **IP 地理推断** | `src/worker/ip-geo.ts` | 保存服务器时推断目标 IP 所在区域，映射到 Cloudflare DO locationHint |
 | **SSHSession** | `src/worker/ssh-session.ts` | SSH 协议状态机（连接→版本→密钥交换→认证→交互） |
 | **SSH 协议栈** | `src/ssh/*.ts` | 纯 TypeScript SSH-2.0 实现（传输层、加密、认证、通道） |
 | **SFTP 处理器** | `src/worker/sftp-handler.ts` | SFTP 协议操作、任务队列、并发下载、上传跟踪与取消支持 |
@@ -151,6 +153,7 @@ flowchart TB
 | **Agent 安全** | `src/worker/agent/safety.ts` | 两层安全策略：直接拦截（rm -rf /、fork bomb 等）+ 弹窗确认（rm、shutdown、iptables 等） |
 | **Agent 面板** | `frontend/src/agent/agent-panel.ts` | AI 助手侧边栏 UI，支持流式输出、Markdown 渲染、可折叠思考过程容器、确认对话框 |
 | **AI 配置** | `frontend/src/ai-config.ts` | AI 模型配置弹窗，支持 Base URL / API Key / 模型选择 |
+| **区域选项** | `frontend/src/regions.ts` | DO locationHint 区域选项共享组件，供服务器管理和匿名连接表单共用 |
 
 ### SSH 协议实现
 

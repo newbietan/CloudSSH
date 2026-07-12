@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] - 2026-07-12
+
+### Added
+- 新增 DO locationHint 智能区域调度：保存服务器时自动通过 ipinfo.io 查询目标 IP 地理位置，推断最优 Cloudflare DO 部署区域并持久化到数据库，连接时直接读取，零运行时外部 API 调用。
+- 新增 `src/worker/ip-geo.ts`：IP 地理位置推断模块，支持 11 个 Cloudflare DO 区域（wnam/enam/sam/weur/eeur/apac/oc/afr/me 等），US/CA 按经度细分东西海岸。
+- 新增 `frontend/src/regions.ts`：共享区域选项组件，供服务器管理弹窗和匿名连接表单共用。
+- 服务器管理弹窗新增区域下拉选择器（默认"自动"），编辑时显示系统推断值。
+- 匿名连接表单新增区域高级选项（仅手动覆盖，不自动推断）。
+- DEBUG_MODE 模式下保存服务器时显示推断过程调试弹窗。
+
+### Changed
+- `servers` 表新增 `region`（用户手动覆盖）和 `inferred_hint`（系统推断持久化）两列，使用幂等 `PRAGMA table_info` 守卫安全迁移。
+- `handleAddServer` 保存时触发一次性 IP 地理推断并写入 `inferred_hint` 列。
+- `handleUpdateServer` host 变更时自动重新推断。
+- `handleConnectServer` 连接时直接读 DB 注入 `locationHint`，零运行时外部调用。
+- `handleSSHConnection` 匿名路径仅读取 URL `?region=` 参数作为手动覆盖。
+- `handleTokenSSHConnection` 从 config.locationHint 读取，经白名单校验后传入 DO `get()`。
+- 终端输入不再触发无意义的 `JSON parse failed` 噪音日志（仅对 `{` 开头的消息尝试解析）。
+- IP 地理推断 API 从 ipapi.co 切换到 ipinfo.io（免费 50k 次/月，避免 Workers 共享 IP 下的 429 限流）。
+
+### Note
+- **locationHint 是 Cloudflare 的 best-effort 特性**：Cloudflare 会尽力在指定区域实例化 DO，但不保证一定成功。当目标区域 DO 容量不足时，会 fallback 到最近的可用区域。免费计划下亚太区域 DO 容量有限，可能无法总是分配到最近节点。
+
 ## [1.0.5] - 2026-07-12
 
 ### Fixed

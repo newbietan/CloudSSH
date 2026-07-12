@@ -92,6 +92,7 @@
 - **Single-Page Multi-Tab Session**: Switch between multiple independent SSH terminal and SFTP instances within a single browser tab, with isolated sandbox environments.
 - **Secure Connection History**: Saves last 5 connection records locally. Credentials (passwords/private keys) can be client-side encrypted using locally derived AES-256-GCM keys.
 - **Dual-Segment Latency & Colo Display**: Instantly and periodically monitor WebSocket RTT (client to CF), physical latency (CF to SSH host), and the current Cloudflare datacenter code (e.g. `CF-LAX`) on the status bar.
+- **Smart Region Scheduling (locationHint)**: Automatically infers the target host's geographic location when saving a server, persisting the optimal DO deployment region to the database. Connections read directly from DB with zero runtime external API calls. Supports manual region override. *Note: locationHint is a Cloudflare best-effort feature — when the target region lacks DO capacity, it falls back to the nearest available region.*
 - **In-Terminal Text Search**: Real-time log search support via `Ctrl+Shift+F`.
 - **Terminal Log Export**: Download the entire screen buffer of the active terminal session as a `.txt` file with a single click on the header download button, avoiding browser freezes when selecting long logs.
 - **AI Agent Assistant**: Built-in AI Agent sidebar with BYOK (Bring Your Own Key) support for OpenAI-compatible APIs (e.g., DeepSeek). Provides 8 specialized operations tools: execute commands, read terminal context, detect server environment, list processes, manage systemctl services, manage Docker containers, user confirmation, and structured report output. Supports LLM streaming output (character-by-character display). Dangerous commands are automatically blocked or require user confirmation. **Thinking Process Container**: During multi-step tasks, displays the latest 1-2 commands in real-time, auto-collapses with total step count after completion, expands to show full execution history.
@@ -139,6 +140,7 @@ flowchart TB
 | **Worker Entry** | `src/worker/index.ts` | HTTP routing, API handling, WebSocket upgrade |
 | **SSHSessionDO** | `src/worker/durable-object.ts` | SSH session lifecycle management, SSRF protection |
 | **UserDBDO** | `src/worker/user-db.ts` | User data, server configs, rate limiting (SQLite) |
+| **IP Geo Inference** | `src/worker/ip-geo.ts` | Infers target IP region at save time, maps to Cloudflare DO locationHint |
 | **SSHSession** | `src/worker/ssh-session.ts` | SSH protocol state machine (connect→version→kex→auth→interactive) |
 | **SSH Protocol Stack** | `src/ssh/*.ts` | Pure TypeScript SSH-2.0 implementation (transport, crypto, auth, channels) |
 | **SFTP Handler** | `src/worker/sftp-handler.ts` | SFTP protocol operations, task queue, concurrent downloads, upload tracking and cancellation |
@@ -151,6 +153,7 @@ flowchart TB
 | **Agent Safety** | `src/worker/agent/safety.ts` | Two-layer security: direct blocking (rm -rf /, fork bomb, etc.) + confirmation prompts (rm, shutdown, iptables, etc.) |
 | **Agent Panel** | `frontend/src/agent/agent-panel.ts` | AI assistant sidebar UI with streaming output, Markdown rendering, collapsible thinking process container, and confirmation dialogs |
 | **AI Config** | `frontend/src/ai-config.ts` | AI model configuration modal for Base URL / API Key / model selection |
+| **Region Options** | `frontend/src/regions.ts` | Shared DO locationHint region options component for server management and anonymous connection forms |
 
 ### SSH Protocol Implementation
 
