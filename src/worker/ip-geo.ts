@@ -56,19 +56,40 @@ function refineForUsCanada(country: string, lon: number): string {
 const ALLOWED_SET: ReadonlySet<string> = new Set(ALLOWED_LOCATION_HINTS);
 
 /**
+ * 推断结果，包含 hint 和调试信息
+ */
+export interface InferResult {
+  hint: string | undefined;
+  debug: string[];
+}
+
+/**
  * 推断 host 对应的 Cloudflare DO locationHint。
  *
  * @param host SSH 服务器的主机名或 IP（IPv4/IPv6/域名均可，ipapi.co 自行解析）
- * @returns locationHint 字符串（如 'apac-ne'），或失败时 undefined
+ * @returns InferResult 包含 hint 和调试日志
  */
-export async function inferLocationHint(host: string): Promise<string | undefined> {
-  if (!host) return undefined;
+export async function inferLocationHint(host: string): Promise<InferResult> {
+  const debug: string[] = [];
+  debug.push(`[IP-GEO] 开始推断 host=${host}`);
+
+  if (!host) {
+    debug.push(`[IP-GEO] host 为空，跳过`);
+    return { hint: undefined, debug };
+  }
 
   try {
-    const res = await fetch(`https://ipapi.co/${encodeURIComponent(host)}/json/`, {
+    const url = `https://ipapi.co/${encodeURIComponent(host)}/json/`;
+    debug.push(`[IP-GEO] 请求 ipapi.co: ${url}`);
+    const res = await fetch(url, {
       cf: { cacheTtl: 86400, cacheEverything: true }, // CF 边缘缓存 24h
     });
-    if (!res.ok) return undefined;
+    debug.push(`[IP-GEO] ipapi.co 响应状态: ${res.status}, CF-Cache-Status: ${res.headers.get('cf-cache-status') || 'N/A'}`);
+
+    if (!res.ok) {
+      debug.push(`[IP-GEO] ipapi.co 请求失败: HTTP ${res.status}`);
+      return { hint: undefined, debug };
+    }
 
     const data = await res.json<{
       country?: string;
@@ -79,15 +100,24 @@ export async function inferLocationHint(host: string): Promise<string | undefine
       reserved?: boolean;
     }>();
 
+    debug.push(`[IP-GEO] ipapi.co 返回: country=${data.country}, lon=${data.longitude}, lat=${data.latitude}, error=${data.error}, reserved=${data.reserved}`);
+
     // reserved IP / 私网 IP / 失败响应
-    if (data.error || data.reserved) return undefined;
+    if (data.error || data.reserved) {
+      debug.push(`[IP-GEO] IP 被识别为 reserved 或查询失败，跳过`);
+      return { hint: undefined, debug };
+    }
 
     if (!data.country || !COUNTRY_TO_HINT[data.country]) {
+      debug.push(`[IP-GEO] 国家 ${data.country} 不在映射表中，尝试经纬度 fallback`);
       // 国家未命中映射表：用经纬度做粗略 fallback
       if (typeof data.latitude === 'number' && typeof data.longitude === 'number') {
-        return fallbackByLatLon(data.latitude, data.longitude);
+        const hint = fallbackByLatLon(data.latitude, data.longitude);
+        debug.push(`[IP-GEO] 经纬度 fallback 结果: ${hint}`);
+        return { hint, debug };
       }
-      return undefined;
+      debug.push(`[IP-GEO] 无经纬度信息，无法推断`);
+      return { hint: undefined, debug };
     }
 
     // US/CA 用经度切东西海岸；其他国家直接取映射值
@@ -95,11 +125,19 @@ export async function inferLocationHint(host: string): Promise<string | undefine
       ? refineForUsCanada(data.country, data.longitude)
       : COUNTRY_TO_HINT[data.country];
 
+    debug.push(`[IP-GEO] 国家 ${data.country} 映射为: ${hint}`);
+
     // 白名单兜底过滤
-    return ALLOWED_SET.has(hint) ? hint : undefined;
-  } catch {
+    const valid = ALLOWED_SET.has(hint);
+    if (!valid) {
+      debug.push(`[IP-GEO] ${hint} 不在白名单中，跳过`);
+    }
+    return { hint: valid ? hint : undefined, debug };
+  } catch (e) {
+    const errMsg = e instanceof Error ? e.message : String(e);
+    debug.push(`[IP-GEO] 请求异常: ${errMsg}`);
     // 网络异常、限流（429）、DNS 失败 → 静默退化为 Auto
-    return undefined;
+    return { hint: undefined, debug };
   }
 }
 

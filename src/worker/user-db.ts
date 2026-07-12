@@ -1,5 +1,5 @@
 import { Env, UserInfo, ServerConfig, SSHConnectionConfig, ALLOWED_LOCATION_HINTS } from '../types';
-import { inferLocationHint } from './ip-geo';
+import { inferLocationHint, type InferResult } from './ip-geo';
 
 /**
  * UserDBDO — 用户数据库 Durable Object（全局单例）
@@ -336,12 +336,19 @@ export class UserDBDO {
     // 保存时一次性推断 locationHint，结果持久化入 inferred_hint 列
     // 失败时返回 null，连接时退化为 Auto
     let inferredHint: string | null = null;
+    let inferDebug: string[] = [];
     try {
-      const hint = await inferLocationHint(body.host);
-      inferredHint = hint ?? null;
-    } catch {
+      const result = await inferLocationHint(body.host);
+      inferredHint = result.hint ?? null;
+      inferDebug = result.debug;
+    } catch (e) {
+      inferDebug.push(`[IP-GEO] 异常: ${e instanceof Error ? e.message : String(e)}`);
       inferredHint = null;
     }
+
+    // console.log 始终输出到 Workers 日志
+    console.log(`[locationHint] host=${body.host}, inferred=${inferredHint}`);
+    inferDebug.forEach(msg => console.log(msg));
 
     this.db.exec(
       'INSERT INTO servers (user_id, name, host, port, username, credential, auth_method, region, inferred_hint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -365,7 +372,12 @@ export class UserDBDO {
       )
       .toArray();
 
-    return Response.json(rows[0] as unknown as ServerConfig, { status: 201 });
+    // DEBUG_MODE 开启时，在响应中附带调试信息
+    const server = rows[0] as unknown as ServerConfig;
+    if (this.env.DEBUG_MODE === 'true') {
+      return Response.json({ ...server, _debug: inferDebug }, { status: 201 });
+    }
+    return Response.json(server, { status: 201 });
   }
 
   private async handleUpdateServer(serverId: number, request: Request): Promise<Response> {
@@ -400,7 +412,11 @@ export class UserDBDO {
       // host 变更 → 重新推断 locationHint 并覆盖 inferred_hint 列
       let newInferred: string | null = null;
       try {
-        newInferred = (await inferLocationHint(body.host)) ?? null;
+        const result = await inferLocationHint(body.host);
+        newInferred = result.hint ?? null;
+        // console.log 始终输出到 Workers 日志
+        console.log(`[locationHint] 更新推断 host=${body.host}, inferred=${newInferred}`);
+        result.debug.forEach(msg => console.log(msg));
       } catch {
         newInferred = null;
       }

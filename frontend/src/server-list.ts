@@ -420,6 +420,15 @@ export class ServerList {
         throw new Error(err.error || 'Save failed');
       }
 
+      // DEBUG_MODE 时，响应中包含 _debug 字段
+      const responseData = await res.json() as any;
+      if (responseData._debug && Array.isArray(responseData._debug)) {
+        console.log('[locationHint 调试信息]');
+        responseData._debug.forEach((msg: string) => console.log(msg));
+        // 显示调试通知
+        this.showDebugNotification(responseData._debug);
+      }
+
       this.hideModal();
       await this.fetchServers();
     } catch (e) {
@@ -431,6 +440,43 @@ export class ServerList {
         ${this.editingServerId ? 'UPDATE_SERVER' : 'SAVE_SERVER'}
       `;
     }
+  }
+
+  // ==================== DEBUG 通知 ====================
+
+  private showDebugNotification(debugLines: string[]): void {
+    // 创建通知元素
+    const notification = document.createElement('div');
+    notification.className = 'fixed bottom-4 right-4 z-[200] max-w-md p-4 rounded-lg shadow-2xl border border-[var(--accent)] bg-[var(--bg-surface)] text-[var(--text)] font-mono text-[11px] leading-relaxed';
+    notification.style.maxHeight = '300px';
+    notification.style.overflowY = 'auto';
+
+    const title = document.createElement('div');
+    title.className = 'text-[var(--accent)] font-bold mb-2 text-xs';
+    title.textContent = '[locationHint 调试信息]';
+    notification.appendChild(title);
+
+    const content = document.createElement('div');
+    content.className = 'text-muted whitespace-pre-wrap';
+    content.textContent = debugLines.join('\n');
+    notification.appendChild(content);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'absolute top-2 right-2 text-muted hover:text-[var(--accent)] cursor-pointer';
+    closeBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 16px;">close</span>';
+    closeBtn.onclick = () => notification.remove();
+    notification.appendChild(closeBtn);
+
+    document.body.appendChild(notification);
+
+    // 8 秒后自动消失
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.style.transition = 'opacity 0.3s';
+        notification.style.opacity = '0';
+        setTimeout(() => notification.remove(), 300);
+      }
+    }, 8000);
   }
 
   // ==================== 退出登录 ====================
