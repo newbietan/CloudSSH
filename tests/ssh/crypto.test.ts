@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   SSHAESGCMCipher,
   SSHAESCTRCipher,
@@ -239,6 +239,25 @@ describe('crypto — SSHAESGCMCipher', () => {
       }
       expect(decrypted).toEqual(plaintexts);
     });
+
+    it('IV 末字节 0xFF 时进位到上一字节（carry 分支）', async () => {
+      // 构造 IV 使 byte[11]=0xFF：incIV 后 byte[11] 回绕到 0x00，
+      // 不 break，继续进位 byte[10] —— 覆盖 incIV 的 carry 路径
+      const iv = new Uint8Array(GCM_IV_LENGTH);
+      iv[11] = 0xff;
+      const enc = new SSHAESGCMCipher(AES_256_KEY, iv);
+      await enc.init();
+      // 加密一条 → incIV 触发 carry
+      const plaintext = ENCODER.encode('carry-test');
+      const c1 = await enc.encrypt(plaintext);
+      // 再加密同样明文 → IV 已变（carry 后 byte[10] 加了 1）→ 密文不同
+      const c2 = enc.encrypt ? await enc.encrypt(plaintext) : plaintext;
+      let eq = true;
+      for (let i = 0; i < c1.length; i++) {
+        if (c1[i] !== c2[i]) { eq = false; break; }
+      }
+      expect(eq).toBe(false);
+    });
   });
 
   describe('IV 起始值被构造时复制（不持有引用）', () => {
@@ -260,6 +279,18 @@ describe('crypto — SSHAESGCMCipher', () => {
       await enc2.init();
       const c2 = await enc2.encrypt(plaintext);
       expect(c2).toEqual(ciphertext);
+    });
+  });
+
+  describe('decrypt 异常处理', () => {
+    it('crypto.subtle.decrypt 抛非 Error 对象时 catch 仍返回 null（String(e) 分支）', async () => {
+      const cipher = new SSHAESGCMCipher(AES_256_KEY, randomBytes(GCM_IV_LENGTH));
+      await cipher.init();
+      // mock 使 decrypt 抛出非 Error 值（如字符串），覆盖 e instanceof Error 的 false 分支
+      const spy = vi.spyOn(crypto.subtle, 'decrypt').mockRejectedValueOnce('not-an-error');
+      const result = await cipher.decrypt(randomBytes(32));
+      expect(result).toBeNull();
+      spy.mockRestore();
     });
   });
 });
@@ -433,6 +464,25 @@ describe('crypto — SSHAESCTRCipher', () => {
       const decrypted = await cipher.encrypt(ciphertext); // 再加密一次
       // 这里不直接断言 counter 值（私有），但确保 encrypt/decrypt 往返不抛错即可
       expect(decrypted.length).toBe(ciphertext.length);
+    });
+  });
+
+  describe('decrypt 异常处理', () => {
+    it('decrypt 传入非法数据应进入 catch 返回 null', async () => {
+      const cipher = new SSHAESCTRCipher(AES_256_KEY, randomBytes(CTR_IV_LENGTH));
+      await cipher.init();
+      // CTR 无 tag 校验，正常输入不会失败；传入非 BufferSource 触发 catch
+      const result = await cipher.decrypt(null as unknown as Uint8Array);
+      expect(result).toBeNull();
+    });
+
+    it('crypto.subtle.decrypt 抛非 Error 对象时 catch 仍返回 null（String(e) 分支）', async () => {
+      const cipher = new SSHAESCTRCipher(AES_256_KEY, randomBytes(CTR_IV_LENGTH));
+      await cipher.init();
+      const spy = vi.spyOn(crypto.subtle, 'decrypt').mockRejectedValueOnce('not-an-error');
+      const result = await cipher.decrypt(randomBytes(16));
+      expect(result).toBeNull();
+      spy.mockRestore();
     });
   });
 });

@@ -76,7 +76,7 @@ export class SSHAESGCMCipher {
       this.incIV();
       return decrypted;
     } catch (e) {
-      console.error('[CRYPTO] Decrypt failed, ciphertextLen:', ciphertext.length, 'error:', e instanceof Error ? e.message : String(e));
+      console.error('[CRYPTO] Decrypt failed, ciphertextLen:', ciphertext?.length, 'error:', e instanceof Error ? e.message : String(e));
       return null;
     }
   }
@@ -147,7 +147,7 @@ export class SSHAESCTRCipher {
       }
       return decrypted;
     } catch (e) {
-      console.error('[CRYPTO] AES-CTR decrypt failed, ciphertextLen:', ciphertext.length, 'error:', e instanceof Error ? e.message : String(e));
+      console.error('[CRYPTO] AES-CTR decrypt failed, ciphertextLen:', ciphertext?.length, 'error:', e instanceof Error ? e.message : String(e));
       return null;
     }
   }
