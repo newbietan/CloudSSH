@@ -186,6 +186,13 @@
               <textarea id="server-private-key" class="terminal-input text-[11px] w-full" rows="4" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...粘贴私钥内容...&#10;-----END OPENSSH PRIVATE KEY-----" style="resize:vertical;border:1px solid var(--border-strong);padding:8px;"></textarea>
             </div>
           </div>
+          <div>
+            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">REGION_HINT</label>
+            <select id="server-region" class="terminal-input text-[13px] bg-background cursor-pointer" style="border:1px solid var(--border-strong);padding:6px 8px;">
+              <option value="">自动（保存时由系统推断）</option>
+            </select>
+            <div id="server-region-inferred" class="text-[10px] text-muted mt-1"></div>
+          </div>
           <div class="pt-2">
             <button id="server-submit-btn" class="cyber-button w-full py-3 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-2 bg-primary text-on-primary" type="button">
               <span class="material-symbols-outlined" style="font-size: 18px;">save</span>

@@ -1,4 +1,5 @@
-import { Env, UserInfo, ServerConfig, SSHConnectionConfig } from '../types';
+import { Env, UserInfo, ServerConfig, SSHConnectionConfig, ALLOWED_LOCATION_HINTS } from '../types';
+import { inferLocationHint } from './ip-geo';
 
 /**
  * UserDBDO — 用户数据库 Durable Object（全局单例）
@@ -56,6 +57,8 @@ export class UserDBDO {
         username    TEXT NOT NULL,
         credential  TEXT NOT NULL,
         auth_method TEXT DEFAULT 'password',
+        region      TEXT DEFAULT NULL,
+        inferred_hint TEXT DEFAULT NULL,
         created_at  TEXT DEFAULT (datetime('now')),
         updated_at  TEXT DEFAULT (datetime('now'))
       );
@@ -98,6 +101,16 @@ export class UserDBDO {
         updated_at     TEXT DEFAULT (datetime('now'))
       );
     `);
+
+    // === Migration: 给既有 servers 表追加 region / inferred_hint 列（幂等） ===
+    // SQLite 没有 ADD COLUMN IF NOT EXISTS，用 PRAGMA table_info 守卫
+    const serverCols = this.db.exec("PRAGMA table_info(servers)").toArray();
+    if (!serverCols.some((c: any) => c.name === 'region')) {
+      this.db.exec("ALTER TABLE servers ADD COLUMN region TEXT DEFAULT NULL");
+    }
+    if (!serverCols.some((c: any) => c.name === 'inferred_hint')) {
+      this.db.exec("ALTER TABLE servers ADD COLUMN inferred_hint TEXT DEFAULT NULL");
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -296,7 +309,7 @@ export class UserDBDO {
   private handleGetServers(userId: number): Response {
     const rows = this.db
       .exec(
-        `SELECT id, user_id, name, host, port, username, auth_method, created_at, updated_at
+        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, created_at, updated_at
          FROM servers WHERE user_id = ? ORDER BY updated_at DESC`,
         userId
       )
@@ -314,26 +327,39 @@ export class UserDBDO {
       username: string;
       credential: string;
       auth_method: string;
+      region?: string;
     }>();
 
     // 加密凭据
     const encrypted = await this.encryptCredential(body.credential, body.user_id);
 
+    // 保存时一次性推断 locationHint，结果持久化入 inferred_hint 列
+    // 失败时返回 null，连接时退化为 Auto
+    let inferredHint: string | null = null;
+    try {
+      const hint = await inferLocationHint(body.host);
+      inferredHint = hint ?? null;
+    } catch {
+      inferredHint = null;
+    }
+
     this.db.exec(
-      'INSERT INTO servers (user_id, name, host, port, username, credential, auth_method) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO servers (user_id, name, host, port, username, credential, auth_method, region, inferred_hint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       body.user_id,
       body.name,
       body.host,
       body.port || 22,
       body.username,
       encrypted,
-      body.auth_method || 'password'
+      body.auth_method || 'password',
+      (ALLOWED_LOCATION_HINTS as readonly string[]).includes(body.region || '') ? (body.region || null) : null,  // 白名单校验，非法值退化为 Auto
+      inferredHint            // 系统推断值（可 NULL）
     );
 
     // 获取新创建的记录
     const rows = this.db
       .exec(
-        `SELECT id, user_id, name, host, port, username, auth_method, created_at, updated_at
+        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, created_at, updated_at
          FROM servers WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
         body.user_id
       )
@@ -351,6 +377,7 @@ export class UserDBDO {
       username?: string;
       credential?: string;
       auth_method?: string;
+      region?: string;
     }>();
 
     // 验证服务器属于该用户
@@ -361,7 +388,7 @@ export class UserDBDO {
 
     // 构建更新语句
     const updates: string[] = [];
-    const values: (string | number)[] = [];
+    const values: (string | number | null)[] = [];
 
     if (body.name !== undefined) {
       updates.push('name = ?');
@@ -370,6 +397,15 @@ export class UserDBDO {
     if (body.host !== undefined) {
       updates.push('host = ?');
       values.push(body.host);
+      // host 变更 → 重新推断 locationHint 并覆盖 inferred_hint 列
+      let newInferred: string | null = null;
+      try {
+        newInferred = (await inferLocationHint(body.host)) ?? null;
+      } catch {
+        newInferred = null;
+      }
+      updates.push('inferred_hint = ?');
+      values.push(newInferred);
     }
     if (body.port !== undefined) {
       updates.push('port = ?');
@@ -388,6 +424,11 @@ export class UserDBDO {
       updates.push('auth_method = ?');
       values.push(body.auth_method);
     }
+    if (body.region !== undefined) {
+      // 空字符串视为 Auto（清空手动覆盖）；白名单校验非法值
+      updates.push('region = ?');
+      values.push((ALLOWED_LOCATION_HINTS as readonly string[]).includes(body.region) ? body.region : null);
+    }
 
     if (updates.length > 0) {
       updates.push("updated_at = datetime('now')");
@@ -397,7 +438,7 @@ export class UserDBDO {
 
     const row = this.db
       .exec(
-        `SELECT id, user_id, name, host, port, username, auth_method, created_at, updated_at
+        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, created_at, updated_at
          FROM servers WHERE id = ?`,
         serverId
       )
@@ -462,6 +503,7 @@ export class UserDBDO {
     const server = rows[0] as unknown as {
       id: number; user_id: number; name: string; host: string;
       port: number; username: string; credential: string; auth_method: string;
+      region: string | null; inferred_hint: string | null;
     };
 
     // 解密凭据
@@ -477,6 +519,10 @@ export class UserDBDO {
       expectedFingerprint = (khRows[0] as unknown as { fingerprint: string }).fingerprint;
     }
 
+    // 计算 DO locationHint：
+    // 优先级：用户手动覆盖 (region) > 系统推断持久化值 (inferred_hint) > 无 hint（Auto）
+    const locationHint = server.region || server.inferred_hint || undefined;
+
     // 生成 one-time-token
     const token = crypto.randomUUID();
     const config: SSHConnectionConfig = {
@@ -488,6 +534,7 @@ export class UserDBDO {
       privateKey: server.auth_method === 'publickey' ? credential : '',
       expectedFingerprint,
       userId: String(body.user_id),
+      locationHint,
     };
 
     // 防止 token 数量无限增长

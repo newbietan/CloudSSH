@@ -1,6 +1,6 @@
 import { loadKnownFingerprint } from './terminal';
 import type { TabManager } from './tab-manager';
-
+import { populateRegionSelect, regionLabel } from './regions';
 // --- Credential encryption helpers ---
 async function deriveKey(salt: Uint8Array): Promise<CryptoKey> {
   const raw = new TextEncoder().encode(window.location.origin + ':cloudssh');
@@ -193,6 +193,12 @@ export class ConnectionForm {
         <div id="turnstile-container" style="display:none;">
           <div id="turnstile-widget" class="flex justify-center"></div>
         </div>
+        <div>
+          <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">REGION_HINT <span class="text-[9px] opacity-60">(匿名路径不自动推断；保存服务器后系统会自动推断)</span></label>
+          <select id="anon-region" class="terminal-input text-[13px] bg-background cursor-pointer" style="border:1px solid var(--border-strong);padding:6px 8px;">
+            <option value="">自动</option>
+          </select>
+        </div>
         <div class="flex items-center gap-2 mt-2">
           <input type="checkbox" id="remember-me" class="accent-[var(--accent)] w-4 h-4 cursor-pointer">
           <label for="remember-me" class="text-xs text-muted cursor-pointer select-none">REMEMBER_CONNECTION</label>
@@ -224,6 +230,12 @@ export class ConnectionForm {
     document.getElementById('connection-form')!.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') this.handleConnect();
     });
+
+    // 填充区域下拉选项（自动选项已存在于 HTML，populateRegionSelect 会完整替换）
+    const anonRegionSelect = document.getElementById('anon-region') as HTMLSelectElement | null;
+    if (anonRegionSelect) {
+      populateRegionSelect(anonRegionSelect, '');
+    }
 
     // Auth method tab switching
     document.getElementById('auth-tab-password')!.addEventListener('click', () => {
@@ -328,10 +340,16 @@ export class ConnectionForm {
     });
   }
 
-  private async fillConnection(item: { host: string; port: number; username: string; authMethod: 'password' | 'publickey'; encryptedCred?: string }): Promise<void> {
+  private async fillConnection(item: { host: string; port: number; username: string; authMethod: 'password' | 'publickey'; encryptedCred?: string; region?: string }): Promise<void> {
     (document.getElementById('host') as HTMLInputElement).value = item.host || '';
     (document.getElementById('port') as HTMLInputElement).value = (item.port || 22).toString();
     (document.getElementById('username') as HTMLInputElement).value = item.username || '';
+
+    // 还原区域下拉（从 recent connection 的 region 字段；老条目无此字段则默认 Auto）
+    const anonRegionSelect = document.getElementById('anon-region') as HTMLSelectElement | null;
+    if (anonRegionSelect) {
+      anonRegionSelect.value = item.region || '';
+    }
 
     if (item.authMethod === 'publickey') {
       this.setAuthMode('key');
@@ -421,6 +439,9 @@ export class ConnectionForm {
     const password = (document.getElementById('password') as HTMLInputElement).value;
     const privateKey = (document.getElementById('private-key') as HTMLTextAreaElement).value;
     const remember = (document.getElementById('remember-me') as HTMLInputElement).checked;
+    // 匿名路径区域选择（仅作为 manual override；系统不会对此路径自动推断）
+    const anonRegionSelect = document.getElementById('anon-region') as HTMLSelectElement | null;
+    const regionValue = anonRegionSelect ? anonRegionSelect.value : '';
 
     if (!host || !username) {
       alert('请填写主机名和用户名');
@@ -472,6 +493,7 @@ export class ConnectionForm {
       username,
       authMethod: this.authMode === 'key' ? 'publickey' : 'password',
       timestamp: Date.now(),
+      ...(regionValue ? { region: regionValue } : {}),   // 区域偏好持久化到 recent
       ...(encryptedCred ? { encryptedCred } : {}),
     };
 
@@ -514,6 +536,7 @@ export class ConnectionForm {
         authMethod: this.authMode === 'key' ? 'publickey' : 'password',
         privateKey,
         expectedFingerprint: expectedFingerprint || undefined,
+        locationHint: regionValue || undefined,
       });
     } catch (error) {
       // 连接失败时关闭该标签

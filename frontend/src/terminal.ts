@@ -16,6 +16,8 @@ export interface SSHConnectionConfig {
   authMethod?: 'password' | 'publickey';
   privateKey?: string;
   expectedFingerprint?: string;
+  /** 匿名路径手动覆盖的区域偏好（保存服务器路径不使用此字段） */
+  locationHint?: string;
 }
 
 interface ConnectOptions {
@@ -429,6 +431,11 @@ export class SSHTerminal {
     const wsUrl = new URL(window.location.href);
     wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
     wsUrl.pathname = '/api/ssh';
+    // 匿名路径：用户在前端选定 region 后作为 URL query 传给 Worker；
+    // Worker 在 get() 前读取并传入 locationHint（仅手动覆盖路径）
+    if (config.locationHint) {
+      wsUrl.searchParams.set('region', config.locationHint);
+    }
 
     return new Promise((resolve, reject) => {
       this.ws = new WebSocket(wsUrl.toString());

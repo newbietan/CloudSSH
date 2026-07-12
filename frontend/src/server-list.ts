@@ -1,3 +1,5 @@
+import { populateRegionSelect, regionLabel } from './regions';
+
 interface UserInfo {
   id: number;
   github_id: number;
@@ -13,6 +15,8 @@ interface ServerConfig {
   port: number;
   username: string;
   auth_method: 'password' | 'publickey';
+  region?: string | null;
+  inferred_hint?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -294,6 +298,21 @@ export class ServerList {
       } else {
         this.setModalAuthMode('password');
       }
+
+      // 区域下拉：回显用户保存的 region（"" = Auto）
+      const regionSelect = document.getElementById('server-region') as HTMLSelectElement | null;
+      const inferredInfo = document.getElementById('server-region-inferred');
+      if (regionSelect) {
+        populateRegionSelect(regionSelect, server.region || '');
+      }
+      // 显示系统推断值（仅编辑时，让用户了解 DB 持久化的 hint）
+      if (inferredInfo) {
+        if (server.inferred_hint) {
+          inferredInfo.textContent = `系统推断：${regionLabel(server.inferred_hint)}`;
+        } else {
+          inferredInfo.textContent = '';
+        }
+      }
     } else {
       // 清空表单
       (document.getElementById('server-name') as HTMLInputElement).value = '';
@@ -303,6 +322,12 @@ export class ServerList {
       (document.getElementById('server-password') as HTMLInputElement).value = '';
       (document.getElementById('server-private-key') as HTMLTextAreaElement).value = '';
       this.setModalAuthMode('password');
+
+      // 新增时：region 默认 Auto，无系统推断可显示
+      const regionSelect = document.getElementById('server-region') as HTMLSelectElement | null;
+      const inferredInfo = document.getElementById('server-region-inferred');
+      if (regionSelect) populateRegionSelect(regionSelect, '');
+      if (inferredInfo) inferredInfo.textContent = '';
     }
 
     modal.classList.remove('hidden');
@@ -368,6 +393,12 @@ export class ServerList {
     try {
       const body: any = { name, host, port, username, auth_method: authMethod };
       if (credential) body.credential = credential;
+
+      // 区域偏好：空字符串表示 Auto（让系统自动推断）
+      const regionSelect = document.getElementById('server-region') as HTMLSelectElement | null;
+      if (regionSelect) {
+        body.region = regionSelect.value || '';
+      }
 
       let res: Response;
       if (this.editingServerId) {

@@ -50,7 +50,27 @@ export interface SSHConnectionConfig {
   rows?: number;
   expectedFingerprint?: string;
   userId?: string;
+  /**
+   * Cloudflare DO locationHint。
+   * - 用户保存服务器时手动覆盖的 `region` → 优先使用
+   * - 系统保存服务器时自动推断并持久化的 `inferred_hint` → 次优
+   * - undefined → Cloudflare 自行决定 DO 实例位置（行为同改造前）
+   * 连接时仅做白名单过滤（实际取值由 user-db.handleConnectServer 计算）。
+   */
+  locationHint?: string;
 }
+
+/**
+ * Cloudflare Durable Object `get()` 支持的 locationHint 值。
+ * 参考: https://developers.cloudflare.com/durable-objects/reference/data-location/
+ */
+export const ALLOWED_LOCATION_HINTS = [
+  'wnam', 'enam', 'sam',
+  'weur', 'eeur',
+  'apac', 'apac-ne', 'apac-se',
+  'oc', 'afr', 'me',
+] as const;
+export type LocationHint = typeof ALLOWED_LOCATION_HINTS[number];
 
 export interface TerminalSize {
   cols: number;
@@ -111,6 +131,10 @@ export interface ServerConfig {
   port: number;
   username: string;
   auth_method: 'password' | 'publickey';
+  /** 用户手动指定的区域偏好；空表示 Auto（依赖系统推断的 inferred_hint） */
+  region?: string | null;
+  /** 系统在保存/更新服务器时通过 ipapi.co 自动推断并持久化的 hint */
+  inferred_hint?: string | null;
   created_at: string;
   updated_at: string;
 }

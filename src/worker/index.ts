@@ -1,4 +1,4 @@
-import { Env, SSHConnectionConfig } from '../types';
+import { Env, SSHConnectionConfig, ALLOWED_LOCATION_HINTS } from '../types';
 import { HTML } from './html';
 import {
   handleGitHubAuth,
@@ -111,6 +111,15 @@ async function isVerifiedTokenValid(token: string, secret: string): Promise<bool
 function getUserDBStub(env: Env): DurableObjectStub {
   const id = env.USER_DB.idFromName('global');
   return env.USER_DB.get(id);
+}
+
+/**
+ * 校验 locationHint 值是否在 Cloudflare DO 允许的列表内（白名单）。
+ * 返回符合规范的 hint 字符串；非法/空值返回 undefined（DO get() 退化为默认调度）。
+ */
+function validateRegion(v: string | null | undefined): string | undefined {
+  if (!v) return undefined;
+  return (ALLOWED_LOCATION_HINTS as readonly string[]).includes(v) ? v : undefined;
 }
 
 export default {
@@ -518,10 +527,11 @@ async function handleSSHConnection(request: Request, env: Env): Promise<Response
     );
   }
 
+  const url = new URL(request.url);
+
   // Prevent Cross-Site WebSocket Hijacking / Quota Leeching
   const origin = request.headers.get('Origin');
   if (origin) {
-    const url = new URL(request.url);
     if (origin !== url.origin) {
       return new Response('Forbidden', { status: 403 });
     }
@@ -529,7 +539,12 @@ async function handleSSHConnection(request: Request, env: Env): Promise<Response
 
   const sessionName = `session:${Date.now()}:${Math.random()}`;
   const doId = env.SSH_SESSION.idFromName(sessionName);
-  const stub = env.SSH_SESSION.get(doId);
+  // 匿名路径不做自动推断（Worker 在 upgrade 时拿不到 host）；
+  // 仅尊重用户通过前端下拉手动传入的 ?region= 覆盖值
+  const region = validateRegion(url.searchParams.get('region'));
+  const stub = region
+    ? env.SSH_SESSION.get(doId, { locationHint: region } as any)
+    : env.SSH_SESSION.get(doId);
 
   const doUrl = new URL(request.url);
   doUrl.searchParams.set('session', sessionName);
@@ -575,7 +590,13 @@ async function handleTokenSSHConnection(request: Request, env: Env, token: strin
 
   const sessionName = `session:${Date.now()}:${Math.random()}`;
   const doId = env.SSH_SESSION.idFromName(sessionName);
-  const doStub = env.SSH_SESSION.get(doId);
+  // Token 路径：locationHint 由 user-db.handleConnectServer 一次性计算并写入 config
+  // （优先级：用户手动 region → DB 持久化的 inferred_hint → undefined）
+  // 这里仅做白名单过滤，零运行时 ipapi 调用
+  const hint = validateRegion(config.locationHint);
+  const doStub = hint
+    ? env.SSH_SESSION.get(doId, { locationHint: hint } as any)
+    : env.SSH_SESSION.get(doId);
 
   const doUrl = new URL(request.url);
   doUrl.searchParams.delete('token');
