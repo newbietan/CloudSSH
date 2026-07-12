@@ -1301,9 +1301,12 @@ export class SSHSession {
   async handleWebSocketMessage(data: string | ArrayBuffer): Promise<void> {
     if (typeof data === 'string') {
       let parsed: any = undefined;
-      try {
-        parsed = JSON.parse(data);
-      } catch (e) { this.sendDebug(() => `JSON parse failed: ${e instanceof Error ? e.message : e}`); }
+      // 仅对可能为 JSON 的消息尝试解析（以 { 开头），避免终端输入产生噪音日志
+      if (data.charCodeAt(0) === 123) {
+        try {
+          parsed = JSON.parse(data);
+        } catch (e) { this.sendDebug(() => `JSON parse failed: ${e instanceof Error ? e.message : e}`); }
+      }
 
       if (parsed && typeof parsed === 'object') {
         if (parsed.type === 'ping') {
