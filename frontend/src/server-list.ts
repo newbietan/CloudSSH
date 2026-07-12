@@ -154,6 +154,14 @@ export class ServerList {
     const authIcon = server.auth_method === 'publickey' ? 'vpn_key' : 'password';
     const authLabel = server.auth_method === 'publickey' ? 'KEY' : 'PWD';
 
+    // 区域信息：用户手动覆盖优先，其次系统推断，都没有则显示 Auto
+    const effectiveHint = server.region || server.inferred_hint || '';
+    const isManual = !!server.region;
+    const regionLabelText = regionLabel(effectiveHint);
+    const regionTag = effectiveHint
+      ? (isManual ? '手动' : '自动')
+      : '自动';
+
     return `
       <div class="server-card p-5 relative group" id="card-${server.id}">
         <div class="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-[var(--border-strong)] to-transparent group-hover:via-[var(--accent)] transition-all duration-300"></div>
@@ -177,6 +185,14 @@ export class ServerList {
           <div class="flex items-center gap-2">
             <span class="text-dim">USER</span>
             <span class="text-on-surface">${this.escapeHtml(server.username)}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-dim">REGION</span>
+            <span class="text-on-surface flex items-center gap-1">
+              <span class="material-symbols-outlined" style="font-size: 11px; color: var(--accent-secondary);">${effectiveHint ? 'my_location' : 'explore'}</span>
+              ${this.escapeHtml(regionLabelText)}
+            </span>
+            <span class="text-[9px] text-dim border border-dim px-1 py-0.5 ml-0.5">${regionTag}</span>
           </div>
         </div>
 
@@ -400,6 +416,7 @@ export class ServerList {
         body.region = regionSelect.value || '';
       }
 
+      // 保存请求（后端在保存时会同步推断 locationHint，故时间可能略长）
       let res: Response;
       if (this.editingServerId) {
         res = await fetch(`/api/servers/${this.editingServerId}`, {
@@ -420,13 +437,28 @@ export class ServerList {
         throw new Error(err.error || 'Save failed');
       }
 
-      // DEBUG_MODE 时，响应中包含 _debug 字段
       const responseData = await res.json() as any;
+
+      // DEBUG_MODE 时，响应中包含 _debug 字段：显示完整调试日志
       if (responseData._debug && Array.isArray(responseData._debug)) {
         console.log('[locationHint 调试信息]');
         responseData._debug.forEach((msg: string) => console.log(msg));
-        // 显示调试通知
         this.showDebugNotification(responseData._debug);
+      }
+
+      // 非调试模式：用简短 toast 提示推断结果，让用户知道区域调度已生效
+      // POST 与 PUT 路径后端均会返回最新记录（含 inferred_hint 字段）
+      if (!responseData._debug) {
+        const inferred = responseData.inferred_hint || null;
+        const userRegion = body.region || null;
+        if (userRegion || inferred) {
+          // 用户手动指定优先显示手动值，否则显示系统推断值
+          const hint = userRegion || inferred;
+          this.showToast(`已保存，区域：${regionLabel(hint)}`, false);
+        } else {
+          // 推断失败（私网 IP / 限流 / 未命中映射表）
+          this.showToast('已保存，未能推断区域（将使用自动调度）', true);
+        }
       }
 
       this.hideModal();
@@ -440,6 +472,47 @@ export class ServerList {
         ${this.editingServerId ? 'UPDATE_SERVER' : 'SAVE_SERVER'}
       `;
     }
+  }
+
+  // ==================== 保存反馈 toast ====================
+
+  /**
+   * 右下角简短提示气泡。warn=true 用青色表示异常场景，否则用主题绿表示正常保存。
+   * 与 DEBUG_MODE 的详细 showDebugNotification 互斥使用。
+   */
+  private showToast(text: string, warn = false): void {
+    const notification = document.createElement('div');
+    const accentColor = warn ? 'var(--accent-secondary)' : 'var(--accent)';
+    notification.className = 'fixed bottom-4 right-4 z-[200] max-w-sm p-3 px-4 rounded-lg shadow-2xl border bg-[var(--bg-surface)] text-[var(--text)] font-mono text-[11px] flex items-center gap-2';
+    notification.style.borderColor = accentColor;
+    notification.style.opacity = '0';
+    notification.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+    notification.style.transform = 'translateY(8px)';
+
+    const icon = document.createElement('span');
+    icon.className = 'material-symbols-outlined';
+    icon.style.fontSize = '16px';
+    icon.style.color = accentColor;
+    icon.textContent = warn ? 'warning' : 'check_circle';
+    notification.appendChild(icon);
+
+    const label = document.createElement('span');
+    label.className = 'text-on-surface';
+    label.textContent = text;
+    notification.appendChild(label);
+
+    document.body.appendChild(notification);
+    // 入场动画
+    requestAnimationFrame(() => {
+      notification.style.opacity = '1';
+      notification.style.transform = 'translateY(0)';
+    });
+    // 4 秒后淡出
+    setTimeout(() => {
+      notification.style.opacity = '0';
+      notification.style.transform = 'translateY(8px)';
+      setTimeout(() => notification.remove(), 300);
+    }, 4000);
   }
 
   // ==================== DEBUG 通知 ====================
