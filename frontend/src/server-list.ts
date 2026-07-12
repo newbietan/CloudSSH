@@ -447,7 +447,7 @@ export class ServerList {
   private showDebugNotification(debugLines: string[]): void {
     // 创建通知元素
     const notification = document.createElement('div');
-    notification.className = 'fixed bottom-4 right-4 z-[200] max-w-md p-4 rounded-lg shadow-2xl border border-[var(--accent)] bg-[var(--bg-surface)] text-[var(--text)] font-mono text-[11px] leading-relaxed';
+    notification.className = 'fixed bottom-4 right-4 z-[200] max-w-md p-4 rounded-lg shadow-2xl border border-[var(--accent)] bg-[var(--bg-surface)] text-[var(--text)] font-mono text-[11px] leading-relaxed custom-scrollbar';
     notification.style.maxHeight = '300px';
     notification.style.overflowY = 'auto';
 

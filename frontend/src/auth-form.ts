@@ -195,7 +195,7 @@ export class ConnectionForm {
         </div>
         <div>
           <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">REGION_HINT <span class="text-[9px] opacity-60">(可选：请选择距离目标SSH服务器最近的节点)</span></label>
-          <select id="anon-region" class="terminal-input text-[13px] bg-background cursor-pointer" style="border:1px solid var(--border-strong);padding:6px 8px;">
+          <select id="anon-region" class="terminal-input text-[13px] cursor-pointer" style="border:1px solid var(--border-strong);border-bottom:1px solid var(--border-strong);padding:6px 8px;">
             <option value="">自动</option>
           </select>
         </div>
