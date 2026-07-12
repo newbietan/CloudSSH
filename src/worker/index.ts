@@ -594,6 +594,7 @@ async function handleTokenSSHConnection(request: Request, env: Env, token: strin
   // （优先级：用户手动 region → DB 持久化的 inferred_hint → undefined）
   // 这里仅做白名单过滤，零运行时 ipapi 调用
   const hint = validateRegion(config.locationHint);
+  console.log(`[locationHint] handleTokenSSHConnection: config.locationHint=${config.locationHint}, validated=${hint}`);
   const doStub = hint
     ? env.SSH_SESSION.get(doId, { locationHint: hint } as any)
     : env.SSH_SESSION.get(doId);

@@ -538,6 +538,7 @@ export class UserDBDO {
     // 计算 DO locationHint：
     // 优先级：用户手动覆盖 (region) > 系统推断持久化值 (inferred_hint) > 无 hint（Auto）
     const locationHint = server.region || server.inferred_hint || undefined;
+    console.log(`[locationHint] handleConnectServer: server.region=${server.region}, server.inferred_hint=${server.inferred_hint}, locationHint=${locationHint}`);
 
     // 生成 one-time-token
     const token = crypto.randomUUID();
