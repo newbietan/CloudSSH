@@ -548,6 +548,8 @@ export class SSHSession {
           newKeys, 8, null, this.seqNumSend++
         );
         await this.writeSocket(packet);
+        this.seqNumSend = 0;
+        this.packetParser.resetSeqNum();
         this.sendDebug(`Client NEWKEYS sent, seqNumSend=${this.seqNumSend}`);
 
         await this.enableEncryption();

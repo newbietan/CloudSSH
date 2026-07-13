@@ -17,6 +17,7 @@ export class UserDBDO {
   // one-time-token 内存存储：token → { config, expiresAt }
   private connectTokens: Map<string, { config: SSHConnectionConfig; expiresAt: number }> = new Map();
   private static readonly MAX_CONNECT_TOKENS = 1000;
+  private derivedKeyCache: Map<number, CryptoKey> = new Map();
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -635,6 +636,9 @@ export class UserDBDO {
   private encryptionSecret: string | null = null;
 
   private async deriveEncryptionKey(userId: number): Promise<CryptoKey> {
+    const cached = this.derivedKeyCache.get(userId);
+    if (cached) return cached;
+
     if (!this.encryptionSecret) {
       const rows = this.db.exec("SELECT value FROM system_config WHERE key = 'encryption_secret'").toArray();
       if (rows.length > 0) {
@@ -663,13 +667,16 @@ export class UserDBDO {
       ['deriveKey']
     );
 
-    return crypto.subtle.deriveKey(
+    const derived = await crypto.subtle.deriveKey(
       { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
       keyMaterial,
       { name: 'AES-GCM', length: 256 },
       false,
       ['encrypt', 'decrypt']
     );
+
+    this.derivedKeyCache.set(userId, derived);
+    return derived;
   }
 
   // ==================== 速率限制 ====================

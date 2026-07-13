@@ -329,13 +329,21 @@ export class AgentCore {
             });
 
             // Execute tool call
-            const result = await this.toolExecutor.execute(
+            let result = await this.toolExecutor.execute(
               toolCall.function.name,
               toolArgs,
               signal,
             );
             this.recordToolCall(toolCall.function.name, toolArgs);
             this.resetTimeout(); // 看门狗：工具执行成功，重置超时时间
+
+            if (result) {
+              result = result
+                .replace(/-----BEGIN[A-Z ]+PRIVATE KEY-----[\s\S]+?-----END[A-Z ]+PRIVATE KEY-----/g, '[REDACTED PRIVATE KEY]')
+                .replace(/\bey[a-zA-Z0-9-_=]+\.[a-zA-Z0-9-_=]+\.?[a-zA-Z0-9-_=]*\b/g, '[REDACTED JWT]')
+                .replace(/\b(ghp|gho|ghu|ghs|ghr)_[a-zA-Z0-9]{36}\b/g, '[REDACTED GITHUB TOKEN]')
+                .replace(/\b(AKIA[0-9A-Z]{16})\b/g, '[REDACTED AWS KEY ID]');
+            }
 
             // 必须先将 tool 结果加入 messages，否则后续轮次的 LLM 调用会因
             // assistant.tool_calls 缺少对应的 tool 响应而触发 API 400 错误

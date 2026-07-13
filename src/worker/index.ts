@@ -599,11 +599,11 @@ async function handleTokenSSHConnection(request: Request, env: Env, token: strin
 
   const doUrl = new URL(request.url);
   doUrl.searchParams.delete('token');
-  doUrl.searchParams.set('config', encodeURIComponent(JSON.stringify(config)));
   doUrl.searchParams.set('session', sessionName);
 
   const headers = new Headers(request.headers);
   headers.set('x-cloudflare-colo', (request as any).cf?.colo || 'UNKNOWN');
+  headers.set('x-ssh-config', encodeURIComponent(JSON.stringify(config)));
 
   const doRequest = new Request(doUrl.toString(), {
     headers: headers,
