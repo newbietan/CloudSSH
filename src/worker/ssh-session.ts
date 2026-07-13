@@ -965,7 +965,7 @@ export class SSHSession {
         break;
 
       case SSH_MSG_USERAUTH_SUCCESS:
-        this.sendStatus('认证成功');
+        this.sendStatus('认证成功', 'auth_success');
         this.state = 'shell';
         this.startKeepalive();
         await this.openShell();
@@ -1068,7 +1068,7 @@ export class SSHSession {
           this.shellReadyTimeout = setTimeout(() => {
             if (this.state === 'shell-requested') {
               this.state = 'ready';
-              this.sendStatus('Shell 已就绪');
+              this.sendStatus('Shell 已就绪', 'shell_ready');
             }
           }, 3000);
         } else if (channelID === this.shellChannel.getLocalChannelID() && this.state === 'shell-requested') {
@@ -1078,7 +1078,7 @@ export class SSHSession {
             this.shellReadyTimeout = null;
           }
           this.state = 'ready';
-          this.sendStatus('Shell 已就绪');
+          this.sendStatus('Shell 已就绪', 'shell_ready');
         } else if (this.sftpHandler && channelID === this.sftpHandler.getChannelID()) {
           // SFTP subsystem request confirmed - send SFTP init
           this.sendDebug(`SFTP CHANNEL_SUCCESS received, calling onSubsystemReady`);
@@ -1130,7 +1130,7 @@ export class SSHSession {
               this.shellReadyTimeout = null;
             }
             this.state = 'ready';
-            this.sendStatus('Shell 已就绪');
+            this.sendStatus('Shell 已就绪', 'shell_ready');
           }
           const outputData = channel.handleChannelData(payload);
           try { this.ws.send(outputData); } catch (e) { this.sendDebug(() => `Send shell output failed: ${e instanceof Error ? e.message : e}`); }
@@ -1664,9 +1664,9 @@ export class SSHSession {
     }
   }
 
-  private sendStatus(message: string): void {
+  private sendStatus(message: string, event?: string): void {
     try {
-      this.ws.send(JSON.stringify({ type: 'status', message }));
+      this.ws.send(JSON.stringify({ type: 'status', message, event }));
     } catch (e) {
       // WebSocket 已关闭，状态消息无法送达
     }

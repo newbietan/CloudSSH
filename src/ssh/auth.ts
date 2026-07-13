@@ -566,58 +566,17 @@ export class SSHAuth {
    * Calculate a mod m for big integers.
    */
   private static bigIntMod(a: Uint8Array, m: Uint8Array): Uint8Array {
-    let remainder = Array.from(a);
-    const divisor = Array.from(m);
-
-    const compare = (x: number[], y: number[]): number => {
-      let xStart = 0;
-      while (xStart < x.length - 1 && x[xStart] === 0) xStart++;
-      let yStart = 0;
-      while (yStart < y.length - 1 && y[yStart] === 0) yStart++;
-
-      const xLen = x.length - xStart;
-      const yLen = y.length - yStart;
-
-      if (xLen !== yLen) return xLen > yLen ? 1 : -1;
-
-      for (let i = 0; i < xLen; i++) {
-        if (x[xStart + i] !== y[yStart + i]) {
-          return x[xStart + i] > y[yStart + i] ? 1 : -1;
-        }
-      }
-      return 0;
+    const toBigInt = (bytes: Uint8Array): bigint => {
+      let n = 0n;
+      for (const b of bytes) n = (n << 8n) | BigInt(b);
+      return n;
     };
-
-    const subtract = (x: number[], y: number[]): number[] => {
-      const result = new Array(x.length);
-      let borrow = 0;
-
-      for (let i = x.length - 1; i >= 0; i--) {
-        const xByte = x[i];
-        const yIdx = i - (x.length - y.length);
-        const yByte = yIdx >= 0 ? y[yIdx] : 0;
-
-        let diff = xByte - yByte - borrow;
-        if (diff < 0) {
-          diff += 256;
-          borrow = 1;
-        } else {
-          borrow = 0;
-        }
-        result[i] = diff;
-      }
-      return result;
-    };
-
-    while (compare(remainder, divisor) >= 0) {
-      remainder = subtract(remainder, divisor);
-    }
-
-    let start = 0;
-    while (start < remainder.length - 1 && remainder[start] === 0) {
-      start++;
-    }
-    return new Uint8Array(remainder.slice(start));
+    const r = toBigInt(a) % toBigInt(m);
+    const hex = r.toString(16).padStart(2, '0');
+    const padded = hex.length % 2 ? '0' + hex : hex;
+    const out = new Uint8Array(padded.length / 2);
+    for (let i = 0; i < out.length; i++) out[i] = parseInt(padded.slice(i * 2, i * 2 + 2), 16);
+    return out;
   }
 
   static handleResponse(payload: Uint8Array): AuthResult {

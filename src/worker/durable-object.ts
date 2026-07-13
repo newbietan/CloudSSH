@@ -217,6 +217,7 @@ export class SSHSessionDO {
   }
 
   async webSocketError(ws: WebSocket, error: unknown): Promise<void> {
+    console.error('WebSocket error:', error);
     await this.webSocketClose(ws, 1011, 'Error', false);
   }
 

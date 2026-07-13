@@ -53,9 +53,15 @@ export function parseKEXInit(data: Uint8Array): KEXInitMessage {
 
   const lists: string[] = [];
   for (let i = 0; i < 10; i++) {
+    if (offset + 4 > data.length) {
+      throw new Error(`Malformed KEXINIT: truncated length field at list ${i}, offset=${offset}, dataLen=${data.length}`);
+    }
     const len = (data[offset] << 24) | (data[offset+1] << 16) |
                 (data[offset+2] << 8) | data[offset+3];
     offset += 4;
+    if (len < 0 || offset + len > data.length) {
+      throw new Error(`Malformed KEXINIT: list ${i} length ${len} exceeds packet boundary (offset=${offset}, dataLen=${data.length})`);
+    }
     const name = new TextDecoder().decode(data.slice(offset, offset + len));
     lists.push(name);
     offset += len;

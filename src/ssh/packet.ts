@@ -136,6 +136,9 @@ export class SSHPacketParser {
       if (!decrypted) return null;
 
       const paddingLength = decrypted[0];
+      if (paddingLength < 4 || paddingLength >= packetLength) {
+        throw new Error(`Invalid padding length ${paddingLength} for packet length ${packetLength}`);
+      }
       const payload = decrypted.subarray(1, 1 + packetLength - 1 - paddingLength);
 
       this.seqNum++;
@@ -181,6 +184,9 @@ export class SSHPacketParser {
     }
 
     const paddingLength = decrypted[4];
+    if (paddingLength < 4 || paddingLength >= packetLength) {
+      throw new Error(`Invalid padding length ${paddingLength} for packet length ${packetLength}`);
+    }
     const payload = decrypted.subarray(5, 5 + packetLength - 1 - paddingLength);
 
     this.seqNum++;

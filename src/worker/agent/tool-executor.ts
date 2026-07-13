@@ -123,7 +123,7 @@ export class ToolExecutor {
       const reason = action === 'stop'
         ? `即将停止服务 ${service}，请确认`
         : `即将禁用服务 ${service}，请确认`;
-      const approved = await this.askConfirmation(`systemctl ${action} ${service}`, reason);
+      const approved = await this.askConfirmationWithAbort(`systemctl ${action} ${service}`, reason, signal);
       if (!approved) {
         return JSON.stringify({ stdout: '', stderr: '用户拒绝执行此操作', exit_code: -1, user_rejected: true });
       }
@@ -147,7 +147,7 @@ export class ToolExecutor {
         rmi: `即将删除镜像 ${target}，此操作不可逆，请确认`,
         restart: `即将重启容器 ${target}，请确认`,
       };
-      const approved = await this.askConfirmation(cmd, reasons[action] || `即将执行: ${cmd}`);
+      const approved = await this.askConfirmationWithAbort(cmd, reasons[action] || `即将执行: ${cmd}`, signal);
       if (!approved) {
         return JSON.stringify({ stdout: '', stderr: '用户拒绝执行此操作', exit_code: -1, user_rejected: true });
       }

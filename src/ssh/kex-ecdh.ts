@@ -26,6 +26,13 @@ function ecdhSubtle(): ECDHSubtleCrypto {
   return crypto.subtle as unknown as ECDHSubtleCrypto;
 }
 
+function isAllZero(bytes: Uint8Array): boolean {
+  for (const byte of bytes) {
+    if (byte !== 0) return false;
+  }
+  return true;
+}
+
 export class ECDHKeyExchange {
   static async generateKeyPair(): Promise<CryptoKeyPair> {
     return ecdhSubtle().generateKey(
@@ -90,7 +97,12 @@ export class ECDHKeyExchange {
       256
     );
 
-    return toSSHMPInt(new Uint8Array(sharedBits));
+    const sharedSecret = new Uint8Array(sharedBits);
+    if (isAllZero(sharedSecret)) {
+      throw new Error('ECDH key exchange failed: all-zero shared secret');
+    }
+
+    return toSSHMPInt(sharedSecret);
   }
 
   static async computeExchangeHash(

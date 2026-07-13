@@ -165,9 +165,11 @@ export class SSHTerminal {
   private lastPingTime: number | null = null;
   private wsLatency: number | null = null;
   private onLatencyUpdated?: (cfLatency: number | null, cfColo: string | null, wsLatency: number | null) => void;
+  private resizeListener: () => void;
 
   constructor(containerId: string) {
     this.container = document.getElementById(containerId)!;
+    this.resizeListener = () => this.fit();
 
     this.terminal = new Terminal({
       cursorBlink: true,
@@ -200,7 +202,7 @@ export class SSHTerminal {
       return true;
     });
 
-    window.addEventListener('resize', () => this.fit());
+    window.addEventListener('resize', this.resizeListener);
 
     // Right-click paste support
     this.container.addEventListener('contextmenu', async (e) => {
@@ -533,12 +535,12 @@ export class SSHTerminal {
           switch (msg.type) {
             case 'status':
               this.terminal.writeln(`\x1b[32m[*] ${msg.message}\x1b[0m`);
-              if (msg.message === '认证成功') {
+              if (msg.event === 'auth_success' || msg.message === '认证成功') {
                 this.reconnectAttempts = 0;
                 const statusText = document.getElementById('status-text');
                 if (statusText) statusText.innerHTML = '<span class="w-2 h-2 bg-[var(--accent)] inline-block animate-pulse"></span> STATUS: ONLINE';
               }
-              if (msg.message === 'Shell 已就绪') {
+              if (msg.event === 'shell_ready' || msg.message === 'Shell 已就绪') {
                 this.onSessionReady?.();
               }
               break;
@@ -758,6 +760,7 @@ export class SSHTerminal {
 
   dispose(): void {
     this.disconnect();
+    window.removeEventListener('resize', this.resizeListener);
     this.terminalDisposables.forEach(d => d.dispose());
     this.terminalDisposables = [];
     this.terminal.dispose();

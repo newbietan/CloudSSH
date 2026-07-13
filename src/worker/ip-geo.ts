@@ -175,6 +175,6 @@ function fallbackByLatLon(lat: number, lon: number): string | undefined {
   if (lon < -30) return 'enam';                      // 美东/南美
   if (lon < 60) return 'weur';                       // 欧洲西部（粗略）
   if (lon < 90) return 'me';                         // 中东/中亚
-  if (lon < 140) return 'apac-ne';                  // 东亚
+  if (lon < 140) return 'apac';                      // 东亚
   return 'apac';                                     // 亚太其他
 }
