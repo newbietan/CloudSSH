@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.7] - 2026-07-13
+
+### Fixed
+- 修复 `bigIntMod` 大数取模卡死：RSA 私钥认证时逐字节减法循环复杂度为 O(a/m)，大密钥下无限循环。改用原生 `BigInt` 取模，O(1) 完成。
+- 修复 ECDH 共享密钥未做全零校验：不符合 RFC 5656 §4 要求，现拒绝全零共享密钥。
+- 修复 KEX_INIT 解析缺少边界检查：畸形包可导致 buffer 越界读取，现对 `length` 字段和 `offset` 做前置校验。
+- 修复 SSH 包 padding 长度未校验：缺少 `paddingLength < 4`（RFC 4253 §6 最小填充）和 `>= packetLength` 越界检查，两条解析路径均已补齐。
+- 修复 NEWKEYS 后序列号未重置：不符合 RFC 4253 §7.3 规范，现发送 NEWKEYS 后立即将 `seqNumSend` 和 `packetParser.seqNum` 归零。
+- 修复 Agent 确认等待无法被中止：`askConfirmation` 在 Agent 被停止时永久挂起，新增 `askConfirmationWithAbort` 通过 `Promise.race` 响应 abort 信号。
+- 修复终端 resize 事件监听器内存泄漏：匿名箭头函数无法 `removeEventListener`，现存储引用并在 `dispose()` 中正确移除。
+- 修复会话就绪状态依赖硬编码中文匹配：`sendStatus` 新增结构化 `event` 字段（`auth_success`/`shell_ready`），前端优先匹配事件名，向后兼容旧消息文本。
+- 修复 `user_id` 参数缺少 `isNaN` 校验：5 处内部 API 的 `parseInt` 结果未校验，可被注入非数字字符串。
+- 修复 500 错误响应泄露内部错误信息：`handleServersRoute` 的 catch 块直接返回原始 `e.message`，现统一返回 `"Internal Server Error"`。
+- 修复 `ip-geo.ts` 区域推断返回无效 `apac-ne`：非合法 Cloudflare DO locationHint，现统一为 `apac`。
+- 修复 SSH 连接配置通过 URL query param 传递的安全隐患：私钥等敏感信息会出现在 URL 日志和浏览器历史中，改用 `x-ssh-config` HTTP header 传递，同时避免 URL 长度超限。
+- 修复 LLM 输出未脱敏：Agent 工具执行结果在送入 LLM 前未过滤敏感信息，现正则脱敏 PEM 私钥、JWT、GitHub Token、AWS Key ID 四类密钥。
+
+### Added
+- 新增 WebSocket 错误日志：`webSocketError` 回调补充 `console.error` 便于排查连接异常。
+- 新增 `derivedKeyCache` 加密密钥缓存：PBKDF2 10 万次迭代开销大，缓存 `CryptoKey` 避免重复推导。
+
 ## [1.0.6] - 2026-07-12
 
 ### Added
