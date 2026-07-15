@@ -554,6 +554,7 @@ export class UserDBDO {
       privateKey: server.auth_method === 'publickey' ? credential : '',
       expectedFingerprint,
       userId: String(body.user_id),
+      githubId: String(github_id),
       locationHint,
     };
 

@@ -50,6 +50,7 @@ export interface SSHConnectionConfig {
   rows?: number;
   expectedFingerprint?: string;
   userId?: string;
+  githubId?: string;
   /**
    * Cloudflare DO locationHint。
    * - 用户保存服务器时手动覆盖的 `region` → 优先使用

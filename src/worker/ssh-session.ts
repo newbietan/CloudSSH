@@ -121,6 +121,7 @@ export class SSHSession {
   private confirmationResolve: ((approved: boolean) => void) | null = null;
   private env: Env | null = null;
   private userId: string | null = null;
+  private githubId: string | null = null;
 
   constructor(
     ws: WebSocket,
@@ -131,6 +132,7 @@ export class SSHSession {
     sftpAttachUrl?: string,
     env?: Env,
     userId?: string,
+    githubId?: string,
   ) {
     this.ws = ws;
     this.socket = socket;
@@ -140,6 +142,7 @@ export class SSHSession {
     this.sftpAttachUrl = sftpAttachUrl;
     this.env = env || null;
     this.userId = userId || null;
+    this.githubId = githubId || null;
 
     this.transport = new SSHTransport();
     this.packetParser = new SSHPacketParser();
@@ -1726,7 +1729,7 @@ export class SSHSession {
       this.agentCore = new AgentCore(
         this.terminalContext,
         (msg: any) => this.sendAgentFrame(msg),
-        async (uid: string) => this.fetchAgentAIConfig(uid),
+        async (uid: string) => this.fetchAgentAIConfig(uid, this.githubId!),
         async (command: string, timeout: number, signal?: AbortSignal) => this.executeAgentCommand(command, timeout, signal),
         async (command: string, reason: string) => this.askAgentConfirmation(command, reason),
       );
@@ -1753,10 +1756,10 @@ export class SSHSession {
     }
   }
 
-  private async fetchAgentAIConfig(userId: string): Promise<{ base_url: string; model: string; api_key: string } | null> {
+  private async fetchAgentAIConfig(userId: string, githubId: string): Promise<{ base_url: string; model: string; api_key: string } | null> {
     if (!this.env) return null;
     try {
-      const stub = this.env.USER_DB.get(this.env.USER_DB.idFromName(userId));
+      const stub = this.env.USER_DB.get(this.env.USER_DB.idFromName(githubId));
       const res = await stub.fetch(
         new Request(`http://internal/internal/ai-config/decrypt?user_id=${userId}`)
       );

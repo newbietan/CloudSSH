@@ -271,7 +271,7 @@ export class SSHSessionDO {
         config.rows = pendingSize.rows;
       }
       const sftpAttachUrl = this.pendingAttachUrls.get(ws);
-      const session = new SSHSession(ws, socket, config, strictVerify, debugMode, sftpAttachUrl, this.env, config.userId);
+      const session = new SSHSession(ws, socket, config, strictVerify, debugMode, sftpAttachUrl, this.env, config.userId, config.githubId);
       this.sessions.set(ws, session);
 
       // 向前端发送双段延迟的物理基准延迟
