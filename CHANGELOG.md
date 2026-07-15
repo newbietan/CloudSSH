@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.8] - 2026-07-15
+
+### Changed
+- 废弃 AI Agent 严格白名单策略，改用黑名单策略以提升使用体验：原策略仅 22 个只读命令免确认、其余一律确认，使用极为繁琐；现改为黑名单兜底 + AI 大脑自主判断，AI 可主动调用 `ask_user_confirmation` 工具评估风险，大幅减少无谓打断。安全分层保持不变：`isBlockedCommand` 直接拒绝灾难性命令（fork bomb、`rm -rf /`、`mkfs`、`dd of=/dev/sd*`），`needsConfirmation` 在 AI 漏判时兜底强制确认。
+- 优化内存限流机制：Worker 实例级 `Map<ip,{count,resetAt}>` 增加惰性清理（每 256 次检查触发）和 10000 条上限 FIFO 淘汰，避免 isolate 内无限增长；定位为「削峰」而非鉴权，真正的连接鉴权仍由 Turnstile 与一次性 token 负责。
+- 统一 SSH 序列号回绕处理：提取纯函数 `nextSequenceNumber(value)` 使用 `(value + 1) >>> 0` 无符号 32 位回绕，修复旧 `this.seqNum++` 在 `2^32-1` 时溢出为 `Number(2^32)` 破坏 SSH 解密的潜在缺陷，符合 RFC 4253 §6.4 / RFC 4344。
+- 收紧匿名身份信任边界：区分 Worker 内部可信 `x-ssh-config` HTTP 头（保留 userId）与匿名 URL query param（强制剥离 userId），并在 `/api/ssh` 入口 `headers.delete('x-ssh-config')` 防止匿名连接通过 HTTP 头注入伪造配置，杜绝提权路径。
+- 根据精简修复清单进行全面重构：统一 SFTP 句柄生命周期与 2000 条目截断保护，简化 `user-db.ts` 查询路径，精简 `sftp-handler` 下载队列，前端 `tab-manager` 多会话协调增强，整体 -588 行冗余代码。
+- Agent 工具执行器确认流程由 `askConfirmation` 改为 `askConfirmationWithAbort` 与 `Promise.race` 竞争 abort 信号，避免 Agent 被停止时确认流程永久挂起。
+
+### Fixed
+- 修复 `rm -fr /` 漏拦（只触发确认而非直接拒绝）：旧正则 `-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*` 要求 `r` 必须在 `f` 之前，flag 反序的 `rm -fr /` 匹配失败。改为解析 rm 短选项字段集合判断「含 r 且含 f」，顺序无关，覆盖 `rm -fr /`、`rm -r -f /`、`rm -rfv /` 等全部变体直接拦截。
+- 补齐 AI Agent 黑名单高危模式兜底：新增 6 条高破坏低误报模式（`iptables -X` 清空链表、`kill -9 -1/0/1` 杀全部进程、`curl|sh` / `wget|bash` 远程脚本执行、`find -delete` 与 `find -exec rm` 递归删除），弥补白名单转黑名单后的兜底覆盖缺口；`apt-get install`、`pkill`、`sudo 写操作` 等运维常用路径仍交由 AI 大脑自主判断。
+- 修复 AI base_url 末尾带 `/chat/completions` 时自动获取模型列表失败：智能容错自动剥离该后缀，并兼容 `Array` / `data` / `models` 三种模型列表响应形态，适配 OpenAI/Anthropic/各兼容服务商。
+- 修复 Cloudflare Workers `fetch` 不支持 `redirect: 'error'` 导致跑通失败：改为 `redirect: 'manual'` 并显式拦截 3xx 响应以保持 SSRF 防护语义，兼容 Workers 运行时。
+- 修复已登录用户无法使用 AI 助手：头注入路径与匿名连接的 userId 剥离逻辑混淆，现严格区分两条路径——`x-ssh-config` 可信头保留 `userId`，URL `config` 参数强制 `delete userId`。
+- 修复 AI Agent 读取配置时内部路由查询失败误报「未配置」：`fetchAgentAIConfig` 改为按 `githubId` 路由到对应 `UserDBDO` 实例，新增 `SSHConnectionConfig.githubId` 字段贯穿 DO 构造链路，避免会话级配置与存储实例错位。
+- 前端透传模型列表获取失败的具体原因：当 AI 提供商 URL 被网络拦截或触发重定向时，前端显示明确错误而非笼统失败，便于用户排查网络环境。
+
+### Added
+- `tests/worker/agent/safety.test.ts` 新增 3 个用例覆盖 `rm -fr` 漏拦修复与黑名单补漏，附相近安全形态（普通 `curl`/`wget`/`find`、`kill -9 <PID>`、`pkill`）的误伤防护回归测试。
+- `tests/worker/security.test.ts` 新增 178 行回归测试覆盖限流机制、匿名身份剥离、可信头注入防御的安全边界。
+
+### Note
+- 本次安全策略调整方向：**AI 大脑仍是主决策者**，底层 `isBlockedCommand` / `needsConfirmation` 仅在 AI 漏判时兜底。system prompt 中风险判断引导与 `ask_user_confirmation` 工具未变动，AI 主动判断空间完整保留。
+
 ## [1.0.7] - 2026-07-13
 
 ### Fixed
