@@ -71,18 +71,27 @@ export class SSHSessionDO {
         return new Response('Invalid request body', { status: 400 });
       }
     } else {
-      const configParam = request.headers.get('x-ssh-config') || url.searchParams.get('config');
-      if (configParam) {
+      const headerConfig = request.headers.get('x-ssh-config');
+      const paramConfig = url.searchParams.get('config');
+
+      if (headerConfig) {
         try {
-          prefilledConfig = JSON.parse(decodeURIComponent(configParam)) as SSHConnectionConfig;
+          prefilledConfig = JSON.parse(decodeURIComponent(headerConfig)) as SSHConnectionConfig;
+          // 来自 Worker 内部可信头的配置，保留 userId
+        } catch {
+          return new Response('Invalid config header', { status: 400 });
+        }
+      } else if (paramConfig) {
+        try {
+          prefilledConfig = JSON.parse(decodeURIComponent(paramConfig)) as SSHConnectionConfig;
+          // 来自 URL 的匿名配置，必须剥离 userId 防止提权伪造
+          if (prefilledConfig && typeof prefilledConfig === 'object') {
+            delete prefilledConfig.userId;
+          }
         } catch {
           return new Response('Invalid config parameter', { status: 400 });
         }
       }
-    }
-
-    if (prefilledConfig && typeof prefilledConfig === 'object') {
-      delete prefilledConfig.userId;
     }
 
     const pair = new WebSocketPair();

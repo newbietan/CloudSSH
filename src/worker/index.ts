@@ -573,6 +573,7 @@ async function handleSSHConnection(request: Request, env: Env): Promise<Response
 
   const headers = new Headers(request.headers);
   headers.set('x-cloudflare-colo', (request as any).cf?.colo || 'UNKNOWN');
+  headers.delete('x-ssh-config'); // 防御：禁止匿名连接通过 HTTP 头注入配置
 
   return stub.fetch(new Request(doUrl.toString(), { headers }));
 }
