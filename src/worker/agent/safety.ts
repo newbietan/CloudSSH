@@ -13,9 +13,25 @@ export function isBlockedCommand(command: string): { blocked: boolean; reason?: 
     return { blocked: true, reason: '禁止执行 Fork Bomb (资源耗尽攻击)' };
   }
 
-  // rm -rf / and variants
-  if (/(^|\s)rm\s+-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*\s+(\/|~\/?|\/\*?)(\s|$)/.test(normalized)) {
-    return { blocked: true, reason: '禁止执行高危删除操作 (rm -rf /)' };
+  // rm -rf / and variants — flag 顺序无关：只要短选项同时含 r 和 f，且目标是
+  // 根目录、家目录或根下通配即视为极度危险。覆盖 rm -rf /、rm -fr /、rm -r -f / 等。
+  if (/(^|\s)rm\s+-[a-zA-Z]+/.test(normalized)) {
+    const rmMatch = normalized.match(/(^|\s)rm\s+(-[a-zA-Z-]+(?:\s+\S+)?)/);
+    if (rmMatch) {
+      const flags = rmMatch[2];
+      const hasR = /r/.test(flags);
+      const hasF = /f/.test(flags);
+      if (hasR && hasF) {
+        // 提取目标参数（首个非 flag 段）
+        const segments = normalized.split(/\s+/);
+        const rmIdx = segments.indexOf('rm');
+        const flagEnd = segments.findIndex((s, i) => i > rmIdx && !s.startsWith('-'));
+        const target = flagEnd > 0 ? segments[flagEnd] : '';
+        if (/^(\/|~\/?|\/\*?|\*?)$/.test(target)) {
+          return { blocked: true, reason: '禁止执行高危删除操作 (rm -rf /)' };
+        }
+      }
+    }
   }
   
   // Wiping disk
@@ -53,7 +69,16 @@ export function needsConfirmation(command: string): { required: boolean; reason?
     { pattern: /(^|\s)parted(\s|$)/, reason: '磁盘分区操作' },
     { pattern: /(^|\s)dd(\s|$)/, reason: '低级磁盘拷贝/覆盖' },
     { pattern: /(^|\s)iptables\s+-f(\s|$)/i, reason: '清空防火墙规则' },
+    { pattern: /(^|\s)iptables\s+-x(\s|$)/i, reason: '清空自定义链表' },
     { pattern: /(^|\s)ufw\s+disable(\s|$)/i, reason: '禁用防火墙' },
+    // 杀全部进程（一锅端），与按 PID 杀进程的 kill 不同，破坏面广且难以恢复
+    { pattern: /(^|\s)kill\s+-9\s+(-1|0|1)(\s|$)/, reason: '杀死全部进程' },
+    { pattern: /(^|\s)kill\s+--signal\s+sigkill(\s|$)/i, reason: '杀死进程' },
+    // 远程脚本执行（curl/wget 管道给 shell），普通 curl/wget 不受影响
+    { pattern: /(curl|wget)\b[^|]*\|\s*(sh|bash)(\s|$)/i, reason: '远程下载并执行脚本' },
+    // find 递归删除（直接 -delete 或 -exec rm），危险面广
+    { pattern: /(^|\s)find\s+.*-delete(\s|$)/, reason: 'find 递归删除文件' },
+    { pattern: /(^|\s)find\s+.*-exec\s+rm(\s|$)/, reason: 'find 递归执行 rm' },
   ];
 
   for (const { pattern, reason } of DANGEROUS_PATTERNS) {
