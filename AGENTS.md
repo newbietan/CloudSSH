@@ -25,7 +25,7 @@ CloudSSH is a serverless Web SSH terminal built on Cloudflare Workers. Users con
 ```
 src/
 ├── worker/           # Cloudflare Worker entry and Durable Objects
-│   ├── index.ts      # Main worker entry (request routing)
+│   ├── index.ts      # Main worker entry (request routing, bounded in-memory SSH rate limiting)
 │   ├── durable-object.ts  # SSHSessionDO - manages SSH sessions
 │   ├── ssh-session.ts     # SSH session logic, multi-channel routing, SFTP handling
 │   ├── sftp-handler.ts    # SFTP protocol ops, task queue, concurrent download, upload tracking
@@ -118,7 +118,6 @@ Two Durable Objects handle state:
 
 2. **UserDBDO** (`src/worker/user-db.ts`)
    - SQLite-based user and server storage
-   - Rate limiting implementation
    - GitHub OAuth user management
 
 ## Environment Variables
@@ -208,6 +207,7 @@ ci: CI/CD 变更
 6. **AI Agent runs in DO** - The agent control loop (`agent/core.ts`) executes inside the Durable Object, not the Worker itself, to access the SSH session directly
 7. **Agent tool confirmations** - Dangerous commands (rm -rf, shutdown, etc.) require user confirmation via `agent_confirm` WebSocket message before execution. Blocked commands (rm -rf /, fork bomb, etc.) are rejected outright without prompting.
 8. **Agent loop timeouts & Watchdog** - The agent run loop has a step-based timeout of 60 seconds (managed by a watchdog timer in `agent/core.ts` that resets after each LLM response or tool execution). When waiting for user confirmation via `agent_confirm`, the watchdog timer is paused to prevent timeouts due to user delays.
+9. **SSH rate limiting** - `/api/ssh` uses a bounded, Worker-isolate in-memory limiter for traffic shedding. It skips requests without `CF-Connecting-IP`; Turnstile and one-time tokens remain the connection authorization controls.
 
 ## Deployment Notes
 
@@ -275,4 +275,3 @@ CLI: `npx wrangler secret set <SECRET_NAME>`
    - 必须遵循 [Keep a Changelog](https://keepachangelog.com/) 规范组织内容。
 2. **README 导航链接维护**：
    - `README.md` 中的 `更新日志` 链接与 `README_en.md` 中的 `Changelog` 跳转超链接必须保持正常。
-

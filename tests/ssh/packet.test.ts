@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SSHPacketParser, SSHPacketBuilder } from '../../src/ssh/packet';
+import { SSHPacketParser, SSHPacketBuilder, nextSequenceNumber } from '../../src/ssh/packet';
 import type { SSHPacket } from '../../src/types';
 import { readUint32 } from '../../src/ssh/utils';
 
@@ -763,6 +763,12 @@ describe('packet — compactChunks 回收（33+ chunk 边界）', () => {
 // seqNum / buffer 查询方法
 // =====================================================================
 describe('packet — seqNum 与 buffer 查询方法', () => {
+  it('序列号按 uint32 递增并在上限回绕', () => {
+    expect(nextSequenceNumber(0)).toBe(1);
+    expect(nextSequenceNumber(0xfffffffe)).toBe(0xffffffff);
+    expect(nextSequenceNumber(0xffffffff)).toBe(0);
+  });
+
   it('getSeqNum 初始应为 0', () => {
     const parser = new SSHPacketParser();
     expect(parser.getSeqNum()).toBe(0);

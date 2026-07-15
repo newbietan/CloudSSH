@@ -7,7 +7,7 @@ import type { Env } from '../../src/types';
 // CloudSSH worker 外层接缝的安全回归测试。聚焦"关键安全领域"，
 // 不追求全分支覆盖——有状态组件走人工测试。
 // 
-// 12 条用例覆盖五类高危漏洞：
+// 用例覆盖五类高危漏洞：
 //   1. CSRF        — OAuth 回调 state 校验
 //   2. IDOR/越权   — handler 强制覆盖 body.user_id、DO 层二次归属校验
 //   3. SSRF 接缝   — AI base_url 经 validateBaseUrl 在路由层拦截
@@ -233,6 +233,37 @@ describe('安全 — SSRF 接缝（AI base_url）', () => {
       expect.objectContaining({ url: expect.stringContaining('/internal/ai-config') })
     );
   });
+
+  it('POST /api/ai/models 拒绝 Provider 重定向', async () => {
+    const worker = await loadWorker();
+    const env = makeEnv({
+      userDbStub: makeDOStub((req) => {
+        if (req.url.includes('/internal/session/verify')) {
+          return new Response(JSON.stringify({ id: 1, github_id: 42, username: 'alice', avatar_url: '' }), {
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response('{}', { status: 500 });
+      }),
+    });
+    fetchMock.mockResolvedValueOnce(new Response(null, {
+      status: 302,
+      headers: { Location: 'http://127.0.0.1/models' },
+    }));
+
+    const req = makeRequest('/api/ai/models', {
+      method: 'POST',
+      cookies: { session: '42:legit_session' },
+      body: { base_url: 'https://api.example.com/v1', api_key: 'test-key' },
+    });
+    const res = await worker.fetch(req, env);
+
+    expect(res.status).toBe(403);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.example.com/v1/models',
+      expect.objectContaining({ redirect: 'manual' }),
+    );
+  });
 });
 
 // =====================================================================
@@ -326,6 +357,43 @@ describe('安全 — 跨站 WebSocket 劫持（CSWSH）', () => {
 // =====================================================================
 
 describe('安全 — 一次性 token 与接缝鉴权', () => {
+  it('connect token 使用 githubId 前缀定位 UserDBDO 分片', async () => {
+    const worker = await loadWorker();
+    const idFromName = vi.fn(() => 'do-userdb');
+    const userDbStub = makeDOStub(() => Response.json({
+      host: 'ssh.example.com',
+      port: 22,
+      username: 'alice',
+      password: 'secret',
+      userId: '12',
+      githubId: '987',
+    }));
+    let forwardedConfig: any;
+    const sshSessionStub = makeDOStub((req) => {
+      const header = req.headers.get('x-ssh-config');
+      forwardedConfig = header ? JSON.parse(decodeURIComponent(header)) : null;
+      return new Response('forwarded');
+    });
+    const env = makeEnv({ sshSessionStub });
+    env.USER_DB = { idFromName, get: () => userDbStub } as any;
+
+    const req = makeRequest('/api/ssh?token=987:one-time-token', {
+      headers: {
+        'CF-Connecting-IP': '203.0.113.20',
+        Upgrade: 'websocket',
+        Origin: 'https://cloudssh.test',
+      },
+    });
+    const res = await worker.fetch(req, env);
+
+    expect(res.status).toBe(200);
+    expect(idFromName).toHaveBeenCalledWith('987');
+    expect(forwardedConfig).toEqual(expect.objectContaining({
+      userId: '12',
+      githubId: '987',
+    }));
+  });
+
   it('伪造的 connect token → 403 Invalid or expired connection token', async () => {
     const worker = await loadWorker();
     const env = makeEnv({
@@ -386,5 +454,113 @@ describe('安全 — 速率限制', () => {
 
     const res = await worker.fetch(req, env);
     expect(res.status).toBe(429);
+    expect(Number(res.headers.get('Retry-After'))).toBeGreaterThan(0);
+  });
+
+  it('不同 IP 使用独立计数桶', async () => {
+    const worker = await loadWorker();
+    const env = makeEnv();
+    const requestFor = (ip: string) => makeRequest('/api/ssh', {
+      headers: {
+        'CF-Connecting-IP': ip,
+        Upgrade: 'websocket',
+        Origin: 'https://evil.attacker.com',
+      },
+    });
+
+    for (let i = 0; i < 10; i++) {
+      await worker.fetch(requestFor('203.0.113.30'), env);
+    }
+
+    expect((await worker.fetch(requestFor('203.0.113.30'), env)).status).toBe(429);
+    expect((await worker.fetch(requestFor('203.0.113.31'), env)).status).toBe(403);
+  });
+
+  it('限流窗口过期后允许重新请求', async () => {
+    const now = vi.spyOn(Date, 'now');
+    const startedAt = 1_800_000_000_000;
+    now.mockReturnValue(startedAt);
+    const worker = await loadWorker();
+    const env = makeEnv();
+    const request = makeRequest('/api/ssh', {
+      headers: {
+        'CF-Connecting-IP': '203.0.113.32',
+        Upgrade: 'websocket',
+        Origin: 'https://evil.attacker.com',
+      },
+    });
+
+    for (let i = 0; i < 10; i++) {
+      await worker.fetch(request, env);
+    }
+    expect((await worker.fetch(request, env)).status).toBe(429);
+
+    now.mockReturnValue(startedAt + 60_000);
+    expect((await worker.fetch(request, env)).status).toBe(403);
+    now.mockRestore();
+  });
+
+  it('缺少 CF-Connecting-IP 时不共享 unknown 限流桶', async () => {
+    const worker = await loadWorker();
+    const env = makeEnv();
+
+    for (let i = 0; i < 11; i++) {
+      const res = await worker.fetch(makeRequest('/api/ssh', {
+        headers: { Upgrade: 'websocket', Origin: 'https://evil.attacker.com' },
+      }), env);
+      expect(res.status).toBe(403);
+    }
+  });
+});
+
+describe('安全 — SSH 身份字段信任边界', () => {
+  it('匿名配置同时剥离 userId 与 githubId', async () => {
+    const { stripUntrustedIdentity } = await import('../../src/worker/durable-object');
+    const config = {
+      host: 'example.com',
+      port: 22,
+      username: 'alice',
+      password: 'secret',
+      userId: '12',
+      githubId: '987',
+    };
+
+    stripUntrustedIdentity(config);
+
+    expect(config).not.toHaveProperty('userId');
+    expect(config).not.toHaveProperty('githubId');
+  });
+
+  it('Agent 使用 githubId 定位分片并用 userId 查询配置', async () => {
+    const { SSHSession } = await import('../../src/worker/ssh-session');
+    const idFromName = vi.fn(() => 'do-userdb-987');
+    let requestedUrl = '';
+    const userDbStub = makeDOStub((req) => {
+      requestedUrl = req.url;
+      return Response.json({
+        base_url: 'https://api.example.com/v1',
+        model: 'test-model',
+        api_key: 'test-key',
+      });
+    });
+    const env = makeEnv();
+    env.USER_DB = { idFromName, get: () => userDbStub } as any;
+    const session = new SSHSession(
+      {} as WebSocket,
+      {} as any,
+      { host: 'ssh.example.com', port: 22, username: 'alice', password: 'secret' },
+      true,
+      false,
+      undefined,
+      env,
+      '12',
+      '987',
+    );
+
+    const config = await (session as any).fetchAgentAIConfig('12', '987');
+
+    expect(idFromName).toHaveBeenCalledWith('987');
+    expect(requestedUrl).toContain('/internal/ai-config/decrypt?user_id=12');
+    expect(config?.model).toBe('test-model');
   });
 });

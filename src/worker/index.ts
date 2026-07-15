@@ -13,26 +13,48 @@ export { UserDBDO } from './user-db';
 
 const RATE_LIMIT_MAX = 10;      // max requests per window
 const RATE_LIMIT_WINDOW = 60000; // 1 minute window
+const RATE_LIMIT_MAX_ENTRIES = 10000;
+const RATE_LIMIT_CLEANUP_INTERVAL = 256;
 
-// 内存级速率限制（Worker 实例级）
+// Worker 实例级削峰；Turnstile 和一次性 token 仍负责实际连接鉴权。
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+let rateLimitChecks = 0;
 
-function isMemoryRateLimited(ip: string): boolean {
+function cleanExpiredRateLimits(now: number): void {
+  for (const [ip, record] of rateLimitMap) {
+    if (now >= record.resetAt) {
+      rateLimitMap.delete(ip);
+    }
+  }
+}
+
+function getRateLimitRetryAfter(ip: string | null): number | null {
+  if (!ip) return null;
+
   const now = Date.now();
+  rateLimitChecks++;
+  if (rateLimitChecks % RATE_LIMIT_CLEANUP_INTERVAL === 0) {
+    cleanExpiredRateLimits(now);
+  }
+
   let record = rateLimitMap.get(ip);
-  
-  if (!record || now > record.resetAt) {
+
+  if (!record || now >= record.resetAt) {
+    if (!record && rateLimitMap.size >= RATE_LIMIT_MAX_ENTRIES) {
+      const oldestIP = rateLimitMap.keys().next().value;
+      if (oldestIP !== undefined) rateLimitMap.delete(oldestIP);
+    }
     record = { count: 1, resetAt: now + RATE_LIMIT_WINDOW };
     rateLimitMap.set(ip, record);
-    return false;
+    return null;
   }
-  
+
   if (record.count >= RATE_LIMIT_MAX) {
-    return true;
+    return Math.max(1, Math.ceil((record.resetAt - now) / 1000));
   }
-  
+
   record.count++;
-  return false;
+  return null;
 }
 
 async function verifyTurnstile(token: string, secret: string, ip: string): Promise<boolean> {
@@ -208,10 +230,13 @@ export default {
     }
 
     if (url.pathname === '/api/ssh') {
-      // Apply rate limiting (distributed via Durable Object)
-      const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
-      if (isMemoryRateLimited(clientIP)) {
-        return new Response('Too Many Requests', { status: 429 });
+      const clientIP = request.headers.get('CF-Connecting-IP');
+      const retryAfter = getRateLimitRetryAfter(clientIP);
+      if (retryAfter !== null) {
+        return new Response('Too Many Requests', {
+          status: 429,
+          headers: { 'Retry-After': String(retryAfter) },
+        });
       }
 
       // Check for one-time-token (from server management connect)
@@ -233,7 +258,7 @@ export default {
           if (!turnstileToken) {
             return Response.json({ error: 'Missing Turnstile token' }, { status: 403 });
           }
-          const isValid = await verifyTurnstile(turnstileToken, env.TURNSTILE_SECRET, clientIP);
+          const isValid = await verifyTurnstile(turnstileToken, env.TURNSTILE_SECRET, clientIP || '');
           if (!isValid) {
             return Response.json({ error: 'Turnstile verification failed' }, { status: 403 });
           }

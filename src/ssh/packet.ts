@@ -5,6 +5,10 @@ const EMPTY_BUFFER = new Uint8Array(0);
 const COMPACT_CHUNKS_THRESHOLD = 32;
 const MAX_PACKET_SIZE = 256 * 1024; // 256KB — RFC 4253 §6.1 requires at least 35000 bytes
 
+export function nextSequenceNumber(value: number): number {
+  return (value + 1) >>> 0;
+}
+
 export class SSHPacketParser {
   private chunks: Uint8Array[] = [];
   private chunkIndex: number = 0;
@@ -141,7 +145,7 @@ export class SSHPacketParser {
       }
       const payload = decrypted.subarray(1, 1 + packetLength - 1 - paddingLength);
 
-      this.seqNum = (this.seqNum + 1) >>> 0;
+      this.seqNum = nextSequenceNumber(this.seqNum);
 
       return {
         length: packetLength,
@@ -189,7 +193,7 @@ export class SSHPacketParser {
     }
     const payload = decrypted.subarray(5, 5 + packetLength - 1 - paddingLength);
 
-    this.seqNum = (this.seqNum + 1) >>> 0;
+    this.seqNum = nextSequenceNumber(this.seqNum);
 
     return {
       length: packetLength,

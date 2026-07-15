@@ -26,7 +26,7 @@ import {
   SSH_MSG_UNIMPLEMENTED,
 } from '../types';
 import { SSHTransport } from '../ssh/transport';
-import { SSHPacketParser, SSHPacketBuilder } from '../ssh/packet';
+import { SSHPacketParser, SSHPacketBuilder, nextSequenceNumber } from '../ssh/packet';
 import {
   KEXInitBuilder,
   parseKEXInit,
@@ -272,7 +272,7 @@ export class SSHSession {
     const packet = await SSHPacketBuilder.build(
       this.kexInitLocal, 8, null, this.seqNumSend
     );
-    this.seqNumSend = (this.seqNumSend + 1) >>> 0;
+    this.seqNumSend = nextSequenceNumber(this.seqNumSend);
     await this.writeSocket(packet);
   }
 
@@ -299,7 +299,7 @@ export class SSHSession {
     const packet = await SSHPacketBuilder.build(
       kexInit, 8, null, this.seqNumSend
     );
-    this.seqNumSend = (this.seqNumSend + 1) >>> 0;
+    this.seqNumSend = nextSequenceNumber(this.seqNumSend);
     await this.writeSocket(packet);
   }
 
@@ -326,7 +326,7 @@ export class SSHSession {
         ? (packetData, seq) => this.encryptMac!.sign(packetData, seq)
         : undefined
     );
-    this.seqNumSend = (this.seqNumSend + 1) >>> 0;
+    this.seqNumSend = nextSequenceNumber(this.seqNumSend);
     return packet;
   }
 
@@ -353,7 +353,7 @@ export class SSHSession {
         ? (packetData, seq) => this.encryptMac!.sign(packetData, seq)
         : undefined
     );
-    this.seqNumSend = (this.seqNumSend + 1) >>> 0;
+    this.seqNumSend = nextSequenceNumber(this.seqNumSend);
     return packet;
   }
 
@@ -556,7 +556,7 @@ export class SSHSession {
         const packet = await SSHPacketBuilder.build(
           newKeys, 8, null, this.seqNumSend
         );
-        this.seqNumSend = (this.seqNumSend + 1) >>> 0;
+        this.seqNumSend = nextSequenceNumber(this.seqNumSend);
         await this.writeSocket(packet);
         this.sendDebug(`Client NEWKEYS sent, seqNumSend=${this.seqNumSend}`);
 
