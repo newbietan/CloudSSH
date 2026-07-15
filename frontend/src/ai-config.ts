@@ -132,7 +132,8 @@ export class AIConfigPanel {
       }
 
       if (data.fallback && data.models?.length === 0) {
-        this.showFetchStatus('Provider 不支持自动获取，请手动输入模型名称', false);
+        const reason = data.reason ? ` (${data.reason})` : '';
+        this.showFetchStatus(`Provider 不支持自动获取${reason}，请手动输入模型名称`, false);
         return;
       }
 
