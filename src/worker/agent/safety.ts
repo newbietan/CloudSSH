@@ -1,44 +1,65 @@
-// Strict whitelist-based command safety logic
-
-const SAFE_COMMANDS = new Set([
-  'pwd', 'ls', 'cat', 'whoami', 'id', 'groups', 
-  'uname', 'uptime', 'date', 'echo', 'which', 'whereis', 
-  'hostname', 'ps', 'df', 'free', 'head', 'tail', 'wc', 'grep', 'stat', 'file'
-]);
+// Blacklist-based command safety logic
 
 /**
  * Check if a command is blocked (never allowed)
- * In the new whitelist model, we no longer outright block commands.
- * We simply require user confirmation for anything not explicitly whitelisted.
+ * This is the ultimate fallback to prevent catastrophic destruction.
  */
 export function isBlockedCommand(command: string): { blocked: boolean; reason?: string } {
+  const trimmed = command.trim();
+  const normalized = trimmed.toLowerCase();
+
+  // Fork bombs
+  if (trimmed.includes(':(){ :|:& };:') || trimmed.includes('fork while fork')) {
+    return { blocked: true, reason: '禁止执行 Fork Bomb (资源耗尽攻击)' };
+  }
+
+  // rm -rf / and variants
+  if (/(^|\s)rm\s+-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*\s+(\/|~\/?|\/\*?)(\s|$)/.test(normalized)) {
+    return { blocked: true, reason: '禁止执行高危删除操作 (rm -rf /)' };
+  }
+  
+  // Wiping disk
+  if (/(^|\s)mkfs(\.[a-z0-9]+)?\s+/.test(normalized)) {
+    return { blocked: true, reason: '禁止格式化磁盘' };
+  }
+  if (/(^|\s)dd\s+.*of=\/dev\/(sd|hd|nvme|vd)[a-z0-9]/.test(normalized)) {
+    return { blocked: true, reason: '禁止覆盖块设备' };
+  }
+
   return { blocked: false };
 }
 
 /**
- * Check if a command requires user confirmation
- * Only explicitly safe, read-only commands can run without confirmation.
+ * Check if a command requires mandatory user confirmation.
+ * The AI is the "brain" and can choose to ask for confirmation via the ask_user_confirmation tool.
+ * This is just a fallback for extremely high-risk commands that could break the system.
  */
 export function needsConfirmation(command: string): { required: boolean; reason?: string } {
   const trimmed = command.trim();
+  const normalized = trimmed.toLowerCase();
   
-  // Extract the base command (first word)
-  const baseCmd = trimmed.split(/\s+/)[0];
-  
-  // If not in the whitelist, requires confirmation
-  if (!SAFE_COMMANDS.has(baseCmd)) {
-    return { required: true, reason: `命令 ${baseCmd} 未在安全白名单中，需要确认` };
-  }
-  
-  // Even if the base command is whitelisted, check for dangerous shell metacharacters
-  // like pipes, redirections, logical operators, variable expansion, or subshells.
-  if (/[|><;&$()\{\}\\\`]/.test(trimmed)) {
-    return { required: true, reason: '命令包含复杂的 shell 元字符，需要确认以保证安全' };
-  }
-  
-  // Check for sudo - even for whitelisted commands, we prompt for sudo just to be safe
-  if (trimmed.includes('sudo')) {
-    return { required: true, reason: '命令使用了 sudo 提权，需要确认' };
+  // 高危操作黑名单（正则表达式匹配）
+  const DANGEROUS_PATTERNS = [
+    { pattern: /(^|\s)rm(\s|$)/, reason: '删除文件操作' },
+    { pattern: /(^|\s)reboot(\s|$)/, reason: '重启服务器' },
+    { pattern: /(^|\s)shutdown(\s|$)/, reason: '关闭服务器' },
+    { pattern: /(^|\s)halt(\s|$)/, reason: '停止服务器' },
+    { pattern: /(^|\s)poweroff(\s|$)/, reason: '关闭服务器电源' },
+    { pattern: /(^|\s)init\s+[06](\s|$)/, reason: '更改运行级别(关机或重启)' },
+    { pattern: /(^|\s)passwd(\s|$)/, reason: '修改密码' },
+    { pattern: /(^|\s)chown\s+-r(\s|$)/i, reason: '递归修改文件所有者' },
+    { pattern: /(^|\s)chmod\s+-r(\s|$)/i, reason: '递归修改文件权限' },
+    { pattern: /(^|\s)fdisk(\s|$)/, reason: '磁盘分区操作' },
+    { pattern: /(^|\s)parted(\s|$)/, reason: '磁盘分区操作' },
+    { pattern: /(^|\s)dd(\s|$)/, reason: '低级磁盘拷贝/覆盖' },
+    { pattern: /(^|\s)iptables\s+-f(\s|$)/i, reason: '清空防火墙规则' },
+    { pattern: /(^|\s)ufw\s+disable(\s|$)/i, reason: '禁用防火墙' },
+  ];
+
+  for (const { pattern, reason } of DANGEROUS_PATTERNS) {
+    if (pattern.test(normalized)) {
+      return { required: true, reason: `${reason}，为保证安全需要确认` };
+    }
   }
 
   return { required: false };
