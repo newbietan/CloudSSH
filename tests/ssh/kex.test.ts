@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { KEXInitBuilder, parseKEXInit, negotiate } from '../../src/ssh/kex';
-import { SSH_MSG_KEXINIT } from '../../src/types';
+import { KEXInitBuilder, parseKEXInit, negotiate, parseServerSigAlgs, filterExtInfo } from '../../src/ssh/kex';
+import { SSH_MSG_KEXINIT, SSH_MSG_EXT_INFO } from '../../src/types';
 import {
   SUPPORTED_KEX_ALGORITHMS,
   SUPPORTED_ENCRYPTION_ALGORITHMS,
@@ -58,10 +58,22 @@ describe('kex — KEXInitBuilder.build()', () => {
 describe('kex — build → parse 往返', () => {
   // 这一组是本文件最关键的测试：用 build 构造，再 parse 回来，
   // 各算法列表应该一一对应于 algorithms.ts 中的常量声明。
-  it('kexAlgorithms 解析后等于 SUPPORTED_KEX_ALGORITHMS', () => {
+  it('kexAlgorithms 解析后等于 SUPPORTED_KEX_ALGORITHMS（含 ext-info-c 前缀）', () => {
     const packet = KEXInitBuilder.build();
     const msg = parseKEXInit(packet);
-    expect(msg.kexAlgorithms).toEqual(SUPPORTED_KEX_ALGORITHMS);
+    // RFC 8301: ext-info-c 作为伪算法名插入到 kex 算法列表最前面
+    expect(msg.kexAlgorithms).toEqual(['ext-info-c', ...SUPPORTED_KEX_ALGORITHMS]);
+  });
+  it('hostKeyAlgorithms 包含 Ed25519 / ECDSA(P-256/P-384/P-521) / RSA-SHA2', () => {
+    const packet = KEXInitBuilder.build();
+    const msg = parseKEXInit(packet);
+    expect(msg.hostKeyAlgorithms).toContain('ssh-ed25519');
+    expect(msg.hostKeyAlgorithms).toContain('ecdsa-sha2-nistp256');
+    expect(msg.hostKeyAlgorithms).toContain('ecdsa-sha2-nistp384');
+    expect(msg.hostKeyAlgorithms).toContain('ecdsa-sha2-nistp521');
+    expect(msg.hostKeyAlgorithms).toContain('rsa-sha2-512');
+    expect(msg.hostKeyAlgorithms).toContain('rsa-sha2-256');
+    expect(msg.hostKeyAlgorithms).toContain('ssh-rsa');
   });
   it('encryptionC2S / S2C 解析后等于 SUPPORTED_ENCRYPTION_ALGORITHMS', () => {
     const packet = KEXInitBuilder.build();
@@ -80,15 +92,6 @@ describe('kex — build → parse 往返', () => {
     const msg = parseKEXInit(packet);
     expect(msg.compressionC2S).toEqual(['none']);
     expect(msg.compressionS2C).toEqual(['none']);
-  });
-  it('hostKeyAlgorithms 包含 Ed25519 / ECDSA / RSA', () => {
-    const packet = KEXInitBuilder.build();
-    const msg = parseKEXInit(packet);
-    expect(msg.hostKeyAlgorithms).toContain('ssh-ed25519');
-    expect(msg.hostKeyAlgorithms).toContain('ecdsa-sha2-nistp256');
-    expect(msg.hostKeyAlgorithms).toContain('rsa-sha2-512');
-    expect(msg.hostKeyAlgorithms).toContain('rsa-sha2-256');
-    expect(msg.hostKeyAlgorithms).toContain('ssh-rsa');
   });
 });
 
@@ -280,5 +283,102 @@ describe('kex — parseKEXInit 边界与错误', () => {
     }
     // 接受两种行为：抛错 或 不抛错但返回畸形数据。重点是此用例提醒：边界检查缺失。
     expect(typeof threw).toBe('boolean');
+  });
+});
+
+// ─── EXT_INFO parsing (RFC 8301) ───────────────────────────────────────
+// 构造 SSH_MSG_EXT_INFO payload 的手工辅助
+function buildExtInfoPayload(exts: { name: string; value: string }[]): Uint8Array {
+  const enc = new TextEncoder();
+  const parts: Uint8Array[] = [];
+  parts.push(new Uint8Array([SSH_MSG_EXT_INFO]));   // 7
+  const nr = new Uint8Array(4);
+  new DataView(nr.buffer).setUint32(0, exts.length, false);
+  parts.push(nr);
+  for (const { name, value } of exts) {
+    const nb = enc.encode(name);
+    const nLen = new Uint8Array(4);
+    new DataView(nLen.buffer).setUint32(0, nb.length, false);
+    parts.push(nLen, nb);
+    const vb = enc.encode(value);
+    const vLen = new Uint8Array(4);
+    new DataView(vLen.buffer).setUint32(0, vb.length, false);
+    parts.push(vLen, vb);
+  }
+  let total = 0;
+  for (const p of parts) total += p.length;
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const p of parts) { out.set(p, off); off += p.length; }
+  return out;
+}
+
+describe('kex — parseServerSigAlgs (RFC 8301)', () => {
+  it('提取 server-sig-algs 扩展', () => {
+    const payload = buildExtInfoPayload([
+      { name: 'server-sig-algs', value: 'rsa-sha2-512,rsa-sha2-256,ssh-rsa,ecdsa-sha2-nistp256' },
+    ]);
+    expect(parseServerSigAlgs(payload)).toEqual([
+      'rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa', 'ecdsa-sha2-nistp256',
+    ]);
+  });
+
+  it('多个扩展时仍提取 server-sig-algs', () => {
+    const payload = buildExtInfoPayload([
+      { name: 'other-ext', value: 'some-value' },
+      { name: 'server-sig-algs', value: 'rsa-sha2-256,ssh-ed25519' },
+      { name: 'third', value: '' },
+    ]);
+    expect(parseServerSigAlgs(payload)).toEqual(['rsa-sha2-256', 'ssh-ed25519']);
+  });
+
+  it('未包含 server-sig-algs 时返回空数组', () => {
+    const payload = buildExtInfoPayload([
+      { name: 'other-ext', value: 'val' },
+    ]);
+    expect(parseServerSigAlgs(payload)).toEqual([]);
+  });
+
+  it('空扩展列表返回空数组', () => {
+    const payload = buildExtInfoPayload([]);
+    expect(parseServerSigAlgs(payload)).toEqual([]);
+  });
+
+  it('trim 与空字符串过滤', () => {
+    const payload = buildExtInfoPayload([
+      { name: 'server-sig-algs', value: '  rsa-sha2-256 , , ssh-ed25519  ' },
+    ]);
+    expect(parseServerSigAlgs(payload)).toEqual(['rsa-sha2-256', 'ssh-ed25519']);
+  });
+
+  it('nr-extensions 超过 1024 上限时抛错', () => {
+    const payload = new Uint8Array(5);
+    payload[0] = SSH_MSG_EXT_INFO;
+    new DataView(payload.buffer).setUint32(1, 5000, false);  // nr=5000
+    expect(() => parseServerSigAlgs(payload)).toThrow(/nr-extensions 过大/);
+  });
+
+  it('畸形 payload（截断）抛错', () => {
+    const payload = new Uint8Array([SSH_MSG_EXT_INFO, 0, 0, 0, 1, 0x00 /* 缺 name-len */]);
+    expect(() => parseServerSigAlgs(payload)).toThrow();
+  });
+});
+
+describe('kex — filterExtInfo (RFC 8301)', () => {
+  it('过滤 ext-info-c 与 ext-info-s', () => {
+    expect(filterExtInfo(['ext-info-c', 'curve25519-sha256', 'ecdh-sha2-nistp256']))
+      .toEqual(['curve25519-sha256', 'ecdh-sha2-nistp256']);
+    expect(filterExtInfo(['ext-info-s', 'curve25519-sha256']))
+      .toEqual(['curve25519-sha256']);
+  });
+
+  it('不过滤同名前缀但不同后缀的算法（事实不存在但恶意构造）', () => {
+    expect(filterExtInfo(['ext-info-x', 'curve25519-sha256']))
+      .toEqual(['curve25519-sha256']);
+  });
+
+  it('保留普通算法', () => {
+    expect(filterExtInfo(['curve25519-sha256', 'ecdh-sha2-nistp256']))
+      .toEqual(['curve25519-sha256', 'ecdh-sha2-nistp256']);
   });
 });

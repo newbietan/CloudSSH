@@ -146,6 +146,7 @@ export const SSH_MSG_UNIMPLEMENTED = 3;
 export const SSH_MSG_DEBUG = 4;
 export const SSH_MSG_SERVICE_REQUEST = 5;
 export const SSH_MSG_SERVICE_ACCEPT = 6;
+export const SSH_MSG_EXT_INFO = 7;
 export const SSH_MSG_KEXINIT = 20;
 export const SSH_MSG_NEWKEYS = 21;
 export const SSH_MSG_KEX_ECDH_INIT = 30;

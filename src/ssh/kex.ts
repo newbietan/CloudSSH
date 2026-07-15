@@ -17,8 +17,10 @@ export class KEXInitBuilder {
     parts.push(cookie);
 
     const algorithmLists = [
-      SUPPORTED_KEX_ALGORITHMS.join(','),
-      'ssh-ed25519,ecdsa-sha2-nistp256,rsa-sha2-512,rsa-sha2-256,ssh-rsa',
+      // RFC 8301 §2.1: ext-info-c 作为伪算法名插入到 kex_algorithms 列表的最前面，
+      // 通知服务器客户端愿意接收 SSH_MSG_EXT_INFO（用于 server-sig-algs 协商）
+      ['ext-info-c', ...SUPPORTED_KEX_ALGORITHMS].join(','),
+      'ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,rsa-sha2-512,rsa-sha2-256,ssh-rsa',
       SUPPORTED_ENCRYPTION_ALGORITHMS.join(','),
       SUPPORTED_ENCRYPTION_ALGORITHMS.join(','),
       SUPPORTED_MAC_ALGORITHMS.join(','),
@@ -84,4 +86,60 @@ export function negotiate(clientList: string[], serverList: string[], category: 
     if (serverList.includes(algo)) return algo;
   }
   throw new Error(`No common ${category}: client=[${clientList.join(',')}] server=[${serverList.join(',')}]`);
+}
+
+/**
+ * 解析 SSH_MSG_EXT_INFO（RFC 8301 §2.3）中的 server-sig-algs 扩展。
+ * 仅提取 "server-sig-algs" 一个扩展，其余忽略；未找到时返回空数组。
+ *
+ * 包格式:
+ *   byte      SSH_MSG_EXT_INFO (7)
+ *   uint32    nr-extensions
+ *   重复 nr-extensions 次:
+ *     string  extension-name
+ *     string  extension-value (binary)
+ */
+export function parseServerSigAlgs(payload: Uint8Array): string[] {
+  let offset = 1; // 跳过 msg type
+
+  if (offset + 4 > payload.length) throw new Error('ext-info: nr-extensions 越界');
+  const nrExtensions = (payload[offset] << 24) | (payload[offset+1] << 16) |
+                       (payload[offset+2] << 8) | payload[offset+3];
+  offset += 4;
+
+  // 防御性上限，避免恶意服务器声明超大计数触发长循环
+  if (nrExtensions > 1024) throw new Error(`ext-info: nr-extensions 过大 (${nrExtensions})`);
+
+  for (let i = 0; i < nrExtensions; i++) {
+    if (offset + 4 > payload.length) throw new Error('ext-info: name-len 越界');
+    const nameLen = (payload[offset] << 24) | (payload[offset+1] << 16) |
+                    (payload[offset+2] << 8) | payload[offset+3];
+    offset += 4;
+    if (offset + nameLen > payload.length) throw new Error('ext-info: name 越界');
+    const name = new TextDecoder().decode(payload.subarray(offset, offset + nameLen));
+    offset += nameLen;
+
+    if (offset + 4 > payload.length) throw new Error('ext-info: value-len 越界');
+    const valueLen = (payload[offset] << 24) | (payload[offset+1] << 16) |
+                     (payload[offset+2] << 8) | payload[offset+3];
+    offset += 4;
+    if (offset + valueLen > payload.length) throw new Error('ext-info: value 越界');
+    const valueBytes = payload.subarray(offset, offset + valueLen);
+    offset += valueLen;
+
+    if (name === 'server-sig-algs') {
+      // value 是 UTF-8 逗号分隔的算法列表
+      const value = new TextDecoder().decode(valueBytes);
+      return value.split(',').map(s => s.trim()).filter(s => s.length > 0);
+    }
+  }
+  return [];
+}
+
+/**
+ * 过滤掉 KEXINIT 算法列表中的 ext-info-* 伪算法名（RFC 8301 §2.1）。
+ * 用于 negotiate 真正的 KEX algorithm 之前清理双方列表。
+ */
+export function filterExtInfo(list: string[]): string[] {
+  return list.filter(a => !a.startsWith('ext-info-'));
 }

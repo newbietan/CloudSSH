@@ -17,6 +17,12 @@ const ECDSA_P521_ALGO = { name: 'ECDSA', namedCurve: 'P-521' };
 
 interface ParsedKey {
   signingKey: CryptoKey;
+  /** RSA key 的 PKCS8 原始字节。WebCrypto 实现可能会在 import 时把
+   *  RSASSA-PKCS1-v1_5 的 hash 绑定到 key 上，导致后续 sign 时再传其它 hash
+   *  被忽略（Node 上观察到的行为）。为了让 RSA 既能签 SHA-256 又能签 SHA-512，
+   *  我们在每次签名时用对应 hash 的 algorithm 对象重新 import 一次。
+   *  Ed25519 与 ECDSA 不受影响（hash 在 sign() 调用时直接传入且 import 时不绑定）。*/
+  rsaPkcs8?: Uint8Array;
   publicKeyBlob: Uint8Array;
   keyType: string;
 }
@@ -41,13 +47,39 @@ export class SSHAuth {
   /**
    * Build a public key auth request for any supported key type (RFC 4252 §7).
    * Automatically detects key type from the private key PEM.
+   *
+   * 对于 RSA：RFC 8332 要求 USERAUTH_REQUEST 的 public key algorithm name 字段与
+   * 签名 blob 内的 signature algorithm name 字段必须一致。公钥 blob 内部类型仍保持
+   * `ssh-rsa`，但外层两个字段根据 `serverSigAlgs` 协商结果选择：
+   *   - `rsa-sha2-512`（优先）
+   *   - `rsa-sha2-256`
+   *   - `ssh-rsa`（SHA-1，仅当 `allowLegacyRsaSha1=true` 且 server 显式支持时）
+   * 默认（未提供 serverSigAlgs）使用 `rsa-sha2-256`，绝不再静默降级到 SHA-1。
+   *
+   * @param username            SSH 用户名
+   * @param privateKeyPEM       OpenSSH 私钥 PEM
+   * @param sessionID           会话 ID（用于签名）
+   * @param serverSigAlgs       服务端 SSH_MSG_EXT_INFO 的 server-sig-algs 列表
+   * @param allowLegacyRsaSha1  是否允许 ssh-rsa(SHA-1) 兼容
    */
   static async buildPublicKeyAuthRequest(
     username: string,
     privateKeyPEM: string,
-    sessionID: Uint8Array
+    sessionID: Uint8Array,
+    serverSigAlgs?: string[],
+    allowLegacyRsaSha1: boolean = false,
   ): Promise<Uint8Array> {
-    const { signingKey, publicKeyBlob, keyType } = await this.parsePrivateKey(privateKeyPEM);
+    const { signingKey, publicKeyBlob, keyType, rsaPkcs8 } = await this.parsePrivateKey(privateKeyPEM);
+
+    // 确定 request / signature 外层算法名（公钥 blob 内部类型不变）
+    let requestAlgo = keyType;
+    let signatureAlgo = keyType;
+
+    if (keyType === SSH_RSA) {
+      const chosen = this.selectRsaSigAlgorithm(serverSigAlgs, allowLegacyRsaSha1);
+      requestAlgo = chosen;
+      signatureAlgo = chosen;
+    }
 
     // Build the request body (without signature first)
     const requestBody = concat(
@@ -56,7 +88,7 @@ export class SSHAuth {
       encodeString('ssh-connection'),
       encodeString('publickey'),
       new Uint8Array([0x01]), // TRUE = has signature
-      encodeString(keyType),
+      encodeString(requestAlgo),
       encodeString(publicKeyBlob),
     );
 
@@ -74,18 +106,38 @@ export class SSHAuth {
         encodeString(rawSignature),
       );
     } else if (keyType === SSH_RSA) {
-      rawSignature = new Uint8Array(await crypto.subtle.sign(RSA_ALGO, signingKey, dataToSign));
+      const hash = signatureAlgo === 'rsa-sha2-512' ? 'SHA-512'
+                 : signatureAlgo === 'ssh-rsa'        ? 'SHA-1'
+                 : 'SHA-256';
+      // 某些 WebCrypto 实现会在 importKey 时把 RSASSA-PKCS1-v1_5 的 hash 绑定到
+      // CryptoKey，导致后续 sign 时即使传不同 hash 也被忽略（用 SHA-256 import
+      // 的 key 试签 SHA-512 会得到 SHA-256 签名）。这里在 hash 与 import 时 hash
+      // 不一致的情况下重新 import 一次。
+      let sigKey = signingKey;
+      if (hash !== 'SHA-256' && rsaPkcs8) {
+        sigKey = await crypto.subtle.importKey(
+          'pkcs8', rsaPkcs8,
+          { name: 'RSASSA-PKCS1-v1_5', hash },
+          false, ['sign'],
+        );
+      }
+      rawSignature = new Uint8Array(
+        await crypto.subtle.sign({ name: 'RSASSA-PKCS1-v1_5', hash }, sigKey, dataToSign)
+      );
       signatureBlob = concat(
-        encodeString('rsa-sha2-256'),
+        encodeString(signatureAlgo),
         encodeString(rawSignature),
       );
     } else if (keyType.startsWith('ecdsa-sha2-')) {
-      const derSignature = new Uint8Array(await crypto.subtle.sign(
-        { name: 'ECDSA', hash: 'SHA-256' },
+      // RFC 5656 §6.2.1: 曲线 → 哈希映射 exhaustive
+      const hash = this.ecdsaHashForCurve(keyType);
+      const sigBytes = new Uint8Array(await crypto.subtle.sign(
+        { name: 'ECDSA', hash },
         signingKey,
         dataToSign
       ));
-      const sshSignature = this.convertECDSADERToSSH(derSignature);
+      // 运行时检测 WebCrypto 返回格式（DER 或 raw r||s），不预设
+      const sshSignature = this.ecdsaWebCryptoToSSH(sigBytes, this.ecdsaCoordBytes(keyType));
       signatureBlob = concat(
         encodeString(keyType),
         encodeString(sshSignature),
@@ -96,6 +148,81 @@ export class SSHAuth {
 
     // Full auth packet: requestBody || string signature_blob
     return concat(requestBody, encodeString(signatureBlob));
+  }
+
+  /**
+   * 根据服务端 server-sig-algs 与本地策略选择 RSA 签名算法。
+   * 优先 rsa-sha2-512，其次 rsa-sha2-256；ssh-rsa(SHA-1) 仅在显式启用且服务器支持时使用。
+   * 服务器能力与本地策略无交集时抛 fatal `no_supported_rsa_signature_algorithm`。
+   */
+  private static selectRsaSigAlgorithm(
+    serverSigAlgs: string[] | undefined,
+    allowLegacyRsaSha1: boolean,
+  ): string {
+    // 本地策略：优先 512 → 256；SHA-1 可选
+    const localOrder = allowLegacyRsaSha1
+      ? ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa']
+      : ['rsa-sha2-512', 'rsa-sha2-256'];
+
+    if (!serverSigAlgs || serverSigAlgs.length === 0) {
+      // 未收到 ext-info：默认 rsa-sha2-256（绝大多数支持 RSA-SHA2 的服务器都接受）
+      return 'rsa-sha2-256';
+    }
+
+    const serverSet = new Set(serverSigAlgs);
+    for (const algo of localOrder) {
+      if (serverSet.has(algo)) return algo;
+    }
+    throw new Error(
+      `no_supported_rsa_signature_algorithm: server=[${serverSigAlgs.join(',')}] local=[${localOrder.join(',')}]`
+    );
+  }
+
+  /**
+   * RFC 5656 §6.2.1: ECDSA 曲线 → 哈希算法 exhaustive 映射。
+   */
+  private static ecdsaHashForCurve(keyType: string): 'SHA-256' | 'SHA-384' | 'SHA-512' {
+    switch (keyType) {
+      case ECDSA_SHA2_NISTP256: return 'SHA-256';  // 坐标 32 字节
+      case ECDSA_SHA2_NISTP384: return 'SHA-384';  // 坐标 48 字节
+      case ECDSA_SHA2_NISTP521: return 'SHA-512';  // 坐标 66 字节
+    }
+    // exhaustive: 走到这里说明 keyType 不是三种受支持曲线之一
+    throw new Error(`unsupported ECDSA key type: ${keyType}`);
+  }
+
+  /**
+   * ECDSA 曲线对应的单坐标字节长度（用于 raw r||s 编码）。
+   */
+  private static ecdsaCoordBytes(keyType: string): number {
+    switch (keyType) {
+      case ECDSA_SHA2_NISTP256: return 32;
+      case ECDSA_SHA2_NISTP384: return 48;
+      case ECDSA_SHA2_NISTP521: return 66;
+    }
+    throw new Error(`unsupported ECDSA key type: ${keyType}`);
+  }
+
+  /**
+   * 把 WebCrypto ECDSA 签名输出转换为 SSH 的 `string(r) || string(s)` 格式。
+   * 运行时检测输入是 DER SEQUENCE 还是 raw `r||s`，不预设 Worker 实现行为。
+   */
+  private static ecdsaWebCryptoToSSH(sigBytes: Uint8Array, coordBytes: number): Uint8Array {
+    if (sigBytes.length < 2) throw new Error('ECDSA 签名长度过短');
+
+    if (sigBytes[0] === 0x30) {
+      // DER SEQUENCE
+      return this.convertECDSADERToSSH(sigBytes);
+    }
+
+    // raw r || s（固定长度 2 * coordBytes）
+    if (sigBytes.length !== coordBytes * 2) {
+      throw new Error(`ECDSA raw 签名长度不匹配: 期望 ${coordBytes * 2}，实际 ${sigBytes.length}`);
+    }
+    const r = sigBytes.subarray(0, coordBytes);
+    const s = sigBytes.subarray(coordBytes);
+    // 转成 mpint（去掉前导 0，最高位为 1 时补 0）
+    return concat(this.sshMPInt(r), this.sshMPInt(s));
   }
 
   /**
@@ -239,6 +366,10 @@ export class SSHAuth {
 
     const pkcs8 = this.buildRSAPKCS8(n, e, d, p, q, iqmp);
 
+    // 注意：RSASSA-PKCS1-v1_5 在 importKey 时把 hash 绑定到 CryptoKey 上，
+    // 后续 sign 时即使传不同 hash 也会被某些 WebCrypto 实现忽略。
+    // 因此这里用一个固定 hash(任意)先导入，供 build 在使用 SHA-256 路径时复用；
+    // 用 SHA-512 时会基于 rsaPkcs8 字段重新 import。
     const signingKey = await crypto.subtle.importKey(
       'pkcs8', pkcs8, RSA_ALGO, false, ['sign']
     );
@@ -249,7 +380,7 @@ export class SSHAuth {
       this.sshMPInt(n),
     );
 
-    return { signingKey, publicKeyBlob, keyType: SSH_RSA };
+    return { signingKey, rsaPkcs8: pkcs8, publicKeyBlob, keyType: SSH_RSA };
   }
 
   /**

@@ -5,6 +5,7 @@ import {
   SSH_MSG_KEX_ECDH_REPLY,
   SSH_MSG_SERVICE_REQUEST,
   SSH_MSG_SERVICE_ACCEPT,
+  SSH_MSG_EXT_INFO,
   SSH_MSG_USERAUTH_SUCCESS,
   SSH_MSG_USERAUTH_FAILURE,
   SSH_MSG_GLOBAL_REQUEST,
@@ -30,7 +31,9 @@ import { SSHPacketParser, SSHPacketBuilder, nextSequenceNumber } from '../ssh/pa
 import {
   KEXInitBuilder,
   parseKEXInit,
-  negotiate
+  negotiate,
+  parseServerSigAlgs,
+  filterExtInfo,
 } from '../ssh/kex';
 import {
   getCipherSpec,
@@ -93,6 +96,12 @@ export class SSHSession {
   private ecdhKeyPair: CryptoKeyPair | null = null;
   private curve25519KeyPair: Curve25519KeyPair | null = null;
   private kexRawPublicKey: Uint8Array | null = null;
+
+  /**
+   * 服务端通过 SSH_MSG_EXT_INFO 公告的 server-sig-algs 列表（RFC 8332）。
+   * 客户端公钥认证时据此选择 RSA 签名算法。为空数组表示未收到（含不支持 ext-info 的旧服务器）。
+   */
+  private serverSigAlgs: string[] = [];
 
   private state: 'connecting' | 'version' | 'kex' | 'auth' | 'shell' | 'shell-requested' | 'ready'
     = 'connecting';
@@ -526,7 +535,17 @@ export class SSHSession {
         try {
           const serverKex = parseKEXInit(payload);
           const clientKex = parseKEXInit(this.kexInitLocal!);
-          this.negotiatedKexAlgorithm = negotiate(clientKex.kexAlgorithms, serverKex.kexAlgorithms, 'KEX algorithm');
+
+          // 检测服务端是否发了 ext-info-s（表示服务器将在 NEWKEYS 后发 SSH_MSG_EXT_INFO）
+          const serverSentExtInfo = serverKex.kexAlgorithms.includes('ext-info-s');
+          this.sendDebug(`Server ext-info-s: ${serverSentExtInfo}`);
+
+          // 过滤掉 ext-info-* 伪算法后再做真正的 KEX algorithm 协商
+          this.negotiatedKexAlgorithm = negotiate(
+            filterExtInfo(clientKex.kexAlgorithms),
+            filterExtInfo(serverKex.kexAlgorithms),
+            'KEX algorithm'
+          );
           this.negotiatedCipherC2S = negotiate(clientKex.encryptionC2S, serverKex.encryptionC2S, 'C2S cipher');
           this.negotiatedCipherS2C = negotiate(clientKex.encryptionS2C, serverKex.encryptionS2C, 'S2C cipher');
           this.negotiatedMacC2S = getCipherSpec(this.negotiatedCipherC2S).aead
@@ -779,8 +798,25 @@ export class SSHSession {
         rawSig,
         exchangeHash
       );
-    } else if (keyType === 'ecdsa-sha2-nistp256') {
-      // Parse ECDSA key
+    } else if (keyType === 'ecdsa-sha2-nistp256' ||
+               keyType === 'ecdsa-sha2-nistp384' ||
+               keyType === 'ecdsa-sha2-nistp521') {
+      // RFC 5656: ECDSA 主机密钥按曲线 exhaustive 支持
+      let namedCurve: string;
+      let hash: 'SHA-256' | 'SHA-384' | 'SHA-512';
+      let coordBytes: number;
+      switch (keyType) {
+        case 'ecdsa-sha2-nistp256':
+          namedCurve = 'P-256'; hash = 'SHA-256'; coordBytes = 32; break;
+        case 'ecdsa-sha2-nistp384':
+          namedCurve = 'P-384'; hash = 'SHA-384'; coordBytes = 48; break;
+        case 'ecdsa-sha2-nistp521':
+          namedCurve = 'P-521'; hash = 'SHA-512'; coordBytes = 66; break;
+        default:
+          throw new Error(`unsupported ECDSA host key: ${keyType}`);
+      }
+
+      // Parse ECDSA key blob: string(curve), string(point)
       const curveLen = (hostKeyBlob[offset] << 24) | (hostKeyBlob[offset+1] << 16) |
                        (hostKeyBlob[offset+2] << 8) | hostKeyBlob[offset+3];
       offset += 4 + curveLen;
@@ -788,22 +824,22 @@ export class SSHSession {
                         (hostKeyBlob[offset+2] << 8) | hostKeyBlob[offset+3];
       offset += 4;
       const rawKey = hostKeyBlob.subarray(offset, offset + rawKeyLen);
-      this.sendDebug(`ECDSA public key: ${rawKey.length} bytes`);
+      this.sendDebug(`ECDSA public key: ${rawKey.length} bytes, curve=${namedCurve}`);
 
       const pubKey = await crypto.subtle.importKey(
         'raw',
         rawKey,
-        { name: 'ECDSA', namedCurve: 'P-256' },
+        { name: 'ECDSA', namedCurve },
         false,
         ['verify']
       );
 
-      // Convert SSH DER signature to raw r||s format for Web Crypto
-      const ecdsaRawSig = this.convertSSHECDSASig(rawSig);
+      // Convert SSH (r||s) signature to raw r||s for Web Crypto（按曲线坐标长度 pad）
+      const ecdsaRawSig = this.convertSSHECDSASig(rawSig, coordBytes);
       this.sendDebug(`ECDSA raw sig: ${ecdsaRawSig.length} bytes`);
 
       return await crypto.subtle.verify(
-        { name: 'ECDSA', hash: 'SHA-256' },
+        { name: 'ECDSA', hash },
         pubKey,
         ecdsaRawSig,
         exchangeHash
@@ -821,12 +857,17 @@ export class SSHSession {
       offset += 4;
       const nRaw = hostKeyBlob.subarray(offset, offset + nLen);
       
-      // Determine hash algorithm based on signature type
-      let hashAlgo = 'SHA-1';
+      // Determine hash algorithm based on signature type (RFC 8332)
+      let hashAlgo: 'SHA-256' | 'SHA-512' | 'SHA-1';
       if (sigType === 'rsa-sha2-256') hashAlgo = 'SHA-256';
       else if (sigType === 'rsa-sha2-512') hashAlgo = 'SHA-512';
+      else if (sigType === 'ssh-rsa') hashAlgo = 'SHA-1';
+      else {
+        this.sendDebug(`Unknown RSA signature type: ${sigType}`);
+        return false;
+      }
       
-      this.sendDebug(`RSA public key: n=${nRaw.length} bytes, e=${eRaw.length} bytes, hash=${hashAlgo}`);
+      this.sendDebug(`RSA public key: n=${nRaw.length} bytes, e=${eRaw.length} bytes, sigType=${sigType}, hash=${hashAlgo}`);
 
       // Convert to JWK format for import
       const jwk = {
@@ -874,7 +915,7 @@ export class SSHSession {
     return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
 
-  private convertSSHECDSASig(sshSig: Uint8Array): Uint8Array {
+  private convertSSHECDSASig(sshSig: Uint8Array, coordBytes: number = 32): Uint8Array {
     // SSH ECDSA sig is: string r, string s (each mpint)
     let offset = 0;
     const rLen = (sshSig[offset] << 24) | (sshSig[offset+1] << 16) |
@@ -888,13 +929,13 @@ export class SSHSession {
     let s = sshSig.subarray(offset, offset + sLen);
 
     // Strip leading zero bytes (mpint sign extension)
-    if (r.length > 32 && r[0] === 0) r = r.subarray(1);
-    if (s.length > 32 && s[0] === 0) s = s.subarray(1);
+    if (r.length > coordBytes && r[0] === 0) r = r.subarray(1);
+    if (s.length > coordBytes && s[0] === 0) s = s.subarray(1);
 
-    // Pad to 32 bytes each
-    const result = new Uint8Array(64);
-    result.set(r, 32 - r.length);
-    result.set(s, 64 - s.length);
+    // Pad to coordBytes each (P-256=32, P-384=48, P-521=66)
+    const result = new Uint8Array(coordBytes * 2);
+    result.set(r, coordBytes - r.length);
+    result.set(s, coordBytes * 2 - s.length);
     return result;
   }
 
@@ -954,7 +995,9 @@ export class SSHSession {
       authRequest = await SSHAuth.buildPublicKeyAuthRequest(
         this.config.username,
         this.config.privateKey,
-        this.sessionID!
+        this.sessionID!,
+        this.serverSigAlgs,            // 传入 server-sig-algs 协商 RSA 签名算法
+        false,                         // allowLegacyRsaSha1: 默认禁用 SHA-1
       );
     } else {
       authRequest = SSHAuth.buildPasswordAuthRequest(
@@ -969,6 +1012,24 @@ export class SSHSession {
 
   private async handleAuthPacket(msgType: number, payload: Uint8Array): Promise<void> {
     switch (msgType) {
+      case SSH_MSG_EXT_INFO: {
+        // RFC 8301: SSH_MSG_EXT_INFO 是 NEWKEYS 之后第一条消息。
+        // 这里解析 server-sig-algs 扩展（用于 RSA-SHA2 算法协商），只接收一次。
+        if (this.serverSigAlgs.length > 0) {
+          this.sendDebug('Duplicate SSH_MSG_EXT_INFO ignored');
+          return;
+        }
+        try {
+          this.serverSigAlgs = parseServerSigAlgs(payload);
+          this.sendDebug(`server-sig-algs: [${this.serverSigAlgs.join(',')}]`);
+        } catch (e) {
+          const errMsg = e instanceof Error ? e.message : String(e);
+          this.sendDebug(`Parse SSH_MSG_EXT_INFO failed: ${errMsg}`);
+          this.serverSigAlgs = [];
+        }
+        return;
+      }
+
       case SSH_MSG_SERVICE_ACCEPT:
         this.sendStatus('认证服务已接受，正在认证...');
         await this.authenticate();
