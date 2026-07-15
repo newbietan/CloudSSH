@@ -488,12 +488,16 @@ async function handleAIRoute(request: Request, url: URL, env: Env): Promise<Resp
       const modelsUrl = `${cleanBaseUrl}/models`;
 
       const res = await fetch(modelsUrl, {
-        redirect: 'error',
+        redirect: 'manual', // Cloudflare Workers only supports 'follow' or 'manual'
         headers: {
           'Authorization': `Bearer ${api_key}`,
         },
         signal: AbortSignal.timeout(10000),
       });
+
+      if (res.status >= 300 && res.status < 400) {
+        return Response.json({ error: 'SSRF Protection: Redirects are not allowed' }, { status: 403 });
+      }
 
       if (!res.ok) {
         if (res.status === 404) {
