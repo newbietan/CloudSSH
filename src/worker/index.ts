@@ -481,7 +481,12 @@ async function handleAIRoute(request: Request, url: URL, env: Env): Promise<Resp
     }
 
     try {
-      const modelsUrl = `${base_url.replace(/\/$/, '')}/models`;
+      let cleanBaseUrl = base_url.replace(/\/$/, '');
+      if (cleanBaseUrl.endsWith('/chat/completions')) {
+        cleanBaseUrl = cleanBaseUrl.slice(0, -'/chat/completions'.length);
+      }
+      const modelsUrl = `${cleanBaseUrl}/models`;
+
       const res = await fetch(modelsUrl, {
         redirect: 'error',
         headers: {
@@ -501,7 +506,17 @@ async function handleAIRoute(request: Request, url: URL, env: Env): Promise<Resp
       }
 
       const data = await res.json() as any;
-      const models: Array<{ id: string }> = (data.data || [])
+      
+      let rawModels: any[] = [];
+      if (Array.isArray(data)) {
+        rawModels = data;
+      } else if (data && Array.isArray(data.data)) {
+        rawModels = data.data;
+      } else if (data && Array.isArray(data.models)) {
+        rawModels = data.models;
+      }
+
+      const models: Array<{ id: string }> = rawModels
         .filter((m: any) => {
           const id = m.id || '';
           return !/embedding|whisper|tts|dall-e|moderation|rerank/i.test(id);

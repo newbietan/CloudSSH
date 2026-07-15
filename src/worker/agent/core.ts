@@ -455,7 +455,12 @@ export class AgentCore {
         throw new Error(`AI base URL is blocked by SSRF protection: ${check.reason}`);
       }
 
-      const res = await fetch(`${config.base_url}/chat/completions`, {
+      let cleanBaseUrl = config.base_url.replace(/\/$/, '');
+      if (cleanBaseUrl.endsWith('/chat/completions')) {
+        cleanBaseUrl = cleanBaseUrl.slice(0, -'/chat/completions'.length);
+      }
+
+      const res = await fetch(`${cleanBaseUrl}/chat/completions`, {
         method: 'POST',
         redirect: 'error', // Prevent SSRF via 302 redirects to internal IPs
         headers: {
@@ -794,7 +799,12 @@ ${conversationText}${previousSection}`;
         return null;
       }
 
-      const res = await fetch(`${config.base_url}/chat/completions`, {
+      let cleanBaseUrl = config.base_url.replace(/\/$/, '');
+      if (cleanBaseUrl.endsWith('/chat/completions')) {
+        cleanBaseUrl = cleanBaseUrl.slice(0, -'/chat/completions'.length);
+      }
+
+      const res = await fetch(`${cleanBaseUrl}/chat/completions`, {
         method: 'POST',
         redirect: 'error', // Prevent SSRF via redirects
         headers: {
