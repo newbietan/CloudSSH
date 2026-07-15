@@ -141,7 +141,7 @@ export class SSHPacketParser {
       }
       const payload = decrypted.subarray(1, 1 + packetLength - 1 - paddingLength);
 
-      this.seqNum++;
+      this.seqNum = (this.seqNum + 1) >>> 0;
 
       return {
         length: packetLength,
@@ -189,7 +189,7 @@ export class SSHPacketParser {
     }
     const payload = decrypted.subarray(5, 5 + packetLength - 1 - paddingLength);
 
-    this.seqNum++;
+    this.seqNum = (this.seqNum + 1) >>> 0;
 
     return {
       length: packetLength,
@@ -201,10 +201,6 @@ export class SSHPacketParser {
 
   getSeqNum(): number {
     return this.seqNum;
-  }
-
-  resetSeqNum(): void {
-    this.seqNum = 0;
   }
 
   getBufferLength(): number {

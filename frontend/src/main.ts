@@ -125,6 +125,9 @@ function showUserSpace(user: { id: number; github_id: number; username: string; 
     () => {
       isLoggedIn = false;
       serverList = null;
+      if (tabManager) {
+        tabManager.closeAllTabs();
+      }
       showAuthSection();
     },
     // onConnect 回调 — 在当前页面创建新标签

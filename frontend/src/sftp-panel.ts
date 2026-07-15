@@ -244,6 +244,11 @@ export class SFTPPanel {
             <span class="material-symbols-outlined mb-2" style="font-size: 28px;">error</span>
             <span id="sftp-error-text" class="text-xs text-center"></span>
           </div>
+          <!-- Truncated warning -->
+          <div id="sftp-truncated-warning" class="hidden flex items-center justify-center py-2 px-3 bg-tertiary-container text-on-tertiary-container text-xs mb-2 rounded mx-2 mt-2">
+            <span class="material-symbols-outlined mr-2" style="font-size: 16px;">warning</span>
+            该目录文件过多，为保证性能，仅显示前 2000 项。
+          </div>
           <!-- Entries will be rendered here -->
           <div id="sftp-entries"></div>
         </div>
@@ -539,7 +544,7 @@ export class SFTPPanel {
         this.navigate('~');
         break;
       case 'sftp_list_result':
-        this.onListResult(msg.path, msg.entries);
+        this.onListResult(msg.path, msg.entries, msg.isTruncated);
         break;
       case 'sftp_stat_result':
         break;
@@ -655,12 +660,21 @@ export class SFTPPanel {
   }
 
   // Directory listing results
-  private onListResult(path: string, entries: SFTPFileEntry[]): void {
+  private onListResult(path: string, entries: SFTPFileEntry[], isTruncated?: boolean): void {
     this.currentPath = path;
     this.entries = entries;
 
     const pathInput = this.container.querySelector('#sftp-path-input') as HTMLInputElement;
     pathInput.value = path;
+
+    const warningEl = this.container.querySelector('#sftp-truncated-warning');
+    if (warningEl) {
+      if (isTruncated) {
+        warningEl.classList.remove('hidden');
+      } else {
+        warningEl.classList.add('hidden');
+      }
+    }
 
     this.renderEntries();
     this.hideLoading();

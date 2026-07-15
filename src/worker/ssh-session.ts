@@ -267,8 +267,9 @@ export class SSHSession {
     this.kexInitLocal = KEXInitBuilder.build();
 
     const packet = await SSHPacketBuilder.build(
-      this.kexInitLocal, 8, null, this.seqNumSend++
+      this.kexInitLocal, 8, null, this.seqNumSend
     );
+    this.seqNumSend = (this.seqNumSend + 1) >>> 0;
     await this.writeSocket(packet);
   }
 
@@ -292,10 +293,11 @@ export class SSHSession {
       throw new Error(`Unsupported KEX algorithm: ${this.negotiatedKexAlgorithm}`);
     }
 
-    const ecdhPacket = await SSHPacketBuilder.build(
-      kexInit, 8, null, this.seqNumSend++
+    const packet = await SSHPacketBuilder.build(
+      kexInit, 8, null, this.seqNumSend
     );
-    await this.writeSocket(ecdhPacket);
+    this.seqNumSend = (this.seqNumSend + 1) >>> 0;
+    await this.writeSocket(packet);
   }
 
   private async writeSocket(data: Uint8Array): Promise<void> {
@@ -311,16 +313,18 @@ export class SSHSession {
     }
 
     const cipher = getCipherSpec(this.negotiatedCipherC2S);
-    return SSHPacketBuilder.build(
+    const packet = await SSHPacketBuilder.build(
       payload,
       cipher.blockSize,
       (data, seq, aad) => this.encryptCipher!.encrypt(data, seq, aad),
-      this.seqNumSend++,
+      this.seqNumSend,
       cipher.aead,
       this.encryptMac
         ? (packetData, seq) => this.encryptMac!.sign(packetData, seq)
         : undefined
     );
+    this.seqNumSend = (this.seqNumSend + 1) >>> 0;
+    return packet;
   }
 
   private async buildEncryptedChannelDataPacket(chunk: ChannelDataChunk, channel: SSHChannel): Promise<Uint8Array> {
@@ -329,7 +333,7 @@ export class SSHSession {
     }
 
     const cipher = getCipherSpec(this.negotiatedCipherC2S);
-    return SSHPacketBuilder.buildWithPayloadWriter(
+    const packet = await SSHPacketBuilder.buildWithPayloadWriter(
       chunk.payloadLength,
       (packet, offset) => channel.writeChannelDataPayload(
         packet,
@@ -340,12 +344,14 @@ export class SSHSession {
       ),
       cipher.blockSize,
       (data, seq, aad) => this.encryptCipher!.encrypt(data, seq, aad),
-      this.seqNumSend++,
+      this.seqNumSend,
       cipher.aead,
       this.encryptMac
         ? (packetData, seq) => this.encryptMac!.sign(packetData, seq)
         : undefined
     );
+    this.seqNumSend = (this.seqNumSend + 1) >>> 0;
+    return packet;
   }
 
   private async processPackets(): Promise<void> {
@@ -545,11 +551,10 @@ export class SSHSession {
         this.sendDebug(`Received NEWKEYS, seqNumSend=${this.seqNumSend}`);
         const newKeys = new Uint8Array([SSH_MSG_NEWKEYS]);
         const packet = await SSHPacketBuilder.build(
-          newKeys, 8, null, this.seqNumSend++
+          newKeys, 8, null, this.seqNumSend
         );
+        this.seqNumSend = (this.seqNumSend + 1) >>> 0;
         await this.writeSocket(packet);
-        this.seqNumSend = 0;
-        this.packetParser.resetSeqNum();
         this.sendDebug(`Client NEWKEYS sent, seqNumSend=${this.seqNumSend}`);
 
         await this.enableEncryption();
@@ -1751,7 +1756,7 @@ export class SSHSession {
   private async fetchAgentAIConfig(userId: string): Promise<{ base_url: string; model: string; api_key: string } | null> {
     if (!this.env) return null;
     try {
-      const stub = this.env.USER_DB.get(this.env.USER_DB.idFromName('global'));
+      const stub = this.env.USER_DB.get(this.env.USER_DB.idFromName(userId));
       const res = await stub.fetch(
         new Request(`http://internal/internal/ai-config/decrypt?user_id=${userId}`)
       );

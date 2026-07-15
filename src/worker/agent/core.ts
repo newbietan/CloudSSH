@@ -448,8 +448,16 @@ export class AgentCore {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       if (signal.aborted) throw new Error('Aborted');
 
+      // Re-validate base_url at fetch time to prevent TOCTOU SSRF
+      const { validateBaseUrl } = await import('./ssrf');
+      const check = validateBaseUrl(config.base_url);
+      if (!check.valid) {
+        throw new Error(`AI base URL is blocked by SSRF protection: ${check.reason}`);
+      }
+
       const res = await fetch(`${config.base_url}/chat/completions`, {
         method: 'POST',
+        redirect: 'error', // Prevent SSRF via 302 redirects to internal IPs
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${config.api_key}`,
@@ -780,8 +788,15 @@ export class AgentCore {
 ${conversationText}${previousSection}`;
 
     try {
+      // Re-validate base_url for summary fetch
+      const { validateBaseUrl } = await import('./ssrf');
+      if (!validateBaseUrl(config.base_url).valid) {
+        return null;
+      }
+
       const res = await fetch(`${config.base_url}/chat/completions`, {
         method: 'POST',
+        redirect: 'error', // Prevent SSRF via redirects
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${config.api_key}`,

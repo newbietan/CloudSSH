@@ -768,21 +768,6 @@ describe('packet — seqNum 与 buffer 查询方法', () => {
     expect(parser.getSeqNum()).toBe(0);
   });
 
-  it('resetSeqNum 应重置 seqNum 为 0', async () => {
-    const blockSize = 16;
-    const parser = new SSHPacketParser();
-    // 解析几个包使 seqNum 递增
-    for (let i = 0; i < 3; i++) {
-      const payload = randomPayload(10);
-      const built = await SSHPacketBuilder.build(payload, blockSize, null, 0);
-      parser.feed(built);
-      await parser.nextPacket(blockSize, identityDecrypt, false, 0);
-    }
-    expect(parser.getSeqNum()).toBe(3);
-    parser.resetSeqNum();
-    expect(parser.getSeqNum()).toBe(0);
-  });
-
   it('getBufferLength 反映当前 buffered 字节数', async () => {
     const blockSize = 16;
     const payload = randomPayload(20);

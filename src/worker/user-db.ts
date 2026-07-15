@@ -73,13 +73,6 @@ export class UserDBDO {
         updated_at  TEXT DEFAULT (datetime('now'))
       );
 
-      CREATE TABLE IF NOT EXISTS rate_limits (
-        ip          TEXT PRIMARY KEY,
-        count       INTEGER NOT NULL DEFAULT 1,
-        reset_time  TEXT NOT NULL,
-        created_at  TEXT DEFAULT (datetime('now'))
-      );
-
       CREATE TABLE IF NOT EXISTS known_hosts (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id     INTEGER NOT NULL REFERENCES users(id),
@@ -178,11 +171,6 @@ export class UserDBDO {
         return this.handlePutTheme(request);
       }
 
-      // --- 速率限制检查 ---
-      if (path === '/internal/rate-limit/check' && request.method === 'POST') {
-        return this.handleRateLimitCheck(request);
-      }
-
       // --- known_hosts 管理 ---
       if (path === '/internal/known-hosts' && request.method === 'GET') {
         const userIdStr = url.searchParams.get('user_id');
@@ -272,12 +260,20 @@ export class UserDBDO {
   private async handleSessionCreate(request: Request): Promise<Response> {
     const { user_id } = await request.json<{ user_id: number }>();
 
-    // 生成随机 token
+    // 获取 github_id
+    const userRows = this.db.exec('SELECT github_id FROM users WHERE id = ?', user_id).toArray();
+    if (userRows.length === 0) {
+      return Response.json({ error: 'User not found' }, { status: 404 });
+    }
+    const github_id = (userRows[0] as any).github_id;
+
+    // 生成 token (github_id:randomHex)
     const tokenBytes = new Uint8Array(32);
     crypto.getRandomValues(tokenBytes);
-    const token = Array.from(tokenBytes)
+    const randomHex = Array.from(tokenBytes)
       .map((b) => b.toString(16).padStart(2, '0'))
       .join('');
+    const token = `${github_id}:${randomHex}`;
 
     // 7 天过期
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -543,8 +539,12 @@ export class UserDBDO {
     // 优先级：用户手动覆盖 (region) > 系统推断持久化值 (inferred_hint) > 无 hint（Auto）
     const locationHint = server.region || server.inferred_hint || undefined;
 
+    const userRows = this.db.exec('SELECT github_id FROM users WHERE id = ?', body.user_id).toArray();
+    if (userRows.length === 0) return Response.json({ error: 'User not found' }, { status: 404 });
+    const github_id = (userRows[0] as any).github_id;
+
     // 生成 one-time-token
-    const token = crypto.randomUUID();
+    const token = `${github_id}:${crypto.randomUUID()}`;
     const config: SSHConnectionConfig = {
       host: server.host,
       port: server.port,
@@ -677,62 +677,6 @@ export class UserDBDO {
 
     this.derivedKeyCache.set(userId, derived);
     return derived;
-  }
-
-  // ==================== 速率限制 ====================
-
-  private async handleRateLimitCheck(request: Request): Promise<Response> {
-    const { ip, maxRequests, windowMs } = await request.json<{
-      ip: string;
-      maxRequests: number;
-      windowMs: number;
-    }>();
-
-    if (!ip) {
-      return Response.json({ error: 'Missing IP address' }, { status: 400 });
-    }
-
-    const now = new Date();
-    const resetTime = new Date(now.getTime() + windowMs).toISOString();
-
-    // 查询当前IP的速率限制记录
-    const rows = this.db.exec(
-      'SELECT count, reset_time FROM rate_limits WHERE ip = ?',
-      ip
-    ).toArray();
-
-    if (rows.length === 0) {
-      // 新IP，创建记录
-      this.db.exec(
-        'INSERT INTO rate_limits (ip, count, reset_time) VALUES (?, 1, ?)',
-        ip,
-        resetTime
-      );
-      return Response.json({ limited: false });
-    }
-
-    const row = rows[0] as unknown as { count: number; reset_time: string };
-    const resetTimeDb = new Date(row.reset_time);
-    
-    if (now > resetTimeDb) {
-      // 窗口已过期，重置计数器
-      this.db.exec(
-        'UPDATE rate_limits SET count = 1, reset_time = ? WHERE ip = ?',
-        resetTime,
-        ip
-      );
-      return Response.json({ limited: false });
-    }
-
-    // 窗口内，增加计数器
-    const newCount = row.count + 1;
-    this.db.exec(
-      'UPDATE rate_limits SET count = ? WHERE ip = ?',
-      newCount,
-      ip
-    );
-
-    return Response.json({ limited: newCount > maxRequests });
   }
 
   // ==================== known_hosts 管理 ====================

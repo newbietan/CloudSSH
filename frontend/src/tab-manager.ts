@@ -214,6 +214,30 @@ export class TabManager {
     this.renderTabBar();
   }
 
+  closeAllTabs(): void {
+    const tabIds = Array.from(this.tabs.keys());
+    for (const tabId of tabIds) {
+      const tab = this.tabs.get(tabId);
+      if (!tab) continue;
+
+      if (tab.sftpPanel) {
+        tab.sftpPanel.dispose();
+        tab.sftpPanel = null;
+      }
+      if (tab.agentPanel) {
+        tab.agentPanel.dispose();
+        tab.agentPanel = null;
+      }
+      tab.terminal.dispose();
+      tab.containerEl.remove();
+    }
+    
+    this.tabs.clear();
+    this.activeTabId = null;
+    this.renderTabBar();
+    this.onAllTabsClosed?.();
+  }
+
   // ==================== 获取当前活跃标签 ====================
 
   getActiveTab(): TabInfo | null {

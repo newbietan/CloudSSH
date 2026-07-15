@@ -16,8 +16,12 @@ export function validateBaseUrl(baseUrl: string): { valid: boolean; reason?: str
       return { valid: false, reason: '禁止访问 localhost' };
     }
 
-    if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.)/.test(hostname)) {
+    if (/^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.)/.test(hostname)) {
       return { valid: false, reason: '禁止访问内网地址' };
+    }
+
+    if (/^(f[cd][0-9a-f]{2}:|fe[89ab][0-9a-f]:|::ffff:)/i.test(hostname)) {
+      return { valid: false, reason: '禁止访问本地或内网 IPv6 地址' };
     }
 
     if (hostname === '169.254.169.254' || hostname === 'metadata.google.internal') {

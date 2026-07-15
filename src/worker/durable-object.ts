@@ -81,6 +81,10 @@ export class SSHSessionDO {
       }
     }
 
+    if (prefilledConfig && typeof prefilledConfig === 'object') {
+      delete prefilledConfig.userId;
+    }
+
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
 

@@ -14,22 +14,25 @@ export { UserDBDO } from './user-db';
 const RATE_LIMIT_MAX = 10;      // max requests per window
 const RATE_LIMIT_WINDOW = 60000; // 1 minute window
 
-// 分布式速率限制（使用 Durable Object）
-async function isDistributedRateLimited(env: Env, ip: string): Promise<boolean> {
-  try {
-    const stub = getUserDBStub(env);
-    const response = await stub.fetch(new Request('http://internal/internal/rate-limit/check', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ip, maxRequests: RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW }),
-    }));
+// 内存级速率限制（Worker 实例级）
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 
-    if (!response.ok) return false;
-    const result = await response.json<{ limited: boolean }>();
-    return result.limited;
-  } catch {
+function isMemoryRateLimited(ip: string): boolean {
+  const now = Date.now();
+  let record = rateLimitMap.get(ip);
+  
+  if (!record || now > record.resetAt) {
+    record = { count: 1, resetAt: now + RATE_LIMIT_WINDOW };
+    rateLimitMap.set(ip, record);
     return false;
   }
+  
+  if (record.count >= RATE_LIMIT_MAX) {
+    return true;
+  }
+  
+  record.count++;
+  return false;
 }
 
 async function verifyTurnstile(token: string, secret: string, ip: string): Promise<boolean> {
@@ -108,8 +111,8 @@ async function isVerifiedTokenValid(token: string, secret: string): Promise<bool
 }
 
 // --- UserDBDO helper ---
-function getUserDBStub(env: Env): DurableObjectStub {
-  const id = env.USER_DB.idFromName('global');
+function getUserDBStub(env: Env, githubId: string | number): DurableObjectStub {
+  const id = env.USER_DB.idFromName(githubId.toString());
   return env.USER_DB.get(id);
 }
 
@@ -207,7 +210,7 @@ export default {
     if (url.pathname === '/api/ssh') {
       // Apply rate limiting (distributed via Durable Object)
       const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
-      if (await isDistributedRateLimited(env, clientIP)) {
+      if (isMemoryRateLimited(clientIP)) {
         return new Response('Too Many Requests', { status: 429 });
       }
 
@@ -279,7 +282,7 @@ async function handleServersRoute(request: Request, url: URL, env: Env): Promise
     return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
 
-  const stub = getUserDBStub(env);
+  const stub = getUserDBStub(env, user.github_id);
 
   // GET /api/servers
   if (url.pathname === '/api/servers' && request.method === 'GET') {
@@ -354,7 +357,7 @@ async function handleThemeRoute(request: Request, env: Env): Promise<Response> {
     return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
 
-  const stub = getUserDBStub(env);
+  const stub = getUserDBStub(env, user.github_id);
 
   if (request.method === 'GET') {
     return stub.fetch(new Request(`http://internal/internal/theme?user_id=${user.id}`, {
@@ -384,7 +387,7 @@ async function handleKnownHostsRoute(request: Request, url: URL, env: Env): Prom
     return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
 
-  const stub = getUserDBStub(env);
+  const stub = getUserDBStub(env, user.github_id);
 
   // GET /api/known-hosts?host=X&port=Y  → 获取特定主机指纹
   // GET /api/known-hosts                 → 列出所有已知主机
@@ -432,7 +435,7 @@ async function handleAIRoute(request: Request, url: URL, env: Env): Promise<Resp
     return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
 
-  const stub = getUserDBStub(env);
+  const stub = getUserDBStub(env, user.github_id);
 
   // GET /api/ai/config — return current AI config (masked)
   if (url.pathname === '/api/ai/config' && request.method === 'GET') {
@@ -480,6 +483,7 @@ async function handleAIRoute(request: Request, url: URL, env: Env): Promise<Resp
     try {
       const modelsUrl = `${base_url.replace(/\/$/, '')}/models`;
       const res = await fetch(modelsUrl, {
+        redirect: 'error',
         headers: {
           'Authorization': `Bearer ${api_key}`,
         },
@@ -574,7 +578,11 @@ async function handleTokenSSHConnection(request: Request, env: Env, token: strin
   }
 
   // 从 UserDBDO 消费 token，获取连接配置
-  const stub = getUserDBStub(env);
+  const [githubId] = token.split(':');
+  if (!githubId) {
+    return Response.json({ error: 'Invalid token format' }, { status: 400 });
+  }
+  const stub = getUserDBStub(env, githubId);
   const tokenRes = await stub.fetch(new Request('http://internal/internal/connect-token/consume', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

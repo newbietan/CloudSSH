@@ -442,10 +442,16 @@ export class SFTPClient {
   }
 
   // Parse all entries from a full directory listing (may need multiple READDIR calls)
-  async listAllEntries(handle: Uint8Array): Promise<SFTPFileEntry[]> {
+  async listAllEntries(handle: Uint8Array, limit?: number): Promise<{ entries: SFTPFileEntry[], isTruncated: boolean }> {
     const allEntries: SFTPFileEntry[] = [];
+    let isTruncated = false;
 
     while (true) {
+      if (limit && allEntries.length >= limit) {
+        isTruncated = true;
+        break;
+      }
+
       try {
         const response = await this.readDir(handle);
         const type = response[0];
@@ -466,6 +472,12 @@ export class SFTPClient {
       }
     }
 
-    return allEntries;
+    // truncate to limit if we over-fetched in the last batch
+    if (limit && allEntries.length > limit) {
+      allEntries.length = limit;
+      isTruncated = true;
+    }
+
+    return { entries: allEntries, isTruncated };
   }
 }

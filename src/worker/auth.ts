@@ -24,8 +24,8 @@ function getBaseUrl(env: Env, request: Request): string {
 
 // ==================== 获取 UserDBDO stub ====================
 
-function getUserDBStub(env: Env): DurableObjectStub {
-  const id = env.USER_DB.idFromName('global');
+function getUserDBStub(env: Env, githubId: string | number): DurableObjectStub {
+  const id = env.USER_DB.idFromName(githubId.toString());
   return env.USER_DB.get(id);
 }
 
@@ -39,7 +39,10 @@ export async function getAuthenticatedUser(request: Request, env: Env): Promise<
   const sessionToken = cookies['session'];
   if (!sessionToken) return null;
 
-  const stub = getUserDBStub(env);
+  const [githubId] = sessionToken.split(':');
+  if (!githubId) return null;
+
+  const stub = getUserDBStub(env, githubId);
   const res = await stub.fetch(new Request('http://internal/internal/session/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -143,7 +146,7 @@ export async function handleGitHubCallback(request: Request, env: Env): Promise<
   }>();
 
   // 4. 创建/更新用户
-  const stub = getUserDBStub(env);
+  const stub = getUserDBStub(env, githubUser.id);
   const userDbRes = await stub.fetch(new Request('http://internal/internal/oauth-user', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -185,7 +188,11 @@ export async function handleLogout(request: Request, env: Env): Promise<Response
   const sessionToken = cookies['session'];
 
   if (sessionToken) {
-    const stub = getUserDBStub(env);
+    const [githubId] = sessionToken.split(':');
+    if (!githubId) {
+      return Response.json({ success: true });
+    }
+    const stub = getUserDBStub(env, githubId);
     await stub.fetch(new Request('http://internal/internal/session/delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -312,8 +312,11 @@ export class SFTPHandler {
 
       const handle = this.sftp.parseHandleResponse(openResp);
       let entries: SFTPFileEntry[];
+      let isTruncated = false;
       try {
-        entries = await this.sftp.listAllEntries(handle);
+        const result = await this.sftp.listAllEntries(handle, 2000); // 限制最多2000项
+        entries = result.entries;
+        isTruncated = result.isTruncated;
       } finally {
         await this.sftp.closeHandle(handle).catch(() => {});
       }
@@ -327,6 +330,7 @@ export class SFTPHandler {
         type: 'sftp_list_result',
         path: resolvedPath,
         entries: formatted,
+        isTruncated,
       });
     } catch (e) {
       this.sendError('list', '列出目录失败: ' + (e instanceof Error ? e.message : String(e)));

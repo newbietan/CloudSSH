@@ -369,16 +369,7 @@ describe('安全 — 一次性 token 与接缝鉴权', () => {
 describe('安全 — 速率限制', () => {
   it('单 IP 触发限流 → 429 Too Many Requests', async () => {
     const worker = await loadWorker();
-    const env = makeEnv({
-      userDbStub: makeDOStub(async (req) => {
-        if (req.url.includes('/internal/rate-limit/check')) {
-          return new Response(JSON.stringify({ limited: true }), {
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
-        return new Response('{}', { status: 500 });
-      }),
-    });
+    const env = makeEnv({});
 
     const req = new Request('https://cloudssh.test/api/ssh', {
       headers: {
@@ -388,8 +379,12 @@ describe('安全 — 速率限制', () => {
       },
     });
 
-    const res = await worker.fetch(req, env);
+    // RATE_LIMIT_MAX = 10, 发送 10 次不会 429，第 11 次会 429
+    for (let i = 0; i < 10; i++) {
+      await worker.fetch(req, env);
+    }
 
+    const res = await worker.fetch(req, env);
     expect(res.status).toBe(429);
   });
 });
