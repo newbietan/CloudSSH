@@ -476,8 +476,8 @@ async function handleAIRoute(request: Request, url: URL, env: Env): Promise<Resp
 
     // SSRF validation for base_url
     if (body.base_url) {
-      const { validateBaseUrl } = await import('./agent/ssrf');
-      const check = validateBaseUrl(body.base_url as string);
+      const { validateBaseUrlWithDNS } = await import('./agent/ssrf');
+      const check = await validateBaseUrlWithDNS(body.base_url as string);
       if (!check.valid) {
         return Response.json({ error: check.reason }, { status: 400 });
       }
@@ -499,8 +499,8 @@ async function handleAIRoute(request: Request, url: URL, env: Env): Promise<Resp
     }
 
     // SSRF validation
-    const { validateBaseUrl } = await import('./agent/ssrf');
-    const check = validateBaseUrl(base_url);
+    const { validateBaseUrlWithDNS } = await import('./agent/ssrf');
+    const check = await validateBaseUrlWithDNS(base_url);
     if (!check.valid) {
       return Response.json({ error: check.reason }, { status: 400 });
     }

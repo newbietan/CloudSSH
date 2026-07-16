@@ -246,6 +246,18 @@ describe('安全 — SSRF 接缝（AI base_url）', () => {
         return new Response('{}', { status: 500 });
       }),
     });
+    // DoH responses for validateBaseUrlWithDNS (api.example.com → public IP)
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ Answer: [{ type: 1, data: '93.184.216.34' }] }), {
+        headers: { 'Content-Type': 'application/dns-json' },
+      })
+    );
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ Answer: [] }), {
+        headers: { 'Content-Type': 'application/dns-json' },
+      })
+    );
+    // Models endpoint returns redirect (should be blocked by redirect: 'manual')
     fetchMock.mockResolvedValueOnce(new Response(null, {
       status: 302,
       headers: { Location: 'http://127.0.0.1/models' },

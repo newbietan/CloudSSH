@@ -1,5 +1,6 @@
 import { Env, SSHConnectionConfig, TerminalSize, normalizeTerminalSize } from '../types';
 import { SSHSession } from './ssh-session';
+import { checkHostResolved } from './dns-check';
 
 export function stripUntrustedIdentity(config: SSHConnectionConfig): void {
   delete config.userId;
@@ -248,6 +249,11 @@ export class SSHSessionDO {
       // --- SSRF Protection ---
       if (isBlockedHost(config.host)) {
         throw new Error('禁止连接内网或保留地址 (SSRF 防护)');
+      }
+      // DNS rebinding defence: resolve hostname and check resolved IPs
+      const dnsCheck = await checkHostResolved(config.host);
+      if (dnsCheck.blocked) {
+        throw new Error(dnsCheck.reason!);
       }
       const BLOCKED_PORTS = [
         23, 80, 443, 25, 465, 587, 110, 143, 993, 995,

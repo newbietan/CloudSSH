@@ -448,12 +448,9 @@ export class AgentCore {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       if (signal.aborted) throw new Error('Aborted');
 
-      // Re-validate base_url at fetch time to prevent TOCTOU SSRF
-      const { validateBaseUrl } = await import('./ssrf');
-      const check = validateBaseUrl(config.base_url);
-      if (!check.valid) {
-        throw new Error(`AI base URL is blocked by SSRF protection: ${check.reason}`);
-      }
+      // base_url was fully validated (string + DNS) at config time before being
+      // saved to DB. Agent reads it from DB — no need to re-validate here.
+      // redirect: 'manual' below remains as the last-line defence.
 
       let cleanBaseUrl = config.base_url.replace(/\/$/, '');
       if (cleanBaseUrl.endsWith('/chat/completions')) {
@@ -797,11 +794,7 @@ export class AgentCore {
 ${conversationText}${previousSection}`;
 
     try {
-      // Re-validate base_url for summary fetch
-      const { validateBaseUrl } = await import('./ssrf');
-      if (!validateBaseUrl(config.base_url).valid) {
-        return null;
-      }
+      // base_url was fully validated at config time — no runtime re-check needed.
 
       let cleanBaseUrl = config.base_url.replace(/\/$/, '');
       if (cleanBaseUrl.endsWith('/chat/completions')) {
