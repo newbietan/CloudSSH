@@ -2,11 +2,6 @@ import { Env, SSHConnectionConfig, TerminalSize, normalizeTerminalSize } from '.
 import { SSHSession } from './ssh-session';
 import { checkHostResolved } from './dns-check';
 
-export function stripUntrustedIdentity(config: SSHConnectionConfig): void {
-  delete config.userId;
-  delete config.githubId;
-}
-
 /**
  * SSRF 防护：检测目标主机是否为内网、保留或特殊地址。
  * 覆盖 IPv4 私有段、IPv6 回环/链路本地/私有段、IPv4-mapped IPv6 等。
@@ -78,24 +73,12 @@ export class SSHSessionDO {
       }
     } else {
       const headerConfig = request.headers.get('x-ssh-config');
-      const paramConfig = url.searchParams.get('config');
 
       if (headerConfig) {
         try {
           prefilledConfig = JSON.parse(decodeURIComponent(headerConfig)) as SSHConnectionConfig;
-          // 来自 Worker 内部可信头的配置，保留 userId
         } catch {
           return new Response('Invalid config header', { status: 400 });
-        }
-      } else if (paramConfig) {
-        try {
-          prefilledConfig = JSON.parse(decodeURIComponent(paramConfig)) as SSHConnectionConfig;
-          // 来自 URL 的匿名配置，必须剥离身份字段防止提权伪造
-          if (prefilledConfig && typeof prefilledConfig === 'object') {
-            stripUntrustedIdentity(prefilledConfig);
-          }
-        } catch {
-          return new Response('Invalid config parameter', { status: 400 });
         }
       }
     }

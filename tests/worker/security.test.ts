@@ -526,23 +526,6 @@ describe('安全 — 速率限制', () => {
 });
 
 describe('安全 — SSH 身份字段信任边界', () => {
-  it('匿名配置同时剥离 userId 与 githubId', async () => {
-    const { stripUntrustedIdentity } = await import('../../src/worker/durable-object');
-    const config = {
-      host: 'example.com',
-      port: 22,
-      username: 'alice',
-      password: 'secret',
-      userId: '12',
-      githubId: '987',
-    };
-
-    stripUntrustedIdentity(config);
-
-    expect(config).not.toHaveProperty('userId');
-    expect(config).not.toHaveProperty('githubId');
-  });
-
   it('Agent 使用 githubId 定位分片并用 userId 查询配置', async () => {
     const { SSHSession } = await import('../../src/worker/ssh-session');
     const idFromName = vi.fn(() => 'do-userdb-987');
