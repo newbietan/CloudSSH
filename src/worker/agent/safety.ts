@@ -30,6 +30,10 @@ export function isBlockedCommand(command: string): { blocked: boolean; reason?: 
         if (/^(\/|~\/?|\/\*?|\*?)$/.test(target)) {
           return { blocked: true, reason: '禁止执行高危删除操作 (rm -rf /)' };
         }
+        // Shell 替换可能展开为根目录 → 一律拦截
+        if (/\$[\(\{]/.test(target) || /`/.test(target)) {
+          return { blocked: true, reason: '禁止在 rm -rf 中使用 shell 替换（可能展开为根目录）' };
+        }
       }
     }
   }

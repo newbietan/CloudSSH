@@ -208,7 +208,8 @@ export class UserDBDO {
       return Response.json({ error: 'Not Found' }, { status: 404 });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      return Response.json({ error: msg }, { status: 500 });
+      console.error('[UserDB] Unhandled error:', msg);
+      return Response.json({ error: '服务器内部错误' }, { status: 500 });
     }
   }
 
@@ -353,12 +354,18 @@ export class UserDBDO {
       inferredHint = null;
     }
 
+    // 校验端口范围
+    const port = body.port || 22;
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      return Response.json({ error: '端口必须是 1-65535 之间的整数' }, { status: 400 });
+    }
+
     this.db.exec(
       'INSERT INTO servers (user_id, name, host, port, username, credential, auth_method, region, inferred_hint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       body.user_id,
       body.name,
       body.host,
-      body.port || 22,
+      port,
       body.username,
       encrypted,
       body.auth_method || 'password',
@@ -424,6 +431,9 @@ export class UserDBDO {
       values.push(newInferred);
     }
     if (body.port !== undefined) {
+      if (!Number.isInteger(body.port) || body.port < 1 || body.port > 65535) {
+        return Response.json({ error: '端口必须是 1-65535 之间的整数' }, { status: 400 });
+      }
       updates.push('port = ?');
       values.push(body.port);
     }

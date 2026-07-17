@@ -118,8 +118,18 @@ export class ToolExecutor {
       return JSON.stringify({ stdout: '', stderr: '非法的服务名称', exit_code: -1 });
     }
 
+    const VALID_ACTIONS = ['status', 'start', 'stop', 'restart', 'enable', 'disable'];
     const safeActions = ['status', 'start', 'restart', 'enable'];
-    if (!safeActions.includes(action)) {
+
+    // 非白名单 action 需要用户确认
+    if (!VALID_ACTIONS.includes(action)) {
+      const cmd = `systemctl ${action} ${service}`;
+      const approved = await this.askConfirmationWithAbort(cmd, `非标准服务操作 "${action}"，即将执行: ${cmd}，请确认`, signal);
+      if (!approved) {
+        return JSON.stringify({ stdout: '', stderr: '用户拒绝执行此操作', exit_code: -1, user_rejected: true });
+      }
+    } else if (!safeActions.includes(action)) {
+      // 白名单内的危险操作（stop/disable）也需要确认
       const reason = action === 'stop'
         ? `即将停止服务 ${service}，请确认`
         : `即将禁用服务 ${service}，请确认`;
@@ -137,10 +147,18 @@ export class ToolExecutor {
     if (target && !safeArgRe.test(target)) target = '';
     if (options && !safeArgRe.test(options)) options = '';
 
+    const VALID_ACTIONS = ['ps', 'logs', 'inspect', 'images', 'stop', 'rm', 'rmi', 'restart'];
     const safeActions = ['ps', 'logs', 'inspect', 'images'];
     const cmd = this.buildDockerCommand(action, target, options);
 
-    if (!safeActions.includes(action)) {
+    // 非白名单 action 需要用户确认
+    if (!VALID_ACTIONS.includes(action)) {
+      const approved = await this.askConfirmationWithAbort(cmd, `非标准 Docker 操作 "${action}"，即将执行: ${cmd}，请确认`, signal);
+      if (!approved) {
+        return JSON.stringify({ stdout: '', stderr: '用户拒绝执行此操作', exit_code: -1, user_rejected: true });
+      }
+    } else if (!safeActions.includes(action)) {
+      // 白名单内的危险操作（stop/rm/rmi/restart）也需要确认
       const reasons: Record<string, string> = {
         stop: `即将停止容器 ${target}，请确认`,
         rm: `即将删除容器 ${target}，此操作不可逆，请确认`,
