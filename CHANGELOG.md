@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.9] - 2026-07-17
+
+### Fixed
+- 修复 SSRF 防护 DNS rebinding 绕过漏洞（VULN-01/02）：新增 `dns-check.ts` 模块，通过 Cloudflare DoH 解析域名后校验真实 IP，防止域名解析到内网地址绕过 `isBlockedHost`/`validateBaseUrl` 字符串校验；SSH 连接和 AI API 调用入口均增加 DNS 解析二次校验。
+- 修复 Agent `service_manage`/`docker_manage` action 参数未校验 enum（VULN-05）：添加 action 白名单校验，非标准操作需用户确认。
+- 修复 `isBlockedCommand` shell 替换绕过（VULN-06）：增加 shell 替换检测，拦截 `rm -rf` 中的 `$()`/`${}`/`` ` `` 模式。
+- 修复 UserDB DO 返回原始错误消息（LOW-04）：异常不再返回原始错误消息，改为通用错误响应，原始错误仅写入 Workers 日志。
+- 修复无端口范围校验（LOW-05）：创建/更新服务器时校验端口 1-65535，非法值返回 400。
+- 修复 RSA/ECDSA 公钥认证协议不合规问题。
+
+### Changed
+- 移除未使用的 `?config=` URL 参数预填功能（LOW-01）：该功能未被使用且存在凭据泄露风险。
+- 优化 DNS 缓存机制：添加最大条目限制（1000）防止内存泄漏，新增 `evictCacheIfNeeded` 函数清理过期和超额缓存。
+- 修正 IPv6 link-local/unique-local 正则表达式精确度：使用更精确的正则匹配 fe80::/10 和 fc00::/7 范围。
+- 添加 DoH 响应 Status 字段校验：只处理 `Status === 0`（NOERROR）的 DNS 响应。
+
+### Added
+- `tests/worker/dns-check.test.ts` 新增 25 个 DNS rebinding 防护测试。
+
 ## [1.0.8] - 2026-07-15
 
 ### Changed
