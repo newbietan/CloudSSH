@@ -14,7 +14,28 @@ interface DnsCacheEntry {
 
 const DNS_CACHE = new Map<string, DnsCacheEntry>();
 const DNS_CACHE_TTL = 60_000; // 60 seconds — balances freshness vs latency
+const DNS_CACHE_MAX_SIZE = 1000; // Prevent unbounded memory growth
 const DOH_TIMEOUT_MS = 5_000;
+
+/** Evict expired entries, then oldest if still over limit. */
+function evictCacheIfNeeded(): void {
+  const now = Date.now();
+  // Remove expired entries first
+  for (const [key, entry] of DNS_CACHE) {
+    if (now >= entry.expiresAt) {
+      DNS_CACHE.delete(key);
+    }
+  }
+  // If still over limit, remove oldest entries (Map preserves insertion order)
+  while (DNS_CACHE.size >= DNS_CACHE_MAX_SIZE) {
+    const firstKey = DNS_CACHE.keys().next().value;
+    if (firstKey !== undefined) {
+      DNS_CACHE.delete(firstKey);
+    } else {
+      break;
+    }
+  }
+}
 
 // ──────────────────────── IP literal detection ────────────────────────
 
@@ -58,10 +79,10 @@ export function isBlockedIP(ip: string): boolean {
 
   // Loopback
   if (normalized === '::1' || normalized === '::') return true;
-  // Link-local fe80::/10
-  if (/^fe[89ab]/.test(normalized)) return true;
-  // Unique local fc00::/7
-  if (/^f[cd]/.test(normalized)) return true;
+  // Link-local fe80::/10 (fe80 to febf)
+  if (/^fe[89ab][0-9a-f]{0,4}(:|::)/i.test(normalized)) return true;
+  // Unique local fc00::/7 (fc00 to fdff)
+  if (/^f[cd][0-9a-f]{0,4}(:|::)/i.test(normalized)) return true;
   // IPv4-mapped IPv6 — block ALL ::ffff: forms (covers dotted-decimal
   // '::ffff:127.0.0.1' AND hex '::ffff:7f00:1')
   if (/^::ffff:/.test(normalized)) return true;
@@ -120,16 +141,20 @@ async function resolveHostname(hostname: string): Promise<string[]> {
     ]);
 
     if (aRes.ok) {
-      const data = await aRes.json<{ Answer?: Array<{ type: number; data: string }> }>();
-      for (const a of data.Answer ?? []) {
-        if (a.type === 1) ips.push(a.data); // A record
+      const data = await aRes.json<{ Status: number; Answer?: Array<{ type: number; data: string }> }>();
+      if (data.Status === 0) { // NOERROR
+        for (const a of data.Answer ?? []) {
+          if (a.type === 1) ips.push(a.data); // A record
+        }
       }
     }
 
     if (aaaaRes.ok) {
-      const data = await aaaaRes.json<{ Answer?: Array<{ type: number; data: string }> }>();
-      for (const a of data.Answer ?? []) {
-        if (a.type === 28) ips.push(a.data); // AAAA record
+      const data = await aaaaRes.json<{ Status: number; Answer?: Array<{ type: number; data: string }> }>();
+      if (data.Status === 0) { // NOERROR
+        for (const a of data.Answer ?? []) {
+          if (a.type === 28) ips.push(a.data); // AAAA record
+        }
       }
     }
   } catch {
@@ -140,6 +165,7 @@ async function resolveHostname(hostname: string): Promise<string[]> {
   }
 
   // Cache even empty results to avoid hammering DoH on persistent failures
+  evictCacheIfNeeded();
   DNS_CACHE.set(hostname, { ips, expiresAt: Date.now() + DNS_CACHE_TTL });
   return ips;
 }
