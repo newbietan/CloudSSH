@@ -1,4 +1,5 @@
 import { populateRegionSelect, regionLabel } from './regions';
+import { confirmAction, notify } from './ui-feedback';
 
 interface UserInfo {
   id: number;
@@ -246,7 +247,10 @@ export class ServerList {
       // 在当前页面内创建新标签并连接
       this.onConnect(wsUrl, server.name, { host: server.host, port: server.port });
     } catch (e) {
-      alert(`连接失败: ${e instanceof Error ? e.message : String(e)}`);
+      notify(e instanceof Error ? e.message : String(e), {
+        title: '连接失败',
+        variant: 'danger',
+      });
     } finally {
       if (connectBtn) {
         connectBtn.innerHTML = `
@@ -262,7 +266,14 @@ export class ServerList {
     const server = this.servers.find((s) => s.id === serverId);
     if (!server) return;
 
-    if (!confirm(`确认删除服务器 "${server.name}" ?`)) return;
+    const confirmed = await confirmAction({
+      title: '删除服务器',
+      message: `确定要删除服务器“${server.name}”吗？保存的连接信息和凭据也会一并删除。`,
+      confirmText: '删除',
+      cancelText: '保留',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
 
     try {
       const card = document.getElementById(`card-${serverId}`);
@@ -279,7 +290,10 @@ export class ServerList {
       this.servers = this.servers.filter((s) => s.id !== serverId);
       this.renderServerGrid();
     } catch (e) {
-      alert(`删除失败: ${e instanceof Error ? e.message : String(e)}`);
+      notify(e instanceof Error ? e.message : String(e), {
+        title: '删除失败',
+        variant: 'danger',
+      });
       await this.fetchServers();
     }
   }
@@ -386,7 +400,12 @@ export class ServerList {
     const privateKey = (document.getElementById('server-private-key') as HTMLTextAreaElement).value;
 
     if (!name || !host || !username) {
-      alert('请填写服务器名称、主机和用户名');
+      notify('请填写服务器名称、主机和用户名', {
+        title: '服务器信息不完整',
+        variant: 'warning',
+      });
+      const missingId = !name ? 'server-name' : !host ? 'server-host' : 'server-username';
+      (document.getElementById(missingId) as HTMLInputElement)?.focus();
       return;
     }
 
@@ -395,7 +414,12 @@ export class ServerList {
 
     // 新增时必须填写凭据，编辑时可选
     if (!this.editingServerId && !credential) {
-      alert(authMethod === 'publickey' ? '请粘贴私钥内容' : '请输入密码');
+      notify(authMethod === 'publickey' ? '请粘贴私钥内容' : '请输入密码', {
+        title: '认证信息不完整',
+        variant: 'warning',
+      });
+      const credentialId = authMethod === 'publickey' ? 'server-private-key' : 'server-password';
+      (document.getElementById(credentialId) as HTMLInputElement | HTMLTextAreaElement)?.focus();
       return;
     }
 
@@ -454,17 +478,23 @@ export class ServerList {
         if (userRegion || inferred) {
           // 用户手动指定优先显示手动值，否则显示系统推断值
           const hint = userRegion || inferred;
-          this.showToast(`已保存，区域：${regionLabel(hint)}`, false);
+          notify(`已保存，区域：${regionLabel(hint)}`, { variant: 'success' });
         } else {
           // 推断失败（私网 IP / 限流 / 未命中映射表）
-          this.showToast('已保存，未能推断区域（将使用自动调度）', true);
+          notify('已保存，未能推断区域（将使用自动调度）', {
+            title: '保存成功',
+            variant: 'warning',
+          });
         }
       }
 
       this.hideModal();
       await this.fetchServers();
     } catch (e) {
-      alert(`保存失败: ${e instanceof Error ? e.message : String(e)}`);
+      notify(e instanceof Error ? e.message : String(e), {
+        title: '保存失败',
+        variant: 'danger',
+      });
     } finally {
       submitBtn.disabled = false;
       submitBtn.innerHTML = `
@@ -472,47 +502,6 @@ export class ServerList {
         ${this.editingServerId ? 'UPDATE_SERVER' : 'SAVE_SERVER'}
       `;
     }
-  }
-
-  // ==================== 保存反馈 toast ====================
-
-  /**
-   * 右下角简短提示气泡。warn=true 用青色表示异常场景，否则用主题绿表示正常保存。
-   * 与 DEBUG_MODE 的详细 showDebugNotification 互斥使用。
-   */
-  private showToast(text: string, warn = false): void {
-    const notification = document.createElement('div');
-    const accentColor = warn ? 'var(--accent-secondary)' : 'var(--accent)';
-    notification.className = 'fixed bottom-4 right-4 z-[200] max-w-sm p-3 px-4 rounded-lg shadow-2xl border bg-[var(--bg-surface)] text-[var(--text)] font-mono text-[11px] flex items-center gap-2';
-    notification.style.borderColor = accentColor;
-    notification.style.opacity = '0';
-    notification.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-    notification.style.transform = 'translateY(8px)';
-
-    const icon = document.createElement('span');
-    icon.className = 'material-symbols-outlined';
-    icon.style.fontSize = '16px';
-    icon.style.color = accentColor;
-    icon.textContent = warn ? 'warning' : 'check_circle';
-    notification.appendChild(icon);
-
-    const label = document.createElement('span');
-    label.className = 'text-on-surface';
-    label.textContent = text;
-    notification.appendChild(label);
-
-    document.body.appendChild(notification);
-    // 入场动画
-    requestAnimationFrame(() => {
-      notification.style.opacity = '1';
-      notification.style.transform = 'translateY(0)';
-    });
-    // 4 秒后淡出
-    setTimeout(() => {
-      notification.style.opacity = '0';
-      notification.style.transform = 'translateY(8px)';
-      setTimeout(() => notification.remove(), 300);
-    }, 4000);
   }
 
   // ==================== DEBUG 通知 ====================

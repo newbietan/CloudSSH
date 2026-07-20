@@ -1,3 +1,5 @@
+import { confirmAction, requestText } from './ui-feedback';
+
 export interface SFTPFileEntry {
   name: string;
   type: 'dir' | 'link' | 'file';
@@ -16,6 +18,12 @@ const UPLOAD_CHUNK_SIZE = 128 * 1024;
 const UPLOAD_CONCURRENCY = 8;
 const DOWNLOAD_URL_REVOKE_DELAY_MS = 1000;
 const SFTP_HEARTBEAT_INTERVAL_MS = 30000;
+
+function validateRemoteName(value: string): string | null {
+  if (value === '.' || value === '..') return '名称不能是“.”或“..”';
+  if (value.includes('/') || value.includes('\0')) return '名称不能包含“/”或空字符';
+  return null;
+}
 
 class Deferred<T> {
   promise: Promise<T>;
@@ -138,7 +146,7 @@ export class SFTPPanel {
   private downloadCancelRequested: boolean = false;
   private downloadQueueGeneration: number = 0;
   private readonly keydownHandler = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape' && this.visible) {
+    if (e.key === 'Escape' && this.visible && !document.querySelector('dialog[open]')) {
       this.hide();
     }
   };
@@ -1205,16 +1213,25 @@ export class SFTPPanel {
   }
 
   // Delete
-  private deleteSelected(): void {
-    if (!this.selectedEntry) return;
+  private async deleteSelected(): Promise<void> {
+    const entry = this.selectedEntry;
+    if (!entry) return;
 
-    const path = this.currentPath === '/' ? `/${this.selectedEntry.name}` : `${this.currentPath}/${this.selectedEntry.name}`;
+    const path = this.currentPath === '/' ? `/${entry.name}` : `${this.currentPath}/${entry.name}`;
+    const confirmed = await confirmAction({
+      title: entry.isDir ? '删除目录' : '删除文件',
+      message: entry.isDir
+        ? `确定要删除目录“${entry.name}”及其中的全部内容吗？此操作无法撤销。`
+        : `确定要删除文件“${entry.name}”吗？此操作无法撤销。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
 
-    if (this.selectedEntry.isDir) {
-      if (!confirm(`Delete directory "${this.selectedEntry.name}" and all its contents?`)) return;
+    if (entry.isDir) {
       this.sendJSON({ type: 'sftp_rmdir', path });
     } else {
-      if (!confirm(`Delete file "${this.selectedEntry.name}"?`)) return;
       this.sendJSON({ type: 'sftp_delete', path });
     }
   }
@@ -1226,13 +1243,23 @@ export class SFTPPanel {
   }
 
   // Rename
-  private showRenameDialog(): void {
-    if (!this.selectedEntry) return;
+  private async showRenameDialog(): Promise<void> {
+    const entry = this.selectedEntry;
+    if (!entry) return;
 
-    const newName = prompt('New name:', this.selectedEntry.name);
-    if (!newName || newName === this.selectedEntry.name) return;
+    const newName = await requestText({
+      title: '重命名',
+      message: `为“${entry.name}”输入新名称。`,
+      label: '新名称',
+      defaultValue: entry.name,
+      confirmText: '重命名',
+      cancelText: '取消',
+      maxLength: 255,
+      validate: validateRemoteName,
+    });
+    if (!newName || newName === entry.name) return;
 
-    const oldPath = this.currentPath === '/' ? `/${this.selectedEntry.name}` : `${this.currentPath}/${this.selectedEntry.name}`;
+    const oldPath = this.currentPath === '/' ? `/${entry.name}` : `${this.currentPath}/${entry.name}`;
     const newPath = this.currentPath === '/' ? `/${newName}` : `${this.currentPath}/${newName}`;
 
     this.sendJSON({ type: 'sftp_rename', oldPath, newPath });
@@ -1245,8 +1272,17 @@ export class SFTPPanel {
   }
 
   // Mkdir
-  private showMkdirDialog(): void {
-    const name = prompt('Directory name:');
+  private async showMkdirDialog(): Promise<void> {
+    const name = await requestText({
+      title: '新建目录',
+      message: `在“${this.currentPath}”中新建目录。`,
+      label: '目录名称',
+      placeholder: '请输入目录名称',
+      confirmText: '创建',
+      cancelText: '取消',
+      maxLength: 255,
+      validate: validateRemoteName,
+    });
     if (!name) return;
 
     const path = this.currentPath === '/' ? `/${name}` : `${this.currentPath}/${name}`;

@@ -4,6 +4,7 @@ import { ConnectionForm } from './auth-form';
 import { ServerList } from './server-list';
 import { TabManager } from './tab-manager';
 import { AIConfigPanel } from './ai-config';
+import { notify } from './ui-feedback';
 
 // ==================== 全局状态 ====================
 
@@ -204,7 +205,10 @@ function showTerminalWithNewTab(
 
 function showTerminalFromServer(wsUrl: string, serverName: string, hostInfo?: { host: string; port: number }): void {
   if (!validateWsUrl(wsUrl)) {
-    alert('Invalid WebSocket URL');
+    notify('服务器返回了无效或不受信任的 WebSocket 地址。', {
+      title: '无法建立连接',
+      variant: 'danger',
+    });
     return;
   }
 
@@ -331,7 +335,7 @@ importThemeInput?.addEventListener('change', async (e) => {
     try {
       const data = JSON.parse(ev.target!.result as string);
       if (!data.ui || typeof data.ui !== 'object') {
-        alert('无效的主题文件：缺少 "ui" 字段');
+        notify('主题文件缺少“ui”字段。', { title: '无法导入主题', variant: 'danger' });
         return;
       }
 
@@ -354,8 +358,9 @@ importThemeInput?.addEventListener('change', async (e) => {
 
       // 直接应用主题，不刷新页面（避免断开 WebSocket）
       getThemeTerminal()?.applyImportedTheme(data);
+      notify('主题已导入并应用。', { variant: 'success' });
     } catch {
-      alert('无效的 JSON 文件');
+      notify('文件不是有效的 JSON 格式。', { title: '无法导入主题', variant: 'danger' });
     }
   };
   reader.readAsText(file);

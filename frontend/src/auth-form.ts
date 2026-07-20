@@ -1,6 +1,7 @@
 import { loadKnownFingerprint } from './terminal';
 import type { TabManager } from './tab-manager';
 import { populateRegionSelect, regionLabel } from './regions';
+import { notify } from './ui-feedback';
 // --- Credential encryption helpers ---
 async function deriveKey(salt: Uint8Array): Promise<CryptoKey> {
   const raw = new TextEncoder().encode(window.location.origin + ':cloudssh');
@@ -261,7 +262,10 @@ export class ConnectionForm {
           fileNameSpan.textContent = file.name;
         }
       } catch (error) {
-        alert('读取密钥文件失败: ' + (error instanceof Error ? error.message : '未知错误'));
+        notify('读取密钥文件失败：' + (error instanceof Error ? error.message : '未知错误'), {
+          title: '无法读取文件',
+          variant: 'danger',
+        });
       }
 
       // Reset file input
@@ -444,23 +448,27 @@ export class ConnectionForm {
     const regionValue = anonRegionSelect ? anonRegionSelect.value : '';
 
     if (!host || !username) {
-      alert('请填写主机名和用户名');
+      notify('请填写主机名和用户名', { title: '连接信息不完整', variant: 'warning' });
+      (document.getElementById(!host ? 'host' : 'username') as HTMLInputElement)?.focus();
       return;
     }
 
     if (this.authMode === 'password' && !password) {
-      alert('请输入密码');
+      notify('请输入密码', { title: '认证信息不完整', variant: 'warning' });
+      (document.getElementById('password') as HTMLInputElement)?.focus();
       return;
     }
 
     if (this.authMode === 'key' && !privateKey) {
-      alert('请粘贴私钥内容');
+      notify('请粘贴私钥内容', { title: '认证信息不完整', variant: 'warning' });
+      (document.getElementById('private-key') as HTMLTextAreaElement)?.focus();
       return;
     }
 
     // Check Turnstile if enabled
     if (this.turnstileEnabled && !this.turnstileVerified) {
-      alert('请完成人机验证');
+      notify('请先完成人机验证', { title: '需要验证', variant: 'warning' });
+      document.getElementById('turnstile-container')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
 
@@ -545,4 +553,3 @@ export class ConnectionForm {
     }
   }
 }
-
