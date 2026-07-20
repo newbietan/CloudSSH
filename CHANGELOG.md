@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-07-20
+
+### Added
+- 新增统一前端反馈系统：普通提示使用非阻塞 Toast，危险操作使用项目主题确认框，需要输入时使用带校验的输入框；支持反馈队列、主题配色、移动端布局、减少动画、ARIA 语义、焦点恢复以及 `Escape`/`Enter` 键盘操作。
+- 新增生产构建回归测试，检查 xterm.js `requestMode` 局部变量声明未被构建工具错误删除；新增原生弹窗扫描测试，防止前端重新引入阻塞式 `alert`/`confirm`/`prompt`。
+
+### Changed
+- 将连接表单、服务器管理、主题导入和 SFTP 文件操作中的浏览器原生弹窗全部替换为统一反馈组件；删除操作默认聚焦安全选项，并明确提示不可撤销。
+- 完善 SFTP 重命名与新建目录输入校验，拒绝空名称、`.`、`..`、路径分隔符和空字符。
+
+### Fixed
+- 修复 Vite 生产构建对 xterm.js 6.0.0 预压缩 ESM 再次执行 esbuild 语法压缩时，错误删除 `InputHandler.requestMode` 局部变量声明，导致 Vim/Vi 发送终端模式查询后输入链中断、无法进入或退出插入模式的问题。
+- 禁用会触发上述错误转换的 esbuild `minifySyntax` 阶段，同时保留其他压缩能力，确保 Worker 内联生产产物可以正确处理 Vim 及其他 TUI 的 DECRQM 查询。
+
 ## [1.0.9] - 2026-07-17
 
 ### Fixed
