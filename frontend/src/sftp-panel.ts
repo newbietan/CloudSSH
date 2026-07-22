@@ -210,15 +210,15 @@ export class SFTPPanel {
           </button>
           <button id="sftp-download-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.download" title="下载" disabled>
             <span class="material-symbols-outlined" style="font-size: 14px;">download</span>
-            <span data-i18n="sftp.download">下载</span>
+            <span data-i18n="sftp.downloadAction">下载</span>
           </button>
           <button id="sftp-delete-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-error-container rounded transition-colors cursor-pointer text-error disabled:opacity-30" data-i18n-title="common.delete" title="删除" disabled>
             <span class="material-symbols-outlined" style="font-size: 14px;">delete</span>
-            <span data-i18n="common.delete">删除</span>
+            <span data-i18n="sftp.deleteAction">删除</span>
           </button>
           <button id="sftp-rename-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.rename" title="重命名" disabled>
             <span class="material-symbols-outlined" style="font-size: 14px;">drive_file_rename_outline</span>
-            <span data-i18n="sftp.rename">重命名</span>
+            <span data-i18n="sftp.renameAction">重命名</span>
           </button>
           <input type="file" id="sftp-file-input" class="hidden" multiple />
         </div>
