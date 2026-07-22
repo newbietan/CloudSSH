@@ -5,26 +5,11 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { SearchAddon } from '@xterm/addon-search';
 import { TrzszFilter } from 'trzsz';
 import '@xterm/xterm/css/xterm.css';
-import { t, type TranslationKey } from './i18n';
+import { t } from './i18n';
 import { centerTerminalText } from './terminal-text';
+import { localizedSSHMessage } from './terminal-status';
 
 const TRZSZ_MAX_DATA_CHUNK_SIZE = 2 * 1024 * 1024;
-
-const SSH_EVENT_KEYS: Record<string, TranslationKey> = {
-  version_exchange: 'terminal.status.versionExchange',
-  version_ready: 'terminal.status.versionReady',
-  auth_success: 'terminal.status.authSuccess',
-  shell_ready: 'terminal.status.shellReady',
-  remote_closed: 'terminal.status.remoteClosed',
-  keepalive_timeout: 'terminal.status.keepaliveTimeout',
-  host_key_accepted: 'terminal.status.hostKeyAccepted',
-  session_ready: 'terminal.status.sessionReady',
-};
-
-function localizedSSHMessage(message: string, event?: string): string {
-  const key = event ? SSH_EVENT_KEYS[event] : undefined;
-  return key ? t(key) : message;
-}
 
 export interface SSHConnectionConfig {
   host: string;
@@ -552,7 +537,7 @@ export class SSHTerminal {
 
           switch (msg.type) {
             case 'status':
-              this.terminal.writeln(`\x1b[32m[*] ${localizedSSHMessage(msg.message, msg.event)}\x1b[0m`);
+              this.terminal.writeln(`\x1b[32m[*] ${localizedSSHMessage(msg.message, msg.event, msg.params)}\x1b[0m`);
               if (msg.event === 'auth_success' || msg.message === '认证成功') {
                 this.reconnectAttempts = 0;
                 const statusText = document.getElementById('status-text');
@@ -563,7 +548,7 @@ export class SSHTerminal {
               }
               break;
             case 'error':
-              this.terminal.writeln(`\x1b[31m[!] ${localizedSSHMessage(msg.message, msg.event)}\x1b[0m`);
+              this.terminal.writeln(`\x1b[31m[!] ${localizedSSHMessage(msg.message, msg.event, msg.params)}\x1b[0m`);
               break;
             case 'debug':
               this.terminal.writeln(`\x1b[90m[DEBUG] ${msg.message}\x1b[0m`);
