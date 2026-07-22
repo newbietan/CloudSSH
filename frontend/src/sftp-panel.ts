@@ -202,11 +202,11 @@ export class SFTPPanel {
         <div class="flex items-center gap-1 px-3 py-1.5 border-b border-outline-variant bg-surface shrink-0">
           <button id="sftp-upload-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" data-i18n-title="sftp.upload" title="上传文件">
             <span class="material-symbols-outlined" style="font-size: 14px;">upload_file</span>
-            <span data-i18n="sftp.upload">上传</span>
+            <span data-i18n="sftp.uploadAction">上传文件</span>
           </button>
           <button id="sftp-mkdir-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-secondary-container" data-i18n-title="sftp.newFolder" title="新建文件夹">
             <span class="material-symbols-outlined" style="font-size: 14px;">create_new_folder</span>
-            <span data-i18n="sftp.newFolder">新建文件夹</span>
+            <span data-i18n="sftp.mkdirAction">新建文件夹</span>
           </button>
           <button id="sftp-download-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.download" title="下载" disabled>
             <span class="material-symbols-outlined" style="font-size: 14px;">download</span>

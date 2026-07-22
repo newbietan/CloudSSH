@@ -38,6 +38,13 @@ describe('国际化核心', () => {
     setLocale('zh-CN', { persist: false });
     expect(t('terminal.connectionClosed', { code: 1000 })).toBe('连接已关闭（代码=1000）');
   });
+
+  it('英文 SFTP 工具栏使用紧凑操作标签', () => {
+    expect(enUS['sftp.uploadAction']).toBe('UPLOAD');
+    expect(enUS['sftp.mkdirAction']).toBe('MKDIR');
+    expect(enUS['sftp.upload']).toBe('Upload file');
+    expect(enUS['sftp.newFolder']).toBe('New folder');
+  });
 });
 
 describe('Agent 响应语言', () => {
