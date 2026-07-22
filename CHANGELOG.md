@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-07-22
+
+### Added
+- 新增简体中文与英文界面切换，支持语言偏好持久化和 URL 参数覆盖。
+- 为匿名连接、服务器管理、终端、SFTP、AI 设置、Agent、弹窗及操作反馈补充完整的双语文案。
+- Agent 请求携带当前界面语言偏好，并根据所选语言生成对应语言的回复。
+
+### Changed
+- 将语言切换入口优化为带图标的目标语言按钮；匿名模式下调整至终端图标左侧，终端会话页隐藏入口以保持会话语言稳定。
+- 精简并统一 SFTP 英文工具栏文案，使用 `UPLOAD`、`MKDIR` 等紧凑的大写操作标签。
+- SSH 状态消息改用结构化事件码和参数化翻译，同时保留对旧服务端原始消息的兼容回退。
+
+### Fixed
+- 修复中文终端连接横幅因 CJK 字符双列宽导致边框无法闭合的问题。
+- 修复英文模式下认证、主机密钥、通道及会话状态仍显示中文的问题。
+
 ## [1.1.0] - 2026-07-20
 
 ### Added
