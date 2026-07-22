@@ -2,6 +2,7 @@ export const zhCN = {
   'language.label': '语言',
   'language.zhCN': '简体中文',
   'language.enUS': 'English',
+  'language.switchTo': '切换为{language}',
   'common.confirm': '确定',
   'common.cancel': '取消',
   'common.close': '关闭',

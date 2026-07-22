@@ -60,28 +60,41 @@ export function translateDocument(root: ParentNode = document): void {
   });
 }
 
-function syncLanguageSelectors(): void {
-  document.querySelectorAll<HTMLSelectElement>('[data-language-select]').forEach((select) => {
-    select.value = currentLocale;
-    select.setAttribute('aria-label', t('language.label'));
-    select.title = t('language.label');
+export function getAlternateLocale(locale: Locale): Locale {
+  return locale === 'zh-CN' ? 'en-US' : 'zh-CN';
+}
+
+function localeSelfName(locale: Locale): string {
+  return locale === 'zh-CN' ? zhCN['language.zhCN'] : enUS['language.enUS'];
+}
+
+function syncLanguageSwitchers(): void {
+  document.querySelectorAll<HTMLButtonElement>('[data-language-toggle]').forEach((button) => {
+    const targetLocale = getAlternateLocale(currentLocale);
+    const targetName = localeSelfName(targetLocale);
+    button.dataset.targetLocale = targetLocale;
+    button.setAttribute('aria-label', t('language.switchTo', { language: targetName }));
+    button.title = t('language.switchTo', { language: targetName });
+    const label = button.querySelector<HTMLElement>('[data-language-toggle-label]');
+    if (label) label.textContent = targetName;
   });
 }
 
 export function mountLanguageSwitchers(root: ParentNode = document): void {
   root.querySelectorAll<HTMLElement>('[data-language-switcher]').forEach((container) => {
-    if (container.querySelector('[data-language-select]')) return;
-    const select = document.createElement('select');
-    select.dataset.languageSelect = '';
-    select.className = 'language-selector';
-    select.innerHTML = `
-      <option value="zh-CN">${zhCN['language.zhCN']}</option>
-      <option value="en-US">${enUS['language.enUS']}</option>
+    if (container.querySelector('[data-language-toggle]')) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.languageToggle = '';
+    button.className = 'language-toggle';
+    button.innerHTML = `
+      <span class="material-symbols-outlined language-toggle__icon" aria-hidden="true">language</span>
+      <span data-language-toggle-label></span>
     `;
-    select.addEventListener('change', () => setLocale(select.value as Locale));
-    container.appendChild(select);
+    button.addEventListener('click', () => setLocale(getAlternateLocale(currentLocale)));
+    container.appendChild(button);
   });
-  syncLanguageSelectors();
+  syncLanguageSwitchers();
 }
 
 export function setLocale(locale: Locale, options: { persist?: boolean } = {}): void {
@@ -89,7 +102,7 @@ export function setLocale(locale: Locale, options: { persist?: boolean } = {}): 
   if (typeof document !== 'undefined') {
     document.documentElement.lang = locale;
     translateDocument();
-    syncLanguageSelectors();
+    syncLanguageSwitchers();
   }
   if (options.persist !== false && typeof localStorage !== 'undefined') {
     try { localStorage.setItem(STORAGE_KEY, locale); } catch { /* storage may be disabled */ }

@@ -39,20 +39,39 @@ body {
   min-height: 100vh;
 }
 
-.language-selector {
+.language-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   color: var(--on-surface-variant);
-  background: var(--bg-surface);
+  background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
   border: 1px solid var(--border-strong);
   border-radius: 4px;
-  padding: 0.25rem 1.75rem 0.25rem 0.5rem;
+  padding: 0.28rem 0.55rem;
   font: inherit;
   font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
   cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
 }
 
-.language-selector:focus-visible {
+.language-toggle:hover {
+  color: var(--accent-secondary);
+  border-color: var(--accent-secondary);
+  background: var(--accent-glow);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.language-toggle:focus-visible {
   outline: 2px solid var(--accent-secondary);
   outline-offset: 2px;
+}
+
+.language-toggle__icon {
+  color: var(--accent-secondary);
+  font-size: 1rem;
+  font-variation-settings: 'FILL' 0;
 }
 
 /* 终端页面需要禁止页面级滚动，通过 JS 切换此类名 */

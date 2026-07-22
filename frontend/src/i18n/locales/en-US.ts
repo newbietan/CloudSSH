@@ -1,7 +1,7 @@
 import type { zhCN } from './zh-CN';
 
 export const enUS: Record<keyof typeof zhCN, string> = {
-  'language.label': 'Language', 'language.zhCN': '简体中文', 'language.enUS': 'English',
+  'language.label': 'Language', 'language.zhCN': '简体中文', 'language.enUS': 'English', 'language.switchTo': 'Switch to {language}',
   'common.confirm': 'Confirm', 'common.cancel': 'Cancel', 'common.close': 'Close', 'common.save': 'Save', 'common.delete': 'Delete', 'common.edit': 'Edit', 'common.connect': 'Connect', 'common.loading': 'Loading…', 'common.optional': 'Optional', 'common.auto': 'Auto', 'common.password': 'Password', 'common.privateKey': 'Private key', 'common.documentation': 'Documentation',
   'feedback.info': 'Notice', 'feedback.success': 'Success', 'feedback.warning': 'Attention', 'feedback.danger': 'Operation failed', 'feedback.closeNotification': 'Close notification',
   'dialog.promptTitle': 'Input required', 'dialog.confirmTitle': 'Confirm action', 'dialog.inputLabel': 'Input', 'dialog.inputRequired': 'Please enter a value',

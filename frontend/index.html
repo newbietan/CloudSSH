@@ -49,7 +49,6 @@
       <div class="scanlines"></div>
       <div class="flicker"></div>
       <main class="w-full max-w-md relative z-10">
-        <div class="flex justify-end mb-3" data-language-switcher></div>
         <div class="mb-8 text-center">
           <div class="text-3xl font-bold text-primary tracking-tighter mb-2">CloudSSH<span class="blinking-cursor"></span></div>
         </div>
@@ -57,7 +56,10 @@
           <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent opacity-50"></div>
           <div class="flex items-center justify-between mb-8 pb-4 border-b border-dim">
             <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]" data-i18n="auth.connectionParameters">连接参数</span>
-            <span class="material-symbols-outlined text-[var(--accent-secondary)]" style="font-variation-settings: 'FILL' 0;">terminal</span>
+            <div class="flex items-center gap-3">
+              <div data-language-switcher></div>
+              <span class="material-symbols-outlined text-[var(--accent-secondary)]" style="font-variation-settings: 'FILL' 0;">terminal</span>
+            </div>
           </div>
           <div id="connection-form-container"></div>
         </div>
@@ -213,7 +215,6 @@
           <h1 class="text-2xl font-bold text-primary-container tracking-tighter cursor-pointer">CloudSSH</h1>
         </div>
         <div class="flex items-center gap-2 sm:gap-4 text-primary-container flex-wrap">
-          <div data-language-switcher></div>
           <select id="theme-selector" class="bg-surface-variant text-on-surface-variant text-xs py-1 px-2 border-none outline-none cursor-pointer rounded">
             <option value="cyberpunk">Cyberpunk</option>
             <option value="glacier">Glacier</option>
