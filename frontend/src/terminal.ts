@@ -6,6 +6,7 @@ import { SearchAddon } from '@xterm/addon-search';
 import { TrzszFilter } from 'trzsz';
 import '@xterm/xterm/css/xterm.css';
 import { t, type TranslationKey } from './i18n';
+import { centerTerminalText } from './terminal-text';
 
 const TRZSZ_MAX_DATA_CHUNK_SIZE = 2 * 1024 * 1024;
 
@@ -701,9 +702,10 @@ export class SSHTerminal {
 
   private showConnectingBanner(): void {
     this.resetTerminalDisplay();
+    const bannerText = centerTerminalText(t('terminal.bannerConnecting'), 34);
     this.terminal.write(
       '\x1b[1;33m╔══════════════════════════════════╗\x1b[0m\r\n' +
-      `\x1b[1;33m║      ${t('terminal.bannerConnecting').padEnd(28)}║\x1b[0m\r\n` +
+      `\x1b[1;33m║${bannerText}║\x1b[0m\r\n` +
       '\x1b[1;33m╚══════════════════════════════════╝\x1b[0m\r\n\r\n'
     );
   }
