@@ -1,3 +1,5 @@
+import { t, type TranslationKey } from './i18n';
+
 /**
  * DO locationHint 区域选项共享数据。
  *
@@ -9,30 +11,31 @@
  */
 export interface RegionOption {
   value: string;
-  label: string;
+  labelKey: TranslationKey;
 }
 
 export const REGION_OPTIONS: RegionOption[] = [
-  { value: '', label: '自动（保存时由系统推断）' },
-  { value: 'wnam', label: 'North America — West' },
-  { value: 'enam', label: 'North America — East' },
-  { value: 'sam', label: 'South America' },
-  { value: 'weur', label: 'Europe — West' },
-  { value: 'eeur', label: 'Europe — East' },
-  { value: 'apac', label: 'Asia-Pacific' },
-  { value: 'apac-ne', label: 'Asia-Pacific — Northeast' },
-  { value: 'apac-se', label: 'Asia-Pacific — Southeast' },
-  { value: 'oc', label: 'Oceania' },
-  { value: 'afr', label: 'Africa' },
-  { value: 'me', label: 'Middle East' },
+  { value: '', labelKey: 'region.auto' },
+  { value: 'wnam', labelKey: 'region.wnam' },
+  { value: 'enam', labelKey: 'region.enam' },
+  { value: 'sam', labelKey: 'region.sam' },
+  { value: 'weur', labelKey: 'region.weur' },
+  { value: 'eeur', labelKey: 'region.eeur' },
+  { value: 'apac', labelKey: 'region.apac' },
+  { value: 'apac-ne', labelKey: 'region.apacNe' },
+  { value: 'apac-se', labelKey: 'region.apacSe' },
+  { value: 'oc', labelKey: 'region.oc' },
+  { value: 'afr', labelKey: 'region.afr' },
+  { value: 'me', labelKey: 'region.me' },
 ];
 
 /**
  * 根据 locationHint 值返回友好标签（用于状态栏、编辑回显等只读场景）。
  */
 export function regionLabel(value: string | null | undefined): string {
-  if (!value) return '自动';
-  return REGION_OPTIONS.find(o => o.value === value)?.label || value;
+  if (!value) return t('region.autoShort');
+  const option = REGION_OPTIONS.find(o => o.value === value);
+  return option ? t(option.labelKey) : value;
 }
 
 /**
@@ -43,6 +46,6 @@ export function populateRegionSelect(
   selected: string | null | undefined,
 ): void {
   el.innerHTML = REGION_OPTIONS.map(o =>
-    `<option value="${o.value}" ${o.value === (selected || '') ? 'selected' : ''}>${o.label}</option>`,
+    `<option value="${o.value}" ${o.value === (selected || '') ? 'selected' : ''}>${t(o.labelKey)}</option>`,
   ).join('');
 }

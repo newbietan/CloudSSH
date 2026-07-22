@@ -1,4 +1,5 @@
 import { confirmAction, requestText } from './ui-feedback';
+import { onLocaleChange, t, translateDocument } from './i18n';
 
 export interface SFTPFileEntry {
   name: string;
@@ -20,8 +21,8 @@ const DOWNLOAD_URL_REVOKE_DELAY_MS = 1000;
 const SFTP_HEARTBEAT_INTERVAL_MS = 30000;
 
 function validateRemoteName(value: string): string | null {
-  if (value === '.' || value === '..') return '名称不能是“.”或“..”';
-  if (value.includes('/') || value.includes('\0')) return '名称不能包含“/”或空字符';
+  if (value === '.' || value === '..') return t('sftp.invalidName');
+  if (value.includes('/') || value.includes('\0')) return t('sftp.invalidName');
   return null;
 }
 
@@ -145,6 +146,7 @@ export class SFTPPanel {
   private downloadActive: boolean = false;
   private downloadCancelRequested: boolean = false;
   private downloadQueueGeneration: number = 0;
+  private localeCleanup: (() => void) | null = null;
   private readonly keydownHandler = (e: KeyboardEvent): void => {
     if (e.key === 'Escape' && this.visible && !document.querySelector('dialog[open]')) {
       this.hide();
@@ -155,6 +157,7 @@ export class SFTPPanel {
     this.getWebSocketUrl = getWebSocketUrl;
     this.container = this.createPanel();
     document.body.appendChild(this.container);
+    this.localeCleanup = onLocaleChange(() => translateDocument(this.container));
     this.bindKeyboard();
   }
 
@@ -171,51 +174,51 @@ export class SFTPPanel {
         <div class="flex items-center justify-between px-4 h-12 border-b border-outline-variant bg-elevated shrink-0">
           <div class="flex items-center gap-2">
             <span class="material-symbols-outlined text-primary-container" style="font-size: 18px; font-variation-settings: 'FILL' 1;">folder_open</span>
-            <span class="text-xs font-bold tracking-[0.1em] text-primary-container">SFTP_FILE_MANAGER</span>
+            <span class="text-xs font-bold tracking-[0.1em] text-primary-container" data-i18n="sftp.title">SFTP 文件管理器</span>
           </div>
-          <button id="sftp-close-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 text-on-surface-variant" title="Close">
+          <button id="sftp-close-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 text-on-surface-variant" data-i18n-title="sftp.close" title="关闭 SFTP 面板">
             <span class="material-symbols-outlined" style="font-size: 18px;">close</span>
           </button>
         </div>
 
         <!-- Toolbar -->
         <div class="flex items-center gap-2 px-3 py-2 border-b border-outline-variant bg-surface shrink-0">
-          <button id="sftp-back-btn" class="p-1 hover:bg-surface-variant rounded transition-colors cursor-pointer" title="Back">
+          <button id="sftp-back-btn" class="p-1 hover:bg-surface-variant rounded transition-colors cursor-pointer" data-i18n-title="sftp.back" title="返回上一级">
             <span class="material-symbols-outlined" style="font-size: 18px;">arrow_back</span>
           </button>
-          <button id="sftp-home-btn" class="p-1 hover:bg-surface-variant rounded transition-colors cursor-pointer" title="Home">
+          <button id="sftp-home-btn" class="p-1 hover:bg-surface-variant rounded transition-colors cursor-pointer" data-i18n-title="sftp.home" title="主目录">
             <span class="material-symbols-outlined" style="font-size: 18px;">home</span>
           </button>
-          <button id="sftp-refresh-btn" class="p-1 hover:bg-surface-variant rounded transition-colors cursor-pointer" title="Refresh">
+          <button id="sftp-refresh-btn" class="p-1 hover:bg-surface-variant rounded transition-colors cursor-pointer" data-i18n-title="sftp.refresh" title="刷新">
             <span class="material-symbols-outlined" style="font-size: 18px;">refresh</span>
           </button>
           <input id="sftp-path-input" class="flex-1 terminal-input text-[12px] px-2 py-1" type="text" value="/" />
-          <button id="sftp-go-btn" class="p-1 hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" title="Go">
+          <button id="sftp-go-btn" class="p-1 hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" data-i18n-title="sftp.go" title="前往">
             <span class="material-symbols-outlined" style="font-size: 18px;">arrow_forward</span>
           </button>
         </div>
 
         <!-- Actions Bar -->
         <div class="flex items-center gap-1 px-3 py-1.5 border-b border-outline-variant bg-surface shrink-0">
-          <button id="sftp-upload-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" title="Upload File">
+          <button id="sftp-upload-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" data-i18n-title="sftp.upload" title="上传文件">
             <span class="material-symbols-outlined" style="font-size: 14px;">upload_file</span>
-            UPLOAD
+            <span data-i18n="sftp.upload">上传</span>
           </button>
-          <button id="sftp-mkdir-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-secondary-container" title="New Folder">
+          <button id="sftp-mkdir-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-secondary-container" data-i18n-title="sftp.newFolder" title="新建文件夹">
             <span class="material-symbols-outlined" style="font-size: 14px;">create_new_folder</span>
-            MKDIR
+            <span data-i18n="sftp.newFolder">新建文件夹</span>
           </button>
-          <button id="sftp-download-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" title="Download" disabled>
+          <button id="sftp-download-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.download" title="下载" disabled>
             <span class="material-symbols-outlined" style="font-size: 14px;">download</span>
-            DOWNLOAD
+            <span data-i18n="sftp.download">下载</span>
           </button>
-          <button id="sftp-delete-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-error-container rounded transition-colors cursor-pointer text-error disabled:opacity-30" title="Delete" disabled>
+          <button id="sftp-delete-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-error-container rounded transition-colors cursor-pointer text-error disabled:opacity-30" data-i18n-title="common.delete" title="删除" disabled>
             <span class="material-symbols-outlined" style="font-size: 14px;">delete</span>
-            DELETE
+            <span data-i18n="common.delete">删除</span>
           </button>
-          <button id="sftp-rename-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" title="Rename" disabled>
+          <button id="sftp-rename-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.rename" title="重命名" disabled>
             <span class="material-symbols-outlined" style="font-size: 14px;">drive_file_rename_outline</span>
-            RENAME
+            <span data-i18n="sftp.rename">重命名</span>
           </button>
           <input type="file" id="sftp-file-input" class="hidden" multiple />
         </div>
@@ -226,7 +229,7 @@ export class SFTPPanel {
             <span id="sftp-progress-text" class="text-on-surface-variant truncate"></span>
             <div class="flex items-center gap-2 shrink-0">
               <span id="sftp-progress-percent" class="text-primary-container font-bold"></span>
-              <button id="sftp-transfer-cancel-btn" class="text-error hover:opacity-80 cursor-pointer flex items-center justify-center" title="Cancel transfer">
+              <button id="sftp-transfer-cancel-btn" class="text-error hover:opacity-80 cursor-pointer flex items-center justify-center" data-i18n-title="sftp.cancelTransfer" title="取消传输">
                 <span class="material-symbols-outlined" style="font-size: 14px;">close</span>
               </button>
             </div>
@@ -245,7 +248,7 @@ export class SFTPPanel {
           <!-- Empty state -->
           <div id="sftp-empty" class="hidden flex flex-col items-center justify-center py-12 text-on-surface-variant">
             <span class="material-symbols-outlined mb-2" style="font-size: 36px; font-variation-settings: 'FILL' 0;">folder_off</span>
-            <span class="text-xs tracking-wider">EMPTY_DIRECTORY</span>
+            <span class="text-xs tracking-wider" data-i18n="sftp.empty">此目录为空</span>
           </div>
           <!-- Error state -->
           <div id="sftp-error" class="hidden flex flex-col items-center justify-center py-8 px-4 text-error">
@@ -255,7 +258,7 @@ export class SFTPPanel {
           <!-- Truncated warning -->
           <div id="sftp-truncated-warning" class="hidden flex items-center justify-center py-2 px-3 bg-tertiary-container text-on-tertiary-container text-xs mb-2 rounded mx-2 mt-2">
             <span class="material-symbols-outlined mr-2" style="font-size: 16px;">warning</span>
-            该目录文件过多，为保证性能，仅显示前 2000 项。
+            <span data-i18n="sftp.truncated">该目录文件过多，为保证性能，仅显示前 2000 项。</span>
           </div>
           <!-- Entries will be rendered here -->
           <div id="sftp-entries"></div>
@@ -263,11 +266,13 @@ export class SFTPPanel {
 
         <!-- Status Bar -->
         <div class="flex items-center justify-between px-3 py-1.5 border-t border-outline-variant bg-elevated text-[10px] text-on-surface-variant shrink-0">
-          <span id="sftp-status-text">Ready</span>
+          <span id="sftp-status-text" data-i18n="sftp.ready">就绪</span>
           <span id="sftp-item-count"></span>
         </div>
       </div>
     `;
+
+    translateDocument(panel);
 
     return panel;
   }
@@ -1219,12 +1224,10 @@ export class SFTPPanel {
 
     const path = this.currentPath === '/' ? `/${entry.name}` : `${this.currentPath}/${entry.name}`;
     const confirmed = await confirmAction({
-      title: entry.isDir ? '删除目录' : '删除文件',
-      message: entry.isDir
-        ? `确定要删除目录“${entry.name}”及其中的全部内容吗？此操作无法撤销。`
-        : `确定要删除文件“${entry.name}”吗？此操作无法撤销。`,
-      confirmText: '删除',
-      cancelText: '取消',
+      title: t('sftp.deleteTitle'),
+      message: t('sftp.deleteMessage', { name: entry.name }),
+      confirmText: t('common.delete'),
+      cancelText: t('common.cancel'),
       variant: 'danger',
     });
     if (!confirmed) return;
@@ -1248,12 +1251,12 @@ export class SFTPPanel {
     if (!entry) return;
 
     const newName = await requestText({
-      title: '重命名',
-      message: `为“${entry.name}”输入新名称。`,
-      label: '新名称',
+      title: t('sftp.renameTitle'),
+      message: t('sftp.renameMessage', { name: entry.name }),
+      label: t('sftp.name'),
       defaultValue: entry.name,
-      confirmText: '重命名',
-      cancelText: '取消',
+      confirmText: t('sftp.rename'),
+      cancelText: t('common.cancel'),
       maxLength: 255,
       validate: validateRemoteName,
     });
@@ -1274,12 +1277,12 @@ export class SFTPPanel {
   // Mkdir
   private async showMkdirDialog(): Promise<void> {
     const name = await requestText({
-      title: '新建目录',
-      message: `在“${this.currentPath}”中新建目录。`,
-      label: '目录名称',
-      placeholder: '请输入目录名称',
-      confirmText: '创建',
-      cancelText: '取消',
+      title: t('sftp.mkdirTitle'),
+      message: t('sftp.mkdirMessage'),
+      label: t('sftp.name'),
+      placeholder: t('sftp.mkdirMessage'),
+      confirmText: t('common.confirm'),
+      cancelText: t('common.cancel'),
       maxLength: 255,
       validate: validateRemoteName,
     });
@@ -1453,6 +1456,8 @@ export class SFTPPanel {
   }
 
   dispose(): void {
+    this.localeCleanup?.();
+    this.localeCleanup = null;
     this.resetUploadQueue();
     this.resetDownloadQueue();
     this.closeWebSocket(1000, 'SFTP panel disposed');

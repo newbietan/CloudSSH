@@ -39,6 +39,22 @@ body {
   min-height: 100vh;
 }
 
+.language-selector {
+  color: var(--on-surface-variant);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0.25rem 1.75rem 0.25rem 0.5rem;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.language-selector:focus-visible {
+  outline: 2px solid var(--accent-secondary);
+  outline-offset: 2px;
+}
+
 /* 终端页面需要禁止页面级滚动，通过 JS 切换此类名 */
 body.terminal-active {
   overflow: hidden;

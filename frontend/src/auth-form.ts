@@ -2,6 +2,7 @@ import { loadKnownFingerprint } from './terminal';
 import type { TabManager } from './tab-manager';
 import { populateRegionSelect, regionLabel } from './regions';
 import { notify } from './ui-feedback';
+import { onLocaleChange, t, translateDocument } from './i18n';
 // --- Credential encryption helpers ---
 async function deriveKey(salt: Uint8Array): Promise<CryptoKey> {
   const raw = new TextEncoder().encode(window.location.origin + ':cloudssh');
@@ -61,6 +62,11 @@ export class ConnectionForm {
     this.render();
     this.loadSavedCredentials();
     this.checkTurnstileConfig();
+    onLocaleChange(() => {
+      const select = document.getElementById('anon-region') as HTMLSelectElement | null;
+      if (select) populateRegionSelect(select, select.value);
+      this.renderRecentConnections();
+    });
   }
 
   private async checkTurnstileConfig(): Promise<void> {
@@ -92,9 +98,10 @@ export class ConnectionForm {
     placeholder.innerHTML = `
       <button type="button" id="github-login-btn" class="github-login-btn text-[11px] font-bold tracking-[0.1em] text-muted hover:text-primary transition-all cursor-pointer flex items-center gap-1.5 bg-transparent border border-dim px-3 py-1 hover:border-[var(--accent)]">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-        LOGIN
+        <span data-i18n="auth.login">使用 GitHub 登录</span>
       </button>
     `;
+    translateDocument(placeholder);
 
     document.getElementById('github-login-btn')?.addEventListener('click', () => {
       window.location.href = '/api/auth/github';
@@ -146,14 +153,14 @@ export class ConnectionForm {
       <form class="space-y-6" id="connection-form">
         <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <div class="sm:col-span-3">
-            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">HOST_ADDRESS</label>
+            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.host">主机地址</label>
             <div class="flex items-center">
               <span class="text-muted mr-2">&gt;</span>
                <input id="host" class="terminal-input text-[13px]" placeholder="192.168.1.1 or 2001:db8::1" type="text" required>
             </div>
           </div>
           <div class="sm:col-span-1">
-            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">PORT</label>
+            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.port">端口</label>
             <div class="flex items-center">
               <span class="text-muted mr-2">:</span>
               <input id="port" class="terminal-input text-[13px]" placeholder="22" type="text" value="22">
@@ -161,17 +168,17 @@ export class ConnectionForm {
           </div>
         </div>
         <div>
-          <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">AUTH_USER</label>
+          <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.user">用户名</label>
           <div class="flex items-center">
             <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px;">person</span>
             <input id="username" class="terminal-input text-[13px]" placeholder="admin" type="text" required>
           </div>
         </div>
         <div>
-          <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">AUTH_METHOD</label>
+          <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.method">认证方式</label>
           <div class="flex gap-2 mb-3">
-            <button type="button" id="auth-tab-password" class="auth-tab auth-tab-active px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all">PASSWORD</button>
-            <button type="button" id="auth-tab-key" class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all">PRIVATE_KEY</button>
+            <button type="button" id="auth-tab-password" class="auth-tab auth-tab-active px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all" data-i18n="common.password">密码</button>
+            <button type="button" id="auth-tab-key" class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all" data-i18n="common.privateKey">私钥</button>
           </div>
           <div id="auth-password-section">
             <div class="flex items-center">
@@ -180,11 +187,11 @@ export class ConnectionForm {
             </div>
           </div>
           <div id="auth-key-section" style="display:none;">
-            <textarea id="private-key" class="terminal-input text-[11px] w-full" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...粘贴 Ed25519/RSA/ECDSA 私钥内容...&#10;-----END OPENSSH PRIVATE KEY-----" style="resize:vertical;border:1px solid var(--border-strong);padding:8px;"></textarea>
+            <textarea id="private-key" class="terminal-input text-[11px] w-full" rows="5" data-i18n-placeholder="auth.keyPlaceholder" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...粘贴私钥内容...&#10;-----END OPENSSH PRIVATE KEY-----" style="resize:vertical;border:1px solid var(--border-strong);padding:8px;"></textarea>
             <div class="flex items-center gap-2 mt-2">
               <label for="private-key-file" class="text-[11px] text-muted hover:text-primary cursor-pointer flex items-center gap-1 border border-dim px-2 py-1 hover:border-[var(--accent)] transition-all">
                 <span class="material-symbols-outlined" style="font-size: 14px;">upload_file</span>
-                选择密钥文件
+                <span data-i18n="auth.chooseKeyFile">选择密钥文件</span>
               </label>
               <input type="file" id="private-key-file" accept=".pem,.key,.txt,.pub" class="hidden">
               <span id="file-name" class="text-[10px] text-muted truncate"></span>
@@ -195,34 +202,35 @@ export class ConnectionForm {
           <div id="turnstile-widget" class="flex justify-center"></div>
         </div>
         <div>
-          <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">REGION_HINT <span class="text-[9px] opacity-60">(可选：请选择距离目标SSH服务器最近的节点)</span></label>
+          <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"><span data-i18n="auth.regionHint">连接区域</span> <span class="text-[9px] opacity-60" data-i18n="auth.regionOptional">可选；自动模式由 Cloudflare 调度</span></label>
           <select id="anon-region" class="terminal-input text-[13px] cursor-pointer" style="border:1px solid var(--border-strong);border-bottom:1px solid var(--border-strong);padding:6px 8px;">
             <option value="">自动</option>
           </select>
         </div>
         <div class="flex items-center gap-2 mt-2">
           <input type="checkbox" id="remember-me" class="accent-[var(--accent)] w-4 h-4 cursor-pointer">
-          <label for="remember-me" class="text-xs text-muted cursor-pointer select-none">REMEMBER_CONNECTION</label>
+          <label for="remember-me" class="text-xs text-muted cursor-pointer select-none" data-i18n="auth.remember">记住连接信息</label>
         </div>
         <div class="pt-4">
           <button id="connect-btn" class="connect-btn w-full py-3 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-2" type="button">
             <span class="material-symbols-outlined" style="font-size: 18px;">power_settings_new</span>
-            Execute_Connection
+            <span data-i18n="auth.execute">建立连接</span>
           </button>
         </div>
         <div class="flex justify-between items-center mt-4">
           <span id="status-text" class="text-[13px] text-muted flex items-center gap-1">
-            <span class="w-2 h-2 bg-surface-dot inline-block"></span> STATUS: OFFLINE
+            <span class="w-2 h-2 bg-surface-dot inline-block"></span> <span data-i18n="auth.statusOffline">状态：离线</span>
           </span>
           <span id="github-login-placeholder"></span>
         </div>
         <!-- Recent Connections Section -->
         <div id="recent-connections-section" class="mt-6 pt-4 border-t border-dim hidden">
-          <label class="block text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)] mb-3">RECENT_CONNECTIONS</label>
+          <label class="block text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)] mb-3" data-i18n="auth.recent">最近连接</label>
           <div id="recent-connections-list" class="space-y-2 max-h-[160px] overflow-y-auto custom-scrollbar pr-1"></div>
         </div>
       </form>
     `;
+    translateDocument(container);
 
     document.getElementById('connect-btn')!.addEventListener('click', () => {
       this.handleConnect();
@@ -262,8 +270,8 @@ export class ConnectionForm {
           fileNameSpan.textContent = file.name;
         }
       } catch (error) {
-        notify('读取密钥文件失败：' + (error instanceof Error ? error.message : '未知错误'), {
-          title: '无法读取文件',
+        notify(t('auth.readKeyFailed') + ' ' + (error instanceof Error ? error.message : ''), {
+          title: t('auth.readKeyTitle'),
           variant: 'danger',
         });
       }
@@ -323,7 +331,7 @@ export class ConnectionForm {
           <span class="text-on-surface truncate" title="${labelText}">${labelText}</span>
           <span class="text-[9px] font-bold tracking-[0.05em] text-muted border border-dim px-1.5 py-0.2 shrink-0">${authLabel}</span>
         </div>
-        <button class="delete-history-btn text-muted hover:text-error flex items-center justify-center p-0.5" title="Remove from history">
+        <button class="delete-history-btn text-muted hover:text-error flex items-center justify-center p-0.5" title="${t('auth.removeHistory')}">
           <span class="material-symbols-outlined" style="font-size: 14px;">close</span>
         </button>
       `;
@@ -448,26 +456,26 @@ export class ConnectionForm {
     const regionValue = anonRegionSelect ? anonRegionSelect.value : '';
 
     if (!host || !username) {
-      notify('请填写主机名和用户名', { title: '连接信息不完整', variant: 'warning' });
+      notify(t('auth.validationHostUser'), { title: t('auth.incompleteConnection'), variant: 'warning' });
       (document.getElementById(!host ? 'host' : 'username') as HTMLInputElement)?.focus();
       return;
     }
 
     if (this.authMode === 'password' && !password) {
-      notify('请输入密码', { title: '认证信息不完整', variant: 'warning' });
+      notify(t('auth.validationPassword'), { title: t('auth.incompleteCredentials'), variant: 'warning' });
       (document.getElementById('password') as HTMLInputElement)?.focus();
       return;
     }
 
     if (this.authMode === 'key' && !privateKey) {
-      notify('请粘贴私钥内容', { title: '认证信息不完整', variant: 'warning' });
+      notify(t('auth.validationPrivateKey'), { title: t('auth.incompleteCredentials'), variant: 'warning' });
       (document.getElementById('private-key') as HTMLTextAreaElement)?.focus();
       return;
     }
 
     // Check Turnstile if enabled
     if (this.turnstileEnabled && !this.turnstileVerified) {
-      notify('请先完成人机验证', { title: '需要验证', variant: 'warning' });
+      notify(t('auth.turnstileRequired'), { title: t('auth.verificationRequired'), variant: 'warning' });
       document.getElementById('turnstile-container')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
@@ -549,7 +557,7 @@ export class ConnectionForm {
     } catch (error) {
       // 连接失败时关闭该标签
       tm.closeTab(tab.id);
-      document.getElementById('status-text')!.innerHTML = '<span class="w-2 h-2 bg-surface-dot inline-block"></span> STATUS: OFFLINE';
+      document.getElementById('status-text')!.innerHTML = `<span class="w-2 h-2 bg-surface-dot inline-block"></span> ${t('auth.statusOffline')}`;
     }
   }
 }

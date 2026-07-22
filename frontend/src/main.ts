@@ -5,6 +5,7 @@ import { ServerList } from './server-list';
 import { TabManager } from './tab-manager';
 import { AIConfigPanel } from './ai-config';
 import { notify } from './ui-feedback';
+import { initI18n, onLocaleChange, t } from './i18n';
 
 // ==================== 全局状态 ====================
 
@@ -64,7 +65,7 @@ function initTerminalTab(): void {
   const port = parseInt(params.get('port') || '0') || 0;
 
   if (!validateWsUrl(wsUrl)) {
-    document.body.innerHTML = '<div style="color:var(--error);padding:2em;font-family:monospace;">Error: Invalid or untrusted WebSocket URL.</div>';
+    document.body.innerHTML = `<div style="color:var(--error);padding:2em;font-family:monospace;">${t('terminal.invalidUrl')}</div>`;
     return;
   }
 
@@ -181,7 +182,7 @@ function showOfflineUI(): void {
     showAuthSection();
   }
 
-  document.getElementById('status-text')!.innerHTML = '<span class="w-2 h-2 bg-surface-dot inline-block"></span> STATUS: OFFLINE';
+  document.getElementById('status-text')!.innerHTML = `<span class="w-2 h-2 bg-surface-dot inline-block"></span> ${t('auth.statusOffline')}`;
 }
 
 /** 在终端页面创建新标签并显示终端视图 */
@@ -205,8 +206,8 @@ function showTerminalWithNewTab(
 
 function showTerminalFromServer(wsUrl: string, serverName: string, hostInfo?: { host: string; port: number }): void {
   if (!validateWsUrl(wsUrl)) {
-    notify('服务器返回了无效或不受信任的 WebSocket 地址。', {
-      title: '无法建立连接',
+    notify(t('server.invalidWs'), {
+      title: t('server.connectFailed'),
       variant: 'danger',
     });
     return;
@@ -312,7 +313,7 @@ function ensureCustomOption(): void {
   if (!themeSelector.querySelector(`option[value="${CUSTOM_THEME_VALUE}"]`)) {
     const opt = document.createElement('option');
     opt.value = CUSTOM_THEME_VALUE;
-    opt.textContent = 'Custom';
+    opt.textContent = t('theme.custom');
     themeSelector.insertBefore(opt, themeSelector.firstChild);
   }
 }
@@ -335,7 +336,7 @@ importThemeInput?.addEventListener('change', async (e) => {
     try {
       const data = JSON.parse(ev.target!.result as string);
       if (!data.ui || typeof data.ui !== 'object') {
-        notify('主题文件缺少“ui”字段。', { title: '无法导入主题', variant: 'danger' });
+        notify(t('theme.missingUi'), { title: t('theme.importTitle'), variant: 'danger' });
         return;
       }
 
@@ -358,9 +359,9 @@ importThemeInput?.addEventListener('change', async (e) => {
 
       // 直接应用主题，不刷新页面（避免断开 WebSocket）
       getThemeTerminal()?.applyImportedTheme(data);
-      notify('主题已导入并应用。', { variant: 'success' });
+      notify(t('theme.importSuccess'), { variant: 'success' });
     } catch {
-      notify('文件不是有效的 JSON 格式。', { title: '无法导入主题', variant: 'danger' });
+      notify(t('theme.invalidJson'), { title: t('theme.importTitle'), variant: 'danger' });
     }
   };
   reader.readAsText(file);
@@ -449,6 +450,13 @@ async function restoreTheme(): Promise<void> {
 // ==================== 初始化 ====================
 
 async function init(): Promise<void> {
+  initI18n();
+  onLocaleChange(() => {
+    ensureCustomOption();
+    const customOption = themeSelector?.querySelector<HTMLOptionElement>(`option[value="${CUSTOM_THEME_VALUE}"]`);
+    if (customOption) customOption.textContent = t('theme.custom');
+    tabManager?.refreshTranslations();
+  });
   await restoreTheme();
   // 设置版权年份
   const copyrightYearSpan = document.getElementById('copyright-year');

@@ -161,7 +161,7 @@ export class SSHSession {
   }
 
   async startHandshake(): Promise<void> {
-    this.sendStatus('正在交换版本信息...');
+    this.sendStatus('正在交换版本信息...', 'version_exchange');
     this.sendSFTPAttachUrl();
     this.state = 'version';
 
@@ -201,7 +201,7 @@ export class SSHSession {
         } else {
           const result = await reader.read();
           if (result.done) {
-            this.sendError('SSH 服务器断开连接 (Socket closed by remote)');
+            this.sendError('SSH 服务器断开连接 (Socket closed by remote)', 'remote_closed');
             this.close();
             break;
           }
@@ -249,7 +249,7 @@ export class SSHSession {
 
           if (versionFound) {
             this.versionRawBuffer = new Uint8Array(0);
-            this.sendStatus('版本交换完成，正在密钥协商...');
+            this.sendStatus('版本交换完成，正在密钥协商...', 'version_ready');
             this.state = 'kex';
             await this.startKEX();
 
@@ -410,7 +410,7 @@ export class SSHSession {
 
     // Transport-level messages handled regardless of state
     if (msgType === SSH_MSG_DISCONNECT) {
-      this.sendStatus('服务器断开连接');
+      this.sendStatus('服务器断开连接', 'remote_closed');
       this.close(true);
       return;
     }
@@ -487,7 +487,7 @@ export class SSHSession {
         this.keepaliveFailCount++;
         this.sendDebug(`Keepalive timeout (${this.keepaliveFailCount}/${this.maxKeepaliveFails})`);
         if (this.keepaliveFailCount >= this.maxKeepaliveFails) {
-          this.sendError('SSH 连接超时，保活失败');
+          this.sendError('SSH 连接超时，保活失败', 'keepalive_timeout');
           this.close();
           return;
         }
@@ -510,7 +510,7 @@ export class SSHSession {
             this.sendDebug(`Keepalive response timeout (${this.keepaliveFailCount}/${this.maxKeepaliveFails})`);
             this.keepalivePending = false;
             if (this.keepaliveFailCount >= this.maxKeepaliveFails) {
-              this.sendError('SSH 连接超时，保活失败');
+              this.sendError('SSH 连接超时，保活失败', 'keepalive_timeout');
               this.close();
             }
           }
@@ -519,7 +519,7 @@ export class SSHSession {
         this.keepaliveFailCount++;
         this.sendDebug(`Keepalive send failed (${this.keepaliveFailCount}/${this.maxKeepaliveFails}): ${e instanceof Error ? e.message : String(e)}`);
         if (this.keepaliveFailCount >= this.maxKeepaliveFails) {
-          this.sendError('SSH 连接超时，保活失败');
+          this.sendError('SSH 连接超时，保活失败', 'keepalive_timeout');
           this.close();
         }
       }
@@ -690,7 +690,7 @@ export class SSHSession {
         this.close();
         return;
       }
-      this.sendStatus(`主机密钥验证通过 (${this.hostKeyType}) ✓`);
+      this.sendStatus(`主机密钥验证通过 (${this.hostKeyType}) ✓`, 'host_key_accepted');
     } else {
       this.sendStatus(`服务器指纹: ${this.hostKeyFingerprint} (${this.hostKeyType})（首次连接，已记录）`);
     }
@@ -1393,7 +1393,7 @@ export class SSHSession {
         // agent_stop / agent_confirm 已由 durable-object.ts 在 webSocketMessage 入口
         // 提前拦截并通过 handleAgentControl 同步处理，不再到达此处。
         if (parsed.type === 'agent_start') {
-          await this.handleAgentStart(parsed.message, parsed.user_id);
+          await this.handleAgentStart(parsed.message, parsed.user_id, parsed.locale);
           return;
         }
 
@@ -1743,9 +1743,9 @@ export class SSHSession {
     }
   }
 
-  private sendError(message: string): void {
+  private sendError(message: string, event?: string): void {
     try {
-      this.ws.send(JSON.stringify({ type: 'error', message }));
+      this.ws.send(JSON.stringify({ type: 'error', message, event }));
     } catch (e) {
       // WebSocket 已关闭，错误消息无法送达
     }
@@ -1762,7 +1762,7 @@ export class SSHSession {
 
   // ==================== Agent Integration ====================
 
-  private async handleAgentStart(userMessage: string, userId?: string): Promise<void> {
+  private async handleAgentStart(userMessage: string, userId?: string, requestedLocale?: string): Promise<void> {
     if (this.state !== 'ready') {
       this.sendAgentFrame({ type: 'agent_frame', subType: 'error', message: 'SSH 连接未就绪' });
       return;
@@ -1796,7 +1796,8 @@ export class SSHSession {
       );
     }
 
-    void this.agentCore.handleAgentStart(effectiveUserId, userMessage);
+    const locale = requestedLocale === 'en-US' ? 'en-US' : 'zh-CN';
+    void this.agentCore.handleAgentStart(effectiveUserId, userMessage, locale);
   }
 
   /**

@@ -1,3 +1,5 @@
+import { t } from './i18n';
+
 export type FeedbackVariant = 'info' | 'success' | 'warning' | 'danger';
 
 export interface NotificationOptions {
@@ -44,11 +46,11 @@ const ICONS: Record<FeedbackVariant, string> = {
   danger: 'error',
 };
 
-const DEFAULT_TITLES: Record<FeedbackVariant, string> = {
-  info: '提示',
-  success: '操作成功',
-  warning: '请注意',
-  danger: '操作失败',
+const DEFAULT_TITLE_KEYS: Record<FeedbackVariant, Parameters<typeof t>[0]> = {
+  info: 'feedback.info',
+  success: 'feedback.success',
+  warning: 'feedback.warning',
+  danger: 'feedback.danger',
 };
 
 let toastContainer: HTMLElement | null = null;
@@ -84,7 +86,7 @@ export function notify(message: string, options: NotificationOptions = {}): void
 
   const title = document.createElement('div');
   title.className = 'app-toast__title';
-  title.textContent = options.title ?? DEFAULT_TITLES[variant];
+  title.textContent = options.title ?? t(DEFAULT_TITLE_KEYS[variant]);
 
   const body = document.createElement('div');
   body.className = 'app-toast__message';
@@ -93,7 +95,7 @@ export function notify(message: string, options: NotificationOptions = {}): void
   const closeButton = document.createElement('button');
   closeButton.className = 'app-toast__close';
   closeButton.type = 'button';
-  closeButton.setAttribute('aria-label', '关闭通知');
+  closeButton.setAttribute('aria-label', t('feedback.closeNotification'));
   closeButton.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">close</span>';
 
   content.append(title, body);
@@ -242,16 +244,16 @@ class DialogManager {
     const options = request.options;
     const variant = options.variant ?? 'info';
     this.dialog!.dataset.variant = variant;
-    this.titleEl!.textContent = options.title ?? (request.kind === 'prompt' ? '请输入' : '确认操作');
+    this.titleEl!.textContent = options.title ?? t(request.kind === 'prompt' ? 'dialog.promptTitle' : 'dialog.confirmTitle');
     this.messageEl!.textContent = options.message;
     this.iconEl!.textContent = ICONS[variant];
-    this.confirmButton!.textContent = options.confirmText ?? '确定';
-    this.cancelButton!.textContent = options.cancelText ?? '取消';
+    this.confirmButton!.textContent = options.confirmText ?? t('common.confirm');
+    this.cancelButton!.textContent = options.cancelText ?? t('common.cancel');
     this.clearInputError();
 
     if (request.kind === 'prompt') {
       this.inputGroup!.hidden = false;
-      this.inputLabel!.textContent = request.options.label ?? '输入内容';
+      this.inputLabel!.textContent = request.options.label ?? t('dialog.inputLabel');
       this.input!.value = request.options.defaultValue ?? '';
       this.input!.placeholder = request.options.placeholder ?? '';
       if (request.options.maxLength) {
@@ -289,7 +291,7 @@ class DialogManager {
     const options = this.active.options;
     let error: string | null = null;
     if ((options.required ?? true) && !value.trim()) {
-      error = '请输入内容';
+      error = t('dialog.inputRequired');
     } else if (options.validate) {
       error = options.validate(value);
     }

@@ -2,6 +2,7 @@
 
 import { marked, type Tokens } from 'marked';
 import DOMPurify from 'dompurify';
+import { getLocale, onLocaleChange, t, translateDocument } from '../i18n';
 
 // Configure marked once at module load: GFM enabled, custom renderer for theme-aware styling
 marked.use({
@@ -57,6 +58,7 @@ export class AgentPanel {
   private thinkingLiveEl: HTMLElement | null = null;
   private thinkingAllSteps: Array<{ tool: string; label: string }> = [];
   private livePreviewCache: string[] = [];
+  private localeCleanup: (() => void) | null = null;
 
   constructor(
     private parentEl: HTMLElement,
@@ -81,25 +83,27 @@ export class AgentPanel {
 
     this.panelEl.innerHTML = `
       <div class="flex items-center justify-between px-4 py-2.5 border-b border-[var(--border)] bg-[var(--bg-elevated)]">
-        <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]">AI_AGENT</span>
-        <button id="agent-close-btn" class="text-muted hover:text-primary transition-colors cursor-pointer">
+        <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]" data-i18n="agent.title">AI Agent 助手</span>
+        <button id="agent-close-btn" class="text-muted hover:text-primary transition-colors cursor-pointer" data-i18n-title="agent.close" title="关闭 Agent 面板">
           <span class="material-symbols-outlined" style="font-size:18px;">close</span>
         </button>
       </div>
       <div id="agent-messages" class="flex-1 overflow-y-auto px-4 py-3 space-y-3 custom-scrollbar text-[13px]"></div>
       <div class="px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-elevated)]">
         <div class="flex gap-2.5 items-end">
-          <textarea id="agent-input" placeholder="描述你想做的事... (Enter 发送, Shift+Enter 换行)"
+          <textarea id="agent-input" data-i18n-placeholder="agent.placeholder" placeholder="描述你希望 Agent 完成的任务…"
             rows="1"
             class="terminal-input flex-1 text-[13px] resize-none overflow-y-auto"
             style="max-height: 140px; line-height: 1.5; padding: 8px 12px; border-radius: 8px;"
             autocomplete="off"></textarea>
-          <button id="agent-send-btn" class="agent-send-btn shrink-0" title="Send (Enter)">
+          <button id="agent-send-btn" class="agent-send-btn shrink-0" data-i18n-title="agent.send" title="发送">
             <span class="material-symbols-outlined" style="font-size:20px;">arrow_upward</span>
           </button>
         </div>
       </div>
     `;
+    translateDocument(this.panelEl);
+    this.localeCleanup = onLocaleChange(() => this.updateInputState());
 
     this.parentEl.appendChild(this.panelEl);
     this.messagesEl = this.panelEl.querySelector('#agent-messages');
@@ -204,6 +208,7 @@ export class AgentPanel {
     this.wsSend?.(JSON.stringify({
       type: 'agent_start',
       message: text,
+      locale: getLocale(),
     }));
   }
 
@@ -211,7 +216,7 @@ export class AgentPanel {
     const blocked = this.isAgentRunning || this.isWaitingConfirmation;
     if (this.inputEl) {
       this.inputEl.disabled = blocked;
-      this.inputEl.placeholder = blocked ? 'Agent 运行中...' : '描述你想做的事...';
+      this.inputEl.placeholder = blocked ? t('agent.thinking') : t('agent.placeholder');
     }
     if (this.sendBtn) {
       (this.sendBtn as HTMLButtonElement).disabled = blocked;
@@ -226,9 +231,9 @@ export class AgentPanel {
     this.ensureThinkingProcess();
     const firstIteration = iteration === 0;
     if (!firstIteration) {
-      this.addThinkingStep('thinking', `正在思考第 ${iteration + 1} 步...`);
+      this.addThinkingStep('thinking', t('agent.thinkingStep', { step: iteration + 1 }));
     } else if (!this.thinkingCurrentEl) {
-      this.addThinkingStep('thinking', '正在分析请求...');
+      this.addThinkingStep('thinking', t('agent.analyzing'));
     }
   }
 
@@ -238,8 +243,8 @@ export class AgentPanel {
     }
     this.ensureThinkingProcess();
     const cmd = args?.command || '';
-    const label = tool === 'respond_to_user' ? '生成回复'
-      : tool === 'ask_user_confirmation' ? '请求用户确认'
+    const label = tool === 'respond_to_user' ? t('agent.generating')
+      : tool === 'ask_user_confirmation' ? t('agent.requestConfirmation')
       : tool === 'execute_command' && cmd ? `$ ${cmd}`
       : `${tool}(${JSON.stringify(args || {})})`;
     this.addThinkingStep(tool, label);
@@ -256,7 +261,7 @@ export class AgentPanel {
       <button class="tp-accordion" type="button">
         <span class="tp-chevron material-symbols-outlined">expand_more</span>
         <span class="tp-icon material-symbols-outlined" style="font-variation-settings:'FILL' 1;">smart_toy</span>
-        <span class="tp-status">正在思考</span>
+        <span class="tp-status">${t('agent.thinking')}</span>
         <div class="thinking-dots">
           <span class="w-1 h-1 rounded-full bg-[var(--agent-agent-color)] animate-bounce" style="animation-delay:0ms;"></span>
           <span class="w-1 h-1 rounded-full bg-[var(--agent-agent-color)] animate-bounce" style="animation-delay:150ms;"></span>
@@ -325,8 +330,10 @@ export class AgentPanel {
     this.thinkingCurrentEl.appendChild(stepEl);
 
     if (this.thinkingStatusEl) {
-      const prefix = this.thinkingIsDone ? '已完成' : '处理中';
-      this.thinkingStatusEl.textContent = `${prefix}（${this.thinkingStepCount} 个步骤）`;
+      this.thinkingStatusEl.textContent = t(
+        this.thinkingIsDone ? 'agent.completedSteps' : 'agent.processingSteps',
+        { count: this.thinkingStepCount },
+      );
     }
     this.scrollToBottom();
   }
@@ -362,7 +369,7 @@ export class AgentPanel {
     });
 
     if (this.thinkingStatusEl) {
-      this.thinkingStatusEl.textContent = `已完成 ${this.thinkingStepCount} 个步骤`;
+      this.thinkingStatusEl.textContent = t('agent.completedSteps', { count: this.thinkingStepCount });
     }
 
     const mainIcon = this.thinkingProcessEl.querySelector('.tp-icon') as HTMLElement | null;
@@ -463,7 +470,7 @@ export class AgentPanel {
       this.streamingText = '';
     }
     this.collapseThinkingProcess();
-    this.appendMessage('error', message || '未知错误');
+    this.appendMessage('error', message || t('feedback.danger'));
   }
 
   private showProgressExtend(message: string, currentIteration: number, newMax: number, reason: string): void {
@@ -472,13 +479,13 @@ export class AgentPanel {
     el.innerHTML = `
       <div class="flex items-center gap-2">
         <span class="material-symbols-outlined text-[14px]" style="color:var(--accent);font-variation-settings:'FILL' 1;">trending_up</span>
-        <span class="font-bold text-[var(--accent)]">任务进度扩展</span>
+        <span class="font-bold text-[var(--accent)]">${t('agent.progressTitle')}</span>
       </div>
       <div class="mt-1 text-[var(--on-surface-variant)]">
-        ${escapeHtml(message)}（当前：${currentIteration}/${newMax}）
+        ${escapeHtml(t('agent.progressCurrent', { message, current: currentIteration, max: newMax }))}
       </div>
       <div class="mt-1 text-[11px] text-[var(--on-surface-variant)] opacity-75">
-        原因：${escapeHtml(reason)}
+        ${escapeHtml(t('agent.progressReason', { reason }))}
       </div>
     `;
     this.messagesEl?.appendChild(el);
@@ -495,12 +502,12 @@ export class AgentPanel {
     const el = document.createElement('div');
     el.className = 'agent-confirm p-3 rounded border border-[var(--error)] bg-[var(--error-bg)]';
     el.innerHTML = `
-      <div class="text-[11px] font-bold text-[var(--error)] mb-1">⚠ 危险操作确认</div>
+      <div class="text-[11px] font-bold text-[var(--error)] mb-1">⚠ ${t('agent.confirmTitle')}</div>
       <div class="text-[12px] mb-1 font-code bg-black/20 p-1 rounded">$ ${escapeHtml(command)}</div>
       <div class="text-[11px] text-[var(--on-surface-variant)] mb-2">${escapeHtml(reason)}</div>
       <div class="flex gap-2">
-        <button class="agent-confirm-no cyber-button flex-1 py-1 text-[11px] font-bold">取消</button>
-        <button class="agent-confirm-yes cyber-button flex-1 py-1 text-[11px] font-bold bg-[var(--error)] text-white">确认执行</button>
+        <button class="agent-confirm-no cyber-button flex-1 py-1 text-[11px] font-bold">${t('agent.reject')}</button>
+        <button class="agent-confirm-yes cyber-button flex-1 py-1 text-[11px] font-bold bg-[var(--error)] text-white">${t('agent.confirm')}</button>
       </div>
     `;
 
@@ -633,6 +640,8 @@ export class AgentPanel {
   }
 
   dispose(): void {
+    this.localeCleanup?.();
+    this.localeCleanup = null;
     this.panelEl?.remove();
     this.panelEl = null;
     this.messagesEl = null;

@@ -1,6 +1,7 @@
 import { SSHTerminal, SSHConnectionConfig, THEMES } from './terminal';
 import { SFTPPanel } from './sftp-panel';
 import { AgentPanel } from './agent/agent-panel';
+import { t } from './i18n';
 
 export type TabState = 'connecting' | 'connected' | 'disconnected';
 
@@ -253,6 +254,12 @@ export class TabManager {
     return this.tabs.size > 0;
   }
 
+  refreshTranslations(): void {
+    this.renderTabBar();
+    const activeTab = this.getActiveTab();
+    if (activeTab) this.updateStatusBar(activeTab);
+  }
+
   // ==================== 关闭当前活跃标签 ====================
 
   closeActiveTab(): void {
@@ -295,7 +302,7 @@ export class TabManager {
       tabEl.innerHTML = `
         <span class="tab-dot ${dotClass}"></span>
         <span class="tab-label">${this.escapeHtml(tab.label)}</span>
-        <button class="tab-close" title="Close">
+        <button class="tab-close" title="${t('terminal.closeTab')}">
           <span class="material-symbols-outlined" style="font-size:14px;">close</span>
         </button>
       `;
@@ -323,7 +330,7 @@ export class TabManager {
       const btn = document.createElement('button');
       btn.id = 'new-tab-btn';
       btn.className = 'tab-new-btn';
-      btn.title = 'New Connection';
+      btn.title = t('terminal.newConnection');
       btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px;">add</span>';
       this.tabBarEl.appendChild(btn);
     }
@@ -339,23 +346,23 @@ export class TabManager {
     const statusText = document.getElementById('status-text');
 
     if (tab.hostInfo) {
-      if (termHost) termHost.textContent = `Host: ${tab.hostInfo.host}`;
-      if (termUser) termUser.textContent = tab.hostInfo.username ? `User: ${tab.hostInfo.username}` : '';
-      if (termPort) termPort.textContent = `Port: ${tab.hostInfo.port}`;
+      if (termHost) termHost.textContent = t('terminal.host', { value: tab.hostInfo.host });
+      if (termUser) termUser.textContent = tab.hostInfo.username ? t('terminal.user', { value: tab.hostInfo.username }) : '';
+      if (termPort) termPort.textContent = t('terminal.port', { value: tab.hostInfo.port });
     } else {
-      if (termHost) termHost.textContent = `Server: ${tab.label}`;
+      if (termHost) termHost.textContent = t('terminal.server', { value: tab.label });
       if (termUser) termUser.textContent = '';
       if (termPort) termPort.textContent = '';
     }
 
     if (tab.state === 'connected') {
-      if (termStatus) termStatus.innerHTML = '<div class="w-2 h-2 bg-primary-container"></div> Connected';
-      if (statusText) statusText.innerHTML = '<span class="w-2 h-2 bg-[var(--accent)] inline-block animate-pulse"></span> STATUS: ONLINE';
+      if (termStatus) termStatus.innerHTML = `<div class="w-2 h-2 bg-primary-container"></div> ${t('terminal.connected')}`;
+      if (statusText) statusText.innerHTML = `<span class="w-2 h-2 bg-[var(--accent)] inline-block animate-pulse"></span> ${t('auth.statusOnline')}`;
     } else if (tab.state === 'connecting') {
-      if (termStatus) termStatus.innerHTML = '<div class="w-2 h-2 bg-primary-container animate-pulse"></div> Connecting';
+      if (termStatus) termStatus.innerHTML = `<div class="w-2 h-2 bg-primary-container animate-pulse"></div> ${t('terminal.connecting')}`;
     } else {
-      if (termStatus) termStatus.innerHTML = '<div class="w-2 h-2 bg-[var(--error)]"></div> Disconnected';
-      if (statusText) statusText.innerHTML = '<span class="w-2 h-2 bg-surface-dot inline-block"></span> STATUS: OFFLINE';
+      if (termStatus) termStatus.innerHTML = `<div class="w-2 h-2 bg-[var(--error)]"></div> ${t('terminal.disconnected')}`;
+      if (statusText) statusText.innerHTML = `<span class="w-2 h-2 bg-surface-dot inline-block"></span> ${t('auth.statusOffline')}`;
     }
 
     // 更新状态栏显示延迟信息

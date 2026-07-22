@@ -8,7 +8,7 @@ import type {
   ChatMessage,
 } from './types';
 import { AGENT_TOOLS } from './tools';
-import { getSystemPrompt } from './prompt';
+import { getResponseLanguageInstruction, getSystemPrompt, type AgentLocale } from './prompt';
 import { ToolExecutor } from './tool-executor';
 import { TerminalContext } from './terminal-context';
 
@@ -50,6 +50,7 @@ export class AgentCore {
   // 环境与终端上下文（独立存储，注入到 system prompt 中）
   private environmentContext: string = '';
   private terminalContextSnapshot: string = '';
+  private preferredLocale: AgentLocale = 'zh-CN';
 
   constructor(
     private terminalContext: TerminalContext,
@@ -139,7 +140,8 @@ export class AgentCore {
     return this.state.status;
   }
 
-  async handleAgentStart(userId: string, userMessage: string): Promise<void> {
+  async handleAgentStart(userId: string, userMessage: string, locale: AgentLocale = 'zh-CN'): Promise<void> {
+    this.preferredLocale = locale;
     // Cancel stale timeout from previous loop so it can't abort the new controller
     if (this.loopTimeout) {
       clearTimeout(this.loopTimeout);
@@ -728,7 +730,8 @@ export class AgentCore {
 
   private buildSystemPromptWithSummary(): string {
     const basePrompt = getSystemPrompt();
-    const parts: string[] = [basePrompt];
+    const languageInstruction = getResponseLanguageInstruction(this.preferredLocale);
+    const parts: string[] = [basePrompt, languageInstruction];
 
     if (this.environmentContext) {
       parts.push(`## 当前服务器环境\n${this.environmentContext}`);

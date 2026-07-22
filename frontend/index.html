@@ -49,18 +49,19 @@
       <div class="scanlines"></div>
       <div class="flicker"></div>
       <main class="w-full max-w-md relative z-10">
+        <div class="flex justify-end mb-3" data-language-switcher></div>
         <div class="mb-8 text-center">
           <div class="text-3xl font-bold text-primary tracking-tighter mb-2">CloudSSH<span class="blinking-cursor"></span></div>
         </div>
         <div class="cyber-box p-6 shadow-2xl relative">
           <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent opacity-50"></div>
           <div class="flex items-center justify-between mb-8 pb-4 border-b border-dim">
-            <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]">CONNECTION_PARAMETERS</span>
+            <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]" data-i18n="auth.connectionParameters">连接参数</span>
             <span class="material-symbols-outlined text-[var(--accent-secondary)]" style="font-variation-settings: 'FILL' 0;">terminal</span>
           </div>
           <div id="connection-form-container"></div>
         </div>
-        <div class="mt-8 text-center text-[13px] text-muted opacity-60">SYSTEM READY. WAITING FOR INPUT.</div>
+        <div class="mt-8 text-center text-[13px] text-muted opacity-60" data-i18n="auth.systemReady">系统就绪，等待输入。</div>
         <div class="mt-4 text-center">
           <a href="https://github.com/newbietan/CloudSSH" class="text-[13px] text-primary opacity-60 hover:opacity-100 transition-colors tracking-widest uppercase">[ GitHub Open Source ]</a>
         </div>
@@ -75,13 +76,14 @@
           <h1 class="text-2xl font-bold text-primary-container tracking-tighter cursor-pointer" id="user-space-logo">CloudSSH</h1>
         </div>
         <div class="flex items-center gap-4 flex-wrap">
+          <div data-language-switcher></div>
           <div id="user-info" class="flex items-center gap-3">
             <!-- 动态渲染：头像 + 用户名 -->
           </div>
-          <button id="ai-config-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" title="AI Agent Settings">
+          <button id="ai-config-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="agent.settings" title="AI Agent 设置">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">psychology</span>
           </button>
-          <button id="logout-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center text-error" title="Logout">
+          <button id="logout-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center text-error" data-i18n-title="auth.logout" title="退出登录">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">logout</span>
           </button>
         </div>
@@ -94,12 +96,12 @@
           <!-- 顶部操作栏 -->
           <div class="flex justify-between items-center mb-6">
             <div>
-              <h2 class="text-lg font-bold text-primary tracking-[0.1em]">SERVER_LIST</h2>
-              <p class="text-xs text-muted opacity-60 mt-1">Manage your SSH connections</p>
+              <h2 class="text-lg font-bold text-primary tracking-[0.1em]" data-i18n="server.list">服务器列表</h2>
+              <p class="text-xs text-muted opacity-60 mt-1" data-i18n="server.manage">管理你的 SSH 连接</p>
             </div>
             <button id="add-server-btn" class="cyber-button text-primary py-2 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center gap-2">
               <span class="material-symbols-outlined" style="font-size: 16px;">add</span>
-              ADD_SERVER
+              <span data-i18n="server.add">添加服务器</span>
             </button>
           </div>
           <!-- 服务器卡片网格 -->
@@ -109,11 +111,11 @@
           <!-- 空状态 -->
           <div id="empty-state" class="hidden flex-col items-center justify-center py-20">
             <span class="material-symbols-outlined text-dim mb-4" style="font-size: 64px; font-variation-settings: 'FILL' 0;">dns</span>
-            <p class="text-muted text-sm tracking-[0.1em] mb-2">NO_SERVERS_CONFIGURED</p>
-            <p class="text-dim text-xs mb-6">Add a server to get started</p>
+            <p class="text-muted text-sm tracking-[0.1em] mb-2" data-i18n="server.none">尚未配置服务器</p>
+            <p class="text-dim text-xs mb-6" data-i18n="server.noneHint">添加一台服务器即可开始使用</p>
               <button id="empty-add-btn" class="cyber-button text-primary py-2 px-6 text-xs font-bold tracking-[0.1em] uppercase flex items-center gap-2">
               <span class="material-symbols-outlined" style="font-size: 16px;">add</span>
-              ADD_FIRST_SERVER
+              <span data-i18n="server.addFirst">添加第一台服务器</span>
             </button>
           </div>
         </div>
@@ -123,7 +125,7 @@
       <footer class="px-6 py-2 flex justify-between items-center z-50 bg-elevated border-t border-outline-variant text-xs h-12">
         <div class="text-secondary-container opacity-60">© <span id="user-copyright-year"></span> CLOUD_SSH_TERMINAL - https://github.com/newbietan/CloudSSH</div>
         <div class="flex gap-4">
-          <a class="text-on-surface-variant opacity-60 hover:opacity-100 transition-opacity" href="https://github.com/newbietan/CloudSSH">Documentation</a>
+          <a class="text-on-surface-variant opacity-60 hover:opacity-100 transition-opacity" href="https://github.com/newbietan/CloudSSH" data-i18n="common.documentation">文档</a>
         </div>
       </footer>
     </div>
@@ -134,29 +136,29 @@
       <div class="cyber-box p-6 shadow-2xl relative z-10 w-full max-w-md mx-4">
         <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent-secondary)] to-transparent opacity-50"></div>
         <div class="flex items-center justify-between mb-6 pb-4 border-b border-dim">
-          <span id="modal-title" class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]">ADD_SERVER</span>
+          <span id="modal-title" class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]" data-i18n="server.add">添加服务器</span>
           <button id="modal-close-btn" class="text-muted hover:text-primary transition-colors cursor-pointer">
             <span class="material-symbols-outlined" style="font-size: 20px;">close</span>
           </button>
         </div>
         <form id="server-form" class="space-y-4">
           <div>
-            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">SERVER_NAME</label>
+            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="server.name">服务器名称</label>
             <div class="flex items-center">
               <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px;">label</span>
-              <input id="server-name" class="terminal-input text-[13px]" placeholder="My Server" type="text" required>
+              <input id="server-name" class="terminal-input text-[13px]" data-i18n-placeholder="server.namePlaceholder" placeholder="我的服务器" type="text" required>
             </div>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div class="sm:col-span-3">
-              <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">HOST_ADDRESS</label>
+              <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.host">主机地址</label>
               <div class="flex items-center">
                 <span class="text-muted mr-2">&gt;</span>
                 <input id="server-host" class="terminal-input text-[13px]" placeholder="192.168.1.1" type="text" required>
               </div>
             </div>
             <div class="sm:col-span-1">
-              <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">PORT</label>
+              <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.port">端口</label>
               <div class="flex items-center">
                 <span class="text-muted mr-2">:</span>
                 <input id="server-port" class="terminal-input text-[13px]" placeholder="22" type="text" value="22">
@@ -164,17 +166,17 @@
             </div>
           </div>
           <div>
-            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">AUTH_USER</label>
+            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.user">用户名</label>
             <div class="flex items-center">
               <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px;">person</span>
               <input id="server-username" class="terminal-input text-[13px]" placeholder="root" type="text" required>
             </div>
           </div>
           <div>
-            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">AUTH_METHOD</label>
+            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.method">认证方式</label>
             <div class="flex gap-2 mb-3">
-              <button type="button" id="modal-auth-tab-password" class="auth-tab auth-tab-active px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all">PASSWORD</button>
-              <button type="button" id="modal-auth-tab-key" class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all">PRIVATE_KEY</button>
+              <button type="button" id="modal-auth-tab-password" class="auth-tab auth-tab-active px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all" data-i18n="common.password">密码</button>
+              <button type="button" id="modal-auth-tab-key" class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all" data-i18n="common.privateKey">私钥</button>
             </div>
             <div id="modal-password-section">
               <div class="flex items-center">
@@ -183,20 +185,20 @@
               </div>
             </div>
             <div id="modal-key-section" style="display:none;">
-              <textarea id="server-private-key" class="terminal-input text-[11px] w-full" rows="4" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...粘贴私钥内容...&#10;-----END OPENSSH PRIVATE KEY-----" style="resize:vertical;border:1px solid var(--border-strong);padding:8px;"></textarea>
+              <textarea id="server-private-key" class="terminal-input text-[11px] w-full" rows="4" data-i18n-placeholder="auth.keyPlaceholder" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...粘贴私钥内容...&#10;-----END OPENSSH PRIVATE KEY-----" style="resize:vertical;border:1px solid var(--border-strong);padding:8px;"></textarea>
             </div>
           </div>
           <div>
-            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">REGION_HINT</label>
+            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.regionHint">连接区域</label>
             <select id="server-region" class="terminal-input text-[13px] cursor-pointer" style="border:1px solid var(--border-strong);border-bottom:1px solid var(--border-strong);padding:6px 8px;">
-              <option value="">自动（保存时由系统推断）</option>
+              <option value="" data-i18n="region.auto">自动（保存时由系统推断）</option>
             </select>
             <div id="server-region-inferred" class="text-[10px] text-muted mt-1"></div>
           </div>
           <div class="pt-2">
             <button id="server-submit-btn" class="cyber-button w-full py-3 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-2 bg-primary text-on-primary" type="button">
               <span class="material-symbols-outlined" style="font-size: 18px;">save</span>
-              SAVE_SERVER
+              <span data-i18n="server.save">保存服务器</span>
             </button>
           </div>
         </form>
@@ -211,28 +213,29 @@
           <h1 class="text-2xl font-bold text-primary-container tracking-tighter cursor-pointer">CloudSSH</h1>
         </div>
         <div class="flex items-center gap-2 sm:gap-4 text-primary-container flex-wrap">
+          <div data-language-switcher></div>
           <select id="theme-selector" class="bg-surface-variant text-on-surface-variant text-xs py-1 px-2 border-none outline-none cursor-pointer rounded">
             <option value="cyberpunk">Cyberpunk</option>
             <option value="glacier">Glacier</option>
             <option value="gruvbox">Gruvbox</option>
           </select>
-          <button id="import-theme-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" title="Import Theme">
+          <button id="import-theme-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.importTheme" title="导入主题">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">upload_file</span>
           </button>
           <input type="file" id="import-theme-input" accept=".json" class="hidden">
-          <button id="sftp-toggle-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" title="SFTP File Manager">
+          <button id="sftp-toggle-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.sftp" title="SFTP 文件管理器">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">folder_open</span>
           </button>
-          <button id="search-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" title="Search (Ctrl+Shift+F)">
+          <button id="search-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.search" title="搜索（Ctrl+Shift+F）">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">search</span>
           </button>
-          <button id="export-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" title="Export Terminal Log">
+          <button id="export-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.export" title="导出终端日志">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">download</span>
           </button>
-          <button id="agent-toggle-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center hidden" title="AI Agent Assistant">
+          <button id="agent-toggle-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center hidden" data-i18n-title="terminal.agent" title="AI Agent 助手">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">psychology</span>
           </button>
-          <button id="disconnect-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" title="Disconnect">
+          <button id="disconnect-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.disconnect" title="断开连接">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">power_settings_new</span>
           </button>
         </div>
@@ -242,7 +245,7 @@
       <div id="tab-bar" class="flex items-center bg-background border-b border-outline-variant px-2 h-9 overflow-x-auto custom-scrollbar gap-0.5"
            style="scrollbar-width: thin;">
         <!-- 由 TabManager 动态渲染标签 -->
-        <button id="new-tab-btn" class="tab-new-btn" title="New Connection">
+        <button id="new-tab-btn" class="tab-new-btn" data-i18n-title="terminal.newConnection" title="新建连接">
           <span class="material-symbols-outlined" style="font-size:16px;">add</span>
         </button>
       </div>
@@ -254,10 +257,10 @@
           <!-- Status Bar -->
           <div class="flex justify-between items-center border-b border-[var(--border)] pb-2 mb-4 text-on-surface-variant opacity-80 text-[11px]">
             <div class="flex gap-2 sm:gap-6 flex-wrap">
-              <span id="term-status" class="flex items-center gap-1"><div class="w-2 h-2 bg-primary-container"></div> Connected</span>
-              <span id="term-host" class="truncate max-w-[200px]">Host: -</span>
-              <span id="term-user" class="truncate max-w-[120px]">User: -</span>
-              <span id="term-port">Port: -</span>
+              <span id="term-status" class="flex items-center gap-1"><div class="w-2 h-2 bg-primary-container"></div> 已连接</span>
+              <span id="term-host" class="truncate max-w-[200px]">主机：-</span>
+              <span id="term-user" class="truncate max-w-[120px]">用户：-</span>
+              <span id="term-port">端口：-</span>
             </div>
             <div>
               <span id="term-info"></span>
@@ -272,7 +275,7 @@
       <footer class="px-6 py-2 flex justify-between items-center z-50 bg-elevated border-t border-outline-variant text-xs h-12 shrink-0">
         <div class="text-secondary-container opacity-60">© <span id="copyright-year"></span> CLOUD_SSH_TERMINAL - https://github.com/newbietan/CloudSSH</div>
         <div class="flex gap-4">
-          <a class="text-on-surface-variant opacity-60 hover:opacity-100 transition-opacity" href="https://github.com/newbietan/CloudSSH">Documentation</a>
+          <a class="text-on-surface-variant opacity-60 hover:opacity-100 transition-opacity" href="https://github.com/newbietan/CloudSSH" data-i18n="common.documentation">文档</a>
         </div>
       </footer>
     </div>

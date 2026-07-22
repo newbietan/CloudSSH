@@ -1,5 +1,7 @@
 // AI Config panel — BYOK settings for LLM API
 
+import { t, translateDocument } from './i18n';
+
 export class AIConfigPanel {
   private modalEl: HTMLElement | null = null;
 
@@ -29,34 +31,34 @@ export class AIConfigPanel {
       <div class="cyber-box p-6 shadow-2xl relative z-10 w-full max-w-md mx-4">
         <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent-secondary)] to-transparent opacity-50"></div>
         <div class="flex items-center justify-between mb-6 pb-4 border-b border-dim">
-          <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]">AI_AGENT_CONFIG</span>
+          <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]" data-i18n="aiConfig.title">AI Agent 设置</span>
           <button id="ai-modal-close-btn" class="text-muted hover:text-primary transition-colors cursor-pointer">
             <span class="material-symbols-outlined" style="font-size:20px;">close</span>
           </button>
         </div>
         <form id="ai-config-form" class="space-y-4">
           <div>
-            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">BASE_URL</label>
+            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="aiConfig.baseUrl">接口地址</label>
             <div class="flex items-center">
               <span class="text-muted mr-2">&gt;</span>
               <input id="ai-base-url" class="terminal-input text-[13px]" placeholder="https://api.openai.com/v1" type="url" required>
             </div>
-            <div class="text-[10px] text-muted opacity-60 mt-1">OpenAI / DeepSeek / 通义千问 / Kimi / OpenRouter 等兼容接口</div>
+            <div class="text-[10px] text-muted opacity-60 mt-1" data-i18n="aiConfig.compatibleHint">支持 OpenAI、DeepSeek、通义千问、Kimi、OpenRouter 等兼容接口</div>
           </div>
           <div>
-            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">API_KEY</label>
+            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="aiConfig.apiKey">API 密钥</label>
             <div class="flex items-center">
               <span class="material-symbols-outlined text-muted mr-2" style="font-size:16px;">key</span>
               <input id="ai-api-key" class="terminal-input text-[13px]" placeholder="sk-..." type="password">
             </div>
-            <div id="ai-key-hint" class="text-[10px] text-muted opacity-60 mt-1">留空 = 不修改现有 Key</div>
+            <div id="ai-key-hint" class="text-[10px] text-muted opacity-60 mt-1" data-i18n="aiConfig.keyUnchanged">留空表示不修改现有密钥</div>
           </div>
           <div>
-            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2">MODEL</label>
+            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="aiConfig.model">模型</label>
             <div class="flex gap-2">
               <input id="ai-model" class="terminal-input flex-1 text-[13px]" placeholder="gpt-4o-mini" type="text" required list="ai-model-list">
               <datalist id="ai-model-list"></datalist>
-              <button type="button" id="ai-fetch-models-btn" class="cyber-button px-3 py-1 text-[11px] font-bold tracking-[0.1em]">FETCH</button>
+              <button type="button" id="ai-fetch-models-btn" class="cyber-button px-3 py-1 text-[11px] font-bold tracking-[0.1em]" data-i18n="aiConfig.loadModels">获取模型列表</button>
             </div>
             <div id="ai-fetch-status" class="text-[10px] mt-1 hidden"></div>
           </div>
@@ -65,12 +67,13 @@ export class AIConfigPanel {
             <div id="ai-config-success" class="text-[var(--accent)] text-[11px] hidden"></div>
             <button id="ai-save-btn" class="cyber-button w-full py-3 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-2 bg-[var(--accent)] text-[var(--on-accent)]" type="button">
               <span class="material-symbols-outlined" style="font-size:18px;">save</span>
-              SAVE_CONFIG
+              <span data-i18n="aiConfig.save">保存设置</span>
             </button>
           </div>
         </form>
       </div>
     `;
+    translateDocument(this.modalEl);
 
     document.body.appendChild(this.modalEl);
 
@@ -92,7 +95,7 @@ export class AIConfigPanel {
           if (baseUrlEl) baseUrlEl.value = data.base_url || '';
           if (modelEl) modelEl.value = data.model || '';
           if (hintEl && data.api_key_last4) {
-            hintEl.textContent = `当前 Key: ****${data.api_key_last4}（留空 = 不修改）`;
+            hintEl.textContent = t('aiConfig.currentKey', { last4: data.api_key_last4 });
           }
         }
       }
@@ -110,12 +113,12 @@ export class AIConfigPanel {
     const apiKey = apiKeyEl?.value.trim();
 
     if (!baseUrl || !apiKey) {
-      this.showFetchStatus('请先填写 Base URL 和 API Key', true);
+      this.showFetchStatus(t('aiConfig.credentialsRequired'), true);
       return;
     }
 
     if (fetchBtn) fetchBtn.disabled = true;
-    this.showFetchStatus('获取模型列表中...');
+    this.showFetchStatus(t('aiConfig.loadingModels'));
 
     try {
       const res = await fetch('/api/ai/models', {
@@ -133,7 +136,7 @@ export class AIConfigPanel {
 
       if (data.fallback && data.models?.length === 0) {
         const reason = data.reason ? ` (${data.reason})` : '';
-        this.showFetchStatus(`Provider 不支持自动获取${reason}，请手动输入模型名称`, false);
+        this.showFetchStatus(t('aiConfig.manualModel', { reason }), false);
         return;
       }
 
@@ -146,9 +149,9 @@ export class AIConfigPanel {
           modelListEl.appendChild(option);
         }
       }
-      this.showFetchStatus(`获取到 ${models.length} 个模型`, false);
+      this.showFetchStatus(t('aiConfig.modelsLoaded', { count: models.length }), false);
     } catch (e) {
-      this.showFetchStatus('获取失败: ' + (e instanceof Error ? e.message : '网络错误'), true);
+      this.showFetchStatus(t('aiConfig.loadFailed', { message: e instanceof Error ? e.message : t('aiConfig.networkError') }), true);
     } finally {
       if (fetchBtn) fetchBtn.disabled = false;
     }
@@ -174,7 +177,7 @@ export class AIConfigPanel {
     successEl?.classList.add('hidden');
 
     if (!baseUrl || !model) {
-      if (errorEl) { errorEl.textContent = 'Base URL 和 Model 为必填项'; errorEl.classList.remove('hidden'); }
+      if (errorEl) { errorEl.textContent = t('aiConfig.required'); errorEl.classList.remove('hidden'); }
       return;
     }
 
@@ -189,14 +192,14 @@ export class AIConfigPanel {
       });
 
       if (res.ok) {
-        if (successEl) { successEl.textContent = '配置保存成功'; successEl.classList.remove('hidden'); }
+        if (successEl) { successEl.textContent = t('aiConfig.saved'); successEl.classList.remove('hidden'); }
         setTimeout(() => this.hide(), 1500);
       } else {
         const data = await res.json() as any;
-        if (errorEl) { errorEl.textContent = data.error || '保存失败'; errorEl.classList.remove('hidden'); }
+        if (errorEl) { errorEl.textContent = data.error || t('feedback.danger'); errorEl.classList.remove('hidden'); }
       }
     } catch {
-      if (errorEl) { errorEl.textContent = '网络错误'; errorEl.classList.remove('hidden'); }
+      if (errorEl) { errorEl.textContent = t('aiConfig.networkError'); errorEl.classList.remove('hidden'); }
     }
   }
 }

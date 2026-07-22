@@ -1,5 +1,6 @@
 import { populateRegionSelect, regionLabel } from './regions';
 import { confirmAction, notify } from './ui-feedback';
+import { onLocaleChange, t } from './i18n';
 
 interface UserInfo {
   id: number;
@@ -41,6 +42,7 @@ export class ServerList {
     this.user = user;
     this.onLogout = onLogout;
     this.onConnect = onConnect;
+    onLocaleChange(() => this.renderServerGrid());
     this.init();
   }
 
@@ -160,8 +162,8 @@ export class ServerList {
     const isManual = !!server.region;
     const regionLabelText = regionLabel(effectiveHint);
     const regionTag = effectiveHint
-      ? (isManual ? '手动' : '自动')
-      : '自动';
+      ? (isManual ? t('server.regionManual') : t('server.regionAuto'))
+      : t('server.regionAuto');
 
     return `
       <div class="server-card p-5 relative group" id="card-${server.id}">
@@ -180,15 +182,15 @@ export class ServerList {
 
         <div class="space-y-1.5 text-xs text-muted mb-4">
           <div class="flex items-center gap-2">
-            <span class="text-dim">HOST</span>
+            <span class="text-dim">${t('server.hostLabel')}</span>
             <span class="text-on-surface">${this.escapeHtml(server.host)}:${server.port}</span>
           </div>
           <div class="flex items-center gap-2">
-            <span class="text-dim">USER</span>
+            <span class="text-dim">${t('server.userLabel')}</span>
             <span class="text-on-surface">${this.escapeHtml(server.username)}</span>
           </div>
           <div class="flex items-center gap-2">
-            <span class="text-dim">REGION</span>
+            <span class="text-dim">${t('server.regionLabel')}</span>
             <span class="text-on-surface flex items-center gap-1">
               <span class="material-symbols-outlined" style="font-size: 11px; color: var(--accent-secondary);">${effectiveHint ? 'my_location' : 'explore'}</span>
               ${this.escapeHtml(regionLabelText)}
@@ -198,14 +200,14 @@ export class ServerList {
         </div>
 
         <div class="flex gap-2 pt-3 border-t border-[var(--border)]">
-          <button id="connect-${server.id}" class="cyber-button text-primary flex-1 py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-1" title="Connect">
+          <button id="connect-${server.id}" class="cyber-button text-primary flex-1 py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-1" title="${t('common.connect')}">
             <span class="material-symbols-outlined" style="font-size: 14px;">power_settings_new</span>
-            CONNECT
+            ${t('common.connect')}
           </button>
-          <button id="edit-${server.id}" class="cyber-button text-primary py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] flex items-center justify-center" title="Edit">
+          <button id="edit-${server.id}" class="cyber-button text-primary py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] flex items-center justify-center" title="${t('common.edit')}">
             <span class="material-symbols-outlined" style="font-size: 14px;">edit</span>
           </button>
-          <button id="delete-${server.id}" class="cyber-button py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] flex items-center justify-center text-error border-[var(--error)] hover:bg-[var(--error)] hover:text-[var(--bg)]" title="Delete">
+          <button id="delete-${server.id}" class="cyber-button py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] flex items-center justify-center text-error border-[var(--error)] hover:bg-[var(--error)] hover:text-[var(--bg)]" title="${t('common.delete')}">
             <span class="material-symbols-outlined" style="font-size: 14px;">delete</span>
           </button>
         </div>
@@ -223,7 +225,7 @@ export class ServerList {
     if (connectBtn) {
       connectBtn.innerHTML = `
         <span class="material-symbols-outlined animate-spin" style="font-size: 14px;">progress_activity</span>
-        CONNECTING...
+        ${t('server.connecting')}
       `;
       (connectBtn as HTMLButtonElement).disabled = true;
     }
@@ -248,14 +250,14 @@ export class ServerList {
       this.onConnect(wsUrl, server.name, { host: server.host, port: server.port });
     } catch (e) {
       notify(e instanceof Error ? e.message : String(e), {
-        title: '连接失败',
+        title: t('server.connectFailed'),
         variant: 'danger',
       });
     } finally {
       if (connectBtn) {
         connectBtn.innerHTML = `
           <span class="material-symbols-outlined" style="font-size: 14px;">power_settings_new</span>
-          CONNECT
+          ${t('common.connect')}
         `;
         (connectBtn as HTMLButtonElement).disabled = false;
       }
@@ -267,10 +269,10 @@ export class ServerList {
     if (!server) return;
 
     const confirmed = await confirmAction({
-      title: '删除服务器',
-      message: `确定要删除服务器“${server.name}”吗？保存的连接信息和凭据也会一并删除。`,
-      confirmText: '删除',
-      cancelText: '保留',
+      title: t('server.deleteTitle'),
+      message: t('server.deleteMessage', { name: server.name }),
+      confirmText: t('common.delete'),
+      cancelText: t('server.keep'),
       variant: 'danger',
     });
     if (!confirmed) return;
@@ -291,7 +293,7 @@ export class ServerList {
       this.renderServerGrid();
     } catch (e) {
       notify(e instanceof Error ? e.message : String(e), {
-        title: '删除失败',
+        title: t('feedback.danger'),
         variant: 'danger',
       });
       await this.fetchServers();
@@ -308,10 +310,10 @@ export class ServerList {
     const submitBtn = document.getElementById('server-submit-btn');
     if (!modal || !title || !submitBtn) return;
 
-    title.textContent = mode === 'add' ? 'ADD_SERVER' : 'EDIT_SERVER';
+    title.textContent = mode === 'add' ? t('server.add') : t('server.edit');
     submitBtn.innerHTML = `
       <span class="material-symbols-outlined" style="font-size: 18px;">save</span>
-      ${mode === 'add' ? 'SAVE_SERVER' : 'UPDATE_SERVER'}
+      ${mode === 'add' ? t('server.save') : t('server.update')}
     `;
 
     // 填充表单
@@ -338,7 +340,7 @@ export class ServerList {
       // 显示系统推断值（仅编辑时，让用户了解 DB 持久化的 hint）
       if (inferredInfo) {
         if (server.inferred_hint) {
-          inferredInfo.textContent = `系统推断：${regionLabel(server.inferred_hint)}`;
+          inferredInfo.textContent = t('server.regionInferred', { region: regionLabel(server.inferred_hint) });
         } else {
           inferredInfo.textContent = '';
         }
@@ -400,8 +402,8 @@ export class ServerList {
     const privateKey = (document.getElementById('server-private-key') as HTMLTextAreaElement).value;
 
     if (!name || !host || !username) {
-      notify('请填写服务器名称、主机和用户名', {
-        title: '服务器信息不完整',
+      notify(t('server.detailsRequired'), {
+        title: t('server.detailsTitle'),
         variant: 'warning',
       });
       const missingId = !name ? 'server-name' : !host ? 'server-host' : 'server-username';
@@ -414,8 +416,8 @@ export class ServerList {
 
     // 新增时必须填写凭据，编辑时可选
     if (!this.editingServerId && !credential) {
-      notify(authMethod === 'publickey' ? '请粘贴私钥内容' : '请输入密码', {
-        title: '认证信息不完整',
+      notify(t(authMethod === 'publickey' ? 'auth.validationPrivateKey' : 'auth.validationPassword'), {
+        title: t('auth.incompleteCredentials'),
         variant: 'warning',
       });
       const credentialId = authMethod === 'publickey' ? 'server-private-key' : 'server-password';
@@ -427,7 +429,7 @@ export class ServerList {
     submitBtn.disabled = true;
     submitBtn.innerHTML = `
       <span class="material-symbols-outlined animate-spin" style="font-size: 18px;">progress_activity</span>
-      SAVING...
+      ${t('server.saving')}
     `;
 
     try {
@@ -478,11 +480,11 @@ export class ServerList {
         if (userRegion || inferred) {
           // 用户手动指定优先显示手动值，否则显示系统推断值
           const hint = userRegion || inferred;
-          notify(`已保存，区域：${regionLabel(hint)}`, { variant: 'success' });
+          notify(t('server.savedRegion', { region: regionLabel(hint) }), { variant: 'success' });
         } else {
           // 推断失败（私网 IP / 限流 / 未命中映射表）
-          notify('已保存，未能推断区域（将使用自动调度）', {
-            title: '保存成功',
+          notify(t('server.savedAuto'), {
+            title: t('feedback.success'),
             variant: 'warning',
           });
         }
@@ -492,14 +494,14 @@ export class ServerList {
       await this.fetchServers();
     } catch (e) {
       notify(e instanceof Error ? e.message : String(e), {
-        title: '保存失败',
+        title: t('feedback.danger'),
         variant: 'danger',
       });
     } finally {
       submitBtn.disabled = false;
       submitBtn.innerHTML = `
         <span class="material-symbols-outlined" style="font-size: 18px;">save</span>
-        ${this.editingServerId ? 'UPDATE_SERVER' : 'SAVE_SERVER'}
+        ${this.editingServerId ? t('server.update') : t('server.save')}
       `;
     }
   }
