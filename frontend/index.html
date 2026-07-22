@@ -67,8 +67,26 @@
       </main>
     </div>
 
-    <!-- User Space Page (登录后) -->
-    <div id="user-space-section" class="hidden min-h-screen flex-col bg-elevated text-on-surface">
+    <!-- 桌面（登录后） -->
+    <div id="desktop" class="hidden fixed inset-0 overflow-hidden">
+      <div id="desktop-wallpaper" class="absolute inset-0"
+           style="background:radial-gradient(circle at 30% 20%, #1b2130, #0a0d14);"></div>
+      <div id="desktop-icons" class="absolute inset-0 p-4 flex flex-col flex-wrap gap-2 content-start"></div>
+      <div id="window-host" class="absolute inset-0" style="bottom:48px;"></div>
+      <div id="taskbar" class="absolute left-0 right-0 bottom-0 h-12 flex items-center gap-1 px-2 z-[9999]"
+           style="background:var(--bg-elevated,#0d1017);border-top:1px solid var(--border-strong,#2a2f3a);">
+        <button id="start-btn" class="px-3 h-9 flex items-center gap-2 text-sm">
+          <span class="material-symbols-outlined" style="font-size:18px;">apps</span>开始
+        </button>
+        <div id="taskbar-items" class="flex-1 flex items-center gap-1 overflow-x-auto"></div>
+        <div id="taskbar-clock" class="px-3 text-xs opacity-80"></div>
+      </div>
+      <div id="start-menu" class="hidden absolute bottom-12 left-2 w-64 z-[9999] p-2"
+           style="background:var(--bg-surface,#12151c);border:1px solid var(--border-strong,#2a2f3a);"></div>
+    </div>
+
+    <!-- 服务器列表宿主（登录后由 servers-app 迁入桌面窗口） -->
+    <div id="server-space-host" class="hidden h-full w-full flex-col bg-elevated text-on-surface">
       <!-- TopAppBar -->
       <header class="flex justify-between items-center w-full px-6 h-16 bg-elevated border-b border-outline-variant z-50">
         <div class="flex items-center gap-6">
@@ -203,79 +221,6 @@
       </div>
     </div>
 
-    <!-- Terminal Page -->
-    <div id="terminal-section" class="hidden h-screen flex-col bg-background text-on-surface">
-      <!-- TopAppBar -->
-      <header class="flex justify-between items-center w-full px-6 h-16 bg-background border-b border-outline-variant z-50">
-        <div class="flex items-center gap-6">
-          <h1 class="text-2xl font-bold text-primary-container tracking-tighter cursor-pointer">CloudSSH</h1>
-        </div>
-        <div class="flex items-center gap-2 sm:gap-4 text-primary-container flex-wrap">
-          <select id="theme-selector" class="bg-surface-variant text-on-surface-variant text-xs py-1 px-2 border-none outline-none cursor-pointer rounded">
-            <option value="cyberpunk">Cyberpunk</option>
-            <option value="glacier">Glacier</option>
-            <option value="gruvbox">Gruvbox</option>
-          </select>
-          <button id="import-theme-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" title="Import Theme">
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">upload_file</span>
-          </button>
-          <input type="file" id="import-theme-input" accept=".json" class="hidden">
-          <button id="sftp-toggle-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" title="SFTP File Manager">
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">folder_open</span>
-          </button>
-          <button id="search-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" title="Search (Ctrl+Shift+F)">
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">search</span>
-          </button>
-          <button id="export-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" title="Export Terminal Log">
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">download</span>
-          </button>
-          <button id="agent-toggle-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center hidden" title="AI Agent Assistant">
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">psychology</span>
-          </button>
-          <button id="disconnect-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" title="Disconnect">
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">power_settings_new</span>
-          </button>
-        </div>
-      </header>
-
-      <!-- Tab Bar（标签栏） -->
-      <div id="tab-bar" class="flex items-center bg-background border-b border-outline-variant px-2 h-9 overflow-x-auto custom-scrollbar gap-0.5"
-           style="scrollbar-width: thin;">
-        <!-- 由 TabManager 动态渲染标签 -->
-        <button id="new-tab-btn" class="tab-new-btn" title="New Connection">
-          <span class="material-symbols-outlined" style="font-size:16px;">add</span>
-        </button>
-      </div>
-
-      <!-- Main Terminal -->
-      <main class="flex-1 p-2 lg:p-6 relative bg-surface-container-lowest overflow-hidden">
-        <div class="absolute inset-0 scanline pointer-events-none z-10 opacity-30"></div>
-        <div id="terminal-wrapper" class="h-full w-full border border-outline-variant bg-[var(--bg)] p-2 lg:p-4 overflow-hidden font-code text-[13px] text-primary-container relative z-0 flex flex-col">
-          <!-- Status Bar -->
-          <div class="flex justify-between items-center border-b border-[var(--border)] pb-2 mb-4 text-on-surface-variant opacity-80 text-[11px]">
-            <div class="flex gap-2 sm:gap-6 flex-wrap">
-              <span id="term-status" class="flex items-center gap-1"><div class="w-2 h-2 bg-primary-container"></div> Connected</span>
-              <span id="term-host" class="truncate max-w-[200px]">Host: -</span>
-              <span id="term-user" class="truncate max-w-[120px]">User: -</span>
-              <span id="term-port">Port: -</span>
-            </div>
-            <div>
-              <span id="term-info"></span>
-            </div>
-          </div>
-          <!-- Terminal Area (TabManager 在此动态创建每个标签的容器) -->
-          <div id="terminal-area" class="flex-1 overflow-hidden relative"></div>
-        </div>
-      </main>
-
-      <!-- Footer -->
-      <footer class="px-6 py-2 flex justify-between items-center z-50 bg-elevated border-t border-outline-variant text-xs h-12 shrink-0">
-        <div class="text-secondary-container opacity-60">© <span id="copyright-year"></span> CLOUD_SSH_TERMINAL - https://github.com/newbietan/CloudSSH</div>
-        <div class="flex gap-4">
-          <a class="text-on-surface-variant opacity-60 hover:opacity-100 transition-opacity" href="https://github.com/newbietan/CloudSSH">Documentation</a>
-        </div>
-      </footer>
-    </div>
   </div>
   <script type="module" src="/src/main.ts"></script>
 </body>

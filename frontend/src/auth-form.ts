@@ -1,6 +1,7 @@
-import { loadKnownFingerprint } from './terminal';
-import type { TabManager } from './tab-manager';
+import { loadKnownFingerprint, type SSHTerminal } from './terminal';
+import type { WindowHandle } from './wm/window-manager';
 import { populateRegionSelect, regionLabel } from './regions';
+import { notify } from './ui-feedback';
 // --- Credential encryption helpers ---
 async function deriveKey(salt: Uint8Array): Promise<CryptoKey> {
   const raw = new TextEncoder().encode(window.location.origin + ':cloudssh');
@@ -44,8 +45,8 @@ async function decryptCredentials(stored: string): Promise<{ host: string; port:
 }
 
 export interface ConnectionFormOptions {
-  /** 获取 TabManager 实例 */
-  getTabManager: () => TabManager;
+  /** 创建并挂载一个终端窗口，返回终端与窗口句柄（由外部注入，负责显示桌面） */
+  createTerminalWindow: (opts: { name: string; hostInfo?: { host: string; port: number } }) => { terminal: SSHTerminal; win: WindowHandle };
 }
 
 export class ConnectionForm {
@@ -261,7 +262,10 @@ export class ConnectionForm {
           fileNameSpan.textContent = file.name;
         }
       } catch (error) {
-        alert('读取密钥文件失败: ' + (error instanceof Error ? error.message : '未知错误'));
+        notify('读取密钥文件失败：' + (error instanceof Error ? error.message : '未知错误'), {
+          title: '无法读取文件',
+          variant: 'danger',
+        });
       }
 
       // Reset file input
@@ -444,23 +448,27 @@ export class ConnectionForm {
     const regionValue = anonRegionSelect ? anonRegionSelect.value : '';
 
     if (!host || !username) {
-      alert('请填写主机名和用户名');
+      notify('请填写主机名和用户名', { title: '连接信息不完整', variant: 'warning' });
+      (document.getElementById(!host ? 'host' : 'username') as HTMLInputElement)?.focus();
       return;
     }
 
     if (this.authMode === 'password' && !password) {
-      alert('请输入密码');
+      notify('请输入密码', { title: '认证信息不完整', variant: 'warning' });
+      (document.getElementById('password') as HTMLInputElement)?.focus();
       return;
     }
 
     if (this.authMode === 'key' && !privateKey) {
-      alert('请粘贴私钥内容');
+      notify('请粘贴私钥内容', { title: '认证信息不完整', variant: 'warning' });
+      (document.getElementById('private-key') as HTMLTextAreaElement)?.focus();
       return;
     }
 
     // Check Turnstile if enabled
     if (this.turnstileEnabled && !this.turnstileVerified) {
-      alert('请完成人机验证');
+      notify('请先完成人机验证', { title: '需要验证', variant: 'warning' });
+      document.getElementById('turnstile-container')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
 
@@ -510,19 +518,12 @@ export class ConnectionForm {
     // 重新渲染历史列表
     this.renderRecentConnections();
 
-    // 通过 TabManager 创建新标签并切换到终端视图
-    const tm = this.options.getTabManager();
+    // 创建终端窗口（外部注入：负责隐藏登录页并显示桌面），复用其 SSHTerminal
     const displayLabel = `${username}@${host}`;
-
-    // 切换到终端视图
-    document.getElementById('auth-section')!.classList.add('hidden');
-    document.getElementById('terminal-section')!.classList.remove('hidden');
-    document.getElementById('terminal-section')!.classList.add('flex');
-
-    const tab = tm.createTab(displayLabel, { host, port, username });
-    const terminal = tab.terminal;
-
-    terminal.mount();
+    const { terminal, win } = this.options.createTerminalWindow({
+      name: displayLabel,
+      hostInfo: { host, port },
+    });
 
     try {
       // 加载已知主机指纹（TOFU 验证）
@@ -539,10 +540,9 @@ export class ConnectionForm {
         locationHint: regionValue || undefined,
       });
     } catch (error) {
-      // 连接失败时关闭该标签
-      tm.closeTab(tab.id);
+      // 连接失败时关闭该终端窗口
+      win.close();
       document.getElementById('status-text')!.innerHTML = '<span class="w-2 h-2 bg-surface-dot inline-block"></span> STATUS: OFFLINE';
     }
   }
 }
-
