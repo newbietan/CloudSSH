@@ -5,15 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CloudSSH Theme Editor</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&amp;display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
+    :root {
+      --editor-bg: #0a0a0a;
+      --editor-surface: #121212;
+      --editor-elevated: #131313;
+      --editor-text: #e5e2e1;
+      --editor-muted: #bbccb0;
+      --editor-dim: #3c4b36;
+      --editor-accent: #4af626;
+      --editor-secondary: #14d1ff;
+      --editor-border: #1f1f1f;
+      --editor-border-strong: #3c4b36;
+      --editor-error: #ffb4ab;
+      --editor-glow: rgba(74, 246, 38, 0.08);
+    }
+
     body {
       font-family: 'JetBrains Mono', monospace;
-      background: #0f0f0f;
-      color: #ccc;
+      background: var(--editor-bg);
+      color: var(--editor-text);
       height: 100vh;
       overflow: hidden;
     }
@@ -27,8 +42,8 @@
     .sidebar {
       width: 340px;
       min-width: 340px;
-      background: #161616;
-      border-right: 1px solid #2a2a2a;
+      background: var(--editor-elevated);
+      border-right: 1px solid var(--editor-border-strong);
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -36,60 +51,80 @@
 
     .sidebar-header {
       padding: 16px 20px;
-      border-bottom: 1px solid #2a2a2a;
+      border-bottom: 1px solid var(--editor-border-strong);
       display: flex;
       align-items: center;
       justify-content: space-between;
       flex-shrink: 0;
     }
 
-    .sidebar-header h1 {
-      font-size: 14px;
+    .editor-brand {
+      min-width: 0;
+    }
+
+    .editor-brand__logo {
+      font-size: 15px;
       font-weight: 700;
-      color: #4af626;
-      letter-spacing: 0.05em;
+      color: var(--editor-accent);
+      letter-spacing: -0.04em;
+    }
+
+    .editor-brand__title {
+      margin-top: 2px;
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--editor-secondary);
+      letter-spacing: 0.12em;
     }
 
     .sidebar-actions {
       display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
       gap: 6px;
     }
 
     .sidebar-actions button {
       background: transparent;
-      border: 1px solid #333;
-      color: #aaa;
+      border: 1px solid var(--editor-border-strong);
+      color: var(--editor-muted);
       font-family: 'JetBrains Mono', monospace;
       font-size: 10px;
       padding: 4px 8px;
       cursor: pointer;
       transition: all 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
     }
 
     .sidebar-actions button:hover {
-      border-color: #4af626;
-      color: #4af626;
+      border-color: var(--editor-accent);
+      color: var(--editor-accent);
+      box-shadow: 0 0 10px var(--editor-glow);
     }
 
     .sidebar-actions button.primary {
-      border-color: #4af626;
-      color: #4af626;
+      border-color: var(--editor-accent);
+      color: var(--editor-accent);
     }
 
     .sidebar-actions button.primary:hover {
-      background: #4af626;
+      background: var(--editor-accent);
       color: #000;
     }
 
     .presets-bar {
       padding: 12px 20px;
-      border-bottom: 1px solid #2a2a2a;
+      border-bottom: 1px solid var(--editor-border-strong);
       flex-shrink: 0;
     }
 
     .presets-bar label {
       font-size: 10px;
-      color: #666;
+      color: var(--editor-muted);
+      opacity: 0.65;
       letter-spacing: 0.1em;
       display: block;
       margin-bottom: 8px;
@@ -102,8 +137,8 @@
 
     .preset-chip {
       background: transparent;
-      border: 1px solid #333;
-      color: #888;
+      border: 1px solid var(--editor-border);
+      color: var(--editor-muted);
       font-family: 'JetBrains Mono', monospace;
       font-size: 10px;
       padding: 4px 10px;
@@ -112,8 +147,9 @@
     }
 
     .preset-chip:hover, .preset-chip.active {
-      border-color: #4af626;
-      color: #4af626;
+      border-color: var(--editor-accent);
+      color: var(--editor-accent);
+      background: var(--editor-glow);
     }
 
     .sidebar-scroll {
@@ -124,16 +160,17 @@
 
     .sidebar-scroll::-webkit-scrollbar { width: 6px; }
     .sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
-    .sidebar-scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+    .sidebar-scroll::-webkit-scrollbar-thumb { background: var(--editor-border-strong); border-radius: 3px; }
 
     .section-title {
       font-size: 10px;
       font-weight: 700;
-      color: #555;
+      color: var(--editor-muted);
+      opacity: 0.65;
       letter-spacing: 0.15em;
       margin: 16px 0 10px;
       padding-bottom: 6px;
-      border-bottom: 1px solid #222;
+      border-bottom: 1px solid var(--editor-border);
     }
 
     .section-title:first-child { margin-top: 0; }
@@ -148,7 +185,7 @@
 
     .color-row label {
       font-size: 11px;
-      color: #888;
+      color: var(--editor-muted);
       min-width: 140px;
       flex-shrink: 0;
     }
@@ -156,10 +193,10 @@
     .color-row input[type="color"] {
       width: 28px;
       height: 28px;
-      border: 1px solid #333;
+      border: 1px solid var(--editor-border-strong);
       border-radius: 4px;
       padding: 2px;
-      background: #1a1a1a;
+      background: var(--editor-surface);
       cursor: pointer;
       flex-shrink: 0;
     }
@@ -170,9 +207,9 @@
     .color-row input[type="text"] {
       flex: 1;
       min-width: 0;
-      background: #1a1a1a;
-      border: 1px solid #2a2a2a;
-      color: #ccc;
+      background: var(--editor-surface);
+      border: 1px solid var(--editor-border);
+      color: var(--editor-text);
       font-family: 'JetBrains Mono', monospace;
       font-size: 11px;
       padding: 5px 8px;
@@ -181,7 +218,7 @@
     }
 
     .color-row input[type="text"]:focus {
-      border-color: #4af626;
+      border-color: var(--editor-accent);
     }
 
     /* ===== Preview Area ===== */
@@ -189,12 +226,12 @@
       flex: 1;
       overflow-y: auto;
       padding: 20px;
-      background: #0a0a0a;
+      background: var(--editor-bg);
     }
 
     .preview-area::-webkit-scrollbar { width: 8px; }
-    .preview-area::-webkit-scrollbar-track { background: #111; }
-    .preview-area::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+    .preview-area::-webkit-scrollbar-track { background: var(--editor-surface); }
+    .preview-area::-webkit-scrollbar-thumb { background: var(--editor-border-strong); border-radius: 4px; }
 
     .preview-grid {
       display: grid;
@@ -213,7 +250,8 @@
 
     .preview-label {
       font-size: 10px;
-      color: #555;
+      color: var(--editor-muted);
+      opacity: 0.65;
       letter-spacing: 0.15em;
       margin-bottom: 8px;
       font-weight: 700;
@@ -222,7 +260,7 @@
     .preview-frame {
       border-radius: 8px;
       overflow: hidden;
-      border: 1px solid #222;
+      border: 1px solid var(--editor-border);
     }
 
     /* ===== Theme Variables (applied to preview) ===== */
@@ -243,9 +281,17 @@
       --error-bg: #93000a;
       --on-accent: #022100;
       --surface-dot: #353534;
+      --scrollbar-track: rgba(28, 27, 27, 0.5);
+      --scrollbar-thumb: rgba(60, 75, 54, 0.8);
+      --scrollbar-thumb-hover: rgba(134, 149, 125, 0.8);
       --scanline-tint: rgba(74, 246, 38, 0.02);
       --accent-glow: rgba(74, 246, 38, 0.08);
+      --accent-bg: rgba(74, 246, 38, 0.1);
       --modal-overlay: rgba(0, 0, 0, 0.8);
+      --on-surface: #e5e2e1;
+      --on-surface-variant: #bbccb0;
+      --agent-user-color: #4af626;
+      --agent-agent-color: #14d1ff;
     }
 
     /* ===== Login Preview ===== */
@@ -895,6 +941,7 @@
       padding: 4px 10px;
       border-bottom: 1px solid var(--border-strong);
       flex-shrink: 0;
+      overflow-x: auto;
     }
 
     .sftp-action-btn {
@@ -910,6 +957,7 @@
       border: none;
       cursor: pointer;
       font-family: 'JetBrains Mono', monospace;
+      flex-shrink: 0;
     }
 
     .sftp-action-btn.secondary {
@@ -1325,6 +1373,215 @@
       flex-shrink: 0;
     }
 
+    /* ===== Shared latest-project controls ===== */
+    .language-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--editor-muted);
+      background: color-mix(in srgb, var(--editor-surface) 82%, transparent);
+      border: 1px solid var(--editor-border-strong);
+      border-radius: 4px;
+      padding: 5px 8px;
+      font: inherit;
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 1;
+      cursor: pointer;
+      transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .language-toggle:hover {
+      color: var(--editor-secondary);
+      border-color: var(--editor-secondary);
+      background: var(--editor-glow);
+      box-shadow: 0 0 10px var(--editor-glow);
+    }
+
+    .language-toggle:focus-visible,
+    button:focus-visible,
+    input:focus-visible {
+      outline: 2px solid var(--editor-secondary);
+      outline-offset: 2px;
+    }
+
+    .language-toggle .material-symbols-outlined {
+      color: var(--editor-secondary);
+      font-size: 14px;
+    }
+
+    .preview-language-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--on-surface-variant);
+      background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      padding: 3px 6px;
+      font-size: 8px;
+      font-weight: 600;
+      line-height: 1;
+    }
+
+    .preview-language-toggle .material-symbols-outlined {
+      color: var(--accent-secondary);
+      font-size: 11px;
+    }
+
+    .terminal-appbar {
+      min-height: 44px;
+      padding: 6px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border-strong);
+    }
+
+    .terminal-appbar__brand {
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+    }
+
+    .terminal-appbar__actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      color: var(--accent);
+    }
+
+    .terminal-theme-select {
+      color: var(--on-surface-variant);
+      background: var(--surface-dot);
+      border: 0;
+      border-radius: 3px;
+      padding: 3px 5px;
+      font: inherit;
+      font-size: 8px;
+    }
+
+    .terminal-tool-icon {
+      font-size: 14px;
+      color: var(--accent);
+    }
+
+    .toast-region {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 1000;
+      width: min(360px, calc(100vw - 32px));
+      pointer-events: none;
+    }
+
+    .editor-toast {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 10px 12px;
+      color: var(--editor-text);
+      background: var(--editor-elevated);
+      border: 1px solid var(--editor-secondary);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+      font-size: 11px;
+      line-height: 1.5;
+      pointer-events: auto;
+      animation: toast-in 160ms ease-out;
+    }
+
+    .editor-toast.error {
+      border-color: var(--editor-error);
+    }
+
+    .editor-toast .material-symbols-outlined {
+      color: var(--editor-secondary);
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .editor-toast.error .material-symbols-outlined {
+      color: var(--editor-error);
+    }
+
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 1180px) {
+      .preview-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .preview-grid .col-terminal,
+      .preview-grid .col-agent {
+        grid-column: 1;
+      }
+    }
+
+    @media (max-width: 760px) {
+      body {
+        height: auto;
+        min-height: 100vh;
+        overflow: auto;
+      }
+
+      .editor-layout {
+        display: block;
+        height: auto;
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        width: 100%;
+        min-width: 0;
+        max-height: 54vh;
+        border-right: 0;
+        border-bottom: 1px solid var(--editor-border-strong);
+      }
+
+      .sidebar-header {
+        align-items: flex-start;
+        gap: 12px;
+      }
+
+      .preview-area {
+        padding: 12px;
+        overflow: visible;
+      }
+
+      .terminal-sftp-preview {
+        flex-direction: column;
+      }
+
+      .sftp-preview {
+        width: 100%;
+        min-width: 0;
+        border-left: 0;
+        border-top: 1px solid var(--border-strong);
+      }
+
+      .terminal-statusbar > div:first-child {
+        gap: 8px !important;
+        flex-wrap: wrap;
+      }
+
+      .sftp-file-item .file-perms,
+      .sftp-file-item .file-date {
+        display: none;
+      }
+
+      .us-cards-grid,
+      .cards-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
     /* ===== Hidden file input ===== */
     #import-input { display: none; }
   </style>
@@ -1335,15 +1592,28 @@
   <!-- Sidebar -->
   <div class="sidebar">
     <div class="sidebar-header">
-      <h1>THEME_EDITOR</h1>
+      <div class="editor-brand">
+        <div class="editor-brand__logo">CloudSSH</div>
+        <div class="editor-brand__title" data-i18n="editor.title">主题在线编辑器</div>
+      </div>
       <div class="sidebar-actions">
-        <button id="btn-import" title="Import JSON">IMPORT</button>
-        <button id="btn-export" class="primary" title="Export JSON">EXPORT</button>
+        <button id="language-toggle" class="language-toggle" type="button">
+          <span class="material-symbols-outlined" aria-hidden="true">language</span>
+          <span id="language-toggle-label">English</span>
+        </button>
+        <button id="btn-import" data-i18n-title="editor.importTitle" title="导入 JSON">
+          <span class="material-symbols-outlined" style="font-size:13px">upload_file</span>
+          <span data-i18n="editor.import">导入</span>
+        </button>
+        <button id="btn-export" class="primary" data-i18n-title="editor.exportTitle" title="导出 JSON">
+          <span class="material-symbols-outlined" style="font-size:13px">download</span>
+          <span data-i18n="editor.export">导出</span>
+        </button>
       </div>
     </div>
 
     <div class="presets-bar">
-      <label>PRESETS</label>
+      <label data-i18n="editor.presets">预设主题</label>
       <div class="preset-chips">
         <button class="preset-chip active" data-preset="cyberpunk">Cyberpunk</button>
         <button class="preset-chip" data-preset="glacier">Glacier</button>
@@ -1361,7 +1631,7 @@
 
         <!-- Login Page (Top Left) -->
         <div class="preview-section">
-          <div class="preview-label">LOGIN PAGE</div>
+          <div class="preview-label" data-i18n="preview.login">匿名连接</div>
           <div class="preview-frame">
             <div class="login-preview">
               <div class="scanlines"></div>
@@ -1373,19 +1643,25 @@
                 <div class="login-box">
                   <div class="top-bar"></div>
                   <div class="header">
-                    <span>CONNECTION_PARAMETERS</span>
-                    <span class="material-symbols-outlined" style="font-size:14px;color:var(--accent-secondary);font-variation-settings:'FILL' 0">terminal</span>
+                    <span data-i18n="auth.connectionParameters">连接参数</span>
+                    <span style="display:flex;align-items:center;gap:6px">
+                      <span class="preview-language-toggle">
+                        <span class="material-symbols-outlined" aria-hidden="true">language</span>
+                        <span data-language-preview-label>English</span>
+                      </span>
+                      <span class="material-symbols-outlined" style="font-size:14px;color:var(--accent-secondary);font-variation-settings:'FILL' 0">terminal</span>
+                    </span>
                   </div>
                   <div style="display:grid;grid-template-columns:3fr 1fr;gap:12px;margin-bottom:12px">
                     <div class="login-field" style="margin-bottom:0">
-                      <label>HOST_ADDRESS</label>
+                      <label data-i18n="auth.host">主机地址</label>
                       <div class="input-line">
                         <span class="prefix">&gt;</span>
                         <span class="placeholder-text">192.168.1.1</span>
                       </div>
                     </div>
                     <div class="login-field" style="margin-bottom:0">
-                      <label>PORT</label>
+                      <label data-i18n="auth.port">端口</label>
                       <div class="input-line">
                         <span class="prefix">:</span>
                         <span class="placeholder-text">22</span>
@@ -1393,17 +1669,17 @@
                     </div>
                   </div>
                   <div class="login-field">
-                    <label>AUTH_USER</label>
+                    <label data-i18n="auth.user">用户名</label>
                     <div class="input-line">
                       <span class="material-symbols-outlined prefix" style="font-size:14px">person</span>
                       <span class="placeholder-text">admin</span>
                     </div>
                   </div>
                   <div class="login-field">
-                    <label>AUTH_METHOD</label>
+                    <label data-i18n="auth.method">认证方式</label>
                     <div class="auth-tabs">
-                      <span class="auth-tab active">PASSWORD</span>
-                      <span class="auth-tab">PRIVATE_KEY</span>
+                      <span class="auth-tab active" data-i18n="common.password">密码</span>
+                      <span class="auth-tab" data-i18n="common.privateKey">私钥</span>
                     </div>
                     <div class="input-line" style="border-bottom:1px solid var(--border-strong);padding-bottom:6px">
                       <span class="material-symbols-outlined prefix" style="font-size:14px">key</span>
@@ -1411,27 +1687,27 @@
                     </div>
                   </div>
                   <div class="login-field">
-                    <label>REGION_HINT <span style="font-size:8px;opacity:0.6;font-weight:400">(可选)</span></label>
+                    <label><span data-i18n="auth.regionHint">连接区域</span> <span style="font-size:8px;opacity:0.6;font-weight:400" data-i18n="common.optional">可选</span></label>
                     <div class="input-line" style="border-bottom:1px solid var(--border-strong);padding-bottom:6px;justify-content:space-between">
-                      <span class="placeholder-text">自动（保存时由系统推断）</span>
+                      <span class="placeholder-text" data-i18n="region.auto">自动（保存时由系统推断）</span>
                       <span class="material-symbols-outlined" style="font-size:12px;color:var(--text-muted)">expand_more</span>
                     </div>
                   </div>
                   <div style="display:flex;align-items:center;gap:6px;margin-top:8px;margin-bottom:4px">
                     <span style="width:14px;height:14px;border:1px solid var(--border-strong);border-radius:2px;display:inline-block;background:var(--bg-surface)"></span>
-                    <label style="font-size:10px;color:var(--text-muted);cursor:pointer">REMEMBER_CONNECTION</label>
+                    <label style="font-size:10px;color:var(--text-muted);cursor:pointer" data-i18n="auth.remember">记住连接信息</label>
                   </div>
                   <button class="connect-btn" style="margin-top:12px">
                     <span class="material-symbols-outlined" style="font-size:14px">power_settings_new</span>
-                    Execute_Connection
+                    <span data-i18n="auth.execute">建立连接</span>
                   </button>
                   <div class="status-bar">
-                    <span class="status-text"><span class="status-dot"></span> STATUS: OFFLINE</span>
+                    <span class="status-text"><span class="status-dot"></span> <span data-i18n="auth.statusOffline">状态：离线</span></span>
                     <span style="font-size:10px;color:var(--text-muted);opacity:0.5">GitHub</span>
                   </div>
                   <!-- Recent Connections Preview -->
                   <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); display: block;">
-                    <label style="display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.1em; color: var(--accent-secondary); margin-bottom: 8px;">RECENT_CONNECTIONS</label>
+                    <label style="display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.1em; color: var(--accent-secondary); margin-bottom: 8px;" data-i18n="auth.recent">最近连接</label>
                     <div style="display: flex; flex-direction: column; gap: 6px;">
                       <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; padding: 6px 8px; border: 1px solid var(--border); background: rgba(255,255,255,0.02); cursor: pointer;">
                         <div style="display: flex; align-items: center; gap: 6px; overflow: hidden; margin-right: 6px;">
@@ -1462,14 +1738,19 @@
 
         <!-- User Space (Top Right) -->
         <div class="preview-section">
-          <div class="preview-label">USER SPACE</div>
+          <div class="preview-label" data-i18n="preview.userSpace">用户空间</div>
           <div class="preview-frame">
             <div class="userspace-preview">
               <div class="us-header">
                 <span class="logo">CloudSSH</span>
                 <div class="user-area">
+                  <span class="preview-language-toggle">
+                    <span class="material-symbols-outlined" aria-hidden="true">language</span>
+                    <span data-language-preview-label>English</span>
+                  </span>
                   <div class="avatar"></div>
                   <span class="username">admin</span>
+                  <span class="material-symbols-outlined" style="color:var(--on-surface-variant);font-size:16px;font-variation-settings:'FILL' 0">psychology</span>
                   <span class="material-symbols-outlined logout-icon" style="font-variation-settings:'FILL' 0">logout</span>
                 </div>
               </div>
@@ -1477,12 +1758,12 @@
                 <div class="scanlines"></div>
                 <div class="us-section-header">
                   <div>
-                    <h2>SERVER_LIST</h2>
-                    <div class="sub">Manage your SSH connections</div>
+                    <h2 data-i18n="server.list">服务器列表</h2>
+                    <div class="sub" data-i18n="server.manage">管理你的 SSH 连接</div>
                   </div>
                   <span class="add-btn">
                     <span class="material-symbols-outlined" style="font-size:13px">add</span>
-                    ADD_SERVER
+                    <span data-i18n="server.add">添加服务器</span>
                   </span>
                 </div>
                 <div class="us-cards-grid">
@@ -1494,11 +1775,11 @@
                       <span class="card-badge">PWD</span>
                     </div>
                     <div class="card-info">
-                      <div><span class="label">HOST</span><span class="value">192.168.1.10:22</span></div>
-                      <div><span class="label">USER</span><span class="value">root</span></div>
+                      <div><span class="label" data-i18n="server.hostLabel">主机</span><span class="value">192.168.1.10:22</span></div>
+                      <div><span class="label" data-i18n="server.userLabel">用户</span><span class="value">root</span></div>
                     </div>
                     <div class="card-actions">
-                      <span class="card-btn"><span class="material-symbols-outlined">power_settings_new</span> CONNECT</span>
+                      <span class="card-btn"><span class="material-symbols-outlined">power_settings_new</span> <span data-i18n="common.connect">连接</span></span>
                       <span class="card-btn"><span class="material-symbols-outlined">edit</span></span>
                       <span class="card-btn delete"><span class="material-symbols-outlined">delete</span></span>
                     </div>
@@ -1511,11 +1792,11 @@
                       <span class="card-badge">KEY</span>
                     </div>
                     <div class="card-info">
-                      <div><span class="label">HOST</span><span class="value">10.0.0.5:2222</span></div>
-                      <div><span class="label">USER</span><span class="value">deploy</span></div>
+                      <div><span class="label" data-i18n="server.hostLabel">主机</span><span class="value">10.0.0.5:2222</span></div>
+                      <div><span class="label" data-i18n="server.userLabel">用户</span><span class="value">deploy</span></div>
                     </div>
                     <div class="card-actions">
-                      <span class="card-btn"><span class="material-symbols-outlined">power_settings_new</span> CONNECT</span>
+                      <span class="card-btn"><span class="material-symbols-outlined">power_settings_new</span> <span data-i18n="common.connect">连接</span></span>
                       <span class="card-btn"><span class="material-symbols-outlined">edit</span></span>
                       <span class="card-btn delete"><span class="material-symbols-outlined">delete</span></span>
                     </div>
@@ -1524,14 +1805,14 @@
                 <!-- Server Modal Preview -->
                 <div class="us-section-header" style="margin-top:16px">
                   <div>
-                    <h2>ADD_SERVER <span style="font-size:10px;color:var(--text-muted);font-weight:400">(弹窗预览)</span></h2>
+                    <h2><span data-i18n="server.add">添加服务器</span> <span style="font-size:10px;color:var(--text-muted);font-weight:400" data-i18n="preview.modal">（弹窗预览）</span></h2>
                   </div>
                 </div>
                 <div style="background:var(--bg-surface);border:1px solid var(--border-strong);border-radius:8px;padding:16px;position:relative">
                   <div style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(to right,transparent,var(--accent-secondary),transparent);opacity:0.5;border-radius:8px 8px 0 0"></div>
-                  <div style="font-size:10px;font-weight:700;letter-spacing:0.1em;color:var(--accent-secondary);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border-strong)">ADD_SERVER</div>
+                  <div style="font-size:10px;font-weight:700;letter-spacing:0.1em;color:var(--accent-secondary);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border-strong)" data-i18n="server.add">添加服务器</div>
                   <div class="login-field">
-                    <label>SERVER_NAME</label>
+                    <label data-i18n="server.name">服务器名称</label>
                     <div class="input-line">
                       <span class="material-symbols-outlined prefix" style="font-size:14px">label</span>
                       <span class="placeholder-text">My Server</span>
@@ -1539,14 +1820,14 @@
                   </div>
                   <div style="display:grid;grid-template-columns:3fr 1fr;gap:12px;margin-bottom:12px">
                     <div class="login-field" style="margin-bottom:0">
-                      <label>HOST_ADDRESS</label>
+                      <label data-i18n="auth.host">主机地址</label>
                       <div class="input-line">
                         <span class="prefix">&gt;</span>
                         <span class="placeholder-text">192.168.1.1</span>
                       </div>
                     </div>
                     <div class="login-field" style="margin-bottom:0">
-                      <label>PORT</label>
+                      <label data-i18n="auth.port">端口</label>
                       <div class="input-line">
                         <span class="prefix">:</span>
                         <span class="placeholder-text">22</span>
@@ -1554,17 +1835,17 @@
                     </div>
                   </div>
                   <div class="login-field">
-                    <label>AUTH_USER</label>
+                    <label data-i18n="auth.user">用户名</label>
                     <div class="input-line">
                       <span class="material-symbols-outlined prefix" style="font-size:14px">person</span>
                       <span class="placeholder-text">root</span>
                     </div>
                   </div>
                   <div class="login-field">
-                    <label>AUTH_METHOD</label>
+                    <label data-i18n="auth.method">认证方式</label>
                     <div class="auth-tabs">
-                      <span class="auth-tab active">PASSWORD</span>
-                      <span class="auth-tab">PRIVATE_KEY</span>
+                      <span class="auth-tab active" data-i18n="common.password">密码</span>
+                      <span class="auth-tab" data-i18n="common.privateKey">私钥</span>
                     </div>
                     <div class="input-line" style="border-bottom:1px solid var(--border-strong);padding-bottom:6px">
                       <span class="material-symbols-outlined prefix" style="font-size:14px">key</span>
@@ -1572,21 +1853,21 @@
                     </div>
                   </div>
                   <div class="login-field">
-                    <label>REGION_HINT</label>
+                    <label data-i18n="auth.regionHint">连接区域</label>
                     <div class="input-line" style="border-bottom:1px solid var(--border-strong);padding-bottom:6px;justify-content:space-between">
-                      <span class="placeholder-text">自动（保存时由系统推断）</span>
+                      <span class="placeholder-text" data-i18n="region.auto">自动（保存时由系统推断）</span>
                       <span class="material-symbols-outlined" style="font-size:12px;color:var(--text-muted)">expand_more</span>
                     </div>
                   </div>
                   <button class="connect-btn" style="margin-top:12px">
                     <span class="material-symbols-outlined" style="font-size:14px">save</span>
-                    SAVE_SERVER
+                    <span data-i18n="server.save">保存服务器</span>
                   </button>
                 </div>
               </div>
               <div class="us-footer">
-                <span>© 2025 CLOUD_SSH_TERMINAL</span>
-                <span>Documentation</span>
+                <span>© <span data-current-year></span> CLOUD_SSH_TERMINAL</span>
+                <span data-i18n="common.documentation">文档</span>
               </div>
             </div>
           </div>
@@ -1594,8 +1875,24 @@
 
         <!-- Terminal + SFTP (Bottom, Full Width) -->
         <div class="preview-section col-terminal">
-          <div class="preview-label">TERMINAL + SFTP</div>
+          <div class="preview-label" data-i18n="preview.terminalSftp">终端与 SFTP</div>
           <div class="preview-frame">
+            <div class="terminal-appbar">
+              <span class="terminal-appbar__brand">CloudSSH</span>
+              <div class="terminal-appbar__actions">
+                <select class="terminal-theme-select" aria-label="Theme">
+                  <option>Cyberpunk</option>
+                  <option>Glacier</option>
+                  <option>Gruvbox</option>
+                </select>
+                <span class="material-symbols-outlined terminal-tool-icon">upload_file</span>
+                <span class="material-symbols-outlined terminal-tool-icon">folder_open</span>
+                <span class="material-symbols-outlined terminal-tool-icon">search</span>
+                <span class="material-symbols-outlined terminal-tool-icon">download</span>
+                <span class="material-symbols-outlined terminal-tool-icon">psychology</span>
+                <span class="material-symbols-outlined terminal-tool-icon">power_settings_new</span>
+              </div>
+            </div>
             <!-- Tab Bar Preview -->
             <div class="preview-tab-bar">
               <div class="preview-tab-item active">
@@ -1623,19 +1920,19 @@
                 <div class="scanline"></div>
                 <div class="terminal-statusbar" style="display:flex;justify-content:space-between;">
                   <div style="display:flex;gap:20px;">
-                    <span class="connected"><span class="dot-green"></span> Connected</span>
-                    <span>Host: 192.168.1.1</span>
-                    <span>User: root</span>
-                    <span>Port: 22</span>
+                    <span class="connected"><span class="dot-green"></span> <span data-i18n="terminal.connected">已连接</span></span>
+                    <span data-i18n-template="terminal.host" data-value="192.168.1.1">主机：192.168.1.1</span>
+                    <span data-i18n-template="terminal.user" data-value="root">用户：root</span>
+                    <span data-i18n-template="terminal.port" data-value="22">端口：22</span>
                   </div>
                   <div>
                     <span>⚡ CF-HKG: 34ms | RTT: 12ms</span>
                   </div>
                 </div>
                 <div class="terminal-body">
-                  <div class="line green">[+] WebSocket connected, sending credentials...</div>
-                  <div class="line green">[*] Authenticating...</div>
-                  <div class="line green">[*] Authentication successful</div>
+                  <div class="line green" data-i18n="terminal.wsSendingCredentials">[+] WebSocket 已连接，正在发送凭据…</div>
+                  <div class="line green" data-i18n="terminal.wsAuthenticating">[*] WebSocket 已连接，正在认证…</div>
+                  <div class="line green" data-i18n="terminal.authSuccess">[*] 认证成功</div>
                   <div class="line white">Welcome to Ubuntu 22.04.3 LTS</div>
                   <div class="line white"> </div>
                   <div class="line"><span class="prompt">root@server</span><span class="white">:</span><span class="path">~</span><span class="white">$ ls -la</span></div>
@@ -1654,7 +1951,7 @@
                 <div class="sftp-header">
                   <div class="title">
                     <span class="material-symbols-outlined icon" style="font-variation-settings:'FILL' 1">folder_open</span>
-                    <span>SFTP_FILE_MANAGER</span>
+                    <span data-i18n="sftp.title">SFTP 文件管理器</span>
                   </div>
                   <span class="material-symbols-outlined close-icon">close</span>
                 </div>
@@ -1666,10 +1963,11 @@
                   <span class="material-symbols-outlined nav-icon" style="color:var(--accent)">arrow_forward</span>
                 </div>
                 <div class="sftp-actions">
-                  <button class="sftp-action-btn"><span class="material-symbols-outlined">upload_file</span>UPLOAD</button>
-                  <button class="sftp-action-btn secondary"><span class="material-symbols-outlined">create_new_folder</span>MKDIR</button>
-                  <button class="sftp-action-btn" style="opacity:0.3"><span class="material-symbols-outlined">download</span>DOWNLOAD</button>
-                  <button class="sftp-action-btn" style="opacity:0.3;color:var(--error)"><span class="material-symbols-outlined">delete</span>DELETE</button>
+                  <button class="sftp-action-btn"><span class="material-symbols-outlined">upload_file</span><span data-i18n="sftp.uploadAction">上传文件</span></button>
+                  <button class="sftp-action-btn secondary"><span class="material-symbols-outlined">create_new_folder</span><span data-i18n="sftp.mkdirAction">新建文件夹</span></button>
+                  <button class="sftp-action-btn" style="opacity:0.3"><span class="material-symbols-outlined">download</span><span data-i18n="sftp.downloadAction">下载</span></button>
+                  <button class="sftp-action-btn" style="opacity:0.3;color:var(--error)"><span class="material-symbols-outlined">delete</span><span data-i18n="sftp.deleteAction">删除</span></button>
+                  <button class="sftp-action-btn" style="opacity:0.3;color:var(--on-surface-variant)"><span class="material-symbols-outlined">edit</span><span data-i18n="sftp.renameAction">重命名</span></button>
                 </div>
                 <div class="sftp-file-list">
                   <div class="sftp-file-item">
@@ -1723,8 +2021,8 @@
                   </div>
                 </div>
                 <div class="sftp-statusbar">
-                  <span>Ready</span>
-                  <span>2 dirs, 4 files</span>
+                  <span data-i18n="sftp.ready">就绪</span>
+                  <span data-i18n="sftp.count">2 个目录，4 个文件</span>
                 </div>
               </div>
             </div>
@@ -1733,19 +2031,19 @@
 
       <!-- AI Agent Panel (Below, Full Width) -->
       <div class="preview-section col-agent">
-        <div class="preview-label">AI AGENT PANEL (THINKING PROGRESS)</div>
+        <div class="preview-label" data-i18n="preview.agent">AI Agent 面板（思考进度）</div>
         <div class="preview-frame">
           <div class="agent-preview">
             <!-- Agent Panel Header -->
             <div class="agent-header">
-              <span class="agent-header-title">AI_AGENT</span>
+              <span class="agent-header-title" data-i18n="agent.title">AI Agent 助手</span>
               <span class="material-symbols-outlined agent-close-icon">close</span>
             </div>
             <!-- Message List -->
             <div class="agent-messages">
               <!-- User Message -->
               <div class="agent-msg-user">
-                <span class="agent-msg-text">帮我检查服务器的配置信息</span>
+                <span class="agent-msg-text" data-i18n="agent.sampleRequest">帮我检查服务器的配置信息</span>
                 <span class="material-symbols-outlined agent-icon-user" style="font-variation-settings:'FILL' 1">person</span>
               </div>
               <!-- Thinking Process Container (Collapsed) -->
@@ -1753,28 +2051,28 @@
                 <div class="tp-header">
                   <span class="material-symbols-outlined tp-chevron">expand_more</span>
                   <span class="material-symbols-outlined tp-icon" style="font-variation-settings:'FILL' 1">check_circle</span>
-                  <span class="tp-status-text">已完成 5 个步骤</span>
+                  <span class="tp-status-text" data-i18n="agent.completedSteps">已完成 5 个步骤</span>
                 </div>
               </div>
               <!-- Agent Response (Markdown) -->
               <div class="agent-msg-agent">
                 <span class="material-symbols-outlined agent-icon-bot" style="font-variation-settings:'FILL' 1">smart_toy</span>
                 <div class="agent-response-body">
-                  <h3>服务器配置信息汇总</h3>
+                  <h3 data-i18n="agent.sampleTitle">服务器配置信息汇总</h3>
                   <table class="agent-table">
-                    <tr><th>项目</th><th>值</th></tr>
-                    <tr><td>操作系统</td><td>Ubuntu 24.04.4 LTS</td></tr>
-                    <tr><td>内核版本</td><td>Linux 6.8.0 x86_64</td></tr>
+                    <tr><th data-i18n="agent.item">项目</th><th data-i18n="agent.value">值</th></tr>
+                    <tr><td data-i18n="agent.os">操作系统</td><td>Ubuntu 24.04.4 LTS</td></tr>
+                    <tr><td data-i18n="agent.kernel">内核版本</td><td>Linux 6.8.0 x86_64</td></tr>
                     <tr><td>CPU</td><td>1 vCPU @ 2494 MHz</td></tr>
-                    <tr><td>内存</td><td>512 MiB (45% used)</td></tr>
+                    <tr><td data-i18n="agent.memory">内存</td><td>512 MiB (45% used)</td></tr>
                   </table>
-                  <p>建议定期执行 <code class="agent-code">apt update && apt upgrade</code></p>
+                  <p><span data-i18n="agent.sampleAdvice">建议定期执行</span> <code class="agent-code">apt update &amp;&amp; apt upgrade</code></p>
                 </div>
               </div>
             </div>
             <!-- Input Area -->
             <div class="agent-input-bar">
-              <textarea class="agent-input" placeholder="描述你想做的事..." readonly>描述你想做的事...</textarea>
+              <textarea class="agent-input" data-i18n-placeholder="agent.placeholder" placeholder="描述你希望 Agent 完成的任务…" readonly></textarea>
               <button class="agent-send-btn">
                 <span class="material-symbols-outlined" style="font-size:14px">arrow_upward</span>
               </button>
@@ -1789,8 +2087,296 @@
 </div>
 
 <input type="file" id="import-input" accept=".json">
+<div id="toast-region" class="toast-region" role="status" aria-live="polite"></div>
 
 <script>
+const TRANSLATIONS = {
+  'zh-CN': {
+    'page.title': 'CloudSSH 主题在线编辑器',
+    'language.zhCN': '简体中文',
+    'language.enUS': 'English',
+    'language.switchTo': '切换到{language}',
+    'editor.title': '主题在线编辑器',
+    'editor.import': '导入',
+    'editor.export': '导出',
+    'editor.importTitle': '导入主题 JSON',
+    'editor.exportTitle': '导出主题 JSON',
+    'editor.presets': '预设主题',
+    'preview.login': '匿名连接',
+    'preview.userSpace': '用户空间',
+    'preview.modal': '（弹窗预览）',
+    'preview.terminalSftp': '终端与 SFTP',
+    'preview.agent': 'AI Agent 面板（思考进度）',
+    'common.optional': '可选',
+    'common.password': '密码',
+    'common.privateKey': '私钥',
+    'common.connect': '连接',
+    'common.documentation': '文档',
+    'auth.connectionParameters': '连接参数',
+    'auth.host': '主机地址',
+    'auth.port': '端口',
+    'auth.user': '用户名',
+    'auth.method': '认证方式',
+    'auth.regionHint': '连接区域',
+    'auth.remember': '记住连接信息',
+    'auth.execute': '建立连接',
+    'auth.statusOffline': '状态：离线',
+    'auth.recent': '最近连接',
+    'region.auto': '自动（保存时由系统推断）',
+    'server.list': '服务器列表',
+    'server.manage': '管理你的 SSH 连接',
+    'server.add': '添加服务器',
+    'server.hostLabel': '主机',
+    'server.userLabel': '用户',
+    'server.name': '服务器名称',
+    'server.save': '保存服务器',
+    'terminal.connected': '已连接',
+    'terminal.host': '主机：{value}',
+    'terminal.user': '用户：{value}',
+    'terminal.port': '端口：{value}',
+    'terminal.wsSendingCredentials': '[+] WebSocket 已连接，正在发送凭据…',
+    'terminal.wsAuthenticating': '[*] WebSocket 已连接，正在认证…',
+    'terminal.authSuccess': '[*] 认证成功',
+    'sftp.title': 'SFTP 文件管理器',
+    'sftp.uploadAction': '上传文件',
+    'sftp.mkdirAction': '新建文件夹',
+    'sftp.downloadAction': '下载',
+    'sftp.deleteAction': '删除',
+    'sftp.renameAction': '重命名',
+    'sftp.ready': '就绪',
+    'sftp.count': '2 个目录，4 个文件',
+    'agent.title': 'AI Agent 助手',
+    'agent.sampleRequest': '帮我检查服务器的配置信息',
+    'agent.completedSteps': '已完成 5 个步骤',
+    'agent.sampleTitle': '服务器配置信息汇总',
+    'agent.item': '项目',
+    'agent.value': '值',
+    'agent.os': '操作系统',
+    'agent.kernel': '内核版本',
+    'agent.memory': '内存',
+    'agent.sampleAdvice': '建议定期执行',
+    'agent.placeholder': '描述你希望 Agent 完成的任务…',
+    'feedback.imported': '主题导入成功。',
+    'feedback.exported': '主题 JSON 已导出。',
+    'feedback.missingUi': '主题文件缺少有效的“ui”字段。',
+    'feedback.invalidJson': '文件不是有效的主题 JSON。',
+    'group.backgrounds': '背景颜色',
+    'group.text': '文本颜色',
+    'group.accents': '强调颜色',
+    'group.borders': '边框',
+    'group.error': '错误状态',
+    'group.components': '组件',
+    'group.agent': 'AI Agent',
+    'group.effects': '视觉效果',
+    'variable.bg': '页面背景',
+    'variable.bgSurface': '卡片 / 表面',
+    'variable.bgElevated': '浮层表面',
+    'variable.bgTerminal': '终端背景',
+    'variable.text': '主要文本',
+    'variable.textMuted': '次要文本',
+    'variable.textDim': '弱化文本',
+    'variable.accent': '主要强调色',
+    'variable.accentSecondary': '次要强调色',
+    'variable.accentSecondaryLight': '次要浅色',
+    'variable.onAccent': '强调色上的文本',
+    'variable.border': '边框',
+    'variable.borderStrong': '强边框',
+    'variable.error': '错误文本',
+    'variable.errorBg': '错误背景',
+    'variable.surfaceDot': '状态点',
+    'variable.scrollbarTrack': '滚动条轨道',
+    'variable.scrollbarThumb': '滚动条滑块',
+    'variable.scrollbarThumbHover': '滚动条悬停',
+    'variable.agentUser': '用户消息',
+    'variable.agentBot': 'Agent 消息',
+    'variable.scanline': '扫描线叠层',
+    'variable.accentGlow': '强调色光晕',
+    'variable.accentBg': '强调色背景',
+    'variable.modalOverlay': '弹窗遮罩',
+    'variable.onSurface': '表面文本',
+    'variable.onSurfaceVariant': '表面次要文本',
+  },
+  'en-US': {
+    'page.title': 'CloudSSH Theme Editor',
+    'language.zhCN': '简体中文',
+    'language.enUS': 'English',
+    'language.switchTo': 'Switch to {language}',
+    'editor.title': 'THEME EDITOR',
+    'editor.import': 'IMPORT',
+    'editor.export': 'EXPORT',
+    'editor.importTitle': 'Import theme JSON',
+    'editor.exportTitle': 'Export theme JSON',
+    'editor.presets': 'PRESETS',
+    'preview.login': 'LOGIN PAGE',
+    'preview.userSpace': 'USER SPACE',
+    'preview.modal': '(MODAL PREVIEW)',
+    'preview.terminalSftp': 'TERMINAL + SFTP',
+    'preview.agent': 'AI AGENT PANEL (THINKING PROGRESS)',
+    'common.optional': 'Optional',
+    'common.password': 'PASSWORD',
+    'common.privateKey': 'PRIVATE KEY',
+    'common.connect': 'CONNECT',
+    'common.documentation': 'Documentation',
+    'auth.connectionParameters': 'CONNECTION PARAMETERS',
+    'auth.host': 'HOST ADDRESS',
+    'auth.port': 'PORT',
+    'auth.user': 'USERNAME',
+    'auth.method': 'AUTHENTICATION METHOD',
+    'auth.regionHint': 'CONNECTION REGION',
+    'auth.remember': 'REMEMBER CONNECTION',
+    'auth.execute': 'CONNECT',
+    'auth.statusOffline': 'STATUS: OFFLINE',
+    'auth.recent': 'RECENT CONNECTIONS',
+    'region.auto': 'Auto (detected when saved)',
+    'server.list': 'SERVER LIST',
+    'server.manage': 'Manage your SSH connections',
+    'server.add': 'ADD SERVER',
+    'server.hostLabel': 'HOST',
+    'server.userLabel': 'USER',
+    'server.name': 'SERVER NAME',
+    'server.save': 'SAVE SERVER',
+    'terminal.connected': 'Connected',
+    'terminal.host': 'Host: {value}',
+    'terminal.user': 'User: {value}',
+    'terminal.port': 'Port: {value}',
+    'terminal.wsSendingCredentials': '[+] WebSocket connected, sending credentials…',
+    'terminal.wsAuthenticating': '[*] WebSocket connected, authenticating…',
+    'terminal.authSuccess': '[*] Authentication successful',
+    'sftp.title': 'SFTP FILE MANAGER',
+    'sftp.uploadAction': 'UPLOAD',
+    'sftp.mkdirAction': 'MKDIR',
+    'sftp.downloadAction': 'DOWNLOAD',
+    'sftp.deleteAction': 'DELETE',
+    'sftp.renameAction': 'RENAME',
+    'sftp.ready': 'Ready',
+    'sftp.count': '2 dirs, 4 files',
+    'agent.title': 'AI AGENT ASSISTANT',
+    'agent.sampleRequest': 'Check the server configuration for me',
+    'agent.completedSteps': 'Completed 5 steps',
+    'agent.sampleTitle': 'Server configuration summary',
+    'agent.item': 'Item',
+    'agent.value': 'Value',
+    'agent.os': 'Operating system',
+    'agent.kernel': 'Kernel',
+    'agent.memory': 'Memory',
+    'agent.sampleAdvice': 'Recommended maintenance command:',
+    'agent.placeholder': 'Describe what you want the Agent to do…',
+    'feedback.imported': 'Theme imported.',
+    'feedback.exported': 'Theme JSON exported.',
+    'feedback.missingUi': 'The theme file is missing a valid “ui” field.',
+    'feedback.invalidJson': 'The file is not valid theme JSON.',
+    'group.backgrounds': 'BACKGROUNDS',
+    'group.text': 'TEXT COLORS',
+    'group.accents': 'ACCENT COLORS',
+    'group.borders': 'BORDERS',
+    'group.error': 'ERROR',
+    'group.components': 'COMPONENTS',
+    'group.agent': 'AI AGENT',
+    'group.effects': 'EFFECTS',
+    'variable.bg': 'Page Background',
+    'variable.bgSurface': 'Card / Surface',
+    'variable.bgElevated': 'Elevated Surface',
+    'variable.bgTerminal': 'Terminal Background',
+    'variable.text': 'Primary Text',
+    'variable.textMuted': 'Muted Text',
+    'variable.textDim': 'Dim Text',
+    'variable.accent': 'Primary Accent',
+    'variable.accentSecondary': 'Secondary Accent',
+    'variable.accentSecondaryLight': 'Secondary Light',
+    'variable.onAccent': 'Text on Accent',
+    'variable.border': 'Border',
+    'variable.borderStrong': 'Strong Border',
+    'variable.error': 'Error Text',
+    'variable.errorBg': 'Error Background',
+    'variable.surfaceDot': 'Status Dot',
+    'variable.scrollbarTrack': 'Scrollbar Track',
+    'variable.scrollbarThumb': 'Scrollbar Thumb',
+    'variable.scrollbarThumbHover': 'Scrollbar Hover',
+    'variable.agentUser': 'User Message',
+    'variable.agentBot': 'Agent Message',
+    'variable.scanline': 'Scanline Overlay',
+    'variable.accentGlow': 'Accent Glow',
+    'variable.accentBg': 'Accent Background',
+    'variable.modalOverlay': 'Modal Overlay',
+    'variable.onSurface': 'Surface Text',
+    'variable.onSurfaceVariant': 'Surface Text Variant',
+  }
+};
+
+const LOCALE_STORAGE_KEY = 'cloudssh_locale';
+let locale = 'zh-CN';
+
+function normalizeLocale(value) {
+  if (!value) return null;
+  const normalized = String(value).replace('_', '-').toLowerCase();
+  if (normalized === 'zh' || normalized.startsWith('zh-')) return 'zh-CN';
+  if (normalized === 'en' || normalized.startsWith('en-')) return 'en-US';
+  return null;
+}
+
+function t(key, params = {}) {
+  const template = TRANSLATIONS[locale][key] || TRANSLATIONS['zh-CN'][key] || key;
+  return template.replace(/\{(\w+)\}/g, (match, name) =>
+    Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match
+  );
+}
+
+function resolveInitialLocale() {
+  let stored = null;
+  try { stored = localStorage.getItem(LOCALE_STORAGE_KEY); } catch { /* storage may be unavailable */ }
+  return normalizeLocale(new URLSearchParams(window.location.search).get('lang'))
+    || normalizeLocale(stored)
+    || (navigator.languages || [navigator.language]).map(normalizeLocale).find(Boolean)
+    || 'zh-CN';
+}
+
+function translateDocument() {
+  document.documentElement.lang = locale;
+  document.title = t('page.title');
+  document.querySelectorAll('[data-i18n]').forEach((element) => {
+    element.textContent = t(element.dataset.i18n);
+  });
+  document.querySelectorAll('[data-i18n-title]').forEach((element) => {
+    element.title = t(element.dataset.i18nTitle);
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((element) => {
+    element.placeholder = t(element.dataset.i18nPlaceholder);
+  });
+  document.querySelectorAll('[data-i18n-template]').forEach((element) => {
+    element.textContent = t(element.dataset.i18nTemplate, { value: element.dataset.value || '' });
+  });
+
+  const alternateLocale = locale === 'zh-CN' ? 'en-US' : 'zh-CN';
+  const alternateLabel = TRANSLATIONS[alternateLocale][`language.${alternateLocale === 'zh-CN' ? 'zhCN' : 'enUS'}`];
+  const languageButton = document.getElementById('language-toggle');
+  document.getElementById('language-toggle-label').textContent = alternateLabel;
+  languageButton.title = t('language.switchTo', { language: alternateLabel });
+  languageButton.setAttribute('aria-label', languageButton.title);
+  document.querySelectorAll('[data-language-preview-label]').forEach((element) => {
+    element.textContent = alternateLabel;
+  });
+}
+
+function setLocale(nextLocale, persist = true) {
+  locale = nextLocale;
+  if (persist) {
+    try { localStorage.setItem(LOCALE_STORAGE_KEY, locale); } catch { /* storage may be unavailable */ }
+  }
+  translateDocument();
+  if (Object.keys(theme).length) renderControls();
+}
+
+function showToast(messageKey, type = 'success') {
+  const region = document.getElementById('toast-region');
+  region.innerHTML = '';
+  const toast = document.createElement('div');
+  toast.className = `editor-toast${type === 'error' ? ' error' : ''}`;
+  toast.innerHTML = `<span class="material-symbols-outlined">${type === 'error' ? 'error' : 'check_circle'}</span><span></span>`;
+  toast.querySelector('span:last-child').textContent = t(messageKey);
+  region.appendChild(toast);
+  window.setTimeout(() => toast.remove(), 3200);
+}
+
 const PRESETS = {
   cyberpunk: {
     name: 'Cyberpunk',
@@ -1802,8 +2388,12 @@ const PRESETS = {
       '--border': '#1f1f1f', '--border-strong': '#3c4b36',
       '--error': '#ffb4ab', '--error-bg': '#93000a',
       '--on-accent': '#022100',       '--surface-dot': '#353534',
+      '--scrollbar-track': 'rgba(28, 27, 27, 0.5)',
+      '--scrollbar-thumb': 'rgba(60, 75, 54, 0.8)',
+      '--scrollbar-thumb-hover': 'rgba(134, 149, 125, 0.8)',
       '--scanline-tint': 'rgba(74, 246, 38, 0.02)',
       '--accent-glow': 'rgba(74, 246, 38, 0.08)',
+      '--accent-bg': 'rgba(74, 246, 38, 0.1)',
       '--modal-overlay': 'rgba(0, 0, 0, 0.8)',
       '--on-surface': '#e5e2e1', '--on-surface-variant': '#bbccb0',
       '--agent-user-color': '#4af626', '--agent-agent-color': '#14d1ff',
@@ -1819,8 +2409,12 @@ const PRESETS = {
       '--border': '#1d3557', '--border-strong': '#495670',
       '--error': '#ff6b6b', '--error-bg': '#3d0000',
       '--on-accent': '#0a192f',       '--surface-dot': '#1d3557',
+      '--scrollbar-track': 'rgba(10, 25, 47, 0.5)',
+      '--scrollbar-thumb': 'rgba(100, 255, 218, 0.2)',
+      '--scrollbar-thumb-hover': 'rgba(100, 255, 218, 0.4)',
       '--scanline-tint': 'rgba(100, 255, 218, 0.02)',
       '--accent-glow': 'rgba(100, 255, 218, 0.08)',
+      '--accent-bg': 'rgba(100, 255, 218, 0.1)',
       '--modal-overlay': 'rgba(0, 0, 0, 0.85)',
       '--on-surface': '#e6f1ff', '--on-surface-variant': '#8892b0',
       '--agent-user-color': '#64ffda', '--agent-agent-color': '#e6f1ff',
@@ -1836,8 +2430,12 @@ const PRESETS = {
       '--border': '#3c3836', '--border-strong': '#665c54',
       '--error': '#fb4934', '--error-bg': '#3d0000',
       '--on-accent': '#282828',       '--surface-dot': '#3c3836',
+      '--scrollbar-track': 'rgba(40, 40, 40, 0.5)',
+      '--scrollbar-thumb': 'rgba(168, 153, 132, 0.3)',
+      '--scrollbar-thumb-hover': 'rgba(168, 153, 132, 0.5)',
       '--scanline-tint': 'rgba(184, 187, 38, 0.02)',
       '--accent-glow': 'rgba(184, 187, 38, 0.08)',
+      '--accent-bg': 'rgba(184, 187, 38, 0.1)',
       '--modal-overlay': 'rgba(0, 0, 0, 0.75)',
       '--on-surface': '#ebdbb2', '--on-surface-variant': '#a89984',
       '--agent-user-color': '#b8bb26', '--agent-agent-color': '#83a598',
@@ -1846,40 +2444,44 @@ const PRESETS = {
 };
 
 const VARIABLE_GROUPS = [
-  { title: 'BACKGROUNDS', vars: ['--bg', '--bg-surface', '--bg-elevated', '--bg-terminal'] },
-  { title: 'TEXT COLORS', vars: ['--text', '--text-muted', '--text-dim', '--on-surface', '--on-surface-variant'] },
-  { title: 'ACCENT COLORS', vars: ['--accent', '--accent-secondary', '--accent-secondary-light', '--on-accent'] },
-  { title: 'BORDERS', vars: ['--border', '--border-strong'] },
-  { title: 'ERROR', vars: ['--error', '--error-bg'] },
-  { title: 'COMPONENTS', vars: ['--surface-dot'] },
-  { title: 'AI AGENT', vars: ['--agent-user-color', '--agent-agent-color'] },
-  { title: 'EFFECTS', vars: ['--scanline-tint', '--accent-glow', '--modal-overlay'] },
+  { titleKey: 'group.backgrounds', vars: ['--bg', '--bg-surface', '--bg-elevated', '--bg-terminal'] },
+  { titleKey: 'group.text', vars: ['--text', '--text-muted', '--text-dim', '--on-surface', '--on-surface-variant'] },
+  { titleKey: 'group.accents', vars: ['--accent', '--accent-secondary', '--accent-secondary-light', '--on-accent'] },
+  { titleKey: 'group.borders', vars: ['--border', '--border-strong'] },
+  { titleKey: 'group.error', vars: ['--error', '--error-bg'] },
+  { titleKey: 'group.components', vars: ['--surface-dot', '--scrollbar-track', '--scrollbar-thumb', '--scrollbar-thumb-hover'] },
+  { titleKey: 'group.agent', vars: ['--agent-user-color', '--agent-agent-color'] },
+  { titleKey: 'group.effects', vars: ['--scanline-tint', '--accent-glow', '--accent-bg', '--modal-overlay'] },
 ];
 
 const VARIABLE_LABELS = {
-  '--bg': 'Page Background',
-  '--bg-surface': 'Card / Surface',
-  '--bg-elevated': 'Elevated Surface',
-  '--bg-terminal': 'Terminal Background',
-  '--text': 'Primary Text',
-  '--text-muted': 'Muted Text',
-  '--text-dim': 'Dim Text',
-  '--accent': 'Primary Accent',
-  '--accent-secondary': 'Secondary Accent',
-  '--accent-secondary-light': 'Secondary Light',
-  '--on-accent': 'Text on Accent',
-  '--border': 'Border',
-  '--border-strong': 'Strong Border',
-  '--error': 'Error Text',
-  '--error-bg': 'Error Background',
-  '--surface-dot': 'Status Dot',
-  '--agent-user-color': 'Agent User Color',
-  '--agent-agent-color': 'Agent Bot Color',
-  '--scanline-tint': 'Scanline Overlay',
-  '--accent-glow': 'Accent Glow',
-  '--modal-overlay': 'Modal Overlay',
-  '--on-surface': 'Surface Text',
-  '--on-surface-variant': 'Surface Text Variant',
+  '--bg': 'variable.bg',
+  '--bg-surface': 'variable.bgSurface',
+  '--bg-elevated': 'variable.bgElevated',
+  '--bg-terminal': 'variable.bgTerminal',
+  '--text': 'variable.text',
+  '--text-muted': 'variable.textMuted',
+  '--text-dim': 'variable.textDim',
+  '--accent': 'variable.accent',
+  '--accent-secondary': 'variable.accentSecondary',
+  '--accent-secondary-light': 'variable.accentSecondaryLight',
+  '--on-accent': 'variable.onAccent',
+  '--border': 'variable.border',
+  '--border-strong': 'variable.borderStrong',
+  '--error': 'variable.error',
+  '--error-bg': 'variable.errorBg',
+  '--surface-dot': 'variable.surfaceDot',
+  '--scrollbar-track': 'variable.scrollbarTrack',
+  '--scrollbar-thumb': 'variable.scrollbarThumb',
+  '--scrollbar-thumb-hover': 'variable.scrollbarThumbHover',
+  '--agent-user-color': 'variable.agentUser',
+  '--agent-agent-color': 'variable.agentBot',
+  '--scanline-tint': 'variable.scanline',
+  '--accent-glow': 'variable.accentGlow',
+  '--accent-bg': 'variable.accentBg',
+  '--modal-overlay': 'variable.modalOverlay',
+  '--on-surface': 'variable.onSurface',
+  '--on-surface-variant': 'variable.onSurfaceVariant',
 };
 
 let theme = {};
@@ -1902,6 +2504,14 @@ function isHexColor(val) {
   return /^#[0-9a-fA-F]{6}$/.test(val) || /^#[0-9a-fA-F]{3}$/.test(val);
 }
 
+function escapeAttribute(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function hexToRgba(hex) {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -1914,10 +2524,10 @@ function renderControls() {
   let html = '';
 
   for (const group of VARIABLE_GROUPS) {
-    html += `<div class="section-title">${group.title}</div>`;
+    html += `<div class="section-title">${t(group.titleKey)}</div>`;
     for (const varName of group.vars) {
       const val = theme[varName] || '';
-      const label = VARIABLE_LABELS[varName] || varName;
+      const label = t(VARIABLE_LABELS[varName] || varName);
       const isHex = isHexColor(val);
 
       html += `<div class="color-row">`;
@@ -1925,7 +2535,7 @@ function renderControls() {
       if (isHex) {
         html += `<input type="color" value="${val}" data-var="${varName}">`;
       }
-      html += `<input type="text" value="${val}" data-var="${varName}" spellcheck="false">`;
+      html += `<input type="text" value="${escapeAttribute(val)}" data-var="${varName}" spellcheck="false">`;
       html += `</div>`;
     }
   }
@@ -1986,19 +2596,25 @@ document.getElementById('import-input').addEventListener('change', (e) => {
     try {
       const data = JSON.parse(ev.target.result);
       if (data.ui && typeof data.ui === 'object') {
-        theme = { ...data.ui };
-        customized = false;
-        if (data.name) {
-          document.querySelector('.preset-chip.active')?.classList.remove('active');
-          activePreset = null;
+        const importedVariables = Object.fromEntries(
+          Object.entries(data.ui).filter(([key, value]) => key.startsWith('--') && typeof value === 'string')
+        );
+        if (!Object.keys(importedVariables).length) {
+          showToast('feedback.missingUi', 'error');
+          return;
         }
+        theme = { ...PRESETS.cyberpunk.ui, ...importedVariables };
+        customized = false;
+        document.querySelector('.preset-chip.active')?.classList.remove('active');
+        activePreset = null;
         renderControls();
         applyTheme();
+        showToast('feedback.imported');
       } else {
-        alert('Invalid theme file: missing "ui" field');
+        showToast('feedback.missingUi', 'error');
       }
     } catch {
-      alert('Invalid JSON file');
+      showToast('feedback.invalidJson', 'error');
     }
   };
   reader.readAsText(file);
@@ -2030,10 +2646,22 @@ document.getElementById('btn-export').addEventListener('click', () => {
   a.href = url;
   a.download = `cloudssh-theme-${themeName.toLowerCase().replace(/\s+/g, '-')}.json`;
   a.click();
+  a.remove();
   URL.revokeObjectURL(url);
+  showToast('feedback.exported');
+});
+
+document.getElementById('language-toggle').addEventListener('click', () => {
+  setLocale(locale === 'zh-CN' ? 'en-US' : 'zh-CN');
+});
+
+document.querySelectorAll('[data-current-year]').forEach((element) => {
+  element.textContent = new Date().getFullYear();
 });
 
 // Init
+locale = resolveInitialLocale();
+translateDocument();
 initTheme('cyberpunk');
 </script>
 </body>
