@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-07-24
+
+### Added
+- 在线主题编辑器新增简体中文与英文切换，复用主项目语言偏好，并支持 URL 参数和浏览器语言自动解析。
+
+### Changed
+- 在线主题编辑器同步主项目最新 UI，补全登录页、服务器列表、终端、SFTP 与 AI Agent 的实时主题预览。
+- 主题编辑器使用统一的非阻塞 Toast 操作反馈，并同步最新主题变量和操作标签风格。
+
+### Fixed
+- 修复 SFTP 右键菜单在中文模式下仍显示 `Open`、`Download`、`Rename`、`Delete` 英文文案的问题。
+- 语言变化时主动关闭已打开的 SFTP 右键菜单，避免菜单继续显示切换前的语言。
+
 ## [1.2.0] - 2026-07-22
 
 ### Added
