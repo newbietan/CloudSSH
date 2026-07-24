@@ -48,6 +48,26 @@ describe('国际化核心', () => {
     expect(enUS['sftp.upload']).toBe('Upload file');
     expect(enUS['sftp.newFolder']).toBe('New folder');
   });
+
+  it('SFTP 右键菜单提供完整的中英文翻译', () => {
+    expect(zhCN['sftp.contextOpen']).toBe('打开');
+    expect(zhCN['sftp.contextDownload']).toBe('下载');
+    expect(zhCN['sftp.contextRename']).toBe('重命名');
+    expect(zhCN['sftp.contextDelete']).toBe('删除');
+    expect(enUS['sftp.contextOpen']).toBe('Open');
+    expect(enUS['sftp.contextDownload']).toBe('Download');
+    expect(enUS['sftp.contextRename']).toBe('Rename');
+    expect(enUS['sftp.contextDelete']).toBe('Delete');
+  });
+
+  it('SFTP 右键菜单不再硬编码展示文案', () => {
+    const source = readFileSync(new URL('../frontend/src/sftp-panel.ts', import.meta.url), 'utf8');
+    expect(source).toContain("label: t('sftp.contextOpen')");
+    expect(source).toContain("label: t('sftp.contextDownload')");
+    expect(source).toContain("label: t('sftp.contextRename')");
+    expect(source).toContain("label: t('sftp.contextDelete')");
+    expect(source).not.toMatch(/label:\s*'(?:Open|Download|Rename|Delete)'/);
+  });
 });
 
 describe('Agent 响应语言', () => {

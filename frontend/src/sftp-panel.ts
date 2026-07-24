@@ -157,7 +157,10 @@ export class SFTPPanel {
     this.getWebSocketUrl = getWebSocketUrl;
     this.container = this.createPanel();
     document.body.appendChild(this.container);
-    this.localeCleanup = onLocaleChange(() => translateDocument(this.container));
+    this.localeCleanup = onLocaleChange(() => {
+      translateDocument(this.container);
+      this.hideContextMenu();
+    });
     this.bindKeyboard();
   }
 
@@ -804,7 +807,7 @@ export class SFTPPanel {
     menu.style.top = y + 'px';
 
     const items = [
-      { label: 'Open', icon: 'open_in_new', action: () => {
+      { label: t('sftp.contextOpen'), icon: 'open_in_new', action: () => {
         if (entry.isDir) {
           this.navigate(this.currentPath === '/' ? `/${entry.name}` : `${this.currentPath}/${entry.name}`);
         } else {
@@ -812,9 +815,9 @@ export class SFTPPanel {
           this.downloadSelected();
         }
       }},
-      ...(entry.type === 'file' ? [{ label: 'Download', icon: 'download', action: () => { this.selectedEntry = entry; this.downloadSelected(); } }] : []),
-      { label: 'Rename', icon: 'drive_file_rename_outline', action: () => { this.selectedEntry = entry; this.showRenameDialog(); } },
-      { label: 'Delete', icon: 'delete', action: () => { this.selectedEntry = entry; this.deleteSelected(); }, className: 'text-error' },
+      ...(entry.type === 'file' ? [{ label: t('sftp.contextDownload'), icon: 'download', action: () => { this.selectedEntry = entry; this.downloadSelected(); } }] : []),
+      { label: t('sftp.contextRename'), icon: 'drive_file_rename_outline', action: () => { this.selectedEntry = entry; this.showRenameDialog(); } },
+      { label: t('sftp.contextDelete'), icon: 'delete', action: () => { this.selectedEntry = entry; this.deleteSelected(); }, className: 'text-error' },
     ];
 
     menu.innerHTML = items.map(item => `
