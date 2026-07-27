@@ -323,8 +323,9 @@ describe('安全 — cf_verified 签名伪造', () => {
     );
     const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(expires));
     const sigHex = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
-    // 篡改：把首个字符 a 改成 b（破坏签名）
-    const tamperedSig = 'b' + sigHex.slice(1);
+    // 根据原字符选择必然不同的十六进制字符，确保每次都真正破坏签名。
+    const tamperedSig = (sigHex[0] === '0' ? '1' : '0') + sigHex.slice(1);
+    expect(tamperedSig).not.toBe(sigHex);
     const tamperedToken = `${expires}:${tamperedSig}`;
 
     // 需要直接调内部函数测——通过路由间接测：
@@ -339,6 +340,31 @@ describe('安全 — cf_verified 签名伪造', () => {
     const res = await worker.fetch(req, env);
 
     expect(res.status).toBe(403); // 篡改签名 → 走 turnstile → turnstile 无效 → 403
+  });
+
+  it.each([
+    ['签名长度错误', (expires: string, signature: string) => `${expires}:${signature.slice(0, -2)}`],
+    ['签名包含非十六进制字符', (expires: string, signature: string) => `${expires}:z${signature.slice(1)}`],
+    ['缺少分隔符', (expires: string, signature: string) => `${expires}${signature}`],
+  ])('%s → 安全降级到 Turnstile 验证并返回 403', async (_name, makeToken) => {
+    const worker = await loadWorker();
+    const env = makeEnv({ TURNSTILE_SECRET: 'supersecret' });
+    const expires = String(Date.now() + 3600000);
+    const validLengthSignature = 'a'.repeat(64);
+    const malformedToken = makeToken(expires, validLengthSignature);
+
+    const req = makeRequest('/api/ssh?turnstile_token=bogus', {
+      headers: { Upgrade: 'websocket', Origin: 'https://cloudssh.test' },
+      cookies: { cf_verified: malformedToken },
+    });
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: false }), { headers: { 'Content-Type': 'application/json' } })
+    );
+
+    const res = await worker.fetch(req, env);
+
+    expect(res.status).toBe(403);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

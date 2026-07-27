@@ -103,9 +103,14 @@ async function generateVerifiedToken(secret: string): Promise<string> {
 
 async function isVerifiedTokenValid(token: string, secret: string): Promise<boolean> {
   try {
-    const [expiresStr, signature] = token.split(':');
-    const expires = parseInt(expiresStr);
-    if (isNaN(expires) || Date.now() > expires) return false;
+    const parts = token.split(':');
+    if (parts.length !== 2) return false;
+
+    const [expiresStr, signature] = parts;
+    if (!/^\d+$/.test(expiresStr) || !/^[0-9a-f]{64}$/i.test(signature)) return false;
+
+    const expires = Number(expiresStr);
+    if (!Number.isSafeInteger(expires) || Date.now() > expires) return false;
     
     // 使用 HMAC-SHA256 验证签名
     const key = await crypto.subtle.importKey(
@@ -118,7 +123,7 @@ async function isVerifiedTokenValid(token: string, secret: string): Promise<bool
     
     // 将十六进制签名转换回字节数组
     const signatureBytes = new Uint8Array(
-      signature.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
+      signature.match(/.{2}/g)!.map(byte => parseInt(byte, 16))
     );
     
     return await crypto.subtle.verify(

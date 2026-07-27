@@ -14,7 +14,7 @@ CloudSSH is a serverless Web SSH terminal built on Cloudflare Workers. Users con
 
 ## Architecture
 
-- **Frontend** (`frontend/`): TypeScript + Vite + xterm.js + Tailwind CSS
+- **Frontend** (`frontend/`): TypeScript + Vite + xterm.js + Tailwind CSS（通过 PostCSS 本地构建）
 - **Backend** (`src/`): Cloudflare Workers + Durable Objects
 - **SSH Protocol**: Pure TypeScript implementation in `src/ssh/` (no external SSH library)
 - **SFTP Protocol**: SFTP v3 subsystem implementation in `src/ssh/sftp.ts` for file management
@@ -208,6 +208,7 @@ ci: CI/CD 变更
 7. **Agent tool confirmations** - Dangerous commands (rm -rf, shutdown, etc.) require user confirmation via `agent_confirm` WebSocket message before execution. Blocked commands (rm -rf /, fork bomb, etc.) are rejected outright without prompting.
 8. **Agent loop timeouts & Watchdog** - The agent run loop has a step-based timeout of 60 seconds (managed by a watchdog timer in `agent/core.ts` that resets after each LLM response or tool execution). When waiting for user confirmation via `agent_confirm`, the watchdog timer is paused to prevent timeouts due to user delays.
 9. **SSH rate limiting** - `/api/ssh` uses a bounded, Worker-isolate in-memory limiter for traffic shedding. It skips requests without `CF-Connecting-IP`; Turnstile and one-time tokens remain the connection authorization controls.
+10. **Tailwind is built locally** - `frontend/postcss.config.cjs` and `frontend/tailwind.config.cjs` generate Tailwind CSS during Vite builds. Do not reintroduce `cdn.tailwindcss.com`; keep content scan paths and theme variable mappings synchronized when adding frontend source locations or theme tokens.
 
 ## Deployment Notes
 
