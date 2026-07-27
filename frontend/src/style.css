@@ -79,6 +79,15 @@ body.terminal-active {
   overflow: hidden;
 }
 
+html[data-theme^="standard-"] .scanlines,
+html[data-theme^="standard-"] .scanline {
+  display: none;
+}
+
+html[data-theme^="standard-"] .flicker {
+  animation: none;
+}
+
 .bg-primary { background-color: var(--accent); }
 .text-primary { color: var(--accent); }
 .text-on-primary { color: var(--on-accent); }

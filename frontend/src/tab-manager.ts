@@ -1,4 +1,4 @@
-import { SSHTerminal, SSHConnectionConfig, THEMES, TerminalSelectionAnchor } from './terminal';
+import { SSHTerminal, SSHConnectionConfig, TerminalSelectionAnchor } from './terminal';
 import { SFTPPanel } from './sftp-panel';
 import { AgentPanel } from './agent/agent-panel';
 import { t } from './i18n';

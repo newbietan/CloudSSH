@@ -1,4 +1,9 @@
-import { THEMES } from './terminal';
+import {
+  applyBuiltInTheme,
+  applyImportedTheme,
+  isBuiltInTheme,
+  type ImportedThemeData,
+} from './theme';
 import type { SSHTerminal } from './terminal';
 import { ConnectionForm } from './auth-form';
 import { ServerList } from './server-list';
@@ -298,23 +303,17 @@ document.getElementById('export-btn')?.addEventListener('click', () => {
 const CUSTOM_THEME_VALUE = '__custom__';
 const themeSelector = document.getElementById('theme-selector') as HTMLSelectElement | null;
 
-/** 获取一个可用于主题操作的终端实例（当前活跃标签的终端） */
-function getThemeTerminal(): SSHTerminal | null {
-  return tabManager?.getActiveTab()?.terminal || null;
-}
-
 themeSelector?.addEventListener('change', (e) => {
   const value = (e.target as HTMLSelectElement).value;
   if (value === CUSTOM_THEME_VALUE) {
     const importedRaw = localStorage.getItem('cloudssh_imported_theme');
     if (importedRaw) {
       try {
-        getThemeTerminal()?.applyImportedTheme(JSON.parse(importedRaw));
+        applyImportedTheme(JSON.parse(importedRaw) as ImportedThemeData);
       } catch { /* ignore */ }
     }
-  } else {
-    getThemeTerminal()?.setTheme(value as keyof typeof THEMES);
-    localStorage.removeItem('cloudssh_imported_theme');
+  } else if (isBuiltInTheme(value)) {
+    applyBuiltInTheme(value);
   }
   localStorage.setItem('cloudssh_theme_selection', value);
 });
@@ -369,7 +368,7 @@ importThemeInput?.addEventListener('change', async (e) => {
       localStorage.setItem('cloudssh_theme_selection', CUSTOM_THEME_VALUE);
 
       // 直接应用主题，不刷新页面（避免断开 WebSocket）
-      getThemeTerminal()?.applyImportedTheme(data);
+      applyImportedTheme(data as ImportedThemeData);
       notify(t('theme.importSuccess'), { variant: 'success' });
     } catch {
       notify(t('theme.invalidJson'), { title: t('theme.importTitle'), variant: 'danger' });
@@ -384,13 +383,30 @@ importThemeInput?.addEventListener('change', async (e) => {
 /** 恢复主题（在 init 时调用，此时还没有终端实例，只设置 UI 变量） */
 async function restoreTheme(): Promise<void> {
   const selection = localStorage.getItem('cloudssh_theme_selection');
+  localStorage.removeItem('cloudssh_theme');
+
+  // 先同步应用本地选择，避免等待云端主题期间出现颜色闪烁。
+  if (isBuiltInTheme(selection)) {
+    applyBuiltInTheme(selection);
+    if (themeSelector) themeSelector.value = selection;
+  } else if (selection === CUSTOM_THEME_VALUE) {
+    const localRaw = localStorage.getItem('cloudssh_imported_theme');
+    if (localRaw) {
+      try {
+        applyImportedTheme(JSON.parse(localRaw) as ImportedThemeData);
+      } catch { /* 云端加载后会再次校验，失败则回退默认主题 */ }
+    }
+  } else {
+    applyBuiltInTheme('cyberpunk');
+    if (themeSelector) themeSelector.value = 'cyberpunk';
+  }
 
   // 尝试从云端加载自定义主题
-  let cloudTheme: Record<string, unknown> | null = null;
+  let cloudTheme: ImportedThemeData | null = null;
   try {
     const res = await fetch('/api/user/theme');
     if (res.ok) {
-      const { theme } = await res.json() as { theme: Record<string, unknown> | null };
+      const { theme } = await res.json() as { theme: ImportedThemeData | null };
       if (theme) {
         cloudTheme = theme;
         // 同步到 localStorage
@@ -418,44 +434,15 @@ async function restoreTheme(): Promise<void> {
     const raw = localStorage.getItem('cloudssh_imported_theme');
     if (raw) {
       try {
-        const data = JSON.parse(raw);
-        // 应用 UI 变量
-        if (data.ui) {
-          const root = document.documentElement;
-          Object.entries(data.ui).forEach(([prop, val]) => {
-            root.style.setProperty(prop, val as string);
-          });
-        }
+        applyImportedTheme(JSON.parse(raw) as ImportedThemeData);
         if (themeSelector) themeSelector.value = CUSTOM_THEME_VALUE;
         return;
       } catch { /* ignore */ }
     }
+    localStorage.setItem('cloudssh_theme_selection', 'cyberpunk');
+    applyBuiltInTheme('cyberpunk');
+    if (themeSelector) themeSelector.value = 'cyberpunk';
   }
-
-  if (selection && THEMES[selection as keyof typeof THEMES]) {
-    // 应用 UI 变量（不需要终端实例）
-    const { UI_THEMES } = await import('./terminal');
-    const uiVars = UI_THEMES[selection as keyof typeof THEMES];
-    if (uiVars) {
-      const root = document.documentElement;
-      Object.entries(uiVars).forEach(([prop, val]) => {
-        root.style.setProperty(prop, val);
-      });
-    }
-    if (themeSelector) themeSelector.value = selection;
-    return;
-  }
-
-  // 默认主题：只设置 UI 变量
-  const { UI_THEMES } = await import('./terminal');
-  const uiVars = UI_THEMES.cyberpunk;
-  if (uiVars) {
-    const root = document.documentElement;
-    Object.entries(uiVars).forEach(([prop, val]) => {
-      root.style.setProperty(prop, val);
-    });
-  }
-  if (themeSelector) themeSelector.value = 'cyberpunk';
 }
 
 // ==================== 初始化 ====================

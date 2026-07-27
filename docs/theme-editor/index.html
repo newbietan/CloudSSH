@@ -1615,6 +1615,8 @@
     <div class="presets-bar">
       <label data-i18n="editor.presets">预设主题</label>
       <div class="preset-chips">
+        <button class="preset-chip" data-preset="standard-dark">Standard Dark</button>
+        <button class="preset-chip" data-preset="standard-light">Standard Light</button>
         <button class="preset-chip active" data-preset="cyberpunk">Cyberpunk</button>
         <button class="preset-chip" data-preset="glacier">Glacier</button>
         <button class="preset-chip" data-preset="gruvbox">Gruvbox</button>
@@ -2378,8 +2380,67 @@ function showToast(messageKey, type = 'success') {
 }
 
 const PRESETS = {
+  'standard-dark': {
+    name: 'Standard Dark',
+    colorScheme: 'dark',
+    terminal: {
+      background: '#0b0e14', foreground: '#d6deeb', cursor: '#58a6ff', cursorAccent: '#0b0e14',
+      selectionBackground: '#264f78', selectionInactiveBackground: '#1f3a56',
+      black: '#0d1117', red: '#ff7b72', green: '#3fb950', yellow: '#d29922',
+      blue: '#58a6ff', magenta: '#bc8cff', cyan: '#39c5cf', white: '#b1bac4',
+      brightBlack: '#6e7681', brightRed: '#ffa198', brightGreen: '#56d364', brightYellow: '#e3b341',
+      brightBlue: '#79c0ff', brightMagenta: '#d2a8ff', brightCyan: '#56d4dd', brightWhite: '#f0f6fc'
+    },
+    ui: {
+      '--bg': '#0f1115', '--bg-surface': '#161a22', '--bg-elevated': '#1c222d', '--bg-terminal': '#0b0e14',
+      '--text': '#e6edf3', '--text-muted': '#9ba7b4', '--text-dim': '#7d8590',
+      '--accent': '#58a6ff', '--accent-secondary': '#79c0ff', '--accent-secondary-light': '#a5d6ff',
+      '--border': '#30363d', '--border-strong': '#484f58',
+      '--error': '#ff7b72', '--error-bg': '#3d1418',
+      '--on-accent': '#07111f', '--surface-dot': '#30363d',
+      '--scrollbar-track': 'rgba(22, 26, 34, 0.7)',
+      '--scrollbar-thumb': 'rgba(155, 167, 180, 0.35)',
+      '--scrollbar-thumb-hover': 'rgba(155, 167, 180, 0.55)',
+      '--scanline-tint': 'transparent',
+      '--accent-glow': 'rgba(88, 166, 255, 0.08)',
+      '--accent-bg': 'rgba(88, 166, 255, 0.1)',
+      '--modal-overlay': 'rgba(0, 0, 0, 0.72)',
+      '--on-surface': '#e6edf3', '--on-surface-variant': '#9ba7b4',
+      '--agent-user-color': '#58a6ff', '--agent-agent-color': '#79c0ff',
+    }
+  },
+  'standard-light': {
+    name: 'Standard Light',
+    colorScheme: 'light',
+    terminal: {
+      background: '#ffffff', foreground: '#24292f', cursor: '#0969da', cursorAccent: '#ffffff',
+      selectionBackground: '#b6d7ff', selectionForeground: '#1f2328', selectionInactiveBackground: '#dbeafe',
+      black: '#24292f', red: '#cf222e', green: '#1a7f37', yellow: '#9a6700',
+      blue: '#0969da', magenta: '#8250df', cyan: '#1b7c83', white: '#6e7781',
+      brightBlack: '#57606a', brightRed: '#a40e26', brightGreen: '#116329', brightYellow: '#7d4e00',
+      brightBlue: '#0550ae', brightMagenta: '#6639ba', brightCyan: '#0a6c74', brightWhite: '#1f2328'
+    },
+    ui: {
+      '--bg': '#f6f8fa', '--bg-surface': '#ffffff', '--bg-elevated': '#eef2f6', '--bg-terminal': '#ffffff',
+      '--text': '#1f2328', '--text-muted': '#57606a', '--text-dim': '#656d76',
+      '--accent': '#0969da', '--accent-secondary': '#0550ae', '--accent-secondary-light': '#0550ae',
+      '--border': '#d0d7de', '--border-strong': '#afb8c1',
+      '--error': '#cf222e', '--error-bg': '#ffebe9',
+      '--on-accent': '#ffffff', '--surface-dot': '#eaeef2',
+      '--scrollbar-track': 'rgba(208, 215, 222, 0.45)',
+      '--scrollbar-thumb': 'rgba(87, 96, 106, 0.35)',
+      '--scrollbar-thumb-hover': 'rgba(87, 96, 106, 0.55)',
+      '--scanline-tint': 'transparent',
+      '--accent-glow': 'rgba(9, 105, 218, 0.08)',
+      '--accent-bg': 'rgba(9, 105, 218, 0.1)',
+      '--modal-overlay': 'rgba(31, 35, 40, 0.48)',
+      '--on-surface': '#1f2328', '--on-surface-variant': '#57606a',
+      '--agent-user-color': '#0969da', '--agent-agent-color': '#8250df',
+    }
+  },
   cyberpunk: {
     name: 'Cyberpunk',
+    colorScheme: 'dark',
     terminal: { background: '#0a0a0a', foreground: '#4af626', cursor: '#14d1ff', cursorAccent: '#0a0a0a', selectionBackground: '#273747' },
     ui: {
       '--bg': '#0a0a0a', '--bg-surface': '#121212', '--bg-elevated': '#131313', '--bg-terminal': '#0e0e0e',
@@ -2401,6 +2462,7 @@ const PRESETS = {
   },
   glacier: {
     name: 'Glacier',
+    colorScheme: 'dark',
     terminal: { background: '#0a192f', foreground: '#64ffda', cursor: '#e6f1ff', cursorAccent: '#0a192f', selectionBackground: '#112240' },
     ui: {
       '--bg': '#0a192f', '--bg-surface': '#0d2137', '--bg-elevated': '#112240', '--bg-terminal': '#061526',
@@ -2422,6 +2484,7 @@ const PRESETS = {
   },
   gruvbox: {
     name: 'Gruvbox',
+    colorScheme: 'dark',
     terminal: { background: '#282828', foreground: '#ebdbb2', cursor: '#d3869b', cursorAccent: '#282828', selectionBackground: '#504945' },
     ui: {
       '--bg': '#282828', '--bg-surface': '#303030', '--bg-elevated': '#282828', '--bg-terminal': '#1d2021',
@@ -2486,12 +2549,14 @@ const VARIABLE_LABELS = {
 
 let theme = {};
 let activePreset = 'cyberpunk';
+let colorScheme = 'dark';
 let customized = false;
 
 function initTheme(presetName) {
   const preset = PRESETS[presetName];
   theme = { ...preset.ui };
   activePreset = presetName;
+  colorScheme = preset.colorScheme;
   customized = false;
   renderControls();
   applyTheme();
@@ -2573,6 +2638,8 @@ function renderControls() {
 
 function applyTheme() {
   const scope = document.getElementById('theme-scope');
+  scope.style.colorScheme = colorScheme;
+  scope.dataset.colorScheme = colorScheme;
   for (const [varName, val] of Object.entries(theme)) {
     scope.style.setProperty(varName, val);
   }
@@ -2603,7 +2670,12 @@ document.getElementById('import-input').addEventListener('change', (e) => {
           showToast('feedback.missingUi', 'error');
           return;
         }
-        theme = { ...PRESETS.cyberpunk.ui, ...importedVariables };
+        const importedScheme = data.colorScheme === 'light' || data.colorScheme === 'dark'
+          ? data.colorScheme
+          : inferColorScheme(importedVariables['--bg']);
+        const fallbackPreset = importedScheme === 'light' ? PRESETS['standard-light'] : PRESETS.cyberpunk;
+        theme = { ...fallbackPreset.ui, ...importedVariables };
+        colorScheme = importedScheme;
         customized = false;
         document.querySelector('.preset-chip.active')?.classList.remove('active');
         activePreset = null;
@@ -2629,6 +2701,7 @@ document.getElementById('btn-export').addEventListener('click', () => {
 
   const output = {
     name: themeName,
+    colorScheme: preset?.colorScheme || colorScheme,
     terminal: (isCustom || !preset) ? {
       background: theme['--bg-terminal'] || '#0a0a0a',
       foreground: theme['--text'] || '#cccccc',
@@ -2650,6 +2723,15 @@ document.getElementById('btn-export').addEventListener('click', () => {
   URL.revokeObjectURL(url);
   showToast('feedback.exported');
 });
+
+function inferColorScheme(background) {
+  if (!background || !/^#[0-9a-fA-F]{6}$/.test(background)) return 'dark';
+  const channels = background.slice(1).match(/.{2}/g).map(value => parseInt(value, 16) / 255);
+  const luminance = channels
+    .map(value => value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4))
+    .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+  return luminance > 0.5 ? 'light' : 'dark';
+}
 
 document.getElementById('language-toggle').addEventListener('click', () => {
   setLocale(locale === 'zh-CN' ? 'en-US' : 'zh-CN');

@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark light" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <title>CloudSSH</title>
   <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
@@ -241,6 +242,8 @@
         </div>
         <div class="flex items-center gap-2 sm:gap-4 text-primary-container flex-wrap">
           <select id="theme-selector" class="bg-surface-variant text-on-surface-variant text-xs py-1 px-2 border-none outline-none cursor-pointer rounded">
+            <option value="standard-dark">Standard Dark</option>
+            <option value="standard-light">Standard Light</option>
             <option value="cyberpunk">Cyberpunk</option>
             <option value="glacier">Glacier</option>
             <option value="gruvbox">Gruvbox</option>
