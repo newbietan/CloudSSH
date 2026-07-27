@@ -122,6 +122,17 @@ export class TabManager {
           tab.agentPanel = new AgentPanel(tab.containerEl, true);
           tab.agentPanel.render();
           tab.agentPanel.setWebSocketSend((data: string) => tab.terminal.sendWebSocketMessage(data));
+          tab.agentPanel.setTerminalFillHandler(
+            () => ({
+              label: this.getTerminalTargetLabel(tab),
+              available: this.activeTabId === tab.id && tab.state === 'connected',
+            }),
+            (command: string) => {
+              const activeTab = this.getActiveTab();
+              if (activeTab?.id !== tab.id || tab.state !== 'connected') return false;
+              return tab.terminal.fillInput(command);
+            },
+          );
           tab.terminal.setAgentFrameHandler((msg: any) => {
             tab.agentPanel?.handleAgentFrame(msg);
           });
@@ -275,6 +286,12 @@ export class TabManager {
 
   hasAnyTab(): boolean {
     return this.tabs.size > 0;
+  }
+
+  private getTerminalTargetLabel(tab: TabInfo): string {
+    if (!tab.hostInfo) return tab.label;
+    const userPrefix = tab.hostInfo.username ? `${tab.hostInfo.username}@` : '';
+    return `${tab.label} · ${userPrefix}${tab.hostInfo.host}:${tab.hostInfo.port}`;
   }
 
   refreshTranslations(): void {

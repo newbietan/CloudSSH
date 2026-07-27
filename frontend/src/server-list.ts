@@ -40,7 +40,7 @@ export class ServerList {
   private user: UserInfo;
   private servers: ServerConfig[] = [];
   private onLogout: () => void;
-  private onConnect: (wsUrl: string, serverName: string, hostInfo?: { host: string; port: number }) => void;
+  private onConnect: (wsUrl: string, serverName: string, hostInfo?: { host: string; port: number; username?: string }) => void;
   private editingServerId: number | null = null;
   private modalAuthMode: 'password' | 'key' = 'password';
   private searchQuery = '';
@@ -48,7 +48,7 @@ export class ServerList {
   constructor(
     user: UserInfo,
     onLogout: () => void,
-    onConnect: (wsUrl: string, serverName: string, hostInfo?: { host: string; port: number }) => void
+    onConnect: (wsUrl: string, serverName: string, hostInfo?: { host: string; port: number; username?: string }) => void
   ) {
     this.user = user;
     this.onLogout = onLogout;
@@ -292,7 +292,11 @@ export class ServerList {
       const { wsUrl } = await res.json() as { wsUrl: string };
 
       // 在当前页面内创建新标签并连接
-      this.onConnect(wsUrl, server.name, { host: server.host, port: server.port });
+      this.onConnect(wsUrl, server.name, {
+        host: server.host,
+        port: server.port,
+        username: server.username,
+      });
     } catch (e) {
       notify(e instanceof Error ? e.message : String(e), {
         title: t('server.connectFailed'),

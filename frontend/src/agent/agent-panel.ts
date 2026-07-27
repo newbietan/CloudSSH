@@ -3,16 +3,30 @@
 import { marked, type Tokens } from 'marked';
 import DOMPurify from 'dompurify';
 import { getLocale, onLocaleChange, t, translateDocument } from '../i18n';
+import { getTerminalFillCommand, normalizeCodeLanguage } from './code-actions';
+
+interface TerminalFillTarget {
+  label: string;
+  available: boolean;
+}
 
 // Configure marked once at module load: GFM enabled, custom renderer for theme-aware styling
 marked.use({
   gfm: true,
   renderer: {
     code({ text, lang }: Tokens.Code) {
-      const safeLang = lang && lang.trim()
-        ? `<div class="agent-md-lang">${escapeHtml(lang.trim())}</div>`
-        : '';
-      return `${safeLang}<pre class="agent-md-pre"><code>${escapeHtml(text)}</code></pre>`;
+      const language = normalizeCodeLanguage(lang);
+      const safeLang = language
+        ? `<span class="agent-md-lang">${escapeHtml(language)}</span>`
+        : '<span class="agent-md-lang" aria-hidden="true"></span>';
+      return `<div class="agent-md-code-block" data-code-language="${escapeHtml(language)}">
+        <div class="agent-md-code-toolbar">
+          ${safeLang}
+          <div class="agent-md-code-meta"></div>
+          <div class="agent-md-code-actions"></div>
+        </div>
+        <pre class="agent-md-pre"><code>${escapeHtml(text)}</code></pre>
+      </div>`;
     },
     codespan({ text }: Tokens.Codespan) {
       return `<code class="agent-md-inline-code">${escapeHtml(text)}</code>`;
@@ -46,6 +60,8 @@ export class AgentPanel {
   private isAgentRunning: boolean = false;
   private isWaitingConfirmation: boolean = false;
   private wsSend: ((data: string) => void) | null = null;
+  private getTerminalFillTarget: (() => TerminalFillTarget) | null = null;
+  private fillTerminalInput: ((command: string) => boolean) | null = null;
   private onLayoutChange?: () => void;
   private streamingEl: HTMLElement | null = null;
   private streamingText: string = '';
@@ -78,6 +94,14 @@ export class AgentPanel {
     this.wsSend = fn;
   }
 
+  setTerminalFillHandler(
+    getTarget: () => TerminalFillTarget,
+    fillInput: (command: string) => boolean,
+  ): void {
+    this.getTerminalFillTarget = getTarget;
+    this.fillTerminalInput = fillInput;
+  }
+
   render(): void {
     if (this.panelEl) return;
 
@@ -108,7 +132,10 @@ export class AgentPanel {
       </div>
     `;
     translateDocument(this.panelEl);
-    this.localeCleanup = onLocaleChange(() => this.updateInputState());
+    this.localeCleanup = onLocaleChange(() => {
+      this.updateInputState();
+      this.refreshCodeBlockActions();
+    });
 
     this.parentEl.appendChild(this.panelEl);
     this.messagesEl = this.panelEl.querySelector('#agent-messages');
@@ -473,6 +500,7 @@ export class AgentPanel {
         tmp.innerHTML = this.renderMarkdown(content || this.streamingText || '');
         const inner = tmp.querySelector('.agent-md-content');
         contentEl.innerHTML = inner ? inner.innerHTML : (content || this.streamingText || '');
+        this.enhanceCodeBlocks(contentEl);
       }
       this.streamingEl = null;
       this.streamingText = '';
@@ -680,6 +708,9 @@ export class AgentPanel {
     }
 
     this.messagesEl?.appendChild(el);
+    if (isAgent) {
+      this.enhanceCodeBlocks(el);
+    }
     this.scrollToBottom();
   }
 
@@ -694,11 +725,144 @@ export class AgentPanel {
       return `<div class="agent-md-content">${escapeHtml(text)}</div>`;
     }
     const clean = DOMPurify.sanitize(raw, {
-      ADD_ATTR: ['target', 'rel', 'class', 'loading'],
+      ADD_ATTR: ['target', 'rel', 'class', 'loading', 'data-code-language'],
       ALLOW_UNKNOWN_PROTOCOLS: false,
       USE_PROFILES: { html: true },
     });
     return `<div class="agent-md-content">${clean}</div>`;
+  }
+
+  private enhanceCodeBlocks(root: ParentNode): void {
+    root.querySelectorAll<HTMLElement>('.agent-md-code-block').forEach((block) => {
+      if (block.dataset.actionsReady === 'true') return;
+
+      const codeEl = block.querySelector<HTMLElement>('code');
+      const actionsEl = block.querySelector<HTMLElement>('.agent-md-code-actions');
+      const metaEl = block.querySelector<HTMLElement>('.agent-md-code-meta');
+      if (!codeEl || !actionsEl || !metaEl) return;
+
+      const code = codeEl.textContent || '';
+      const copyButton = this.createCodeActionButton('copy', 'content_copy', t('agent.codeCopy'));
+      copyButton.addEventListener('click', async () => {
+        const copied = await this.copyText(code);
+        this.showCodeActionFeedback(
+          copyButton,
+          copied ? 'check' : 'error',
+          copied ? t('agent.codeCopied') : t('agent.codeCopyFailed'),
+        );
+      });
+      actionsEl.appendChild(copyButton);
+
+      const command = getTerminalFillCommand(block.dataset.codeLanguage, code);
+      if (command && this.getTerminalFillTarget && this.fillTerminalInput) {
+        const target = this.getTerminalFillTarget();
+        metaEl.textContent = t('agent.codeTarget', { target: target.label });
+        metaEl.title = target.label;
+
+        const fillButton = this.createCodeActionButton('fill', 'input', t('agent.codeFill'));
+        fillButton.disabled = !target.available;
+        fillButton.addEventListener('click', () => {
+          const currentTarget = this.getTerminalFillTarget?.();
+          const filled = !!currentTarget?.available && !!this.fillTerminalInput?.(command);
+          this.showCodeActionFeedback(
+            fillButton,
+            filled ? 'check' : 'error',
+            filled ? t('agent.codeFilled') : t('agent.codeFillFailed'),
+          );
+        });
+        actionsEl.appendChild(fillButton);
+      }
+
+      block.dataset.actionsReady = 'true';
+    });
+  }
+
+  private refreshCodeBlockActions(): void {
+    this.panelEl?.querySelectorAll<HTMLElement>('.agent-md-code-block').forEach((block) => {
+      const copyButton = block.querySelector<HTMLButtonElement>('[data-code-action="copy"]');
+      if (copyButton) this.setCodeActionButton(copyButton, 'content_copy', t('agent.codeCopy'));
+
+      const fillButton = block.querySelector<HTMLButtonElement>('[data-code-action="fill"]');
+      if (!fillButton) return;
+      this.setCodeActionButton(fillButton, 'input', t('agent.codeFill'));
+
+      const target = this.getTerminalFillTarget?.();
+      fillButton.disabled = !target?.available;
+      const metaEl = block.querySelector<HTMLElement>('.agent-md-code-meta');
+      if (metaEl && target) {
+        metaEl.textContent = t('agent.codeTarget', { target: target.label });
+        metaEl.title = target.label;
+      }
+    });
+  }
+
+  private createCodeActionButton(
+    action: 'copy' | 'fill',
+    icon: string,
+    label: string,
+  ): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'agent-md-code-action';
+    button.dataset.codeAction = action;
+    this.setCodeActionButton(button, icon, label);
+    return button;
+  }
+
+  private setCodeActionButton(button: HTMLButtonElement, icon: string, label: string): void {
+    button.replaceChildren();
+    const iconEl = document.createElement('span');
+    iconEl.className = 'material-symbols-outlined';
+    iconEl.setAttribute('aria-hidden', 'true');
+    iconEl.textContent = icon;
+    const labelEl = document.createElement('span');
+    labelEl.textContent = label;
+    button.append(iconEl, labelEl);
+    button.title = label;
+    button.setAttribute('aria-label', label);
+  }
+
+  private showCodeActionFeedback(
+    button: HTMLButtonElement,
+    icon: string,
+    label: string,
+  ): void {
+    this.setCodeActionButton(button, icon, label);
+    window.setTimeout(() => {
+      if (!button.isConnected) return;
+      const isFillButton = button.dataset.codeAction === 'fill';
+      this.setCodeActionButton(
+        button,
+        isFillButton ? 'input' : 'content_copy',
+        isFillButton ? t('agent.codeFill') : t('agent.codeCopy'),
+      );
+    }, 1600);
+  }
+
+  private async copyText(text: string): Promise<boolean> {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      // Clipboard API 不可用时回退到浏览器复制命令。
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      return document.execCommand('copy');
+    } catch {
+      return false;
+    } finally {
+      textarea.remove();
+    }
   }
 
   private scrollToBottom(): void {

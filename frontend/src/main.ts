@@ -138,7 +138,7 @@ function showUserSpace(user: { id: number; github_id: number; username: string; 
       showAuthSection();
     },
     // onConnect 回调 — 在当前页面创建新标签
-    (wsUrl: string, serverName: string, hostInfo?: { host: string; port: number }) => {
+    (wsUrl: string, serverName: string, hostInfo?: { host: string; port: number; username?: string }) => {
       showTerminalFromServer(wsUrl, serverName, hostInfo);
     }
   );
@@ -211,7 +211,11 @@ function showTerminalWithNewTab(
   return { tab, terminal: tab.terminal };
 }
 
-function showTerminalFromServer(wsUrl: string, serverName: string, hostInfo?: { host: string; port: number }): void {
+function showTerminalFromServer(
+  wsUrl: string,
+  serverName: string,
+  hostInfo?: { host: string; port: number; username?: string },
+): void {
   if (!validateWsUrl(wsUrl)) {
     notify(t('server.invalidWs'), {
       title: t('server.connectFailed'),

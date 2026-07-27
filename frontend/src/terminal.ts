@@ -186,6 +186,16 @@ export class SSHTerminal {
     }
   }
 
+  /** 将文本填入当前远端终端输入行，不附加回车。 */
+  fillInput(text: string): boolean {
+    if (!text || /[\r\n]/.test(text)) return false;
+    if (this.ws?.readyState !== WebSocket.OPEN || !this.trzszFilter) return false;
+
+    this.trzszFilter.processTerminalInput(text);
+    this.terminal.focus();
+    return true;
+  }
+
   setLatencyUpdatedHandler(handler: (cfLatency: number | null, cfColo: string | null, wsLatency: number | null) => void): void {
     this.onLatencyUpdated = handler;
     if (this.cfLatency !== null || this.cfColo !== null || this.wsLatency !== null) {
