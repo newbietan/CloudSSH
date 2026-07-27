@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-07-27
+
+### Changed
+- 将生产环境 Tailwind CSS 从运行时 CDN 编译迁移为 Vite + PostCSS 本地构建，保留 forms 与 container-queries 插件，并通过产物级回归测试确保主题、响应式及表单样式完整生成。
+
+### Fixed
+- 修复 `cf_verified` 安全回归测试可能未真正篡改签名而偶发失败的问题；同时收紧验证 token 的结构、时间戳和 HMAC 签名格式校验，使畸形 token 稳定回退到 Turnstile 验证。
+
 ## [1.3.0] - 2026-07-27
 
 ### Added
