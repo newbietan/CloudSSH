@@ -671,6 +671,53 @@ body.terminal-active {
   max-width: 120px;
 }
 
+.network-latency-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.network-latency-separator {
+  margin: 0 7px;
+  opacity: 0.55;
+}
+
+.network-quality-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.network-quality-good {
+  background: #22c55e;
+  box-shadow: 0 0 5px rgba(34, 197, 94, 0.65);
+}
+
+.network-quality-fair {
+  background: #f59e0b;
+  box-shadow: 0 0 5px rgba(245, 158, 11, 0.65);
+}
+
+.network-quality-poor {
+  background: #ef4444;
+  box-shadow: 0 0 5px rgba(239, 68, 68, 0.65);
+}
+
+.ask-ai-selection-float {
+  position: fixed;
+  z-index: 80;
+  display: inline-flex;
+  white-space: nowrap;
+  background: var(--bg-elevated);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.ask-ai-selection-float.hidden {
+  display: none;
+}
+
 .tab-dot {
   width: 6px;
   height: 6px;
@@ -1217,7 +1264,7 @@ body.terminal-active {
   color: var(--accent);
 }
 
-.agent-progress-extend .text-[var(--on-surface-variant)] {
+.agent-progress-extend .agent-progress-detail {
   color: var(--on-surface-variant);
   opacity: 0.8;
 }

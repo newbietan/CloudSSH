@@ -198,10 +198,19 @@ export class AgentPanel {
   }
 
   private handleSend(): void {
-    const text = this.inputEl?.value.trim();
-    if (!text) return;
-    if (this.isAgentRunning) return;
-    if (this.isWaitingConfirmation) return;
+    const text = this.inputEl?.value || '';
+    if (!this.sendMessage(text)) return;
+
+    this.inputEl!.value = '';
+    this.inputEl!.style.height = 'auto';
+  }
+
+  /** 从终端等外部入口直接提交消息；返回 false 表示 Agent 当前不可接收新请求。 */
+  sendMessage(text: string): boolean {
+    const message = text.trim();
+    if (!message) return false;
+    if (this.isAgentRunning) return false;
+    if (this.isWaitingConfirmation) return false;
 
     // Reset streaming + thinking process state
     this.streamingEl = null;
@@ -210,17 +219,16 @@ export class AgentPanel {
     this.thinkingStepCount = 0;
     this.livePreviewCache = [];
 
-    this.addUserMessage(text);
-    this.inputEl!.value = '';
-    this.inputEl!.style.height = 'auto';
+    this.addUserMessage(message);
     this.isAgentRunning = true;
     this.updateInputState();
 
     this.wsSend?.(JSON.stringify({
       type: 'agent_start',
-      message: text,
+      message,
       locale: getLocale(),
     }));
+    return true;
   }
 
   private updateInputState(): void {
@@ -492,10 +500,10 @@ export class AgentPanel {
         <span class="material-symbols-outlined text-[14px]" style="color:var(--accent);font-variation-settings:'FILL' 1;">trending_up</span>
         <span class="font-bold text-[var(--accent)]">${t('agent.progressTitle')}</span>
       </div>
-      <div class="mt-1 text-[var(--on-surface-variant)]">
+      <div class="agent-progress-detail mt-1">
         ${escapeHtml(t('agent.progressCurrent', { message, current: currentIteration, max: newMax }))}
       </div>
-      <div class="mt-1 text-[11px] text-[var(--on-surface-variant)] opacity-75">
+      <div class="agent-progress-detail mt-1 text-[11px]">
         ${escapeHtml(t('agent.progressReason', { reason }))}
       </div>
     `;

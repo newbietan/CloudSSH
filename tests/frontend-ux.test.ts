@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { filterServers, type ServerConfig } from '../frontend/src/server-list';
+import { getNetworkQuality } from '../frontend/src/network-quality';
 
 const servers: ServerConfig[] = [
   {
@@ -76,5 +77,80 @@ describe('Agent 危险确认交互', () => {
     expect(agentSource).toMatch(/hide\(\): void \{\s*this\.rejectPendingConfirmation\(false\)/);
     expect(agentSource).toMatch(/dispose\(\): void \{\s*this\.rejectPendingConfirmation\(false\)/);
     expect(tabManagerSource).toContain('prevTab.agentPanel?.rejectPendingConfirmation(false)');
+  });
+});
+
+describe('网络质量三色提示', () => {
+  it('分别按 CF 延迟和 WebSocket RTT 阈值返回三种颜色等级', () => {
+    expect(getNetworkQuality(100, 'cf')).toBe('good');
+    expect(getNetworkQuality(101, 'cf')).toBe('fair');
+    expect(getNetworkQuality(250, 'cf')).toBe('fair');
+    expect(getNetworkQuality(251, 'cf')).toBe('poor');
+
+    expect(getNetworkQuality(100, 'ws')).toBe('good');
+    expect(getNetworkQuality(101, 'ws')).toBe('fair');
+    expect(getNetworkQuality(200, 'ws')).toBe('fair');
+    expect(getNetworkQuality(201, 'ws')).toBe('poor');
+  });
+
+  it('状态栏只渲染色点和延迟数值，不增加质量文字', () => {
+    const source = readFileSync(new URL('../frontend/src/tab-manager.ts', import.meta.url), 'utf8');
+    expect(source).toContain('network-quality-${quality}');
+    expect(source).toContain('CF-${this.escapeHtml');
+    expect(source).toContain('RTT: ${tab.wsLatency}ms');
+    expect(source).not.toMatch(/良好|一般|较差|Good|Fair|Poor/);
+  });
+});
+
+describe('终端选区询问 Agent', () => {
+  const tabManagerSource = readFileSync(
+    new URL('../frontend/src/tab-manager.ts', import.meta.url),
+    'utf8',
+  );
+  const terminalSource = readFileSync(
+    new URL('../frontend/src/terminal.ts', import.meta.url),
+    'utf8',
+  );
+  const agentSource = readFileSync(
+    new URL('../frontend/src/agent/agent-panel.ts', import.meta.url),
+    'utf8',
+  );
+  const indexSource = readFileSync(
+    new URL('../frontend/index.html', import.meta.url),
+    'utf8',
+  );
+
+  it('监听完整选区并在点击入口后直接发送给 Agent', () => {
+    expect(terminalSource).toContain('this.terminal.onSelectionChange');
+    expect(terminalSource).toContain('this.terminal.getSelection()');
+    expect(tabManagerSource).toContain("tab.agentPanel.sendMessage(t('agent.selectionPrompt'");
+    expect(tabManagerSource).toContain('tab.terminal.clearSelection()');
+  });
+
+  it('在鼠标选区末端显示浮动入口，取消选区后隐藏', () => {
+    const toolbar = indexSource.slice(
+      indexSource.indexOf('<!-- TopAppBar -->'),
+      indexSource.indexOf('<!-- Tab Bar'),
+    );
+    expect(toolbar).not.toContain('ask-ai-selection-btn');
+    expect(indexSource).toContain('class="ask-ai-selection-float hidden');
+    expect(terminalSource).toContain("this.container.addEventListener('pointermove'");
+    expect(terminalSource).toContain("window.addEventListener('pointerup'");
+    expect(tabManagerSource).toContain('const { clientX, clientY } = tab.selectionAnchor');
+    expect(tabManagerSource).toContain("button.classList.toggle('hidden', !visible)");
+    expect(terminalSource).toContain('this.selectionAnchor = null');
+  });
+
+  it('没有对选区或外部消息进行长度截断', () => {
+    const selectionFlow = tabManagerSource.slice(
+      tabManagerSource.indexOf('askAIAboutActiveSelection'),
+      tabManagerSource.indexOf('// ==================== 渲染标签栏'),
+    );
+    const sendMessageFlow = agentSource.slice(
+      agentSource.indexOf('sendMessage(text: string)'),
+      agentSource.indexOf('private updateInputState'),
+    );
+    expect(selectionFlow).not.toMatch(/slice|substring|maxLength|truncate/i);
+    expect(sendMessageFlow).not.toMatch(/slice|substring|maxLength|truncate/i);
   });
 });

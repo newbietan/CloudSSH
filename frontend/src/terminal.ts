@@ -23,6 +23,11 @@ export interface SSHConnectionConfig {
   locationHint?: string;
 }
 
+export interface TerminalSelectionAnchor {
+  clientX: number;
+  clientY: number;
+}
+
 interface ConnectOptions {
   resetDisplay?: boolean;
 }
@@ -168,7 +173,28 @@ export class SSHTerminal {
   private lastPingTime: number | null = null;
   private wsLatency: number | null = null;
   private onLatencyUpdated?: (cfLatency: number | null, cfColo: string | null, wsLatency: number | null) => void;
+  private onSelectionChanged?: (selection: string, anchor: TerminalSelectionAnchor | null) => void;
+  private selectionAnchor: TerminalSelectionAnchor | null = null;
+  private selectionPointerActive = false;
   private resizeListener: () => void;
+  private readonly selectionPointerDownListener = (event: PointerEvent): void => {
+    if (event.button !== 0) return;
+    this.selectionPointerActive = true;
+    this.selectionAnchor = { clientX: event.clientX, clientY: event.clientY };
+  };
+  private readonly selectionPointerMoveListener = (event: PointerEvent): void => {
+    if (!this.selectionPointerActive) return;
+    this.selectionAnchor = { clientX: event.clientX, clientY: event.clientY };
+    if (this.terminal.hasSelection()) {
+      this.notifySelectionChanged();
+    }
+  };
+  private readonly selectionPointerUpListener = (event: PointerEvent): void => {
+    if (!this.selectionPointerActive) return;
+    this.selectionPointerActive = false;
+    this.selectionAnchor = { clientX: event.clientX, clientY: event.clientY };
+    this.notifySelectionChanged();
+  };
 
   constructor(containerId: string) {
     this.container = document.getElementById(containerId)!;
@@ -190,6 +216,15 @@ export class SSHTerminal {
     this.searchAddon = new SearchAddon();
     this.terminal.loadAddon(this.searchAddon);
     this.registerCursorRestoreHandlers();
+    this.terminalDisposables.push(
+      this.terminal.onSelectionChange(() => {
+        this.notifySelectionChanged();
+      }),
+    );
+    this.container.addEventListener('pointerdown', this.selectionPointerDownListener, true);
+    this.container.addEventListener('pointermove', this.selectionPointerMoveListener, true);
+    window.addEventListener('pointerup', this.selectionPointerUpListener, true);
+    window.addEventListener('pointercancel', this.selectionPointerUpListener, true);
 
     // Ctrl+Shift+F to toggle search bar
     this.terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
@@ -285,8 +320,27 @@ export class SSHTerminal {
     }
   }
 
+  setSelectionChangeHandler(handler: (selection: string, anchor: TerminalSelectionAnchor | null) => void): void {
+    this.onSelectionChanged = handler;
+    this.notifySelectionChanged();
+  }
+
+  clearSelection(): void {
+    this.terminal.clearSelection();
+    this.selectionAnchor = null;
+    this.notifySelectionChanged();
+  }
+
   getSFTPWebSocketUrl(): string | null {
     return this.sftpAttachUrl;
+  }
+
+  private notifySelectionChanged(): void {
+    const selection = this.terminal.getSelection();
+    if (!selection) {
+      this.selectionAnchor = null;
+    }
+    this.onSelectionChanged?.(selection, this.selectionAnchor);
   }
 
   mount(): void {
@@ -765,6 +819,10 @@ export class SSHTerminal {
   dispose(): void {
     this.disconnect();
     window.removeEventListener('resize', this.resizeListener);
+    this.container.removeEventListener('pointerdown', this.selectionPointerDownListener, true);
+    this.container.removeEventListener('pointermove', this.selectionPointerMoveListener, true);
+    window.removeEventListener('pointerup', this.selectionPointerUpListener, true);
+    window.removeEventListener('pointercancel', this.selectionPointerUpListener, true);
     this.terminalDisposables.forEach(d => d.dispose());
     this.terminalDisposables = [];
     this.terminal.dispose();

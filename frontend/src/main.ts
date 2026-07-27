@@ -267,6 +267,15 @@ document.getElementById('agent-toggle-btn')?.addEventListener('click', () => {
   tab.agentPanel.toggle();
 });
 
+const askAISelectionButton = document.getElementById('ask-ai-selection-btn');
+askAISelectionButton?.addEventListener('pointerdown', (event) => {
+  // 阻止浮动入口的指针事件干扰终端拖拽状态。
+  event.stopPropagation();
+});
+askAISelectionButton?.addEventListener('click', () => {
+  tabManager?.askAIAboutActiveSelection();
+});
+
 /** 显示 AI 配置面板（从 server-list 调用） */
 export function showAIConfig(): void {
   aiConfigPanel.show();
