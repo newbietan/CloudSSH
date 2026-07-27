@@ -562,6 +562,41 @@
       background: var(--accent);
     }
 
+    .network-latency-preview {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      white-space: nowrap;
+    }
+
+    .network-latency-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .network-quality-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      flex-shrink: 0;
+    }
+
+    .network-quality-good {
+      background: #22c55e;
+      box-shadow: 0 0 5px rgba(34, 197, 94, 0.65);
+    }
+
+    .network-quality-fair {
+      background: #f59e0b;
+      box-shadow: 0 0 5px rgba(245, 158, 11, 0.65);
+    }
+
+    .network-quality-poor {
+      background: #ef4444;
+      box-shadow: 0 0 5px rgba(239, 68, 68, 0.65);
+    }
+
     .terminal-body {
       position: relative;
       z-index: 2;
@@ -576,6 +611,29 @@
     .terminal-body .white { color: var(--text); }
     .terminal-body .prompt { color: var(--accent); font-weight: 600; }
     .terminal-body .path { color: var(--accent-secondary); }
+
+    .ask-ai-selection-preview {
+      position: absolute;
+      right: 18px;
+      bottom: 16px;
+      z-index: 3;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 7px;
+      color: var(--accent);
+      background: var(--bg-elevated);
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+      font-size: 9px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .ask-ai-selection-preview .material-symbols-outlined {
+      font-size: 13px;
+    }
 
     .terminal-input-mock {
       display: flex;
@@ -703,6 +761,40 @@
       gap: 4px;
     }
 
+    .us-search-preview {
+      position: relative;
+      z-index: 1;
+      width: min(260px, 100%);
+      margin-bottom: 12px;
+    }
+
+    .us-search-preview .material-symbols-outlined {
+      position: absolute;
+      left: 9px;
+      top: 50%;
+      color: var(--text-dim);
+      font-size: 14px;
+      pointer-events: none;
+      transform: translateY(-50%);
+    }
+
+    .us-search-preview input {
+      width: 100%;
+      min-width: 0;
+      padding: 6px 10px 6px 30px;
+      color: var(--on-surface);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      font: inherit;
+      font-size: 10px;
+    }
+
+    .us-search-preview input::placeholder {
+      color: var(--text-muted);
+      opacity: 0.75;
+    }
+
     .us-cards-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -827,8 +919,42 @@
       margin-bottom: 3px;
     }
 
-    .card-info .label { color: var(--text-dim); }
+    .card-info .label {
+      color: var(--text-dim);
+      flex-shrink: 0;
+    }
     .card-info .value { color: var(--on-surface); }
+
+    .card-info .card-region-row {
+      align-items: center;
+      flex-wrap: nowrap;
+    }
+
+    .card-info .region-value {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      min-width: 0;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .card-info .region-value .material-symbols-outlined {
+      color: var(--accent-secondary);
+      font-size: 10px;
+    }
+
+    .card-region-tag {
+      margin-left: 2px;
+      padding: 1px 3px;
+      color: var(--text-dim);
+      border: 1px solid var(--border-strong);
+      font-size: 8px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
 
     .card-actions {
       display: flex;
@@ -1308,11 +1434,73 @@
       background: color-mix(in srgb, var(--agent-agent-color) 10%, transparent);
     }
 
-    .agent-code {
-      background: color-mix(in srgb, var(--agent-agent-color) 10%, transparent);
-      padding: 1px 4px;
-      border-radius: 3px;
+    .agent-response-body .agent-md-code-block {
+      margin-top: 8px;
+      overflow: hidden;
+      background: color-mix(in srgb, var(--agent-agent-color) 8%, transparent);
+      border: 1px solid color-mix(in srgb, var(--agent-agent-color) 15%, transparent);
+      border-radius: 6px;
+    }
+
+    .agent-response-body .agent-md-code-toolbar {
+      min-height: 28px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 5px 3px 8px;
+      border-bottom: 1px solid color-mix(in srgb, var(--agent-agent-color) 12%, transparent);
+    }
+
+    .agent-response-body .agent-md-lang {
+      color: var(--agent-agent-color);
+      font-size: 9px;
+      opacity: 0.65;
+      flex-shrink: 0;
+    }
+
+    .agent-response-body .agent-md-code-meta {
+      min-width: 0;
+      flex: 1;
+      overflow: hidden;
+      color: var(--on-surface-variant);
+      font-size: 9px;
+      text-align: right;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .agent-response-body .agent-md-code-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .agent-response-body .agent-md-code-action {
+      min-height: 22px;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 5px;
+      color: var(--agent-agent-color);
+      background: color-mix(in srgb, var(--agent-agent-color) 6%, transparent);
+      border: 1px solid color-mix(in srgb, var(--agent-agent-color) 22%, transparent);
+      border-radius: 4px;
+      font: inherit;
+      font-size: 9px;
+    }
+
+    .agent-response-body .agent-md-code-action .material-symbols-outlined {
+      font-size: 12px;
+    }
+
+    .agent-response-body .agent-md-pre {
+      margin: 0;
+      padding: 8px 10px;
+      overflow-x: auto;
+      color: var(--agent-agent-color);
       font-size: 10px;
+      white-space: pre-wrap;
     }
 
     /* Thinking Process (collapsed) */
@@ -1787,6 +1975,10 @@
                     <span data-i18n="server.add">添加服务器</span>
                   </span>
                 </div>
+                <div class="us-search-preview">
+                  <span class="material-symbols-outlined" aria-hidden="true">search</span>
+                  <input type="search" data-i18n-placeholder="server.searchPlaceholder" placeholder="按名称、主机或用户名搜索" readonly>
+                </div>
                 <div class="us-cards-grid">
                   <div class="server-card-mock">
                     <div class="top-line"></div>
@@ -1798,6 +1990,11 @@
                     <div class="card-info">
                       <div><span class="label" data-i18n="server.hostLabel">主机</span><span class="value">192.168.1.10:22</span></div>
                       <div><span class="label" data-i18n="server.userLabel">用户</span><span class="value">root</span></div>
+                      <div class="card-region-row">
+                        <span class="label" data-i18n="server.regionLabel">区域</span>
+                        <span class="value region-value"><span class="material-symbols-outlined">my_location</span>APAC NE</span>
+                        <span class="card-region-tag" data-i18n="server.regionAuto">自动</span>
+                      </div>
                     </div>
                     <div class="card-actions">
                       <span class="card-btn"><span class="material-symbols-outlined">power_settings_new</span> <span data-i18n="common.connect">连接</span></span>
@@ -1815,6 +2012,11 @@
                     <div class="card-info">
                       <div><span class="label" data-i18n="server.hostLabel">主机</span><span class="value">10.0.0.5:2222</span></div>
                       <div><span class="label" data-i18n="server.userLabel">用户</span><span class="value">deploy</span></div>
+                      <div class="card-region-row">
+                        <span class="label" data-i18n="server.regionLabel">区域</span>
+                        <span class="value region-value"><span class="material-symbols-outlined">my_location</span>WEUR</span>
+                        <span class="card-region-tag" data-i18n="server.regionManual">手动</span>
+                      </div>
                     </div>
                     <div class="card-actions">
                       <span class="card-btn"><span class="material-symbols-outlined">power_settings_new</span> <span data-i18n="common.connect">连接</span></span>
@@ -1902,9 +2104,12 @@
               <span class="terminal-appbar__brand">CloudSSH</span>
               <div class="terminal-appbar__actions">
                 <select class="terminal-theme-select" aria-label="Theme">
-                  <option>Cyberpunk</option>
-                  <option>Glacier</option>
-                  <option>Gruvbox</option>
+                  <option value="custom" data-i18n="editor.custom" disabled>自定义</option>
+                  <option value="standard-dark">Standard Dark</option>
+                  <option value="standard-light">Standard Light</option>
+                  <option value="cyberpunk" selected>Cyberpunk</option>
+                  <option value="glacier">Glacier</option>
+                  <option value="gruvbox">Gruvbox</option>
                 </select>
                 <span class="material-symbols-outlined terminal-tool-icon">upload_file</span>
                 <span class="material-symbols-outlined terminal-tool-icon">folder_open</span>
@@ -1946,8 +2151,9 @@
                     <span data-i18n-template="terminal.user" data-value="root">用户：root</span>
                     <span data-i18n-template="terminal.port" data-value="22">端口：22</span>
                   </div>
-                  <div>
-                    <span>⚡ CF-HKG: 34ms | RTT: 12ms</span>
+                  <div class="network-latency-preview">
+                    <span class="network-latency-item"><span class="network-quality-dot network-quality-good" aria-hidden="true"></span>CF-HKG: 34ms</span>
+                    <span class="network-latency-item"><span class="network-quality-dot network-quality-fair" aria-hidden="true"></span>RTT: 126ms</span>
                   </div>
                 </div>
                 <div class="terminal-body">
@@ -1965,6 +2171,10 @@
                   <div class="line yellow">-rw-r--r-- 1 root root  512 Jan 15 10:22 README.md</div>
                   <div class="line white"> </div>
                   <div class="line"><span class="prompt">root@server</span><span class="white">:</span><span class="path">~</span><span class="white">$ </span><span class="cursor-block"></span></div>
+                </div>
+                <div class="ask-ai-selection-preview">
+                  <span class="material-symbols-outlined" aria-hidden="true">quick_phrases</span>
+                  <span data-i18n="terminal.askAISelection">询问 AI 助手</span>
                 </div>
               </div>
               <!-- SFTP Panel (Right Side) -->
@@ -2087,7 +2297,24 @@
                     <tr><td>CPU</td><td>1 vCPU @ 2494 MHz</td></tr>
                     <tr><td data-i18n="agent.memory">内存</td><td>512 MiB (45% used)</td></tr>
                   </table>
-                  <p><span data-i18n="agent.sampleAdvice">建议定期执行</span> <code class="agent-code">apt update &amp;&amp; apt upgrade</code></p>
+                  <p data-i18n="agent.sampleAdvice">建议先检查服务状态：</p>
+                  <div class="agent-md-code-block">
+                    <div class="agent-md-code-toolbar">
+                      <span class="agent-md-lang">bash</span>
+                      <span class="agent-md-code-meta" data-i18n-template="agent.codeTarget" data-value="Production · root@192.168.1.10:22">目标：Production · root@192.168.1.10:22</span>
+                      <div class="agent-md-code-actions">
+                        <button class="agent-md-code-action" type="button">
+                          <span class="material-symbols-outlined" aria-hidden="true">content_copy</span>
+                          <span data-i18n="agent.codeCopy">复制</span>
+                        </button>
+                        <button class="agent-md-code-action" type="button">
+                          <span class="material-symbols-outlined" aria-hidden="true">input</span>
+                          <span data-i18n="agent.codeFill">填入终端</span>
+                        </button>
+                      </div>
+                    </div>
+                    <pre class="agent-md-pre"><code>systemctl status nginx</code></pre>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2148,8 +2375,12 @@ const TRANSLATIONS = {
     'server.list': '服务器列表',
     'server.manage': '管理你的 SSH 连接',
     'server.add': '添加服务器',
+    'server.searchPlaceholder': '按名称、主机或用户名搜索',
     'server.hostLabel': '主机',
     'server.userLabel': '用户',
+    'server.regionLabel': '区域',
+    'server.regionAuto': '自动',
+    'server.regionManual': '手动',
     'server.name': '服务器名称',
     'server.save': '保存服务器',
     'terminal.connected': '已连接',
@@ -2159,6 +2390,7 @@ const TRANSLATIONS = {
     'terminal.wsSendingCredentials': '[+] WebSocket 已连接，正在发送凭据…',
     'terminal.wsAuthenticating': '[*] WebSocket 已连接，正在认证…',
     'terminal.authSuccess': '[*] 认证成功',
+    'terminal.askAISelection': '询问 AI 助手',
     'sftp.title': 'SFTP 文件管理器',
     'sftp.uploadAction': '上传文件',
     'sftp.mkdirAction': '新建文件夹',
@@ -2176,7 +2408,10 @@ const TRANSLATIONS = {
     'agent.os': '操作系统',
     'agent.kernel': '内核版本',
     'agent.memory': '内存',
-    'agent.sampleAdvice': '建议定期执行',
+    'agent.sampleAdvice': '建议先检查服务状态：',
+    'agent.codeTarget': '目标：{value}',
+    'agent.codeCopy': '复制',
+    'agent.codeFill': '填入终端',
     'agent.placeholder': '描述你希望 Agent 完成的任务…',
     'feedback.imported': '主题导入成功。',
     'feedback.exported': '主题 JSON 已导出。',
@@ -2254,8 +2489,12 @@ const TRANSLATIONS = {
     'server.list': 'SERVER LIST',
     'server.manage': 'Manage your SSH connections',
     'server.add': 'ADD SERVER',
+    'server.searchPlaceholder': 'Search by name, host, or username',
     'server.hostLabel': 'HOST',
     'server.userLabel': 'USER',
+    'server.regionLabel': 'REGION',
+    'server.regionAuto': 'AUTO',
+    'server.regionManual': 'MANUAL',
     'server.name': 'SERVER NAME',
     'server.save': 'SAVE SERVER',
     'terminal.connected': 'Connected',
@@ -2265,6 +2504,7 @@ const TRANSLATIONS = {
     'terminal.wsSendingCredentials': '[+] WebSocket connected, sending credentials…',
     'terminal.wsAuthenticating': '[*] WebSocket connected, authenticating…',
     'terminal.authSuccess': '[*] Authentication successful',
+    'terminal.askAISelection': 'Ask AI assistant',
     'sftp.title': 'SFTP FILE MANAGER',
     'sftp.uploadAction': 'UPLOAD',
     'sftp.mkdirAction': 'MKDIR',
@@ -2282,7 +2522,10 @@ const TRANSLATIONS = {
     'agent.os': 'Operating system',
     'agent.kernel': 'Kernel',
     'agent.memory': 'Memory',
-    'agent.sampleAdvice': 'Recommended maintenance command:',
+    'agent.sampleAdvice': 'Check the service status first:',
+    'agent.codeTarget': 'Target: {value}',
+    'agent.codeCopy': 'Copy',
+    'agent.codeFill': 'Fill terminal',
     'agent.placeholder': 'Describe what you want the Agent to do…',
     'feedback.imported': 'Theme imported.',
     'feedback.exported': 'Theme JSON exported.',
@@ -2573,6 +2816,13 @@ let activePreset = 'cyberpunk';
 let colorScheme = 'dark';
 let customized = false;
 
+function syncThemeSelectors(value) {
+  document.getElementById('preset-select').value = value;
+  document.querySelectorAll('.terminal-theme-select').forEach(select => {
+    select.value = value;
+  });
+}
+
 function initTheme(presetName) {
   const preset = PRESETS[presetName];
   if (!preset) return;
@@ -2582,12 +2832,12 @@ function initTheme(presetName) {
   customized = false;
   renderControls();
   applyTheme();
-  document.getElementById('preset-select').value = presetName;
+  syncThemeSelectors(presetName);
 }
 
 function markThemeCustomized() {
   customized = true;
-  document.getElementById('preset-select').value = 'custom';
+  syncThemeSelectors('custom');
 }
 
 function isHexColor(val) {
@@ -2674,6 +2924,9 @@ function applyTheme() {
 document.getElementById('preset-select').addEventListener('change', (event) => {
   initTheme(event.target.value);
 });
+document.querySelectorAll('.terminal-theme-select').forEach(select => {
+  select.addEventListener('change', (event) => initTheme(event.target.value));
+});
 
 // Import
 document.getElementById('btn-import').addEventListener('click', () => {
@@ -2703,7 +2956,7 @@ document.getElementById('import-input').addEventListener('change', (e) => {
         colorScheme = importedScheme;
         customized = false;
         activePreset = null;
-        document.getElementById('preset-select').value = 'custom';
+        syncThemeSelectors('custom');
         renderControls();
         applyTheme();
         showToast('feedback.imported');

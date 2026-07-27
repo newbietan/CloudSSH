@@ -101,7 +101,7 @@ describe('Standard 主题入口和编辑器', () => {
       expect(editorHtml).toContain(`<option value="${themeName}"`);
     }
     expect(editorHtml).toContain("document.getElementById('preset-select').addEventListener('change'");
-    expect(editorHtml).toContain("document.getElementById('preset-select').value = 'custom'");
+    expect(editorHtml).toContain("syncThemeSelectors('custom')");
     expect(editorHtml).not.toContain('class="preset-chip"');
   });
 
