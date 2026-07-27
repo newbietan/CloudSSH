@@ -90,9 +90,19 @@ describe('Standard 主题入口和编辑器', () => {
   it('主项目和在线编辑器都提供两个 Standard 主题', () => {
     expect(appHtml).toContain('<option value="standard-dark">Standard Dark</option>');
     expect(appHtml).toContain('<option value="standard-light">Standard Light</option>');
-    expect(editorHtml).toContain('data-preset="standard-dark">Standard Dark</button>');
-    expect(editorHtml).toContain('data-preset="standard-light">Standard Light</button>');
+    expect(editorHtml).toContain('<select id="preset-select" class="preset-select">');
+    expect(editorHtml).toContain('<option value="standard-dark">Standard Dark</option>');
+    expect(editorHtml).toContain('<option value="standard-light">Standard Light</option>');
     expect(editorHtml).toContain("colorScheme: preset?.colorScheme || colorScheme");
+  });
+
+  it('在线编辑器通过下拉框完整展示和切换全部预设', () => {
+    for (const themeName of ['standard-dark', 'standard-light', 'cyberpunk', 'glacier', 'gruvbox']) {
+      expect(editorHtml).toContain(`<option value="${themeName}"`);
+    }
+    expect(editorHtml).toContain("document.getElementById('preset-select').addEventListener('change'");
+    expect(editorHtml).toContain("document.getElementById('preset-select').value = 'custom'");
+    expect(editorHtml).not.toContain('class="preset-chip"');
   });
 
   it('在线编辑器与主项目的 Standard UI 预设保持一致', () => {

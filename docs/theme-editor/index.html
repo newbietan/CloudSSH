@@ -130,26 +130,41 @@
       margin-bottom: 8px;
     }
 
-    .preset-chips {
-      display: flex;
-      gap: 6px;
+    .preset-select-wrap {
+      position: relative;
     }
 
-    .preset-chip {
-      background: transparent;
-      border: 1px solid var(--editor-border);
-      color: var(--editor-muted);
+    .preset-select {
+      width: 100%;
+      min-width: 0;
+      appearance: none;
+      background: var(--editor-bg);
+      border: 1px solid var(--editor-border-strong);
+      color: var(--editor-text);
       font-family: 'JetBrains Mono', monospace;
-      font-size: 10px;
-      padding: 4px 10px;
+      font-size: 11px;
+      line-height: 1.4;
+      padding: 7px 32px 7px 10px;
       cursor: pointer;
       transition: all 0.15s;
     }
 
-    .preset-chip:hover, .preset-chip.active {
+    .preset-select:hover,
+    .preset-select:focus {
       border-color: var(--editor-accent);
       color: var(--editor-accent);
-      background: var(--editor-glow);
+      outline: none;
+      box-shadow: 0 0 10px var(--editor-glow);
+    }
+
+    .preset-select-wrap .material-symbols-outlined {
+      position: absolute;
+      top: 50%;
+      right: 9px;
+      color: var(--editor-muted);
+      font-size: 16px;
+      pointer-events: none;
+      transform: translateY(-50%);
     }
 
     .sidebar-scroll {
@@ -1613,13 +1628,17 @@
     </div>
 
     <div class="presets-bar">
-      <label data-i18n="editor.presets">预设主题</label>
-      <div class="preset-chips">
-        <button class="preset-chip" data-preset="standard-dark">Standard Dark</button>
-        <button class="preset-chip" data-preset="standard-light">Standard Light</button>
-        <button class="preset-chip active" data-preset="cyberpunk">Cyberpunk</button>
-        <button class="preset-chip" data-preset="glacier">Glacier</button>
-        <button class="preset-chip" data-preset="gruvbox">Gruvbox</button>
+      <label for="preset-select" data-i18n="editor.presets">预设主题</label>
+      <div class="preset-select-wrap">
+        <select id="preset-select" class="preset-select">
+          <option value="custom" data-i18n="editor.custom" disabled>自定义</option>
+          <option value="standard-dark">Standard Dark</option>
+          <option value="standard-light">Standard Light</option>
+          <option value="cyberpunk" selected>Cyberpunk</option>
+          <option value="glacier">Glacier</option>
+          <option value="gruvbox">Gruvbox</option>
+        </select>
+        <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
       </div>
     </div>
 
@@ -2104,6 +2123,7 @@ const TRANSLATIONS = {
     'editor.importTitle': '导入主题 JSON',
     'editor.exportTitle': '导出主题 JSON',
     'editor.presets': '预设主题',
+    'editor.custom': '自定义',
     'preview.login': '匿名连接',
     'preview.userSpace': '用户空间',
     'preview.modal': '（弹窗预览）',
@@ -2209,6 +2229,7 @@ const TRANSLATIONS = {
     'editor.importTitle': 'Import theme JSON',
     'editor.exportTitle': 'Export theme JSON',
     'editor.presets': 'PRESETS',
+    'editor.custom': 'CUSTOM',
     'preview.login': 'LOGIN PAGE',
     'preview.userSpace': 'USER SPACE',
     'preview.modal': '(MODAL PREVIEW)',
@@ -2554,15 +2575,19 @@ let customized = false;
 
 function initTheme(presetName) {
   const preset = PRESETS[presetName];
+  if (!preset) return;
   theme = { ...preset.ui };
   activePreset = presetName;
   colorScheme = preset.colorScheme;
   customized = false;
   renderControls();
   applyTheme();
-  document.querySelectorAll('.preset-chip').forEach(c => {
-    c.classList.toggle('active', c.dataset.preset === presetName);
-  });
+  document.getElementById('preset-select').value = presetName;
+}
+
+function markThemeCustomized() {
+  customized = true;
+  document.getElementById('preset-select').value = 'custom';
 }
 
 function isHexColor(val) {
@@ -2614,7 +2639,7 @@ function renderControls() {
       theme[varName] = e.target.value;
       const textInput = container.querySelector(`input[type="text"][data-var="${varName}"]`);
       if (textInput) textInput.value = e.target.value;
-      customized = true;
+      markThemeCustomized();
       applyTheme();
     });
   });
@@ -2630,7 +2655,7 @@ function renderControls() {
           ? '#' + val[1]+val[1]+val[2]+val[2]+val[3]+val[3]
           : val;
       }
-      customized = true;
+      markThemeCustomized();
       applyTheme();
     });
   });
@@ -2645,9 +2670,9 @@ function applyTheme() {
   }
 }
 
-// Preset chips
-document.querySelectorAll('.preset-chip').forEach(chip => {
-  chip.addEventListener('click', () => initTheme(chip.dataset.preset));
+// Preset selector
+document.getElementById('preset-select').addEventListener('change', (event) => {
+  initTheme(event.target.value);
 });
 
 // Import
@@ -2677,8 +2702,8 @@ document.getElementById('import-input').addEventListener('change', (e) => {
         theme = { ...fallbackPreset.ui, ...importedVariables };
         colorScheme = importedScheme;
         customized = false;
-        document.querySelector('.preset-chip.active')?.classList.remove('active');
         activePreset = null;
+        document.getElementById('preset-select').value = 'custom';
         renderControls();
         applyTheme();
         showToast('feedback.imported');
