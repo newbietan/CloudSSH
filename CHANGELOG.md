@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-07-27
+
+### Added
+- 新增 Standard Dark 与 Standard Light 两款常用主题，并将内置主题、终端配色及自定义主题同步逻辑收敛到统一主题模块。
+- 服务器列表新增前端即时搜索，可按服务器名称、主机地址和用户名进行不区分大小写的过滤。
+- 终端状态栏新增网络质量三色提示，根据 CF 物理延迟与 WebSocket RTT 分别显示绿、黄、红色状态点，不增加额外质量文字。
+- 终端选区末端新增“询问 AI 助手”浮动入口；用户点击后直接将完整选区发送给当前会话的 Agent，取消选区时入口自动消失。
+- Agent 回复中的所有代码块支持一键复制；明确标注为 Shell 的安全单行命令可填入当前活动终端，填入后不会自动执行。
+
+### Changed
+- 完善 Agent 危险操作确认交互：使用无障碍警告对话框语义、默认聚焦拒绝按钮、限制焦点范围，并支持 `Escape` 拒绝；关闭面板、销毁会话或切换标签时会自动拒绝待确认操作。
+- 在线主题编辑器同步当前项目的服务器搜索、区域、网络质量、终端选区入口和 Agent 代码块操作 UI，并补齐 Standard Dark/Light 预览。
+- 在线主题编辑器的预设主题改用下拉框选择，避免主题较多时横向裁切和部分选项无法操作。
+
+### Fixed
+- 修复在线主题编辑器预设主题展示不完整、部分主题无法选择的问题。
+
 ## [1.2.1] - 2026-07-24
 
 ### Added
