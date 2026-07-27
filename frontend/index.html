@@ -106,9 +106,34 @@
               <span data-i18n="server.add">添加服务器</span>
             </button>
           </div>
+          <!-- 服务器搜索（仅在存在服务器时显示） -->
+          <div id="server-search-wrapper" class="hidden mb-4">
+            <label for="server-search" class="sr-only" data-i18n="server.searchLabel">搜索服务器</label>
+            <div class="relative max-w-md">
+              <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-dim pointer-events-none" style="font-size: 17px;" aria-hidden="true">search</span>
+              <input id="server-search" type="search"
+                class="terminal-input text-[13px] w-full"
+                style="padding-left: 36px; padding-right: 38px;"
+                data-i18n-placeholder="server.searchPlaceholder"
+                placeholder="按名称、主机或用户名搜索"
+                autocomplete="off">
+              <button id="server-search-clear" type="button"
+                class="hidden absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-primary p-1"
+                data-i18n-aria-label="server.clearSearch"
+                aria-label="清空搜索">
+                <span class="material-symbols-outlined" style="font-size: 16px;" aria-hidden="true">close</span>
+              </button>
+            </div>
+          </div>
           <!-- 服务器卡片网格 -->
           <div id="server-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <!-- 由 JS 动态渲染 -->
+          </div>
+          <!-- 搜索无结果状态 -->
+          <div id="server-search-empty" class="hidden flex-col items-center justify-center py-16">
+            <span class="material-symbols-outlined text-dim mb-3" style="font-size: 48px;" aria-hidden="true">search_off</span>
+            <p class="text-muted text-sm tracking-[0.08em] mb-2" data-i18n="server.noMatches">没有匹配的服务器</p>
+            <p class="text-dim text-xs" data-i18n="server.noMatchesHint">请尝试其他名称、主机或用户名</p>
           </div>
           <!-- 空状态 -->
           <div id="empty-state" class="hidden flex-col items-center justify-center py-20">

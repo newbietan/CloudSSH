@@ -59,6 +59,11 @@ export class AgentPanel {
   private thinkingAllSteps: Array<{ tool: string; label: string }> = [];
   private livePreviewCache: string[] = [];
   private localeCleanup: (() => void) | null = null;
+  private pendingConfirmation: {
+    command: string;
+    element: HTMLElement;
+    previousFocus: HTMLElement | null;
+  } | null = null;
 
   constructor(
     private parentEl: HTMLElement,
@@ -145,10 +150,16 @@ export class AgentPanel {
   }
 
   hide(): void {
+    this.rejectPendingConfirmation(false);
     this.isVisible = false;
     if (this.panelEl) this.panelEl.style.display = 'none';
     // 触发终端重新适配（面板收起后终端区域恢复，需要 refit）
     requestAnimationFrame(() => this.onLayoutChange?.());
+  }
+
+  /** 离开当前会话上下文时，安全地拒绝仍在等待的危险操作。 */
+  rejectPendingConfirmation(restoreFocus = true): void {
+    this.resolvePendingConfirmation(false, restoreFocus);
   }
 
   handleAgentFrame(msg: any): void {
@@ -496,39 +507,90 @@ export class AgentPanel {
     if (this.streamingEl) {
       this.convertStreamToThoughtStep();
     }
+    const terminalSectionHidden = document.getElementById('terminal-section')?.classList.contains('hidden') ?? false;
+    if (!this.isVisible || this.parentEl.style.display === 'none' || terminalSectionHidden) {
+      this.wsSend?.(JSON.stringify({ type: 'agent_confirm', approved: false, command }));
+      return;
+    }
+    this.rejectPendingConfirmation(false);
     this.isWaitingConfirmation = true;
     this.updateInputState();
 
     const el = document.createElement('div');
     el.className = 'agent-confirm p-3 rounded border border-[var(--error)] bg-[var(--error-bg)]';
+    el.setAttribute('role', 'alertdialog');
+    el.setAttribute('aria-modal', 'true');
+    el.setAttribute('aria-labelledby', 'agent-confirm-title');
+    el.setAttribute('aria-describedby', 'agent-confirm-description');
     el.innerHTML = `
-      <div class="text-[11px] font-bold text-[var(--error)] mb-1">⚠ ${t('agent.confirmTitle')}</div>
+      <div id="agent-confirm-title" class="text-[11px] font-bold text-[var(--error)] mb-1">⚠ ${t('agent.confirmTitle')}</div>
       <div class="text-[12px] mb-1 font-code bg-black/20 p-1 rounded">$ ${escapeHtml(command)}</div>
-      <div class="text-[11px] text-[var(--on-surface-variant)] mb-2">${escapeHtml(reason)}</div>
+      <div id="agent-confirm-description" class="text-[11px] text-[var(--on-surface-variant)] mb-2">${escapeHtml(reason)}</div>
       <div class="flex gap-2">
-        <button class="agent-confirm-no cyber-button flex-1 py-1 text-[11px] font-bold">${t('agent.reject')}</button>
-        <button class="agent-confirm-yes cyber-button flex-1 py-1 text-[11px] font-bold bg-[var(--error)] text-white">${t('agent.confirm')}</button>
+        <button type="button" class="agent-confirm-no cyber-button flex-1 py-1 text-[11px] font-bold">${t('agent.reject')}</button>
+        <button type="button" class="agent-confirm-yes cyber-button flex-1 py-1 text-[11px] font-bold bg-[var(--error)] text-white">${t('agent.confirm')}</button>
       </div>
     `;
 
-    const onResolve = () => {
-      this.isWaitingConfirmation = false;
-      this.updateInputState();
+    const rejectButton = el.querySelector<HTMLButtonElement>('.agent-confirm-no')!;
+    const confirmButton = el.querySelector<HTMLButtonElement>('.agent-confirm-yes')!;
+    this.pendingConfirmation = {
+      command,
+      element: el,
+      previousFocus: document.activeElement instanceof HTMLElement ? document.activeElement : null,
     };
 
-    el.querySelector('.agent-confirm-no')?.addEventListener('click', () => {
-      this.wsSend?.(JSON.stringify({ type: 'agent_confirm', approved: false, command }));
-      el.remove();
-      onResolve();
+    rejectButton.addEventListener('click', () => {
+      this.resolvePendingConfirmation(false);
     });
-    el.querySelector('.agent-confirm-yes')?.addEventListener('click', () => {
-      this.wsSend?.(JSON.stringify({ type: 'agent_confirm', approved: true, command }));
-      el.remove();
-      onResolve();
+    confirmButton.addEventListener('click', () => {
+      this.resolvePendingConfirmation(true);
+    });
+    el.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        this.resolvePendingConfirmation(false);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const first = rejectButton;
+      const last = confirmButton;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     });
 
     this.messagesEl?.appendChild(el);
     this.scrollToBottom();
+    requestAnimationFrame(() => rejectButton.focus());
+  }
+
+  private resolvePendingConfirmation(approved: boolean, restoreFocus = true): void {
+    const pending = this.pendingConfirmation;
+    if (!pending) return;
+
+    this.pendingConfirmation = null;
+    this.wsSend?.(JSON.stringify({
+      type: 'agent_confirm',
+      approved,
+      command: pending.command,
+    }));
+    pending.element.remove();
+    this.isWaitingConfirmation = false;
+    this.updateInputState();
+
+    if (restoreFocus) {
+      requestAnimationFrame(() => {
+        const target = pending.previousFocus?.isConnected ? pending.previousFocus : this.inputEl;
+        target?.focus();
+      });
+    }
   }
 
   private convertStreamToThoughtStep(): void {
@@ -640,6 +702,7 @@ export class AgentPanel {
   }
 
   dispose(): void {
+    this.rejectPendingConfirmation(false);
     this.localeCleanup?.();
     this.localeCleanup = null;
     this.panelEl?.remove();

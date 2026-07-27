@@ -141,6 +141,8 @@ function showUserSpace(user: { id: number; github_id: number; username: string; 
 
 /** 显示连接页面（匿名 → auth-form，登录 → 服务器列表） */
 function showConnectionPage(): void {
+  tabManager?.getActiveTab()?.agentPanel?.rejectPendingConfirmation(false);
+
   // 如果还有活跃标签，不需要隐藏终端区域；只需要覆盖显示连接页面
   // 但为了简单起见，我们先切回对应的入口页面
   if (isLoggedIn) {

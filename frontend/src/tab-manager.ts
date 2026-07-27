@@ -165,6 +165,7 @@ export class TabManager {
     if (this.activeTabId && this.activeTabId !== tabId) {
       const prevTab = this.tabs.get(this.activeTabId);
       if (prevTab) {
+        prevTab.agentPanel?.rejectPendingConfirmation(false);
         prevTab.containerEl.style.display = 'none';
         prevTab.sftpPanel?.hide();
       }
@@ -277,6 +278,7 @@ export class TabManager {
     if (tab.sftpPanel) {
       tab.sftpPanel.hide();
     }
+    tab.agentPanel?.rejectPendingConfirmation(false);
     tab.terminal.disconnect();
     tab.state = 'disconnected';
     this.renderTabBar();

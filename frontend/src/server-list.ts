@@ -9,7 +9,7 @@ interface UserInfo {
   avatar_url: string;
 }
 
-interface ServerConfig {
+export interface ServerConfig {
   id: number;
   user_id: number;
   name: string;
@@ -23,6 +23,16 @@ interface ServerConfig {
   updated_at: string;
 }
 
+export function filterServers(servers: readonly ServerConfig[], query: string): ServerConfig[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) return [...servers];
+
+  return servers.filter((server) =>
+    [server.name, server.host, server.username]
+      .some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
+  );
+}
+
 /**
  * 用户空间 — 服务器列表管理组件
  */
@@ -33,6 +43,7 @@ export class ServerList {
   private onConnect: (wsUrl: string, serverName: string, hostInfo?: { host: string; port: number }) => void;
   private editingServerId: number | null = null;
   private modalAuthMode: 'password' | 'key' = 'password';
+  private searchQuery = '';
 
   constructor(
     user: UserInfo,
@@ -89,6 +100,21 @@ export class ServerList {
     document.getElementById('add-server-btn')?.addEventListener('click', () => this.showModal('add'));
     document.getElementById('empty-add-btn')?.addEventListener('click', () => this.showModal('add'));
 
+    const searchInput = document.getElementById('server-search') as HTMLInputElement | null;
+    const clearSearchButton = document.getElementById('server-search-clear');
+    searchInput?.addEventListener('input', () => {
+      this.searchQuery = searchInput.value;
+      this.renderServerGrid();
+    });
+    clearSearchButton?.addEventListener('click', () => {
+      this.searchQuery = '';
+      if (searchInput) {
+        searchInput.value = '';
+        searchInput.focus();
+      }
+      this.renderServerGrid();
+    });
+
     // Modal 关闭
     document.getElementById('modal-close-btn')?.addEventListener('click', () => this.hideModal());
     document.getElementById('modal-backdrop')?.addEventListener('click', () => this.hideModal());
@@ -129,24 +155,43 @@ export class ServerList {
   private renderServerGrid(): void {
     const grid = document.getElementById('server-grid');
     const emptyState = document.getElementById('empty-state');
-    if (!grid || !emptyState) return;
+    const searchWrapper = document.getElementById('server-search-wrapper');
+    const searchEmptyState = document.getElementById('server-search-empty');
+    const clearSearchButton = document.getElementById('server-search-clear');
+    if (!grid || !emptyState || !searchWrapper || !searchEmptyState) return;
 
     if (this.servers.length === 0) {
       grid.innerHTML = '';
+      searchWrapper.classList.add('hidden');
+      searchEmptyState.classList.add('hidden');
+      searchEmptyState.classList.remove('flex');
       emptyState.classList.remove('hidden');
       emptyState.classList.add('flex');
       return;
     }
 
+    searchWrapper.classList.remove('hidden');
     emptyState.classList.add('hidden');
     emptyState.classList.remove('flex');
+    clearSearchButton?.classList.toggle('hidden', this.searchQuery.length === 0);
 
-    grid.innerHTML = this.servers
+    const visibleServers = filterServers(this.servers, this.searchQuery);
+    if (visibleServers.length === 0) {
+      grid.innerHTML = '';
+      searchEmptyState.classList.remove('hidden');
+      searchEmptyState.classList.add('flex');
+      return;
+    }
+
+    searchEmptyState.classList.add('hidden');
+    searchEmptyState.classList.remove('flex');
+
+    grid.innerHTML = visibleServers
       .map((server) => this.renderServerCard(server))
       .join('');
 
     // 绑定卡片事件
-    this.servers.forEach((server) => {
+    visibleServers.forEach((server) => {
       document.getElementById(`connect-${server.id}`)?.addEventListener('click', () => this.connectServer(server.id));
       document.getElementById(`edit-${server.id}`)?.addEventListener('click', () => this.showModal('edit', server));
       document.getElementById(`delete-${server.id}`)?.addEventListener('click', () => this.deleteServer(server.id));
