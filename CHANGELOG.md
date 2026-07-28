@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- 服务器配置支持最多 10 个规范化标签，服务器列表新增标签筛选，并以每页 9 张卡片进行分页展示。
+- SFTP 文件列表支持 `Cmd/Ctrl` 切换选择、`Shift` 连选、全选、批量文件下载与批量删除。
+- CI 部署前新增 Worker/前端类型检查、单元与集成测试、可复现构建、Playwright 浏览器 E2E 和 axe 无障碍门禁。
+- “询问 AI 助手”支持将完整终端选区作为当前标签独立的上下文附件，提供来源与大小信息、展开预览、替换和移除操作。
+
+### Changed
+- 终端选区不再点击后直接发送给 Agent；用户必须先补充问题，发送时选区会被明确标记为非可信分析数据，而不是操作授权。
+- 前端生产构建改为严格使用已安装依赖并校验唯一 JS/CSS 入口，避免构建阶段隐式安装依赖，确保内联产物可复现。
+
 ## [1.3.1] - 2026-07-27
 
 ### Changed

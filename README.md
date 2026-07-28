@@ -86,16 +86,17 @@
 - **防范中间人攻击 (TOFU)**：首次连接自动提取服务器 Host Key（SHA-256 指纹）并显示，支持 Ed25519/ECDSA/RSA 签名验证，并在本地及 API 持久化缓存已知主机指纹以防范二次连接的欺骗风险。
 - **全功能极客终端**：基于 `@xterm/xterm` 与 `@xterm/addon-webgl` 硬件加速渲染引擎，保证海量日志输出顺滑不卡顿。
 - **个性化 UI**：全站颜色基于 CSS 变量系统，提供 Standard Dark、Standard Light、Cyberpunk、Glacier、Gruvbox 五款内置主题一键切换。配套[可视化主题编辑器](https://newbietan.github.io/CloudSSH/)使用下拉框选择预设主题，支持实时调色预览（覆盖登录页、服务器列表、终端 + SFTP、AI Agent 面板）、导出 JSON 主题文件；登录用户可一键同步至云端并跨浏览器生效。支持移动端适配。
-- **SFTP 图形化文件管理**：集成完整的 SFTP v3 文件传输协议，提供图形化文件浏览器界面。支持目录浏览、文件上传/下载、新建文件夹、文件重命名与删除等操作。基于 SSH 子系统实现，与终端会话并行运行，互不干扰，支持并发下载及上传取消。
+- **SFTP 图形化文件管理**：集成完整的 SFTP v3 文件传输协议，提供图形化文件浏览器界面。支持目录浏览、文件上传/下载、新建文件夹、文件重命名与删除等操作；支持普通单选、`Cmd/Ctrl` 切换选择、`Shift` 连选、全选，以及批量下载文件和批量删除。基于 SSH 子系统实现，与终端会话并行运行，互不干扰，支持下载队列及上传取消。
 - **原生文件传输**：集成 [trzsz.js](https://github.com/trzsz/trzsz.js)，支持 `trz`（上传）/ `tsz`（下载）命令进行文件传输，兼容 tmux 会话。还支持拖拽文件到终端窗口直接上传、目录传输及断点续传等高级功能。（需远程服务器安装 [trzsz](https://trzsz.github.io/)）
-- **GitHub OAuth 集成**：支持 GitHub 登录，用户可保存和管理常用 SSH 服务器，实现一键连接；服务器列表支持按名称、主机地址和用户名即时搜索。
+- **GitHub OAuth 集成**：支持 GitHub 登录，用户可保存和管理常用 SSH 服务器，实现一键连接；服务器支持最多 10 个规范化标签，列表可按名称、主机地址、用户名即时搜索并按标签筛选，每页固定展示 9 张服务器卡片。
 - **单页面多标签会话管理**：支持在单个页面内开启与切换多个独立的 SSH 终端与 SFTP 文件管理器，各会话环境和状态完全隔离，并在个性化主题编辑器中进行了联动适配。
 - **安全匿名历史记录**：本地存储最近 5 条匿名连接，且敏感凭证可选使用本地派生的密钥进行 AES-256-GCM 安全加密存储至 `localStorage`，提供一键回填与清除。
 - **双段延迟与 Colo 展示**：状态栏即时且周期性地展示当前 RTT（客户端至 Cloudflare）、物理延迟（Cloudflare 至主机）以及 Cloudflare 当前服务的数据中心代码（如 `CF-LAX`），并通过绿、黄、红三色状态点提示网络质量。
 - **智能区域调度（locationHint）**：保存服务器时自动推断目标主机的地理位置，持久化最优 DO 部署区域。连接时直接读取数据库，零运行时外部调用。支持手动覆盖区域偏好。*注意：locationHint 是 Cloudflare 的 best-effort 特性，当目标区域 DO 容量不足时会 fallback 到最近可用区域。*
 - **终端文本检索**：支持使用快捷键 `Ctrl+Shift+F` 呼出搜索框，实时检索终端历史日志。
 - **终端日志一键导出**：支持通过顶栏的下载按钮，将当前活跃会话终端的完整屏幕历史 buffer 一键导出并下载为 `.txt` 文本文件，解决长日志在浏览器下鼠标选取容易卡顿的痛点。
-- **AI 智能助手**：内置 AI Agent 侧边栏，支持 BYOK（自带 API Key）接入 OpenAI 兼容接口（如 DeepSeek）。提供 8 个专业运维工具：执行命令、读取终端上下文、探测服务器环境、进程列表、systemctl 服务管理、Docker 容器管理、用户确认、结构化报告输出。选择终端内容后可在选区末端直接“询问 AI 助手”；Agent 代码块支持一键复制，安全的 Shell 单行命令可填入当前终端且不会自动执行。支持 LLM 流式输出（逐字显示），危险命令自动拦截或通过默认拒绝的安全对话框确认。**思考过程容器**：多步骤任务执行时，实时预览最近 1-2 条命令，完成后自动折叠显示总步骤数，支持展开查看完整执行历史。
+- **AI 智能助手**：内置 AI Agent 侧边栏，支持 BYOK（自带 API Key）接入 OpenAI 兼容接口（如 DeepSeek）。提供 8 个专业运维工具：执行命令、读取终端上下文、探测服务器环境、进程列表、systemctl 服务管理、Docker 容器管理、用户确认、结构化报告输出。选择终端内容后可在选区末端点击“询问 AI 助手”，将完整选区作为当前标签独立的待发送上下文附件；附件支持来源和行数展示、展开预览、替换与移除，只有用户补充问题后才会发送。终端选区会被明确标记为非可信分析数据，不代表操作授权，也不能覆盖用户指令。Agent 代码块支持一键复制，安全的 Shell 单行命令可填入当前终端且不会自动执行。支持 LLM 流式输出（逐字显示），危险命令自动拦截或通过默认拒绝的安全对话框确认。**思考过程容器**：多步骤任务执行时，实时预览最近 1-2 条命令，完成后自动折叠显示总步骤数，支持展开查看完整执行历史。
+- **工程质量门禁**：GitHub Actions 在 `test` 与 `main` 分支部署前依次执行冻结锁文件安装、Worker/前端类型检查、单元与集成测试、可复现前端构建、Playwright 浏览器 E2E 和 axe 无障碍回归；任一环节失败都会阻止部署。
 
 <a id="architecture"></a>
 ## 架构说明
@@ -139,19 +140,21 @@ flowchart TB
 |------|------|------|
 | **Worker 入口** | `src/worker/index.ts` | HTTP 路由、API 处理、WebSocket 升级 |
 | **SSHSessionDO** | `src/worker/durable-object.ts` | SSH 会话生命周期管理、SSRF 防护 |
-| **UserDBDO** | `src/worker/user-db.ts` | 用户数据、服务器配置、速率限制（SQLite） |
+| **UserDBDO** | `src/worker/user-db.ts` | 用户数据、服务器配置、规范化标签与速率限制（SQLite） |
 | **IP 地理推断** | `src/worker/ip-geo.ts` | 保存服务器时推断目标 IP 所在区域，映射到 Cloudflare DO locationHint |
 | **SSHSession** | `src/worker/ssh-session.ts` | SSH 协议状态机（连接→版本→密钥交换→认证→交互） |
 | **SSH 协议栈** | `src/ssh/*.ts` | 纯 TypeScript SSH-2.0 实现（传输层、加密、认证、通道） |
 | **SFTP 处理器** | `src/worker/sftp-handler.ts` | SFTP 协议操作、任务队列、并发下载、上传跟踪与取消支持 |
 | **SFTP 协议实现** | `src/ssh/sftp.ts` / `sftp-types.ts` | SFTP v3 协议客户端、包解析与类型定义 |
 | **前端终端** | `frontend/src/terminal.ts` | xterm.js 封装、实时双段延迟心跳、网络质量三色提示、终端搜索、选区询问 Agent 及 WebSocket 交互 |
-| **标签管理器** | `frontend/src/tab-manager.ts` | 单页面多会话标签页管理器，协调不同标签页内的终端与 SFTP 实例 |
-| **SFTP 面板** | `frontend/src/sftp-panel.ts` | 图形化文件管理器 UI，支持上传/下载队列和取消操作 |
+| **标签管理器** | `frontend/src/tab-manager.ts` | 单页面多会话标签页管理器，协调不同标签页内的终端、SFTP 与 Agent 实例及上下文隔离 |
+| **服务器列表** | `frontend/src/server-list.ts` | 服务器卡片管理、搜索、标签筛选及每页 9 项分页 |
+| **SFTP 面板** | `frontend/src/sftp-panel.ts` | 图形化文件管理器 UI，支持多选、批量下载/删除、上传下载队列和取消操作 |
 | **AI Agent** | `src/worker/agent/core.ts` | AI 控制循环：LLM 流式调用、工具执行、环境探测、终端上下文读取 |
 | **Agent 工具** | `src/worker/agent/tools.ts` | 8 个运维工具定义（执行命令、终端上下文、环境探测、进程列表、服务管理、Docker 管理、用户确认、报告输出） |
 | **Agent 安全** | `src/worker/agent/safety.ts` | 两层安全策略：直接拦截（rm -rf /、fork bomb 等）+ 弹窗确认（rm、shutdown、iptables 等） |
-| **Agent 面板** | `frontend/src/agent/agent-panel.ts` | AI 助手侧边栏 UI，支持流式输出、Markdown 渲染、代码块复制与安全填入终端、可折叠思考过程容器和安全确认对话框 |
+| **Agent 面板** | `frontend/src/agent/agent-panel.ts` | AI 助手侧边栏 UI，支持终端选区上下文附件、流式输出、Markdown 渲染、代码块复制与安全填入终端、可折叠思考过程容器和安全确认对话框 |
+| **Agent 选区上下文** | `frontend/src/agent/terminal-selection-context.ts` | 保留终端选区快照、统计展示信息，并将用户问题与非授权安全边界组合为模型请求 |
 | **AI 配置** | `frontend/src/ai-config.ts` | AI 模型配置弹窗，支持 Base URL / API Key / 模型选择 |
 | **区域选项** | `frontend/src/regions.ts` | DO locationHint 区域选项共享组件，供服务器管理和匿名连接表单共用 |
 
@@ -177,7 +180,7 @@ flowchart TB
 4. SSHSession 执行完整的 SSH 协议协商（版本交换→密钥交换→认证→打开通道→PTY→Shell）。
 5. 加密的终端数据通过 WebSocket 在前端和 SSH 服务器之间双向转发。
 6. SFTP 文件管理通过独立的 SSH 子系统通道运行，支持目录浏览、文件上传/下载等操作。
-7. AI 助手通过 WebSocket 接收用户消息，AgentCore 调用外部 LLM API，通过 SSH exec 通道执行命令，结果流式返回前端。
+7. AI 助手通过 WebSocket 接收用户问题及可选的终端选区上下文；选区被标记为非可信分析数据后交给 AgentCore，后者调用外部 LLM API，通过 SSH exec 通道执行获准的命令，并将结果流式返回前端。
 
 <a id="quick-start"></a>
 ## 快速部署
@@ -302,6 +305,7 @@ CloudSSH/
 ├── docs/                   # GitHub Pages 静态资源
 │   └── theme-editor/       # 可视化主题编辑器
 ├── scripts/                # 构建脚本
+├── tests/                  # Vitest、Playwright 与 axe 回归测试
 ├── .github/workflows/      # CI/CD 自动部署配置
 ├── pnpm-workspace.yaml     # pnpm 工作区配置
 └── wrangler.toml           # Cloudflare 部署配置
@@ -358,7 +362,11 @@ pnpm run dev
 |------|------|
 | `pnpm run dev` | 构建前端 + 启动 Wrangler 开发服务器 |
 | `pnpm run build:frontend` | 仅构建前端（输出到 `frontend/dist/`） |
-| `pnpm test` | 运行测试 |
+| `pnpm run typecheck` | 检查 Worker 与前端 TypeScript 类型 |
+| `pnpm test` | 运行 Vitest 单元与集成测试 |
+| `pnpm run test:e2e` | 运行 Playwright 浏览器 E2E 与 axe 无障碍测试 |
+| `pnpm run verify` | 依次执行类型检查、测试、生产构建和浏览器 E2E |
+| `pnpm run deploy:test` | 构建并部署到隔离的测试环境 |
 
 #### 提交变更的流程
 

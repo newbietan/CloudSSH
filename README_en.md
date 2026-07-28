@@ -86,16 +86,17 @@
 - **MitM Protection (TOFU)**: Automatically extracts and prints the server's Host Key (SHA-256 fingerprint) on the first connection, supporting Ed25519/ECDSA/RSA signature verification, and caches known host keys locally and via API to prevent MitM on future connections.
 - **Geek Terminal Experience**: Powered by `@xterm/xterm` and the `@xterm/addon-webgl` hardware acceleration rendering engine, ensuring silky smooth scrolling even with massive log outputs.
 - **Customizable UI**: All colors are powered by a CSS variable system, with five built-in themes: Standard Dark, Standard Light, Cyberpunk, Glacier, and Gruvbox. The companion [Visual Theme Editor](https://newbietan.github.io/CloudSSH/) uses a preset dropdown and provides live color customization with full preview areas (login page, server list, terminal + SFTP, AI Agent panel), JSON theme export, and cloud sync for logged-in users across browsers. Fully optimized for mobile devices.
-- **SFTP Graphical File Manager**: Integrated with a complete SFTP v3 file transfer protocol, providing a graphical file browser interface. Supports directory browsing, file upload/download, creating new folders, file renaming, and deletion. Built on SSH subsystem, running in parallel with terminal sessions without interference, supporting concurrent downloads and upload cancellation.
+- **SFTP Graphical File Manager**: Integrated with a complete SFTP v3 file transfer protocol, providing a graphical file browser interface. Supports directory browsing, file upload/download, creating new folders, file renaming, and deletion, plus plain selection, `Cmd/Ctrl` toggle selection, `Shift` range selection, select all, batch file downloads, and batch deletion. Built on the SSH subsystem, it runs alongside terminal sessions without interference and supports download queues and upload cancellation.
 - **Native File Transfer**: Integrated with [trzsz.js](https://github.com/trzsz/trzsz.js), supporting `trz` (upload) / `tsz` (download) commands for file transfer, fully compatible with tmux sessions. Also supports drag-and-drop file upload to the terminal, directory transfer, and resumable transfers. (Requires [trzsz](https://trzsz.github.io/) installed on the remote server)
-- **GitHub OAuth Integration**: Supports GitHub login, allowing users to save and manage frequently used SSH servers for one-click connections. The server list can be searched instantly by name, host, or username.
+- **GitHub OAuth Integration**: Supports GitHub login, allowing users to save and manage frequently used SSH servers for one-click connections. Each server can have up to 10 normalized tags; the list supports instant search by name, host, or username, tag filtering, and pagination with 9 server cards per page.
 - **Single-Page Multi-Tab Session**: Switch between multiple independent SSH terminal and SFTP instances within a single browser tab, with isolated sandbox environments.
 - **Secure Connection History**: Saves last 5 connection records locally. Credentials (passwords/private keys) can be client-side encrypted using locally derived AES-256-GCM keys.
 - **Dual-Segment Latency & Colo Display**: Instantly and periodically monitor WebSocket RTT (client to CF), physical latency (CF to SSH host), and the current Cloudflare datacenter code (e.g. `CF-LAX`) on the status bar, with green, yellow, and red indicators for network quality.
 - **Smart Region Scheduling (locationHint)**: Automatically infers the target host's geographic location when saving a server, persisting the optimal DO deployment region to the database. Connections read directly from DB with zero runtime external API calls. Supports manual region override. *Note: locationHint is a Cloudflare best-effort feature — when the target region lacks DO capacity, it falls back to the nearest available region.*
 - **In-Terminal Text Search**: Real-time log search support via `Ctrl+Shift+F`.
 - **Terminal Log Export**: Download the entire screen buffer of the active terminal session as a `.txt` file with a single click on the header download button, avoiding browser freezes when selecting long logs.
-- **AI Agent Assistant**: Built-in AI Agent sidebar with BYOK (Bring Your Own Key) support for OpenAI-compatible APIs (e.g., DeepSeek). Provides 8 specialized operations tools: execute commands, read terminal context, detect server environment, list processes, manage systemctl services, manage Docker containers, user confirmation, and structured report output. Select terminal text to show an “Ask AI assistant” action at the end of the selection and send it directly to the current Agent. Agent code blocks support one-click copy, while safe single-line Shell commands can be filled into the active terminal without being executed automatically. Supports LLM streaming output (character-by-character display). Dangerous commands are automatically blocked or require confirmation in a safe, reject-by-default dialog. **Thinking Process Container**: During multi-step tasks, displays the latest 1-2 commands in real-time, auto-collapses with total step count after completion, expands to show full execution history.
+- **AI Agent Assistant**: Built-in AI Agent sidebar with BYOK (Bring Your Own Key) support for OpenAI-compatible APIs (e.g., DeepSeek). Provides 8 specialized operations tools: execute commands, read terminal context, detect server environment, list processes, manage systemctl services, manage Docker containers, user confirmation, and structured report output. Selecting terminal text exposes an “Ask AI assistant” action that attaches the complete selection to the current tab's composer instead of sending it immediately. The attachment shows its source and size, can be expanded, replaced, or removed, and is sent only after the user adds a question. Terminal selections are explicitly treated as untrusted analysis data—not action authorization—and cannot override user instructions. Agent code blocks support one-click copy, while safe single-line Shell commands can be filled into the active terminal without being executed automatically. Supports LLM streaming output (character-by-character display). Dangerous commands are automatically blocked or require confirmation in a safe, reject-by-default dialog. **Thinking Process Container**: During multi-step tasks, displays the latest 1-2 commands in real-time, auto-collapses with total step count after completion, expands to show full execution history.
+- **Quality Gates**: Before deploying either `test` or `main`, GitHub Actions performs frozen-lockfile installation, Worker/frontend type checking, unit and integration tests, reproducible frontend builds, Playwright browser E2E, and axe accessibility regression. Any failure blocks deployment.
 
 <a id="architecture"></a>
 ## Architecture
@@ -139,19 +140,21 @@ flowchart TB
 |-----------|------|----------------|
 | **Worker Entry** | `src/worker/index.ts` | HTTP routing, API handling, WebSocket upgrade |
 | **SSHSessionDO** | `src/worker/durable-object.ts` | SSH session lifecycle management, SSRF protection |
-| **UserDBDO** | `src/worker/user-db.ts` | User data, server configs, rate limiting (SQLite) |
+| **UserDBDO** | `src/worker/user-db.ts` | User data, server configs, normalized tags, and rate limiting (SQLite) |
 | **IP Geo Inference** | `src/worker/ip-geo.ts` | Infers target IP region at save time, maps to Cloudflare DO locationHint |
 | **SSHSession** | `src/worker/ssh-session.ts` | SSH protocol state machine (connect→version→kex→auth→interactive) |
 | **SSH Protocol Stack** | `src/ssh/*.ts` | Pure TypeScript SSH-2.0 implementation (transport, crypto, auth, channels) |
 | **SFTP Handler** | `src/worker/sftp-handler.ts` | SFTP protocol operations, task queue, concurrent downloads, upload tracking and cancellation |
 | **SFTP Protocol** | `src/ssh/sftp.ts` / `sftp-types.ts` | SFTP v3 protocol client, packet parsing and type definitions |
 | **Frontend Terminal** | `frontend/src/terminal.ts` | xterm.js wrapper, dynamic RTT heartbeats, three-color network quality indicators, terminal search, selection-to-Agent actions, and WebSocket management |
-| **Tab Manager** | `frontend/src/tab-manager.ts` | Single-page tab and session coordinator for independent terminals and SFTP panels |
-| **SFTP Panel** | `frontend/src/sftp-panel.ts` | Graphical file manager UI with upload/download queue and cancellation support |
+| **Tab Manager** | `frontend/src/tab-manager.ts` | Single-page coordinator for isolated terminal, SFTP, Agent, and pending-context state in each session tab |
+| **Server List** | `frontend/src/server-list.ts` | Server-card management, search, tag filtering, and pagination with 9 items per page |
+| **SFTP Panel** | `frontend/src/sftp-panel.ts` | Graphical file manager UI with multi-selection, batch download/delete, transfer queues, and cancellation |
 | **AI Agent** | `src/worker/agent/core.ts` | AI control loop: LLM streaming calls, tool execution, environment detection, terminal context reading |
 | **Agent Tools** | `src/worker/agent/tools.ts` | 8 operations tools (execute command, terminal context, environment detection, process list, service management, Docker management, user confirmation, report output) |
 | **Agent Safety** | `src/worker/agent/safety.ts` | Two-layer security: direct blocking (rm -rf /, fork bomb, etc.) + confirmation prompts (rm, shutdown, iptables, etc.) |
-| **Agent Panel** | `frontend/src/agent/agent-panel.ts` | AI assistant sidebar UI with streaming output, Markdown rendering, code-block copy and safe terminal fill, collapsible thinking process, and safe confirmation dialogs |
+| **Agent Panel** | `frontend/src/agent/agent-panel.ts` | AI assistant sidebar UI with terminal-selection attachments, streaming output, Markdown rendering, code-block copy and safe terminal fill, collapsible thinking process, and safe confirmation dialogs |
+| **Agent Selection Context** | `frontend/src/agent/terminal-selection-context.ts` | Preserves terminal-selection snapshots and composes user questions with an explicit untrusted-data boundary |
 | **AI Config** | `frontend/src/ai-config.ts` | AI model configuration modal for Base URL / API Key / model selection |
 | **Region Options** | `frontend/src/regions.ts` | Shared DO locationHint region options component for server management and anonymous connection forms |
 
@@ -177,7 +180,7 @@ This project implements a complete SSH-2.0 protocol stack:
 4. SSHSession executes the complete SSH protocol negotiation (version exchange → key exchange → authentication → channel open → PTY → Shell).
 5. Encrypted terminal data is bidirectionally forwarded between the frontend and SSH server via WebSocket.
 6. SFTP file management runs on a separate SSH subsystem channel, supporting directory browsing, file upload/download, and other operations.
-7. The AI Agent receives user messages via WebSocket, AgentCore calls the external LLM API, executes commands through SSH exec channels, and streams results back to the frontend.
+7. The AI Agent receives the user question and optional terminal-selection context via WebSocket. The selection is marked as untrusted analysis data before AgentCore calls the external LLM API, executes approved commands through SSH exec channels, and streams results back to the frontend.
 
 <a id="quick-start"></a>
 ## Quick Deployment
@@ -300,6 +303,8 @@ CloudSSH/
 ├── docs/                   # GitHub Pages static assets
 │   └── theme-editor/       # Visual theme editor
 ├── scripts/                # Build scripts
+├── tests/                  # Vitest, Playwright, and axe regression tests
+├── .github/workflows/      # CI quality gates and deployment workflows
 ├── pnpm-workspace.yaml     # pnpm workspace configuration
 └── wrangler.toml           # Cloudflare deployment configuration
 ```
@@ -355,7 +360,11 @@ After the dev server starts, visit the local address shown in the terminal (usua
 |---------|-------------|
 | `pnpm run dev` | Build frontend + start Wrangler dev server |
 | `pnpm run build:frontend` | Build frontend only (output to `frontend/dist/`) |
-| `pnpm test` | Run tests |
+| `pnpm run typecheck` | Type-check Worker and frontend TypeScript |
+| `pnpm test` | Run Vitest unit and integration tests |
+| `pnpm run test:e2e` | Run Playwright browser E2E and axe accessibility tests |
+| `pnpm run verify` | Run type checks, tests, production build, and browser E2E |
+| `pnpm run deploy:test` | Build and deploy the isolated test environment |
 
 #### Submitting Changes
 

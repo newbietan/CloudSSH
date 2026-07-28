@@ -64,11 +64,13 @@ frontend/
 │   ├── main.ts       # Frontend entry point (routing, theme, event handlers)
 │   ├── terminal.ts   # xterm.js terminal setup (search, dynamic RTT latency, log export)
 │   ├── tab-manager.ts # Tab manager (multi-session terminal/SFTP/Agent coordinator)
-│   ├── sftp-panel.ts # SFTP file manager UI (queue, cancel support)
+│   ├── sftp-panel.ts # SFTP file manager UI (multi-select, batch actions, queue, cancel)
+│   ├── sftp-selection.ts # Pure multi-selection state model
 │   ├── auth-form.ts  # Auth form & encrypted anonymous credentials storage/autofill
-│   ├── server-list.ts # Server management UI (card grid, add/edit/delete/connect)
+│   ├── server-list.ts # Server UI (tags, search, 9-card pagination, CRUD/connect)
 │   ├── agent/
-│   │   └── agent-panel.ts  # AI assistant sidebar (streaming output, Markdown rendering, thinking process, confirm dialogs)
+│   │   ├── agent-panel.ts  # AI assistant sidebar (context attachments, streaming, Markdown, confirmations)
+│   │   └── terminal-selection-context.ts # Selection snapshots and untrusted-data prompt boundary
 │   ├── ai-config.ts  # AI model configuration modal
 │   ├── style.css     # Global styles (CSS variable theme system)
 │   └── turnstile.d.ts # Turnstile type declarations
@@ -222,6 +224,7 @@ ci: CI/CD 变更
 11. **Builds never install dependencies** - run `pnpm install --frozen-lockfile` before build/deploy. `scripts/build-html.js` requires exactly one JS and one CSS bundle so every production asset is inlined deterministically.
 12. **Server list organization** - server tags are stored as normalized JSON in SQLite, filtered client-side, and rendered with 9 items per page. Search/tag changes must reset pagination to page 1.
 13. **SFTP selection model** - file selection supports single, Cmd/Ctrl toggle, Shift range and select-all. Batch download reuses the sequential download queue; batch delete waits for all delete/rmdir results before refreshing.
+14. **Agent terminal selection context** - “Ask AI assistant” attaches one immutable selection snapshot per tab and never sends it by itself. New selections replace the pending snapshot; successful sends and session teardown clear it. Preserve the untrusted-data/non-authorization boundary in `terminal-selection-context.ts`.
 
 ## Deployment Notes
 

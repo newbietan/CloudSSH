@@ -7,12 +7,15 @@
 ```
 tests/
 ├── build/                  # 构建产物与可复现性回归
-├── e2e/                    # Playwright 浏览器 E2E 与 axe 无障碍测试
+├── e2e/                    # 服务器分页、Agent 上下文及 axe 无障碍 E2E
 ├── worker/                 # Worker、UserDB、Agent 与安全边界测试
 ├── ssh/                    # SSH 协议相关测试
 │   ├── auth.test.ts        # SSH 认证测试
 │   ├── utils.test.ts       # SSH 工具函数测试
 │   └── integration.test.ts # 集成测试
+├── agent-terminal-selection.test.ts # Agent 终端选区上下文与安全边界
+├── frontend-ux.test.ts     # 前端关键交互源码回归
+├── sftp-selection.test.ts  # SFTP 多选状态模型
 ├── types.test.ts           # 类型定义测试
 └── README.md               # 本文件
 ```
@@ -85,4 +88,5 @@ pnpm test --watch
 - ✅ UserDB 服务器标签迁移、序列化与更新
 - ✅ 服务器搜索、标签筛选与分页
 - ✅ SFTP 单选、Cmd/Ctrl 多选与 Shift 连选
-- ✅ 登录页无障碍扫描及服务器弹窗键盘语义
+- ✅ Agent 终端选区附件、用户问题组合与非授权安全边界
+- ✅ 登录页、服务器弹窗及 Agent 附件区域的浏览器与无障碍回归
