@@ -4,6 +4,11 @@ import { marked, type Tokens } from 'marked';
 import DOMPurify from 'dompurify';
 import { getLocale, onLocaleChange, t, translateDocument } from '../i18n';
 import { getTerminalFillCommand, normalizeCodeLanguage } from './code-actions';
+import {
+  buildTerminalSelectionMessage,
+  createTerminalSelectionContext,
+  type TerminalSelectionContext,
+} from './terminal-selection-context';
 
 interface TerminalFillTarget {
   label: string;
@@ -54,6 +59,7 @@ function escapeHtml(text: string): string {
 export class AgentPanel {
   private panelEl: HTMLElement | null = null;
   private messagesEl: HTMLElement | null = null;
+  private contextEl: HTMLElement | null = null;
   private inputEl: HTMLTextAreaElement | null = null;
   private sendBtn: HTMLElement | null = null;
   private isVisible: boolean = false;
@@ -75,6 +81,7 @@ export class AgentPanel {
   private thinkingAllSteps: Array<{ tool: string; label: string }> = [];
   private livePreviewCache: string[] = [];
   private localeCleanup: (() => void) | null = null;
+  private pendingTerminalSelection: TerminalSelectionContext | null = null;
   private pendingConfirmation: {
     command: string;
     element: HTMLElement;
@@ -119,6 +126,7 @@ export class AgentPanel {
       </div>
       <div id="agent-messages" class="flex-1 overflow-y-auto px-4 py-3 space-y-3 custom-scrollbar text-[13px]"></div>
       <div class="px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-elevated)]">
+        <div id="agent-context" class="agent-context-container hidden"></div>
         <div class="flex gap-2.5 items-end">
           <textarea id="agent-input" data-i18n-placeholder="agent.placeholder" placeholder="描述你希望 Agent 完成的任务…"
             rows="1"
@@ -134,14 +142,17 @@ export class AgentPanel {
     translateDocument(this.panelEl);
     this.localeCleanup = onLocaleChange(() => {
       this.updateInputState();
+      this.renderTerminalSelectionContext();
       this.refreshCodeBlockActions();
     });
 
     this.parentEl.appendChild(this.panelEl);
     this.messagesEl = this.panelEl.querySelector('#agent-messages');
+    this.contextEl = this.panelEl.querySelector('#agent-context');
     this.inputEl = this.panelEl.querySelector('#agent-input') as HTMLTextAreaElement;
     this.sendBtn = this.panelEl.querySelector('#agent-send-btn');
     this.bindEvents();
+    this.updateInputState();
   }
 
   private bindEvents(): void {
@@ -160,6 +171,7 @@ export class AgentPanel {
       const el = this.inputEl!;
       el.style.height = 'auto';
       el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+      this.updateInputState();
     });
   }
 
@@ -187,6 +199,25 @@ export class AgentPanel {
   /** 离开当前会话上下文时，安全地拒绝仍在等待的危险操作。 */
   rejectPendingConfirmation(restoreFocus = true): void {
     this.resolvePendingConfirmation(false, restoreFocus);
+  }
+
+  /**
+   * 将终端选区作为待发送上下文附加到输入区。每个面板只保留最新一条选区快照。
+   */
+  attachTerminalSelection(content: string, sourceLabel: string): boolean {
+    const context = createTerminalSelectionContext(content, sourceLabel);
+    if (!context) return false;
+
+    this.pendingTerminalSelection = context;
+    this.renderTerminalSelectionContext();
+    this.show();
+    this.inputEl?.focus();
+    return true;
+  }
+
+  clearTerminalSelectionContext(): void {
+    this.pendingTerminalSelection = null;
+    this.renderTerminalSelectionContext();
   }
 
   handleAgentFrame(msg: any): void {
@@ -226,18 +257,24 @@ export class AgentPanel {
 
   private handleSend(): void {
     const text = this.inputEl?.value || '';
-    if (!this.sendMessage(text)) return;
+    const selection = this.pendingTerminalSelection;
+    if (!this.sendMessage(text, selection)) return;
 
     this.inputEl!.value = '';
     this.inputEl!.style.height = 'auto';
+    if (selection) this.clearTerminalSelectionContext();
+    this.updateInputState();
   }
 
-  /** 从终端等外部入口直接提交消息；返回 false 表示 Agent 当前不可接收新请求。 */
-  sendMessage(text: string): boolean {
+  /** 提交用户消息；返回 false 表示 Agent 当前不可接收新请求。 */
+  sendMessage(text: string, terminalSelection: TerminalSelectionContext | null = null): boolean {
     const message = text.trim();
     if (!message) return false;
     if (this.isAgentRunning) return false;
     if (this.isWaitingConfirmation) return false;
+    const outboundMessage = terminalSelection
+      ? buildTerminalSelectionMessage(message, terminalSelection)
+      : message;
 
     // Reset streaming + thinking process state
     this.streamingEl = null;
@@ -246,13 +283,13 @@ export class AgentPanel {
     this.thinkingStepCount = 0;
     this.livePreviewCache = [];
 
-    this.addUserMessage(message);
+    this.addUserMessage(message, !!terminalSelection);
     this.isAgentRunning = true;
     this.updateInputState();
 
     this.wsSend?.(JSON.stringify({
       type: 'agent_start',
-      message,
+      message: outboundMessage,
       locale: getLocale(),
     }));
     return true;
@@ -265,12 +302,49 @@ export class AgentPanel {
       this.inputEl.placeholder = blocked ? t('agent.thinking') : t('agent.placeholder');
     }
     if (this.sendBtn) {
-      (this.sendBtn as HTMLButtonElement).disabled = blocked;
+      (this.sendBtn as HTMLButtonElement).disabled = blocked || !this.inputEl?.value.trim();
     }
   }
 
-  private addUserMessage(text: string): void {
-    this.appendMessage('user', text);
+  private addUserMessage(text: string, hasTerminalSelection = false): void {
+    this.appendMessage('user', text, { hasTerminalSelection });
+  }
+
+  private renderTerminalSelectionContext(): void {
+    if (!this.contextEl) return;
+    const context = this.pendingTerminalSelection;
+    this.contextEl.classList.toggle('hidden', !context);
+    this.contextEl.innerHTML = '';
+    if (!context) return;
+
+    const source = context.sourceLabel || t('agent.selectionUnknownSource');
+    this.contextEl.innerHTML = `
+      <div class="agent-context-chip">
+        <details class="agent-context-details">
+          <summary class="agent-context-summary">
+            <span class="material-symbols-outlined agent-context-icon" aria-hidden="true">terminal</span>
+            <span class="agent-context-title">${t('agent.selectionAttachment')}</span>
+            <span class="agent-context-meta">${escapeHtml(t('agent.selectionAttachmentMeta', {
+              lines: context.lineCount,
+              characters: context.characterCount,
+            }))}</span>
+            <span class="material-symbols-outlined agent-context-expand" aria-hidden="true">expand_more</span>
+          </summary>
+          <div class="agent-context-source">${escapeHtml(source)}</div>
+          <pre class="agent-context-preview">${escapeHtml(context.content)}</pre>
+        </details>
+        <button type="button" class="agent-context-remove"
+          aria-label="${escapeHtml(t('agent.removeSelection'))}"
+          title="${escapeHtml(t('agent.removeSelection'))}">
+          <span class="material-symbols-outlined" aria-hidden="true">close</span>
+        </button>
+      </div>
+    `;
+    this.contextEl.querySelector<HTMLButtonElement>('.agent-context-remove')
+      ?.addEventListener('click', () => {
+        this.clearTerminalSelectionContext();
+        this.inputEl?.focus();
+      });
   }
 
   private showThinking(iteration: number): void {
@@ -653,7 +727,11 @@ export class AgentPanel {
     }
   }
 
-  private appendMessage(role: string, content: string): void {
+  private appendMessage(
+    role: string,
+    content: string,
+    options: { hasTerminalSelection?: boolean } = {},
+  ): void {
     const el = document.createElement('div');
     el.className = `agent-message agent-${role}`;
 
@@ -685,12 +763,19 @@ export class AgentPanel {
     } else {
       renderedContent = `<div style="color:${themeColor};word-break:break-word;">${escapeHtml(content)}</div>`;
     }
+    const terminalSelectionBadge = isUser && options.hasTerminalSelection
+      ? `<div class="agent-message-context">
+          <span class="material-symbols-outlined" aria-hidden="true">terminal</span>
+          <span>${t('agent.selectionAttachedMessage')}</span>
+        </div>`
+      : '';
 
     // User messages: bubble on right. Agent/others: full width on left.
     if (isUser) {
       el.innerHTML = `
         <div class="flex justify-end">
           <div class="max-w-[85%] px-3 py-2 rounded-lg" style="background: color-mix(in srgb, ${themeColor} 12%, transparent); border: 1px solid color-mix(in srgb, ${themeColor} 30%, transparent);">
+            ${terminalSelectionBadge}
             <div class="flex gap-2 items-start">
               <div class="flex-1 min-w-0 text-[13px]">${renderedContent}</div>
               <div class="shrink-0 mt-0.5">${roleIcon}</div>
@@ -877,9 +962,11 @@ export class AgentPanel {
     this.rejectPendingConfirmation(false);
     this.localeCleanup?.();
     this.localeCleanup = null;
+    this.pendingTerminalSelection = null;
     this.panelEl?.remove();
     this.panelEl = null;
     this.messagesEl = null;
+    this.contextEl = null;
     this.inputEl = null;
     this.sendBtn = null;
     this.isVisible = false;

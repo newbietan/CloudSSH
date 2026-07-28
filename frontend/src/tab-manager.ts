@@ -318,6 +318,7 @@ export class TabManager {
       tab.sftpPanel.hide();
     }
     tab.agentPanel?.rejectPendingConfirmation(false);
+    tab.agentPanel?.clearTerminalSelectionContext();
     tab.terminal.disconnect();
     tab.state = 'disconnected';
     tab.selectedText = '';
@@ -326,18 +327,20 @@ export class TabManager {
     this.renderTabBar();
   }
 
-  /** 将当前终端选区直接作为一条 Agent 请求发送。 */
+  /** 将当前终端选区附加到 Agent 输入区，等待用户补充问题后发送。 */
   askAIAboutActiveSelection(): boolean {
     const tab = this.getActiveTab();
     const selection = tab?.selectedText || '';
     if (!tab?.agentPanel || !selection.trim()) return false;
 
-    tab.agentPanel.show();
-    const sent = tab.agentPanel.sendMessage(t('agent.selectionPrompt', { content: selection }));
-    if (sent) {
+    const attached = tab.agentPanel.attachTerminalSelection(
+      selection,
+      this.getTerminalTargetLabel(tab),
+    );
+    if (attached) {
       tab.terminal.clearSelection();
     }
-    return sent;
+    return attached;
   }
 
   // ==================== 渲染标签栏 ====================

@@ -216,6 +216,136 @@ html[data-theme^="standard-"] .flicker {
   display: none; /* WebKit (Chrome/Safari) */
 }
 
+/* Agent 待发送终端选区 */
+.agent-context-container {
+  margin-bottom: 10px;
+}
+
+.agent-context-chip {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 7px 8px 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-surface));
+}
+
+.agent-context-details {
+  min-width: 0;
+  flex: 1;
+}
+
+.agent-context-summary {
+  display: flex;
+  min-height: 22px;
+  align-items: center;
+  gap: 6px;
+  color: var(--on-surface);
+  cursor: pointer;
+  list-style: none;
+}
+
+.agent-context-summary::-webkit-details-marker {
+  display: none;
+}
+
+.agent-context-summary:focus-visible,
+.agent-context-remove:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.agent-context-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-size: 16px;
+}
+
+.agent-context-title {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.agent-context-meta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--on-surface-variant);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-context-expand {
+  margin-left: auto;
+  color: var(--on-surface-variant);
+  font-size: 17px;
+  transition: transform 0.2s ease;
+}
+
+.agent-context-details[open] .agent-context-expand {
+  transform: rotate(180deg);
+}
+
+.agent-context-source {
+  margin: 7px 0 5px 22px;
+  overflow: hidden;
+  color: var(--on-surface-variant);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-context-preview {
+  max-height: 140px;
+  margin: 0 0 2px 22px;
+  overflow: auto;
+  color: var(--on-surface);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agent-context-remove {
+  display: flex;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+}
+
+.agent-context-remove:hover {
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  color: var(--error);
+}
+
+.agent-context-remove .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.agent-message-context {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+  color: var(--on-surface-variant);
+  font-size: 10px;
+}
+
+.agent-message-context .material-symbols-outlined {
+  font-size: 13px;
+}
+
 /* Agent markdown table */
 .agent-table {
   border-spacing: 0;

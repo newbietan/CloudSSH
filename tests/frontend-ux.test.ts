@@ -138,11 +138,14 @@ describe('终端选区询问 Agent', () => {
     'utf8',
   );
 
-  it('监听完整选区并在点击入口后直接发送给 Agent', () => {
+  it('监听完整选区并在点击入口后附加到 Agent 输入区', () => {
     expect(terminalSource).toContain('this.terminal.onSelectionChange');
     expect(terminalSource).toContain('this.terminal.getSelection()');
-    expect(tabManagerSource).toContain("tab.agentPanel.sendMessage(t('agent.selectionPrompt'");
+    expect(tabManagerSource).toContain('tab.agentPanel.attachTerminalSelection(');
+    expect(tabManagerSource).not.toContain("tab.agentPanel.sendMessage(t('agent.selection");
     expect(tabManagerSource).toContain('tab.terminal.clearSelection()');
+    expect(agentSource).toContain('id="agent-context"');
+    expect(agentSource).toContain('clearTerminalSelectionContext()');
   });
 
   it('在鼠标选区末端显示浮动入口，取消选区后隐藏', () => {
@@ -170,5 +173,13 @@ describe('终端选区询问 Agent', () => {
     );
     expect(selectionFlow).not.toMatch(/slice|substring|maxLength|truncate/i);
     expect(sendMessageFlow).not.toMatch(/slice|substring|maxLength|truncate/i);
+  });
+
+  it('要求用户输入问题后发送，并为选区提供可访问的移除入口', () => {
+    expect(agentSource).toContain('if (!message) return false');
+    expect(agentSource).toContain("t('agent.removeSelection')");
+    expect(agentSource).toContain('aria-label=');
+    expect(agentSource).toContain('buildTerminalSelectionMessage(message, terminalSelection)');
+    expect(agentSource).toContain('if (selection) this.clearTerminalSelectionContext()');
   });
 });
