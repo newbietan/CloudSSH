@@ -1,5 +1,6 @@
 import { Env, UserInfo, ServerConfig, SSHConnectionConfig, ALLOWED_LOCATION_HINTS } from '../types';
 import { inferLocationHint, type InferResult } from './ip-geo';
+import { deserializeServerRow, serializeServerTags } from './server-tags';
 
 /**
  * UserDBDO — 用户数据库 Durable Object（全局单例）
@@ -60,6 +61,7 @@ export class UserDBDO {
         auth_method TEXT DEFAULT 'password',
         region      TEXT DEFAULT NULL,
         inferred_hint TEXT DEFAULT NULL,
+        tags        TEXT NOT NULL DEFAULT '[]',
         created_at  TEXT DEFAULT (datetime('now')),
         updated_at  TEXT DEFAULT (datetime('now'))
       );
@@ -104,6 +106,9 @@ export class UserDBDO {
     }
     if (!serverCols.some((c: any) => c.name === 'inferred_hint')) {
       this.db.exec("ALTER TABLE servers ADD COLUMN inferred_hint TEXT DEFAULT NULL");
+    }
+    if (!serverCols.some((c: any) => c.name === 'tags')) {
+      this.db.exec("ALTER TABLE servers ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'");
     }
   }
 
@@ -317,13 +322,13 @@ export class UserDBDO {
   private handleGetServers(userId: number): Response {
     const rows = this.db
       .exec(
-        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, created_at, updated_at
+        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, created_at, updated_at
          FROM servers WHERE user_id = ? ORDER BY updated_at DESC`,
         userId
       )
       .toArray();
 
-    return Response.json(rows as unknown as ServerConfig[]);
+    return Response.json(rows.map((row: Record<string, unknown>) => deserializeServerRow(row)) as unknown as ServerConfig[]);
   }
 
   private async handleAddServer(request: Request): Promise<Response> {
@@ -336,6 +341,7 @@ export class UserDBDO {
       credential: string;
       auth_method: string;
       region?: string;
+      tags?: unknown;
     }>();
 
     // 加密凭据
@@ -361,7 +367,7 @@ export class UserDBDO {
     }
 
     this.db.exec(
-      'INSERT INTO servers (user_id, name, host, port, username, credential, auth_method, region, inferred_hint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO servers (user_id, name, host, port, username, credential, auth_method, region, inferred_hint, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       body.user_id,
       body.name,
       body.host,
@@ -370,20 +376,21 @@ export class UserDBDO {
       encrypted,
       body.auth_method || 'password',
       (ALLOWED_LOCATION_HINTS as readonly string[]).includes(body.region || '') ? (body.region || null) : null,  // 白名单校验，非法值退化为 Auto
-      inferredHint            // 系统推断值（可 NULL）
+      inferredHint,           // 系统推断值（可 NULL）
+      serializeServerTags(body.tags)
     );
 
     // 获取新创建的记录
     const rows = this.db
       .exec(
-        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, created_at, updated_at
+        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, created_at, updated_at
          FROM servers WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
         body.user_id
       )
       .toArray();
 
     // DEBUG_MODE 开启时，在响应中附带调试信息
-    const server = rows[0] as unknown as ServerConfig;
+    const server = deserializeServerRow(rows[0] as Record<string, unknown>) as unknown as ServerConfig;
     if (this.env.DEBUG_MODE === 'true') {
       return Response.json({ ...server, _debug: inferDebug }, { status: 201 });
     }
@@ -400,6 +407,7 @@ export class UserDBDO {
       credential?: string;
       auth_method?: string;
       region?: string;
+      tags?: unknown;
     }>();
 
     // 验证服务器属于该用户
@@ -455,6 +463,10 @@ export class UserDBDO {
       updates.push('region = ?');
       values.push((ALLOWED_LOCATION_HINTS as readonly string[]).includes(body.region) ? body.region : null);
     }
+    if (body.tags !== undefined) {
+      updates.push('tags = ?');
+      values.push(serializeServerTags(body.tags));
+    }
 
     if (updates.length > 0) {
       updates.push("updated_at = datetime('now')");
@@ -464,13 +476,13 @@ export class UserDBDO {
 
     const row = this.db
       .exec(
-        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, created_at, updated_at
+        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, created_at, updated_at
          FROM servers WHERE id = ?`,
         serverId
       )
       .toArray();
 
-    return Response.json(row[0] as unknown as ServerConfig);
+    return Response.json(deserializeServerRow(row[0] as Record<string, unknown>) as unknown as ServerConfig);
   }
 
   private async handleDeleteServer(serverId: number, request: Request): Promise<Response> {

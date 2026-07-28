@@ -77,27 +77,38 @@
           </div>
           <!-- 服务器搜索（仅在存在服务器时显示） -->
           <div id="server-search-wrapper" class="hidden mb-4">
-            <label for="server-search" class="sr-only" data-i18n="server.searchLabel">搜索服务器</label>
-            <div class="relative max-w-md">
-              <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-dim pointer-events-none" style="font-size: 17px;" aria-hidden="true">search</span>
-              <input id="server-search" type="search"
-                class="terminal-input text-[13px] w-full"
-                style="padding-left: 36px; padding-right: 38px;"
-                data-i18n-placeholder="server.searchPlaceholder"
-                placeholder="按名称、主机或用户名搜索"
-                autocomplete="off">
-              <button id="server-search-clear" type="button"
-                class="hidden absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-primary p-1"
-                data-i18n-aria-label="server.clearSearch"
-                aria-label="清空搜索">
-                <span class="material-symbols-outlined" style="font-size: 16px;" aria-hidden="true">close</span>
-              </button>
+            <div class="flex flex-col sm:flex-row gap-3">
+              <div class="relative flex-1 max-w-md">
+                <label for="server-search" class="sr-only" data-i18n="server.searchLabel">搜索服务器</label>
+                <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-dim pointer-events-none" style="font-size: 17px;" aria-hidden="true">search</span>
+                <input id="server-search" type="search"
+                  class="terminal-input text-[13px] w-full"
+                  style="padding-left: 36px; padding-right: 38px;"
+                  data-i18n-placeholder="server.searchPlaceholder"
+                  placeholder="按名称、主机或用户名搜索"
+                  autocomplete="off">
+                <button id="server-search-clear" type="button"
+                  class="hidden absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-primary p-1"
+                  data-i18n-aria-label="server.clearSearch"
+                  aria-label="清空搜索">
+                  <span class="material-symbols-outlined" style="font-size: 16px;" aria-hidden="true">close</span>
+                </button>
+              </div>
+              <div id="server-tag-filter-wrapper" class="hidden sm:w-52">
+                <label for="server-tag-filter" class="sr-only" data-i18n="server.tagFilter">按标签筛选</label>
+                <select id="server-tag-filter" class="terminal-input text-[13px] w-full cursor-pointer" data-i18n-aria-label="server.tagFilter" aria-label="按标签筛选"></select>
+              </div>
             </div>
           </div>
           <!-- 服务器卡片网格 -->
           <div id="server-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <!-- 由 JS 动态渲染 -->
           </div>
+          <nav id="server-pagination" class="hidden items-center justify-center gap-3 mt-6" data-i18n-aria-label="server.pagination" aria-label="服务器列表分页">
+            <button id="server-page-prev" type="button" class="cyber-button px-3 py-1.5 text-xs disabled:opacity-30" data-i18n="server.previousPage">上一页</button>
+            <span id="server-page-info" class="text-xs text-muted" aria-live="polite"></span>
+            <button id="server-page-next" type="button" class="cyber-button px-3 py-1.5 text-xs disabled:opacity-30" data-i18n="server.nextPage">下一页</button>
+          </nav>
           <!-- 搜索无结果状态 -->
           <div id="server-search-empty" class="hidden flex-col items-center justify-center py-16">
             <span class="material-symbols-outlined text-dim mb-3" style="font-size: 48px;" aria-hidden="true">search_off</span>
@@ -127,34 +138,40 @@
     </div>
 
     <!-- Server Modal (添加/编辑) -->
-    <div id="server-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center">
+    <div id="server-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center"
+      role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div class="modal-overlay absolute inset-0" id="modal-backdrop"></div>
       <div class="cyber-box p-6 shadow-2xl relative z-10 w-full max-w-md mx-4">
         <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent-secondary)] to-transparent opacity-50"></div>
         <div class="flex items-center justify-between mb-6 pb-4 border-b border-dim">
           <span id="modal-title" class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]" data-i18n="server.add">添加服务器</span>
-          <button id="modal-close-btn" class="text-muted hover:text-primary transition-colors cursor-pointer">
-            <span class="material-symbols-outlined" style="font-size: 20px;">close</span>
+          <button id="modal-close-btn" class="text-muted hover:text-primary transition-colors cursor-pointer" data-i18n-aria-label="common.close" aria-label="关闭">
+            <span class="material-symbols-outlined" style="font-size: 20px;" aria-hidden="true">close</span>
           </button>
         </div>
         <form id="server-form" class="space-y-4">
           <div>
-            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="server.name">服务器名称</label>
+            <label for="server-name" class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="server.name">服务器名称</label>
             <div class="flex items-center">
               <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px;">label</span>
               <input id="server-name" class="terminal-input text-[13px]" data-i18n-placeholder="server.namePlaceholder" placeholder="我的服务器" type="text" required>
             </div>
           </div>
+          <div>
+            <label for="server-tags" class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="server.tags">标签</label>
+            <input id="server-tags" class="terminal-input text-[13px] w-full" type="text" data-i18n-placeholder="server.tagsPlaceholder" placeholder="生产, 数据库, 亚太" maxlength="249">
+            <div class="text-[10px] text-muted mt-1" data-i18n="server.tagsHint">使用逗号分隔，最多 10 个标签</div>
+          </div>
           <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div class="sm:col-span-3">
-              <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.host">主机地址</label>
+              <label for="server-host" class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.host">主机地址</label>
               <div class="flex items-center">
                 <span class="text-muted mr-2">&gt;</span>
                 <input id="server-host" class="terminal-input text-[13px]" placeholder="192.168.1.1" type="text" required>
               </div>
             </div>
             <div class="sm:col-span-1">
-              <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.port">端口</label>
+              <label for="server-port" class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.port">端口</label>
               <div class="flex items-center">
                 <span class="text-muted mr-2">:</span>
                 <input id="server-port" class="terminal-input text-[13px]" placeholder="22" type="text" value="22">
@@ -162,7 +179,7 @@
             </div>
           </div>
           <div>
-            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.user">用户名</label>
+            <label for="server-username" class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.user">用户名</label>
             <div class="flex items-center">
               <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px;">person</span>
               <input id="server-username" class="terminal-input text-[13px]" placeholder="root" type="text" required>
@@ -177,15 +194,15 @@
             <div id="modal-password-section">
               <div class="flex items-center">
                 <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px;">key</span>
-                <input id="server-password" class="terminal-input text-[13px]" placeholder="••••••••" type="password">
+                <input id="server-password" class="terminal-input text-[13px]" placeholder="••••••••" type="password" data-i18n-aria-label="common.password" aria-label="密码">
               </div>
             </div>
             <div id="modal-key-section" style="display:none;">
-              <textarea id="server-private-key" class="terminal-input text-[11px] w-full" rows="4" data-i18n-placeholder="auth.keyPlaceholder" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...粘贴私钥内容...&#10;-----END OPENSSH PRIVATE KEY-----" style="resize:vertical;border:1px solid var(--border-strong);padding:8px;"></textarea>
+              <textarea id="server-private-key" class="terminal-input text-[11px] w-full" rows="4" data-i18n-placeholder="auth.keyPlaceholder" data-i18n-aria-label="common.privateKey" aria-label="私钥" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...粘贴私钥内容...&#10;-----END OPENSSH PRIVATE KEY-----" style="resize:vertical;border:1px solid var(--border-strong);padding:8px;"></textarea>
             </div>
           </div>
           <div>
-            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.regionHint">连接区域</label>
+            <label for="server-region" class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.regionHint">连接区域</label>
             <select id="server-region" class="terminal-input text-[13px] cursor-pointer" style="border:1px solid var(--border-strong);border-bottom:1px solid var(--border-strong);padding:6px 8px;">
               <option value="" data-i18n="region.auto">自动（保存时由系统推断）</option>
             </select>

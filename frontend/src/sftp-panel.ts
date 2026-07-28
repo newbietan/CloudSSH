@@ -1,5 +1,6 @@
 import { confirmAction, requestText } from './ui-feedback';
 import { onLocaleChange, t, translateDocument } from './i18n';
+import { updateSelection } from './sftp-selection';
 
 export interface SFTPFileEntry {
   name: string;
@@ -116,7 +117,10 @@ export class SFTPPanel {
   private container: HTMLElement;
   private currentPath: string = '/';
   private entries: SFTPFileEntry[] = [];
-  private selectedEntry: SFTPFileEntry | null = null;
+  private renderedEntries: SFTPFileEntry[] = [];
+  private selectedEntries: Map<string, SFTPFileEntry> = new Map();
+  private selectionAnchorIndex: number | null = null;
+  private pendingDeleteCount = 0;
   private getWebSocketUrl: GetSFTPWebSocketUrlFn;
   private ws: WebSocket | null = null;
   private connectingPromise: Promise<void> | null = null;
@@ -148,7 +152,16 @@ export class SFTPPanel {
   private downloadQueueGeneration: number = 0;
   private localeCleanup: (() => void) | null = null;
   private readonly keydownHandler = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape' && this.visible && !document.querySelector('dialog[open]')) {
+    if (!this.visible || document.querySelector('dialog[open]')) return;
+    const target = e.target as HTMLElement | null;
+    const isEditable = target?.matches('input, textarea, select, [contenteditable="true"]');
+    if ((e.ctrlKey || e.metaKey) && e.key.toLocaleLowerCase() === 'a' && !isEditable) {
+      e.preventDefault();
+      this.selectAllEntries();
+    } else if (e.key === 'Escape' && this.selectedEntries.size > 0) {
+      e.preventDefault();
+      this.clearSelection();
+    } else if (e.key === 'Escape') {
       this.hide();
     }
   };
@@ -264,7 +277,7 @@ export class SFTPPanel {
             <span data-i18n="sftp.truncated">该目录文件过多，为保证性能，仅显示前 2000 项。</span>
           </div>
           <!-- Entries will be rendered here -->
-          <div id="sftp-entries"></div>
+          <div id="sftp-entries" role="listbox" aria-multiselectable="true"></div>
         </div>
 
         <!-- Status Bar -->
@@ -600,7 +613,7 @@ export class SFTPPanel {
         this.onMkdirResult(msg.path);
         break;
       case 'sftp_rmdir_result':
-        this.onMkdirResult(msg.path);
+        this.onDeleteResult(msg.path);
         break;
       case 'sftp_closed':
         this.initializing = false;
@@ -633,6 +646,13 @@ export class SFTPPanel {
 
     if (operation === 'download') {
       this.rejectDownloadWaiter(msg.message);
+    }
+    if ((operation === 'delete' || operation === 'rmdir') && this.pendingDeleteCount > 0) {
+      this.pendingDeleteCount--;
+      if (this.pendingDeleteCount === 0) {
+        this.clearSelection();
+        this.refresh();
+      }
     }
 
     this.showError(msg.message);
@@ -720,10 +740,12 @@ export class SFTPPanel {
       if (!a.isDir && b.isDir) return 1;
       return a.name.localeCompare(b.name);
     });
+    this.renderedEntries = sorted;
 
     entriesContainer.innerHTML = sorted.map((entry, idx) => `
       <div class="sftp-entry flex items-center gap-2 px-3 py-1.5 hover:bg-surface-variant cursor-pointer transition-colors border-b border-outline-variant/30 text-[12px]"
-           data-idx="${idx}" data-name="${this.escapeHtml(entry.name)}" data-type="${entry.type}">
+           data-idx="${idx}" data-name="${this.escapeHtml(entry.name)}" data-type="${entry.type}"
+           role="option" aria-selected="${this.selectedEntries.has(entry.name)}" tabindex="-1">
         <span class="material-symbols-outlined shrink-0 ${entry.isDir ? 'text-primary-container' : entry.isLink ? 'text-secondary-container' : 'text-on-surface-variant'}"
               style="font-size: 16px; font-variation-settings: 'FILL' ${entry.isDir ? '1' : '0'};">
           ${entry.isDir ? 'folder' : entry.isLink ? 'link' : this.getFileIcon(entry.name)}
@@ -742,8 +764,10 @@ export class SFTPPanel {
       el.addEventListener('click', (e) => {
         const target = el as HTMLElement;
         const idx = parseInt(target.dataset['idx']!);
-        const entry = sorted[idx];
-        this.selectEntry(entry, target);
+        this.selectEntry(idx, {
+          additive: (e as MouseEvent).ctrlKey || (e as MouseEvent).metaKey,
+          range: (e as MouseEvent).shiftKey,
+        });
       });
 
       el.addEventListener('dblclick', (e) => {
@@ -753,9 +777,7 @@ export class SFTPPanel {
         if (entry.isDir) {
           this.navigate(this.currentPath === '/' ? `/${entry.name}` : `${this.currentPath}/${entry.name}`);
         } else {
-          // Download on double-click
-          this.selectedEntry = entry;
-          this.downloadSelected();
+          this.downloadEntries([entry]);
         }
       });
 
@@ -766,24 +788,57 @@ export class SFTPPanel {
         const target = el as HTMLElement;
         const idx = parseInt(target.dataset['idx']!);
         const entry = sorted[idx];
-        this.selectEntry(entry, target);
+        if (!this.selectedEntries.has(entry.name)) {
+          this.selectEntry(idx, { additive: false, range: false });
+        }
         this.showContextMenu(me.clientX, me.clientY, entry);
       });
     });
+    this.syncSelectionUI();
   }
 
-  private selectEntry(entry: SFTPFileEntry, el: HTMLElement): void {
-    // Remove previous selection
-    this.container.querySelectorAll('.sftp-entry').forEach(e => e.classList.remove('bg-surface-variant'));
-    el.classList.add('bg-surface-variant');
-    this.selectedEntry = entry;
+  private selectEntry(index: number, options: { additive: boolean; range: boolean }): void {
+    const selectedIndices = new Set<number>();
+    this.renderedEntries.forEach((entry, entryIndex) => {
+      if (this.selectedEntries.has(entry.name)) selectedIndices.add(entryIndex);
+    });
+    const result = updateSelection(
+      selectedIndices,
+      index,
+      this.selectionAnchorIndex,
+      this.renderedEntries.length,
+      options,
+    );
+    this.selectionAnchorIndex = result.anchor;
+    this.selectedEntries.clear();
+    result.selected.forEach((selectedIndex) => {
+      const entry = this.renderedEntries[selectedIndex];
+      if (entry) this.selectedEntries.set(entry.name, entry);
+    });
+    this.syncSelectionUI();
     this.updateActionButtons();
   }
 
   private clearSelection(): void {
-    this.container.querySelectorAll('.sftp-entry').forEach(e => e.classList.remove('bg-surface-variant'));
-    this.selectedEntry = null;
+    this.selectedEntries.clear();
+    this.selectionAnchorIndex = null;
+    this.syncSelectionUI();
     this.updateActionButtons();
+  }
+
+  private selectAllEntries(): void {
+    this.selectedEntries = new Map(this.renderedEntries.map((entry) => [entry.name, entry]));
+    this.selectionAnchorIndex = this.renderedEntries.length > 0 ? this.renderedEntries.length - 1 : null;
+    this.syncSelectionUI();
+    this.updateActionButtons();
+  }
+
+  private syncSelectionUI(): void {
+    this.container.querySelectorAll<HTMLElement>('.sftp-entry').forEach((element) => {
+      const selected = this.selectedEntries.has(element.dataset['name'] || '');
+      element.classList.toggle('bg-surface-variant', selected);
+      element.setAttribute('aria-selected', String(selected));
+    });
   }
 
   private updateActionButtons(): void {
@@ -791,10 +846,14 @@ export class SFTPPanel {
     const deleteBtn = this.container.querySelector('#sftp-delete-btn') as HTMLButtonElement;
     const renameBtn = this.container.querySelector('#sftp-rename-btn') as HTMLButtonElement;
 
-    const hasSelection = !!this.selectedEntry;
-    downloadBtn.disabled = !hasSelection || this.selectedEntry!.isDir;
+    const selected = [...this.selectedEntries.values()];
+    const hasSelection = selected.length > 0;
+    downloadBtn.disabled = !selected.some((entry) => !entry.isDir);
     deleteBtn.disabled = !hasSelection;
-    renameBtn.disabled = !hasSelection;
+    renameBtn.disabled = selected.length !== 1;
+    this.setIdleStatus(hasSelection
+      ? t('sftp.selectedCount', { count: selected.length })
+      : this.getItemsStatus());
   }
 
   private showContextMenu(x: number, y: number, entry: SFTPFileEntry): void {
@@ -806,19 +865,37 @@ export class SFTPPanel {
     menu.style.left = x + 'px';
     menu.style.top = y + 'px';
 
-    const items = [
-      { label: t('sftp.contextOpen'), icon: 'open_in_new', action: () => {
+    const selected = [...this.selectedEntries.values()];
+    const items: Array<{ label: string; icon: string; action: () => void; className?: string }> = [];
+    if (selected.length === 1) {
+      items.push({ label: t('sftp.contextOpen'), icon: 'open_in_new', action: () => {
         if (entry.isDir) {
           this.navigate(this.currentPath === '/' ? `/${entry.name}` : `${this.currentPath}/${entry.name}`);
         } else {
-          this.selectedEntry = entry;
-          this.downloadSelected();
+          this.downloadEntries([entry]);
         }
-      }},
-      ...(entry.type === 'file' ? [{ label: t('sftp.contextDownload'), icon: 'download', action: () => { this.selectedEntry = entry; this.downloadSelected(); } }] : []),
-      { label: t('sftp.contextRename'), icon: 'drive_file_rename_outline', action: () => { this.selectedEntry = entry; this.showRenameDialog(); } },
-      { label: t('sftp.contextDelete'), icon: 'delete', action: () => { this.selectedEntry = entry; this.deleteSelected(); }, className: 'text-error' },
-    ];
+      }});
+    }
+    if (selected.some((selectedEntry) => !selectedEntry.isDir)) {
+      items.push({
+        label: t('sftp.contextDownload'),
+        icon: 'download',
+        action: () => this.downloadSelected(),
+      });
+    }
+    if (selected.length === 1) {
+      items.push({
+        label: t('sftp.contextRename'),
+        icon: 'drive_file_rename_outline',
+        action: () => { void this.showRenameDialog(); },
+      });
+    }
+    items.push({
+      label: t('sftp.contextDelete'),
+      icon: 'delete',
+      action: () => { void this.deleteSelected(); },
+      className: 'text-error',
+    });
 
     menu.innerHTML = items.map(item => `
       <div class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface-variant cursor-pointer ${item.className || ''}">
@@ -1017,10 +1094,14 @@ export class SFTPPanel {
 
   // File download
   private downloadSelected(): void {
-    if (!this.selectedEntry || this.selectedEntry.isDir) return;
+    this.downloadEntries([...this.selectedEntries.values()]);
+  }
 
-    const path = this.currentPath === '/' ? `/${this.selectedEntry.name}` : `${this.currentPath}/${this.selectedEntry.name}`;
-    this.queueDownloadFile(path, this.selectedEntry.name);
+  private downloadEntries(entries: SFTPFileEntry[]): void {
+    entries.filter((entry) => !entry.isDir).forEach((entry) => {
+      const path = this.currentPath === '/' ? `/${entry.name}` : `${this.currentPath}/${entry.name}`;
+      this.queueDownloadFile(path, entry.name);
+    });
   }
 
   private queueDownloadFile(path: string, filename: string): void {
@@ -1222,36 +1303,41 @@ export class SFTPPanel {
 
   // Delete
   private async deleteSelected(): Promise<void> {
-    const entry = this.selectedEntry;
-    if (!entry) return;
+    const entries = [...this.selectedEntries.values()];
+    if (entries.length === 0) return;
 
-    const path = this.currentPath === '/' ? `/${entry.name}` : `${this.currentPath}/${entry.name}`;
     const confirmed = await confirmAction({
       title: t('sftp.deleteTitle'),
-      message: t('sftp.deleteMessage', { name: entry.name }),
+      message: entries.length === 1
+        ? t('sftp.deleteMessage', { name: entries[0].name })
+        : t('sftp.deleteManyMessage', { count: entries.length }),
       confirmText: t('common.delete'),
       cancelText: t('common.cancel'),
       variant: 'danger',
     });
     if (!confirmed) return;
 
-    if (entry.isDir) {
-      this.sendJSON({ type: 'sftp_rmdir', path });
-    } else {
-      this.sendJSON({ type: 'sftp_delete', path });
+    this.pendingDeleteCount = entries.length;
+    for (const entry of entries) {
+      const path = this.currentPath === '/' ? `/${entry.name}` : `${this.currentPath}/${entry.name}`;
+      this.sendJSON({ type: entry.isDir ? 'sftp_rmdir' : 'sftp_delete', path });
     }
   }
 
   private onDeleteResult(_path: string): void {
-    this.setStatus('Deleted');
-    this.clearSelection();
-    this.refresh();
+    this.pendingDeleteCount = Math.max(0, this.pendingDeleteCount - 1);
+    if (this.pendingDeleteCount === 0) {
+      this.setStatus(t('sftp.deleted'));
+      this.clearSelection();
+      this.refresh();
+    }
   }
 
   // Rename
   private async showRenameDialog(): Promise<void> {
-    const entry = this.selectedEntry;
-    if (!entry) return;
+    const selected = [...this.selectedEntries.values()];
+    if (selected.length !== 1) return;
+    const entry = selected[0];
 
     const newName = await requestText({
       title: t('sftp.renameTitle'),

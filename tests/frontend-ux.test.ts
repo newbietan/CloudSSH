@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { filterServers, type ServerConfig } from '../frontend/src/server-list';
+import {
+  filterServers,
+  normalizeTagsInput,
+  paginateServers,
+  type ServerConfig,
+} from '../frontend/src/server-list';
 import { getNetworkQuality } from '../frontend/src/network-quality';
 
 const servers: ServerConfig[] = [
@@ -12,6 +17,7 @@ const servers: ServerConfig[] = [
     port: 22,
     username: 'deploy',
     auth_method: 'publickey',
+    tags: ['production', 'api'],
     created_at: '',
     updated_at: '',
   },
@@ -23,6 +29,7 @@ const servers: ServerConfig[] = [
     port: 2222,
     username: 'DBAdmin',
     auth_method: 'password',
+    tags: ['staging', 'database'],
     created_at: '',
     updated_at: '',
   },
@@ -42,6 +49,17 @@ describe('服务器列表搜索', () => {
 
   it('没有匹配项时返回空列表', () => {
     expect(filterServers(servers, 'missing')).toEqual([]);
+  });
+
+  it('支持标签筛选、标签输入规范化和分页边界修正', () => {
+    expect(filterServers(servers, '', 'database')).toEqual([servers[1]]);
+    expect(normalizeTagsInput(' Production, production，data   base '))
+      .toEqual(['Production', 'data base']);
+    expect(paginateServers(servers, 99, 1)).toEqual({
+      items: [servers[1]],
+      currentPage: 2,
+      totalPages: 2,
+    });
   });
 });
 

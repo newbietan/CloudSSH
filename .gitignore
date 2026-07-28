@@ -6,3 +6,5 @@ dist/
 .DS_Store
 *.jsonl
 coverage/
+playwright-report/
+test-results/

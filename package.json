@@ -1,6 +1,7 @@
 {
   "name": "cloudssh",
   "version": "1.3.1",
+  "packageManager": "pnpm@11.8.0",
   "description": "纯 Cloudflare 架构 Web SSH 工具",
   "main": "src/worker/index.ts",
   "scripts": {
@@ -8,9 +9,14 @@
     "deploy": "node scripts/build-html.js && wrangler deploy",
     "deploy:test": "node scripts/build-html.js && wrangler deploy --env test",
     "build:frontend": "node scripts/build-html.js",
+    "typecheck": "pnpm run typecheck:worker && pnpm run typecheck:frontend",
+    "typecheck:worker": "tsc --noEmit",
+    "typecheck:frontend": "pnpm --dir frontend exec tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:watch": "vitest watch"
+    "test:watch": "vitest watch",
+    "test:e2e": "playwright test",
+    "verify": "pnpm run typecheck && pnpm test && pnpm run build:frontend && pnpm run test:e2e"
   },
   "keywords": [
     "ssh",
@@ -20,10 +26,12 @@
   "author": "",
   "license": "Apache-2.0",
   "devDependencies": {
+    "@axe-core/playwright": "4.12.1",
     "@cloudflare/workers-types": "^4.20260630.1",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@playwright/test": "1.62.0",
+    "@vitest/coverage-v8": "4.1.10",
     "typescript": "^5.7.0",
-    "vitest": "^4.1.9",
+    "vitest": "4.1.10",
     "wrangler": "^4.106.0"
   }
 }

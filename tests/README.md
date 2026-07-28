@@ -6,6 +6,9 @@
 
 ```
 tests/
+├── build/                  # 构建产物与可复现性回归
+├── e2e/                    # Playwright 浏览器 E2E 与 axe 无障碍测试
+├── worker/                 # Worker、UserDB、Agent 与安全边界测试
 ├── ssh/                    # SSH 协议相关测试
 │   ├── auth.test.ts        # SSH 认证测试
 │   ├── utils.test.ts       # SSH 工具函数测试
@@ -26,6 +29,21 @@ pnpm test
 
 ```bash
 pnpm test tests/ssh/auth.test.ts
+```
+
+### 运行浏览器 E2E 与无障碍测试
+
+首次运行需安装 Chromium：
+
+```bash
+pnpm exec playwright install chromium
+pnpm run test:e2e
+```
+
+### 运行完整质量门禁
+
+```bash
+pnpm run verify
 ```
 
 ### 监听模式
@@ -60,3 +78,11 @@ pnpm test --watch
 - ✅ DER 编码
 - ✅ 密钥类型检测
 - ✅ 错误处理
+
+### 核心业务与浏览器回归
+
+- ✅ CI 门禁和构建可复现性
+- ✅ UserDB 服务器标签迁移、序列化与更新
+- ✅ 服务器搜索、标签筛选与分页
+- ✅ SFTP 单选、Cmd/Ctrl 多选与 Shift 连选
+- ✅ 登录页无障碍扫描及服务器弹窗键盘语义

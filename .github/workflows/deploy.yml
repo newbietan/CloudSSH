@@ -21,18 +21,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.8.0'
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 'latest'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: |
-          pnpm install
-          cd frontend && pnpm install
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Type check
+        run: pnpm run typecheck
+
+      - name: Unit and integration tests
+        run: pnpm test
+
+      - name: Build frontend
+        run: pnpm run build:frontend
+
+      - name: Browser E2E and accessibility tests
+        run: pnpm run test:e2e
 
       - name: Build frontend and deploy (test)
         if: github.ref == 'refs/heads/test'

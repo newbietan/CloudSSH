@@ -19,18 +19,57 @@ export interface ServerConfig {
   auth_method: 'password' | 'publickey';
   region?: string | null;
   inferred_hint?: string | null;
+  tags: string[];
   created_at: string;
   updated_at: string;
 }
 
-export function filterServers(servers: readonly ServerConfig[], query: string): ServerConfig[] {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  if (!normalizedQuery) return [...servers];
+export const SERVER_PAGE_SIZE = 9;
 
-  return servers.filter((server) =>
-    [server.name, server.host, server.username]
-      .some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
-  );
+export function normalizeTagsInput(value: string): string[] {
+  const tags: string[] = [];
+  const seen = new Set<string>();
+  for (const part of value.split(/[,，]/)) {
+    const tag = part.trim().replace(/\s+/g, ' ').slice(0, 24);
+    const key = tag.toLocaleLowerCase();
+    if (!tag || seen.has(key)) continue;
+    seen.add(key);
+    tags.push(tag);
+    if (tags.length >= 10) break;
+  }
+  return tags;
+}
+
+export function filterServers(
+  servers: readonly ServerConfig[],
+  query: string,
+  selectedTag = '',
+): ServerConfig[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+
+  return servers.filter((server) => {
+    const matchesQuery = !normalizedQuery || [server.name, server.host, server.username]
+      .some((value) => value.toLocaleLowerCase().includes(normalizedQuery));
+    const matchesTag = !selectedTag || (server.tags || []).some(
+      (tag) => tag.toLocaleLowerCase() === selectedTag.toLocaleLowerCase(),
+    );
+    return matchesQuery && matchesTag;
+  });
+}
+
+export function paginateServers(
+  servers: readonly ServerConfig[],
+  page: number,
+  pageSize = SERVER_PAGE_SIZE,
+): { items: ServerConfig[]; currentPage: number; totalPages: number } {
+  const totalPages = Math.max(1, Math.ceil(servers.length / pageSize));
+  const currentPage = Math.min(Math.max(1, Math.floor(page)), totalPages);
+  const start = (currentPage - 1) * pageSize;
+  return {
+    items: servers.slice(start, start + pageSize),
+    currentPage,
+    totalPages,
+  };
 }
 
 /**
@@ -44,6 +83,8 @@ export class ServerList {
   private editingServerId: number | null = null;
   private modalAuthMode: 'password' | 'key' = 'password';
   private searchQuery = '';
+  private selectedTag = '';
+  private currentPage = 1;
 
   constructor(
     user: UserInfo,
@@ -104,10 +145,12 @@ export class ServerList {
     const clearSearchButton = document.getElementById('server-search-clear');
     searchInput?.addEventListener('input', () => {
       this.searchQuery = searchInput.value;
+      this.currentPage = 1;
       this.renderServerGrid();
     });
     clearSearchButton?.addEventListener('click', () => {
       this.searchQuery = '';
+      this.currentPage = 1;
       if (searchInput) {
         searchInput.value = '';
         searchInput.focus();
@@ -115,9 +158,29 @@ export class ServerList {
       this.renderServerGrid();
     });
 
+    (document.getElementById('server-tag-filter') as HTMLSelectElement | null)?.addEventListener('change', (event) => {
+      this.selectedTag = (event.target as HTMLSelectElement).value;
+      this.currentPage = 1;
+      this.renderServerGrid();
+    });
+    document.getElementById('server-page-prev')?.addEventListener('click', () => {
+      this.currentPage--;
+      this.renderServerGrid();
+    });
+    document.getElementById('server-page-next')?.addEventListener('click', () => {
+      this.currentPage++;
+      this.renderServerGrid();
+    });
+
     // Modal 关闭
     document.getElementById('modal-close-btn')?.addEventListener('click', () => this.hideModal());
     document.getElementById('modal-backdrop')?.addEventListener('click', () => this.hideModal());
+    document.getElementById('server-modal')?.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        this.hideModal();
+      }
+    });
 
     // Modal 提交
     document.getElementById('server-submit-btn')?.addEventListener('click', () => this.handleSubmit());
@@ -141,7 +204,11 @@ export class ServerList {
     try {
       const res = await fetch('/api/servers');
       if (!res.ok) throw new Error('Failed to fetch servers');
-      this.servers = await res.json();
+      const servers = await res.json() as ServerConfig[];
+      this.servers = servers.map((server) => ({
+        ...server,
+        tags: Array.isArray(server.tags) ? server.tags : [],
+      }));
       this.renderServerGrid();
     } catch (e) {
       console.error('Failed to fetch servers:', e);
@@ -158,11 +225,16 @@ export class ServerList {
     const searchWrapper = document.getElementById('server-search-wrapper');
     const searchEmptyState = document.getElementById('server-search-empty');
     const clearSearchButton = document.getElementById('server-search-clear');
+    const tagFilterWrapper = document.getElementById('server-tag-filter-wrapper');
+    const tagFilter = document.getElementById('server-tag-filter') as HTMLSelectElement | null;
+    const pagination = document.getElementById('server-pagination');
     if (!grid || !emptyState || !searchWrapper || !searchEmptyState) return;
 
     if (this.servers.length === 0) {
       grid.innerHTML = '';
       searchWrapper.classList.add('hidden');
+      pagination?.classList.add('hidden');
+      pagination?.classList.remove('flex');
       searchEmptyState.classList.add('hidden');
       searchEmptyState.classList.remove('flex');
       emptyState.classList.remove('hidden');
@@ -175,9 +247,23 @@ export class ServerList {
     emptyState.classList.remove('flex');
     clearSearchButton?.classList.toggle('hidden', this.searchQuery.length === 0);
 
-    const visibleServers = filterServers(this.servers, this.searchQuery);
-    if (visibleServers.length === 0) {
+    const allTags = [...new Set(this.servers.flatMap((server) => server.tags || []))]
+      .sort((a, b) => a.localeCompare(b));
+    tagFilterWrapper?.classList.toggle('hidden', allTags.length === 0);
+    if (tagFilter) {
+      if (this.selectedTag && !allTags.includes(this.selectedTag)) this.selectedTag = '';
+      tagFilter.innerHTML = [
+        `<option value="">${t('server.allTags')}</option>`,
+        ...allTags.map((tag) => `<option value="${this.escapeHtml(tag)}">${this.escapeHtml(tag)}</option>`),
+      ].join('');
+      tagFilter.value = this.selectedTag;
+    }
+
+    const filteredServers = filterServers(this.servers, this.searchQuery, this.selectedTag);
+    if (filteredServers.length === 0) {
       grid.innerHTML = '';
+      pagination?.classList.add('hidden');
+      pagination?.classList.remove('flex');
       searchEmptyState.classList.remove('hidden');
       searchEmptyState.classList.add('flex');
       return;
@@ -185,6 +271,10 @@ export class ServerList {
 
     searchEmptyState.classList.add('hidden');
     searchEmptyState.classList.remove('flex');
+
+    const page = paginateServers(filteredServers, this.currentPage);
+    this.currentPage = page.currentPage;
+    const visibleServers = page.items;
 
     grid.innerHTML = visibleServers
       .map((server) => this.renderServerCard(server))
@@ -196,6 +286,26 @@ export class ServerList {
       document.getElementById(`edit-${server.id}`)?.addEventListener('click', () => this.showModal('edit', server));
       document.getElementById(`delete-${server.id}`)?.addEventListener('click', () => this.deleteServer(server.id));
     });
+
+    if (page.totalPages > 1) {
+      pagination?.classList.remove('hidden');
+      pagination?.classList.add('flex');
+      const previous = document.getElementById('server-page-prev') as HTMLButtonElement | null;
+      const next = document.getElementById('server-page-next') as HTMLButtonElement | null;
+      if (previous) previous.disabled = page.currentPage === 1;
+      if (next) next.disabled = page.currentPage === page.totalPages;
+      const info = document.getElementById('server-page-info');
+      if (info) {
+        info.textContent = t('server.pageInfo', {
+          current: page.currentPage,
+          total: page.totalPages,
+          count: filteredServers.length,
+        });
+      }
+    } else {
+      pagination?.classList.add('hidden');
+      pagination?.classList.remove('flex');
+    }
   }
 
   private renderServerCard(server: ServerConfig): string {
@@ -209,6 +319,11 @@ export class ServerList {
     const regionTag = effectiveHint
       ? (isManual ? t('server.regionManual') : t('server.regionAuto'))
       : t('server.regionAuto');
+    const tagMarkup = (server.tags || []).length > 0
+      ? `<div class="flex flex-wrap gap-1 mt-3">${server.tags.map((tag) =>
+          `<span class="text-[9px] text-primary border border-[var(--border-strong)] px-1.5 py-0.5">#${this.escapeHtml(tag)}</span>`
+        ).join('')}</div>`
+      : '';
 
     return `
       <div class="server-card p-5 relative group" id="card-${server.id}">
@@ -242,6 +357,7 @@ export class ServerList {
             </span>
             <span class="text-[9px] text-dim border border-dim px-1 py-0.5 ml-0.5">${regionTag}</span>
           </div>
+          ${tagMarkup}
         </div>
 
         <div class="flex gap-2 pt-3 border-t border-[var(--border)]">
@@ -373,6 +489,7 @@ export class ServerList {
       (document.getElementById('server-username') as HTMLInputElement).value = server.username;
       (document.getElementById('server-password') as HTMLInputElement).value = '';
       (document.getElementById('server-private-key') as HTMLTextAreaElement).value = '';
+      (document.getElementById('server-tags') as HTMLInputElement).value = (server.tags || []).join(', ');
 
       if (server.auth_method === 'publickey') {
         this.setModalAuthMode('key');
@@ -402,6 +519,7 @@ export class ServerList {
       (document.getElementById('server-username') as HTMLInputElement).value = '';
       (document.getElementById('server-password') as HTMLInputElement).value = '';
       (document.getElementById('server-private-key') as HTMLTextAreaElement).value = '';
+      (document.getElementById('server-tags') as HTMLInputElement).value = '';
       this.setModalAuthMode('password');
 
       // 新增时：region 默认 Auto，无系统推断可显示
@@ -449,6 +567,7 @@ export class ServerList {
     const username = (document.getElementById('server-username') as HTMLInputElement).value.trim();
     const password = (document.getElementById('server-password') as HTMLInputElement).value;
     const privateKey = (document.getElementById('server-private-key') as HTMLTextAreaElement).value;
+    const tags = normalizeTagsInput((document.getElementById('server-tags') as HTMLInputElement).value);
 
     if (!name || !host || !username) {
       notify(t('server.detailsRequired'), {
@@ -482,7 +601,7 @@ export class ServerList {
     `;
 
     try {
-      const body: any = { name, host, port, username, auth_method: authMethod };
+      const body: any = { name, host, port, username, auth_method: authMethod, tags };
       if (credential) body.credential = credential;
 
       // 区域偏好：空字符串表示 Auto（让系统自动推断）

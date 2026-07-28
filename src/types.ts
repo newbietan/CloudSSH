@@ -136,6 +136,8 @@ export interface ServerConfig {
   region?: string | null;
   /** 系统在保存/更新服务器时通过 ipapi.co 自动推断并持久化的 hint */
   inferred_hint?: string | null;
+  /** 用户用于组织和筛选服务器的单层标签 */
+  tags: string[];
   created_at: string;
   updated_at: string;
 }

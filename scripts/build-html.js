@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 const rootDir = path.resolve(__dirname, '..');
 const frontendDir = path.join(rootDir, 'frontend');
@@ -10,9 +10,9 @@ const htmlTsFile = path.join(workerDir, 'html.ts');
 
 console.log('Building frontend...');
 try {
-  // 1. Install and build frontend
-  execSync('npx pnpm install', { cwd: frontendDir, stdio: 'inherit' });
-  execSync('npx pnpm run build', { cwd: frontendDir, stdio: 'inherit' });
+  // Dependencies are installed explicitly by developers/CI. Keeping installs out
+  // of the build makes production artifacts deterministic and offline-buildable.
+  execFileSync('pnpm', ['run', 'build'], { cwd: frontendDir, stdio: 'inherit' });
 
   console.log('Inlining assets...');
   // 2. Read dist/index.html
@@ -20,19 +20,18 @@ try {
 
   // 3. Find assets in dist/assets
   const assetsDir = path.join(distDir, 'assets');
-  const files = fs.readdirSync(assetsDir);
+  const files = fs.readdirSync(assetsDir).sort();
+  const jsFiles = files.filter((file) => file.endsWith('.js'));
+  const cssFiles = files.filter((file) => file.endsWith('.css'));
 
-  let jsContent = '';
-  let cssContent = '';
-
-  for (const file of files) {
-    const filePath = path.join(assetsDir, file);
-    if (file.endsWith('.js')) {
-      jsContent = fs.readFileSync(filePath, 'utf8');
-    } else if (file.endsWith('.css')) {
-      cssContent = fs.readFileSync(filePath, 'utf8');
-    }
+  if (jsFiles.length !== 1 || cssFiles.length !== 1) {
+    throw new Error(
+      `Expected exactly one JS and one CSS bundle for Worker inlining, got ${jsFiles.length} JS and ${cssFiles.length} CSS.`
+    );
   }
+
+  const jsContent = fs.readFileSync(path.join(assetsDir, jsFiles[0]), 'utf8');
+  const cssContent = fs.readFileSync(path.join(assetsDir, cssFiles[0]), 'utf8');
 
   // 4. Inline favicon.svg as base64 data URL
   const faviconPath = path.join(frontendDir, 'public', 'favicon.svg');
