@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.2] - 2026-07-28
 
 ### Added
 - 服务器配置支持最多 10 个规范化标签，服务器列表新增标签筛选，并以每页 9 张卡片进行分页展示。
