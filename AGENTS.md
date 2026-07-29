@@ -50,7 +50,7 @@ src/
 │   ├── kex-curve25519.ts  # Curve25519-SHA256 key exchange
 │   ├── kex-ecdh.ts   # ECDH-NISTP256 key exchange
 │   ├── algorithms.ts # Supported algorithm definitions
-│   ├── auth.ts       # Authentication methods (password, Ed25519 public key)
+│   ├── auth.ts       # Authentication methods (password, Ed25519/ECDSA/RSA private keys)
 │   ├── channel.ts    # SSH channels (session + SFTP subsystem + exec)
 │   ├── crypto.ts     # AES-GCM/CTR cipher, HMAC implementations
 │   ├── keys.ts       # Key derivation per RFC 4253
@@ -126,7 +126,7 @@ Two Durable Objects handle state:
 1. **SSHSessionDO** (`src/worker/durable-object.ts`)
    - Manages WebSocket ↔ TCP socket connections
    - Handles SSH session lifecycle
-   - Uses Hibernation API for long-lived connections
+   - Accepts browser WebSockets through the Hibernation API, but active outbound SSH TCP sockets keep the DO awake and prevent hibernation during a live session
 
 2. **UserDBDO** (`src/worker/user-db.ts`)
    - SQLite-based user and server storage
@@ -225,6 +225,7 @@ ci: CI/CD 变更
 12. **Server list organization** - server tags are stored as normalized JSON in SQLite, filtered client-side, and rendered with 9 items per page. Search/tag changes must reset pagination to page 1.
 13. **SFTP selection model** - file selection supports single, Cmd/Ctrl toggle, Shift range and select-all. Batch download reuses the sequential download queue; batch delete waits for all delete/rmdir results before refreshing.
 14. **Agent terminal selection context** - “Ask AI assistant” attaches one immutable selection snapshot per tab and never sends it by itself. New selections replace the pending snapshot; successful sends and session teardown clear it. Preserve the untrusted-data/non-authorization boundary in `terminal-selection-context.ts`.
+15. **Region inference privacy** - Saving or changing a server host calls the third-party IPinfo service and persists the inferred locationHint. Keep the provider name and disclosure synchronized across README/code comments; failures must continue to fall back to Cloudflare's default placement.
 
 ## Deployment Notes
 
@@ -275,9 +276,10 @@ pnpm run deploy:test     # 部署 test 环境
 Dashboard: Workers → 你的 Worker → Settings → Variables → Environment Variables
 CLI: `npx wrangler secret set <SECRET_NAME>`
 
-### 首次部署注意
+### 首次部署与迁移注意
 
-- 新 Durable Objects 首次部署：先删除旧 worker 再重新部署（`npx wrangler delete <worker-name>`）
+- 新 Durable Object 类必须通过 `wrangler.toml` 中新的、不可复用的 migration tag 部署；已有环境不得通过删除 Worker 作为常规初始化或迁移方式
+- 只有确认环境中没有需要保留的数据、且明确要重建整个环境时，才可删除 Worker
 - Test 环境 DO 绑定与 production 相同的 class_name，但因 Worker 名称不同，数据完全隔离
 
 ## AI 版本发布与文档维护规范

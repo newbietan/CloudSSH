@@ -134,7 +134,7 @@ export interface ServerConfig {
   auth_method: 'password' | 'publickey';
   /** 用户手动指定的区域偏好；空表示 Auto（依赖系统推断的 inferred_hint） */
   region?: string | null;
-  /** 系统在保存/更新服务器时通过 ipapi.co 自动推断并持久化的 hint */
+  /** 系统在保存/更新服务器时通过第三方 IPinfo 自动推断并持久化的 hint */
   inferred_hint?: string | null;
   /** 用户用于组织和筛选服务器的单层标签 */
   tags: string[];

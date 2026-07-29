@@ -3,7 +3,7 @@ import { inferLocationHint, type InferResult } from './ip-geo';
 import { deserializeServerRow, serializeServerTags } from './server-tags';
 
 /**
- * UserDBDO — 用户数据库 Durable Object（全局单例）
+ * UserDBDO — 按 GitHub 用户 ID 命名并隔离的用户数据库 Durable Object
  *
  * 职责：
  * - 用户管理（GitHub OAuth 登录后创建/更新）

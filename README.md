@@ -71,12 +71,12 @@
 
 ### 安全可靠
 
-- **端到端加密**：完整的 SSH-2.0 协议实现，支持 Curve25519-SHA256（优先）和 ECDH-NISTP256 密钥交换，AES-256-GCM（优先）/ AES-128-GCM / AES-256-CTR 数据加密，以及 HMAC-SHA2-256/512 完整性校验。
-- **多算法主机密钥验证**：支持 Ed25519、ECDSA P-256、RSA 签名验证，首次连接展示 SHA-256 指纹（TOFU 模式）。
-- **安全加固体系**：内置针对 IPv6 与保留地址的 SSRF 防护、API 请求频率限制（防爆破），并在本地使用 AES-256-GCM 算法加密存储您的服务器凭证。
+- **分段加密传输**：浏览器与 Cloudflare Worker 之间使用 HTTPS/WSS，Worker 与目标主机之间使用完整的 SSH-2.0 协议；SSH 段支持 Curve25519-SHA256（优先）和 ECDH-NISTP256 密钥交换、AES-256-GCM（优先）/ AES-128-GCM / AES-256-CTR 数据加密，以及 HMAC-SHA2-256/512 完整性校验。
+- **多算法主机密钥验证**：支持 Ed25519、ECDSA P-256/P-384/P-521、RSA 签名验证，首次连接展示 SHA-256 指纹（TOFU 模式）。
+- **安全加固体系**：内置针对 IPv6 与保留地址的 SSRF 防护；`/api/ssh` 使用有界的 Worker 实例内存限流进行流量削峰，连接授权仍由 Turnstile 或一次性连接令牌负责；已保存的服务器凭据在每用户 Durable Object SQLite 中使用 AES-256-GCM 加密存储。
 - **人机验证**：支持 Cloudflare Turnstile 验证，防止恶意机器人滥用。
-- **隔离的会话状态**：借助 Cloudflare Durable Objects 和 Hibernation API，每个终端会话都在沙盒内安全、持久地运行。
-- **凭据零暴露**：One-Time-Token 机制确保密码/私钥不经过前端，完全在 Worker 内部安全流转。
+- **隔离的会话状态**：每个 SSH 终端会话由独立的 Cloudflare Durable Object 管理；浏览器侧 WebSocket 使用 Hibernation API 接入方式，但活动的 SSH 出站 TCP 连接会使该 Durable Object 在会话期间保持唤醒。
+- **已保存凭据内部流转**：一键连接已保存服务器时，凭据由 UserDBDO 在服务端解密，并通过一次性连接令牌在 Worker 与 SSHSessionDO 之间传递；浏览器不会收到明文凭据。匿名连接或首次保存服务器时，用户输入仍会通过 HTTPS/WSS 发送到 Worker。
 
 <a id="features"></a>
 ## 核心特性
@@ -84,7 +84,7 @@
 - **纯 TypeScript SSH-2.0 实现**：完全自研的 SSH 协议栈，不依赖任何第三方 SSH 库，基于 Web Crypto API 实现全部加密操作。
 - **多算法密钥交换**：支持 Curve25519-SHA256（优先）和 ECDH-NISTP256 两种 KEX 算法，适配各类 SSH 服务器（包括 Dropbear）。
 - **IPv4/IPv6 双栈**：完整支持 IPv4 和 IPv6 地址连接，包括 IPv6 方括号格式自动处理。
-- **多种认证方式**：支持标准 SSH 密码认证以及基于 Ed25519 的纯文本私钥认证。
+- **多种认证方式**：支持标准 SSH 密码认证，以及 OpenSSH 格式的 Ed25519、ECDSA P-256/P-384/P-521 和 RSA 私钥认证；RSA 默认使用 RSA-SHA2-256/512，只有显式兼容配置才允许旧 `ssh-rsa` SHA-1。
 - **防范中间人攻击 (TOFU)**：首次连接自动提取服务器 Host Key（SHA-256 指纹）并显示，支持 Ed25519/ECDSA/RSA 签名验证，并在本地及 API 持久化缓存已知主机指纹以防范二次连接的欺骗风险。
 - **全功能极客终端**：基于 `@xterm/xterm` 与 `@xterm/addon-webgl` 硬件加速渲染引擎，保证海量日志输出顺滑不卡顿。
 - **个性化 UI**：全站颜色基于 CSS 变量系统，提供 Standard Dark、Standard Light、Cyberpunk、Glacier、Gruvbox 五款内置主题一键切换。配套[可视化主题编辑器](https://newbietan.github.io/CloudSSH/)使用下拉框选择预设主题，支持实时调色预览（覆盖登录页、服务器列表、终端 + SFTP、AI Agent 面板）、导出 JSON 主题文件；登录用户可一键同步至云端并跨浏览器生效。支持移动端适配。
@@ -94,7 +94,7 @@
 - **单页面多标签会话管理**：支持在单个页面内开启与切换多个独立的 SSH 终端与 SFTP 文件管理器，各会话环境和状态完全隔离，并在个性化主题编辑器中进行了联动适配。
 - **安全匿名历史记录**：本地存储最近 5 条匿名连接，且敏感凭证可选使用本地派生的密钥进行 AES-256-GCM 安全加密存储至 `localStorage`，提供一键回填与清除。
 - **双段延迟与 Colo 展示**：状态栏即时且周期性地展示当前 RTT（客户端至 Cloudflare）、物理延迟（Cloudflare 至主机）以及 Cloudflare 当前服务的数据中心代码（如 `CF-LAX`），并通过绿、黄、红三色状态点提示网络质量。
-- **智能区域调度（locationHint）**：保存服务器时自动推断目标主机的地理位置，持久化最优 DO 部署区域。连接时直接读取数据库，零运行时外部调用。支持手动覆盖区域偏好。*注意：locationHint 是 Cloudflare 的 best-effort 特性，当目标区域 DO 容量不足时会 fallback 到最近可用区域。*
+- **智能区域调度（locationHint）**：保存服务器时通过 IPinfo 查询目标主机的地理信息并持久化 DO 部署区域，连接时直接读取数据库，不再执行外部地理查询；查询失败时自动退化为 Cloudflare 默认调度，也可手动覆盖区域偏好。*注意：自动推断会把目标主机信息发送给第三方 IPinfo；locationHint 是 Cloudflare 的 best-effort 特性，当目标区域 DO 容量不足时会 fallback 到最近可用区域。*
 - **终端文本检索**：支持使用快捷键 `Ctrl+Shift+F` 呼出搜索框，实时检索终端历史日志。
 - **终端日志一键导出**：支持通过顶栏的下载按钮，将当前活跃会话终端的完整屏幕历史 buffer 一键导出并下载为 `.txt` 文本文件，解决长日志在浏览器下鼠标选取容易卡顿的痛点。
 - **AI 智能助手**：内置 AI Agent 侧边栏，支持 BYOK（自带 API Key）接入 OpenAI 兼容接口（如 DeepSeek）。提供 8 个专业运维工具：执行命令、读取终端上下文、探测服务器环境、进程列表、systemctl 服务管理、Docker 容器管理、用户确认、结构化报告输出。选择终端内容后可在选区末端点击“询问 AI 助手”，将完整选区作为当前标签独立的待发送上下文附件；附件支持来源和行数展示、展开预览、替换与移除，只有用户补充问题后才会发送。终端选区会被明确标记为非可信分析数据，不代表操作授权，也不能覆盖用户指令。Agent 代码块支持一键复制，安全的 Shell 单行命令可填入当前终端且不会自动执行。支持 LLM 流式输出（逐字显示），危险命令自动拦截或通过默认拒绝的安全对话框确认。**思考过程容器**：多步骤任务执行时，实时预览最近 1-2 条命令，完成后自动折叠显示总步骤数，支持展开查看完整执行历史。
@@ -142,7 +142,7 @@ flowchart TB
 |------|------|------|
 | **Worker 入口** | `src/worker/index.ts` | HTTP 路由、API 处理、WebSocket 升级 |
 | **SSHSessionDO** | `src/worker/durable-object.ts` | SSH 会话生命周期管理、SSRF 防护 |
-| **UserDBDO** | `src/worker/user-db.ts` | 用户数据、服务器配置、规范化标签与速率限制（SQLite） |
+| **UserDBDO** | `src/worker/user-db.ts` | 按 GitHub 用户隔离的用户数据、Session、服务器配置、规范化标签与凭据存储（SQLite） |
 | **IP 地理推断** | `src/worker/ip-geo.ts` | 保存服务器时推断目标 IP 所在区域，映射到 Cloudflare DO locationHint |
 | **SSHSession** | `src/worker/ssh-session.ts` | SSH 协议状态机（连接→版本→密钥交换→认证→交互） |
 | **SSH 协议栈** | `src/ssh/*.ts` | 纯 TypeScript SSH-2.0 实现（传输层、加密、认证、通道） |
@@ -169,8 +169,8 @@ flowchart TB
 | **密钥交换** | `kex-curve25519.ts` / `kex-ecdh.ts` | curve25519-sha256, ecdh-sha2-nistp256 |
 | **数据加密** | `crypto.ts` | aes256-gcm, aes128-gcm, aes256-ctr, aes192-ctr, aes128-ctr |
 | **完整性校验** | `crypto.ts` | hmac-sha2-256, hmac-sha2-512, hmac-sha1 |
-| **主机密钥** | `ssh-session.ts` | Ed25519, ECDSA P-256, RSA |
-| **用户认证** | `auth.ts` | 密码认证, Ed25519 公钥认证 |
+| **主机密钥** | `ssh-session.ts` | Ed25519, ECDSA P-256/P-384/P-521, RSA |
+| **用户认证** | `auth.ts` | 密码认证；Ed25519、ECDSA P-256/P-384/P-521、RSA-SHA2 私钥认证 |
 | **通道管理** | `channel.ts` | session channel, SFTP subsystem, PTY, shell, window-change |
 | **SFTP 协议** | `sftp.ts` / `sftp-types.ts` | SFTP v3 文件传输协议（目录浏览、上传、下载、删除、重命名） |
 
@@ -180,7 +180,7 @@ flowchart TB
 2. 前端与后端的 Durable Object 建立 WebSocket 连接。
 3. SSHSessionDO 接收凭据，使用 `@cloudflare/sockets` 与目标 SSH 服务器建立 TCP 连接。
 4. SSHSession 执行完整的 SSH 协议协商（版本交换→密钥交换→认证→打开通道→PTY→Shell）。
-5. 加密的终端数据通过 WebSocket 在前端和 SSH 服务器之间双向转发。
+5. 终端数据在浏览器与 Worker 之间通过 WSS 传输，在 Worker 与目标服务器之间通过 SSH 加密传输；Worker 负责两段协议之间的转发和 SSH 协议处理。
 6. SFTP 文件管理通过独立的 SSH 子系统通道运行，支持目录浏览、文件上传/下载等操作。
 7. AI 助手通过 WebSocket 接收用户问题及可选的终端选区上下文；选区被标记为非可信分析数据后交给 AgentCore，后者调用外部 LLM API，通过 SSH exec 通道执行获准的命令，并将结果流式返回前端。
 
@@ -190,7 +190,7 @@ flowchart TB
 ### 前置要求
 
 - 一个 Cloudflare 账号。
-- Node.js 环境 (v18+)。
+- Node.js 22 环境（与项目 CI 保持一致）。
 - 启用 Cloudflare Workers 免费计划（TCP Sockets 和 Durable Objects 功能需要）。
 
 ### 部署步骤
@@ -280,13 +280,13 @@ flowchart TB
    - `BASE_URL` = `https://your-domain.com`（你的部署域名）
    - `GITHUB_CLIENT_SECRET` = 你的 Client Secret
 
-3. **重新部署**：如果你是刚刚修改了环境变量，且是首次启用该功能，请务必删除旧版并全新部署以初始化数据库。
+3. **重新部署**：保存环境变量后重新部署当前 Worker。仓库中的 Durable Object migration 会负责初始化所需类和数据库，不需要删除已有 Worker。
 
 > **环境变量类型建议**：建议将所有环境变量都设置为 **Secret** 类型。Secrets 存储在 Cloudflare 加密存储中，与代码部署分离，重新部署时不会被覆盖或丢失。在 Dashboard 添加变量时，选择 "Secret" 类型即可。
 
-> **说明**：服务器凭据（密码/私钥）在数据库中使用 AES-256-GCM 加密存储，加密密钥在首次使用时自动生成并安全地存储在数据库中。连接时凭据不经过前端，通过 one-time-token 机制安全传递。
+> **说明**：服务器凭据（密码/私钥）在每用户 UserDBDO SQLite 中使用 AES-256-GCM 加密存储。当前加密密钥在首次使用时自动生成，并与密文保存在同一个 Durable Object 数据库中，主要用于避免凭据以明文存储，不能抵御整个数据库同时泄露的情况。一键连接已保存服务器时，浏览器不会收到明文凭据，服务端通过一次性连接令牌完成内部传递。
 
-> **注意**：首次启用此功能需要从零部署（删除旧 Worker 后重新部署），因为需要初始化新的 Durable Object。可通过 `npx wrangler delete cloudssh` 删除旧 Worker，然后运行 `pnpm run deploy` 重新部署。
+> **迁移注意**：已有部署应通过 `wrangler.toml` 中递增且不可复用的 migration tag 演进 Durable Object。只有在确认环境中没有需要保留的数据、且明确要重建整个环境时，才应删除 Worker；生产环境不要把删除 Worker 当作常规初始化步骤。
 
 <a id="development"></a>
 ## 开发说明
@@ -395,7 +395,7 @@ test 分支（开发/测试）  ──合并──>  main 分支（生产）
 | **文件传输** | trzsz.js | 支持 trz/tsz 命令、拖拽上传、断点续传 |
 | **AI 助手** | BYOK + OpenAI 兼容接口 | 自带 API Key，支持 DeepSeek 等兼容模型 |
 | **后端** | Cloudflare Workers | Serverless 边缘计算 |
-| **会话管理** | Durable Objects | SSH 会话隔离、Hibernation API |
+| **会话管理** | Durable Objects | SSH 会话隔离；浏览器 WebSocket 使用 Hibernation API 接入，活动出站 TCP 期间不休眠 |
 | **数据存储** | Durable Objects SQLite | 用户数据、服务器配置 |
 | **包管理** | pnpm (workspace) | Monorepo 依赖管理 |
 
@@ -417,7 +417,9 @@ test 分支（开发/测试）  ──合并──>  main 分支（生产）
 
 本项目基于 [Apache License 2.0](LICENSE) 协议开源。
 
-**特别声明**：本项目允许商业使用及二次修改，但必须明确注明原作者。
+**原作者与署名要求**：CloudSSH 由 [TanXin (@newbietan)](https://github.com/newbietan) 发起并完成核心架构设计，目前仍由原作者持续维护。任何基于本项目的二次修改、衍生开发或再发布，均须保留 [LICENSE](LICENSE) 与 [NOTICE](NOTICE) 中的许可证、版权和归属声明，并在项目文档或其他随附声明中明确注明“本项目基于 CloudSSH 修改，原作者为 TanXin (@newbietan)”及原项目链接。
+
+商业使用、修改与再分发均以 [Apache License 2.0](LICENSE) 的条款为准；上述署名要求用于保留原项目来源和作者归属，不限制该许可证授予的其他权利。
 
 欢迎提交 Issue 和 Pull Request 共建社区。如果这个项目对你有帮助，恳求大家给本项目点个 ⭐ Star 支持一下，非常感谢！
 

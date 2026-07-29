@@ -5,7 +5,7 @@ import { t, type TranslationKey } from './i18n';
  *
  * `value` 直接对应 Cloudflare DO 的 locationHint 值。
  * `value = ''` 表示 "Auto"（不留 hint，由 Cloudflare 默认调度；
- *   保存服务器时 user-db 会通过 ipapi.co 自动推断并持久化 hint）。
+ *   保存服务器时 user-db 会通过第三方 IPinfo 自动推断并持久化 hint）。
  *
  * 参考: https://developers.cloudflare.com/durable-objects/reference/data-location/
  */
