@@ -2,6 +2,7 @@
 
 import { marked, type Tokens } from 'marked';
 import DOMPurify from 'dompurify';
+import { copyTextToClipboard } from '../clipboard';
 import { getLocale, onLocaleChange, t, translateDocument } from '../i18n';
 import { getTerminalFillCommand, normalizeCodeLanguage } from './code-actions';
 import {
@@ -829,7 +830,7 @@ export class AgentPanel {
       const code = codeEl.textContent || '';
       const copyButton = this.createCodeActionButton('copy', 'content_copy', t('agent.codeCopy'));
       copyButton.addEventListener('click', async () => {
-        const copied = await this.copyText(code);
+        const copied = await copyTextToClipboard(code);
         this.showCodeActionFeedback(
           copyButton,
           copied ? 'check' : 'error',
@@ -922,32 +923,6 @@ export class AgentPanel {
         isFillButton ? t('agent.codeFill') : t('agent.codeCopy'),
       );
     }, 1600);
-  }
-
-  private async copyText(text: string): Promise<boolean> {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-        return true;
-      }
-    } catch {
-      // Clipboard API 不可用时回退到浏览器复制命令。
-    }
-
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.setAttribute('readonly', '');
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    document.body.appendChild(textarea);
-    textarea.select();
-    try {
-      return document.execCommand('copy');
-    } catch {
-      return false;
-    } finally {
-      textarea.remove();
-    }
   }
 
   private scrollToBottom(): void {

@@ -5,6 +5,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { SearchAddon } from '@xterm/addon-search';
 import { TrzszFilter } from 'trzsz';
 import '@xterm/xterm/css/xterm.css';
+import { copyTextToClipboard } from './clipboard';
 import { t } from './i18n';
 import { notify } from './ui-feedback';
 import { centerTerminalText } from './terminal-text';
@@ -89,11 +90,13 @@ export class SSHTerminal {
     this.selectionPointerActive = false;
     this.selectionAnchor = { clientX: event.clientX, clientY: event.clientY };
     this.notifySelectionChanged();
-    // 鼠标滑动选中后自动复制到剪贴板
     const selection = this.terminal.getSelection();
     if (selection) {
-      this.copySelectionToClipboard(selection);
+      void this.copySelectionToClipboard(selection);
     }
+  };
+  private readonly selectionPointerCancelListener = (): void => {
+    this.selectionPointerActive = false;
   };
 
   constructor(containerId: string) {
@@ -127,7 +130,7 @@ export class SSHTerminal {
     this.container.addEventListener('pointerdown', this.selectionPointerDownListener, true);
     this.container.addEventListener('pointermove', this.selectionPointerMoveListener, true);
     window.addEventListener('pointerup', this.selectionPointerUpListener, true);
-    window.addEventListener('pointercancel', this.selectionPointerUpListener, true);
+    window.addEventListener('pointercancel', this.selectionPointerCancelListener, true);
 
     // Ctrl+Shift+F to toggle search bar
     this.terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
@@ -232,19 +235,12 @@ export class SSHTerminal {
     this.onSelectionChanged?.(selection, this.selectionAnchor);
   }
 
-  /** 将选中文字写入剪贴板，失败时回退到 execCommand；成功后弹出右下角提示 */
+  /** 将选中文字写入剪贴板，并按实际复制结果提供反馈。 */
   private async copySelectionToClipboard(text: string): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
-      try { document.execCommand('copy'); } catch { /* 静默失败 */ }
-      document.body.removeChild(ta);
+    const copied = await copyTextToClipboard(text);
+    if (!copied) {
+      notify(t('terminal.copyFailed'), { variant: 'danger' });
+      return;
     }
     notify(t('terminal.copySuccess'), { variant: 'success', duration: 1500 });
   }
@@ -728,7 +724,7 @@ export class SSHTerminal {
     this.container.removeEventListener('pointerdown', this.selectionPointerDownListener, true);
     this.container.removeEventListener('pointermove', this.selectionPointerMoveListener, true);
     window.removeEventListener('pointerup', this.selectionPointerUpListener, true);
-    window.removeEventListener('pointercancel', this.selectionPointerUpListener, true);
+    window.removeEventListener('pointercancel', this.selectionPointerCancelListener, true);
     this.themeCleanup();
     this.terminalDisposables.forEach(d => d.dispose());
     this.terminalDisposables = [];
