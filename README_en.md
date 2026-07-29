@@ -15,6 +15,7 @@
     <a href="#quick-start">Deployment</a> ·
     <a href="#architecture">Architecture</a> ·
     <a href="CHANGELOG.md">Changelog</a> ·
+    <a href="#contributors">Contributors</a> ·
     <a href="#license">License</a>
   </p>
   <p>
@@ -52,6 +53,7 @@
 - [Development](#development)
   - [Local Development](#local-development)
   - [Tech Stack](#tech-stack)
+- [Contributors](#contributors)
 - [License](#license)
 
 <a id="highlights"></a>
@@ -394,6 +396,19 @@ test branch (dev/test)  ──merge──>  main branch (production)
 | **Session Management** | Durable Objects | SSH session isolation, Hibernation API |
 | **Data Storage** | Durable Objects SQLite | User data, server configurations |
 | **Package Manager** | pnpm (workspace) | Monorepo dependency management |
+
+<a id="contributors"></a>
+## Contributors
+
+Thank you to the following contributors for improving CloudSSH's code, compatibility, and user experience:
+
+| Contributor | Key Contributions |
+|-------------|-------------------|
+| [TanXin (@newbietan)](https://github.com/newbietan) | Project creator, core architecture, and ongoing maintenance |
+| [David xu (@xqdoo00o)](https://github.com/xqdoo00o) | Dropbear compatibility, trzsz file transfer, PTY and session interaction improvements |
+| [vonl1 (@vonl1)](https://github.com/vonl1) | Terminal selection auto-copy and right-click paste experience |
+
+This list is based on the Git commit history. See [GitHub Contributors](https://github.com/newbietan/CloudSSH/graphs/contributors) for the complete record. Issues and Pull Requests are welcome.
 
 <a id="license"></a>
 ## License

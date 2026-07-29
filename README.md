@@ -15,6 +15,7 @@
     <a href="#quick-start">部署指南</a> ·
     <a href="#architecture">架构设计</a> ·
     <a href="CHANGELOG.md">更新日志</a> ·
+    <a href="#contributors">贡献者</a> ·
     <a href="#license">开源协议</a>
   </p>
   <p>
@@ -52,6 +53,7 @@
 - [开发说明](#development)
   - [本地开发](#本地开发)
   - [技术栈](#技术栈)
+- [贡献者](#contributors)
 - [开源协议](#license)
 
 <a id="highlights"></a>
@@ -396,6 +398,19 @@ test 分支（开发/测试）  ──合并──>  main 分支（生产）
 | **会话管理** | Durable Objects | SSH 会话隔离、Hibernation API |
 | **数据存储** | Durable Objects SQLite | 用户数据、服务器配置 |
 | **包管理** | pnpm (workspace) | Monorepo 依赖管理 |
+
+<a id="contributors"></a>
+## 贡献者
+
+感谢以下贡献者对 CloudSSH 的代码、兼容性和用户体验所做的贡献：
+
+| 贡献者 | 主要贡献 |
+|--------|----------|
+| [TanXin (@newbietan)](https://github.com/newbietan) | 项目发起、核心架构与持续维护 |
+| [David xu (@xqdoo00o)](https://github.com/xqdoo00o) | Dropbear 兼容、trzsz 文件传输、PTY 与会话交互优化 |
+| [vonl1 (@vonl1)](https://github.com/vonl1) | 终端选区自动复制与右键粘贴体验 |
+
+名单依据 Git 提交历史整理，完整记录请参阅 [GitHub Contributors](https://github.com/newbietan/CloudSSH/graphs/contributors)。欢迎通过 Issue 和 Pull Request 参与项目建设。
 
 <a id="license"></a>
 ## 开源协议
