@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.4] - 2026-07-29
+
+### Added
+- SFTP 上传同名文件时新增覆盖确认，后端通过目标不存在前置条件阻止未经确认的覆盖，并补充单元与浏览器回归测试。
+- 新增应用明暗模式订阅能力，供 Turnstile 等第三方组件与当前主题保持一致。
+- 新增 `NOTICE` 原作者与项目来源声明，明确二次修改和再发布时需要保留的归属信息。
+
+### Changed
+- 完善 SFTP 中文和英文界面文案，统一文件操作、批量任务、错误反馈及覆盖确认信息。
+- 保存服务器时仅在主机变化且需要自动推断区域时查询 IPinfo，并为第三方请求增加超时回退。
+- 更新 README、AGENTS 和测试文档，使架构、部署迁移、安全边界、运行环境及原作者署名说明与当前实现一致。
+
+### Fixed
+- 修复切换服务器认证方式后沿用旧凭据，导致认证方式与密码或私钥不一致的问题。
+- 修复私钥输入框按 Enter 意外提交连接，以及端口未严格限制为 1-65535 整数的问题。
+- 修复 SFTP 上传同名文件时静默覆盖远端内容的问题。
+- 修复 AI 配置窗口首次点击创建后仍保持隐藏、需要再次点击才能显示的问题。
+- 修复 Standard Light 主题下 Turnstile 固定使用深色组件，以及未验证时切换主题无法同步配色的问题。
+
 ## [1.3.3] - 2026-07-29
 
 ### Added
