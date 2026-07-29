@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2026-07-29
+
+### Added
+- 终端支持在鼠标正常结束文本选区时自动复制到系统剪贴板，并提供中英文操作反馈。
+- 中英文 README 新增贡献者名单、主要贡献说明及完整 GitHub Contributors 记录入口。
+- 新增剪贴板写入单元测试和 Chromium 浏览器回归，覆盖自动复制、指针取消、旧版回退及焦点恢复。
+
+### Changed
+- 终端选区与 Agent 代码块复制统一使用公共剪贴板模块；Clipboard API 不可用或被拒绝时自动回退到 `document.execCommand('copy')`。
+
+### Fixed
+- 修复旧版复制回退抢占终端焦点、复制失败仍显示成功提示，以及 `pointercancel` 意外触发复制的问题。
+
 ## [1.3.2] - 2026-07-28
 
 ### Added
