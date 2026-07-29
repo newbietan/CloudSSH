@@ -40,20 +40,34 @@ class Deferred<T> {
   }
 }
 
+interface UploadConflict {
+  path: string;
+  existingSize: number;
+}
+
+type UploadStartResult =
+  | { status: 'ready' }
+  | { status: 'conflict'; conflict: UploadConflict };
+
 class UploadWaiter {
-  private ready: Deferred<void> | null = null;
+  private ready: Deferred<UploadStartResult> | null = null;
   private progress: Deferred<number> | null = null;
   private complete: Deferred<void> | null = null;
   private progressQueue: number[] = [];
   private progressQueueHead = 0;
 
-  waitReady(): Promise<void> {
-    this.ready = new Deferred<void>();
+  waitReady(): Promise<UploadStartResult> {
+    this.ready = new Deferred<UploadStartResult>();
     return this.ready.promise;
   }
 
   resolveReady(): void {
-    this.ready?.resolve();
+    this.ready?.resolve({ status: 'ready' });
+    this.ready = null;
+  }
+
+  resolveConflict(conflict: UploadConflict): void {
+    this.ready?.resolve({ status: 'conflict', conflict });
     this.ready = null;
   }
 
@@ -596,6 +610,12 @@ export class SFTPPanel {
       case 'sftp_upload_ready':
         this.onUploadReady();
         break;
+      case 'sftp_upload_conflict':
+        this.uploadWaiter.resolveConflict({
+          path: msg.path,
+          existingSize: Number.isFinite(msg.existingSize) ? msg.existingSize : 0,
+        });
+        break;
       case 'sftp_upload_progress':
         this.onUploadProgress(msg.loaded, msg.total);
         break;
@@ -1007,7 +1027,7 @@ export class SFTPPanel {
     let sendOffset = 0;
     let acknowledged = 0;
     const maxBufferedBytes = UPLOAD_CHUNK_SIZE * UPLOAD_CONCURRENCY;
-    const reader = file.stream().getReader();
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
     let pendingChunk: Uint8Array | null = null;
     let pendingChunkOffset = 0;
 
@@ -1019,9 +1039,38 @@ export class SFTPPanel {
 
     try {
       const readyPromise = this.uploadWaiter.waitReady();
-      this.sendJSON({ type: 'sftp_upload_start', path, size: file.size });
+      this.sendJSON({ type: 'sftp_upload_start', path, size: file.size, overwrite: false });
+      let startResult = await readyPromise;
+
+      if (startResult.status === 'conflict') {
+        const confirmed = await confirmAction({
+          title: t('sftp.overwriteTitle'),
+          message: t('sftp.overwriteMessage', {
+            name: file.name,
+            existingSize: this.formatSize(startResult.conflict.existingSize),
+            newSize: this.formatSize(file.size),
+          }),
+          confirmText: t('sftp.overwrite'),
+          cancelText: t('common.cancel'),
+          variant: 'danger',
+        });
+        if (!confirmed || this.uploadCancelRequested || !this.visible) {
+          this.uploadActive = false;
+          this.setIdleStatus(t('sftp.uploadSkipped'));
+          return;
+        }
+
+        const overwriteReadyPromise = this.uploadWaiter.waitReady();
+        this.sendJSON({ type: 'sftp_upload_start', path, size: file.size, overwrite: true });
+        startResult = await overwriteReadyPromise;
+      }
+
+      if (startResult.status !== 'ready') {
+        throw new Error(t('sftp.uploadConflictUnresolved'));
+      }
+
+      reader = file.stream().getReader();
       this.showProgress(t('sftp.uploading', { name: file.name }), 0);
-      await readyPromise;
       if (this.uploadCancelRequested) {
         await this.waitForUploadCancel();
         return;
@@ -1029,7 +1078,7 @@ export class SFTPPanel {
 
       const readNextChunk = async (): Promise<Uint8Array | null> => {
         while (!pendingChunk || pendingChunkOffset >= pendingChunk.length) {
-          const { done, value } = await reader.read();
+          const { done, value } = await reader!.read();
           if (done) return null;
           pendingChunk = value;
           pendingChunkOffset = 0;
@@ -1092,7 +1141,7 @@ export class SFTPPanel {
       this.uploadCancelRequested = false;
       this.uploadCancelConfirmed = false;
       this.uploadCancelWaiter = null;
-      reader.releaseLock();
+      reader?.releaseLock();
     }
   }
 

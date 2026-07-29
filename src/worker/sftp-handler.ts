@@ -8,10 +8,12 @@ import {
   SSH_FXP_ATTRS,
   SSH_FX_OK,
   SSH_FX_EOF,
+  SSH_FX_NO_SUCH_FILE,
   SSH_FXF_READ,
   SSH_FXF_WRITE,
   SSH_FXF_CREAT,
   SSH_FXF_TRUNC,
+  SSH_FXF_EXCL,
   getFileTypeFromPermissions,
   formatPermissions,
   formatFileSize,
@@ -555,7 +557,7 @@ export class SFTPHandler {
   }
 
   // Start file upload
-  async uploadStart(path: string, totalSize: number): Promise<void> {
+  async uploadStart(path: string, totalSize: number, overwrite: boolean = false): Promise<void> {
     if (!this.ready) {
       this.sendError('upload', 'SFTP 未就绪');
       return;
@@ -571,7 +573,41 @@ export class SFTPHandler {
       this.uploadPath = path;
       this.uploadTotalSize = totalSize;
 
-      const openResp = await this.sftp.openFile(path, SSH_FXF_WRITE | SSH_FXF_CREAT | SSH_FXF_TRUNC);
+      if (!overwrite) {
+        const statResp = await this.sftp.stat(path);
+        const statType = statResp[0];
+
+        if (statType === SSH_FXP_ATTRS) {
+          const attrs = this.sftp.parseAttrsResponse(statResp);
+          const fileType = getFileTypeFromPermissions(attrs.permissions ?? 0);
+          if (fileType === 'dir') {
+            this.sendError('upload', '目标路径是目录，无法覆盖');
+            return;
+          }
+          this.sendJSON({
+            type: 'sftp_upload_conflict',
+            path,
+            existingSize: attrs.size ?? 0,
+          });
+          return;
+        }
+
+        if (statType === SSH_FXP_STATUS) {
+          const status = this.sftp.parseStatusResponse(statResp);
+          if (status.code !== SSH_FX_NO_SUCH_FILE) {
+            this.sendError('upload', '检查目标文件失败: ' + status.message);
+            return;
+          }
+        } else {
+          this.sendError('upload', '检查目标文件失败');
+          return;
+        }
+      }
+
+      const openFlags = overwrite
+        ? SSH_FXF_WRITE | SSH_FXF_CREAT | SSH_FXF_TRUNC
+        : SSH_FXF_WRITE | SSH_FXF_CREAT | SSH_FXF_EXCL;
+      const openResp = await this.sftp.openFile(path, openFlags);
       const openType = openResp[0];
 
       if (openType === SSH_FXP_STATUS) {

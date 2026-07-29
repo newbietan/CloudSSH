@@ -1492,7 +1492,7 @@ export class SSHSession {
         this.sftpHandler.cancelDownload();
         break;
       case 'sftp_upload_start':
-        await this.sftpHandler.uploadStart(msg.path, msg.size || 0);
+        await this.sftpHandler.uploadStart(msg.path, msg.size || 0, msg.overwrite === true);
         break;
       case 'sftp_upload_end':
         await this.sftpHandler.uploadEnd();

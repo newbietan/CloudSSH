@@ -95,6 +95,19 @@ describe('国际化核心', () => {
       /'(?:Reconnecting SFTP|Waiting for SFTP|Invalid SFTP response|Upload failed:|Download failed:|Uploading:|Downloading:|Upload cancelled|Download cancelled|Renamed)'/,
     );
   });
+
+  it('SFTP 同名覆盖确认提供完整中英文文案', () => {
+    expect(zhCN['sftp.overwriteTitle']).toBe('覆盖同名文件');
+    expect(zhCN['sftp.overwriteMessage']).toContain('{existingSize}');
+    expect(zhCN['sftp.overwriteMessage']).toContain('{newSize}');
+    expect(enUS['sftp.overwriteTitle']).toBe('Overwrite existing file');
+
+    const source = readFileSync(new URL('../frontend/src/sftp-panel.ts', import.meta.url), 'utf8');
+    expect(source).toContain("title: t('sftp.overwriteTitle')");
+    expect(source).toContain("confirmText: t('sftp.overwrite')");
+    expect(source).toContain("overwrite: false");
+    expect(source).toContain("overwrite: true");
+  });
 });
 
 describe('Agent 响应语言', () => {
