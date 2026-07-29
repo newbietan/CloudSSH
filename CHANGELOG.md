@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - 修复旧版复制回退抢占终端焦点、复制失败仍显示成功提示，以及 `pointercancel` 意外触发复制的问题。
+- 修复 WebCrypto 原始 ECDSA 签名以 `0x30` 开头时被误判为 DER 格式，导致 SSH 公钥认证随机失败的问题。
 
 ## [1.3.2] - 2026-07-28
 

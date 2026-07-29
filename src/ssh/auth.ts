@@ -210,19 +210,17 @@ export class SSHAuth {
   private static ecdsaWebCryptoToSSH(sigBytes: Uint8Array, coordBytes: number): Uint8Array {
     if (sigBytes.length < 2) throw new Error('ECDSA 签名长度过短');
 
-    if (sigBytes[0] === 0x30) {
-      // DER SEQUENCE
-      return this.convertECDSADERToSSH(sigBytes);
+    // raw r || s（固定长度 2 * coordBytes）
+    // 必须优先按长度识别：raw 的首字节也可能随机为 DER SEQUENCE 标记 0x30。
+    if (sigBytes.length === coordBytes * 2) {
+      const r = sigBytes.subarray(0, coordBytes);
+      const s = sigBytes.subarray(coordBytes);
+      // 转成 mpint（去掉前导 0，最高位为 1 时补 0）
+      return concat(this.sshMPInt(r), this.sshMPInt(s));
     }
 
-    // raw r || s（固定长度 2 * coordBytes）
-    if (sigBytes.length !== coordBytes * 2) {
-      throw new Error(`ECDSA raw 签名长度不匹配: 期望 ${coordBytes * 2}，实际 ${sigBytes.length}`);
-    }
-    const r = sigBytes.subarray(0, coordBytes);
-    const s = sigBytes.subarray(coordBytes);
-    // 转成 mpint（去掉前导 0，最高位为 1 时补 0）
-    return concat(this.sshMPInt(r), this.sshMPInt(s));
+    // 部分 WebCrypto 实现返回 DER SEQUENCE。
+    return this.convertECDSADERToSSH(sigBytes);
   }
 
   /**
@@ -594,49 +592,47 @@ export class SSHAuth {
     if (derSignature[offset] !== 0x30) throw new Error('无效的 DER 签名格式');
     offset++;
 
-    if (derSignature[offset] < 0x80) {
-      offset++;
-    } else {
-      const lenBytes = derSignature[offset] & 0x7f;
-      offset += 1 + lenBytes;
-    }
+    const readLength = (): number => {
+      if (offset >= derSignature.length) throw new Error('无效的 DER 签名格式');
 
-    if (derSignature[offset] !== 0x02) throw new Error('无效的 DER 签名格式');
-    offset++;
+      const first = derSignature[offset++];
+      if (first < 0x80) return first;
 
-    let rLen: number;
-    if (derSignature[offset] < 0x80) {
-      rLen = derSignature[offset];
-      offset++;
-    } else {
-      const lenBytes = derSignature[offset] & 0x7f;
-      rLen = 0;
-      for (let i = 0; i < lenBytes; i++) {
-        rLen = (rLen << 8) | derSignature[offset + 1 + i];
+      const lenBytes = first & 0x7f;
+      if (lenBytes === 0 || lenBytes > 2 || offset + lenBytes > derSignature.length) {
+        throw new Error('无效的 DER 签名格式');
       }
-      offset += 1 + lenBytes;
-    }
 
-    let r = derSignature.slice(offset, offset + rLen);
-    offset += rLen;
-
-    if (derSignature[offset] !== 0x02) throw new Error('无效的 DER 签名格式');
-    offset++;
-
-    let sLen: number;
-    if (derSignature[offset] < 0x80) {
-      sLen = derSignature[offset];
-      offset++;
-    } else {
-      const lenBytes = derSignature[offset] & 0x7f;
-      sLen = 0;
+      let length = 0;
       for (let i = 0; i < lenBytes; i++) {
-        sLen = (sLen << 8) | derSignature[offset + 1 + i];
+        length = (length << 8) | derSignature[offset++];
       }
-      offset += 1 + lenBytes;
-    }
+      if (length < 0x80) throw new Error('无效的 DER 签名格式');
+      return length;
+    };
 
-    let s = derSignature.slice(offset, offset + sLen);
+    const sequenceLength = readLength();
+    const sequenceEnd = offset + sequenceLength;
+    if (sequenceEnd !== derSignature.length) throw new Error('无效的 DER 签名格式');
+
+    const readInteger = (): Uint8Array => {
+      if (offset >= sequenceEnd || derSignature[offset++] !== 0x02) {
+        throw new Error('无效的 DER 签名格式');
+      }
+
+      const length = readLength();
+      if (length === 0 || offset + length > sequenceEnd) {
+        throw new Error('无效的 DER 签名格式');
+      }
+
+      const value = derSignature.slice(offset, offset + length);
+      offset += length;
+      return value;
+    };
+
+    let r = readInteger();
+    let s = readInteger();
+    if (offset !== sequenceEnd) throw new Error('无效的 DER 签名格式');
 
     while (r.length > 1 && r[0] === 0) r = r.slice(1);
     while (s.length > 1 && s[0] === 0) s = s.slice(1);

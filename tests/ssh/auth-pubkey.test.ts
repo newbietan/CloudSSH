@@ -233,6 +233,46 @@ describe('SSHAuth.buildPublicKeyAuthRequest — RSA', () => {
 });
 
 describe('SSHAuth.buildPublicKeyAuthRequest — ECDSA', () => {
+  const convertWebCryptoSignature = (signature: Uint8Array, coordBytes: number): Uint8Array => {
+    const authWithPrivateConverter = SSHAuth as unknown as {
+      ecdsaWebCryptoToSSH: (sigBytes: Uint8Array, coordinateBytes: number) => Uint8Array;
+    };
+    return authWithPrivateConverter.ecdsaWebCryptoToSSH(signature, coordBytes);
+  };
+
+  it('固定长度 raw 签名以 0x30 开头时仍按 raw r||s 解析', () => {
+    const rawSignature = new Uint8Array(64);
+    rawSignature[0] = 0x30;
+    rawSignature[32] = 0x80;
+
+    const sshSignature = convertWebCryptoSignature(rawSignature, 32);
+    const rLength = readUint32(sshSignature, 0);
+    const r = sshSignature.subarray(4, 4 + rLength);
+    const sOffset = 4 + rLength;
+    const sLength = readUint32(sshSignature, sOffset);
+    const s = sshSignature.subarray(sOffset + 4, sOffset + 4 + sLength);
+
+    expect(rLength).toBe(32);
+    expect(r[0]).toBe(0x30);
+    expect(sLength).toBe(33);
+    expect(s.subarray(0, 2)).toEqual(new Uint8Array([0, 0x80]));
+  });
+
+  it('非 raw 长度的有效 DER 签名仍可转换为 SSH 格式', () => {
+    const derSignature = new Uint8Array([
+      0x30, 0x06,
+      0x02, 0x01, 0x01,
+      0x02, 0x01, 0x02,
+    ]);
+
+    const sshSignature = convertWebCryptoSignature(derSignature, 32);
+
+    expect(sshSignature).toEqual(concat(
+      encodeString(new Uint8Array([0x01])),
+      encodeString(new Uint8Array([0x02])),
+    ));
+  });
+
   // 三曲线参数：[key, keyType, namedCurve, hash, coordBytes]
   const ECDSA_CASES = [
     { key: ECDSA_256_KEY, keyType: 'ecdsa-sha2-nistp256', curve: 'P-256', hash: 'SHA-256', coordBytes: 32 },
