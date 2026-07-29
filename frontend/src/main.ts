@@ -270,6 +270,10 @@ document.getElementById('sftp-toggle-btn')?.addEventListener('click', () => {
 
 const aiConfigPanel = new AIConfigPanel();
 
+document.getElementById('ai-config-btn')?.addEventListener('click', () => {
+  aiConfigPanel.show();
+});
+
 document.getElementById('agent-toggle-btn')?.addEventListener('click', () => {
   const tab = tabManager?.getActiveTab();
   if (!tab?.agentPanel) return;
@@ -284,11 +288,6 @@ askAISelectionButton?.addEventListener('pointerdown', (event) => {
 askAISelectionButton?.addEventListener('click', () => {
   tabManager?.askAIAboutActiveSelection();
 });
-
-/** 显示 AI 配置面板（从 server-list 调用） */
-export function showAIConfig(): void {
-  aiConfigPanel.show();
-}
 
 // ==================== 终端搜索 ====================
 

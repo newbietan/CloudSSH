@@ -4,6 +4,7 @@ import { populateRegionSelect, regionLabel } from './regions';
 import { notify } from './ui-feedback';
 import { onLocaleChange, t, translateDocument } from './i18n';
 import { parsePort } from './port';
+import { getActiveColorScheme, onColorSchemeChange, type ColorScheme } from './theme';
 // --- Credential encryption helpers ---
 async function deriveKey(salt: Uint8Array): Promise<CryptoKey> {
   const raw = new TextEncoder().encode(window.location.origin + ':cloudssh');
@@ -57,10 +58,21 @@ export class ConnectionForm {
   private turnstileVerified = false;
   private turnstileWidgetId: string | null = null;
   private turnstileSitekey = '';
+  private turnstileTheme: ColorScheme | null = null;
 
   constructor(options: ConnectionFormOptions) {
     this.options = options;
     this.render();
+    onColorSchemeChange((colorScheme) => {
+      if (
+        this.turnstileEnabled
+        && this.turnstileSitekey
+        && !this.turnstileVerified
+        && this.turnstileTheme !== colorScheme
+      ) {
+        this.renderTurnstile();
+      }
+    });
     this.loadSavedCredentials();
     this.checkTurnstileConfig();
     onLocaleChange(() => {
@@ -113,12 +125,19 @@ export class ConnectionForm {
     const container = document.getElementById('turnstile-widget');
     if (!container || !window.turnstile) return;
 
+    if (this.turnstileWidgetId) {
+      window.turnstile.remove(this.turnstileWidgetId);
+      this.turnstileWidgetId = null;
+      container.replaceChildren();
+    }
+
     const wrapper = document.getElementById('turnstile-container');
     if (wrapper) wrapper.style.display = 'block';
 
+    this.turnstileTheme = getActiveColorScheme();
     this.turnstileWidgetId = window.turnstile.render(container, {
       sitekey: this.turnstileSitekey,
-      theme: 'dark',
+      theme: this.turnstileTheme,
       callback: async (token: string) => {
         // Verify with backend and get cookie
         try {

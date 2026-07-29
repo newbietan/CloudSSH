@@ -241,7 +241,9 @@ const COLOR_SCHEMES: Record<BuiltInThemeName, ColorScheme> = {
 };
 
 let activeTerminalTheme: ITheme = THEMES.cyberpunk;
+let activeColorScheme: ColorScheme = 'dark';
 const terminalThemeListeners = new Set<(theme: ITheme) => void>();
+const colorSchemeListeners = new Set<(colorScheme: ColorScheme) => void>();
 
 export function isBuiltInTheme(value: string | null): value is BuiltInThemeName {
   return !!value && Object.prototype.hasOwnProperty.call(THEMES, value);
@@ -265,10 +267,20 @@ export function getActiveTerminalTheme(): ITheme {
   return activeTerminalTheme;
 }
 
+export function getActiveColorScheme(): ColorScheme {
+  return activeColorScheme;
+}
+
 export function onTerminalThemeChange(listener: (theme: ITheme) => void): () => void {
   terminalThemeListeners.add(listener);
   listener(activeTerminalTheme);
   return () => terminalThemeListeners.delete(listener);
+}
+
+export function onColorSchemeChange(listener: (colorScheme: ColorScheme) => void): () => void {
+  colorSchemeListeners.add(listener);
+  listener(activeColorScheme);
+  return () => colorSchemeListeners.delete(listener);
 }
 
 function applyTheme(
@@ -278,6 +290,7 @@ function applyTheme(
   themeName: BuiltInThemeName | 'custom',
 ): void {
   activeTerminalTheme = terminal;
+  activeColorScheme = colorScheme;
 
   if (typeof document !== 'undefined') {
     const root = document.documentElement;
@@ -289,6 +302,7 @@ function applyTheme(
   }
 
   terminalThemeListeners.forEach(listener => listener(terminal));
+  colorSchemeListeners.forEach(listener => listener(colorScheme));
 }
 
 function inferColorScheme(data: ImportedThemeData): ColorScheme {

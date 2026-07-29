@@ -5,8 +5,10 @@ import {
   UI_THEMES,
   applyBuiltInTheme,
   applyImportedTheme,
+  getActiveColorScheme,
   getActiveTerminalTheme,
   isBuiltInTheme,
+  onColorSchemeChange,
   onTerminalThemeChange,
 } from '../frontend/src/theme';
 
@@ -63,6 +65,19 @@ describe('Standard 内置主题', () => {
     applyBuiltInTheme('standard-light');
     expect(received).toEqual([THEMES.cyberpunk, THEMES['standard-light']]);
     expect(getActiveTerminalTheme()).toBe(THEMES['standard-light']);
+
+    unsubscribe();
+    applyBuiltInTheme('standard-dark');
+    expect(received).toHaveLength(2);
+  });
+
+  it('主题变化会广播明暗模式，供第三方组件同步配色', () => {
+    const received: unknown[] = [];
+    const unsubscribe = onColorSchemeChange(colorScheme => received.push(colorScheme));
+
+    applyBuiltInTheme('standard-light');
+    expect(received).toEqual(['dark', 'light']);
+    expect(getActiveColorScheme()).toBe('light');
 
     unsubscribe();
     applyBuiltInTheme('standard-dark');

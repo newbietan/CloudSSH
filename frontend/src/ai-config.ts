@@ -7,15 +7,10 @@ export class AIConfigPanel {
 
   constructor() {}
 
-  async show(): Promise<void> {
-    if (this.modalEl) {
-      this.modalEl.classList.remove('hidden');
-      await this.loadConfig();
-      return;
-    }
-
-    this.render();
-    await this.loadConfig();
+  show(): void {
+    if (!this.modalEl) this.render();
+    this.modalEl!.classList.remove('hidden');
+    void this.loadConfig();
   }
 
   hide(): void {
