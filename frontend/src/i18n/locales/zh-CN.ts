@@ -142,6 +142,7 @@ export const zhCN = {
   'terminal.reconnectWait': '{seconds} 秒后重连（第 {attempt}/{max} 次）…',
   'terminal.reconnecting': '正在重新连接…',
   'terminal.reconnectFailed': '重新连接失败',
+  'terminal.copySuccess': '已复制',
   'terminal.status.versionExchange': '正在交换 SSH 版本…',
   'terminal.status.versionReady': 'SSH 版本交换完成',
   'terminal.status.authPublicKey': '正在使用密钥认证…',

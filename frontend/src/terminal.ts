@@ -6,6 +6,7 @@ import { SearchAddon } from '@xterm/addon-search';
 import { TrzszFilter } from 'trzsz';
 import '@xterm/xterm/css/xterm.css';
 import { t } from './i18n';
+import { notify } from './ui-feedback';
 import { centerTerminalText } from './terminal-text';
 import { localizedSSHMessage } from './terminal-status';
 import {
@@ -88,6 +89,11 @@ export class SSHTerminal {
     this.selectionPointerActive = false;
     this.selectionAnchor = { clientX: event.clientX, clientY: event.clientY };
     this.notifySelectionChanged();
+    // 鼠标滑动选中后自动复制到剪贴板
+    const selection = this.terminal.getSelection();
+    if (selection) {
+      this.copySelectionToClipboard(selection);
+    }
   };
 
   constructor(containerId: string) {
@@ -139,7 +145,7 @@ export class SSHTerminal {
 
     window.addEventListener('resize', this.resizeListener);
 
-    // Right-click paste support
+    // 右键粘贴（选区已通过鼠标松手自动复制到剪贴板）
     this.container.addEventListener('contextmenu', async (e) => {
       e.preventDefault();
       try {
@@ -224,6 +230,23 @@ export class SSHTerminal {
       this.selectionAnchor = null;
     }
     this.onSelectionChanged?.(selection, this.selectionAnchor);
+  }
+
+  /** 将选中文字写入剪贴板，失败时回退到 execCommand；成功后弹出右下角提示 */
+  private async copySelectionToClipboard(text: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try { document.execCommand('copy'); } catch { /* 静默失败 */ }
+      document.body.removeChild(ta);
+    }
+    notify(t('terminal.copySuccess'), { variant: 'success', duration: 1500 });
   }
 
   mount(): void {
