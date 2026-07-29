@@ -1,6 +1,7 @@
 import { populateRegionSelect, regionLabel } from './regions';
 import { confirmAction, notify } from './ui-feedback';
 import { onLocaleChange, t } from './i18n';
+import { parsePort } from './port';
 
 interface UserInfo {
   id: number;
@@ -81,6 +82,7 @@ export class ServerList {
   private onLogout: () => void;
   private onConnect: (wsUrl: string, serverName: string, hostInfo?: { host: string; port: number; username?: string }) => void;
   private editingServerId: number | null = null;
+  private editingOriginalAuthMethod: ServerConfig['auth_method'] | null = null;
   private modalAuthMode: 'password' | 'key' = 'password';
   private searchQuery = '';
   private selectedTag = '';
@@ -183,19 +185,15 @@ export class ServerList {
     });
 
     // Modal 提交
-    document.getElementById('server-submit-btn')?.addEventListener('click', () => this.handleSubmit());
+    document.getElementById('server-form')?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      void this.handleSubmit();
+    });
 
     // Modal 认证方式切换
     document.getElementById('modal-auth-tab-password')?.addEventListener('click', () => this.setModalAuthMode('password'));
     document.getElementById('modal-auth-tab-key')?.addEventListener('click', () => this.setModalAuthMode('key'));
 
-    // 回车提交
-    document.getElementById('server-form')?.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        this.handleSubmit();
-      }
-    });
   }
 
   // ==================== 数据获取 ====================
@@ -469,6 +467,7 @@ export class ServerList {
 
   showModal(mode: 'add' | 'edit', server?: ServerConfig): void {
     this.editingServerId = mode === 'edit' && server ? server.id : null;
+    this.editingOriginalAuthMethod = mode === 'edit' && server ? server.auth_method : null;
 
     const modal = document.getElementById('server-modal');
     const title = document.getElementById('modal-title');
@@ -545,6 +544,7 @@ export class ServerList {
       modal.classList.remove('flex');
     }
     this.editingServerId = null;
+    this.editingOriginalAuthMethod = null;
   }
 
   private setModalAuthMode(mode: 'password' | 'key'): void {
@@ -563,7 +563,8 @@ export class ServerList {
   private async handleSubmit(): Promise<void> {
     const name = (document.getElementById('server-name') as HTMLInputElement).value.trim();
     const host = (document.getElementById('server-host') as HTMLInputElement).value.trim();
-    const port = parseInt((document.getElementById('server-port') as HTMLInputElement).value || '22');
+    const portInput = document.getElementById('server-port') as HTMLInputElement;
+    const port = parsePort(portInput.value);
     const username = (document.getElementById('server-username') as HTMLInputElement).value.trim();
     const password = (document.getElementById('server-password') as HTMLInputElement).value;
     const privateKey = (document.getElementById('server-private-key') as HTMLTextAreaElement).value;
@@ -579,12 +580,26 @@ export class ServerList {
       return;
     }
 
+    if (port === null) {
+      notify(t('auth.validationPort'), {
+        title: t('server.detailsTitle'),
+        variant: 'warning',
+      });
+      portInput.focus();
+      return;
+    }
+
     const authMethod = this.modalAuthMode === 'key' ? 'publickey' : 'password';
     const credential = authMethod === 'publickey' ? privateKey : password;
+    const authMethodChanged = this.editingServerId !== null
+      && this.editingOriginalAuthMethod !== null
+      && authMethod !== this.editingOriginalAuthMethod;
 
-    // 新增时必须填写凭据，编辑时可选
-    if (!this.editingServerId && !credential) {
-      notify(t(authMethod === 'publickey' ? 'auth.validationPrivateKey' : 'auth.validationPassword'), {
+    // 新增或切换认证方式时必须填写与新方式匹配的凭据
+    if ((!this.editingServerId || authMethodChanged) && !credential) {
+      notify(authMethodChanged
+        ? t('server.credentialRequiredAfterAuthChange')
+        : t(authMethod === 'publickey' ? 'auth.validationPrivateKey' : 'auth.validationPassword'), {
         title: t('auth.incompleteCredentials'),
         variant: 'warning',
       });

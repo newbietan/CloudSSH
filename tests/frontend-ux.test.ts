@@ -7,6 +7,7 @@ import {
   type ServerConfig,
 } from '../frontend/src/server-list';
 import { getNetworkQuality } from '../frontend/src/network-quality';
+import { parsePort } from '../frontend/src/port';
 
 const servers: ServerConfig[] = [
   {
@@ -60,6 +61,39 @@ describe('服务器列表搜索', () => {
       currentPage: 2,
       totalPages: 2,
     });
+  });
+});
+
+describe('连接表单提交与端口校验', () => {
+  it('仅接受 1-65535 范围内的十进制整数端口', () => {
+    expect(parsePort('22')).toBe(22);
+    expect(parsePort(' 65535 ')).toBe(65535);
+    expect(parsePort('0')).toBeNull();
+    expect(parsePort('65536')).toBeNull();
+    expect(parsePort('22.5')).toBeNull();
+    expect(parsePort('22abc')).toBeNull();
+    expect(parsePort('1e2')).toBeNull();
+    expect(parsePort('')).toBeNull();
+  });
+
+  it('使用标准 submit 事件，私钥文本框中的 Enter 不会被全局捕获', () => {
+    const authSource = readFileSync(
+      new URL('../frontend/src/auth-form.ts', import.meta.url),
+      'utf8',
+    );
+    const serverSource = readFileSync(
+      new URL('../frontend/src/server-list.ts', import.meta.url),
+      'utf8',
+    );
+    const html = readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
+
+    expect(authSource).toContain("addEventListener('submit'");
+    expect(serverSource).toContain("addEventListener('submit'");
+    expect(authSource).not.toContain("addEventListener('keypress'");
+    expect(serverSource).not.toContain("addEventListener('keypress'");
+    expect(authSource).toContain('id="connect-btn"');
+    expect(authSource).toContain('type="submit"');
+    expect(html).toMatch(/id="server-submit-btn"[^>]+type="submit"/);
   });
 });
 

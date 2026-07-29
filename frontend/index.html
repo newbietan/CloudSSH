@@ -174,7 +174,7 @@
               <label for="server-port" class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.port">端口</label>
               <div class="flex items-center">
                 <span class="text-muted mr-2">:</span>
-                <input id="server-port" class="terminal-input text-[13px]" placeholder="22" type="text" value="22">
+                <input id="server-port" class="terminal-input text-[13px]" placeholder="22" type="number" inputmode="numeric" min="1" max="65535" step="1" value="22" required>
               </div>
             </div>
           </div>
@@ -209,7 +209,7 @@
             <div id="server-region-inferred" class="text-[10px] text-muted mt-1"></div>
           </div>
           <div class="pt-2">
-            <button id="server-submit-btn" class="cyber-button w-full py-3 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-2 bg-primary text-on-primary" type="button">
+            <button id="server-submit-btn" class="cyber-button w-full py-3 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-2 bg-primary text-on-primary" type="submit">
               <span class="material-symbols-outlined" style="font-size: 18px;">save</span>
               <span data-i18n="server.save">保存服务器</span>
             </button>

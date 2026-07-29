@@ -68,6 +68,33 @@ describe('国际化核心', () => {
     expect(source).toContain("label: t('sftp.contextDelete')");
     expect(source).not.toMatch(/label:\s*'(?:Open|Download|Rename|Delete)'/);
   });
+
+  it('SFTP 连接、传输和统计状态均通过语言包展示', () => {
+    const source = readFileSync(new URL('../frontend/src/sftp-panel.ts', import.meta.url), 'utf8');
+    for (const key of [
+      'sftp.reconnecting',
+      'sftp.waitingWebSocket',
+      'sftp.invalidResponse',
+      'sftp.websocketError',
+      'sftp.connectionClosed',
+      'sftp.uploading',
+      'sftp.downloading',
+      'sftp.uploadFailed',
+      'sftp.downloadFailed',
+      'sftp.uploadCancelled',
+      'sftp.downloadCancelled',
+      'sftp.renamed',
+      'sftp.queuedUpload',
+      'sftp.queuedDownload',
+      'sftp.itemCounts',
+      'sftp.items',
+    ]) {
+      expect(source).toContain(`t('${key}'`);
+    }
+    expect(source).not.toMatch(
+      /'(?:Reconnecting SFTP|Waiting for SFTP|Invalid SFTP response|Upload failed:|Download failed:|Uploading:|Downloading:|Upload cancelled|Download cancelled|Renamed)'/,
+    );
+  });
 });
 
 describe('Agent 响应语言', () => {

@@ -229,6 +229,9 @@ export class SSHSessionDO {
     attachToken?: string
   ): Promise<void> {
     try {
+      if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) {
+        throw new Error('端口必须是 1-65535 之间的整数');
+      }
       // --- SSRF Protection ---
       if (isBlockedHost(config.host)) {
         throw new Error('禁止连接内网或保留地址 (SSRF 防护)');

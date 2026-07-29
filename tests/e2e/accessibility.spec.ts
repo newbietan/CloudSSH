@@ -16,6 +16,23 @@ test('anonymous connection form has no serious accessibility violations', async 
   )).toEqual([]);
 });
 
+test('private key textarea keeps Enter as a newline instead of submitting the form', async ({ page }) => {
+  await mockAnonymousSession(page);
+  await page.goto('/');
+
+  await page.locator('#host').fill('example.com');
+  await page.locator('#username').fill('deploy');
+  await page.locator('#auth-tab-key').click();
+  const privateKey = page.locator('#private-key');
+  await privateKey.fill('line one');
+  await privateKey.press('Enter');
+  await privateKey.type('line two');
+
+  await expect(privateKey).toHaveValue('line one\nline two');
+  await expect(page.locator('#auth-section')).toBeVisible();
+  await expect(page.locator('#terminal-section')).toBeHidden();
+});
+
 test('server modal exposes keyboard-operable dialog semantics', async ({ page }) => {
   await mockAnonymousSession(page);
   await page.route('**/api/auth/me', (route) =>

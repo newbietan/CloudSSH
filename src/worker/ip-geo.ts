@@ -54,6 +54,7 @@ function refineForUsCanada(country: string, lon: number): string {
 }
 
 const ALLOWED_SET: ReadonlySet<string> = new Set(ALLOWED_LOCATION_HINTS);
+const IPINFO_TIMEOUT_MS = 3000;
 
 /**
  * 推断结果，包含 hint 和调试信息
@@ -84,6 +85,7 @@ export async function inferLocationHint(host: string): Promise<InferResult> {
     debug.push(`[IP-GEO] 请求 ipinfo.io: ${url}`);
     const res = await fetch(url, {
       cf: { cacheTtl: 86400, cacheEverything: true }, // CF 边缘缓存 24h
+      signal: AbortSignal.timeout(IPINFO_TIMEOUT_MS),
     });
     debug.push(`[IP-GEO] ipinfo.io 响应状态: ${res.status}, CF-Cache-Status: ${res.headers.get('cf-cache-status') || 'N/A'}`);
 

@@ -413,7 +413,7 @@ export class SFTPPanel {
 
     this.initializing = true;
     this.showLoading();
-    this.setStatus('Reconnecting SFTP...');
+    this.setStatus(t('sftp.reconnecting'));
     this.sendJSON({ type: 'sftp_init' });
   }
 
@@ -446,7 +446,7 @@ export class SFTPPanel {
 
     const wsUrl = this.getWebSocketUrl();
     if (!wsUrl) {
-      this.setStatus('Waiting for SFTP WebSocket...');
+      this.setStatus(t('sftp.waitingWebSocket'));
       if (!this.sftpWsRetryTimer) {
         this.sftpWsRetryTimer = setTimeout(() => {
           this.sftpWsRetryTimer = null;
@@ -473,7 +473,7 @@ export class SFTPPanel {
           try {
             this.handleMessage(JSON.parse(event.data));
           } catch {
-            this.showError('Invalid SFTP response');
+            this.showError(t('sftp.invalidResponse'));
           }
           return;
         }
@@ -484,15 +484,16 @@ export class SFTPPanel {
       };
 
       ws.onerror = () => {
+        const message = t('sftp.websocketError');
         this.stopHeartbeat();
         this.connectingPromise = null;
         this.initializing = false;
         this.sftpReady = false;
         this.pendingSends = [];
-        this.rejectUploadWaiter('SFTP WebSocket error');
-        this.rejectDownloadWaiter('SFTP WebSocket error');
-        this.showError('SFTP WebSocket error');
-        reject(new Error('SFTP WebSocket error'));
+        this.rejectUploadWaiter(message);
+        this.rejectDownloadWaiter(message);
+        this.showError(message);
+        reject(new Error(message));
       };
 
       ws.onclose = () => {
@@ -503,12 +504,13 @@ export class SFTPPanel {
         this.connectingPromise = null;
 
         if (!this.closedByPanel.has(ws)) {
+          const message = t('sftp.connectionClosed');
           this.initializing = false;
           this.sftpReady = false;
           this.pendingSends = [];
-          this.rejectUploadWaiter('SFTP connection closed');
-          this.rejectDownloadWaiter('SFTP connection closed');
-          if (this.visible) this.showError('SFTP connection closed');
+          this.rejectUploadWaiter(message);
+          this.rejectDownloadWaiter(message);
+          if (this.visible) this.showError(message);
         }
       };
     });
@@ -615,15 +617,17 @@ export class SFTPPanel {
       case 'sftp_rmdir_result':
         this.onDeleteResult(msg.path);
         break;
-      case 'sftp_closed':
+      case 'sftp_closed': {
+        const message = t('sftp.connectionClosed');
         this.initializing = false;
         this.sftpReady = false;
-        this.rejectUploadWaiter('SFTP connection closed');
-        this.rejectDownloadWaiter('SFTP connection closed');
+        this.rejectUploadWaiter(message);
+        this.rejectDownloadWaiter(message);
         if (this.visible) {
-          this.showError('SFTP connection closed');
+          this.showError(message);
         }
         break;
+      }
       case 'sftp_error':
         this.handleSFTPError(msg);
         break;
@@ -968,7 +972,7 @@ export class SFTPPanel {
 
       this.uploadQueueTail = run
         .catch((e) => {
-          this.showError('Upload failed: ' + (e instanceof Error ? e.message : String(e)));
+          this.showError(t('sftp.uploadFailed', { message: e instanceof Error ? e.message : String(e) }));
         })
         .finally(() => {
           if (generation === this.uploadQueueGeneration) {
@@ -992,7 +996,7 @@ export class SFTPPanel {
     this.uploadActive = false;
     this.uploadCancelRequested = cancelActiveUpload;
     this.uploadCancelConfirmed = true;
-    this.uploadWaiter.reject('Upload cancelled');
+    this.uploadWaiter.reject(t('sftp.uploadCancelled'));
     this.resolveUploadCancelWaiter();
     this.uploadQueueTail = Promise.resolve();
   }
@@ -1016,7 +1020,7 @@ export class SFTPPanel {
     try {
       const readyPromise = this.uploadWaiter.waitReady();
       this.sendJSON({ type: 'sftp_upload_start', path, size: file.size });
-      this.showProgress('Uploading: ' + file.name, 0);
+      this.showProgress(t('sftp.uploading', { name: file.name }), 0);
       await readyPromise;
       if (this.uploadCancelRequested) {
         await this.waitForUploadCancel();
@@ -1039,7 +1043,7 @@ export class SFTPPanel {
 
       const sendNextChunk = async (): Promise<boolean> => {
         if (this.uploadCancelRequested) {
-          throw new Error('Upload cancelled');
+          throw new Error(t('sftp.uploadCancelled'));
         }
         const value = await readNextChunk();
         if (!value) return false;
@@ -1054,7 +1058,7 @@ export class SFTPPanel {
           return;
         }
         if (!await sendNextChunk()) {
-          throw new Error('File stream ended before upload completed');
+          throw new Error(t('sftp.uploadStreamEnded'));
         }
       }
 
@@ -1066,7 +1070,7 @@ export class SFTPPanel {
         }
         while (sendOffset < file.size && sendOffset - acknowledged < maxBufferedBytes) {
           if (!await sendNextChunk()) {
-            throw new Error('File stream ended before upload completed');
+            throw new Error(t('sftp.uploadStreamEnded'));
           }
         }
       }
@@ -1079,7 +1083,7 @@ export class SFTPPanel {
         await this.waitForUploadCancel();
       } else {
         this.sendJSON({ type: 'sftp_upload_cancel' });
-        this.showError('Upload failed: ' + (e instanceof Error ? e.message : String(e)));
+        this.showError(t('sftp.uploadFailed', { message: e instanceof Error ? e.message : String(e) }));
       }
       this.uploadWaiter.reset();
       return;
@@ -1125,7 +1129,7 @@ export class SFTPPanel {
 
     this.downloadQueueTail = run
       .catch((e) => {
-        this.showError('Download failed: ' + (e instanceof Error ? e.message : String(e)));
+        this.showError(t('sftp.downloadFailed', { message: e instanceof Error ? e.message : String(e) }));
       })
       .finally(() => {
         if (generation === this.downloadQueueGeneration) {
@@ -1143,7 +1147,7 @@ export class SFTPPanel {
     this.downloadActive = false;
     this.downloadCancelRequested = false;
     this.downloadQueueTail = Promise.resolve();
-    this.rejectDownloadWaiter('Download cancelled');
+    this.rejectDownloadWaiter(t('sftp.downloadCancelled'));
   }
 
   private async downloadFile(path: string, filename: string): Promise<void> {
@@ -1155,7 +1159,7 @@ export class SFTPPanel {
     this.downloadFilename = filename;
     this.downloadSize = 0;
     this.sendJSON({ type: 'sftp_download', path });
-    this.showProgress('Downloading: ' + filename, 0);
+    this.showProgress(t('sftp.downloading', { name: filename }), 0);
     try {
       await this.downloadWaiter.promise;
     } catch {
@@ -1170,7 +1174,7 @@ export class SFTPPanel {
     this.downloadFilename = filename;
     this.downloadSize = size;
     this.downloadChunks = [];
-    this.showProgress('Downloading: ' + filename, 0);
+    this.showProgress(t('sftp.downloading', { name: filename }), 0);
   }
 
   private onDownloadProgress(loaded: number, total: number): void {
@@ -1184,7 +1188,7 @@ export class SFTPPanel {
       this.downloadActive = false;
       this.downloadCancelRequested = false;
       this.hideProgress();
-      this.setIdleStatus('Download cancelled');
+      this.setIdleStatus(t('sftp.downloadCancelled'));
       this.resolveDownloadWaiter();
       return;
     }
@@ -1213,7 +1217,7 @@ export class SFTPPanel {
     this.downloadActive = false;
     this.downloadCancelRequested = false;
     this.hideProgress();
-    this.setIdleStatus('Download cancelled');
+    this.setIdleStatus(t('sftp.downloadCancelled'));
     this.resolveDownloadWaiter();
   }
 
@@ -1236,7 +1240,7 @@ export class SFTPPanel {
       }
       this.sendJSON({ type: 'sftp_upload_cancel' });
       this.hideProgress();
-      this.setIdleStatus('Upload cancelled');
+      this.setIdleStatus(t('sftp.uploadCancelled'));
       return;
     }
 
@@ -1246,7 +1250,7 @@ export class SFTPPanel {
       this.downloadChunks = [];
       this.downloadFilename = '';
       this.hideProgress();
-      this.setIdleStatus('Download cancelled');
+      this.setIdleStatus(t('sftp.downloadCancelled'));
     }
   }
 
@@ -1274,9 +1278,9 @@ export class SFTPPanel {
   private onUploadCancelled(): void {
     this.uploadCancelConfirmed = true;
     this.uploadActive = false;
-    this.uploadWaiter.reject('Upload cancelled');
+    this.uploadWaiter.reject(t('sftp.uploadCancelled'));
     this.hideProgress();
-    this.setIdleStatus('Upload cancelled');
+    this.setIdleStatus(t('sftp.uploadCancelled'));
     this.resolveUploadCancelWaiter();
   }
 
@@ -1358,7 +1362,7 @@ export class SFTPPanel {
   }
 
   private onRenameResult(): void {
-    this.setStatus('Renamed');
+    this.setStatus(t('sftp.renamed'));
     this.clearSelection();
     this.refresh();
   }
@@ -1406,7 +1410,7 @@ export class SFTPPanel {
     errorEl.classList.remove('hidden');
     errorEl.classList.add('flex');
     this.hideLoading();
-    this.setStatus('Error');
+    this.setStatus(t('sftp.statusError'));
   }
 
   private hideError(): void {
@@ -1451,22 +1455,22 @@ export class SFTPPanel {
 
   private setQueueStatus(): boolean {
     if (this.uploadQueuedFiles > 0) {
-      this.setStatus(`Queued upload: ${this.uploadQueuedFiles} file(s)`);
+      this.setStatus(t('sftp.queuedUpload', { count: this.uploadQueuedFiles }));
       return true;
     }
 
     if (this.downloadQueuedFiles > 0) {
-      this.setStatus(`Queued download: ${this.downloadQueuedFiles} file(s)`);
+      this.setStatus(t('sftp.queuedDownload', { count: this.downloadQueuedFiles }));
       return true;
     }
 
     if (this.uploadActive) {
-      this.setStatus('Uploading files');
+      this.setStatus(t('sftp.uploadingFiles'));
       return true;
     }
 
     if (this.downloadActive) {
-      this.setStatus('Downloading files');
+      this.setStatus(t('sftp.downloadingFiles'));
       return true;
     }
 
@@ -1481,11 +1485,11 @@ export class SFTPPanel {
     const dirs = this.entries.filter(e => e.isDir).length;
     const files = this.entries.filter(e => !e.isDir).length;
     (this.container.querySelector('#sftp-item-count') as HTMLElement).textContent =
-      `${dirs} dirs, ${files} files`;
+      t('sftp.itemCounts', { dirs, files });
   }
 
   private getItemsStatus(): string {
-    return `${this.entries.length} items`;
+    return t('sftp.items', { count: this.entries.length });
   }
 
   private getFileIcon(filename: string): string {
