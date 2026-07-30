@@ -34,10 +34,128 @@
   --accent-glow: rgba(74, 246, 38, 0.08);
   --accent-bg: rgba(74, 246, 38, 0.1);
   --modal-overlay: rgba(0, 0, 0, 0.8);
+  --font-ui: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-code: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-size-scale: 1;
+  --space-scale: 0.9;
+  --control-radius: 2px;
+  --card-radius: 0px;
+  --modal-radius: 0px;
+  --control-padding-x: 0.7rem;
+  --control-padding-y: 0.45rem;
+  --control-min-height: 32px;
+  --card-padding: 1.25rem;
+  --panel-gap: 0.75rem;
+  --shadow-card: none;
+  --shadow-modal: 0 18px 52px rgba(0, 0, 0, 0.48);
+  --shadow-floating: 0 8px 28px rgba(0, 0, 0, 0.34);
+  --surface-blur: 0px;
+  --motion-fast: 120ms;
+  --motion-normal: 220ms;
+  --motion-slow: 320ms;
+  --hover-lift: -2px;
+}
+
+html[data-ui-shape="square"] {
+  --control-radius: 2px;
+  --card-radius: 0px;
+  --modal-radius: 0px;
+}
+
+html[data-ui-shape="rounded"] {
+  --control-radius: 6px;
+  --card-radius: 9px;
+  --modal-radius: 12px;
+}
+
+html[data-ui-shape="soft"] {
+  --control-radius: 10px;
+  --card-radius: 15px;
+  --modal-radius: 18px;
+}
+
+html[data-ui-density="compact"] {
+  --font-size-scale: 0.94;
+  --space-scale: 0.84;
+  --control-padding-x: 0.62rem;
+  --control-padding-y: 0.36rem;
+  --control-min-height: 28px;
+  --card-padding: 1rem;
+  --panel-gap: 0.55rem;
+}
+
+html[data-ui-density="comfortable"] {
+  --font-size-scale: 1;
+  --space-scale: 1;
+  --control-padding-x: 0.78rem;
+  --control-padding-y: 0.5rem;
+  --control-min-height: 34px;
+  --card-padding: 1.25rem;
+  --panel-gap: 0.8rem;
+}
+
+html[data-ui-density="spacious"] {
+  --font-size-scale: 1.04;
+  --space-scale: 1.12;
+  --control-padding-x: 0.92rem;
+  --control-padding-y: 0.62rem;
+  --control-min-height: 40px;
+  --card-padding: 1.5rem;
+  --panel-gap: 1rem;
+}
+
+html[data-ui-font="mono"] {
+  --font-ui: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+html[data-ui-font="system"] {
+  --font-ui: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+html[data-ui-shadow="none"] {
+  --shadow-card: none;
+  --shadow-modal: none;
+  --shadow-floating: none;
+  --surface-blur: 0px;
+}
+
+html[data-ui-shadow="subtle"] {
+  --shadow-card: 0 4px 16px color-mix(in srgb, var(--bg) 24%, transparent);
+  --shadow-modal: 0 18px 52px rgba(0, 0, 0, 0.38);
+  --shadow-floating: 0 8px 24px rgba(0, 0, 0, 0.26);
+  --surface-blur: 4px;
+}
+
+html[data-ui-shadow="elevated"] {
+  --shadow-card: 0 12px 32px color-mix(in srgb, var(--bg) 32%, transparent);
+  --shadow-modal: 0 28px 80px rgba(0, 0, 0, 0.48);
+  --shadow-floating: 0 14px 38px rgba(0, 0, 0, 0.34);
+  --surface-blur: 10px;
+}
+
+html[data-ui-motion="none"] {
+  --motion-fast: 0ms;
+  --motion-normal: 0ms;
+  --motion-slow: 0ms;
+  --hover-lift: 0px;
+}
+
+html[data-ui-motion="reduced"] {
+  --motion-fast: 80ms;
+  --motion-normal: 140ms;
+  --motion-slow: 180ms;
+  --hover-lift: -1px;
+}
+
+html[data-ui-motion="full"] {
+  --motion-fast: 140ms;
+  --motion-normal: 220ms;
+  --motion-slow: 320ms;
+  --hover-lift: -2px;
 }
 
 body {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-ui);
   background-color: var(--bg);
   color: var(--text);
   min-height: 100vh;
@@ -50,14 +168,14 @@ body {
   color: var(--on-surface-variant);
   background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
   border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  padding: 0.28rem 0.55rem;
+  border-radius: var(--control-radius);
+  padding: var(--control-padding-y) var(--control-padding-x);
   font: inherit;
   font-size: 0.75rem;
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
-  transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+  transition: color var(--motion-fast) ease, border-color var(--motion-fast) ease, background-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
 }
 
 .language-toggle:hover {
@@ -78,18 +196,56 @@ body {
   font-variation-settings: 'FILL' 0;
 }
 
+.theme-selector {
+  min-height: var(--control-min-height);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--control-radius);
+  background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
+  font-family: var(--font-ui);
+  transition: color var(--motion-fast), border-color var(--motion-fast), background-color var(--motion-fast);
+}
+
+.theme-selector:hover,
+.theme-selector:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+  outline: none;
+}
+
+.theme-toolbar-button {
+  min-width: var(--control-min-height);
+  min-height: var(--control-min-height);
+  border: 1px solid transparent;
+  border-radius: var(--control-radius);
+  transition: color var(--motion-fast), border-color var(--motion-fast), background-color var(--motion-fast), opacity var(--motion-fast);
+}
+
+.theme-toolbar-button:hover,
+.theme-toolbar-button:focus-visible {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  background: var(--accent-bg);
+  outline: none;
+}
+
 /* 终端页面需要禁止页面级滚动，通过 JS 切换此类名 */
 body.terminal-active {
   overflow: hidden;
 }
 
-html[data-theme^="standard-"] .scanlines,
-html[data-theme^="standard-"] .scanline {
+#terminal-wrapper {
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow-card);
+}
+
+html:not([data-ui-style="cyberpunk"]) .scanlines,
+html:not([data-ui-style="cyberpunk"]) .scanline {
   display: none;
 }
 
-html[data-theme^="standard-"] .flicker {
+html:not([data-ui-style="cyberpunk"]) .flicker {
   animation: none;
+  display: none;
 }
 
 .bg-primary { background-color: var(--accent); }
@@ -125,9 +281,11 @@ html[data-theme^="standard-"] .flicker {
 .terminal-input {
   background: transparent; border: none;
   border-bottom: 1px solid var(--border-strong); color: var(--text);
-  font-family: 'JetBrains Mono', monospace;
-  padding: 8px 0; width: 100%; outline: none;
-  transition: border-color 0.2s;
+  border-radius: var(--control-radius);
+  font-family: var(--font-ui);
+  min-height: var(--control-min-height);
+  padding: var(--control-padding-y) var(--control-padding-x); width: 100%; outline: none;
+  transition: border-color var(--motion-fast), box-shadow var(--motion-fast), background-color var(--motion-fast);
 }
 
 .terminal-input:focus {
@@ -153,11 +311,17 @@ html[data-theme^="standard-"] .flicker {
 .cyber-box {
   background-color: var(--bg-surface);
   border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow-card);
+  padding: var(--card-padding);
 }
 
 .cyber-button {
   border: 1px solid var(--accent);
-  transition: all 0.2s ease; position: relative; overflow: hidden;
+  border-radius: var(--control-radius);
+  transition: color var(--motion-fast) ease, background-color var(--motion-fast) ease, border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease, transform var(--motion-fast) ease;
+  position: relative; overflow: hidden;
+  min-height: var(--control-min-height);
   cursor: pointer;
 }
 
@@ -168,9 +332,10 @@ html[data-theme^="standard-"] .flicker {
 
 .connect-btn {
   border: 1px solid var(--accent);
+  border-radius: var(--control-radius);
   background: var(--accent);
   color: var(--on-accent);
-  transition: all 0.2s ease;
+  transition: color var(--motion-fast) ease, background-color var(--motion-fast) ease, border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
   cursor: pointer;
 }
 
@@ -362,18 +527,25 @@ html[data-theme^="standard-"] .flicker {
 
 /* ==================== User Space Styles ==================== */
 
+#server-grid {
+  gap: var(--panel-gap);
+}
+
 /* 服务器卡片 */
 .server-card {
   background-color: var(--bg-surface);
   border: 1px solid var(--border);
-  transition: all 0.3s ease;
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow-card);
+  padding: var(--card-padding);
+  transition: border-color var(--motion-normal) ease, transform var(--motion-normal) ease, box-shadow var(--motion-normal) ease, background-color var(--motion-normal) ease;
   position: relative;
 }
 
 .server-card:hover {
   border-color: var(--accent);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 20px var(--accent-glow);
+  transform: translateY(var(--hover-lift));
+  box-shadow: var(--shadow-card), 0 4px 20px var(--accent-glow);
 }
 
 /* 卡片删除动画 */
@@ -391,7 +563,7 @@ html[data-theme^="standard-"] .flicker {
 /* Modal 遮罩 */
 .modal-overlay {
   background: var(--modal-overlay);
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(var(--surface-blur));
 }
 
 /* ==================== Unified Feedback ==================== */
@@ -419,11 +591,12 @@ html[data-theme^="standard-"] .flicker {
   background: color-mix(in srgb, var(--bg-surface) 96%, transparent);
   border: 1px solid color-mix(in srgb, var(--feedback-color) 65%, var(--border));
   border-left: 3px solid var(--feedback-color);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.38);
-  backdrop-filter: blur(12px);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow-floating);
+  backdrop-filter: blur(var(--surface-blur));
   opacity: 0;
   transform: translateX(18px);
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity var(--motion-normal) ease, transform var(--motion-normal) ease;
   pointer-events: auto;
 }
 
@@ -492,12 +665,12 @@ html[data-theme^="standard-"] .flicker {
 
 .app-dialog::backdrop {
   background: var(--modal-overlay);
-  backdrop-filter: blur(6px);
-  animation: app-dialog-backdrop-in 0.18s ease-out;
+  backdrop-filter: blur(var(--surface-blur));
+  animation: app-dialog-backdrop-in var(--motion-normal) ease-out;
 }
 
 .app-dialog[open] .app-dialog__panel {
-  animation: app-dialog-in 0.2s ease-out;
+  animation: app-dialog-in var(--motion-normal) ease-out;
 }
 
 .app-dialog__panel {
@@ -505,7 +678,8 @@ html[data-theme^="standard-"] .flicker {
   padding: 22px;
   background: var(--bg-surface);
   border: 1px solid color-mix(in srgb, var(--feedback-color) 50%, var(--border));
-  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.55);
+  border-radius: var(--modal-radius);
+  box-shadow: var(--shadow-modal);
   overflow: hidden;
 }
 
@@ -567,8 +741,9 @@ html[data-theme^="standard-"] .flicker {
   font-size: 13px;
   background: var(--bg-terminal);
   border: 1px solid var(--border-strong);
+  border-radius: var(--control-radius);
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
 }
 
 .app-dialog__input:focus {
@@ -599,8 +774,9 @@ html[data-theme^="standard-"] .flicker {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
+  border-radius: var(--control-radius);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease, border-color var(--motion-fast) ease;
 }
 
 .app-dialog__button:focus-visible {
@@ -660,7 +836,7 @@ html[data-theme^="standard-"] .flicker {
 .user-avatar {
   border: 2px solid var(--accent);
   border-radius: 50%;
-  transition: border-color 0.2s;
+  transition: border-color var(--motion-fast);
 }
 
 .user-avatar:hover {
@@ -669,7 +845,7 @@ html[data-theme^="standard-"] .flicker {
 
 /* GitHub 登录按钮 */
 .github-login-btn {
-  transition: all 0.2s ease;
+  transition: border-color var(--motion-fast) ease, color var(--motion-fast) ease, background-color var(--motion-fast) ease;
 }
 
 .github-login-btn:hover {
@@ -690,8 +866,10 @@ html[data-theme^="standard-"] .flicker {
 /* Auth tab buttons */
 .auth-tab {
   border: 1px solid var(--border-strong);
+  border-radius: var(--control-radius);
   color: var(--text-muted);
   background: transparent;
+  transition: color var(--motion-fast), border-color var(--motion-fast), background-color var(--motion-fast);
 }
 
 .auth-tab-active {
@@ -712,9 +890,9 @@ html[data-theme^="standard-"] .flicker {
   gap: 4px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-strong);
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   padding: 4px 6px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-floating);
 }
 
 .cloudssh-search-input {
@@ -722,7 +900,7 @@ html[data-theme^="standard-"] .flicker {
   border: none;
   outline: none;
   color: var(--text);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-ui);
   font-size: 12px;
   width: min(200px, calc(100% - 40px));
   padding: 2px 4px;
@@ -741,8 +919,8 @@ html[data-theme^="standard-"] .flicker {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 2px;
-  transition: all 0.15s;
+  border-radius: var(--control-radius);
+  transition: color var(--motion-fast), background-color var(--motion-fast);
 }
 
 .cloudssh-search-btn:hover {
@@ -761,7 +939,7 @@ html[data-theme^="standard-"] .flicker {
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-ui);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.05em;
@@ -769,9 +947,9 @@ html[data-theme^="standard-"] .flicker {
   background: transparent;
   border: 1px solid transparent;
   border-bottom: none;
-  border-radius: 4px 4px 0 0;
+  border-radius: var(--control-radius) var(--control-radius) 0 0;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color var(--motion-fast) ease, background-color var(--motion-fast) ease, border-color var(--motion-fast) ease;
   white-space: nowrap;
   max-width: 180px;
   position: relative;
@@ -854,7 +1032,8 @@ html[data-theme^="standard-"] .flicker {
   display: inline-flex;
   white-space: nowrap;
   background: var(--bg-elevated);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  border-radius: var(--control-radius);
+  box-shadow: var(--shadow-floating);
 }
 
 .ask-ai-selection-float.hidden {
@@ -891,9 +1070,9 @@ html[data-theme^="standard-"] .flicker {
   background: transparent;
   color: var(--text-dim);
   cursor: pointer;
-  border-radius: 2px;
+  border-radius: var(--control-radius);
   opacity: 0;
-  transition: all 0.15s;
+  transition: color var(--motion-fast), background-color var(--motion-fast), opacity var(--motion-fast);
   flex-shrink: 0;
 }
 
@@ -916,8 +1095,8 @@ html[data-theme^="standard-"] .flicker {
   background: transparent;
   color: var(--text-dim);
   cursor: pointer;
-  border-radius: 4px;
-  transition: all 0.15s;
+  border-radius: var(--control-radius);
+  transition: color var(--motion-fast), border-color var(--motion-fast), background-color var(--motion-fast);
   flex-shrink: 0;
   margin-left: 2px;
 }
@@ -931,6 +1110,161 @@ html[data-theme^="standard-"] .flicker {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+
+/* ==================== Theme V2 Component Variants ==================== */
+
+.theme-accent-line {
+  transition: opacity var(--motion-normal) ease;
+}
+
+html:not([data-ui-style="cyberpunk"]) .theme-accent-line {
+  opacity: 0 !important;
+}
+
+html[data-component-input="underline"] .terminal-input {
+  padding-right: 0;
+  padding-left: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border-strong);
+  border-radius: 0;
+}
+
+html[data-component-input="boxed"] .terminal-input {
+  padding: var(--control-padding-y) var(--control-padding-x);
+  background: color-mix(in srgb, var(--bg-terminal) 88%, var(--bg-surface));
+  border: 1px solid var(--border-strong);
+  border-radius: var(--control-radius);
+}
+
+html[data-component-input="boxed"] .terminal-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+html[data-component-button="outline"] .cyber-button {
+  color: var(--accent);
+  background: transparent;
+  border-color: var(--accent);
+}
+
+html[data-component-button="outline"] .cyber-button:hover {
+  color: var(--on-accent);
+  background: var(--accent);
+  box-shadow: 0 0 16px var(--accent-glow);
+}
+
+html[data-component-button="solid"] .cyber-button:not(.text-error) {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+html[data-component-button="solid"] .cyber-button:not(.text-error):hover {
+  background: var(--accent-secondary-light);
+  border-color: var(--accent-secondary-light);
+  box-shadow: var(--shadow-floating);
+}
+
+html[data-component-button="soft"] .cyber-button:not(.text-error) {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-surface));
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+}
+
+html[data-component-button="soft"] .cyber-button:not(.text-error):hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, var(--bg-surface));
+  border-color: var(--accent);
+  box-shadow: var(--shadow-card);
+}
+
+html[data-component-card="flat"] :is(.server-card, .cyber-box, .app-dialog__panel) {
+  background: var(--bg-surface);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+html[data-component-card="outlined"] :is(.server-card, .cyber-box, .app-dialog__panel) {
+  border-color: var(--border);
+  box-shadow: var(--shadow-card);
+}
+
+html[data-component-card="elevated"] :is(.server-card, .cyber-box, .app-dialog__panel) {
+  background: color-mix(in srgb, var(--bg-surface) 96%, var(--accent) 4%);
+  border-color: color-mix(in srgb, var(--border) 72%, transparent);
+  box-shadow: var(--shadow-card);
+}
+
+html[data-component-tabs="segmented"] .tab-item {
+  margin: 3px 2px;
+  border: 1px solid transparent;
+  border-radius: var(--control-radius);
+}
+
+html[data-component-tabs="segmented"] .tab-item.active {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+html[data-component-tabs="segmented"] .tab-item.active::after {
+  display: none;
+}
+
+html[data-component-tabs="segmented"] .auth-tab {
+  background: color-mix(in srgb, var(--bg-elevated) 86%, transparent);
+}
+
+html[data-component-tabs="segmented"] .auth-tab-active {
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+html[data-ui-style="soft"] :is(header, footer) {
+  background: color-mix(in srgb, var(--bg-elevated) 90%, transparent);
+  backdrop-filter: blur(var(--surface-blur));
+}
+
+html[data-ui-style="dense"] .server-card:hover {
+  transform: none;
+}
+
+html[data-ui-motion="none"] :is(
+  .server-card,
+  .cyber-button,
+  .connect-btn,
+  .terminal-input,
+  .tab-item,
+  .tab-close,
+  .tab-new-btn,
+  .app-toast,
+  .app-dialog__panel,
+  .theme-accent-line
+) {
+  transition: none !important;
+  animation: none !important;
+}
+
+html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline, .blinking-cursor)::after,
+html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-normal: 0ms;
+    --motion-slow: 0ms;
+    --hover-lift: 0px;
+  }
+
+  .server-card,
+  .cyber-button,
+  .connect-btn,
+  .tab-item {
+    transition: none !important;
+  }
 }
 
 /* ========== Agent Panel ========== */

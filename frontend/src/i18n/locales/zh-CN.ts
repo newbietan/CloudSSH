@@ -182,6 +182,7 @@ export const zhCN = {
   'theme.invalidJson': '文件不是有效的 JSON 格式。',
   'theme.importTitle': '无法导入主题',
   'theme.custom': '自定义',
+  'theme.selector': '主题与界面风格',
   'sftp.title': 'SFTP 文件管理器',
   'sftp.refresh': '刷新',
   'sftp.upload': '上传文件',

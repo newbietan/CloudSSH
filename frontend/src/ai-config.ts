@@ -24,7 +24,7 @@ export class AIConfigPanel {
     this.modalEl.innerHTML = `
       <div class="modal-overlay absolute inset-0" id="ai-modal-backdrop"></div>
       <div class="cyber-box p-6 shadow-2xl relative z-10 w-full max-w-md mx-4">
-        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent-secondary)] to-transparent opacity-50"></div>
+        <div class="theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent-secondary)] to-transparent opacity-50"></div>
         <div class="flex items-center justify-between mb-6 pb-4 border-b border-dim">
           <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]" data-i18n="aiConfig.title">AI Agent 设置</span>
           <button id="ai-modal-close-btn" class="text-muted hover:text-primary transition-colors cursor-pointer">

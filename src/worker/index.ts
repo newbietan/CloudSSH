@@ -397,8 +397,16 @@ async function handleThemeRoute(request: Request, env: Env): Promise<Response> {
 
   if (request.method === 'PUT') {
     const body = await request.json<Record<string, unknown>>();
+    const themeData = body.theme_data;
+    if (!themeData || typeof themeData !== 'object' || Array.isArray(themeData)) {
+      return Response.json({ error: 'Invalid theme data' }, { status: 400 });
+    }
+    const serializedTheme = JSON.stringify(themeData);
+    if (serializedTheme.length > 64 * 1024) {
+      return Response.json({ error: 'Theme data is too large' }, { status: 413 });
+    }
     body.user_id = user.id;
-    body.theme_data = JSON.stringify(body.theme_data);
+    body.theme_data = serializedTheme;
     return stub.fetch(new Request('http://internal/internal/theme', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },

@@ -22,7 +22,7 @@
           <div class="text-3xl font-bold text-primary tracking-tighter mb-2">CloudSSH<span class="blinking-cursor"></span></div>
         </div>
         <div class="cyber-box p-6 shadow-2xl relative">
-          <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent opacity-50"></div>
+          <div class="theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent opacity-50"></div>
           <div class="flex items-center justify-between mb-8 pb-4 border-b border-dim">
             <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]" data-i18n="auth.connectionParameters">连接参数</span>
             <div class="flex items-center gap-3">
@@ -47,6 +47,19 @@
           <h1 class="text-2xl font-bold text-primary-container tracking-tighter cursor-pointer" id="user-space-logo">CloudSSH</h1>
         </div>
         <div class="flex items-center gap-4 flex-wrap">
+          <select id="user-theme-selector" data-theme-selector
+            class="theme-selector bg-surface-variant text-on-surface-variant text-xs py-1 px-2 border-none outline-none cursor-pointer"
+            data-i18n-aria-label="theme.selector" aria-label="主题与界面风格">
+            <option value="standard-dark">Standard Dark</option>
+            <option value="standard-light">Standard Light</option>
+            <option value="cyberpunk">Cyberpunk</option>
+            <option value="glacier">Glacier · Soft</option>
+            <option value="gruvbox">Gruvbox · Dense</option>
+          </select>
+          <button data-theme-import class="theme-toolbar-button hover:opacity-80 cursor-pointer p-1 flex items-center justify-center"
+            data-i18n-title="terminal.importTheme" title="导入主题">
+            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">upload_file</span>
+          </button>
           <div data-language-switcher></div>
           <div id="user-info" class="flex items-center gap-3">
             <!-- 动态渲染：头像 + 用户名 -->
@@ -142,7 +155,7 @@
       role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div class="modal-overlay absolute inset-0" id="modal-backdrop"></div>
       <div class="cyber-box p-6 shadow-2xl relative z-10 w-full max-w-md mx-4">
-        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent-secondary)] to-transparent opacity-50"></div>
+        <div class="theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent-secondary)] to-transparent opacity-50"></div>
         <div class="flex items-center justify-between mb-6 pb-4 border-b border-dim">
           <span id="modal-title" class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]" data-i18n="server.add">添加服务器</span>
           <button id="modal-close-btn" class="text-muted hover:text-primary transition-colors cursor-pointer" data-i18n-aria-label="common.close" aria-label="关闭">
@@ -226,14 +239,16 @@
           <h1 class="text-2xl font-bold text-primary-container tracking-tighter cursor-pointer">CloudSSH</h1>
         </div>
         <div class="flex items-center gap-2 sm:gap-4 text-primary-container flex-wrap">
-          <select id="theme-selector" class="bg-surface-variant text-on-surface-variant text-xs py-1 px-2 border-none outline-none cursor-pointer rounded">
+          <select id="theme-selector" data-theme-selector
+            class="theme-selector bg-surface-variant text-on-surface-variant text-xs py-1 px-2 border-none outline-none cursor-pointer"
+            data-i18n-aria-label="theme.selector" aria-label="主题与界面风格">
             <option value="standard-dark">Standard Dark</option>
             <option value="standard-light">Standard Light</option>
             <option value="cyberpunk">Cyberpunk</option>
-            <option value="glacier">Glacier</option>
-            <option value="gruvbox">Gruvbox</option>
+            <option value="glacier">Glacier · Soft</option>
+            <option value="gruvbox">Gruvbox · Dense</option>
           </select>
-          <button id="import-theme-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.importTheme" title="导入主题">
+          <button id="import-theme-btn" data-theme-import class="theme-toolbar-button hover:opacity-80 cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.importTheme" title="导入主题">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">upload_file</span>
           </button>
           <input type="file" id="import-theme-input" accept=".json" class="hidden">

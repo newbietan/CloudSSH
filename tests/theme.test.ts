@@ -1,15 +1,20 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
+  BUILT_IN_APPEARANCE,
   THEMES,
+  THEME_SCHEMA_VERSION,
   UI_THEMES,
+  UI_STYLE_PRESETS,
   applyBuiltInTheme,
   applyImportedTheme,
   getActiveColorScheme,
   getActiveTerminalTheme,
+  getActiveThemeAppearance,
   isBuiltInTheme,
   onColorSchemeChange,
   onTerminalThemeChange,
+  resolveThemeAppearance,
 } from '../frontend/src/theme';
 
 function relativeLuminance(hex: string): number {
@@ -94,6 +99,110 @@ describe('Standard 内置主题', () => {
 
     expect(getActiveTerminalTheme().background).toBe(THEMES['standard-light'].background);
     expect(getActiveTerminalTheme().yellow).toBe(THEMES['standard-light'].yellow);
+    expect(getActiveThemeAppearance().style).toBe('standard');
+  });
+});
+
+describe('Theme V2 界面风格', () => {
+  afterEach(() => applyBuiltInTheme('cyberpunk'));
+
+  it('提供版本化外观结构，并让内置主题覆盖四种风格', () => {
+    expect(THEME_SCHEMA_VERSION).toBe(2);
+    expect(BUILT_IN_APPEARANCE).toEqual({
+      'standard-dark': { style: 'standard' },
+      'standard-light': { style: 'standard' },
+      cyberpunk: { style: 'cyberpunk' },
+      glacier: { style: 'soft' },
+      gruvbox: { style: 'dense' },
+    });
+    expect(Object.keys(UI_STYLE_PRESETS).sort()).toEqual(
+      ['cyberpunk', 'dense', 'soft', 'standard'],
+    );
+  });
+
+  it('切换内置主题会同步形状、密度、字体、阴影、动效和组件风格', () => {
+    applyBuiltInTheme('glacier');
+    expect(getActiveThemeAppearance()).toEqual({
+      style: 'soft',
+      shape: 'soft',
+      density: 'comfortable',
+      font: 'system',
+      shadow: 'elevated',
+      motion: 'reduced',
+      components: {
+        button: 'soft',
+        input: 'boxed',
+        card: 'elevated',
+        tabs: 'segmented',
+      },
+    });
+
+    applyBuiltInTheme('gruvbox');
+    expect(getActiveThemeAppearance().style).toBe('dense');
+    expect(getActiveThemeAppearance().density).toBe('compact');
+    expect(getActiveThemeAppearance().components.card).toBe('flat');
+  });
+
+  it('自定义主题可以在预设之上安全覆盖外观枚举', () => {
+    applyImportedTheme({
+      schemaVersion: 2,
+      colorScheme: 'dark',
+      ui: { '--bg': '#101318' },
+      appearance: {
+        style: 'soft',
+        shape: 'square',
+        density: 'spacious',
+        font: 'mono',
+        shadow: 'none',
+        motion: 'none',
+        components: {
+          button: 'solid',
+          input: 'underline',
+          card: 'flat',
+          tabs: 'underline',
+        },
+      },
+    });
+
+    expect(getActiveThemeAppearance()).toEqual({
+      style: 'soft',
+      shape: 'square',
+      density: 'spacious',
+      font: 'mono',
+      shadow: 'none',
+      motion: 'none',
+      components: {
+        button: 'solid',
+        input: 'underline',
+        card: 'flat',
+        tabs: 'underline',
+      },
+    });
+  });
+
+  it('非法外观取值回退到所选预设，不进入页面数据属性', () => {
+    const resolved = resolveThemeAppearance({
+      style: 'soft',
+      shape: 'invalid' as never,
+      density: 'invalid' as never,
+      components: { button: 'invalid' as never },
+    });
+
+    expect(resolved.shape).toBe(UI_STYLE_PRESETS.soft.shape);
+    expect(resolved.density).toBe(UI_STYLE_PRESETS.soft.density);
+    expect(resolved.components.button).toBe(UI_STYLE_PRESETS.soft.components.button);
+  });
+
+  it('终端主题拒绝可触发外部资源请求的 CSS 值', () => {
+    applyImportedTheme({
+      terminal: {
+        background: 'url(https://example.com/tracker.png)',
+        foreground: '#abcdef',
+      },
+    });
+
+    expect(getActiveTerminalTheme().background).toBe(THEMES.cyberpunk.background);
+    expect(getActiveTerminalTheme().foreground).toBe('#abcdef');
   });
 });
 
@@ -101,6 +210,7 @@ describe('Standard 主题入口和编辑器', () => {
   const appHtml = readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
   const editorHtml = readFileSync(new URL('../docs/theme-editor/index.html', import.meta.url), 'utf8');
   const terminalSource = readFileSync(new URL('../frontend/src/terminal.ts', import.meta.url), 'utf8');
+  const appCss = readFileSync(new URL('../frontend/src/style.css', import.meta.url), 'utf8');
 
   it('主项目和在线编辑器都提供两个 Standard 主题', () => {
     expect(appHtml).toContain('<option value="standard-dark">Standard Dark</option>');
@@ -109,6 +219,32 @@ describe('Standard 主题入口和编辑器', () => {
     expect(editorHtml).toContain('<option value="standard-dark">Standard Dark</option>');
     expect(editorHtml).toContain('<option value="standard-light">Standard Light</option>');
     expect(editorHtml).toContain("colorScheme: preset?.colorScheme || colorScheme");
+  });
+
+  it('用户空间和终端页都可以直接切换主题风格', () => {
+    expect(appHtml.match(/data-theme-selector/g)).toHaveLength(2);
+    expect(appHtml.match(/data-theme-import/g)).toHaveLength(2);
+    expect(appHtml).toContain('Glacier · Soft');
+    expect(appHtml).toContain('Gruvbox · Dense');
+  });
+
+  it('样式表使用语义令牌实现外观与布局解耦', () => {
+    for (const token of [
+      '--control-radius',
+      '--card-radius',
+      '--space-scale',
+      '--font-ui',
+      '--shadow-card',
+      '--motion-normal',
+    ]) {
+      expect(appCss).toContain(token);
+    }
+    expect(appCss).toContain('data-component-button');
+    expect(appCss).toContain('data-component-input');
+    expect(appCss).toContain('data-component-card');
+    expect(appCss).toContain('data-component-tabs');
+    expect(appCss).not.toContain('data-server-list-layout');
+    expect(appCss).not.toContain('data-panel-position');
   });
 
   it('在线编辑器通过下拉框完整展示和切换全部预设', () => {
