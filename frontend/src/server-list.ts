@@ -353,7 +353,7 @@ export class ServerList {
           ${tagMarkup}
         </div>
 
-        <div class="flex gap-2 pt-3 border-t border-[var(--border)]">
+        <div class="server-card-actions flex gap-2 pt-3 border-t border-[var(--border)]">
           <button id="connect-${server.id}" class="cyber-button text-primary flex-1 py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-1" title="${t('common.connect')}">
             <span class="material-symbols-outlined" style="font-size: 14px;">power_settings_new</span>
             ${t('common.connect')}

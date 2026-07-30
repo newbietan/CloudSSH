@@ -541,6 +541,8 @@ html:not([data-ui-style="cyberpunk"]) .flicker {
 
 /* 服务器卡片 */
 .server-card {
+  display: flex;
+  flex-direction: column;
   background-color: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--card-radius);
@@ -548,6 +550,10 @@ html:not([data-ui-style="cyberpunk"]) .flicker {
   padding: var(--card-padding);
   transition: border-color var(--motion-normal) ease, transform var(--motion-normal) ease, box-shadow var(--motion-normal) ease, background-color var(--motion-normal) ease;
   position: relative;
+}
+
+.server-card-actions {
+  margin-top: auto;
 }
 
 .server-card:hover {
