@@ -63,3 +63,24 @@ test('内置主题切换 UI 风格但保持服务器列表结构稳定', async (
   await expect(grid).toHaveClass(/md:grid-cols-2/);
   await expect(grid).toHaveClass(/lg:grid-cols-3/);
 });
+
+test('终端四周留白按形状收窄并为圆角保留安全间距', async ({ page }) => {
+  const wsUrl = encodeURIComponent('ws://127.0.0.1:4173/fake');
+  await page.goto(`/?wsUrl=${wsUrl}&name=ThemePreview&host=127.0.0.1&port=22`);
+
+  const selector = page.locator('#theme-selector');
+  const terminalMain = page.locator('.terminal-main');
+  const terminalWrapper = page.locator('#terminal-wrapper');
+
+  await selector.selectOption('cyberpunk');
+  await expect(terminalMain).toHaveCSS('padding', '4px');
+  await expect(terminalWrapper).toHaveCSS('border-radius', '0px');
+
+  await selector.selectOption('standard-dark');
+  await expect(terminalMain).toHaveCSS('padding', '7px');
+  await expect(terminalWrapper).toHaveCSS('border-radius', '9px');
+
+  await selector.selectOption('glacier');
+  await expect(terminalMain).toHaveCSS('padding', '10px');
+  await expect(terminalWrapper).toHaveCSS('border-radius', '15px');
+});

@@ -46,6 +46,7 @@
   --control-min-height: 32px;
   --card-padding: 1.25rem;
   --panel-gap: 0.75rem;
+  --terminal-frame-gap: 6px;
   --shadow-card: none;
   --shadow-modal: 0 18px 52px rgba(0, 0, 0, 0.48);
   --shadow-floating: 0 8px 28px rgba(0, 0, 0, 0.34);
@@ -60,18 +61,21 @@ html[data-ui-shape="square"] {
   --control-radius: 2px;
   --card-radius: 0px;
   --modal-radius: 0px;
+  --terminal-frame-gap: 4px;
 }
 
 html[data-ui-shape="rounded"] {
   --control-radius: 6px;
   --card-radius: 9px;
   --modal-radius: 12px;
+  --terminal-frame-gap: 7px;
 }
 
 html[data-ui-shape="soft"] {
   --control-radius: 10px;
   --card-radius: 15px;
   --modal-radius: 18px;
+  --terminal-frame-gap: 10px;
 }
 
 html[data-ui-density="compact"] {
@@ -231,6 +235,10 @@ body {
 /* 终端页面需要禁止页面级滚动，通过 JS 切换此类名 */
 body.terminal-active {
   overflow: hidden;
+}
+
+.terminal-main {
+  padding: var(--terminal-frame-gap);
 }
 
 #terminal-wrapper {

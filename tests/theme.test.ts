@@ -236,6 +236,7 @@ describe('Standard 主题入口和编辑器', () => {
       '--font-ui',
       '--shadow-card',
       '--motion-normal',
+      '--terminal-frame-gap',
     ]) {
       expect(appCss).toContain(token);
     }
