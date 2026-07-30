@@ -236,6 +236,38 @@
       border-color: var(--editor-accent);
     }
 
+    .setting-row {
+      display: grid;
+      grid-template-columns: minmax(110px, 1fr) minmax(118px, 1fr);
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .setting-row label {
+      min-width: 0;
+      color: var(--editor-muted);
+      font-size: 11px;
+    }
+
+    .setting-row input,
+    .setting-row select {
+      width: 100%;
+      min-width: 0;
+      background: var(--editor-surface);
+      border: 1px solid var(--editor-border);
+      color: var(--editor-text);
+      font: inherit;
+      font-size: 11px;
+      padding: 6px 8px;
+      outline: none;
+    }
+
+    .setting-row input:focus,
+    .setting-row select:focus {
+      border-color: var(--editor-accent);
+    }
+
     /* ===== Preview Area ===== */
     .preview-area {
       flex: 1;
@@ -307,6 +339,244 @@
       --on-surface-variant: #bbccb0;
       --agent-user-color: #4af626;
       --agent-agent-color: #14d1ff;
+      --font-ui: 'JetBrains Mono', ui-monospace, monospace;
+      --font-size-scale: 0.94;
+      --space-scale: 0.84;
+      --control-radius: 2px;
+      --card-radius: 0px;
+      --control-padding-x: 8px;
+      --control-padding-y: 5px;
+      --card-padding: 14px;
+      --panel-gap: 10px;
+      --shadow-card: none;
+      --motion-fast: 140ms;
+      --motion-normal: 220ms;
+      --hover-lift: -2px;
+      font-family: var(--font-ui);
+      font-size: calc(1em * var(--font-size-scale));
+    }
+
+    .theme-scope[data-ui-shape="square"] {
+      --control-radius: 2px;
+      --card-radius: 0px;
+    }
+
+    .theme-scope[data-ui-shape="rounded"] {
+      --control-radius: 6px;
+      --card-radius: 9px;
+    }
+
+    .theme-scope[data-ui-shape="soft"] {
+      --control-radius: 10px;
+      --card-radius: 15px;
+    }
+
+    .theme-scope[data-ui-density="compact"] {
+      --font-size-scale: 0.94;
+      --space-scale: 0.84;
+      --control-padding-x: 7px;
+      --control-padding-y: 4px;
+      --card-padding: 12px;
+      --panel-gap: 8px;
+    }
+
+    .theme-scope[data-ui-density="comfortable"] {
+      --font-size-scale: 1;
+      --space-scale: 1;
+      --control-padding-x: 9px;
+      --control-padding-y: 6px;
+      --card-padding: 14px;
+      --panel-gap: 12px;
+    }
+
+    .theme-scope[data-ui-density="spacious"] {
+      --font-size-scale: 1.04;
+      --space-scale: 1.12;
+      --control-padding-x: 11px;
+      --control-padding-y: 8px;
+      --card-padding: 18px;
+      --panel-gap: 16px;
+    }
+
+    .theme-scope[data-ui-font="mono"] {
+      --font-ui: 'JetBrains Mono', ui-monospace, monospace;
+    }
+
+    .theme-scope[data-ui-font="system"] {
+      --font-ui: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .theme-scope[data-ui-shadow="none"] {
+      --shadow-card: none;
+    }
+
+    .theme-scope[data-ui-shadow="subtle"] {
+      --shadow-card: 0 4px 16px color-mix(in srgb, var(--bg) 24%, transparent);
+    }
+
+    .theme-scope[data-ui-shadow="elevated"] {
+      --shadow-card: 0 12px 32px color-mix(in srgb, var(--bg) 32%, transparent);
+    }
+
+    .theme-scope[data-ui-motion="none"] {
+      --motion-fast: 0ms;
+      --motion-normal: 0ms;
+      --hover-lift: 0px;
+    }
+
+    .theme-scope[data-ui-motion="reduced"] {
+      --motion-fast: 80ms;
+      --motion-normal: 140ms;
+      --hover-lift: -1px;
+    }
+
+    .theme-scope[data-ui-motion="full"] {
+      --motion-fast: 140ms;
+      --motion-normal: 220ms;
+      --hover-lift: -2px;
+    }
+
+    .theme-scope :is(
+      .preview-frame,
+      .login-box,
+      .server-card-mock,
+      .terminal-preview,
+      .sftp-preview,
+      .agent-preview
+    ) {
+      border-radius: var(--card-radius);
+      box-shadow: var(--shadow-card);
+      transition: all var(--motion-normal) ease;
+    }
+
+    .theme-scope :is(
+      .login-field .input-line,
+      .search-box,
+      .sftp-toolbar .path-input,
+      .agent-input
+    ) {
+      border-radius: var(--control-radius);
+      padding: var(--control-padding-y) var(--control-padding-x);
+    }
+
+    .theme-scope :is(
+      .connect-btn,
+      .cards-header .add-btn,
+      .card-connect,
+      .sftp-action-btn,
+      .agent-send-btn,
+      .agent-md-code-action
+    ) {
+      border-radius: var(--control-radius);
+      padding: var(--control-padding-y) var(--control-padding-x);
+      transition: all var(--motion-fast) ease;
+    }
+
+    .theme-scope :is(.server-card-mock, .login-box) {
+      padding: var(--card-padding);
+    }
+
+    .theme-scope :is(.cards-grid, .terminal-sftp-preview) {
+      gap: var(--panel-gap);
+    }
+
+    .theme-scope[data-component-input="underline"] :is(
+      .login-field .input-line,
+      .search-box,
+      .sftp-toolbar .path-input,
+      .agent-input
+    ) {
+      background: transparent;
+      border: 0;
+      border-bottom: 1px solid var(--border-strong);
+      border-radius: 0;
+    }
+
+    .theme-scope[data-component-input="boxed"] :is(
+      .login-field .input-line,
+      .search-box,
+      .sftp-toolbar .path-input,
+      .agent-input
+    ) {
+      background: color-mix(in srgb, var(--bg-terminal) 88%, var(--bg-surface));
+      border: 1px solid var(--border-strong);
+    }
+
+    .theme-scope[data-component-button="outline"] :is(
+      .connect-btn,
+      .cards-header .add-btn,
+      .card-connect,
+      .sftp-action-btn,
+      .agent-send-btn
+    ) {
+      color: var(--accent);
+      background: transparent;
+      border-color: var(--accent);
+    }
+
+    .theme-scope[data-component-button="solid"] :is(
+      .connect-btn,
+      .cards-header .add-btn,
+      .card-connect,
+      .sftp-action-btn,
+      .agent-send-btn
+    ) {
+      color: var(--on-accent);
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .theme-scope[data-component-button="soft"] :is(
+      .connect-btn,
+      .cards-header .add-btn,
+      .card-connect,
+      .sftp-action-btn,
+      .agent-send-btn
+    ) {
+      color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 12%, var(--bg-surface));
+      border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+    }
+
+    .theme-scope[data-component-card="flat"] :is(.login-box, .server-card-mock, .agent-preview) {
+      border-color: transparent;
+      box-shadow: none;
+    }
+
+    .theme-scope[data-component-card="outlined"] :is(.login-box, .server-card-mock, .agent-preview) {
+      border-color: var(--border);
+    }
+
+    .theme-scope[data-component-card="elevated"] :is(.login-box, .server-card-mock, .agent-preview) {
+      background: color-mix(in srgb, var(--bg-surface) 96%, var(--accent) 4%);
+      border-color: color-mix(in srgb, var(--border) 72%, transparent);
+    }
+
+    .theme-scope[data-component-tabs="segmented"] :is(.auth-tab, .preview-tab-item) {
+      margin: 3px 2px;
+      border: 1px solid transparent;
+      border-radius: var(--control-radius);
+      background: color-mix(in srgb, var(--bg-elevated) 86%, transparent);
+    }
+
+    .theme-scope[data-component-tabs="segmented"] :is(.auth-tab.active, .preview-tab-item.active) {
+      background: var(--accent-bg);
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    }
+
+    .theme-scope[data-component-tabs="segmented"] .preview-tab-item.active::after {
+      display: none;
+    }
+
+    .theme-scope[data-ui-style="standard"] :is(.scanlines, .scanline, .flicker),
+    .theme-scope[data-ui-style="soft"] :is(.scanlines, .scanline, .flicker),
+    .theme-scope[data-ui-style="dense"] :is(.scanlines, .scanline, .flicker) {
+      display: none;
+    }
+
+    .theme-scope[data-ui-motion="none"] * {
+      animation: none !important;
+      transition: none !important;
     }
 
     /* ===== Login Preview ===== */
@@ -2415,8 +2685,48 @@ const TRANSLATIONS = {
     'agent.placeholder': '描述你希望 Agent 完成的任务…',
     'feedback.imported': '主题导入成功。',
     'feedback.exported': '主题 JSON 已导出。',
-    'feedback.missingUi': '主题文件缺少有效的“ui”字段。',
+    'feedback.missingUi': '主题文件不包含有效的颜色、终端或外观配置。',
     'feedback.invalidJson': '文件不是有效的主题 JSON。',
+    'group.basic': '主题信息',
+    'group.appearance': '整体外观',
+    'group.componentStyles': '组件样式',
+    'appearance.name': '主题名称',
+    'appearance.colorScheme': '明暗模式',
+    'appearance.style': '整体风格',
+    'appearance.shape': '形状',
+    'appearance.density': '密度',
+    'appearance.font': '字体',
+    'appearance.shadow': '阴影',
+    'appearance.motion': '动效',
+    'appearance.button': '按钮',
+    'appearance.input': '输入框',
+    'appearance.card': '卡片',
+    'appearance.tabs': '标签页',
+    'option.dark': '深色',
+    'option.light': '浅色',
+    'option.standard': '标准',
+    'option.cyberpunk': '赛博朋克',
+    'option.soft': '柔和',
+    'option.dense': '紧凑',
+    'option.square': '方正',
+    'option.rounded': '圆角',
+    'option.compact': '紧凑',
+    'option.comfortable': '舒适',
+    'option.spacious': '宽松',
+    'option.mono': '等宽字体',
+    'option.system': '系统字体',
+    'option.none': '无',
+    'option.subtle': '轻微',
+    'option.elevated': '悬浮',
+    'option.reduced': '精简',
+    'option.full': '完整',
+    'option.outline': '描边',
+    'option.solid': '实心',
+    'option.underline': '下划线',
+    'option.boxed': '方框',
+    'option.outlined': '描边',
+    'option.flat': '扁平',
+    'option.segmented': '分段',
     'group.backgrounds': '背景颜色',
     'group.text': '文本颜色',
     'group.accents': '强调颜色',
@@ -2529,8 +2839,48 @@ const TRANSLATIONS = {
     'agent.placeholder': 'Describe what you want the Agent to do…',
     'feedback.imported': 'Theme imported.',
     'feedback.exported': 'Theme JSON exported.',
-    'feedback.missingUi': 'The theme file is missing a valid “ui” field.',
+    'feedback.missingUi': 'The theme file has no valid color, terminal, or appearance settings.',
     'feedback.invalidJson': 'The file is not valid theme JSON.',
+    'group.basic': 'THEME INFORMATION',
+    'group.appearance': 'APPEARANCE',
+    'group.componentStyles': 'COMPONENT STYLES',
+    'appearance.name': 'Theme name',
+    'appearance.colorScheme': 'Color scheme',
+    'appearance.style': 'Style',
+    'appearance.shape': 'Shape',
+    'appearance.density': 'Density',
+    'appearance.font': 'Font',
+    'appearance.shadow': 'Shadow',
+    'appearance.motion': 'Motion',
+    'appearance.button': 'Button',
+    'appearance.input': 'Input',
+    'appearance.card': 'Card',
+    'appearance.tabs': 'Tabs',
+    'option.dark': 'Dark',
+    'option.light': 'Light',
+    'option.standard': 'Standard',
+    'option.cyberpunk': 'Cyberpunk',
+    'option.soft': 'Soft',
+    'option.dense': 'Dense',
+    'option.square': 'Square',
+    'option.rounded': 'Rounded',
+    'option.compact': 'Compact',
+    'option.comfortable': 'Comfortable',
+    'option.spacious': 'Spacious',
+    'option.mono': 'Monospace',
+    'option.system': 'System',
+    'option.none': 'None',
+    'option.subtle': 'Subtle',
+    'option.elevated': 'Elevated',
+    'option.reduced': 'Reduced',
+    'option.full': 'Full',
+    'option.outline': 'Outline',
+    'option.solid': 'Solid',
+    'option.underline': 'Underline',
+    'option.boxed': 'Boxed',
+    'option.outlined': 'Outlined',
+    'option.flat': 'Flat',
+    'option.segmented': 'Segmented',
     'group.backgrounds': 'BACKGROUNDS',
     'group.text': 'TEXT COLORS',
     'group.accents': 'ACCENT COLORS',
@@ -2643,132 +2993,313 @@ function showToast(messageKey, type = 'success') {
   window.setTimeout(() => toast.remove(), 3200);
 }
 
-const PRESETS = {
-  'standard-dark': {
-    name: 'Standard Dark',
-    colorScheme: 'dark',
-    terminal: {
-      background: '#0b0e14', foreground: '#d6deeb', cursor: '#58a6ff', cursorAccent: '#0b0e14',
-      selectionBackground: '#264f78', selectionInactiveBackground: '#1f3a56',
-      black: '#0d1117', red: '#ff7b72', green: '#3fb950', yellow: '#d29922',
-      blue: '#58a6ff', magenta: '#bc8cff', cyan: '#39c5cf', white: '#b1bac4',
-      brightBlack: '#6e7681', brightRed: '#ffa198', brightGreen: '#56d364', brightYellow: '#e3b341',
-      brightBlue: '#79c0ff', brightMagenta: '#d2a8ff', brightCyan: '#56d4dd', brightWhite: '#f0f6fc'
+const PRESETS = /* THEME_PRESETS_START */ {
+  "standard-dark": {
+    "name": "Standard Dark",
+    "colorScheme": "dark",
+    "appearance": {
+      "style": "standard",
+      "shape": "rounded",
+      "density": "comfortable",
+      "font": "system",
+      "shadow": "subtle",
+      "motion": "reduced",
+      "components": {
+        "button": "solid",
+        "input": "boxed",
+        "card": "outlined",
+        "tabs": "underline"
+      }
     },
-    ui: {
-      '--bg': '#0f1115', '--bg-surface': '#161a22', '--bg-elevated': '#1c222d', '--bg-terminal': '#0b0e14',
-      '--text': '#e6edf3', '--text-muted': '#9ba7b4', '--text-dim': '#7d8590',
-      '--accent': '#58a6ff', '--accent-secondary': '#79c0ff', '--accent-secondary-light': '#a5d6ff',
-      '--border': '#30363d', '--border-strong': '#484f58',
-      '--error': '#ff7b72', '--error-bg': '#3d1418',
-      '--on-accent': '#07111f', '--surface-dot': '#30363d',
-      '--scrollbar-track': 'rgba(22, 26, 34, 0.7)',
-      '--scrollbar-thumb': 'rgba(155, 167, 180, 0.35)',
-      '--scrollbar-thumb-hover': 'rgba(155, 167, 180, 0.55)',
-      '--scanline-tint': 'transparent',
-      '--accent-glow': 'rgba(88, 166, 255, 0.08)',
-      '--accent-bg': 'rgba(88, 166, 255, 0.1)',
-      '--modal-overlay': 'rgba(0, 0, 0, 0.72)',
-      '--on-surface': '#e6edf3', '--on-surface-variant': '#9ba7b4',
-      '--agent-user-color': '#58a6ff', '--agent-agent-color': '#79c0ff',
-    }
-  },
-  'standard-light': {
-    name: 'Standard Light',
-    colorScheme: 'light',
-    terminal: {
-      background: '#ffffff', foreground: '#24292f', cursor: '#0969da', cursorAccent: '#ffffff',
-      selectionBackground: '#b6d7ff', selectionForeground: '#1f2328', selectionInactiveBackground: '#dbeafe',
-      black: '#24292f', red: '#cf222e', green: '#1a7f37', yellow: '#9a6700',
-      blue: '#0969da', magenta: '#8250df', cyan: '#1b7c83', white: '#6e7781',
-      brightBlack: '#57606a', brightRed: '#a40e26', brightGreen: '#116329', brightYellow: '#7d4e00',
-      brightBlue: '#0550ae', brightMagenta: '#6639ba', brightCyan: '#0a6c74', brightWhite: '#1f2328'
+    "terminal": {
+      "background": "#0b0e14",
+      "foreground": "#d6deeb",
+      "cursor": "#58a6ff",
+      "cursorAccent": "#0b0e14",
+      "selectionBackground": "#264f78",
+      "selectionInactiveBackground": "#1f3a56",
+      "black": "#0d1117",
+      "red": "#ff7b72",
+      "green": "#3fb950",
+      "yellow": "#d29922",
+      "blue": "#58a6ff",
+      "magenta": "#bc8cff",
+      "cyan": "#39c5cf",
+      "white": "#b1bac4",
+      "brightBlack": "#6e7681",
+      "brightRed": "#ffa198",
+      "brightGreen": "#56d364",
+      "brightYellow": "#e3b341",
+      "brightBlue": "#79c0ff",
+      "brightMagenta": "#d2a8ff",
+      "brightCyan": "#56d4dd",
+      "brightWhite": "#f0f6fc"
     },
-    ui: {
-      '--bg': '#f6f8fa', '--bg-surface': '#ffffff', '--bg-elevated': '#eef2f6', '--bg-terminal': '#ffffff',
-      '--text': '#1f2328', '--text-muted': '#57606a', '--text-dim': '#656d76',
-      '--accent': '#0969da', '--accent-secondary': '#0550ae', '--accent-secondary-light': '#0550ae',
-      '--border': '#d0d7de', '--border-strong': '#afb8c1',
-      '--error': '#cf222e', '--error-bg': '#ffebe9',
-      '--on-accent': '#ffffff', '--surface-dot': '#eaeef2',
-      '--scrollbar-track': 'rgba(208, 215, 222, 0.45)',
-      '--scrollbar-thumb': 'rgba(87, 96, 106, 0.35)',
-      '--scrollbar-thumb-hover': 'rgba(87, 96, 106, 0.55)',
-      '--scanline-tint': 'transparent',
-      '--accent-glow': 'rgba(9, 105, 218, 0.08)',
-      '--accent-bg': 'rgba(9, 105, 218, 0.1)',
-      '--modal-overlay': 'rgba(31, 35, 40, 0.48)',
-      '--on-surface': '#1f2328', '--on-surface-variant': '#57606a',
-      '--agent-user-color': '#0969da', '--agent-agent-color': '#8250df',
+    "ui": {
+      "--bg": "#0f1115",
+      "--bg-surface": "#161a22",
+      "--bg-elevated": "#1c222d",
+      "--bg-terminal": "#0b0e14",
+      "--text": "#e6edf3",
+      "--text-muted": "#9ba7b4",
+      "--text-dim": "#7d8590",
+      "--accent": "#58a6ff",
+      "--accent-secondary": "#79c0ff",
+      "--accent-secondary-light": "#a5d6ff",
+      "--border": "#30363d",
+      "--border-strong": "#484f58",
+      "--error": "#ff7b72",
+      "--error-bg": "#3d1418",
+      "--on-accent": "#07111f",
+      "--surface-dot": "#30363d",
+      "--scrollbar-track": "rgba(22, 26, 34, 0.7)",
+      "--scrollbar-thumb": "rgba(155, 167, 180, 0.35)",
+      "--scrollbar-thumb-hover": "rgba(155, 167, 180, 0.55)",
+      "--scanline-tint": "transparent",
+      "--accent-glow": "rgba(88, 166, 255, 0.08)",
+      "--accent-bg": "rgba(88, 166, 255, 0.1)",
+      "--modal-overlay": "rgba(0, 0, 0, 0.72)",
+      "--on-surface": "#e6edf3",
+      "--on-surface-variant": "#9ba7b4",
+      "--agent-user-color": "#58a6ff",
+      "--agent-agent-color": "#79c0ff"
     }
   },
-  cyberpunk: {
-    name: 'Cyberpunk',
-    colorScheme: 'dark',
-    terminal: { background: '#0a0a0a', foreground: '#4af626', cursor: '#14d1ff', cursorAccent: '#0a0a0a', selectionBackground: '#273747' },
-    ui: {
-      '--bg': '#0a0a0a', '--bg-surface': '#121212', '--bg-elevated': '#131313', '--bg-terminal': '#0e0e0e',
-      '--text': '#4af626', '--text-muted': '#bbccb0', '--text-dim': '#3c4b36',
-      '--accent': '#4af626', '--accent-secondary': '#14d1ff', '--accent-secondary-light': '#b7eaff',
-      '--border': '#1f1f1f', '--border-strong': '#3c4b36',
-      '--error': '#ffb4ab', '--error-bg': '#93000a',
-      '--on-accent': '#022100',       '--surface-dot': '#353534',
-      '--scrollbar-track': 'rgba(28, 27, 27, 0.5)',
-      '--scrollbar-thumb': 'rgba(60, 75, 54, 0.8)',
-      '--scrollbar-thumb-hover': 'rgba(134, 149, 125, 0.8)',
-      '--scanline-tint': 'rgba(74, 246, 38, 0.02)',
-      '--accent-glow': 'rgba(74, 246, 38, 0.08)',
-      '--accent-bg': 'rgba(74, 246, 38, 0.1)',
-      '--modal-overlay': 'rgba(0, 0, 0, 0.8)',
-      '--on-surface': '#e5e2e1', '--on-surface-variant': '#bbccb0',
-      '--agent-user-color': '#4af626', '--agent-agent-color': '#14d1ff',
+  "standard-light": {
+    "name": "Standard Light",
+    "colorScheme": "light",
+    "appearance": {
+      "style": "standard",
+      "shape": "rounded",
+      "density": "comfortable",
+      "font": "system",
+      "shadow": "subtle",
+      "motion": "reduced",
+      "components": {
+        "button": "solid",
+        "input": "boxed",
+        "card": "outlined",
+        "tabs": "underline"
+      }
+    },
+    "terminal": {
+      "background": "#ffffff",
+      "foreground": "#24292f",
+      "cursor": "#0969da",
+      "cursorAccent": "#ffffff",
+      "selectionBackground": "#b6d7ff",
+      "selectionForeground": "#1f2328",
+      "selectionInactiveBackground": "#dbeafe",
+      "black": "#24292f",
+      "red": "#cf222e",
+      "green": "#1a7f37",
+      "yellow": "#9a6700",
+      "blue": "#0969da",
+      "magenta": "#8250df",
+      "cyan": "#1b7c83",
+      "white": "#6e7781",
+      "brightBlack": "#57606a",
+      "brightRed": "#a40e26",
+      "brightGreen": "#116329",
+      "brightYellow": "#7d4e00",
+      "brightBlue": "#0550ae",
+      "brightMagenta": "#6639ba",
+      "brightCyan": "#0a6c74",
+      "brightWhite": "#1f2328"
+    },
+    "ui": {
+      "--bg": "#f6f8fa",
+      "--bg-surface": "#ffffff",
+      "--bg-elevated": "#eef2f6",
+      "--bg-terminal": "#ffffff",
+      "--text": "#1f2328",
+      "--text-muted": "#57606a",
+      "--text-dim": "#656d76",
+      "--accent": "#0969da",
+      "--accent-secondary": "#0550ae",
+      "--accent-secondary-light": "#0550ae",
+      "--border": "#d0d7de",
+      "--border-strong": "#afb8c1",
+      "--error": "#cf222e",
+      "--error-bg": "#ffebe9",
+      "--on-accent": "#ffffff",
+      "--surface-dot": "#eaeef2",
+      "--scrollbar-track": "rgba(208, 215, 222, 0.45)",
+      "--scrollbar-thumb": "rgba(87, 96, 106, 0.35)",
+      "--scrollbar-thumb-hover": "rgba(87, 96, 106, 0.55)",
+      "--scanline-tint": "transparent",
+      "--accent-glow": "rgba(9, 105, 218, 0.08)",
+      "--accent-bg": "rgba(9, 105, 218, 0.1)",
+      "--modal-overlay": "rgba(31, 35, 40, 0.48)",
+      "--on-surface": "#1f2328",
+      "--on-surface-variant": "#57606a",
+      "--agent-user-color": "#0969da",
+      "--agent-agent-color": "#8250df"
     }
   },
-  glacier: {
-    name: 'Glacier',
-    colorScheme: 'dark',
-    terminal: { background: '#0a192f', foreground: '#64ffda', cursor: '#e6f1ff', cursorAccent: '#0a192f', selectionBackground: '#112240' },
-    ui: {
-      '--bg': '#0a192f', '--bg-surface': '#0d2137', '--bg-elevated': '#112240', '--bg-terminal': '#061526',
-      '--text': '#64ffda', '--text-muted': '#8892b0', '--text-dim': '#495670',
-      '--accent': '#64ffda', '--accent-secondary': '#e6f1ff', '--accent-secondary-light': '#ccd6f6',
-      '--border': '#1d3557', '--border-strong': '#495670',
-      '--error': '#ff6b6b', '--error-bg': '#3d0000',
-      '--on-accent': '#0a192f',       '--surface-dot': '#1d3557',
-      '--scrollbar-track': 'rgba(10, 25, 47, 0.5)',
-      '--scrollbar-thumb': 'rgba(100, 255, 218, 0.2)',
-      '--scrollbar-thumb-hover': 'rgba(100, 255, 218, 0.4)',
-      '--scanline-tint': 'rgba(100, 255, 218, 0.02)',
-      '--accent-glow': 'rgba(100, 255, 218, 0.08)',
-      '--accent-bg': 'rgba(100, 255, 218, 0.1)',
-      '--modal-overlay': 'rgba(0, 0, 0, 0.85)',
-      '--on-surface': '#e6f1ff', '--on-surface-variant': '#8892b0',
-      '--agent-user-color': '#64ffda', '--agent-agent-color': '#e6f1ff',
+  "cyberpunk": {
+    "name": "Cyberpunk",
+    "colorScheme": "dark",
+    "appearance": {
+      "style": "cyberpunk",
+      "shape": "square",
+      "density": "compact",
+      "font": "mono",
+      "shadow": "none",
+      "motion": "full",
+      "components": {
+        "button": "outline",
+        "input": "underline",
+        "card": "outlined",
+        "tabs": "underline"
+      }
+    },
+    "terminal": {
+      "background": "#0a0a0a",
+      "foreground": "#4af626",
+      "cursor": "#14d1ff",
+      "cursorAccent": "#0a0a0a",
+      "selectionBackground": "#273747"
+    },
+    "ui": {
+      "--bg": "#0a0a0a",
+      "--bg-surface": "#121212",
+      "--bg-elevated": "#131313",
+      "--bg-terminal": "#0e0e0e",
+      "--text": "#4af626",
+      "--text-muted": "#bbccb0",
+      "--text-dim": "#3c4b36",
+      "--accent": "#4af626",
+      "--accent-secondary": "#14d1ff",
+      "--accent-secondary-light": "#b7eaff",
+      "--border": "#1f1f1f",
+      "--border-strong": "#3c4b36",
+      "--error": "#ffb4ab",
+      "--error-bg": "#93000a",
+      "--on-accent": "#022100",
+      "--surface-dot": "#353534",
+      "--scrollbar-track": "rgba(28, 27, 27, 0.5)",
+      "--scrollbar-thumb": "rgba(60, 75, 54, 0.8)",
+      "--scrollbar-thumb-hover": "rgba(134, 149, 125, 0.8)",
+      "--scanline-tint": "rgba(74, 246, 38, 0.02)",
+      "--accent-glow": "rgba(74, 246, 38, 0.08)",
+      "--accent-bg": "rgba(74, 246, 38, 0.1)",
+      "--modal-overlay": "rgba(0, 0, 0, 0.8)",
+      "--on-surface": "#e5e2e1",
+      "--on-surface-variant": "#bbccb0",
+      "--agent-user-color": "#4af626",
+      "--agent-agent-color": "#14d1ff"
     }
   },
-  gruvbox: {
-    name: 'Gruvbox',
-    colorScheme: 'dark',
-    terminal: { background: '#282828', foreground: '#ebdbb2', cursor: '#d3869b', cursorAccent: '#282828', selectionBackground: '#504945' },
-    ui: {
-      '--bg': '#282828', '--bg-surface': '#303030', '--bg-elevated': '#282828', '--bg-terminal': '#1d2021',
-      '--text': '#ebdbb2', '--text-muted': '#a89984', '--text-dim': '#665c54',
-      '--accent': '#b8bb26', '--accent-secondary': '#83a598', '--accent-secondary-light': '#8ec07c',
-      '--border': '#3c3836', '--border-strong': '#665c54',
-      '--error': '#fb4934', '--error-bg': '#3d0000',
-      '--on-accent': '#282828',       '--surface-dot': '#3c3836',
-      '--scrollbar-track': 'rgba(40, 40, 40, 0.5)',
-      '--scrollbar-thumb': 'rgba(168, 153, 132, 0.3)',
-      '--scrollbar-thumb-hover': 'rgba(168, 153, 132, 0.5)',
-      '--scanline-tint': 'rgba(184, 187, 38, 0.02)',
-      '--accent-glow': 'rgba(184, 187, 38, 0.08)',
-      '--accent-bg': 'rgba(184, 187, 38, 0.1)',
-      '--modal-overlay': 'rgba(0, 0, 0, 0.75)',
-      '--on-surface': '#ebdbb2', '--on-surface-variant': '#a89984',
-      '--agent-user-color': '#b8bb26', '--agent-agent-color': '#83a598',
+  "glacier": {
+    "name": "Glacier",
+    "colorScheme": "dark",
+    "appearance": {
+      "style": "soft",
+      "shape": "soft",
+      "density": "comfortable",
+      "font": "system",
+      "shadow": "elevated",
+      "motion": "reduced",
+      "components": {
+        "button": "soft",
+        "input": "boxed",
+        "card": "elevated",
+        "tabs": "segmented"
+      }
+    },
+    "terminal": {
+      "background": "#0a192f",
+      "foreground": "#64ffda",
+      "cursor": "#e6f1ff",
+      "cursorAccent": "#0a192f",
+      "selectionBackground": "#112240"
+    },
+    "ui": {
+      "--bg": "#0a192f",
+      "--bg-surface": "#0d2137",
+      "--bg-elevated": "#112240",
+      "--bg-terminal": "#061526",
+      "--text": "#64ffda",
+      "--text-muted": "#8892b0",
+      "--text-dim": "#495670",
+      "--accent": "#64ffda",
+      "--accent-secondary": "#e6f1ff",
+      "--accent-secondary-light": "#ccd6f6",
+      "--border": "#1d3557",
+      "--border-strong": "#495670",
+      "--error": "#ff6b6b",
+      "--error-bg": "#3d0000",
+      "--on-accent": "#0a192f",
+      "--surface-dot": "#1d3557",
+      "--scrollbar-track": "rgba(10, 25, 47, 0.5)",
+      "--scrollbar-thumb": "rgba(100, 255, 218, 0.2)",
+      "--scrollbar-thumb-hover": "rgba(100, 255, 218, 0.4)",
+      "--scanline-tint": "rgba(100, 255, 218, 0.02)",
+      "--accent-glow": "rgba(100, 255, 218, 0.08)",
+      "--accent-bg": "rgba(100, 255, 218, 0.1)",
+      "--modal-overlay": "rgba(0, 0, 0, 0.85)",
+      "--on-surface": "#e6f1ff",
+      "--on-surface-variant": "#8892b0",
+      "--agent-user-color": "#64ffda",
+      "--agent-agent-color": "#e6f1ff"
+    }
+  },
+  "gruvbox": {
+    "name": "Gruvbox",
+    "colorScheme": "dark",
+    "appearance": {
+      "style": "dense",
+      "shape": "rounded",
+      "density": "compact",
+      "font": "mono",
+      "shadow": "none",
+      "motion": "reduced",
+      "components": {
+        "button": "outline",
+        "input": "boxed",
+        "card": "flat",
+        "tabs": "segmented"
+      }
+    },
+    "terminal": {
+      "background": "#282828",
+      "foreground": "#ebdbb2",
+      "cursor": "#d3869b",
+      "cursorAccent": "#282828",
+      "selectionBackground": "#504945"
+    },
+    "ui": {
+      "--bg": "#282828",
+      "--bg-surface": "#303030",
+      "--bg-elevated": "#282828",
+      "--bg-terminal": "#1d2021",
+      "--text": "#ebdbb2",
+      "--text-muted": "#a89984",
+      "--text-dim": "#665c54",
+      "--accent": "#b8bb26",
+      "--accent-secondary": "#83a598",
+      "--accent-secondary-light": "#8ec07c",
+      "--border": "#3c3836",
+      "--border-strong": "#665c54",
+      "--error": "#fb4934",
+      "--error-bg": "#3d0000",
+      "--on-accent": "#282828",
+      "--surface-dot": "#3c3836",
+      "--scrollbar-track": "rgba(40, 40, 40, 0.5)",
+      "--scrollbar-thumb": "rgba(168, 153, 132, 0.3)",
+      "--scrollbar-thumb-hover": "rgba(168, 153, 132, 0.5)",
+      "--scanline-tint": "rgba(184, 187, 38, 0.02)",
+      "--accent-glow": "rgba(184, 187, 38, 0.08)",
+      "--accent-bg": "rgba(184, 187, 38, 0.1)",
+      "--modal-overlay": "rgba(0, 0, 0, 0.75)",
+      "--on-surface": "#ebdbb2",
+      "--on-surface-variant": "#a89984",
+      "--agent-user-color": "#b8bb26",
+      "--agent-agent-color": "#83a598"
     }
   }
-};
+} /* THEME_PRESETS_END */;
 
 const VARIABLE_GROUPS = [
   { titleKey: 'group.backgrounds', vars: ['--bg', '--bg-surface', '--bg-elevated', '--bg-terminal'] },
@@ -2812,9 +3343,27 @@ const VARIABLE_LABELS = {
 };
 
 let theme = {};
+let terminalTheme = {};
 let activePreset = 'cyberpunk';
 let colorScheme = 'dark';
-let customized = false;
+let themeName = 'Cyberpunk';
+let appearance = {};
+
+const APPEARANCE_FIELDS = [
+  { key: 'style', labelKey: 'appearance.style', values: ['standard', 'cyberpunk', 'soft', 'dense'] },
+  { key: 'shape', labelKey: 'appearance.shape', values: ['square', 'rounded', 'soft'] },
+  { key: 'density', labelKey: 'appearance.density', values: ['compact', 'comfortable', 'spacious'] },
+  { key: 'font', labelKey: 'appearance.font', values: ['mono', 'system'] },
+  { key: 'shadow', labelKey: 'appearance.shadow', values: ['none', 'subtle', 'elevated'] },
+  { key: 'motion', labelKey: 'appearance.motion', values: ['none', 'reduced', 'full'] },
+];
+
+const COMPONENT_FIELDS = [
+  { key: 'button', labelKey: 'appearance.button', values: ['outline', 'solid', 'soft'] },
+  { key: 'input', labelKey: 'appearance.input', values: ['underline', 'boxed'] },
+  { key: 'card', labelKey: 'appearance.card', values: ['outlined', 'flat', 'elevated'] },
+  { key: 'tabs', labelKey: 'appearance.tabs', values: ['underline', 'segmented'] },
+];
 
 function syncThemeSelectors(value) {
   document.getElementById('preset-select').value = value;
@@ -2827,16 +3376,20 @@ function initTheme(presetName) {
   const preset = PRESETS[presetName];
   if (!preset) return;
   theme = { ...preset.ui };
+  terminalTheme = { ...preset.terminal };
   activePreset = presetName;
   colorScheme = preset.colorScheme;
-  customized = false;
+  themeName = preset.name;
+  appearance = {
+    ...preset.appearance,
+    components: { ...preset.appearance.components },
+  };
   renderControls();
   applyTheme();
   syncThemeSelectors(presetName);
 }
 
 function markThemeCustomized() {
-  customized = true;
   syncThemeSelectors('custom');
 }
 
@@ -2852,16 +3405,24 @@ function escapeAttribute(value) {
     .replace(/>/g, '&gt;');
 }
 
-function hexToRgba(hex) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, 1)`;
-}
-
 function renderControls() {
   const container = document.getElementById('controls');
-  let html = '';
+  let html = `<div class="section-title">${t('group.basic')}</div>`;
+  html += settingInput('appearance.name', themeName, 'data-theme-name');
+  html += settingSelect('appearance.colorScheme', colorScheme, ['dark', 'light'], 'data-color-scheme');
+  html += `<div class="section-title">${t('group.appearance')}</div>`;
+  html += APPEARANCE_FIELDS
+    .map(field => settingSelect(field.labelKey, appearance[field.key], field.values, `data-appearance="${field.key}"`))
+    .join('');
+  html += `<div class="section-title">${t('group.componentStyles')}</div>`;
+  html += COMPONENT_FIELDS
+    .map(field => settingSelect(
+      field.labelKey,
+      appearance.components?.[field.key],
+      field.values,
+      `data-component="${field.key}"`,
+    ))
+    .join('');
 
   for (const group of VARIABLE_GROUPS) {
     html += `<div class="section-title">${t(group.titleKey)}</div>`;
@@ -2873,16 +3434,42 @@ function renderControls() {
       html += `<div class="color-row">`;
       html += `<label>${label}</label>`;
       if (isHex) {
-        html += `<input type="color" value="${val}" data-var="${varName}">`;
+        html += `<input type="color" value="${val}" data-var="${varName}" aria-label="${escapeAttribute(label)}">`;
       }
-      html += `<input type="text" value="${escapeAttribute(val)}" data-var="${varName}" spellcheck="false">`;
+      html += `<input type="text" value="${escapeAttribute(val)}" data-var="${varName}" aria-label="${escapeAttribute(label)}" spellcheck="false">`;
       html += `</div>`;
     }
   }
 
   container.innerHTML = html;
 
-  // Bind events
+  container.querySelector('[data-theme-name]').addEventListener('input', (event) => {
+    themeName = event.target.value.slice(0, 80);
+    markThemeCustomized();
+  });
+
+  container.querySelector('[data-color-scheme]').addEventListener('change', (event) => {
+    colorScheme = event.target.value;
+    markThemeCustomized();
+    applyTheme();
+  });
+
+  container.querySelectorAll('[data-appearance]').forEach(select => {
+    select.addEventListener('change', (event) => {
+      appearance[event.target.dataset.appearance] = event.target.value;
+      markThemeCustomized();
+      applyTheme();
+    });
+  });
+
+  container.querySelectorAll('[data-component]').forEach(select => {
+    select.addEventListener('change', (event) => {
+      appearance.components[event.target.dataset.component] = event.target.value;
+      markThemeCustomized();
+      applyTheme();
+    });
+  });
+
   container.querySelectorAll('input[type="color"]').forEach(input => {
     input.addEventListener('input', (e) => {
       const varName = e.target.dataset.var;
@@ -2894,7 +3481,7 @@ function renderControls() {
     });
   });
 
-  container.querySelectorAll('input[type="text"]').forEach(input => {
+  container.querySelectorAll('input[type="text"][data-var]').forEach(input => {
     input.addEventListener('input', (e) => {
       const varName = e.target.dataset.var;
       const val = e.target.value;
@@ -2911,10 +3498,33 @@ function renderControls() {
   });
 }
 
+function settingInput(labelKey, value, attribute) {
+  return `<div class="setting-row"><label>${t(labelKey)}</label>`
+    + `<input type="text" value="${escapeAttribute(value)}" ${attribute} aria-label="${escapeAttribute(t(labelKey))}" maxlength="80"></div>`;
+}
+
+function settingSelect(labelKey, value, values, attribute) {
+  const options = values.map(option =>
+    `<option value="${option}"${option === value ? ' selected' : ''}>${t(`option.${option}`)}</option>`
+  ).join('');
+  return `<div class="setting-row"><label>${t(labelKey)}</label>`
+    + `<select ${attribute} aria-label="${escapeAttribute(t(labelKey))}">${options}</select></div>`;
+}
+
 function applyTheme() {
   const scope = document.getElementById('theme-scope');
   scope.style.colorScheme = colorScheme;
   scope.dataset.colorScheme = colorScheme;
+  scope.dataset.uiStyle = appearance.style;
+  scope.dataset.uiShape = appearance.shape;
+  scope.dataset.uiDensity = appearance.density;
+  scope.dataset.uiFont = appearance.font;
+  scope.dataset.uiShadow = appearance.shadow;
+  scope.dataset.uiMotion = appearance.motion;
+  scope.dataset.componentButton = appearance.components.button;
+  scope.dataset.componentInput = appearance.components.input;
+  scope.dataset.componentCard = appearance.components.card;
+  scope.dataset.componentTabs = appearance.components.tabs;
   for (const [varName, val] of Object.entries(theme)) {
     scope.style.setProperty(varName, val);
   }
@@ -2940,29 +3550,34 @@ document.getElementById('import-input').addEventListener('change', (e) => {
   reader.onload = (ev) => {
     try {
       const data = JSON.parse(ev.target.result);
-      if (data.ui && typeof data.ui === 'object') {
-        const importedVariables = Object.fromEntries(
-          Object.entries(data.ui).filter(([key, value]) => key.startsWith('--') && typeof value === 'string')
-        );
-        if (!Object.keys(importedVariables).length) {
-          showToast('feedback.missingUi', 'error');
-          return;
-        }
-        const importedScheme = data.colorScheme === 'light' || data.colorScheme === 'dark'
-          ? data.colorScheme
-          : inferColorScheme(importedVariables['--bg']);
-        const fallbackPreset = importedScheme === 'light' ? PRESETS['standard-light'] : PRESETS.cyberpunk;
-        theme = { ...fallbackPreset.ui, ...importedVariables };
-        colorScheme = importedScheme;
-        customized = false;
-        activePreset = null;
-        syncThemeSelectors('custom');
-        renderControls();
-        applyTheme();
-        showToast('feedback.imported');
-      } else {
+      const importedVariables = sanitizeColorRecord(data.ui, Object.keys(PRESETS.cyberpunk.ui));
+      const importedTerminal = sanitizeColorRecord(data.terminal, Object.keys(PRESETS['standard-dark'].terminal));
+      const importedAppearance = sanitizeAppearance(data.appearance);
+      if (!Object.keys(importedVariables).length
+        && !Object.keys(importedTerminal).length
+        && !importedAppearance) {
         showToast('feedback.missingUi', 'error');
+        return;
       }
+      const importedScheme = data.colorScheme === 'light' || data.colorScheme === 'dark'
+        ? data.colorScheme
+        : inferColorScheme(importedVariables['--bg'] || importedTerminal.background);
+      const requestedBase = typeof data.baseTheme === 'string' && PRESETS[data.baseTheme]
+        ? data.baseTheme
+        : (importedScheme === 'light' ? 'standard-light' : 'cyberpunk');
+      const fallbackPreset = PRESETS[requestedBase];
+      theme = { ...fallbackPreset.ui, ...importedVariables };
+      terminalTheme = { ...fallbackPreset.terminal, ...importedTerminal };
+      colorScheme = importedScheme;
+      themeName = typeof data.name === 'string' && data.name.trim()
+        ? data.name.trim().slice(0, 80)
+        : 'Custom';
+      appearance = mergeAppearance(fallbackPreset.appearance, importedAppearance);
+      activePreset = requestedBase;
+      syncThemeSelectors('custom');
+      renderControls();
+      applyTheme();
+      showToast('feedback.imported');
     } catch {
       showToast('feedback.invalidJson', 'error');
     }
@@ -2973,20 +3588,23 @@ document.getElementById('import-input').addEventListener('change', (e) => {
 
 // Export
 document.getElementById('btn-export').addEventListener('click', () => {
-  const isCustom = customized || !activePreset;
-  const preset = activePreset ? PRESETS[activePreset] : null;
-  const themeName = isCustom ? 'Custom' : (preset?.name || 'Custom');
-
   const output = {
-    name: themeName,
-    colorScheme: preset?.colorScheme || colorScheme,
-    terminal: (isCustom || !preset) ? {
-      background: theme['--bg-terminal'] || '#0a0a0a',
-      foreground: theme['--text'] || '#cccccc',
-      cursor: theme['--accent-secondary'] || '#ffffff',
-      cursorAccent: theme['--bg-terminal'] || '#0a0a0a',
-      selectionBackground: theme['--border-strong'] || '#333333',
-    } : preset.terminal,
+    schemaVersion: 2,
+    name: themeName.trim() || 'Custom',
+    baseTheme: activePreset || (colorScheme === 'light' ? 'standard-light' : 'cyberpunk'),
+    colorScheme,
+    appearance: {
+      ...appearance,
+      components: { ...appearance.components },
+    },
+    terminal: {
+      ...terminalTheme,
+      background: theme['--bg-terminal'] || terminalTheme.background,
+      foreground: theme['--text'] || terminalTheme.foreground,
+      cursor: theme['--accent-secondary'] || terminalTheme.cursor,
+      cursorAccent: theme['--bg-terminal'] || terminalTheme.cursorAccent,
+      selectionBackground: theme['--border-strong'] || terminalTheme.selectionBackground,
+    },
     ui: { ...theme },
   };
 
@@ -2995,12 +3613,62 @@ document.getElementById('btn-export').addEventListener('click', () => {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `cloudssh-theme-${themeName.toLowerCase().replace(/\s+/g, '-')}.json`;
+  const safeName = output.name.toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff_-]+/gi, '-')
+    .replace(/^-+|-+$/g, '') || 'custom';
+  a.download = `cloudssh-theme-${safeName}.json`;
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
   showToast('feedback.exported');
 });
+
+function sanitizeColorRecord(value, allowedProperties) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const allowed = new Set(allowedProperties);
+  return Object.fromEntries(
+    Object.entries(value).filter(([key, color]) =>
+      allowed.has(key) && typeof color === 'string' && isSafeColor(color)
+    )
+  );
+}
+
+function isSafeColor(value) {
+  const normalized = value.trim();
+  if (!normalized || normalized.length > 96 || /url\s*\(|var\s*\(|expression\s*\(/i.test(normalized)) {
+    return false;
+  }
+  return normalized === 'transparent'
+    || /^#[0-9a-f]{3,8}$/i.test(normalized)
+    || /^rgba?\(\s*[\d.\s,%+-]+\)$/i.test(normalized)
+    || /^hsla?\(\s*[\d.\s,%+-]+(?:deg|rad|turn)?[\d.\s,%+-]*\)$/i.test(normalized);
+}
+
+function sanitizeAppearance(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const result = { components: {} };
+  for (const field of APPEARANCE_FIELDS) {
+    if (field.values.includes(value[field.key])) result[field.key] = value[field.key];
+  }
+  const components = value.components && typeof value.components === 'object'
+    ? value.components
+    : {};
+  for (const field of COMPONENT_FIELDS) {
+    if (field.values.includes(components[field.key])) result.components[field.key] = components[field.key];
+  }
+  return Object.keys(result).length > 1 || Object.keys(result.components).length ? result : null;
+}
+
+function mergeAppearance(fallback, imported) {
+  return {
+    ...fallback,
+    ...(imported || {}),
+    components: {
+      ...fallback.components,
+      ...(imported?.components || {}),
+    },
+  };
+}
 
 function inferColorScheme(background) {
   if (!background || !/^#[0-9a-fA-F]{6}$/.test(background)) return 'dark';

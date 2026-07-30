@@ -8,6 +8,7 @@
     "dev": "node scripts/build-html.js && wrangler dev",
     "deploy": "node scripts/build-html.js && wrangler deploy",
     "deploy:test": "node scripts/build-html.js && wrangler deploy --env test",
+    "sync:theme-editor": "node scripts/sync-theme-editor.js",
     "build:frontend": "node scripts/build-html.js",
     "typecheck": "pnpm run typecheck:worker && pnpm run typecheck:frontend",
     "typecheck:worker": "tsc --noEmit",

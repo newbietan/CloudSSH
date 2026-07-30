@@ -87,7 +87,7 @@
 - **多种认证方式**：支持标准 SSH 密码认证，以及 OpenSSH 格式的 Ed25519、ECDSA P-256/P-384/P-521 和 RSA 私钥认证；RSA 默认使用 RSA-SHA2-256/512，只有显式兼容配置才允许旧 `ssh-rsa` SHA-1。
 - **防范中间人攻击 (TOFU)**：首次连接自动提取服务器 Host Key（SHA-256 指纹）并显示，支持 Ed25519/ECDSA/RSA 签名验证，并在本地及 API 持久化缓存已知主机指纹以防范二次连接的欺骗风险。
 - **全功能极客终端**：基于 `@xterm/xterm` 与 `@xterm/addon-webgl` 硬件加速渲染引擎，保证海量日志输出顺滑不卡顿。
-- **个性化 UI**：全站颜色基于 CSS 变量系统，提供 Standard Dark、Standard Light、Cyberpunk、Glacier、Gruvbox 五款内置主题一键切换。配套[可视化主题编辑器](https://newbietan.github.io/CloudSSH/)使用下拉框选择预设主题，支持实时调色预览（覆盖登录页、服务器列表、终端 + SFTP、AI Agent 面板）、导出 JSON 主题文件；登录用户可一键同步至云端并跨浏览器生效。支持移动端适配。
+- **个性化 UI**：Theme V2 系统提供 Standard Dark、Standard Light、Cyberpunk、Glacier、Gruvbox 五款内置主题。配套 [GitHub Pages 主题编辑器](https://newbietan.github.io/CloudSSH/)可实时调整颜色、形状、密度、字体、阴影、动效及按钮/输入框/卡片/标签页样式，并预览登录页、服务器列表、终端 + SFTP 和 AI Agent 面板。主题通过 JSON 文件导入、导出、备份与分享；登录用户在应用中导入后会同步到账号并可跨浏览器恢复，匿名用户仅保存在当前浏览器。
 - **SFTP 图形化文件管理**：集成完整的 SFTP v3 文件传输协议，提供图形化文件浏览器界面。支持目录浏览、文件上传/下载、新建文件夹、文件重命名与删除等操作；支持普通单选、`Cmd/Ctrl` 切换选择、`Shift` 连选、全选，以及批量下载文件和批量删除。基于 SSH 子系统实现，与终端会话并行运行，互不干扰，支持下载队列及上传取消。
 - **原生文件传输**：集成 [trzsz.js](https://github.com/trzsz/trzsz.js)，支持 `trz`（上传）/ `tsz`（下载）命令进行文件传输，兼容 tmux 会话。还支持拖拽文件到终端窗口直接上传、目录传输及断点续传等高级功能。（需远程服务器安装 [trzsz](https://trzsz.github.io/)）
 - **GitHub OAuth 集成**：支持 GitHub 登录，用户可保存和管理常用 SSH 服务器，实现一键连接；服务器支持最多 10 个规范化标签，列表可按名称、主机地址、用户名即时搜索并按标签筛选，每页固定展示 9 张服务器卡片。
@@ -391,7 +391,7 @@ test 分支（开发/测试）  ──合并──>  main 分支（生产）
 | 层级 | 技术 | 说明 |
 |------|------|------|
 | **前端** | TypeScript + Vite + xterm.js | Web 终端模拟器，WebGL 硬件加速 |
-| **UI 框架** | Tailwind CSS（Vite/PostCSS 本地构建）+ CSS 变量主题系统 | 可切换内置主题，支持自定义 JSON 主题导入与云端同步；生产环境不依赖 Tailwind CDN |
+| **UI 框架** | Tailwind CSS（Vite/PostCSS 本地构建）+ Theme V2 系统 | 可切换内置主题，支持自定义主题 JSON 导入、导出及登录账号同步；生产环境不依赖 Tailwind CDN |
 | **文件传输** | trzsz.js | 支持 trz/tsz 命令、拖拽上传、断点续传 |
 | **AI 助手** | BYOK + OpenAI 兼容接口 | 自带 API Key，支持 DeepSeek 等兼容模型 |
 | **后端** | Cloudflare Workers | Serverless 边缘计算 |

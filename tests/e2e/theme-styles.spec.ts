@@ -19,7 +19,11 @@ const server = {
 test.beforeEach(async ({ page }) => {
   await blockOptionalThirdPartyAssets(page);
   await page.route('**/api/user/theme', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '{"theme":null}' }),
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: route.request().method() === 'GET' ? '{"theme":null}' : '{"success":true}',
+    }),
   );
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
@@ -83,4 +87,97 @@ test('终端四周留白按形状收窄并为圆角保留安全间距', async ({
   await selector.selectOption('glacier');
   await expect(terminalMain).toHaveCSS('padding', '10px');
   await expect(terminalWrapper).toHaveCSS('border-radius', '15px');
+});
+
+test('应用可导入、导出并在本地删除 Theme V2 JSON', async ({ page }) => {
+  const themeRequestMethods: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/api/user/theme')) {
+      themeRequestMethods.push(request.method());
+    }
+  });
+  await page.goto('/');
+
+  const customTheme = {
+    schemaVersion: 2,
+    name: 'Ocean Soft',
+    baseTheme: 'glacier',
+    colorScheme: 'dark',
+    ui: {
+      '--accent': '#22d3ee',
+      '--bg': '#071827',
+    },
+    appearance: {
+      style: 'soft',
+      shape: 'soft',
+      density: 'spacious',
+      components: {
+        button: 'soft',
+        input: 'boxed',
+        card: 'elevated',
+        tabs: 'segmented',
+      },
+    },
+  };
+
+  await page.locator('#import-theme-input').setInputFiles({
+    name: 'ocean-soft.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(customTheme)),
+  });
+
+  await expect(page.locator('#user-theme-selector')).toHaveValue('__custom__');
+  await expect(page.locator('html')).toHaveAttribute('data-ui-style', 'soft');
+  await expect(page.locator('html')).toHaveAttribute('data-ui-density', 'spacious');
+  await expect(page.locator('[data-theme-export]').first()).toBeVisible();
+  await expect(page.locator('[data-theme-delete]').first()).toBeVisible();
+  await expect.poll(() => themeRequestMethods).toContain('PUT');
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.locator('[data-theme-export]').first().click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe('cloudssh-theme-ocean-soft.json');
+
+  await page.locator('[data-theme-delete]').first().click();
+  await page.locator('.app-dialog__button--confirm').click();
+
+  await expect(page.locator('#user-theme-selector')).toHaveValue('cyberpunk');
+  await expect(page.locator('[data-theme-export]').first()).toBeHidden();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('cloudssh_imported_theme'))).toBeNull();
+  expect(themeRequestMethods).toEqual(expect.arrayContaining(['GET', 'PUT', 'DELETE']));
+});
+
+test('新浏览器登录后自动恢复并启用账号中的自定义主题', async ({ page }) => {
+  await page.unroute('**/api/user/theme');
+  await page.route('**/api/user/theme', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        theme: {
+          schemaVersion: 2,
+          name: 'Synced Glacier',
+          baseTheme: 'glacier',
+          colorScheme: 'dark',
+          ui: { '--accent': '#67e8f9' },
+          appearance: {
+            style: 'soft',
+            shape: 'soft',
+            density: 'comfortable',
+            components: { card: 'elevated' },
+          },
+        },
+      }),
+    }),
+  );
+
+  await page.goto('/');
+
+  await expect(page.locator('#user-theme-selector')).toHaveValue('__custom__');
+  await expect(page.locator('html')).toHaveAttribute('data-ui-style', 'soft');
+  await expect(page.locator('html')).toHaveAttribute('data-component-card', 'elevated');
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('cloudssh_theme_selection')))
+    .toBe('__custom__');
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('cloudssh_imported_theme')))
+    .toContain('Synced Glacier');
 });

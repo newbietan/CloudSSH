@@ -12,6 +12,7 @@ import {
   getActiveTerminalTheme,
   getActiveThemeAppearance,
   isBuiltInTheme,
+  normalizeImportedTheme,
   onColorSchemeChange,
   onTerminalThemeChange,
   resolveThemeAppearance,
@@ -204,6 +205,34 @@ describe('Theme V2 界面风格', () => {
     expect(getActiveTerminalTheme().background).toBe(THEMES.cyberpunk.background);
     expect(getActiveTerminalTheme().foreground).toBe('#abcdef');
   });
+
+  it('导入时规范化 Theme V2 并保留合法的基础主题和外观配置', () => {
+    expect(normalizeImportedTheme({
+      schemaVersion: 999,
+      name: ' My Theme ',
+      baseTheme: 'glacier',
+      colorScheme: 'dark',
+      ui: {
+        '--accent': '#abcdef',
+        '--unknown': '#ffffff',
+      },
+      appearance: {
+        shape: 'soft',
+        motion: 'invalid',
+        components: { button: 'solid', tabs: 'invalid' },
+      },
+    })).toEqual({
+      schemaVersion: 2,
+      name: 'My Theme',
+      baseTheme: 'glacier',
+      colorScheme: 'dark',
+      ui: { '--accent': '#abcdef' },
+      appearance: {
+        shape: 'soft',
+        components: { button: 'solid' },
+      },
+    });
+  });
 });
 
 describe('Standard 主题入口和编辑器', () => {
@@ -211,6 +240,16 @@ describe('Standard 主题入口和编辑器', () => {
   const editorHtml = readFileSync(new URL('../docs/theme-editor/index.html', import.meta.url), 'utf8');
   const terminalSource = readFileSync(new URL('../frontend/src/terminal.ts', import.meta.url), 'utf8');
   const appCss = readFileSync(new URL('../frontend/src/style.css', import.meta.url), 'utf8');
+  const mainSource = readFileSync(new URL('../frontend/src/main.ts', import.meta.url), 'utf8');
+  const workerSource = readFileSync(new URL('../src/worker/index.ts', import.meta.url), 'utf8');
+  const userDbSource = readFileSync(new URL('../src/worker/user-db.ts', import.meta.url), 'utf8');
+  const presetJson = editorHtml.match(
+    /\/\* THEME_PRESETS_START \*\/ ([\s\S]+?) \/\* THEME_PRESETS_END \*\//,
+  )?.[1];
+  const editorPresets = JSON.parse(presetJson || '{}') as Record<string, {
+    ui: Record<string, string>;
+    appearance: Record<string, unknown>;
+  }>;
 
   it('主项目和在线编辑器都提供两个 Standard 主题', () => {
     expect(appHtml).toContain('<option value="standard-dark">Standard Dark</option>');
@@ -218,14 +257,30 @@ describe('Standard 主题入口和编辑器', () => {
     expect(editorHtml).toContain('<select id="preset-select" class="preset-select">');
     expect(editorHtml).toContain('<option value="standard-dark">Standard Dark</option>');
     expect(editorHtml).toContain('<option value="standard-light">Standard Light</option>');
-    expect(editorHtml).toContain("colorScheme: preset?.colorScheme || colorScheme");
+    expect(editorHtml).toContain('colorScheme,');
   });
 
   it('用户空间和终端页都可以直接切换主题风格', () => {
     expect(appHtml.match(/data-theme-selector/g)).toHaveLength(2);
     expect(appHtml.match(/data-theme-import/g)).toHaveLength(2);
+    expect(appHtml.match(/data-theme-export/g)).toHaveLength(2);
+    expect(appHtml.match(/data-theme-delete/g)).toHaveLength(2);
     expect(appHtml).toContain('Glacier · Soft');
     expect(appHtml).toContain('Gruvbox · Dense');
+  });
+
+  it('Pages 保持独立，应用为登录用户同步自定义主题并支持云端删除', () => {
+    expect(mainSource).toContain("localStorage.setItem('cloudssh_imported_theme'");
+    expect(mainSource).toContain('[data-theme-export]');
+    expect(mainSource).toContain('[data-theme-delete]');
+    expect(mainSource).toContain("fetch('/api/user/theme'");
+    expect(mainSource).toContain("method: 'PUT'");
+    expect(mainSource).toContain("method: 'DELETE'");
+    expect(mainSource).toContain('restoreCloudTheme(initialThemeSelection)');
+    expect(workerSource).toContain("url.pathname === '/api/user/theme'");
+    expect(userDbSource).toContain('CREATE TABLE IF NOT EXISTS user_themes');
+    expect(userDbSource).toContain("DELETE FROM user_themes WHERE user_id = ?");
+    expect(editorHtml).not.toContain('/api/user/theme');
   });
 
   it('样式表使用语义令牌实现外观与布局解耦', () => {
@@ -260,9 +315,26 @@ describe('Standard 主题入口和编辑器', () => {
   it('在线编辑器与主项目的 Standard UI 预设保持一致', () => {
     for (const themeName of ['standard-dark', 'standard-light'] as const) {
       for (const [property, value] of Object.entries(UI_THEMES[themeName])) {
-        expect(editorHtml).toContain(`'${property}': '${value}'`);
+        expect(editorPresets[themeName].ui[property]).toBe(value);
       }
     }
+  });
+
+  it('在线编辑器覆盖 Theme V2 全部外观和组件维度，并导出版本化 JSON', () => {
+    for (const field of ['style', 'shape', 'density', 'font', 'shadow', 'motion']) {
+      expect(editorHtml).toContain(`key: '${field}'`);
+    }
+    for (const field of ['button', 'input', 'card', 'tabs']) {
+      expect(editorHtml).toContain(`key: '${field}'`);
+    }
+    expect(editorHtml).toContain('schemaVersion: 2');
+    expect(editorHtml).toContain('baseTheme: activePreset');
+    expect(editorHtml).toContain('sanitizeAppearance(data.appearance)');
+    expect(editorPresets.glacier.appearance).toMatchObject({
+      style: 'soft',
+      shape: 'soft',
+      density: 'comfortable',
+    });
   });
 
   it('终端订阅全局主题并在销毁时解除订阅', () => {

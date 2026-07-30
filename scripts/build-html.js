@@ -10,6 +10,7 @@ const htmlTsFile = path.join(workerDir, 'html.ts');
 
 console.log('Building frontend...');
 try {
+  execFileSync(process.execPath, ['scripts/sync-theme-editor.js'], { cwd: rootDir, stdio: 'inherit' });
   // Dependencies are installed explicitly by developers/CI. Keeping installs out
   // of the build makes production artifacts deterministic and offline-buildable.
   execFileSync('pnpm', ['run', 'build'], { cwd: frontendDir, stdio: 'inherit' });

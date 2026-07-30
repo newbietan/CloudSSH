@@ -45,6 +45,7 @@ export interface ResolvedThemeAppearance {
 export interface ImportedThemeData {
   schemaVersion?: number;
   name?: string;
+  baseTheme?: BuiltInThemeName;
   colorScheme?: ColorScheme;
   terminal?: ITheme;
   ui?: Record<string, string>;
@@ -370,16 +371,51 @@ export function applyBuiltInTheme(themeName: BuiltInThemeName): void {
 }
 
 export function applyImportedTheme(data: ImportedThemeData): void {
-  const colorScheme = data.colorScheme || inferColorScheme(data);
-  const fallbackName: BuiltInThemeName = colorScheme === 'light' ? 'standard-light' : 'cyberpunk';
-  const validUiEntries = Object.entries(data.ui || {}).filter(
-    ([property, value]) => isSafeUIThemeEntry(property, value),
-  );
-  const ui = { ...UI_THEMES[fallbackName], ...Object.fromEntries(validUiEntries) };
-  const terminal = { ...THEMES[fallbackName], ...sanitizeTerminalTheme(data.terminal) };
+  const normalized = normalizeImportedTheme(data);
+  if (!normalized) return;
+  const colorScheme = normalized.colorScheme || inferColorScheme(normalized);
+  const fallbackName = normalized.baseTheme
+    || (colorScheme === 'light' ? 'standard-light' : 'cyberpunk');
+  const ui = { ...UI_THEMES[fallbackName], ...normalized.ui };
+  const terminal = { ...THEMES[fallbackName], ...normalized.terminal };
   const fallbackAppearance = resolveThemeAppearance(BUILT_IN_APPEARANCE[fallbackName]);
-  const appearance = resolveThemeAppearance(data.appearance, fallbackAppearance);
+  const appearance = resolveThemeAppearance(normalized.appearance, fallbackAppearance);
   applyTheme(ui, terminal, colorScheme, 'custom', appearance);
+}
+
+export function normalizeImportedTheme(data: unknown): ImportedThemeData | null {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const input = data as Record<string, unknown>;
+  const ui = Object.fromEntries(
+    Object.entries(input.ui && typeof input.ui === 'object' && !Array.isArray(input.ui) ? input.ui : {})
+      .filter(isSafeUIThemeEntry),
+  );
+  const terminal = sanitizeTerminalTheme(
+    input.terminal && typeof input.terminal === 'object' && !Array.isArray(input.terminal)
+      ? input.terminal as ITheme
+      : undefined,
+  );
+  const appearance = sanitizeThemeAppearance(input.appearance);
+
+  if (!Object.keys(ui).length && !Object.keys(terminal).length && !appearance) return null;
+
+  const baseTheme = typeof input.baseTheme === 'string' && isBuiltInTheme(input.baseTheme)
+    ? input.baseTheme
+    : undefined;
+  const colorScheme = input.colorScheme === 'light' || input.colorScheme === 'dark'
+    ? input.colorScheme
+    : inferColorScheme({ ui, terminal });
+  const name = typeof input.name === 'string' ? input.name.trim().slice(0, 80) : '';
+
+  return {
+    schemaVersion: THEME_SCHEMA_VERSION,
+    ...(name ? { name } : {}),
+    ...(baseTheme ? { baseTheme } : {}),
+    colorScheme,
+    ...(Object.keys(ui).length ? { ui } : {}),
+    ...(Object.keys(terminal).length ? { terminal } : {}),
+    ...(appearance ? { appearance } : {}),
+  };
 }
 
 export function getActiveTerminalTheme(): ITheme {
@@ -529,6 +565,32 @@ function sanitizeTerminalTheme(theme?: ITheme): ITheme {
         && isSafeCSSColor(value),
     ),
   ) as ITheme;
+}
+
+function sanitizeThemeAppearance(value: unknown): ThemeAppearance | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const input = value as Record<string, unknown>;
+  const componentsInput = input.components && typeof input.components === 'object'
+    && !Array.isArray(input.components)
+    ? input.components as Record<string, unknown>
+    : {};
+  const appearance: ThemeAppearance = {};
+
+  if (isOneOf(input.style, ['standard', 'cyberpunk', 'soft', 'dense'])) appearance.style = input.style;
+  if (isOneOf(input.shape, ['square', 'rounded', 'soft'])) appearance.shape = input.shape;
+  if (isOneOf(input.density, ['compact', 'comfortable', 'spacious'])) appearance.density = input.density;
+  if (isOneOf(input.font, ['mono', 'system'])) appearance.font = input.font;
+  if (isOneOf(input.shadow, ['none', 'subtle', 'elevated'])) appearance.shadow = input.shadow;
+  if (isOneOf(input.motion, ['none', 'reduced', 'full'])) appearance.motion = input.motion;
+
+  const components: Partial<ThemeComponentStyles> = {};
+  if (isOneOf(componentsInput.button, ['outline', 'solid', 'soft'])) components.button = componentsInput.button;
+  if (isOneOf(componentsInput.input, ['underline', 'boxed'])) components.input = componentsInput.input;
+  if (isOneOf(componentsInput.card, ['outlined', 'flat', 'elevated'])) components.card = componentsInput.card;
+  if (isOneOf(componentsInput.tabs, ['underline', 'segmented'])) components.tabs = componentsInput.tabs;
+  if (Object.keys(components).length) appearance.components = components;
+
+  return Object.keys(appearance).length ? appearance : undefined;
 }
 
 function isSafeCSSColor(value: string): boolean {

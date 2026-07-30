@@ -8,9 +8,6 @@ export async function blockOptionalThirdPartyAssets(page: Page): Promise<void> {
 
 export async function mockAnonymousSession(page: Page): Promise<void> {
   await blockOptionalThirdPartyAssets(page);
-  await page.route('**/api/user/theme', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '{"theme":null}' }),
-  );
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"unauthorized"}' }),
   );

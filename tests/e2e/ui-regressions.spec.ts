@@ -72,9 +72,6 @@ test('Turnstile 跟随 Standard Light 和后续主题切换', async ({ page }) =
     };
   });
   await blockOptionalThirdPartyAssets(page);
-  await page.route('**/api/user/theme', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '{"theme":null}' }),
-  );
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"unauthorized"}' }),
   );

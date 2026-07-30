@@ -181,7 +181,7 @@ export default {
       return handleServersRoute(request, url, env);
     }
 
-    // ==================== Theme Routes (需认证) ====================
+    // ==================== Theme Routes（登录用户跨环境同步） ====================
 
     if (url.pathname === '/api/user/theme') {
       return handleThemeRoute(request, env);
@@ -405,12 +405,18 @@ async function handleThemeRoute(request: Request, env: Env): Promise<Response> {
     if (serializedTheme.length > 64 * 1024) {
       return Response.json({ error: 'Theme data is too large' }, { status: 413 });
     }
-    body.user_id = user.id;
-    body.theme_data = serializedTheme;
     return stub.fetch(new Request('http://internal/internal/theme', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ user_id: user.id, theme_data: serializedTheme }),
+    }));
+  }
+
+  if (request.method === 'DELETE') {
+    return stub.fetch(new Request('http://internal/internal/theme', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: user.id }),
     }));
   }
 

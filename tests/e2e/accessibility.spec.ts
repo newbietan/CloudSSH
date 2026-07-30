@@ -35,6 +35,9 @@ test('private key textarea keeps Enter as a newline instead of submitting the fo
 
 test('server modal exposes keyboard-operable dialog semantics', async ({ page }) => {
   await mockAnonymousSession(page);
+  await page.route('**/api/user/theme', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"theme":null}' }),
+  );
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
