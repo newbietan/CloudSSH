@@ -17,6 +17,7 @@ import {
   onTerminalThemeChange,
   resolveThemeAppearance,
 } from '../frontend/src/theme';
+import { SAFE_UI_THEME_PROPERTIES, THEME_MAX_BYTES } from '../src/theme-schema';
 
 function relativeLuminance(hex: string): number {
   const channels = hex.slice(1).match(/.{2}/g)!.map(value => parseInt(value, 16) / 255);
@@ -233,6 +234,18 @@ describe('Theme V2 界面风格', () => {
       },
     });
   });
+
+  it('应用与服务端共享 UI 属性白名单，并拒绝 UI 中的外部资源值', () => {
+    expect([...SAFE_UI_THEME_PROPERTIES].sort()).toEqual(Object.keys(UI_THEMES.cyberpunk).sort());
+    expect(normalizeImportedTheme({
+      ui: {
+        '--accent': '#abcdef',
+        '--bg': 'url(https://example.com/tracker.png)',
+      },
+    })).toMatchObject({
+      ui: { '--accent': '#abcdef' },
+    });
+  });
 });
 
 describe('Standard 主题入口和编辑器', () => {
@@ -269,13 +282,13 @@ describe('Standard 主题入口和编辑器', () => {
     expect(appHtml).toContain('Gruvbox · Dense');
   });
 
-  it('Pages 保持独立，应用为登录用户同步自定义主题并支持云端删除', () => {
+  it('Pages 保持独立，应用为登录用户同步单个自定义主题', () => {
     expect(mainSource).toContain("localStorage.setItem('cloudssh_imported_theme'");
     expect(mainSource).not.toContain('[data-theme-export]');
     expect(mainSource).not.toContain('[data-theme-delete]');
     expect(mainSource).toContain("fetch('/api/user/theme'");
     expect(mainSource).toContain("method: 'PUT'");
-    expect(mainSource).toContain('restoreCloudTheme(initialThemeSelection)');
+    expect(mainSource).toContain('void restoreCloudTheme(initialThemeSelection, themeSelectionRevision)');
     expect(workerSource).toContain("url.pathname === '/api/user/theme'");
     expect(userDbSource).toContain('CREATE TABLE IF NOT EXISTS user_themes');
     expect(userDbSource).not.toContain('handleDeleteTheme');
@@ -329,6 +342,13 @@ describe('Standard 主题入口和编辑器', () => {
     expect(editorHtml).toContain('schemaVersion: 2');
     expect(editorHtml).toContain('baseTheme: activePreset');
     expect(editorHtml).toContain('sanitizeAppearance(data.appearance)');
+    expect(editorHtml).toContain('file.size > THEME_MAX_BYTES');
+    expect(editorHtml).toContain('const isValid = isSafeColor(val)');
+    expect(editorHtml).toContain("e.target.setAttribute('aria-invalid', String(!isValid))");
+    expect(editorHtml).toContain('invalidColorProperties.size > 0');
+    expect(editorHtml).toContain('ui: safeUiTheme');
+    expect(editorHtml).not.toContain('transition: all');
+    expect(THEME_MAX_BYTES).toBe(64 * 1024);
     expect(editorPresets.glacier.appearance).toMatchObject({
       style: 'soft',
       shape: 'soft',

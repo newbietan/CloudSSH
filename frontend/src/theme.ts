@@ -1,36 +1,35 @@
 import type { ITheme } from '@xterm/xterm';
+import {
+  THEME_MAX_BYTES,
+  THEME_SCHEMA_VERSION,
+  normalizeThemeData,
+  type BuiltInThemeName,
+  type ColorScheme,
+  type NormalizedThemeData,
+  type ThemeAppearance,
+  type ThemeComponentStyles,
+  type ThemeDensity,
+  type ThemeFont,
+  type ThemeMotion,
+  type ThemeShadow,
+  type ThemeShape,
+  type UIStylePresetName,
+} from '../../src/theme-schema';
 
-export type ColorScheme = 'dark' | 'light';
-
-export const THEME_SCHEMA_VERSION = 2;
-
-export type UIStylePresetName = 'standard' | 'cyberpunk' | 'soft' | 'dense';
-export type ThemeShape = 'square' | 'rounded' | 'soft';
-export type ThemeDensity = 'compact' | 'comfortable' | 'spacious';
-export type ThemeFont = 'mono' | 'system';
-export type ThemeShadow = 'none' | 'subtle' | 'elevated';
-export type ThemeMotion = 'none' | 'reduced' | 'full';
-export type ThemeButtonStyle = 'outline' | 'solid' | 'soft';
-export type ThemeInputStyle = 'underline' | 'boxed';
-export type ThemeCardStyle = 'outlined' | 'flat' | 'elevated';
-export type ThemeTabStyle = 'underline' | 'segmented';
-
-export interface ThemeComponentStyles {
-  button: ThemeButtonStyle;
-  input: ThemeInputStyle;
-  card: ThemeCardStyle;
-  tabs: ThemeTabStyle;
-}
-
-export interface ThemeAppearance {
-  style?: UIStylePresetName;
-  shape?: ThemeShape;
-  density?: ThemeDensity;
-  font?: ThemeFont;
-  shadow?: ThemeShadow;
-  motion?: ThemeMotion;
-  components?: Partial<ThemeComponentStyles>;
-}
+export {
+  THEME_MAX_BYTES,
+  THEME_SCHEMA_VERSION,
+  type BuiltInThemeName,
+  type ColorScheme,
+  type ThemeAppearance,
+  type ThemeComponentStyles,
+  type ThemeDensity,
+  type ThemeFont,
+  type ThemeMotion,
+  type ThemeShadow,
+  type ThemeShape,
+  type UIStylePresetName,
+} from '../../src/theme-schema';
 
 export interface ResolvedThemeAppearance {
   style: UIStylePresetName;
@@ -42,15 +41,11 @@ export interface ResolvedThemeAppearance {
   components: ThemeComponentStyles;
 }
 
-export interface ImportedThemeData {
+export type ImportedThemeData = Omit<NormalizedThemeData, 'schemaVersion' | 'colorScheme' | 'terminal'> & {
   schemaVersion?: number;
-  name?: string;
-  baseTheme?: BuiltInThemeName;
   colorScheme?: ColorScheme;
   terminal?: ITheme;
-  ui?: Record<string, string>;
-  appearance?: ThemeAppearance;
-}
+};
 
 export const UI_STYLE_PRESETS: Record<UIStylePresetName, ResolvedThemeAppearance> = {
   standard: {
@@ -183,8 +178,6 @@ export const THEMES = {
     selectionBackground: '#504945',
   },
 } satisfies Record<string, ITheme>;
-
-export type BuiltInThemeName = keyof typeof THEMES;
 
 export const UI_THEMES: Record<BuiltInThemeName, Record<string, string>> = {
   'standard-dark': {
@@ -373,7 +366,7 @@ export function applyBuiltInTheme(themeName: BuiltInThemeName): void {
 export function applyImportedTheme(data: ImportedThemeData): void {
   const normalized = normalizeImportedTheme(data);
   if (!normalized) return;
-  const colorScheme = normalized.colorScheme || inferColorScheme(normalized);
+  const colorScheme = normalized.colorScheme ?? 'dark';
   const fallbackName = normalized.baseTheme
     || (colorScheme === 'light' ? 'standard-light' : 'cyberpunk');
   const ui = { ...UI_THEMES[fallbackName], ...normalized.ui };
@@ -384,38 +377,7 @@ export function applyImportedTheme(data: ImportedThemeData): void {
 }
 
 export function normalizeImportedTheme(data: unknown): ImportedThemeData | null {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
-  const input = data as Record<string, unknown>;
-  const ui = Object.fromEntries(
-    Object.entries(input.ui && typeof input.ui === 'object' && !Array.isArray(input.ui) ? input.ui : {})
-      .filter(isSafeUIThemeEntry),
-  );
-  const terminal = sanitizeTerminalTheme(
-    input.terminal && typeof input.terminal === 'object' && !Array.isArray(input.terminal)
-      ? input.terminal as ITheme
-      : undefined,
-  );
-  const appearance = sanitizeThemeAppearance(input.appearance);
-
-  if (!Object.keys(ui).length && !Object.keys(terminal).length && !appearance) return null;
-
-  const baseTheme = typeof input.baseTheme === 'string' && isBuiltInTheme(input.baseTheme)
-    ? input.baseTheme
-    : undefined;
-  const colorScheme = input.colorScheme === 'light' || input.colorScheme === 'dark'
-    ? input.colorScheme
-    : inferColorScheme({ ui, terminal });
-  const name = typeof input.name === 'string' ? input.name.trim().slice(0, 80) : '';
-
-  return {
-    schemaVersion: THEME_SCHEMA_VERSION,
-    ...(name ? { name } : {}),
-    ...(baseTheme ? { baseTheme } : {}),
-    colorScheme,
-    ...(Object.keys(ui).length ? { ui } : {}),
-    ...(Object.keys(terminal).length ? { terminal } : {}),
-    ...(appearance ? { appearance } : {}),
-  };
+  return normalizeThemeData(data) as ImportedThemeData | null;
 }
 
 export function getActiveTerminalTheme(): ITheme {
@@ -515,110 +477,10 @@ export function resolveThemeAppearance(
   };
 }
 
-const SAFE_UI_PROPERTIES = new Set(Object.keys(UI_THEMES.cyberpunk));
-const SAFE_TERMINAL_PROPERTIES = new Set([
-  'background',
-  'foreground',
-  'cursor',
-  'cursorAccent',
-  'selectionBackground',
-  'selectionForeground',
-  'selectionInactiveBackground',
-  'black',
-  'red',
-  'green',
-  'yellow',
-  'blue',
-  'magenta',
-  'cyan',
-  'white',
-  'brightBlack',
-  'brightRed',
-  'brightGreen',
-  'brightYellow',
-  'brightBlue',
-  'brightMagenta',
-  'brightCyan',
-  'brightWhite',
-]);
-
-function isSafeUIThemeEntry(entry: [string, unknown]): boolean;
-function isSafeUIThemeEntry(property: string, value: unknown): boolean;
-function isSafeUIThemeEntry(
-  propertyOrEntry: string | [string, unknown],
-  entryValue?: unknown,
-): boolean {
-  const [property, value] = Array.isArray(propertyOrEntry)
-    ? propertyOrEntry
-    : [propertyOrEntry, entryValue];
-  return SAFE_UI_PROPERTIES.has(property)
-    && typeof value === 'string'
-    && isSafeCSSColor(value);
-}
-
-function sanitizeTerminalTheme(theme?: ITheme): ITheme {
-  if (!theme || typeof theme !== 'object') return {};
-  return Object.fromEntries(
-    Object.entries(theme).filter(
-      ([property, value]) => SAFE_TERMINAL_PROPERTIES.has(property)
-        && typeof value === 'string'
-        && isSafeCSSColor(value),
-    ),
-  ) as ITheme;
-}
-
-function sanitizeThemeAppearance(value: unknown): ThemeAppearance | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const input = value as Record<string, unknown>;
-  const componentsInput = input.components && typeof input.components === 'object'
-    && !Array.isArray(input.components)
-    ? input.components as Record<string, unknown>
-    : {};
-  const appearance: ThemeAppearance = {};
-
-  if (isOneOf(input.style, ['standard', 'cyberpunk', 'soft', 'dense'])) appearance.style = input.style;
-  if (isOneOf(input.shape, ['square', 'rounded', 'soft'])) appearance.shape = input.shape;
-  if (isOneOf(input.density, ['compact', 'comfortable', 'spacious'])) appearance.density = input.density;
-  if (isOneOf(input.font, ['mono', 'system'])) appearance.font = input.font;
-  if (isOneOf(input.shadow, ['none', 'subtle', 'elevated'])) appearance.shadow = input.shadow;
-  if (isOneOf(input.motion, ['none', 'reduced', 'full'])) appearance.motion = input.motion;
-
-  const components: Partial<ThemeComponentStyles> = {};
-  if (isOneOf(componentsInput.button, ['outline', 'solid', 'soft'])) components.button = componentsInput.button;
-  if (isOneOf(componentsInput.input, ['underline', 'boxed'])) components.input = componentsInput.input;
-  if (isOneOf(componentsInput.card, ['outlined', 'flat', 'elevated'])) components.card = componentsInput.card;
-  if (isOneOf(componentsInput.tabs, ['underline', 'segmented'])) components.tabs = componentsInput.tabs;
-  if (Object.keys(components).length) appearance.components = components;
-
-  return Object.keys(appearance).length ? appearance : undefined;
-}
-
-function isSafeCSSColor(value: string): boolean {
-  const normalized = value.trim();
-  if (!normalized || normalized.length > 96 || /url\s*\(|var\s*\(|expression\s*\(/i.test(normalized)) {
-    return false;
-  }
-  return normalized === 'transparent'
-    || /^#[0-9a-f]{3,8}$/i.test(normalized)
-    || /^rgba?\(\s*[\d.\s,%+-]+\)$/i.test(normalized)
-    || /^hsla?\(\s*[\d.\s,%+-]+(?:deg|rad|turn)?[\d.\s,%+-]*\)$/i.test(normalized);
-}
-
 function isUIStylePresetName(value: unknown): value is UIStylePresetName {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(UI_STYLE_PRESETS, value);
 }
 
 function isOneOf<T extends string>(value: unknown, values: readonly T[]): value is T {
   return typeof value === 'string' && values.includes(value as T);
-}
-
-function inferColorScheme(data: ImportedThemeData): ColorScheme {
-  const background = data.ui?.['--bg'] || data.terminal?.background;
-  if (!background || !/^#[0-9a-f]{6}$/i.test(background)) return 'dark';
-
-  const channels = background.slice(1).match(/.{2}/g)!.map(value => parseInt(value, 16) / 255);
-  const luminance = channels
-    .map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
-    .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
-  return luminance > 0.5 ? 'light' : 'dark';
 }

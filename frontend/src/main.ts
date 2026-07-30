@@ -3,6 +3,7 @@ import {
   applyImportedTheme,
   isBuiltInTheme,
   normalizeImportedTheme,
+  THEME_MAX_BYTES,
 } from './theme';
 import type { SSHTerminal } from './terminal';
 import { ConnectionForm } from './auth-form';
@@ -304,12 +305,14 @@ document.getElementById('export-btn')?.addEventListener('click', () => {
 // ==================== 主题切换 ====================
 
 const CUSTOM_THEME_VALUE = '__custom__';
+let themeSelectionRevision = 0;
 const themeSelectors = Array.from(
   document.querySelectorAll<HTMLSelectElement>('[data-theme-selector]'),
 );
 
 themeSelectors.forEach((selector) => {
   selector.addEventListener('change', (e) => {
+    themeSelectionRevision++;
     const value = (e.target as HTMLSelectElement).value;
     if (value === CUSTOM_THEME_VALUE) {
       const importedRaw = localStorage.getItem('cloudssh_imported_theme');
@@ -357,7 +360,7 @@ importThemeButtons.forEach((button) => {
 importThemeInput?.addEventListener('change', (e) => {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (!file) return;
-  if (file.size > 64 * 1024) {
+  if (file.size > THEME_MAX_BYTES) {
     notify(t('theme.importFailed'), { title: t('theme.importTitle'), variant: 'danger' });
     importThemeInput.value = '';
     return;
@@ -373,6 +376,7 @@ importThemeInput?.addEventListener('change', (e) => {
       }
 
       localStorage.setItem('cloudssh_imported_theme', JSON.stringify(data));
+      themeSelectionRevision++;
       ensureCustomOption();
       syncThemeSelectors(CUSTOM_THEME_VALUE);
       localStorage.setItem('cloudssh_theme_selection', CUSTOM_THEME_VALUE);
@@ -443,7 +447,10 @@ async function saveThemeToCloud(theme: ReturnType<typeof normalizeImportedTheme>
  * 登录后恢复账号主题。新浏览器没有本地选择时自动启用云端主题；
  * 已明确选择内置主题的当前浏览器只缓存云端主题，不强制覆盖本地选择。
  */
-async function restoreCloudTheme(initialSelection: string | null): Promise<void> {
+async function restoreCloudTheme(
+  initialSelection: string | null,
+  expectedSelectionRevision: number,
+): Promise<void> {
   try {
     const response = await fetch('/api/user/theme');
     if (!response.ok) return;
@@ -451,6 +458,8 @@ async function restoreCloudTheme(initialSelection: string | null): Promise<void>
     const cloudTheme = normalizeImportedTheme(payload.theme);
 
     if (cloudTheme) {
+      // 用户已在请求期间切换或导入主题时，不用较旧的云端响应覆盖当前操作。
+      if (themeSelectionRevision !== expectedSelectionRevision) return;
       localStorage.setItem('cloudssh_imported_theme', JSON.stringify(cloudTheme));
       ensureCustomOption();
       if (initialSelection === null || initialSelection === CUSTOM_THEME_VALUE) {
@@ -498,8 +507,8 @@ async function init(): Promise<void> {
     const meRes = await fetch('/api/auth/me');
     if (meRes.ok) {
       const user = await meRes.json();
-      await restoreCloudTheme(initialThemeSelection);
       showUserSpace(user);
+      void restoreCloudTheme(initialThemeSelection, themeSelectionRevision);
       return;
     }
   } catch {

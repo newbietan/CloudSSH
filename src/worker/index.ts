@@ -1,4 +1,5 @@
 import { Env, SSHConnectionConfig, ALLOWED_LOCATION_HINTS } from '../types';
+import { THEME_MAX_BYTES, normalizeThemeData } from '../theme-schema';
 import { HTML } from './html';
 import {
   handleGitHubAuth,
@@ -396,15 +397,25 @@ async function handleThemeRoute(request: Request, env: Env): Promise<Response> {
   }
 
   if (request.method === 'PUT') {
-    const body = await request.json<Record<string, unknown>>();
-    const themeData = body.theme_data;
-    if (!themeData || typeof themeData !== 'object' || Array.isArray(themeData)) {
+    let body: Record<string, unknown>;
+    try {
+      body = await request.json<Record<string, unknown>>();
+    } catch {
+      return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
+    const rawThemeData = body.theme_data;
+    if (!rawThemeData || typeof rawThemeData !== 'object' || Array.isArray(rawThemeData)) {
+      return Response.json({ error: 'Invalid theme data' }, { status: 400 });
+    }
+    const rawSerializedTheme = JSON.stringify(rawThemeData);
+    if (new TextEncoder().encode(rawSerializedTheme).byteLength > THEME_MAX_BYTES) {
+      return Response.json({ error: 'Theme data is too large' }, { status: 413 });
+    }
+    const themeData = normalizeThemeData(rawThemeData);
+    if (!themeData) {
       return Response.json({ error: 'Invalid theme data' }, { status: 400 });
     }
     const serializedTheme = JSON.stringify(themeData);
-    if (serializedTheme.length > 64 * 1024) {
-      return Response.json({ error: 'Theme data is too large' }, { status: 413 });
-    }
     return stub.fetch(new Request('http://internal/internal/theme', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },

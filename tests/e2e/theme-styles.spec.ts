@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { blockOptionalThirdPartyAssets } from './helpers';
 
 const server = {
@@ -66,6 +68,47 @@ test('内置主题切换 UI 风格但保持服务器列表结构稳定', async (
   await expect(card).toHaveCSS('border-radius', '0px');
   await expect(grid).toHaveClass(/md:grid-cols-2/);
   await expect(grid).toHaveClass(/lg:grid-cols-3/);
+});
+
+test('云端主题恢复不阻塞用户空间首屏，并避免覆盖加载期间的用户选择', async ({ page }) => {
+  let releaseThemeRequest!: () => void;
+  const themeRequestGate = new Promise<void>((resolve) => {
+    releaseThemeRequest = resolve;
+  });
+  await page.unroute('**/api/user/theme');
+  await page.route('**/api/user/theme', async (route) => {
+    await themeRequestGate;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        theme: {
+          schemaVersion: 2,
+          name: 'Delayed Theme',
+          baseTheme: 'glacier',
+          colorScheme: 'dark',
+          ui: { '--accent': '#67e8f9' },
+          appearance: { style: 'soft', shape: 'soft' },
+        },
+      }),
+    });
+  });
+
+  await page.goto('/');
+  await expect(page.locator('#user-theme-selector')).toBeVisible();
+  await expect(page.locator('.server-card')).toHaveCount(1);
+  await page.locator('#user-theme-selector').selectOption('standard-light');
+
+  const themeResponse = page.waitForResponse(response =>
+    response.url().includes('/api/user/theme') && response.request().method() === 'GET'
+  );
+  releaseThemeRequest();
+  await themeResponse;
+  await page.evaluate(() => new Promise<void>((resolveFrame) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
+  }));
+  await expect(page.locator('#user-theme-selector')).toHaveValue('standard-light');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'standard-light');
 });
 
 test('终端四周留白按形状收窄并为圆角保留安全间距', async ({ page }) => {
@@ -169,4 +212,30 @@ test('新浏览器登录后自动恢复并启用账号中的自定义主题', as
     .toBe('__custom__');
   await expect.poll(() => page.evaluate(() => localStorage.getItem('cloudssh_imported_theme')))
     .toContain('Synced Glacier');
+});
+
+test('Pages 编辑器拒绝超大文件和危险颜色，并在修正后恢复导出', async ({ page }) => {
+  const requestedUrls: string[] = [];
+  page.on('request', request => requestedUrls.push(request.url()));
+  const editorUrl = pathToFileURL(resolve('docs/theme-editor/index.html')).href;
+
+  await page.goto(editorUrl);
+
+  const backgroundInput = page.locator('input[type="text"][data-var="--bg"]');
+  const exportButton = page.locator('#btn-export');
+  await backgroundInput.fill('url(https://tracker.example/pixel.png)');
+  await expect(backgroundInput).toHaveAttribute('aria-invalid', 'true');
+  await expect(exportButton).toBeDisabled();
+  expect(requestedUrls).not.toContain('https://tracker.example/pixel.png');
+
+  await backgroundInput.fill('#101820');
+  await expect(backgroundInput).toHaveAttribute('aria-invalid', 'false');
+  await expect(exportButton).toBeEnabled();
+
+  await page.locator('#import-input').setInputFiles({
+    name: 'oversized-theme.json',
+    mimeType: 'application/json',
+    buffer: Buffer.alloc(65 * 1024, 0x20),
+  });
+  await expect(page.locator('.editor-toast')).toContainText('64 KiB');
 });

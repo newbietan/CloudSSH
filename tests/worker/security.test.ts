@@ -199,6 +199,148 @@ describe('安全 — 越权防护（IDOR）', () => {
   });
 });
 
+describe('安全 — 自定义主题接口边界', () => {
+  function makeAuthenticatedThemeEnv(
+    onThemeRequest: (request: Request) => Response | Promise<Response> = () => Response.json({ success: true }),
+  ): Env {
+    return makeEnv({
+      userDbStub: makeDOStub((request) => {
+        if (request.url.includes('/internal/session/verify')) {
+          return Response.json({ id: 12, github_id: 987, username: 'alice', avatar_url: '' });
+        }
+        if (request.url.includes('/internal/theme')) return onThemeRequest(request);
+        return Response.json({ error: 'not mocked' }, { status: 500 });
+      }),
+    });
+  }
+
+  it('未登录请求主题接口 → 401', async () => {
+    const worker = await loadWorker();
+    const res = await worker.fetch(makeRequest('/api/user/theme'), makeEnv());
+
+    expect(res.status).toBe(401);
+  });
+
+  it('读取主题时只使用认证用户 ID', async () => {
+    const worker = await loadWorker();
+    let forwardedUrl = '';
+    const env = makeAuthenticatedThemeEnv((request) => {
+      forwardedUrl = request.url;
+      return Response.json({ theme: null });
+    });
+    const res = await worker.fetch(makeRequest('/api/user/theme', {
+      cookies: { session: '987:legit_session' },
+    }), env);
+
+    expect(res.status).toBe(200);
+    expect(forwardedUrl).toContain('/internal/theme?user_id=12');
+  });
+
+  it('不受支持的方法 → 405', async () => {
+    const worker = await loadWorker();
+    const env = makeAuthenticatedThemeEnv();
+    const res = await worker.fetch(makeRequest('/api/user/theme', {
+      method: 'POST',
+      cookies: { session: '987:legit_session' },
+      body: {},
+    }), env);
+
+    expect(res.status).toBe(405);
+  });
+
+  it('无法解析的 JSON 请求体 → 400', async () => {
+    const worker = await loadWorker();
+    const onThemeRequest = vi.fn(() => Response.json({ success: true }));
+    const env = makeAuthenticatedThemeEnv(onThemeRequest);
+    const res = await worker.fetch(makeRequest('/api/user/theme', {
+      method: 'PUT',
+      cookies: { session: '987:legit_session' },
+      body: '{"theme_data":',
+    }), env);
+
+    expect(res.status).toBe(400);
+    expect(onThemeRequest).not.toHaveBeenCalled();
+  });
+
+  it('无有效主题字段或非法颜色 → 400 且不写入', async () => {
+    const worker = await loadWorker();
+    const onThemeRequest = vi.fn(() => Response.json({ success: true }));
+    const env = makeAuthenticatedThemeEnv(onThemeRequest);
+    const res = await worker.fetch(makeRequest('/api/user/theme', {
+      method: 'PUT',
+      cookies: { session: '987:legit_session' },
+      body: {
+        theme_data: {
+          ui: {
+            '--unknown': '#ffffff',
+            '--bg': 'url(https://example.com/tracker.png)',
+          },
+        },
+      },
+    }), env);
+
+    expect(res.status).toBe(400);
+    expect(onThemeRequest).not.toHaveBeenCalled();
+  });
+
+  it('超过 64 KiB 的主题请求 → 413 且不写入', async () => {
+    const worker = await loadWorker();
+    const onThemeRequest = vi.fn(() => Response.json({ success: true }));
+    const env = makeAuthenticatedThemeEnv(onThemeRequest);
+    const res = await worker.fetch(makeRequest('/api/user/theme', {
+      method: 'PUT',
+      cookies: { session: '987:legit_session' },
+      body: {
+        theme_data: {
+          name: 'x'.repeat(70 * 1024),
+          ui: { '--accent': '#abcdef' },
+        },
+      },
+    }), env);
+
+    expect(res.status).toBe(413);
+    expect(onThemeRequest).not.toHaveBeenCalled();
+  });
+
+  it('合法主题会规范化后使用认证用户 ID 写入自己的分片', async () => {
+    const worker = await loadWorker();
+    let forwardedBody: { user_id: number; theme_data: string } | undefined;
+    const env = makeAuthenticatedThemeEnv(async (request) => {
+      forwardedBody = await request.json();
+      return Response.json({ success: true });
+    });
+    const res = await worker.fetch(makeRequest('/api/user/theme', {
+      method: 'PUT',
+      cookies: { session: '987:legit_session' },
+      body: {
+        theme_data: {
+          schemaVersion: 999,
+          name: '  Shared Theme  ',
+          user_id: 999,
+          ui: {
+            '--accent': '#abcdef',
+            '--unknown': '#ffffff',
+          },
+          appearance: {
+            style: 'soft',
+            motion: 'invalid',
+          },
+        },
+      },
+    }), env);
+
+    expect(res.status).toBe(200);
+    expect(forwardedBody?.user_id).toBe(12);
+    expect(JSON.parse(forwardedBody?.theme_data ?? '{}')).toEqual({
+      schemaVersion: 2,
+      name: 'Shared Theme',
+      colorScheme: 'dark',
+      ui: { '--accent': '#abcdef' },
+      appearance: { style: 'soft' },
+    });
+  });
+});
+
 // =====================================================================
 // 3. SSRF 接缝 — AI base_url 在路由层经 validateBaseUrl 拦截
 // =====================================================================

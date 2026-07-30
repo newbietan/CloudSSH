@@ -93,7 +93,8 @@
       font-size: 10px;
       padding: 4px 8px;
       cursor: pointer;
-      transition: all 0.15s;
+      transition: color 0.15s, background-color 0.15s, border-color 0.15s,
+        box-shadow 0.15s, transform 0.15s, opacity 0.15s;
       display: inline-flex;
       align-items: center;
       gap: 4px;
@@ -146,7 +147,7 @@
       line-height: 1.4;
       padding: 7px 32px 7px 10px;
       cursor: pointer;
-      transition: all 0.15s;
+      transition: color 0.15s, background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
     }
 
     .preset-select:hover,
@@ -234,6 +235,16 @@
 
     .color-row input[type="text"]:focus {
       border-color: var(--editor-accent);
+    }
+
+    .color-row input[type="text"][aria-invalid="true"] {
+      border-color: #ff5f57;
+      box-shadow: 0 0 0 1px rgba(255, 95, 87, 0.2);
+    }
+
+    .sidebar-actions button:disabled {
+      cursor: not-allowed;
+      opacity: 0.45;
     }
 
     .setting-row {
@@ -446,7 +457,12 @@
     ) {
       border-radius: var(--card-radius);
       box-shadow: var(--shadow-card);
-      transition: all var(--motion-normal) ease;
+      transition: background-color var(--motion-normal) ease,
+        border-color var(--motion-normal) ease,
+        border-radius var(--motion-normal) ease,
+        box-shadow var(--motion-normal) ease,
+        color var(--motion-normal) ease,
+        transform var(--motion-normal) ease;
     }
 
     .theme-scope :is(
@@ -469,7 +485,12 @@
     ) {
       border-radius: var(--control-radius);
       padding: var(--control-padding-y) var(--control-padding-x);
-      transition: all var(--motion-fast) ease;
+      transition: background-color var(--motion-fast) ease,
+        border-color var(--motion-fast) ease,
+        border-radius var(--motion-fast) ease,
+        box-shadow var(--motion-fast) ease,
+        color var(--motion-fast) ease,
+        transform var(--motion-fast) ease;
     }
 
     .theme-scope :is(.server-card-mock, .login-box) {
@@ -742,7 +763,8 @@
       justify-content: center;
       gap: 6px;
       margin-top: 16px;
-      transition: all 0.2s;
+      transition: background-color 0.2s, border-color 0.2s, color 0.2s,
+        box-shadow 0.2s, transform 0.2s;
     }
 
     .connect-btn:hover {
@@ -1552,7 +1574,7 @@
       color: var(--text-dim);
       cursor: pointer;
       opacity: 0;
-      transition: all 0.15s;
+      transition: color 0.15s, opacity 0.15s;
     }
 
     .preview-tab-item:hover .preview-tab-close,
@@ -2687,6 +2709,8 @@ const TRANSLATIONS = {
     'feedback.exported': '主题 JSON 已导出。',
     'feedback.missingUi': '主题文件不包含有效的颜色、终端或外观配置。',
     'feedback.invalidJson': '文件不是有效的主题 JSON。',
+    'feedback.fileTooLarge': '主题文件不能超过 64 KiB。',
+    'feedback.invalidColor': '请先修正标红的无效颜色值。',
     'group.basic': '主题信息',
     'group.appearance': '整体外观',
     'group.componentStyles': '组件样式',
@@ -2841,6 +2865,8 @@ const TRANSLATIONS = {
     'feedback.exported': 'Theme JSON exported.',
     'feedback.missingUi': 'The theme file has no valid color, terminal, or appearance settings.',
     'feedback.invalidJson': 'The file is not valid theme JSON.',
+    'feedback.fileTooLarge': 'Theme files must not exceed 64 KiB.',
+    'feedback.invalidColor': 'Fix the invalid color values highlighted in red first.',
     'group.basic': 'THEME INFORMATION',
     'group.appearance': 'APPEARANCE',
     'group.componentStyles': 'COMPONENT STYLES',
@@ -3348,6 +3374,8 @@ let activePreset = 'cyberpunk';
 let colorScheme = 'dark';
 let themeName = 'Cyberpunk';
 let appearance = {};
+const THEME_MAX_BYTES = 64 * 1024;
+const invalidColorProperties = new Set();
 
 const APPEARANCE_FIELDS = [
   { key: 'style', labelKey: 'appearance.style', values: ['standard', 'cyberpunk', 'soft', 'dense'] },
@@ -3375,6 +3403,7 @@ function syncThemeSelectors(value) {
 function initTheme(presetName) {
   const preset = PRESETS[presetName];
   if (!preset) return;
+  invalidColorProperties.clear();
   theme = { ...preset.ui };
   terminalTheme = { ...preset.terminal };
   activePreset = presetName;
@@ -3387,6 +3416,7 @@ function initTheme(presetName) {
   renderControls();
   applyTheme();
   syncThemeSelectors(presetName);
+  updateExportAvailability();
 }
 
 function markThemeCustomized() {
@@ -3474,9 +3504,14 @@ function renderControls() {
     input.addEventListener('input', (e) => {
       const varName = e.target.dataset.var;
       theme[varName] = e.target.value;
+      invalidColorProperties.delete(varName);
       const textInput = container.querySelector(`input[type="text"][data-var="${varName}"]`);
-      if (textInput) textInput.value = e.target.value;
+      if (textInput) {
+        textInput.value = e.target.value;
+        textInput.setAttribute('aria-invalid', 'false');
+      }
       markThemeCustomized();
+      updateExportAvailability();
       applyTheme();
     });
   });
@@ -3485,6 +3520,15 @@ function renderControls() {
     input.addEventListener('input', (e) => {
       const varName = e.target.dataset.var;
       const val = e.target.value;
+      const isValid = isSafeColor(val);
+      e.target.setAttribute('aria-invalid', String(!isValid));
+      if (!isValid) {
+        invalidColorProperties.add(varName);
+        markThemeCustomized();
+        updateExportAvailability();
+        return;
+      }
+      invalidColorProperties.delete(varName);
       theme[varName] = val;
       const colorInput = container.querySelector(`input[type="color"][data-var="${varName}"]`);
       if (colorInput && isHexColor(val)) {
@@ -3493,9 +3537,20 @@ function renderControls() {
           : val;
       }
       markThemeCustomized();
+      updateExportAvailability();
       applyTheme();
     });
   });
+
+  updateExportAvailability();
+}
+
+function updateExportAvailability() {
+  const exportButton = document.getElementById('btn-export');
+  exportButton.disabled = invalidColorProperties.size > 0;
+  exportButton.title = invalidColorProperties.size > 0
+    ? t('feedback.invalidColor')
+    : t('editor.exportTitle');
 }
 
 function settingInput(labelKey, value, attribute) {
@@ -3546,6 +3601,11 @@ document.getElementById('btn-import').addEventListener('click', () => {
 document.getElementById('import-input').addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
+  if (file.size > THEME_MAX_BYTES) {
+    showToast('feedback.fileTooLarge', 'error');
+    e.target.value = '';
+    return;
+  }
   const reader = new FileReader();
   reader.onload = (ev) => {
     try {
@@ -3574,9 +3634,11 @@ document.getElementById('import-input').addEventListener('change', (e) => {
         : 'Custom';
       appearance = mergeAppearance(fallbackPreset.appearance, importedAppearance);
       activePreset = requestedBase;
+      invalidColorProperties.clear();
       syncThemeSelectors('custom');
       renderControls();
       applyTheme();
+      updateExportAvailability();
       showToast('feedback.imported');
     } catch {
       showToast('feedback.invalidJson', 'error');
@@ -3588,6 +3650,15 @@ document.getElementById('import-input').addEventListener('change', (e) => {
 
 // Export
 document.getElementById('btn-export').addEventListener('click', () => {
+  if (invalidColorProperties.size > 0) {
+    showToast('feedback.invalidColor', 'error');
+    return;
+  }
+  const safeUiTheme = sanitizeColorRecord(theme, Object.keys(PRESETS.cyberpunk.ui));
+  const safeTerminalTheme = sanitizeColorRecord(
+    terminalTheme,
+    Object.keys(PRESETS['standard-dark'].terminal),
+  );
   const output = {
     schemaVersion: 2,
     name: themeName.trim() || 'Custom',
@@ -3598,14 +3669,14 @@ document.getElementById('btn-export').addEventListener('click', () => {
       components: { ...appearance.components },
     },
     terminal: {
-      ...terminalTheme,
-      background: theme['--bg-terminal'] || terminalTheme.background,
-      foreground: theme['--text'] || terminalTheme.foreground,
-      cursor: theme['--accent-secondary'] || terminalTheme.cursor,
-      cursorAccent: theme['--bg-terminal'] || terminalTheme.cursorAccent,
-      selectionBackground: theme['--border-strong'] || terminalTheme.selectionBackground,
+      ...safeTerminalTheme,
+      background: safeUiTheme['--bg-terminal'] || safeTerminalTheme.background,
+      foreground: safeUiTheme['--text'] || safeTerminalTheme.foreground,
+      cursor: safeUiTheme['--accent-secondary'] || safeTerminalTheme.cursor,
+      cursorAccent: safeUiTheme['--bg-terminal'] || safeTerminalTheme.cursorAccent,
+      selectionBackground: safeUiTheme['--border-strong'] || safeTerminalTheme.selectionBackground,
     },
-    ui: { ...theme },
+    ui: safeUiTheme,
   };
 
   const json = JSON.stringify(output, null, 2);
