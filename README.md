@@ -391,7 +391,7 @@ test 分支（开发/测试）  ──合并──>  main 分支（生产）
 | 层级 | 技术 | 说明 |
 |------|------|------|
 | **前端** | TypeScript + Vite + xterm.js | Web 终端模拟器，WebGL 硬件加速 |
-| **UI 框架** | Tailwind CSS（Vite/PostCSS 本地构建）+ Theme V2 系统 | 可切换内置主题，支持自定义主题 JSON 导入、导出及登录账号同步；生产环境不依赖 Tailwind CDN |
+| **UI 框架** | Tailwind CSS（Vite/PostCSS 本地构建）+ Theme V2 系统 | 应用支持内置主题切换、自定义主题 JSON 导入及登录账号同步；主题编辑与导出由 GitHub Pages 提供 |
 | **文件传输** | trzsz.js | 支持 trz/tsz 命令、拖拽上传、断点续传 |
 | **AI 助手** | BYOK + OpenAI 兼容接口 | 自带 API Key，支持 DeepSeek 等兼容模型 |
 | **后端** | Cloudflare Workers | Serverless 边缘计算 |

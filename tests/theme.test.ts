@@ -263,23 +263,22 @@ describe('Standard 主题入口和编辑器', () => {
   it('用户空间和终端页都可以直接切换主题风格', () => {
     expect(appHtml.match(/data-theme-selector/g)).toHaveLength(2);
     expect(appHtml.match(/data-theme-import/g)).toHaveLength(2);
-    expect(appHtml.match(/data-theme-export/g)).toHaveLength(2);
-    expect(appHtml.match(/data-theme-delete/g)).toHaveLength(2);
+    expect(appHtml).not.toContain('data-theme-export');
+    expect(appHtml).not.toContain('data-theme-delete');
     expect(appHtml).toContain('Glacier · Soft');
     expect(appHtml).toContain('Gruvbox · Dense');
   });
 
   it('Pages 保持独立，应用为登录用户同步自定义主题并支持云端删除', () => {
     expect(mainSource).toContain("localStorage.setItem('cloudssh_imported_theme'");
-    expect(mainSource).toContain('[data-theme-export]');
-    expect(mainSource).toContain('[data-theme-delete]');
+    expect(mainSource).not.toContain('[data-theme-export]');
+    expect(mainSource).not.toContain('[data-theme-delete]');
     expect(mainSource).toContain("fetch('/api/user/theme'");
     expect(mainSource).toContain("method: 'PUT'");
-    expect(mainSource).toContain("method: 'DELETE'");
     expect(mainSource).toContain('restoreCloudTheme(initialThemeSelection)');
     expect(workerSource).toContain("url.pathname === '/api/user/theme'");
     expect(userDbSource).toContain('CREATE TABLE IF NOT EXISTS user_themes');
-    expect(userDbSource).toContain("DELETE FROM user_themes WHERE user_id = ?");
+    expect(userDbSource).not.toContain('handleDeleteTheme');
     expect(editorHtml).not.toContain('/api/user/theme');
   });
 

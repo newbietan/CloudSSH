@@ -389,7 +389,7 @@ test branch (dev/test)  ──merge──>  main branch (production)
 | Layer | Technology | Description |
 |-------|------------|-------------|
 | **Frontend** | TypeScript + Vite + xterm.js | Web terminal emulator, WebGL hardware acceleration |
-| **UI Framework** | Tailwind CSS (local Vite/PostCSS build) + Theme V2 | Switchable built-in themes with custom-theme JSON import/export and signed-in account sync; production does not depend on the Tailwind CDN |
+| **UI Framework** | Tailwind CSS (local Vite/PostCSS build) + Theme V2 | The app supports built-in theme switching, custom JSON import, and signed-in account sync; editing and export live on GitHub Pages |
 | **File Transfer** | trzsz.js | Supports trz/tsz commands, drag-and-drop upload, resumable transfers |
 | **AI Assistant** | BYOK + OpenAI-compatible API | Bring your own API key, supports DeepSeek and other compatible models |
 | **Backend** | Cloudflare Workers | Serverless edge computing |

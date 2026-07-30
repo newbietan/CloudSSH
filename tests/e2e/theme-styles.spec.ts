@@ -89,7 +89,7 @@ test('终端四周留白按形状收窄并为圆角保留安全间距', async ({
   await expect(terminalWrapper).toHaveCSS('border-radius', '15px');
 });
 
-test('应用可导入、导出并在本地删除 Theme V2 JSON', async ({ page }) => {
+test('应用导入 Theme V2 JSON 后覆盖本地主题并同步账号', async ({ page }) => {
   const themeRequestMethods: string[] = [];
   page.on('request', (request) => {
     if (request.url().includes('/api/user/theme')) {
@@ -129,22 +129,11 @@ test('应用可导入、导出并在本地删除 Theme V2 JSON', async ({ page }
   await expect(page.locator('#user-theme-selector')).toHaveValue('__custom__');
   await expect(page.locator('html')).toHaveAttribute('data-ui-style', 'soft');
   await expect(page.locator('html')).toHaveAttribute('data-ui-density', 'spacious');
-  await expect(page.locator('[data-theme-export]').first()).toBeVisible();
-  await expect(page.locator('[data-theme-delete]').first()).toBeVisible();
   await expect.poll(() => themeRequestMethods).toContain('PUT');
-
-  const downloadPromise = page.waitForEvent('download');
-  await page.locator('[data-theme-export]').first().click();
-  const download = await downloadPromise;
-  expect(download.suggestedFilename()).toBe('cloudssh-theme-ocean-soft.json');
-
-  await page.locator('[data-theme-delete]').first().click();
-  await page.locator('.app-dialog__button--confirm').click();
-
-  await expect(page.locator('#user-theme-selector')).toHaveValue('cyberpunk');
-  await expect(page.locator('[data-theme-export]').first()).toBeHidden();
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('cloudssh_imported_theme'))).toBeNull();
-  expect(themeRequestMethods).toEqual(expect.arrayContaining(['GET', 'PUT', 'DELETE']));
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('cloudssh_imported_theme')))
+    .toContain('Ocean Soft');
+  expect(themeRequestMethods).toEqual(expect.arrayContaining(['GET', 'PUT']));
+  expect(themeRequestMethods).not.toContain('DELETE');
 });
 
 test('新浏览器登录后自动恢复并启用账号中的自定义主题', async ({ page }) => {

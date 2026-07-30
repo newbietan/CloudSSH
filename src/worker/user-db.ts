@@ -172,10 +172,6 @@ export class UserDBDO {
       if (path === '/internal/theme' && request.method === 'PUT') {
         return this.handlePutTheme(request);
       }
-      if (path === '/internal/theme' && request.method === 'DELETE') {
-        return this.handleDeleteTheme(request);
-      }
-
       // --- One-time-token 消费 ---
       if (path === '/internal/connect-token/consume' && request.method === 'POST') {
         return this.handleConsumeToken(request);
@@ -590,12 +586,6 @@ export class UserDBDO {
       theme_data
     );
 
-    return Response.json({ success: true });
-  }
-
-  private async handleDeleteTheme(request: Request): Promise<Response> {
-    const { user_id } = await request.json<{ user_id: number }>();
-    this.db.exec('DELETE FROM user_themes WHERE user_id = ?', user_id);
     return Response.json({ success: true });
   }
 

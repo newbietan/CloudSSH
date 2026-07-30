@@ -9,7 +9,7 @@ import { ConnectionForm } from './auth-form';
 import { ServerList } from './server-list';
 import { TabManager } from './tab-manager';
 import { AIConfigPanel } from './ai-config';
-import { confirmAction, notify } from './ui-feedback';
+import { notify } from './ui-feedback';
 import { initI18n, onLocaleChange, t } from './i18n';
 
 // ==================== 全局状态 ====================
@@ -307,9 +307,6 @@ const CUSTOM_THEME_VALUE = '__custom__';
 const themeSelectors = Array.from(
   document.querySelectorAll<HTMLSelectElement>('[data-theme-selector]'),
 );
-const customThemeActions = Array.from(
-  document.querySelectorAll<HTMLElement>('[data-theme-custom-action]'),
-);
 
 themeSelectors.forEach((selector) => {
   selector.addEventListener('change', (e) => {
@@ -340,20 +337,11 @@ function ensureCustomOption(): void {
     }
     option.textContent = t('theme.custom');
   });
-  syncCustomThemeActions();
 }
 
 function syncThemeSelectors(value: string): void {
   themeSelectors.forEach((selector) => {
     selector.value = value;
-  });
-}
-
-function syncCustomThemeActions(): void {
-  const hasCustomTheme = !!localStorage.getItem('cloudssh_imported_theme');
-  customThemeActions.forEach((action) => {
-    action.classList.toggle('hidden', !hasCustomTheme);
-    action.classList.toggle('flex', hasCustomTheme);
   });
 }
 
@@ -402,69 +390,6 @@ importThemeInput?.addEventListener('change', (e) => {
   importThemeInput.value = '';
 });
 
-// ==================== 主题导出与删除 ====================
-
-document.querySelectorAll<HTMLElement>('[data-theme-export]').forEach((button) => {
-  button.addEventListener('click', () => {
-    const raw = localStorage.getItem('cloudssh_imported_theme');
-    if (!raw) return;
-    try {
-      const theme = normalizeImportedTheme(JSON.parse(raw));
-      if (!theme) throw new Error('Invalid theme');
-      const blob = new Blob([JSON.stringify(theme, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      const safeName = (theme.name || 'custom')
-        .toLowerCase()
-        .replace(/[^a-z0-9\u4e00-\u9fff_-]+/gi, '-')
-        .replace(/^-+|-+$/g, '') || 'custom';
-      link.href = url;
-      link.download = `cloudssh-theme-${safeName}.json`;
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-      notify(t('theme.exportSuccess'), { variant: 'success' });
-    } catch {
-      notify(t('theme.importFailed'), { title: t('theme.export'), variant: 'danger' });
-    }
-  });
-});
-
-document.querySelectorAll<HTMLElement>('[data-theme-delete]').forEach((button) => {
-  button.addEventListener('click', async () => {
-    const confirmed = await confirmAction({
-      title: t('theme.delete'),
-      message: t('theme.deleteConfirm'),
-      confirmText: t('common.delete'),
-      variant: 'danger',
-    });
-    if (!confirmed) return;
-
-    if (isLoggedIn) {
-      try {
-        const response = await fetch('/api/user/theme', { method: 'DELETE' });
-        if (!response.ok) {
-          notify(t('theme.deleteFailed'), { title: t('theme.delete'), variant: 'danger' });
-          return;
-        }
-      } catch {
-        notify(t('theme.deleteFailed'), { title: t('theme.delete'), variant: 'danger' });
-        return;
-      }
-    }
-
-    localStorage.removeItem('cloudssh_imported_theme');
-    localStorage.setItem('cloudssh_theme_selection', 'cyberpunk');
-    themeSelectors.forEach((selector) => {
-      selector.querySelector(`option[value="${CUSTOM_THEME_VALUE}"]`)?.remove();
-    });
-    applyBuiltInTheme('cyberpunk');
-    syncThemeSelectors('cyberpunk');
-    syncCustomThemeActions();
-    notify(t('theme.deleteSuccess'), { variant: 'success' });
-  });
-});
-
 // ==================== 主题恢复 ====================
 
 /** 恢复主题（在 init 时调用，此时还没有终端实例，只设置 UI 变量） */
@@ -475,7 +400,6 @@ function restoreTheme(): void {
   if (isBuiltInTheme(selection)) {
     applyBuiltInTheme(selection);
     syncThemeSelectors(selection);
-    syncCustomThemeActions();
     return;
   }
 
@@ -499,7 +423,6 @@ function restoreTheme(): void {
   localStorage.setItem('cloudssh_theme_selection', 'cyberpunk');
   applyBuiltInTheme('cyberpunk');
   syncThemeSelectors('cyberpunk');
-  syncCustomThemeActions();
 }
 
 async function saveThemeToCloud(theme: ReturnType<typeof normalizeImportedTheme>): Promise<boolean> {

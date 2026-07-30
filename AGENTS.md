@@ -154,7 +154,7 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 | `/api/servers` | GET/POST | Yes | List or create saved servers（含单层 `tags`） |
 | `/api/servers/:id` | PUT/DELETE | Yes | Update or delete a server（含标签更新） |
 | `/api/servers/:id/connect` | POST | Yes | Generate one-time-token, return WebSocket URL |
-| `/api/user/theme` | GET/PUT/DELETE | Yes | Get, save, or delete the signed-in user's custom theme |
+| `/api/user/theme` | GET/PUT | Yes | Get or replace the signed-in user's single custom theme |
 | `/api/known-hosts` | GET/POST/DELETE | Yes | Known host fingerprint CRUD (TOFU) |
 | `/api/ai/config` | GET/PUT | Yes | Get or save AI LLM config |
 | `/api/ai/models` | POST | Yes | Proxy model list from user's LLM provider |
@@ -229,7 +229,7 @@ ci: CI/CD 变更
 13. **SFTP selection model** - file selection supports single, Cmd/Ctrl toggle, Shift range and select-all. Batch download reuses the sequential download queue; batch delete waits for all delete/rmdir results before refreshing.
 14. **Agent terminal selection context** - “Ask AI assistant” attaches one immutable selection snapshot per tab and never sends it by itself. New selections replace the pending snapshot; successful sends and session teardown clear it. Preserve the untrusted-data/non-authorization boundary in `terminal-selection-context.ts`.
 15. **Region inference privacy** - Saving or changing a server host calls the third-party IPinfo service and persists the inferred locationHint. Keep the provider name and disclosure synchronized across README/code comments; failures must continue to fall back to Cloudflare's default placement.
-16. **Theme editor ownership** - The full visual editor lives in `docs/theme-editor/index.html` for GitHub Pages and never authenticates against CloudSSH. `scripts/sync-theme-editor.js` keeps its built-in colors and resolved appearance presets aligned with `frontend/src/theme.ts`. The application imports/exports JSON themes and synchronizes imported themes through `/api/user/theme` for signed-in users; anonymous themes remain local.
+16. **Theme editor ownership** - The full visual editor and JSON export live in `docs/theme-editor/index.html` for GitHub Pages and never authenticate against CloudSSH. `scripts/sync-theme-editor.js` keeps its built-in colors and resolved appearance presets aligned with `frontend/src/theme.ts`. The application only imports JSON themes and synchronizes the single custom-theme slot through `/api/user/theme` for signed-in users; later imports replace the previous theme, while anonymous themes remain local.
 
 ## Deployment Notes
 

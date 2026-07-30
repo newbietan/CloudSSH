@@ -412,14 +412,6 @@ async function handleThemeRoute(request: Request, env: Env): Promise<Response> {
     }));
   }
 
-  if (request.method === 'DELETE') {
-    return stub.fetch(new Request('http://internal/internal/theme', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: user.id }),
-    }));
-  }
-
   return Response.json({ error: 'Method not allowed' }, { status: 405 });
 }
 
