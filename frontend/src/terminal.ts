@@ -149,12 +149,15 @@ export class SSHTerminal {
     window.addEventListener('resize', this.resizeListener);
 
     // 右键粘贴（选区已通过鼠标松手自动复制到剪贴板）
+    // 使用 bracketed paste 模式包裹粘贴内容，避免 vim 等编辑器
+    // 对粘贴内容错误应用自动缩进、注释续行等编辑行为
     this.container.addEventListener('contextmenu', async (e) => {
       e.preventDefault();
       try {
-        const text = await navigator.clipboard.readText();
+        let text = await navigator.clipboard.readText();
         if (text && this.ws?.readyState === WebSocket.OPEN) {
-          this.ws.send(text);
+          text = text.replace(/\r\n/g, '\r').replace(/\n/g, '\r');
+          this.ws.send('\x1b[200~' + text + '\x1b[201~');
         }
       } catch (err) {
         console.error('Failed to read clipboard', err);
