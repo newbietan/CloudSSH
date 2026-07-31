@@ -1817,3 +1817,33 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   color: var(--on-surface-variant);
   opacity: 0.8;
 }
+
+/* ==================== Host IP Badge ==================== */
+
+.host-ip-badge {
+  display: inline-block;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 5px;
+  margin-left: 2px;
+  cursor: pointer;
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+  user-select: none;
+  vertical-align: baseline;
+}
+
+.host-ip-badge:hover {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.host-ip-badge.host-ip-copied {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}

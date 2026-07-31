@@ -2,6 +2,7 @@ import { populateRegionSelect, regionLabel } from './regions';
 import { confirmAction, notify } from './ui-feedback';
 import { onLocaleChange, t } from './i18n';
 import { parsePort } from './port';
+import { copyTextToClipboard } from './clipboard';
 
 interface UserInfo {
   id: number;
@@ -26,6 +27,17 @@ export interface ServerConfig {
 }
 
 export const SERVER_PAGE_SIZE = 9;
+
+const IPV4_RE = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+const IPV6_RE = /^([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):[0-9a-fA-F:]+/;
+
+function maskIP(host: string): string | null {
+  const m4 = IPV4_RE.exec(host);
+  if (m4) return `${m4[1]}.${m4[2]}.*.*`;
+  const m6 = IPV6_RE.exec(host);
+  if (m6) return `${m6[1]}:${m6[2]}:**.**/64`;
+  return null;
+}
 
 export function normalizeTagsInput(value: string): string[] {
   const tags: string[] = [];
@@ -278,7 +290,22 @@ export class ServerList {
       document.getElementById(`connect-${server.id}`)?.addEventListener('click', () => this.connectServer(server.id));
       document.getElementById(`edit-${server.id}`)?.addEventListener('click', () => this.showModal('edit', server));
       document.getElementById(`delete-${server.id}`)?.addEventListener('click', () => this.deleteServer(server.id));
-    });
+        const hostBadge = document.getElementById(`host-badge-${server.id}`);
+        if (hostBadge) {
+          hostBadge.addEventListener('click', async () => {
+            const fullIP = hostBadge.dataset.fullIp || '';
+            if (fullIP) {
+              const ok = await copyTextToClipboard(fullIP);
+              if (ok) {
+                hostBadge.classList.add('host-ip-copied');
+                setTimeout(() => hostBadge.classList.remove('host-ip-copied'), 800);
+                notify(t('server.ipCopied'), { variant: 'success', duration: 1500 });
+              }
+            }
+          });
+        }
+      });
+
 
     if (page.totalPages > 1) {
       pagination?.classList.remove('hidden');
@@ -318,10 +345,14 @@ export class ServerList {
         ).join('')}</div>`
       : '';
 
+    const hostDisplay = maskIP(server.host)
+      ? `<span class="host-ip-badge server-host-badge" id="host-badge-${server.id}" title="${t('server.clickToCopyIP')}" data-full-ip="${this.escapeAttr(server.host)}">${this.escapeHtml(maskIP(server.host)!)}:${server.port}</span>`
+      : `<span class="text-on-surface">${this.escapeHtml(server.host)}:${server.port}</span>`;
+
     return `
       <div class="server-card p-5 relative group" id="card-${server.id}">
         <div class="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-[var(--border-strong)] to-transparent group-hover:via-[var(--accent)] transition-all duration-300"></div>
-        
+
         <div class="flex items-start justify-between mb-3">
           <div class="flex items-center gap-2">
             <span class="material-symbols-outlined text-primary" style="font-size: 20px; font-variation-settings: 'FILL' 0;">dns</span>
@@ -336,7 +367,7 @@ export class ServerList {
         <div class="space-y-1.5 text-xs text-muted mb-4">
           <div class="flex items-center gap-2">
             <span class="text-dim">${t('server.hostLabel')}</span>
-            <span class="text-on-surface">${this.escapeHtml(server.host)}:${server.port}</span>
+            ${hostDisplay}
           </div>
           <div class="flex items-center gap-2">
             <span class="text-dim">${t('server.userLabel')}</span>
@@ -738,5 +769,9 @@ export class ServerList {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  private escapeAttr(text: string): string {
+    return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 }
