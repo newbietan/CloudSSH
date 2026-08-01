@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2026-08-01
+
+### Added
+- 新增默认关闭的 Fork 上游自动同步工作流，用户可通过仓库变量选择开启每日定时同步，也可随时手动执行。
+- 同步过程使用 GitHub Fork 同步接口更新 `main` 分支，无需 PAT；发生合并冲突时保留用户现有代码并停止任务，避免强制覆盖。
+
+### Changed
+- 完善中英文部署文档，补充自动同步的开启步骤、Cloudflare Git 集成自动部署条件、手动同步方式及冲突处理建议。
+
 ## [1.4.1] - 2026-08-01
 
 ### Added
