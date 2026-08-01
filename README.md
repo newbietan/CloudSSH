@@ -87,10 +87,12 @@
 - **多种认证方式**：支持标准 SSH 密码认证，以及 OpenSSH 格式的 Ed25519、ECDSA P-256/P-384/P-521 和 RSA 私钥认证；RSA 默认使用 RSA-SHA2-256/512，只有显式兼容配置才允许旧 `ssh-rsa` SHA-1。
 - **防范中间人攻击 (TOFU)**：首次连接自动提取服务器 Host Key（SHA-256 指纹）并显示，支持 Ed25519/ECDSA/RSA 签名验证，并在本地及 API 持久化缓存已知主机指纹以防范二次连接的欺骗风险。
 - **全功能极客终端**：基于 `@xterm/xterm` 与 `@xterm/addon-webgl` 硬件加速渲染引擎，保证海量日志输出顺滑不卡顿。
+- **可靠的终端剪贴板交互**：鼠标完成终端选区后自动复制，右键可直接粘贴。粘贴统一经过 xterm.js 原生输入管线，仅在远端应用启用 bracketed paste 模式时发送对应控制序列，并自动规范化换行，兼容 Vim 等交互式编辑器和普通 Shell。
 - **个性化 UI**：Theme V2 系统提供 Standard Dark、Standard Light、Cyberpunk、Glacier、Gruvbox 五款内置主题。配套 [GitHub Pages 主题编辑器](https://newbietan.github.io/CloudSSH/)可实时调整颜色、形状、密度、字体、阴影、动效及按钮/输入框/卡片/标签页样式，并预览登录页、服务器列表、终端 + SFTP 和 AI Agent 面板。主题通过 JSON 文件导入、导出、备份与分享；登录用户在应用中导入后会同步到账号并可跨浏览器恢复，匿名用户仅保存在当前浏览器。
 - **SFTP 图形化文件管理**：集成完整的 SFTP v3 文件传输协议，提供图形化文件浏览器界面。支持目录浏览、文件上传/下载、新建文件夹、文件重命名与删除等操作；支持普通单选、`Cmd/Ctrl` 切换选择、`Shift` 连选、全选，以及批量下载文件和批量删除。基于 SSH 子系统实现，与终端会话并行运行，互不干扰，支持下载队列及上传取消。
 - **原生文件传输**：集成 [trzsz.js](https://github.com/trzsz/trzsz.js)，支持 `trz`（上传）/ `tsz`（下载）命令进行文件传输，兼容 tmux 会话。还支持拖拽文件到终端窗口直接上传、目录传输及断点续传等高级功能。（需远程服务器安装 [trzsz](https://trzsz.github.io/)）
 - **GitHub OAuth 集成**：支持 GitHub 登录，用户可保存和管理常用 SSH 服务器，实现一键连接；服务器支持最多 10 个规范化标签，列表可按名称、主机地址、用户名即时搜索并按标签筛选，每页固定展示 9 张服务器卡片。
+- **IP 隐私展示与快捷复制**：服务器列表和连接状态栏会对有效 IPv4/IPv6 地址进行视觉掩码，减少演示或截图时意外暴露完整地址的风险；可通过鼠标点击或键盘操作复制用于连接的完整 IP。域名保持原样显示，视觉掩码不等同于加密或访问控制。
 - **单页面多标签会话管理**：支持在单个页面内开启与切换多个独立的 SSH 终端与 SFTP 文件管理器，各会话环境和状态完全隔离，并在个性化主题编辑器中进行了联动适配。
 - **安全匿名历史记录**：本地存储最近 5 条匿名连接，且敏感凭证可选使用本地派生的密钥进行 AES-256-GCM 安全加密存储至 `localStorage`，提供一键回填与清除。
 - **双段延迟与 Colo 展示**：状态栏即时且周期性地展示当前 RTT（客户端至 Cloudflare）、物理延迟（Cloudflare 至主机）以及 Cloudflare 当前服务的数据中心代码（如 `CF-LAX`），并通过绿、黄、红三色状态点提示网络质量。
@@ -148,9 +150,10 @@ flowchart TB
 | **SSH 协议栈** | `src/ssh/*.ts` | 纯 TypeScript SSH-2.0 实现（传输层、加密、认证、通道） |
 | **SFTP 处理器** | `src/worker/sftp-handler.ts` | SFTP 协议操作、任务队列、并发下载、上传跟踪与取消支持 |
 | **SFTP 协议实现** | `src/ssh/sftp.ts` / `sftp-types.ts` | SFTP v3 协议客户端、包解析与类型定义 |
-| **前端终端** | `frontend/src/terminal.ts` | xterm.js 封装、实时双段延迟心跳、网络质量三色提示、终端搜索、选区询问 Agent 及 WebSocket 交互 |
-| **标签管理器** | `frontend/src/tab-manager.ts` | 单页面多会话标签页管理器，协调不同标签页内的终端、SFTP 与 Agent 实例及上下文隔离 |
-| **服务器列表** | `frontend/src/server-list.ts` | 服务器卡片管理、搜索、标签筛选及每页 9 项分页 |
+| **前端终端** | `frontend/src/terminal.ts` | xterm.js 封装、原生右键粘贴、实时双段延迟心跳、网络质量三色提示、终端搜索、选区询问 Agent 及 WebSocket 交互 |
+| **标签管理器** | `frontend/src/tab-manager.ts` | 单页面多会话标签页管理器，协调不同标签页内的终端、SFTP 与 Agent 实例及上下文隔离，并展示可复制的掩码 IP |
+| **服务器列表** | `frontend/src/server-list.ts` | 服务器卡片管理、搜索、标签筛选、IP 隐私展示及每页 9 项分页 |
+| **主机地址展示** | `frontend/src/host-display.ts` | 校验 IPv4/IPv6 字面量并生成统一的隐私掩码文本 |
 | **SFTP 面板** | `frontend/src/sftp-panel.ts` | 图形化文件管理器 UI，支持多选、批量下载/删除、上传下载队列和取消操作 |
 | **AI Agent** | `src/worker/agent/core.ts` | AI 控制循环：LLM 流式调用、工具执行、环境探测、终端上下文读取 |
 | **Agent 工具** | `src/worker/agent/tools.ts` | 8 个运维工具定义（执行命令、终端上下文、环境探测、进程列表、服务管理、Docker 管理、用户确认、报告输出） |
@@ -406,11 +409,11 @@ test 分支（开发/测试）  ──合并──>  main 分支（生产）
 
 | 贡献者 | 主要贡献 |
 |--------|----------|
-| [TanXin (@newbietan)](https://github.com/newbietan) | 项目发起、核心架构与持续维护 |
-| [David xu (@xqdoo00o)](https://github.com/xqdoo00o) | Dropbear 兼容、trzsz 文件传输、PTY 与会话交互优化 |
-| [vonl1 (@vonl1)](https://github.com/vonl1) | 终端选区自动复制与右键粘贴体验 |
+| [TanXin (@newbietan)](https://github.com/newbietan) | 项目发起与持续维护；Cloudflare Serverless、SSH/SFTP、AI Agent、安全体系、主题系统及工程化建设 |
+| [David xu (@xqdoo00o)](https://github.com/xqdoo00o) | Dropbear 兼容、trzsz 文件传输迁移、PTY 尺寸处理，以及会话退出与重连交互优化 |
+| [vonl1 (@vonl1)](https://github.com/vonl1) | 终端选区自动复制、兼容 Vim 的右键粘贴体验，以及服务器 IPv4/IPv6 掩码与完整地址快捷复制 |
 
-名单依据 Git 提交历史整理，完整记录请参阅 [GitHub Contributors](https://github.com/newbietan/CloudSSH/graphs/contributors)。欢迎通过 Issue 和 Pull Request 参与项目建设。
+名单及贡献说明依据 Git 提交历史与已接收的 Pull Request 整理；同一贡献者在历史中可能使用过不同的 Git 作者名称或邮箱。完整记录请参阅 [GitHub Contributors](https://github.com/newbietan/CloudSSH/graphs/contributors)。欢迎通过 Issue 和 Pull Request 参与项目建设。
 
 <a id="license"></a>
 ## 开源协议

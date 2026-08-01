@@ -87,10 +87,12 @@
 - **Multiple Auth Methods**: Supports standard SSH password authentication and OpenSSH-format Ed25519, ECDSA P-256/P-384/P-521, and RSA private keys. RSA uses RSA-SHA2-256/512 by default; legacy `ssh-rsa` SHA-1 is allowed only through explicit compatibility configuration.
 - **MitM Protection (TOFU)**: Automatically extracts and prints the server's Host Key (SHA-256 fingerprint) on the first connection, supporting Ed25519/ECDSA/RSA signature verification, and caches known host keys locally and via API to prevent MitM on future connections.
 - **Geek Terminal Experience**: Powered by `@xterm/xterm` and the `@xterm/addon-webgl` hardware acceleration rendering engine, ensuring silky smooth scrolling even with massive log outputs.
+- **Reliable Terminal Clipboard Interaction**: Completing a terminal selection automatically copies it, and right-click pastes directly. Paste data follows xterm.js's native input pipeline, emits bracketed-paste control sequences only when the remote application enables that mode, and normalizes line endings for compatibility with Vim and regular shells.
 - **Customizable UI**: Theme V2 includes Standard Dark, Standard Light, Cyberpunk, Glacier, and Gruvbox. The companion [GitHub Pages theme editor](https://newbietan.github.io/CloudSSH/) provides live controls for colors, shape, density, font, shadows, motion, and button/input/card/tab styles, with previews for login, server list, terminal + SFTP, and the AI Agent panel. Themes are imported, exported, backed up, and shared as JSON files. Signed-in users sync imported themes to their account for cross-browser restoration, while anonymous users keep them in the current browser only.
 - **SFTP Graphical File Manager**: Integrated with a complete SFTP v3 file transfer protocol, providing a graphical file browser interface. Supports directory browsing, file upload/download, creating new folders, file renaming, and deletion, plus plain selection, `Cmd/Ctrl` toggle selection, `Shift` range selection, select all, batch file downloads, and batch deletion. Built on the SSH subsystem, it runs alongside terminal sessions without interference and supports download queues and upload cancellation.
 - **Native File Transfer**: Integrated with [trzsz.js](https://github.com/trzsz/trzsz.js), supporting `trz` (upload) / `tsz` (download) commands for file transfer, fully compatible with tmux sessions. Also supports drag-and-drop file upload to the terminal, directory transfer, and resumable transfers. (Requires [trzsz](https://trzsz.github.io/) installed on the remote server)
 - **GitHub OAuth Integration**: Supports GitHub login, allowing users to save and manage frequently used SSH servers for one-click connections. Each server can have up to 10 normalized tags; the list supports instant search by name, host, or username, tag filtering, and pagination with 9 server cards per page.
+- **Private IP Display and Quick Copy**: Valid IPv4 and IPv6 addresses are visually masked in the saved-server list and connection status bar to reduce accidental disclosure in demos or screenshots. The complete connection address remains available through mouse or keyboard copy. Hostnames remain unchanged; visual masking is not encryption or access control.
 - **Single-Page Multi-Tab Session**: Switch between multiple independent SSH terminal and SFTP instances within a single browser tab, with isolated sandbox environments.
 - **Secure Connection History**: Saves last 5 connection records locally. Credentials (passwords/private keys) can be client-side encrypted using locally derived AES-256-GCM keys.
 - **Dual-Segment Latency & Colo Display**: Instantly and periodically monitor WebSocket RTT (client to CF), physical latency (CF to SSH host), and the current Cloudflare datacenter code (e.g. `CF-LAX`) on the status bar, with green, yellow, and red indicators for network quality.
@@ -148,9 +150,10 @@ flowchart TB
 | **SSH Protocol Stack** | `src/ssh/*.ts` | Pure TypeScript SSH-2.0 implementation (transport, crypto, auth, channels) |
 | **SFTP Handler** | `src/worker/sftp-handler.ts` | SFTP protocol operations, task queue, concurrent downloads, upload tracking and cancellation |
 | **SFTP Protocol** | `src/ssh/sftp.ts` / `sftp-types.ts` | SFTP v3 protocol client, packet parsing and type definitions |
-| **Frontend Terminal** | `frontend/src/terminal.ts` | xterm.js wrapper, dynamic RTT heartbeats, three-color network quality indicators, terminal search, selection-to-Agent actions, and WebSocket management |
-| **Tab Manager** | `frontend/src/tab-manager.ts` | Single-page coordinator for isolated terminal, SFTP, Agent, and pending-context state in each session tab |
-| **Server List** | `frontend/src/server-list.ts` | Server-card management, search, tag filtering, and pagination with 9 items per page |
+| **Frontend Terminal** | `frontend/src/terminal.ts` | xterm.js wrapper, native right-click paste, dynamic RTT heartbeats, three-color network quality indicators, terminal search, selection-to-Agent actions, and WebSocket management |
+| **Tab Manager** | `frontend/src/tab-manager.ts` | Single-page coordinator for isolated terminal, SFTP, Agent, and pending-context state in each session tab, including copyable masked-IP display |
+| **Server List** | `frontend/src/server-list.ts` | Server-card management, search, tag filtering, private IP display, and pagination with 9 items per page |
+| **Host Display** | `frontend/src/host-display.ts` | Validates IPv4/IPv6 literals and produces consistent privacy-masked display text |
 | **SFTP Panel** | `frontend/src/sftp-panel.ts` | Graphical file manager UI with multi-selection, batch download/delete, transfer queues, and cancellation |
 | **AI Agent** | `src/worker/agent/core.ts` | AI control loop: LLM streaming calls, tool execution, environment detection, terminal context reading |
 | **Agent Tools** | `src/worker/agent/tools.ts` | 8 operations tools (execute command, terminal context, environment detection, process list, service management, Docker management, user confirmation, report output) |
@@ -404,11 +407,11 @@ Thank you to the following contributors for improving CloudSSH's code, compatibi
 
 | Contributor | Key Contributions |
 |-------------|-------------------|
-| [TanXin (@newbietan)](https://github.com/newbietan) | Project creator, core architecture, and ongoing maintenance |
-| [David xu (@xqdoo00o)](https://github.com/xqdoo00o) | Dropbear compatibility, trzsz file transfer, PTY and session interaction improvements |
-| [vonl1 (@vonl1)](https://github.com/vonl1) | Terminal selection auto-copy and right-click paste experience |
+| [TanXin (@newbietan)](https://github.com/newbietan) | Project creator and maintainer; Cloudflare Serverless architecture, SSH/SFTP, AI Agent, security, theming, and engineering infrastructure |
+| [David xu (@xqdoo00o)](https://github.com/xqdoo00o) | Dropbear compatibility, migration to trzsz file transfer, PTY sizing, and session exit/reconnection improvements |
+| [vonl1 (@vonl1)](https://github.com/vonl1) | Terminal selection auto-copy, Vim-compatible right-click paste, and masked IPv4/IPv6 display with quick full-address copy |
 
-This list is based on the Git commit history. See [GitHub Contributors](https://github.com/newbietan/CloudSSH/graphs/contributors) for the complete record. Issues and Pull Requests are welcome.
+The list and contribution summaries are based on Git history and accepted Pull Requests; one contributor may appear under multiple historical Git author names or email addresses. See [GitHub Contributors](https://github.com/newbietan/CloudSSH/graphs/contributors) for the complete record. Issues and Pull Requests are welcome.
 
 <a id="license"></a>
 ## License

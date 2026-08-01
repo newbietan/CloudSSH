@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-08-01
+
+### Added
+- 服务器列表与终端连接状态栏新增 IPv4/IPv6 隐私掩码展示，并支持通过鼠标点击或键盘操作复制完整地址，以及复制成功和失败反馈。
+- 新增共享的主机地址校验与掩码模块，覆盖 IPv4、完整/压缩/带作用域 IPv6 和 IPv4 映射 IPv6，并补充单元及 Chromium 浏览器回归测试。
+
+### Changed
+- 终端右键粘贴改为复用 xterm.js 原生输入管线，统一换行格式，并仅在远端应用显式启用 bracketed paste 模式时发送对应控制序列；粘贴数据继续经过 trzsz 输入处理。
+- IP 掩码交互改用原生按钮语义，增加键盘操作与清晰的焦点样式；完整地址不再写入 HTML 数据属性，而是从当前连接配置复制。
+- 更新中英文 README 的终端剪贴板、IP 隐私展示、架构组件和贡献者说明。
+
+### Fixed
+- 修复在 Vim 中通过右键粘贴多行内容时可能触发自动缩进、注释续行或产生异常空行的问题。
+- 修复未启用 bracketed paste 的普通 Shell 仍收到粘贴控制序列，可能导致输入内容被污染的问题。
+- 修复旧 IP 掩码规则接受越界 IPv4、无法识别压缩 IPv6，并使用不准确 `/64` 展示的问题。
+
 ## [1.4.0] - 2026-07-30
 
 ### Added
