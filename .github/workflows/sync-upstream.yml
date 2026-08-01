@@ -1,0 +1,35 @@
+name: Sync upstream
+
+on:
+  schedule:
+    # Runs daily at 04:20 Asia/Shanghai (20:20 UTC).
+    - cron: '20 20 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    # Run only in forks. Scheduled sync is opt-in;
+    # manual dispatch remains available without setting the repository variable.
+    if: >-
+      github.event.repository.fork == true &&
+      (github.event_name == 'workflow_dispatch' || vars.AUTO_SYNC_UPSTREAM == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Sync main branch from upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          gh api \
+            --method POST \
+            "repos/${REPOSITORY}/merge-upstream" \
+            -f branch=main

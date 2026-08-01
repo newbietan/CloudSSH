@@ -47,6 +47,7 @@
 - [Architecture](#architecture)
 - [Quick Deployment](#quick-start)
   - [GitHub Integration](#method-1-deploy-via-github-integration-recommended)
+    - [Automatically Sync Upstream](#optional-automatically-sync-upstream-releases)
   - [Local CLI Deployment](#method-2-local-cli-deployment)
   - [Configure Turnstile](#optional-configure-turnstile-human-verification)
   - [Configure GitHub OAuth](#optional-configure-github-oauth-login--server-management)
@@ -214,6 +215,19 @@ This project implements a complete SSH-2.0 protocol stack:
 5. **Bind Custom Domain** (Optional): Go to Worker Settings → Domains & Routes → Add, enter your domain and confirm.
 
 > **Note**: To deploy a test environment, repeat the above steps on the `test` branch to create a separate Worker (e.g., `cloudssh-test`). The Durable Objects data between both environments is completely isolated.
+
+##### Optional: Automatically Sync Upstream Releases
+
+A fork can use the built-in `Sync upstream` GitHub Actions workflow to periodically synchronize the latest `main` branch from this project into its own `main` branch. This feature is **disabled by default**. Once enabled, it checks daily at 04:20 Asia/Shanghai; branch updates created by a successful sync are automatically built and deployed by Cloudflare Git integration, so no additional deployment toggle is required.
+
+1. Make sure the Cloudflare Worker is connected to your fork, its Production branch is set to `main`, and automatic builds are enabled.
+2. Open the fork's **Actions** page and enable workflows. If an existing fork does not yet contain `Sync upstream`, first use GitHub's **Sync fork** feature once to obtain the workflow.
+3. Go to **Settings → Secrets and variables → Actions → Variables** and create a Repository variable:
+   - Name: `AUTO_SYNC_UPSTREAM`
+   - Value: `true`
+4. To sync immediately, open **Actions → Sync upstream → Run workflow**. Manual runs do not require the variable above.
+
+> **Sync behavior**: The workflow uses GitHub's fork synchronization API, requires no PAT, and never force-overwrites the branch. If your `main` branch cannot be merged with upstream automatically, the job fails while preserving the existing code and the conflict must be resolved manually. Avoid editing the deployment `main` branch directly, and keep domains, secrets, and environment variables in the Cloudflare Dashboard.
 
 #### Method 2: Local CLI Deployment
 
