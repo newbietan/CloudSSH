@@ -71,6 +71,19 @@ export class SSHTerminal {
   private onSelectionChanged?: (selection: string, anchor: TerminalSelectionAnchor | null) => void;
   private selectionAnchor: TerminalSelectionAnchor | null = null;
   private selectionPointerActive = false;
+  private readonly contextMenuPasteListener = async (event: MouseEvent): Promise<void> => {
+    event.preventDefault();
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && this.ws?.readyState === WebSocket.OPEN) {
+        // xterm 会统一换行，并且仅在远端显式启用 bracketed paste 时添加控制序列。
+        // paste() 还会经过 onData/trzsz 输入管线，与键盘粘贴保持一致。
+        this.terminal.paste(text);
+      }
+    } catch (err) {
+      console.error('Failed to read clipboard', err);
+    }
+  };
   private themeCleanup: () => void;
   private resizeListener: () => void;
   private readonly selectionPointerDownListener = (event: PointerEvent): void => {
@@ -149,20 +162,7 @@ export class SSHTerminal {
     window.addEventListener('resize', this.resizeListener);
 
     // 右键粘贴（选区已通过鼠标松手自动复制到剪贴板）
-    // 使用 bracketed paste 模式包裹粘贴内容，避免 vim 等编辑器
-    // 对粘贴内容错误应用自动缩进、注释续行等编辑行为
-    this.container.addEventListener('contextmenu', async (e) => {
-      e.preventDefault();
-      try {
-        let text = await navigator.clipboard.readText();
-        if (text && this.ws?.readyState === WebSocket.OPEN) {
-          text = text.replace(/\r\n/g, '\r').replace(/\n/g, '\r');
-          this.ws.send('\x1b[200~' + text + '\x1b[201~');
-        }
-      } catch (err) {
-        console.error('Failed to read clipboard', err);
-      }
-    });
+    this.container.addEventListener('contextmenu', this.contextMenuPasteListener);
 
     // Drag-and-drop file upload support (trzsz)
     this.container.addEventListener('dragover', (e) => {
@@ -728,6 +728,7 @@ export class SSHTerminal {
     this.container.removeEventListener('pointermove', this.selectionPointerMoveListener, true);
     window.removeEventListener('pointerup', this.selectionPointerUpListener, true);
     window.removeEventListener('pointercancel', this.selectionPointerCancelListener, true);
+    this.container.removeEventListener('contextmenu', this.contextMenuPasteListener);
     this.themeCleanup();
     this.terminalDisposables.forEach(d => d.dispose());
     this.terminalDisposables = [];

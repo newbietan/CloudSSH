@@ -120,3 +120,57 @@ test('旧版复制回退准确返回结果并恢复原焦点', async ({ page }) 
     focusedAfterFailure: true,
   });
 });
+
+test('右键粘贴遵循终端的 bracketed paste 模式并统一换行', async ({ page }) => {
+  await mockAnonymousSession(page);
+  await page.goto('/?lang=zh-CN');
+
+  const result = await page.evaluate(async () => {
+    const terminalModule = await (window as any).eval("import('/src/terminal.ts')");
+    const root = document.createElement('div');
+    root.id = 'terminal-paste-test-root';
+    root.style.width = '800px';
+    root.style.height = '320px';
+    document.body.appendChild(root);
+
+    const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { readText: async () => 'one\r\ntwo\n' },
+    });
+
+    const terminal = new terminalModule.SSHTerminal(root.id);
+    terminal.mount();
+    const xterm = (terminal as any).terminal;
+    (terminal as any).ws = {
+      readyState: WebSocket.OPEN,
+      close: () => undefined,
+    };
+    const pasted: string[] = [];
+    const inputDisposable = xterm.onData((data: string) => pasted.push(data));
+
+    await new Promise<void>((resolve) => xterm.write('\x1b[?2004h', resolve));
+    root.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const bracketed = pasted.join('');
+
+    pasted.length = 0;
+    await new Promise<void>((resolve) => xterm.write('\x1b[?2004l', resolve));
+    root.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const plain = pasted.join('');
+
+    inputDisposable.dispose();
+    terminal.dispose();
+    root.remove();
+    if (clipboardDescriptor) {
+      Object.defineProperty(navigator, 'clipboard', clipboardDescriptor);
+    } else {
+      delete (navigator as any).clipboard;
+    }
+    return { bracketed, plain };
+  });
+
+  expect(result.bracketed).toBe('\x1b[200~one\rtwo\r\x1b[201~');
+  expect(result.plain).toBe('one\rtwo\r');
+});

@@ -1821,7 +1821,9 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 /* ==================== Host IP Badge ==================== */
 
 .host-ip-badge {
-  display: inline-block;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 3px;
@@ -1834,12 +1836,18 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   transition: background 0.2s, border-color 0.2s, color 0.2s;
   user-select: none;
   vertical-align: baseline;
+  line-height: inherit;
 }
 
 .host-ip-badge:hover {
   background: var(--accent-bg);
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.host-ip-badge:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .host-ip-badge.host-ip-copied {

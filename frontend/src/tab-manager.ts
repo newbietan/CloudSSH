@@ -5,17 +5,7 @@ import { t } from './i18n';
 import { getNetworkQuality } from './network-quality';
 import { copyTextToClipboard } from './clipboard';
 import { notify } from './ui-feedback';
-
-const IPV4_RE = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-const IPV6_RE = /^([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):[0-9a-fA-F:]+/;
-
-function maskIP(host: string): string | null {
-  const m4 = IPV4_RE.exec(host);
-  if (m4) return `${m4[1]}.${m4[2]}.*.*`;
-  const m6 = IPV6_RE.exec(host);
-  if (m6) return `${m6[1]}:${m6[2]}:**.**/64`;
-  return null;
-}
+import { maskIPAddress } from './host-display';
 
 export type TabState = 'connecting' | 'connected' | 'disconnected';
 
@@ -421,20 +411,20 @@ export class TabManager {
 
     if (tab.hostInfo) {
       if (termHost) {
-        const masked = maskIP(tab.hostInfo.host);
+        const masked = maskIPAddress(tab.hostInfo.host);
         if (masked) {
-          termHost.innerHTML = `${t('terminal.hostLabel')}<span class="host-ip-badge" title="${t('terminal.clickToCopyIP')}" data-full-ip="${this.escapeAttr(tab.hostInfo.host)}">${this.escapeHtml(masked)}</span>`;
-          const badge = termHost.querySelector('.host-ip-badge') as HTMLElement | null;
+          const copyIPLabel = this.escapeAttr(t('terminal.clickToCopyIP'));
+          termHost.innerHTML = `${t('terminal.hostLabel')}<button type="button" class="host-ip-badge" title="${copyIPLabel}" aria-label="${copyIPLabel}">${this.escapeHtml(masked)}</button>`;
+          const badge = termHost.querySelector('.host-ip-badge') as HTMLButtonElement | null;
           if (badge) {
             badge.addEventListener('click', async () => {
-              const fullIP = badge.dataset.fullIp || '';
-              if (fullIP) {
-                const ok = await copyTextToClipboard(fullIP);
-                if (ok) {
-                  badge.classList.add('host-ip-copied');
-                  setTimeout(() => badge.classList.remove('host-ip-copied'), 800);
-                  notify(t('terminal.ipCopied'), { variant: 'success', duration: 1500 });
-                }
+              const ok = await copyTextToClipboard(tab.hostInfo!.host);
+              if (ok) {
+                badge.classList.add('host-ip-copied');
+                setTimeout(() => badge.classList.remove('host-ip-copied'), 800);
+                notify(t('terminal.ipCopied'), { variant: 'success', duration: 1500 });
+              } else {
+                notify(t('terminal.ipCopyFailed'), { variant: 'danger' });
               }
             });
           }

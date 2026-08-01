@@ -5,7 +5,7 @@ const servers = Array.from({ length: 30 }, (_, index) => ({
   id: index + 1,
   user_id: 1,
   name: `Server ${String(index + 1).padStart(2, '0')}`,
-  host: `host-${index + 1}.example.com`,
+  host: index === 0 ? '203.0.113.42' : `host-${index + 1}.example.com`,
   port: 22,
   username: 'deploy',
   auth_method: 'publickey',
@@ -69,4 +69,27 @@ test('有无标签的同排服务器卡片将操作按钮对齐到底部', async
 
   expect(new Set(positions.map(({ top }) => top)).size).toBe(1);
   expect(new Set(positions.map(({ bottom }) => bottom)).size).toBe(1);
+});
+
+test('IP 掩码按钮支持键盘复制完整地址', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          (window as any).__copiedServerIP = text;
+        },
+      },
+    });
+  });
+  await page.goto('/?lang=zh-CN');
+
+  const badge = page.locator('#host-badge-1');
+  await expect(badge).toHaveJSProperty('tagName', 'BUTTON');
+  await expect(badge).toHaveText('203.0.*.*:22');
+  await badge.focus();
+  await page.keyboard.press('Enter');
+
+  await expect.poll(() => page.evaluate(() => (window as any).__copiedServerIP)).toBe('203.0.113.42');
+  await expect(page.locator('.app-toast')).toContainText('已复制服务器 IP');
 });

@@ -3,6 +3,7 @@ import { confirmAction, notify } from './ui-feedback';
 import { onLocaleChange, t } from './i18n';
 import { parsePort } from './port';
 import { copyTextToClipboard } from './clipboard';
+import { maskIPAddress } from './host-display';
 
 interface UserInfo {
   id: number;
@@ -27,17 +28,6 @@ export interface ServerConfig {
 }
 
 export const SERVER_PAGE_SIZE = 9;
-
-const IPV4_RE = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-const IPV6_RE = /^([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):[0-9a-fA-F:]+/;
-
-function maskIP(host: string): string | null {
-  const m4 = IPV4_RE.exec(host);
-  if (m4) return `${m4[1]}.${m4[2]}.*.*`;
-  const m6 = IPV6_RE.exec(host);
-  if (m6) return `${m6[1]}:${m6[2]}:**.**/64`;
-  return null;
-}
 
 export function normalizeTagsInput(value: string): string[] {
   const tags: string[] = [];
@@ -290,21 +280,20 @@ export class ServerList {
       document.getElementById(`connect-${server.id}`)?.addEventListener('click', () => this.connectServer(server.id));
       document.getElementById(`edit-${server.id}`)?.addEventListener('click', () => this.showModal('edit', server));
       document.getElementById(`delete-${server.id}`)?.addEventListener('click', () => this.deleteServer(server.id));
-        const hostBadge = document.getElementById(`host-badge-${server.id}`);
-        if (hostBadge) {
-          hostBadge.addEventListener('click', async () => {
-            const fullIP = hostBadge.dataset.fullIp || '';
-            if (fullIP) {
-              const ok = await copyTextToClipboard(fullIP);
-              if (ok) {
-                hostBadge.classList.add('host-ip-copied');
-                setTimeout(() => hostBadge.classList.remove('host-ip-copied'), 800);
-                notify(t('server.ipCopied'), { variant: 'success', duration: 1500 });
-              }
-            }
-          });
-        }
-      });
+      const hostBadge = document.getElementById(`host-badge-${server.id}`);
+      if (hostBadge) {
+        hostBadge.addEventListener('click', async () => {
+          const ok = await copyTextToClipboard(server.host);
+          if (ok) {
+            hostBadge.classList.add('host-ip-copied');
+            setTimeout(() => hostBadge.classList.remove('host-ip-copied'), 800);
+            notify(t('server.ipCopied'), { variant: 'success', duration: 1500 });
+          } else {
+            notify(t('server.ipCopyFailed'), { variant: 'danger' });
+          }
+        });
+      }
+    });
 
 
     if (page.totalPages > 1) {
@@ -345,8 +334,10 @@ export class ServerList {
         ).join('')}</div>`
       : '';
 
-    const hostDisplay = maskIP(server.host)
-      ? `<span class="host-ip-badge server-host-badge" id="host-badge-${server.id}" title="${t('server.clickToCopyIP')}" data-full-ip="${this.escapeAttr(server.host)}">${this.escapeHtml(maskIP(server.host)!)}:${server.port}</span>`
+    const maskedHost = maskIPAddress(server.host);
+    const copyIPLabel = this.escapeAttr(t('server.clickToCopyIP'));
+    const hostDisplay = maskedHost
+      ? `<button type="button" class="host-ip-badge server-host-badge" id="host-badge-${server.id}" title="${copyIPLabel}" aria-label="${copyIPLabel}">${this.escapeHtml(maskedHost)}:${server.port}</button>`
       : `<span class="text-on-surface">${this.escapeHtml(server.host)}:${server.port}</span>`;
 
     return `
