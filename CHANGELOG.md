@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3] - 2026-08-02
+
+### Changed
+- 上游同步工作流解析 GitHub Fork 同步接口的返回结果，明确区分无需同步、fast-forward、merge 及异常状态，不再直接展示含义不清的原始 JSON。
+- 同步日志新增简洁中文提示和 GitHub Actions 执行摘要；冲突或权限异常会输出诊断建议并保持任务失败，同时减少不必要的 Emoji 图标。
+
 ## [1.4.2] - 2026-08-01
 
 ### Added
