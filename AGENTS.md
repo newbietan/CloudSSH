@@ -64,6 +64,8 @@ frontend/
 ├── src/
 │   ├── main.ts       # Frontend entry point (routing, theme, event handlers)
 │   ├── terminal.ts   # xterm.js terminal setup (search, dynamic RTT latency, log export)
+│   ├── mobile-terminal.ts # Mobile viewport, shortcut toolbar, clipboard and landscape controller
+│   ├── mobile-input.ts # Pure iOS IME diff and one-shot modifier helpers
 │   ├── tab-manager.ts # Tab manager (multi-session terminal/SFTP/Agent coordinator)
 │   ├── sftp-panel.ts # SFTP file manager UI (multi-select, batch actions, queue, cancel)
 │   ├── sftp-selection.ts # Pure multi-selection state model
@@ -231,6 +233,7 @@ ci: CI/CD 变更
 14. **Agent terminal selection context** - “Ask AI assistant” attaches one immutable selection snapshot per tab and never sends it by itself. New selections replace the pending snapshot; successful sends and session teardown clear it. Preserve the untrusted-data/non-authorization boundary in `terminal-selection-context.ts`.
 15. **Region inference privacy** - Saving or changing a server host calls the third-party IPinfo service and persists the inferred locationHint. Keep the provider name and disclosure synchronized across README/code comments; failures must continue to fall back to Cloudflare's default placement.
 16. **Theme editor ownership** - The full visual editor and JSON export live in `docs/theme-editor/index.html` for GitHub Pages and never authenticate against CloudSSH. `scripts/sync-theme-editor.js` keeps its built-in colors and resolved appearance presets aligned with `frontend/src/theme.ts`; the application and Worker share Theme V2 validation through `src/theme-schema.ts`. The application only imports JSON themes and synchronizes the single custom-theme slot through `/api/user/theme` for signed-in users; later imports replace the previous theme, while anonymous themes remain local.
+17. **Mobile terminal input** - Mobile shortcuts and the iOS keyCode 229 fallback must continue through `TrzszFilter.processTerminalInput`; never send them directly to the WebSocket. Keep touch selection explicit-copy behavior isolated from desktop mouse auto-copy, and debounce visual viewport refits.
 
 ## Deployment Notes
 

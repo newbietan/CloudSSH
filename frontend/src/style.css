@@ -55,6 +55,11 @@
   --motion-normal: 220ms;
   --motion-slow: 320ms;
   --hover-lift: -2px;
+  --visual-viewport-height: 100vh;
+}
+
+@supports (height: 100dvh) {
+  :root { --visual-viewport-height: 100dvh; }
 }
 
 html[data-ui-shape="square"] {
@@ -235,6 +240,16 @@ body {
 /* 终端页面需要禁止页面级滚动，通过 JS 切换此类名 */
 body.terminal-active {
   overflow: hidden;
+  overscroll-behavior: none;
+}
+
+#terminal-section {
+  height: var(--visual-viewport-height);
+  min-height: 0;
+}
+
+.mobile-only {
+  display: none;
 }
 
 .terminal-main {
@@ -1788,10 +1803,261 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 
 /* ==================== Responsive Adaptations ==================== */
 
-@media (max-width: 768px) {
-  /* 终端状态栏信息项缩小间距 */
-  #terminal-wrapper .flex.gap-6 {
-    gap: 8px;
+@media (max-width: 768px), (max-width: 1180px) and (pointer: coarse) {
+  .mobile-only:not(.hidden) {
+    display: flex;
+  }
+
+  .terminal-app-header {
+    height: 48px;
+    min-height: 48px;
+    padding-left: max(8px, env(safe-area-inset-left));
+    padding-right: max(8px, env(safe-area-inset-right));
+  }
+
+  .terminal-app-title {
+    font-size: 17px;
+  }
+
+  .terminal-header-actions {
+    flex-wrap: nowrap;
+    gap: 2px;
+  }
+
+  .terminal-header-actions > button,
+  .mobile-header-button {
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .terminal-header-actions .material-symbols-outlined {
+    font-size: 21px;
+  }
+
+  .desktop-terminal-action {
+    display: none !important;
+  }
+
+  .mobile-more-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: max(8px, env(safe-area-inset-right));
+    z-index: 120;
+    width: min(280px, calc(100vw - 16px));
+    flex-direction: column;
+    padding: 8px;
+    gap: 4px;
+    color: var(--on-surface);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--modal-radius);
+    box-shadow: var(--shadow-floating);
+  }
+
+  .mobile-more-menu > button,
+  .mobile-more-theme-row {
+    display: flex;
+    min-height: 44px;
+    width: 100%;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    color: var(--on-surface);
+    background: transparent;
+    border: 0;
+    border-radius: var(--control-radius);
+    font: inherit;
+    font-size: 12px;
+    text-align: left;
+  }
+
+  .mobile-more-menu > button:active {
+    background: var(--accent-bg);
+  }
+
+  .mobile-more-theme-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .mobile-more-theme-row .theme-selector {
+    width: 100%;
+    min-height: 36px;
+    color: var(--on-surface);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-strong);
+  }
+
+  #tab-bar {
+    height: 38px;
+    min-height: 38px;
+    padding-left: max(4px, env(safe-area-inset-left));
+    padding-right: max(4px, env(safe-area-inset-right));
+  }
+
+  .tab-item {
+    min-height: 34px;
+  }
+
+  .tab-close,
+  .tab-new-btn {
+    min-width: 34px;
+    min-height: 34px;
+  }
+
+  .terminal-main {
+    min-height: 0;
+    padding: 0;
+  }
+
+  #terminal-wrapper {
+    padding: 4px !important;
+    border-left: 0;
+    border-right: 0;
+    border-radius: 0;
+  }
+
+  .terminal-status-bar {
+    min-height: 28px;
+    margin-bottom: 3px !important;
+    padding: 2px 4px 4px !important;
+  }
+
+  .terminal-status-details {
+    min-width: 0;
+    flex: 1;
+    flex-wrap: nowrap !important;
+    gap: 8px !important;
+  }
+
+  #term-host {
+    max-width: none;
+    min-width: 0;
+    flex: 1;
+  }
+
+  #term-user,
+  #term-port,
+  #term-info {
+    display: none;
+  }
+
+  .terminal-footer {
+    display: none !important;
+  }
+
+  .mobile-terminal-toolbar {
+    min-height: 48px;
+    flex: 0 0 auto;
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    overflow: hidden;
+    color: var(--on-surface);
+    background: var(--bg-elevated);
+    border-top: 1px solid var(--border-strong);
+  }
+
+  .mobile-terminal-toolbar-scroll {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    gap: 5px;
+    padding: 4px 6px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-terminal-toolbar-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-terminal-toolbar button {
+    display: inline-flex;
+    min-width: 42px;
+    height: 40px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    padding: 0 9px;
+    color: var(--on-surface);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--control-radius);
+    font: 600 12px/1 var(--font-code);
+  }
+
+  .mobile-terminal-toolbar button:active,
+  .mobile-terminal-toolbar button.is-active {
+    color: var(--accent);
+    background: var(--accent-bg);
+    border-color: var(--accent);
+  }
+
+  .mobile-terminal-toolbar .material-symbols-outlined {
+    font-size: 19px;
+  }
+
+  #agent-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    width: 100% !important;
+    height: var(--visual-viewport-height);
+    max-width: none !important;
+    min-width: 0;
+    border-left: 0;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  .agent-panel-header,
+  .sftp-panel-header {
+    padding-top: env(safe-area-inset-top);
+    min-height: calc(48px + env(safe-area-inset-top));
+  }
+
+  .agent-panel-composer {
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  #sftp-panel {
+    width: 100vw !important;
+    height: var(--visual-viewport-height) !important;
+  }
+
+  .sftp-panel-toolbar {
+    padding-left: max(8px, env(safe-area-inset-left));
+    padding-right: max(8px, env(safe-area-inset-right));
+  }
+
+  .sftp-panel-actions {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .sftp-panel-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sftp-panel-actions button {
+    min-height: 40px;
+    flex: 0 0 auto;
+  }
+
+  .ask-ai-selection-float {
+    max-width: calc(100vw - 24px);
+  }
+
+  .cloudssh-search-box {
+    max-width: calc(100% - 8px);
   }
 }
 

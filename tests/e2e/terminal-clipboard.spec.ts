@@ -78,6 +78,59 @@ test('终端只在正常结束鼠标选区时自动复制', async ({ page }) => 
   expect(result.toastVariant).toBe('success');
 });
 
+test('触摸选区不会自动复制，保留给移动端显式复制按钮', async ({ page }) => {
+  await mockAnonymousSession(page);
+  await page.goto('/?lang=zh-CN');
+
+  const result = await page.evaluate(async () => {
+    const terminalModule = await (window as any).eval("import('/src/terminal.ts')");
+    const root = document.createElement('div');
+    root.id = 'terminal-touch-copy-test-root';
+    root.style.cssText = 'width:390px;height:320px;';
+    document.body.appendChild(root);
+
+    const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    const copiedTexts: string[] = [];
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async (text: string) => copiedTexts.push(text) },
+    });
+
+    const terminal = new terminalModule.SSHTerminal(root.id);
+    terminal.mount();
+    const xterm = (terminal as any).terminal;
+    await new Promise<void>((resolve) => xterm.write('touch', resolve));
+    xterm.select(0, 0, 5);
+    root.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true,
+      button: 0,
+      pointerType: 'touch',
+      clientX: 10,
+      clientY: 10,
+    }));
+    window.dispatchEvent(new PointerEvent('pointerup', {
+      button: 0,
+      pointerType: 'touch',
+      clientX: 60,
+      clientY: 10,
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const output = { copiedTexts, selection: xterm.getSelection() };
+    terminal.dispose();
+    root.remove();
+    if (clipboardDescriptor) {
+      Object.defineProperty(navigator, 'clipboard', clipboardDescriptor);
+    } else {
+      delete (navigator as any).clipboard;
+    }
+    return output;
+  });
+
+  expect(result.copiedTexts).toEqual([]);
+  expect(result.selection).toBe('touch');
+});
+
 test('旧版复制回退准确返回结果并恢复原焦点', async ({ page }) => {
   await mockAnonymousSession(page);
   await page.goto('/?lang=zh-CN');

@@ -1,0 +1,192 @@
+import type { SSHTerminal } from './terminal';
+import type { MobileModifier, MobileTerminalKey } from './mobile-input';
+import { onLocaleChange, t } from './i18n';
+import { notify } from './ui-feedback';
+
+type TerminalGetter = () => SSHTerminal | null;
+
+const TERMINAL_KEY_ACTIONS = new Set<MobileTerminalKey>([
+  'escape', 'tab', 'arrow_up', 'arrow_down', 'arrow_right',
+  'arrow_left', 'home', 'end', 'page_up', 'page_down',
+]);
+
+export class MobileTerminalController {
+  private viewportFrame: number | null = null;
+  private fitFrame: number | null = null;
+  private moreMenu: HTMLElement | null;
+  private modifierButtons: HTMLButtonElement[];
+  private readonly viewportListener = () => this.scheduleViewportUpdate();
+  private readonly terminalStateListener = () => this.syncModifierButtons();
+  private readonly outsideMenuListener = (event: PointerEvent) => {
+    const target = event.target as Node | null;
+    const button = document.getElementById('mobile-more-btn');
+    if (target && (this.moreMenu?.contains(target) || button?.contains(target))) return;
+    this.hideMoreMenu();
+  };
+
+  constructor(private readonly getTerminal: TerminalGetter) {
+    this.moreMenu = document.getElementById('mobile-more-menu');
+    this.modifierButtons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-mobile-modifier]'),
+    );
+  }
+
+  start(): void {
+    window.addEventListener('resize', this.viewportListener, { passive: true });
+    window.addEventListener('orientationchange', this.viewportListener, { passive: true });
+    window.visualViewport?.addEventListener('resize', this.viewportListener, { passive: true });
+    document.addEventListener('fullscreenchange', this.viewportListener);
+    document.addEventListener('cloudssh:mobile-modifier-change', this.terminalStateListener);
+    document.addEventListener('cloudssh:active-terminal-change', this.terminalStateListener);
+    document.addEventListener('pointerdown', this.outsideMenuListener, true);
+
+    document.getElementById('mobile-more-btn')?.addEventListener('click', () => this.toggleMoreMenu());
+    document.getElementById('mobile-search-btn')?.addEventListener('click', () => {
+      this.getTerminal()?.toggleSearch();
+      this.hideMoreMenu();
+    });
+    document.getElementById('mobile-export-btn')?.addEventListener('click', () => {
+      this.getTerminal()?.exportToFile();
+      this.hideMoreMenu();
+    });
+    document.getElementById('mobile-landscape-btn')?.addEventListener('click', () => {
+      void this.requestLandscape();
+      this.hideMoreMenu();
+    });
+
+    document.querySelectorAll<HTMLButtonElement>('[data-terminal-key]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const key = button.dataset.terminalKey || '';
+        const terminal = this.getTerminal();
+        if (terminal && TERMINAL_KEY_ACTIONS.has(key as MobileTerminalKey)) {
+          terminal.sendMobileKey(key as MobileTerminalKey);
+        } else if (terminal && key) {
+          terminal.sendInput(key);
+        }
+        this.syncModifierButtons();
+      });
+    });
+
+    this.modifierButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const terminal = this.getTerminal();
+        if (!terminal) return;
+        const modifier = button.dataset.mobileModifier as MobileModifier;
+        terminal.setMobileModifier(terminal.getMobileModifier() === modifier ? null : modifier);
+        this.syncModifierButtons();
+        terminal.focus();
+      });
+    });
+
+    document.getElementById('mobile-copy-btn')?.addEventListener('click', () => {
+      void this.getTerminal()?.copyCurrentSelection();
+    });
+    document.getElementById('mobile-paste-btn')?.addEventListener('click', () => {
+      void this.getTerminal()?.pasteFromClipboard();
+    });
+    document.getElementById('mobile-keyboard-hide-btn')?.addEventListener('click', () => {
+      this.getTerminal()?.blur();
+    });
+
+    onLocaleChange(() => this.updateOrientationLabel());
+    this.updateOrientationLabel();
+    this.scheduleViewportUpdate();
+  }
+
+  private scheduleViewportUpdate(): void {
+    if (this.viewportFrame !== null) cancelAnimationFrame(this.viewportFrame);
+    this.viewportFrame = requestAnimationFrame(() => {
+      this.viewportFrame = null;
+      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+      document.documentElement.style.setProperty('--visual-viewport-height', `${Math.round(viewportHeight)}px`);
+      this.scheduleFit();
+      this.updateOrientationLabel();
+    });
+  }
+
+  private scheduleFit(): void {
+    if (!document.body.classList.contains('terminal-active')) return;
+    if (this.fitFrame !== null) cancelAnimationFrame(this.fitFrame);
+    this.fitFrame = requestAnimationFrame(() => {
+      this.fitFrame = null;
+      this.getTerminal()?.fit();
+    });
+  }
+
+  private toggleMoreMenu(): void {
+    const hidden = this.moreMenu?.classList.contains('hidden') ?? true;
+    this.moreMenu?.classList.toggle('hidden', !hidden);
+    document.getElementById('mobile-more-btn')?.setAttribute('aria-expanded', String(hidden));
+  }
+
+  private hideMoreMenu(): void {
+    this.moreMenu?.classList.add('hidden');
+    document.getElementById('mobile-more-btn')?.setAttribute('aria-expanded', 'false');
+  }
+
+  private syncModifierButtons(): void {
+    const active = this.getTerminal()?.getMobileModifier() ?? null;
+    this.modifierButtons.forEach((button) => {
+      const pressed = button.dataset.mobileModifier === active;
+      button.classList.toggle('is-active', pressed);
+      button.setAttribute('aria-pressed', String(pressed));
+    });
+  }
+
+  private updateOrientationLabel(): void {
+    const button = document.getElementById('mobile-landscape-btn');
+    if (!button) return;
+    const label = this.isTerminalFullscreen()
+      ? t('terminal.exitFullscreen')
+      : t('terminal.landscapeMode');
+    const text = button.querySelector<HTMLElement>('[data-mobile-landscape-label]');
+    if (text) text.textContent = label;
+    button.title = label;
+  }
+
+  private async requestLandscape(): Promise<void> {
+    if (this.isTerminalFullscreen()) {
+      try { screen.orientation?.unlock?.(); } catch { /* ignore */ }
+      await document.exitFullscreen?.();
+      return;
+    }
+
+    const fullscreenTarget = document.documentElement;
+    if (!fullscreenTarget.requestFullscreen) {
+      notify(t('terminal.landscapeUnsupported'), { variant: 'warning' });
+      return;
+    }
+
+    try {
+      await fullscreenTarget.requestFullscreen();
+      const orientation = screen.orientation as ScreenOrientation & {
+        lock?: (orientation: 'landscape') => Promise<void>;
+      };
+      if (orientation.lock) {
+        await orientation.lock('landscape');
+      } else {
+        notify(t('terminal.rotateManually'), { variant: 'info' });
+      }
+    } catch {
+      if (!this.isTerminalFullscreen()) {
+        notify(t('terminal.landscapeUnsupported'), { variant: 'warning' });
+      } else {
+        notify(t('terminal.rotateManually'), { variant: 'info' });
+      }
+    } finally {
+      this.scheduleViewportUpdate();
+    }
+  }
+
+  leaveTerminal(): void {
+    if (this.isTerminalFullscreen()) {
+      try { screen.orientation?.unlock?.(); } catch { /* ignore */ }
+      void document.exitFullscreen?.();
+    }
+    this.hideMoreMenu();
+  }
+
+  private isTerminalFullscreen(): boolean {
+    return document.fullscreenElement === document.documentElement;
+  }
+}

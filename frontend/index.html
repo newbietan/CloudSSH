@@ -2,7 +2,7 @@
 <html class="dark" lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
   <meta name="color-scheme" content="dark light" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <title>CloudSSH</title>
@@ -234,13 +234,13 @@
     <!-- Terminal Page -->
     <div id="terminal-section" class="hidden h-screen flex-col bg-background text-on-surface">
       <!-- TopAppBar -->
-      <header class="flex justify-between items-center w-full px-6 h-16 bg-background border-b border-outline-variant z-50">
+      <header class="terminal-app-header flex justify-between items-center w-full px-6 h-16 bg-background border-b border-outline-variant z-50 relative">
         <div class="flex items-center gap-6">
-          <h1 class="text-2xl font-bold text-primary-container tracking-tighter cursor-pointer">CloudSSH</h1>
+          <h1 class="terminal-app-title text-2xl font-bold text-primary-container tracking-tighter cursor-pointer">CloudSSH</h1>
         </div>
-        <div class="flex items-center gap-2 sm:gap-4 text-primary-container flex-wrap">
+        <div class="terminal-header-actions flex items-center gap-2 sm:gap-4 text-primary-container flex-wrap">
           <select id="theme-selector" data-theme-selector
-            class="theme-selector bg-surface-variant text-on-surface-variant text-xs py-1 px-2 border-none outline-none cursor-pointer"
+            class="desktop-terminal-action theme-selector bg-surface-variant text-on-surface-variant text-xs py-1 px-2 border-none outline-none cursor-pointer"
             data-i18n-aria-label="theme.selector" aria-label="主题与界面风格">
             <option value="standard-dark">Standard Dark</option>
             <option value="standard-light">Standard Light</option>
@@ -248,17 +248,17 @@
             <option value="glacier">Glacier · Soft</option>
             <option value="gruvbox">Gruvbox · Dense</option>
           </select>
-          <button id="import-theme-btn" data-theme-import class="theme-toolbar-button hover:opacity-80 cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.importTheme" title="导入主题">
+          <button id="import-theme-btn" data-theme-import class="desktop-terminal-action theme-toolbar-button hover:opacity-80 cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.importTheme" title="导入主题">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">upload_file</span>
           </button>
           <input type="file" id="import-theme-input" accept=".json" class="hidden">
           <button id="sftp-toggle-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.sftp" title="SFTP 文件管理器">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">folder_open</span>
           </button>
-          <button id="search-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.search" title="搜索（Ctrl+Shift+F）">
+          <button id="search-btn" class="desktop-terminal-action hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.search" title="搜索（Ctrl+Shift+F）">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">search</span>
           </button>
-          <button id="export-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.export" title="导出终端日志">
+          <button id="export-btn" class="desktop-terminal-action hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.export" title="导出终端日志">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">download</span>
           </button>
           <button id="agent-toggle-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center hidden" data-i18n-title="terminal.agent" title="AI Agent 助手">
@@ -266,6 +266,33 @@
           </button>
           <button id="disconnect-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.disconnect" title="断开连接">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">power_settings_new</span>
+          </button>
+          <button id="mobile-more-btn" type="button" class="mobile-only mobile-header-button" aria-expanded="false" aria-controls="mobile-more-menu" data-i18n-title="terminal.moreActions" title="更多操作">
+            <span class="material-symbols-outlined" aria-hidden="true">more_vert</span>
+          </button>
+        </div>
+        <div id="mobile-more-menu" class="mobile-more-menu mobile-only hidden">
+          <label class="mobile-more-theme-row">
+            <span data-i18n="theme.selector">主题与界面风格</span>
+            <select id="mobile-theme-selector" data-theme-selector class="theme-selector" data-i18n-aria-label="theme.selector" aria-label="主题与界面风格">
+              <option value="standard-dark">Standard Dark</option>
+              <option value="standard-light">Standard Light</option>
+              <option value="cyberpunk">Cyberpunk</option>
+              <option value="glacier">Glacier · Soft</option>
+              <option value="gruvbox">Gruvbox · Dense</option>
+            </select>
+          </label>
+          <button id="mobile-search-btn" type="button">
+            <span class="material-symbols-outlined" aria-hidden="true">search</span><span data-i18n="terminal.searchMobile">搜索</span>
+          </button>
+          <button id="mobile-export-btn" type="button">
+            <span class="material-symbols-outlined" aria-hidden="true">download</span><span data-i18n="terminal.export">导出终端日志</span>
+          </button>
+          <button type="button" data-theme-import>
+            <span class="material-symbols-outlined" aria-hidden="true">upload_file</span><span data-i18n="terminal.importTheme">导入主题</span>
+          </button>
+          <button id="mobile-landscape-btn" type="button">
+            <span class="material-symbols-outlined" aria-hidden="true">screen_rotation</span><span data-mobile-landscape-label data-i18n="terminal.landscapeMode">全屏横屏</span>
           </button>
         </div>
       </header>
@@ -284,8 +311,8 @@
         <div class="absolute inset-0 scanline pointer-events-none z-10 opacity-30"></div>
         <div id="terminal-wrapper" class="h-full w-full border border-outline-variant bg-[var(--bg)] p-2 lg:p-4 overflow-hidden font-code text-[13px] text-primary-container relative z-0 flex flex-col">
           <!-- Status Bar -->
-          <div class="flex justify-between items-center border-b border-[var(--border)] pb-2 mb-4 text-on-surface-variant opacity-80 text-[11px]">
-            <div class="flex gap-2 sm:gap-6 flex-wrap">
+          <div class="terminal-status-bar flex justify-between items-center border-b border-[var(--border)] pb-2 mb-4 text-on-surface-variant opacity-80 text-[11px]">
+            <div class="terminal-status-details flex gap-2 sm:gap-6 flex-wrap">
               <span id="term-status" class="flex items-center gap-1"><div class="w-2 h-2 bg-primary-container"></div> 已连接</span>
               <span id="term-host" class="truncate max-w-[200px]">主机：-</span>
               <span id="term-user" class="truncate max-w-[120px]">用户：-</span>
@@ -300,6 +327,31 @@
         </div>
       </main>
 
+      <nav id="mobile-terminal-toolbar" class="mobile-terminal-toolbar mobile-only" data-i18n-aria-label="terminal.mobileKeyboard" aria-label="终端快捷键">
+        <div class="mobile-terminal-toolbar-scroll">
+          <button type="button" data-terminal-key="escape">Esc</button>
+          <button type="button" data-terminal-key="tab">Tab</button>
+          <button type="button" data-mobile-modifier="ctrl" aria-pressed="false">Ctrl</button>
+          <button type="button" data-mobile-modifier="alt" aria-pressed="false">Alt</button>
+          <button type="button" data-terminal-key="arrow_left" data-i18n-title="terminal.arrowLeft" title="左方向键"><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span></button>
+          <button type="button" data-terminal-key="arrow_up" data-i18n-title="terminal.arrowUp" title="上方向键"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
+          <button type="button" data-terminal-key="arrow_down" data-i18n-title="terminal.arrowDown" title="下方向键"><span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>
+          <button type="button" data-terminal-key="arrow_right" data-i18n-title="terminal.arrowRight" title="右方向键"><span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></button>
+          <button type="button" data-terminal-key="home">Home</button>
+          <button type="button" data-terminal-key="end">End</button>
+          <button type="button" data-terminal-key="page_up">PgUp</button>
+          <button type="button" data-terminal-key="page_down">PgDn</button>
+          <button type="button" data-terminal-key="/">/</button>
+          <button type="button" data-terminal-key="-">-</button>
+          <button type="button" data-terminal-key="_">_</button>
+          <button type="button" data-terminal-key="|">|</button>
+          <button type="button" data-terminal-key="~">~</button>
+          <button id="mobile-copy-btn" type="button" data-i18n-title="terminal.copySelection" title="复制选区"><span class="material-symbols-outlined" aria-hidden="true">content_copy</span></button>
+          <button id="mobile-paste-btn" type="button" data-i18n-title="terminal.paste" title="粘贴"><span class="material-symbols-outlined" aria-hidden="true">content_paste</span></button>
+          <button id="mobile-keyboard-hide-btn" type="button" data-i18n-title="terminal.hideKeyboard" title="收起键盘"><span class="material-symbols-outlined" aria-hidden="true">keyboard_hide</span></button>
+        </div>
+      </nav>
+
       <button id="ask-ai-selection-btn" type="button"
         class="ask-ai-selection-float hidden cyber-button text-primary px-2 py-1 text-[11px] font-bold items-center gap-1"
         data-i18n-title="terminal.askAISelection" title="询问 AI 助手">
@@ -308,7 +360,7 @@
       </button>
 
       <!-- Footer -->
-      <footer class="px-6 py-2 flex justify-between items-center z-50 bg-elevated border-t border-outline-variant text-xs h-12 shrink-0">
+      <footer class="terminal-footer px-6 py-2 flex justify-between items-center z-50 bg-elevated border-t border-outline-variant text-xs h-12 shrink-0">
         <div class="text-secondary-container opacity-60">© <span id="copyright-year"></span> CLOUD_SSH_TERMINAL - https://github.com/newbietan/CloudSSH</div>
         <div class="flex gap-4">
           <a class="text-on-surface-variant opacity-60 hover:opacity-100 transition-opacity" href="https://github.com/newbietan/CloudSSH" data-i18n="common.documentation">文档</a>

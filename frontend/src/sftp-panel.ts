@@ -201,7 +201,7 @@ export class SFTPPanel {
     panel.innerHTML = `
       <div class="flex flex-col w-full h-full bg-surface border-l border-outline-variant text-on-surface">
         <!-- Header -->
-        <div class="flex items-center justify-between px-4 h-12 border-b border-outline-variant bg-elevated shrink-0">
+        <div class="sftp-panel-header flex items-center justify-between px-4 h-12 border-b border-outline-variant bg-elevated shrink-0">
           <div class="flex items-center gap-2">
             <span class="material-symbols-outlined text-primary-container" style="font-size: 18px; font-variation-settings: 'FILL' 1;">folder_open</span>
             <span class="text-xs font-bold tracking-[0.1em] text-primary-container" data-i18n="sftp.title">SFTP 文件管理器</span>
@@ -212,7 +212,7 @@ export class SFTPPanel {
         </div>
 
         <!-- Toolbar -->
-        <div class="flex items-center gap-2 px-3 py-2 border-b border-outline-variant bg-surface shrink-0">
+        <div class="sftp-panel-toolbar flex items-center gap-2 px-3 py-2 border-b border-outline-variant bg-surface shrink-0">
           <button id="sftp-back-btn" class="p-1 hover:bg-surface-variant rounded transition-colors cursor-pointer" data-i18n-title="sftp.back" title="返回上一级">
             <span class="material-symbols-outlined" style="font-size: 18px;">arrow_back</span>
           </button>
@@ -229,7 +229,7 @@ export class SFTPPanel {
         </div>
 
         <!-- Actions Bar -->
-        <div class="flex items-center gap-1 px-3 py-1.5 border-b border-outline-variant bg-surface shrink-0">
+        <div class="sftp-panel-actions flex items-center gap-1 px-3 py-1.5 border-b border-outline-variant bg-surface shrink-0">
           <button id="sftp-upload-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" data-i18n-title="sftp.upload" title="上传文件">
             <span class="material-symbols-outlined" style="font-size: 14px;">upload_file</span>
             <span data-i18n="sftp.uploadAction">上传文件</span>

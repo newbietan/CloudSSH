@@ -12,6 +12,7 @@ import { TabManager } from './tab-manager';
 import { AIConfigPanel } from './ai-config';
 import { notify } from './ui-feedback';
 import { initI18n, onLocaleChange, t } from './i18n';
+import { MobileTerminalController } from './mobile-terminal';
 
 // ==================== 全局状态 ====================
 
@@ -19,6 +20,9 @@ let tabManager: TabManager | null = null;
 let connectionForm: ConnectionForm | null = null;
 let serverList: ServerList | null = null;
 let isLoggedIn = false;
+const mobileTerminalController = new MobileTerminalController(
+  () => tabManager?.getActiveTab()?.terminal ?? null,
+);
 
 /** 获取或初始化 TabManager 单例 */
 function getTabManager(): TabManager {
@@ -98,13 +102,18 @@ function initTerminalTab(): void {
 
 // ==================== 页面切换 ====================
 
-function showAuthSection(): void {
-  document.getElementById('auth-section')!.classList.remove('hidden');
-  document.getElementById('user-space-section')!.classList.add('hidden');
-  document.getElementById('user-space-section')!.classList.remove('flex');
+function deactivateTerminalView(): void {
+  mobileTerminalController.leaveTerminal();
   document.getElementById('terminal-section')!.classList.add('hidden');
   document.getElementById('terminal-section')!.classList.remove('flex');
   document.body.classList.remove('terminal-active');
+}
+
+function showAuthSection(): void {
+  deactivateTerminalView();
+  document.getElementById('auth-section')!.classList.remove('hidden');
+  document.getElementById('user-space-section')!.classList.add('hidden');
+  document.getElementById('user-space-section')!.classList.remove('flex');
   document.getElementById('server-modal')!.classList.add('hidden');
   document.getElementById('server-modal')!.classList.remove('flex');
 
@@ -116,13 +125,11 @@ function showAuthSection(): void {
 }
 
 function showUserSpace(user: { id: number; github_id: number; username: string; avatar_url: string }): void {
+  deactivateTerminalView();
   isLoggedIn = true;
   document.getElementById('auth-section')!.classList.add('hidden');
   document.getElementById('user-space-section')!.classList.remove('hidden');
   document.getElementById('user-space-section')!.classList.add('flex');
-  document.getElementById('terminal-section')!.classList.add('hidden');
-  document.getElementById('terminal-section')!.classList.remove('flex');
-  document.body.classList.remove('terminal-active');
 
   // Show agent toggle button for logged-in users
   document.getElementById('agent-toggle-btn')?.classList.remove('hidden');
@@ -152,21 +159,17 @@ function showConnectionPage(): void {
   // 如果还有活跃标签，不需要隐藏终端区域；只需要覆盖显示连接页面
   // 但为了简单起见，我们先切回对应的入口页面
   if (isLoggedIn) {
-    document.getElementById('terminal-section')!.classList.add('hidden');
-    document.getElementById('terminal-section')!.classList.remove('flex');
-    document.body.classList.remove('terminal-active');
+    deactivateTerminalView();
     document.getElementById('user-space-section')!.classList.remove('hidden');
     document.getElementById('user-space-section')!.classList.add('flex');
   } else {
-    document.getElementById('terminal-section')!.classList.add('hidden');
-    document.getElementById('terminal-section')!.classList.remove('flex');
-    document.body.classList.remove('terminal-active');
     showAuthSection();
   }
 }
 
 function showOfflineUI(): void {
   if (isTerminalTab()) {
+    mobileTerminalController.leaveTerminal();
     window.close();
     return;
   }
@@ -176,12 +179,7 @@ function showOfflineUI(): void {
     return;
   }
 
-  const termSection = document.getElementById('terminal-section');
-  if (termSection) {
-    termSection.classList.add('hidden');
-    termSection.classList.remove('flex');
-    document.body.classList.remove('terminal-active');
-  }
+  deactivateTerminalView();
 
   if (isLoggedIn) {
     document.getElementById('user-space-section')?.classList.remove('hidden');
@@ -484,6 +482,7 @@ async function restoreCloudTheme(
 
 async function init(): Promise<void> {
   initI18n();
+  mobileTerminalController.start();
   onLocaleChange(() => {
     if (localStorage.getItem('cloudssh_imported_theme')) ensureCustomOption();
     tabManager?.refreshTranslations();

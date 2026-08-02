@@ -207,6 +207,7 @@ export class TabManager {
     // 显示目标标签
     tab.containerEl.style.display = 'flex';
     this.activeTabId = tabId;
+    document.dispatchEvent(new Event('cloudssh:active-terminal-change'));
 
     // Mount 并 fit 终端
     tab.terminal.mount();

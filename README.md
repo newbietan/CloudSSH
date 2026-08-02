@@ -88,7 +88,8 @@
 - **多种认证方式**：支持标准 SSH 密码认证，以及 OpenSSH 格式的 Ed25519、ECDSA P-256/P-384/P-521 和 RSA 私钥认证；RSA 默认使用 RSA-SHA2-256/512，只有显式兼容配置才允许旧 `ssh-rsa` SHA-1。
 - **防范中间人攻击 (TOFU)**：首次连接自动提取服务器 Host Key（SHA-256 指纹）并显示，支持 Ed25519/ECDSA/RSA 签名验证，并在本地及 API 持久化缓存已知主机指纹以防范二次连接的欺骗风险。
 - **全功能极客终端**：基于 `@xterm/xterm` 与 `@xterm/addon-webgl` 硬件加速渲染引擎，保证海量日志输出顺滑不卡顿。
-- **可靠的终端剪贴板交互**：鼠标完成终端选区后自动复制，右键可直接粘贴。粘贴统一经过 xterm.js 原生输入管线，仅在远端应用启用 bracketed paste 模式时发送对应控制序列，并自动规范化换行，兼容 Vim 等交互式编辑器和普通 Shell。
+- **可靠的终端剪贴板交互**：鼠标完成终端选区后自动复制，右键可直接粘贴；触摸设备使用快捷键栏中的显式复制与粘贴按钮，避免长按选择误触。粘贴统一经过 xterm.js 原生输入管线，仅在远端应用启用 bracketed paste 模式时发送对应控制序列，并自动规范化换行，兼容 Vim 等交互式编辑器和普通 Shell。
+- **移动端终端适配**：针对手机和平板提供动态可视高度、软键盘与安全区适配、iOS 中文输入法兼容、紧凑工具栏、一次性 Ctrl/Alt、Esc/Tab/方向键/Home/End/PgUp/PgDn 等快捷键，以及移动端全屏 Agent/SFTP 面板。用户可主动尝试“全屏横屏”；浏览器不支持方向锁定时会回退为手动旋转提示，不会强制改变桌面端布局。
 - **个性化 UI**：Theme V2 系统提供 Standard Dark、Standard Light、Cyberpunk、Glacier、Gruvbox 五款内置主题。配套 [GitHub Pages 主题编辑器](https://newbietan.github.io/CloudSSH/)可实时调整颜色、形状、密度、字体、阴影、动效及按钮/输入框/卡片/标签页样式，并预览登录页、服务器列表、终端 + SFTP 和 AI Agent 面板。主题通过 JSON 文件导入、导出、备份与分享；登录用户在应用中导入后会同步到账号并可跨浏览器恢复，匿名用户仅保存在当前浏览器。
 - **SFTP 图形化文件管理**：集成完整的 SFTP v3 文件传输协议，提供图形化文件浏览器界面。支持目录浏览、文件上传/下载、新建文件夹、文件重命名与删除等操作；支持普通单选、`Cmd/Ctrl` 切换选择、`Shift` 连选、全选，以及批量下载文件和批量删除。基于 SSH 子系统实现，与终端会话并行运行，互不干扰，支持下载队列及上传取消。
 - **原生文件传输**：集成 [trzsz.js](https://github.com/trzsz/trzsz.js)，支持 `trz`（上传）/ `tsz`（下载）命令进行文件传输，兼容 tmux 会话。还支持拖拽文件到终端窗口直接上传、目录传输及断点续传等高级功能。（需远程服务器安装 [trzsz](https://trzsz.github.io/)）
@@ -152,6 +153,7 @@ flowchart TB
 | **SFTP 处理器** | `src/worker/sftp-handler.ts` | SFTP 协议操作、任务队列、并发下载、上传跟踪与取消支持 |
 | **SFTP 协议实现** | `src/ssh/sftp.ts` / `sftp-types.ts` | SFTP v3 协议客户端、包解析与类型定义 |
 | **前端终端** | `frontend/src/terminal.ts` | xterm.js 封装、原生右键粘贴、实时双段延迟心跳、网络质量三色提示、终端搜索、选区询问 Agent 及 WebSocket 交互 |
+| **移动端控制器** | `frontend/src/mobile-terminal.ts` / `mobile-input.ts` | 动态视口、iOS IME 补偿、触摸快捷键、剪贴板操作及可选全屏横屏 |
 | **标签管理器** | `frontend/src/tab-manager.ts` | 单页面多会话标签页管理器，协调不同标签页内的终端、SFTP 与 Agent 实例及上下文隔离，并展示可复制的掩码 IP |
 | **服务器列表** | `frontend/src/server-list.ts` | 服务器卡片管理、搜索、标签筛选、IP 隐私展示及每页 9 项分页 |
 | **主机地址展示** | `frontend/src/host-display.ts` | 校验 IPv4/IPv6 字面量并生成统一的隐私掩码文本 |

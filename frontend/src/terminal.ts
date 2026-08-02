@@ -14,6 +14,14 @@ import {
   getActiveTerminalTheme,
   onTerminalThemeChange,
 } from './theme';
+import {
+  applyMobileModifier,
+  diffTextareaInput,
+  isIOSLike,
+  type MobileModifier,
+  type MobileTerminalKey,
+  mobileTerminalKeySequence,
+} from './mobile-input';
 
 const TRZSZ_MAX_DATA_CHUNK_SIZE = 2 * 1024 * 1024;
 
@@ -71,18 +79,15 @@ export class SSHTerminal {
   private onSelectionChanged?: (selection: string, anchor: TerminalSelectionAnchor | null) => void;
   private selectionAnchor: TerminalSelectionAnchor | null = null;
   private selectionPointerActive = false;
+  private mobileModifier: MobileModifier | null = null;
+  private imeTextarea: HTMLTextAreaElement | null = null;
+  private imePendingBaseline: string | null = null;
+  private imePendingHandled = false;
+  private imeKeyupTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly contextMenuPasteListener = async (event: MouseEvent): Promise<void> => {
+    if (window.matchMedia?.('(pointer: coarse)').matches) return;
     event.preventDefault();
-    try {
-      const text = await navigator.clipboard.readText();
-      if (text && this.ws?.readyState === WebSocket.OPEN) {
-        // xterm 会统一换行，并且仅在远端显式启用 bracketed paste 时添加控制序列。
-        // paste() 还会经过 onData/trzsz 输入管线，与键盘粘贴保持一致。
-        this.terminal.paste(text);
-      }
-    } catch (err) {
-      console.error('Failed to read clipboard', err);
-    }
+    await this.pasteFromClipboard();
   };
   private themeCleanup: () => void;
   private resizeListener: () => void;
@@ -104,7 +109,7 @@ export class SSHTerminal {
     this.selectionAnchor = { clientX: event.clientX, clientY: event.clientY };
     this.notifySelectionChanged();
     const selection = this.terminal.getSelection();
-    if (selection) {
+    if (selection && event.pointerType !== 'touch') {
       void this.copySelectionToClipboard(selection);
     }
   };
@@ -198,6 +203,68 @@ export class SSHTerminal {
     }
   }
 
+  /** 通过与物理键盘相同的 trzsz 输入管线发送移动端快捷键。 */
+  sendInput(data: string): boolean {
+    if (!data || this.ws?.readyState !== WebSocket.OPEN || !this.trzszFilter) return false;
+    this.processTerminalInput(data);
+    this.terminal.focus();
+    return true;
+  }
+
+  /** 按 xterm 当前 application cursor mode 发送移动端功能键。 */
+  sendMobileKey(key: MobileTerminalKey): boolean {
+    const data = mobileTerminalKeySequence(
+      key,
+      this.terminal.modes.applicationCursorKeysMode,
+      this.mobileModifier,
+    );
+    this.setMobileModifier(null);
+    return this.sendInput(data);
+  }
+
+  setMobileModifier(modifier: MobileModifier | null): void {
+    this.mobileModifier = modifier;
+    this.container.dispatchEvent(new CustomEvent('cloudssh:mobile-modifier-change', { bubbles: true }));
+  }
+
+  getMobileModifier(): MobileModifier | null {
+    return this.mobileModifier;
+  }
+
+  focus(): void {
+    this.terminal.focus();
+  }
+
+  blur(): void {
+    this.imeTextarea?.blur();
+  }
+
+  async copyCurrentSelection(): Promise<boolean> {
+    const selection = this.terminal.getSelection();
+    if (!selection) {
+      notify(t('terminal.noSelection'), { variant: 'info' });
+      return false;
+    }
+    await this.copySelectionToClipboard(selection);
+    return true;
+  }
+
+  async pasteFromClipboard(): Promise<boolean> {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text || this.ws?.readyState !== WebSocket.OPEN) return false;
+      // xterm 会统一换行，并且仅在远端显式启用 bracketed paste 时添加控制序列。
+      // paste() 还会经过 onData/trzsz 输入管线，与键盘粘贴保持一致。
+      this.setMobileModifier(null);
+      this.terminal.paste(text);
+      return true;
+    } catch (err) {
+      console.error('Failed to read clipboard', err);
+      notify(t('terminal.pasteFailed'), { variant: 'danger' });
+      return false;
+    }
+  }
+
   /** 将文本填入当前远端终端输入行，不附加回车。 */
   fillInput(text: string): boolean {
     if (!text || /[\r\n]/.test(text)) return false;
@@ -256,6 +323,7 @@ export class SSHTerminal {
 
     this.terminal.open(this.container);
     this.mounted = true;
+    this.installIOSIMEFallback();
     
     // Load WebGL addon after terminal is opened
     try {
@@ -567,7 +635,10 @@ export class SSHTerminal {
     // User input goes through trzsz filter
     this.disposables.push(
       this.terminal.onData((data) => {
-        this.trzszFilter!.processTerminalInput(data);
+        if (this.imePendingBaseline !== null && data) {
+          this.imePendingHandled = true;
+        }
+        this.processTerminalInput(data);
       })
     );
 
@@ -588,7 +659,70 @@ export class SSHTerminal {
   }
 
   fit(): void {
+    if (!this.mounted || this.container.clientWidth === 0 || this.container.clientHeight === 0) return;
     this.fitAddon.fit();
+  }
+
+  private processTerminalInput(data: string): void {
+    if (!this.trzszFilter) return;
+    const transformed = applyMobileModifier(data, this.mobileModifier);
+    if (transformed.consumed) this.setMobileModifier(null);
+    this.trzszFilter.processTerminalInput(transformed.data);
+  }
+
+  /**
+   * xterm.js 6.0 尚未包含上游 keyCode=229 keyup 修复。这里只在 iOS-like
+   * 环境补发 xterm 未观察到的 textarea 差异；若 xterm 已产生 onData 则不重复发送。
+   */
+  private installIOSIMEFallback(): void {
+    if (this.imeTextarea) return;
+    const textarea = this.container.querySelector<HTMLTextAreaElement>('.xterm-helper-textarea');
+    if (!textarea) return;
+    this.imeTextarea = textarea;
+    textarea.setAttribute('enterkeyhint', 'enter');
+    textarea.setAttribute('autocapitalize', 'off');
+    textarea.setAttribute('autocomplete', 'off');
+    textarea.setAttribute('autocorrect', 'off');
+    textarea.spellcheck = false;
+    if (!isIOSLike(navigator)) return;
+    textarea.addEventListener('keydown', this.imeKeydownListener, true);
+    textarea.addEventListener('keyup', this.imeKeyupListener, true);
+    textarea.addEventListener('compositionstart', this.imeCompositionStartListener, true);
+  }
+
+  private readonly imeKeydownListener = (event: KeyboardEvent): void => {
+    if (event.keyCode !== 229 || !this.imeTextarea) return;
+    if (this.imePendingBaseline === null) {
+      this.imePendingBaseline = this.imeTextarea.value;
+      this.imePendingHandled = false;
+    }
+  };
+
+  private readonly imeKeyupListener = (event: KeyboardEvent): void => {
+    if (event.keyCode !== 229 || this.imePendingBaseline === null) return;
+    if (this.imeKeyupTimer !== null) clearTimeout(this.imeKeyupTimer);
+    // 让 xterm 自己在 keyup 或先前的 0ms fallback 中优先消费输入。
+    this.imeKeyupTimer = setTimeout(() => {
+      this.imeKeyupTimer = null;
+      if (!this.imePendingHandled && this.imeTextarea && this.imePendingBaseline !== null) {
+        const diff = diffTextareaInput(this.imePendingBaseline, this.imeTextarea.value);
+        if (diff) this.sendInput(diff);
+      }
+      this.clearIMEPendingInput();
+    }, 0);
+  };
+
+  private readonly imeCompositionStartListener = (): void => {
+    this.clearIMEPendingInput();
+  };
+
+  private clearIMEPendingInput(): void {
+    if (this.imeKeyupTimer !== null) {
+      clearTimeout(this.imeKeyupTimer);
+      this.imeKeyupTimer = null;
+    }
+    this.imePendingBaseline = null;
+    this.imePendingHandled = false;
   }
 
   private startHeartbeat(): void {
@@ -729,6 +863,11 @@ export class SSHTerminal {
     window.removeEventListener('pointerup', this.selectionPointerUpListener, true);
     window.removeEventListener('pointercancel', this.selectionPointerCancelListener, true);
     this.container.removeEventListener('contextmenu', this.contextMenuPasteListener);
+    this.imeTextarea?.removeEventListener('keydown', this.imeKeydownListener, true);
+    this.imeTextarea?.removeEventListener('keyup', this.imeKeyupListener, true);
+    this.imeTextarea?.removeEventListener('compositionstart', this.imeCompositionStartListener, true);
+    this.clearIMEPendingInput();
+    this.imeTextarea = null;
     this.themeCleanup();
     this.terminalDisposables.forEach(d => d.dispose());
     this.terminalDisposables = [];
