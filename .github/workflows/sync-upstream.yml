@@ -31,11 +31,14 @@ jobs:
         run: |
           set -euo pipefail
 
+          error_file="$(mktemp)"
+          trap 'rm -f "$error_file"' EXIT
+
           if ! response=$(gh api \
             --method POST \
             "repos/${REPOSITORY}/merge-upstream" \
-            -f branch=main 2>&1); then
-            printf '%s\n' "$response" >&2
+            -f branch=main 2>"$error_file"); then
+            cat "$error_file" >&2
             echo "::error title=上游同步失败::GitHub 无法同步 main 分支，请检查分支冲突或仓库权限。"
             {
               echo "## 上游同步结果"
@@ -45,6 +48,12 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
+
+          if [[ -s "$error_file" ]]; then
+            cat "$error_file" >&2
+          fi
+          rm -f "$error_file"
+          trap - EXIT
 
           merge_type=$(jq -r '.merge_type // "unknown"' <<< "$response")
           base_branch=$(jq -r '.base_branch // "unknown"' <<< "$response")
