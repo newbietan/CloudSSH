@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-08-02
+
+### Added
+- 新增移动端终端快捷工具栏，支持一次性 Ctrl/Alt、Esc、Tab、方向键、Home/End、PgUp/PgDn、常用符号及显式复制、粘贴和隐藏软键盘操作。
+- 新增用户主动触发的全屏横屏入口，并为不支持屏幕方向锁定的浏览器提供手动旋转提示。
+- 新增移动端终端输入、快捷键序列、剪贴板及页面布局的单元和 Chromium 浏览器回归测试。
+
+### Changed
+- 优化手机和平板上的动态视口、软键盘、安全区、触摸选区、终端尺寸重算以及 Agent/SFTP 全屏面板布局，同时保持桌面端布局和鼠标剪贴板交互不变。
+- 更新中英文使用说明，明确移动端适配主要面向临时操作与应急访问；长期、高频或复杂终端任务仍建议使用桌面端。
+
+### Fixed
+- 修复 iOS 中文输入法在 xterm.js 隐藏输入框中可能漏发延迟写入字符的问题。
+- 修复移动端软键盘弹出、屏幕旋转或进入全屏后终端高度和列数可能未及时适配的问题。
+
 ## [1.4.3] - 2026-08-02
 
 ### Changed
