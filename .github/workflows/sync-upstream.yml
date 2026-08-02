@@ -29,7 +29,58 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          gh api \
+          set -euo pipefail
+
+          if ! response=$(gh api \
             --method POST \
             "repos/${REPOSITORY}/merge-upstream" \
-            -f branch=main
+            -f branch=main 2>&1); then
+            printf '%s\n' "$response" >&2
+            echo "::error title=上游同步失败::GitHub 无法同步 main 分支，请检查分支冲突或仓库权限。"
+            {
+              echo "## 上游同步结果"
+              echo
+              echo "- 状态：同步失败"
+              echo "- 建议：检查分支冲突或仓库权限"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          merge_type=$(jq -r '.merge_type // "unknown"' <<< "$response")
+          base_branch=$(jq -r '.base_branch // "unknown"' <<< "$response")
+          detail=""
+
+          case "$merge_type" in
+            none)
+              result="当前 main 分支未落后于上游，无需同步"
+              ;;
+            fast-forward)
+              result="已成功同步上游更新"
+              detail="合并方式：fast-forward"
+              ;;
+            merge)
+              result="已成功同步上游更新"
+              detail="合并方式：merge"
+              ;;
+            *)
+              result="GitHub 已完成同步请求"
+              detail="合并方式：${merge_type}"
+              ;;
+          esac
+
+          echo "上游分支：${base_branch}"
+          echo "同步结果：${result}"
+          if [[ -n "$detail" ]]; then
+            echo "$detail"
+          fi
+          echo "::notice title=上游同步::${result}"
+
+          {
+            echo "## 上游同步结果"
+            echo
+            echo "- 上游分支：\`${base_branch}\`"
+            echo "- 状态：${result}"
+            if [[ -n "$detail" ]]; then
+              echo "- ${detail}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
