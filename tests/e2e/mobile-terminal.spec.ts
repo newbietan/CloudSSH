@@ -83,7 +83,7 @@ test('移动端 Agent 和 SFTP 面板占满终端可用区域', async ({ page })
   expect(dimensions.sftpHeight).toBeGreaterThan(0);
 });
 
-test('iOS keyCode 229 在 keyup 后只补发一次输入法文本', async ({ page }) => {
+test('iOS keyCode 229 在 keyup 后准确补发输入法文本和多字符删除', async ({ page }) => {
   await mockAnonymousSession(page);
   await page.goto('/');
 
@@ -124,6 +124,12 @@ test('iOS keyCode 229 在 keyup 后只补发一次输入法文本', async ({ pag
     textarea.dispatchEvent(keyEvent('keyup'));
     await new Promise((resolve) => setTimeout(resolve, 10));
 
+    textarea.value = 'abc';
+    textarea.dispatchEvent(keyEvent('keydown'));
+    textarea.value = 'a';
+    textarea.dispatchEvent(keyEvent('keyup'));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
     terminal.dispose();
     root.remove();
     for (const [key, descriptor] of Object.entries(descriptors)) {
@@ -133,5 +139,5 @@ test('iOS keyCode 229 在 keyup 后只补发一次输入法文本', async ({ pag
     return payloads;
   });
 
-  expect(sent).toEqual(['。']);
+  expect(sent).toEqual(['。', '\x7f\x7f']);
 });

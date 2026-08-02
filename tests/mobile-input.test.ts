@@ -16,7 +16,7 @@ describe('移动端 IME 输入补偿', () => {
   it('对输入法替换和删除生成终端 DEL 序列', () => {
     expect(diffTextareaInput('ab', 'ac')).toBe('\x7fc');
     expect(diffTextareaInput('abcde', 'abXYde')).toBe('\x7f\x7f\x7fXYde');
-    expect(diffTextareaInput('abc', 'a')).toBe('\x7f');
+    expect(diffTextareaInput('abc', 'a')).toBe('\x7f\x7f');
   });
 
   it('识别 iPhone、iPad 和触摸模式 iPadOS', () => {

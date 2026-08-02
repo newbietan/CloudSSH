@@ -17,7 +17,6 @@ export type MobileTerminalKey =
  */
 export function diffTextareaInput(oldValue: string, newValue: string): string {
   if (oldValue === newValue) return '';
-  if (newValue.length < oldValue.length) return '\x7f';
 
   let commonPrefixLength = 0;
   while (
