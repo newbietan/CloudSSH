@@ -1839,7 +1839,7 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 
 /* ==================== Responsive Adaptations ==================== */
 
-@media (max-width: 768px), (max-width: 1180px) and (pointer: coarse) {
+@media (max-width: 767px), (max-width: 1180px) and (pointer: coarse) {
   .mobile-only:not(.hidden) {
     display: flex;
   }

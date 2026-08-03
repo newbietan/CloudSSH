@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] - 2026-08-03
+
+### Fixed
+- 统一 AI 助手返回终端按钮的可见文案、工具提示与无障碍语义，避免移动端仍提示“关闭 Agent 面板”。
+- 对齐 CSS 与前端逻辑的移动端断点，使 768px 精细指针设备统一使用桌面布局和分页，同时保留触屏平板布局。
+
 ## [1.5.1] - 2026-08-03
 
 ### Changed

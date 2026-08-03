@@ -99,6 +99,18 @@ test('服务器分页在手机、触屏平板和桌面宽度间自动切换', as
   await expect(page.locator('.server-card')).toHaveCount(9);
 });
 
+test.describe('响应式断点边界', () => {
+  test.use({ viewport: { width: 768, height: 800 }, hasTouch: false });
+
+  test('768px 精细指针设备统一使用桌面布局和分页', async ({ page }) => {
+    await page.goto('/?lang=zh-CN');
+
+    await expect(page.locator('.server-card')).toHaveCount(9);
+    await expect(page.locator('#user-space-header-actions')).toBeVisible();
+    await expect(page.locator('#user-space-more-btn')).toBeHidden();
+  });
+});
+
 test('移动端服务器卡片不会被长文本撑宽且表单弹窗在视口内滚动', async ({ page }) => {
   await page.goto('/?lang=zh-CN');
 
