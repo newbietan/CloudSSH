@@ -176,6 +176,7 @@ test('移动端 Agent 可返回终端且 SFTP 面板占满可用区域', async (
   await expect(backButton).toBeVisible();
   await expect(backButton).toContainText('返回终端');
   await expect(backButton).toHaveAttribute('title', '返回终端');
+  await expect(backButton).toHaveAttribute('aria-label', '返回终端');
   await page.locator('#sftp-panel').evaluate((element) => element.remove());
   await backButton.click();
   await expect(page.locator('#agent-panel')).toBeHidden();
