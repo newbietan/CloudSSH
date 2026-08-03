@@ -54,6 +54,7 @@ class FakeSql {
       region: null,
       inferred_hint: 'apac',
       tags: this.storedTags,
+      os: 'ubuntu',
       created_at: '',
       updated_at: '',
     };
@@ -218,5 +219,77 @@ describe('UserDB server tags', () => {
 
     expect(response.status).toBe(200);
     expect(inferLocationHintMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('UserDB server OS detection', () => {
+  beforeEach(() => {
+    inferLocationHintMock.mockReset();
+    inferLocationHintMock.mockResolvedValue({ hint: 'apac', debug: [] });
+  });
+
+  it('幂等地为 servers 表添加 os 列', () => {
+    const sql = new FakeSql();
+    createUserDB(sql);
+
+    expect(sql.statements.some(({ query }) =>
+      query.includes('ALTER TABLE servers ADD COLUMN os TEXT DEFAULT NULL'),
+    )).toBe(true);
+  });
+
+  it('PUT /internal/servers/:id/os 更新操作系统', async () => {
+    const sql = new FakeSql();
+    const database = createUserDB(sql);
+
+    const response = await database.fetch(new Request('http://internal/internal/servers/1/os', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: 7, os: 'ubuntu' }),
+    }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ success: true });
+    expect(sql.statements.some(({ query, values }) =>
+      query.startsWith('UPDATE servers SET os = ?') && values[0] === 'ubuntu',
+    )).toBe(true);
+  });
+
+  it('PUT /internal/servers/:id/os 越权返回 403', async () => {
+    const sql = new FakeSql();
+    const database = createUserDB(sql);
+
+    const response = await database.fetch(new Request('http://internal/internal/servers/1/os', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: 999, os: 'ubuntu' }),
+    }));
+
+    expect(response.status).toBe(403);
+    expect(sql.statements.some(({ query }) => query.startsWith('UPDATE servers SET os'))).toBe(false);
+  });
+
+  it('PUT /internal/servers/:id/os 拒绝空或过长的 os 值', async () => {
+    for (const os of ['', 'a'.repeat(33)]) {
+      const sql = new FakeSql();
+      const database = createUserDB(sql);
+
+      const response = await database.fetch(new Request('http://internal/internal/servers/1/os', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: 7, os }),
+      }));
+
+      expect(response.status).toBe(400);
+    }
+  });
+
+  it('GET /api 服务器列表返回 os 字段', async () => {
+    const sql = new FakeSql();
+    const database = createUserDB(sql);
+
+    const response = await database.fetch(new Request('http://internal/internal/servers?user_id=7'));
+    await expect(response.json()).resolves.toEqual([
+      expect.objectContaining({ os: 'ubuntu' }),
+    ]);
   });
 });

@@ -49,6 +49,7 @@ import { SSHAESCTRCipher, SSHAESGCMCipher, SSHHMAC } from '../ssh/crypto';
 import { SSHAuth } from '../ssh/auth';
 import { SSHChannel, type ChannelDataChunk } from '../ssh/channel';
 import { SFTPHandler } from './sftp-handler';
+import { DETECT_OS_COMMAND, parseDetectedOS } from './os-detect';
 import { AgentCore } from './agent/core';
 import { TerminalContext } from './agent/terminal-context';
 import { AgentExecChannel } from './agent/exec-channel';
@@ -131,6 +132,7 @@ export class SSHSession {
   private env: Env | null = null;
   private userId: string | null = null;
   private githubId: string | null = null;
+  private osDetectInProgress: boolean = false;
 
   constructor(
     ws: WebSocket,
@@ -1145,7 +1147,7 @@ export class SSHSession {
           this.shellReadyTimeout = setTimeout(() => {
             if (this.state === 'shell-requested') {
               this.state = 'ready';
-              this.sendStatus('Shell 已就绪', 'shell_ready');
+              this.onShellReady();
             }
           }, 3000);
         } else if (channelID === this.shellChannel.getLocalChannelID() && this.state === 'shell-requested') {
@@ -1155,7 +1157,7 @@ export class SSHSession {
             this.shellReadyTimeout = null;
           }
           this.state = 'ready';
-          this.sendStatus('Shell 已就绪', 'shell_ready');
+          this.onShellReady();
         } else if (this.sftpHandler && channelID === this.sftpHandler.getChannelID()) {
           // SFTP subsystem request confirmed - send SFTP init
           this.sendDebug(`SFTP CHANNEL_SUCCESS received, calling onSubsystemReady`);
@@ -1207,7 +1209,7 @@ export class SSHSession {
               this.shellReadyTimeout = null;
             }
             this.state = 'ready';
-            this.sendStatus('Shell 已就绪', 'shell_ready');
+            this.onShellReady();
           }
           const outputData = channel.handleChannelData(payload);
           try { this.ws.send(outputData); } catch (e) { this.sendDebug(() => `Send shell output failed: ${e instanceof Error ? e.message : e}`); }
@@ -1763,6 +1765,58 @@ export class SSHSession {
       this.ws.send(JSON.stringify({ type: 'debug', message: typeof message === 'function' ? message() : message }));
     } catch (e) {
       // WebSocket 已关闭，调试消息无法送达
+    }
+  }
+
+  // ==================== 操作系统检测 ====================
+
+  /** Shell 就绪统一入口：发送状态并触发远端 OS 检测（尽力而为，不阻塞就绪流程） */
+  private onShellReady(): void {
+    this.sendStatus('Shell 已就绪', 'shell_ready');
+    void this.detectRemoteOS();
+  }
+
+  /**
+   * 通过独立 exec channel 检测远端操作系统并持久化到 UserDBDO。
+   * 仅对已登录用户的已保存服务器执行；解析/持久化失败都不影响 SSH 会话。
+   */
+  private async detectRemoteOS(): Promise<void> {
+    // 已保存服务器（token 路径才有 serverId）、未检测过、且未在进行中
+    if (!this.config.serverId || !this.userId || !this.githubId || this.config.os || this.osDetectInProgress) {
+      return;
+    }
+    this.osDetectInProgress = true;
+    try {
+      const result = await this.executeAgentCommand(DETECT_OS_COMMAND, 5000);
+      const os = parseDetectedOS(result.stdout + result.stderr);
+
+      try {
+        if (this.env) {
+          const stub = this.env.USER_DB.get(this.env.USER_DB.idFromName(this.githubId));
+          const res = await stub.fetch(
+            new Request(`http://internal/internal/servers/${this.config.serverId}/os`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ user_id: Number(this.userId), os }),
+            })
+          );
+          if (!res.ok) {
+            this.sendDebug(`OS detect persist failed: ${res.status}`);
+          }
+        }
+      } catch (e) {
+        this.sendDebug(`OS detect persist error: ${e instanceof Error ? e.message : String(e)}`);
+      }
+
+      try {
+        if (this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({ type: 'os_detected', serverId: this.config.serverId, os }));
+        }
+      } catch (e) { /* ws closed */ }
+    } catch (e) {
+      this.sendDebug(`OS detect error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      this.osDetectInProgress = false;
     }
   }
 

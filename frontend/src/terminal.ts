@@ -68,6 +68,7 @@ export class SSHTerminal {
   private onSessionClosed?: (event: CloseEvent) => void;
   private onSessionReady?: () => void;
   private onAgentFrameHandler?: (msg: any) => void;
+  private onOSDetectedHandler?: (serverId: number, os: string) => void;
   private sftpAttachUrl: string | null = null;
   private searchBox: HTMLElement | null = null;
   private searchInput: HTMLInputElement | null = null;
@@ -196,6 +197,10 @@ export class SSHTerminal {
 
   setAgentFrameHandler(handler: (msg: any) => void): void {
     this.onAgentFrameHandler = handler;
+  }
+
+  setOSDetectedHandler(handler: (serverId: number, os: string) => void): void {
+    this.onOSDetectedHandler = handler;
   }
 
   sendWebSocketMessage(data: string): void {
@@ -596,6 +601,9 @@ export class SSHTerminal {
               this.cfColo = msg.colo;
               this.onLatencyUpdated?.(this.cfLatency, this.cfColo, this.wsLatency);
               break;
+            case 'os_detected':
+              this.onOSDetectedHandler?.(msg.serverId, msg.os);
+              return;
           }
         } catch {
           // Non-JSON string data — pass through trzsz filter

@@ -51,6 +51,10 @@ export interface SSHConnectionConfig {
   expectedFingerprint?: string;
   userId?: string;
   githubId?: string;
+  /** 已保存服务器的记录 ID（token 路径下由 handleConnectServer 填充，供 OS 检测持久化） */
+  serverId?: number;
+  /** 已检测并持久化的操作系统标识（已设置则连接时跳过重复检测） */
+  os?: string | null;
   /**
    * Cloudflare DO locationHint。
    * - 用户保存服务器时手动覆盖的 `region` → 优先使用
@@ -138,6 +142,8 @@ export interface ServerConfig {
   inferred_hint?: string | null;
   /** 用户用于组织和筛选服务器的单层标签 */
   tags: string[];
+  /** 连接时检测到的远端操作系统（canonical key，如 ubuntu/debian/centos） */
+  os?: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -42,6 +42,9 @@ export class TabManager {
   /** 当所有标签都被关闭时触发，外部可以用它来回到连接页面 */
   private onAllTabsClosed?: () => void;
 
+  /** 连接后检测到远端操作系统时触发（用于更新服务器列表图标） */
+  private onOSDetected?: (serverId: number, os: string) => void;
+
   constructor(tabBarId: string, terminalAreaId: string) {
     this.tabBarEl = document.getElementById(tabBarId)!;
     this.terminalAreaEl = document.getElementById(terminalAreaId)!;
@@ -54,6 +57,10 @@ export class TabManager {
 
   setAllTabsClosedHandler(handler: () => void): void {
     this.onAllTabsClosed = handler;
+  }
+
+  setOSDetectedHandler(handler: (serverId: number, os: string) => void): void {
+    this.onOSDetected = handler;
   }
 
   // ==================== 创建标签 ====================
@@ -144,6 +151,11 @@ export class TabManager {
           this.updateSelectionAction(tab);
         }
       }
+    });
+
+    // 连接后检测到远端操作系统 → 通知外部更新服务器列表图标
+    terminal.setOSDetectedHandler((serverId, os) => {
+      this.onOSDetected?.(serverId, os);
     });
 
     // 设置延迟监测更新回调
