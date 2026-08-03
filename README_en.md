@@ -97,6 +97,7 @@
 - **SFTP Graphical File Manager**: Integrated with a complete SFTP v3 file transfer protocol, providing a graphical file browser interface. Supports directory browsing, file upload/download, creating new folders, file renaming, and deletion, plus plain selection, `Cmd/Ctrl` toggle selection, `Shift` range selection, select all, batch file downloads, and batch deletion. Built on the SSH subsystem, it runs alongside terminal sessions without interference and supports download queues and upload cancellation.
 - **Native File Transfer**: Integrated with [trzsz.js](https://github.com/trzsz/trzsz.js), supporting `trz` (upload) / `tsz` (download) commands for file transfer, fully compatible with tmux sessions. Also supports drag-and-drop file upload to the terminal, directory transfer, and resumable transfers. (Requires [trzsz](https://trzsz.github.io/) installed on the remote server)
 - **GitHub OAuth Integration**: Supports GitHub login, allowing users to save and manage frequently used SSH servers for one-click connections. Each server can have up to 10 normalized tags; the list supports instant search by name, host, or username, tag filtering, and pagination with 9 server cards per page.
+- **Automatic Server OS Detection**: When a signed-in user first connects to a saved server without an OS record, CloudSSH uses a separate SSH exec channel after the terminal is ready to read `/etc/os-release` or `uname`, then shows the corresponding system icon on the server card. Detection runs in the background without blocking the terminal. Only recognized results are saved; unknown results are retried naturally on the next connection, and changing the host or port clears stale results. Anonymous connections do not run this check. The read-only command may appear in the target server's SSH audit logs.
 - **Private IP Display and Quick Copy**: Valid IPv4 and IPv6 addresses are visually masked in the saved-server list and connection status bar to reduce accidental disclosure in demos or screenshots. The complete connection address remains available through mouse or keyboard copy. Hostnames remain unchanged; visual masking is not encryption or access control.
 - **Single-Page Multi-Tab Session**: Switch between multiple independent SSH terminal and SFTP instances within a single browser tab, with isolated sandbox environments.
 - **Secure Connection History**: Saves last 5 connection records locally. Credentials (passwords/private keys) can be client-side encrypted using locally derived AES-256-GCM keys.
@@ -151,6 +152,7 @@ flowchart TB
 | **SSHSessionDO** | `src/worker/durable-object.ts` | SSH session lifecycle management, SSRF protection |
 | **UserDBDO** | `src/worker/user-db.ts` | Per-GitHub-user data, sessions, server configs, normalized tags, and encrypted credentials (SQLite) |
 | **IP Geo Inference** | `src/worker/ip-geo.ts` | Infers target IP region at save time, maps to Cloudflare DO locationHint |
+| **OS Detection** | `src/worker/os-detect.ts` | Parses remote system identity and normalizes persistable OS keys |
 | **SSHSession** | `src/worker/ssh-session.ts` | SSH protocol state machine (connect→version→kex→auth→interactive) |
 | **SSH Protocol Stack** | `src/ssh/*.ts` | Pure TypeScript SSH-2.0 implementation (transport, crypto, auth, channels) |
 | **SFTP Handler** | `src/worker/sftp-handler.ts` | SFTP protocol operations, task queue, concurrent downloads, upload tracking and cancellation |
@@ -191,7 +193,8 @@ This project implements a complete SSH-2.0 protocol stack:
 4. SSHSession executes the complete SSH protocol negotiation (version exchange → key exchange → authentication → channel open → PTY → Shell).
 5. Terminal data travels over WSS between the browser and Worker, and over SSH between the Worker and target server; the Worker bridges the two protocol segments and processes SSH.
 6. SFTP file management runs on a separate SSH subsystem channel, supporting directory browsing, file upload/download, and other operations.
-7. The AI Agent receives the user question and optional terminal-selection context via WebSocket. The selection is marked as untrusted analysis data before AgentCore calls the external LLM API, executes approved commands through SSH exec channels, and streams results back to the frontend.
+7. For a saved server without an OS record, SSHSession performs one read-only system check through a separate exec channel after the Shell is ready. Recognized results are stored in UserDBDO and sent to the frontend; unknown results are not stored.
+8. The AI Agent receives the user question and optional terminal-selection context via WebSocket. The selection is marked as untrusted analysis data before AgentCore calls the external LLM API, executes approved commands through SSH exec channels, and streams results back to the frontend.
 
 <a id="quick-start"></a>
 ## Quick Deployment
@@ -428,7 +431,7 @@ Thank you to the following contributors for improving CloudSSH's code, compatibi
 |-------------|-------------------|
 | [TanXin (@newbietan)](https://github.com/newbietan) | Project creator and maintainer; Cloudflare Serverless architecture, SSH/SFTP, AI Agent, security, theming, and engineering infrastructure |
 | [David xu (@xqdoo00o)](https://github.com/xqdoo00o) | Dropbear compatibility, migration to trzsz file transfer, PTY sizing, and session exit/reconnection improvements |
-| [vonl1 (@vonl1)](https://github.com/vonl1) | Terminal selection auto-copy, Vim-compatible right-click paste, and masked IPv4/IPv6 display with quick full-address copy |
+| [vonl1 (@vonl1)](https://github.com/vonl1) | Terminal selection auto-copy, Vim-compatible right-click paste, masked IPv4/IPv6 display with quick full-address copy, and automatic server OS detection with branded icons |
 
 The list and contribution summaries are based on Git history and accepted Pull Requests; one contributor may appear under multiple historical Git author names or email addresses. See [GitHub Contributors](https://github.com/newbietan/CloudSSH/graphs/contributors) for the complete record. Issues and Pull Requests are welcome.
 

@@ -1,10 +1,10 @@
 import { populateRegionSelect, regionLabel } from './regions';
 import { confirmAction, notify } from './ui-feedback';
-import { onLocaleChange, t, type TranslationKey } from './i18n';
+import { onLocaleChange, t } from './i18n';
 import { parsePort } from './port';
 import { copyTextToClipboard } from './clipboard';
 import { maskIPAddress } from './host-display';
-import { osIconSvg, isKnownOS } from './os-icons';
+import { osDisplayName, osIconSvg } from './os-icons';
 
 interface UserInfo {
   id: number;
@@ -356,8 +356,7 @@ export class ServerList {
   private renderOSIconMarkup(os: string | null | undefined): string {
     const svg = osIconSvg(os);
     if (svg) {
-      const key = isKnownOS(os) ? os! : 'linux';
-      const label = isKnownOS(os) ? t(`os.${key}` as TranslationKey) : t('os.linux');
+      const label = osDisplayName(os) ?? t('os.linux');
       return `<span class="server-os-icon shrink-0" title="${this.escapeAttr(label)}">${svg}</span>`;
     }
     return `<span class="material-symbols-outlined text-primary shrink-0" style="font-size: 20px; font-variation-settings: 'FILL' 0;">dns</span>`;

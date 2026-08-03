@@ -1,6 +1,7 @@
 import { Env, UserInfo, ServerConfig, SSHConnectionConfig, ALLOWED_LOCATION_HINTS } from '../types';
 import { inferLocationHint, type InferResult } from './ip-geo';
 import { deserializeServerRow, serializeServerTags } from './server-tags';
+import { isDetectedOS } from './os-detect';
 
 const AUTH_METHODS = new Set(['password', 'publickey']);
 
@@ -436,13 +437,14 @@ export class UserDBDO {
 
     // 验证服务器属于该用户
     const existing = this.db.exec(
-      'SELECT user_id, host, auth_method, region, inferred_hint FROM servers WHERE id = ?',
+      'SELECT user_id, host, port, auth_method, region, inferred_hint FROM servers WHERE id = ?',
       serverId,
     ).toArray();
     if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
     const current = existing[0] as unknown as {
       user_id: number;
       host: string;
+      port: number;
       auth_method: string;
       region: string | null;
       inferred_hint: string | null;
@@ -467,6 +469,7 @@ export class UserDBDO {
       ? ((ALLOWED_LOCATION_HINTS as readonly string[]).includes(body.region) ? body.region : null)
       : current.region;
     const hostChanged = body.host !== undefined && body.host !== current.host;
+    const portChanged = body.port !== undefined && body.port !== current.port;
     const switchedToAuto = body.region !== undefined
       && normalizedRegion === null
       && current.region !== null;
@@ -514,6 +517,10 @@ export class UserDBDO {
       }
       updates.push('port = ?');
       values.push(body.port);
+    }
+    if (hostChanged || portChanged) {
+      // 主机地址或端口可能指向另一台 SSH 服务，旧 OS 结果不可继续复用。
+      updates.push('os = NULL');
     }
     if (body.username !== undefined) {
       updates.push('username = ?');
@@ -582,12 +589,12 @@ export class UserDBDO {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    if (typeof body.os !== 'string' || body.os.length === 0 || body.os.length > 32) {
+    if (!isDetectedOS(body.os)) {
       return Response.json({ error: 'Invalid os' }, { status: 400 });
     }
 
     this.db.exec(
-      "UPDATE servers SET os = ?, updated_at = datetime('now') WHERE id = ?",
+      'UPDATE servers SET os = ? WHERE id = ?',
       body.os,
       serverId
     );

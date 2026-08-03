@@ -250,8 +250,22 @@ describe('UserDB server OS detection', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ success: true });
     expect(sql.statements.some(({ query, values }) =>
-      query.startsWith('UPDATE servers SET os = ?') && values[0] === 'ubuntu',
+      query === 'UPDATE servers SET os = ? WHERE id = ?' && values[0] === 'ubuntu',
     )).toBe(true);
+  });
+
+  it('后台更新操作系统不改变服务器 updated_at 和列表排序', async () => {
+    const sql = new FakeSql();
+    const database = createUserDB(sql);
+
+    await database.fetch(new Request('http://internal/internal/servers/1/os', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: 7, os: 'debian' }),
+    }));
+
+    const update = sql.statements.find(({ query }) => query.startsWith('UPDATE servers SET os'));
+    expect(update?.query).not.toContain('updated_at');
   });
 
   it('PUT /internal/servers/:id/os 越权返回 403', async () => {
@@ -268,8 +282,8 @@ describe('UserDB server OS detection', () => {
     expect(sql.statements.some(({ query }) => query.startsWith('UPDATE servers SET os'))).toBe(false);
   });
 
-  it('PUT /internal/servers/:id/os 拒绝空或过长的 os 值', async () => {
-    for (const os of ['', 'a'.repeat(33)]) {
+  it('PUT /internal/servers/:id/os 拒绝 unknown 和非规范 os 值', async () => {
+    for (const os of ['', 'unknown', 'Ubuntu', 'a'.repeat(33)]) {
       const sql = new FakeSql();
       const database = createUserDB(sql);
 
@@ -281,6 +295,35 @@ describe('UserDB server OS detection', () => {
 
       expect(response.status).toBe(400);
     }
+  });
+
+  it('修改主机地址或端口时清空旧 os，普通编辑时保留', async () => {
+    for (const update of [
+      { host: 'new.example.com' },
+      { port: 2222 },
+    ]) {
+      const sql = new FakeSql();
+      const database = createUserDB(sql);
+      const response = await database.fetch(new Request('http://internal/internal/servers/1', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: 7, ...update }),
+      }));
+
+      expect(response.status).toBe(200);
+      expect(sql.statements.some(({ query }) =>
+        query.startsWith('UPDATE servers SET') && query.includes('os = NULL'),
+      )).toBe(true);
+    }
+
+    const sql = new FakeSql();
+    const database = createUserDB(sql);
+    await database.fetch(new Request('http://internal/internal/servers/1', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: 7, name: 'Renamed' }),
+    }));
+    expect(sql.statements.some(({ query }) => query.includes('os = NULL'))).toBe(false);
   });
 
   it('GET /api 服务器列表返回 os 字段', async () => {

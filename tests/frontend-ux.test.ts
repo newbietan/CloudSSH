@@ -10,6 +10,8 @@ import {
 import { getNetworkQuality } from '../frontend/src/network-quality';
 import { parsePort } from '../frontend/src/port';
 import { resolveTerminalFontSize } from '../frontend/src/terminal-layout';
+import { osDisplayName, osIconSvg } from '../frontend/src/os-icons';
+import { DETECTED_OS_KEYS } from '../src/worker/os-detect';
 
 const servers: ServerConfig[] = [
   {
@@ -37,6 +39,21 @@ const servers: ServerConfig[] = [
     updated_at: '',
   },
 ];
+
+describe('服务器操作系统图标', () => {
+  it('后端所有可持久化 OS key 都有可访问名称和图标回退', () => {
+    for (const os of DETECTED_OS_KEYS) {
+      expect(osDisplayName(os), os).not.toBeNull();
+      expect(osIconSvg(os), os).toContain('<svg');
+    }
+  });
+
+  it('未知或空值继续使用服务器默认图标', () => {
+    expect(osDisplayName('unknown')).toBeNull();
+    expect(osIconSvg('unknown')).toBeNull();
+    expect(osIconSvg(null)).toBeNull();
+  });
+});
 
 describe('服务器列表搜索', () => {
   it('手机、触屏平板和桌面端分别使用 3、6、9 张分页', () => {

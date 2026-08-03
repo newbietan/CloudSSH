@@ -11,6 +11,7 @@ const servers = Array.from({ length: 30 }, (_, index) => ({
   auth_method: 'publickey',
   region: null,
   inferred_hint: 'apac',
+  os: index === 0 ? 'ubuntu' : null,
   tags: index === 2 ? [] : index % 2 === 0 ? ['production', 'apac'] : ['staging'],
   created_at: '',
   updated_at: '',
@@ -92,4 +93,16 @@ test('IP 掩码按钮支持键盘复制完整地址', async ({ page }) => {
 
   await expect.poll(() => page.evaluate(() => (window as any).__copiedServerIP)).toBe('203.0.113.42');
   await expect(page.locator('.app-toast')).toContainText('已复制服务器 IP');
+});
+
+test('已识别服务器显示系统图标，未识别服务器保留默认图标', async ({ page }) => {
+  await page.goto('/?lang=zh-CN');
+
+  const firstCard = page.locator('.server-card').nth(0);
+  await expect(firstCard.locator('.server-os-icon')).toHaveAttribute('title', 'Ubuntu');
+  await expect(firstCard.locator('.server-os-icon svg')).toHaveAttribute('aria-label', 'Ubuntu');
+
+  const secondCard = page.locator('.server-card').nth(1);
+  await expect(secondCard.locator('.server-os-icon')).toHaveCount(0);
+  await expect(secondCard.locator('.material-symbols-outlined').first()).toHaveText('dns');
 });

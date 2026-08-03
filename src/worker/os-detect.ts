@@ -7,10 +7,27 @@
 
 /**
  * 检测命令：优先读取 /etc/os-release（现代发行版），其次旧式
- * /etc/redhat-release，再次任意 /etc/*-release，最后回退到 uname -s。
+ * /etc/redhat-release，随后回退到 uname -s。末尾的 %OS% 用于兼容
+ * 以 cmd.exe 为默认 Shell 的 Windows OpenSSH。
  */
 export const DETECT_OS_COMMAND =
-  'cat /etc/os-release 2>/dev/null || cat /etc/redhat-release 2>/dev/null || cat /etc/*-release 2>/dev/null || uname -s 2>/dev/null';
+  'cat /etc/os-release 2>/dev/null || cat /etc/redhat-release 2>/dev/null || uname -s 2>/dev/null || echo %OS%';
+
+/** 可持久化的规范 OS key；unknown 只表示本次未识别，不应写入数据库。 */
+export const DETECTED_OS_KEYS = [
+  'ubuntu', 'debian', 'centos', 'rhel', 'fedora', 'arch', 'alpine',
+  'rocky', 'almalinux', 'opensuse', 'suse', 'kali', 'mint', 'manjaro',
+  'popos', 'oracle', 'gentoo', 'nixos', 'void', 'raspbian', 'macos',
+  'freebsd', 'openbsd', 'netbsd', 'linux', 'solaris', 'windows',
+] as const;
+
+export type DetectedOS = typeof DETECTED_OS_KEYS[number];
+
+const DETECTED_OS_KEY_SET = new Set<string>(DETECTED_OS_KEYS);
+
+export function isDetectedOS(value: unknown): value is DetectedOS {
+  return typeof value === 'string' && DETECTED_OS_KEY_SET.has(value);
+}
 
 /** ID=/ID_LIKE= 值 → 规范 key */
 const OS_ALIASES: Record<string, string> = {
@@ -98,7 +115,9 @@ export function parseDetectedOS(output: string): string {
   if (uname.includes('netbsd')) return 'netbsd';
   if (uname.includes('linux')) return 'linux';
   if (uname.includes('sunos')) return 'solaris';
-  if (uname.includes('mingw') || uname.includes('cygwin') || uname.includes('msys')) return 'windows';
+  if (uname.includes('windows_nt') || uname.includes('mingw') || uname.includes('cygwin') || uname.includes('msys')) {
+    return 'windows';
+  }
 
   return 'unknown';
 }

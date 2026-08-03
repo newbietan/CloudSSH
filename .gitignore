@@ -8,6 +8,3 @@ dist/
 coverage/
 playwright-report/
 test-results/
-
-# AI 协作配置文件（本地使用，不纳入版本控制）
-CLAUDE.md

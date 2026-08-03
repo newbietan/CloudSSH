@@ -97,6 +97,7 @@
 - **SFTP 图形化文件管理**：集成完整的 SFTP v3 文件传输协议，提供图形化文件浏览器界面。支持目录浏览、文件上传/下载、新建文件夹、文件重命名与删除等操作；支持普通单选、`Cmd/Ctrl` 切换选择、`Shift` 连选、全选，以及批量下载文件和批量删除。基于 SSH 子系统实现，与终端会话并行运行，互不干扰，支持下载队列及上传取消。
 - **原生文件传输**：集成 [trzsz.js](https://github.com/trzsz/trzsz.js)，支持 `trz`（上传）/ `tsz`（下载）命令进行文件传输，兼容 tmux 会话。还支持拖拽文件到终端窗口直接上传、目录传输及断点续传等高级功能。（需远程服务器安装 [trzsz](https://trzsz.github.io/)）
 - **GitHub OAuth 集成**：支持 GitHub 登录，用户可保存和管理常用 SSH 服务器，实现一键连接；服务器支持最多 10 个规范化标签，列表可按名称、主机地址、用户名即时搜索并按标签筛选，每页固定展示 9 张服务器卡片。
+- **服务器系统自动识别**：登录用户首次连接尚未识别的已保存服务器时，CloudSSH 会在终端就绪后通过独立 SSH exec 通道读取 `/etc/os-release` 或 `uname`，并在服务器卡片显示对应系统图标。检测在后台执行，不阻塞终端；只有成功识别的结果才会保存，未识别结果会留待下次连接重新探测，修改主机地址或端口也会清除旧结果。匿名连接不执行该检测。该只读命令可能出现在目标服务器的 SSH 审计日志中。
 - **IP 隐私展示与快捷复制**：服务器列表和连接状态栏会对有效 IPv4/IPv6 地址进行视觉掩码，减少演示或截图时意外暴露完整地址的风险；可通过鼠标点击或键盘操作复制用于连接的完整 IP。域名保持原样显示，视觉掩码不等同于加密或访问控制。
 - **单页面多标签会话管理**：支持在单个页面内开启与切换多个独立的 SSH 终端与 SFTP 文件管理器，各会话环境和状态完全隔离，并在个性化主题编辑器中进行了联动适配。
 - **安全匿名历史记录**：本地存储最近 5 条匿名连接，且敏感凭证可选使用本地派生的密钥进行 AES-256-GCM 安全加密存储至 `localStorage`，提供一键回填与清除。
@@ -151,6 +152,7 @@ flowchart TB
 | **SSHSessionDO** | `src/worker/durable-object.ts` | SSH 会话生命周期管理、SSRF 防护 |
 | **UserDBDO** | `src/worker/user-db.ts` | 按 GitHub 用户隔离的用户数据、Session、服务器配置、规范化标签与凭据存储（SQLite） |
 | **IP 地理推断** | `src/worker/ip-geo.ts` | 保存服务器时推断目标 IP 所在区域，映射到 Cloudflare DO locationHint |
+| **操作系统识别** | `src/worker/os-detect.ts` | 解析远端系统标识、规范化可持久化 OS key |
 | **SSHSession** | `src/worker/ssh-session.ts` | SSH 协议状态机（连接→版本→密钥交换→认证→交互） |
 | **SSH 协议栈** | `src/ssh/*.ts` | 纯 TypeScript SSH-2.0 实现（传输层、加密、认证、通道） |
 | **SFTP 处理器** | `src/worker/sftp-handler.ts` | SFTP 协议操作、任务队列、并发下载、上传跟踪与取消支持 |
@@ -191,7 +193,8 @@ flowchart TB
 4. SSHSession 执行完整的 SSH 协议协商（版本交换→密钥交换→认证→打开通道→PTY→Shell）。
 5. 终端数据在浏览器与 Worker 之间通过 WSS 传输，在 Worker 与目标服务器之间通过 SSH 加密传输；Worker 负责两段协议之间的转发和 SSH 协议处理。
 6. SFTP 文件管理通过独立的 SSH 子系统通道运行，支持目录浏览、文件上传/下载等操作。
-7. AI 助手通过 WebSocket 接收用户问题及可选的终端选区上下文；选区被标记为非可信分析数据后交给 AgentCore，后者调用外部 LLM API，通过 SSH exec 通道执行获准的命令，并将结果流式返回前端。
+7. 对尚无 OS 记录的已保存服务器，SSHSession 在 Shell 就绪后通过独立 exec 通道进行一次只读系统识别；成功结果写入 UserDBDO 并通知前端更新卡片，未知结果不保存。
+8. AI 助手通过 WebSocket 接收用户问题及可选的终端选区上下文；选区被标记为非可信分析数据后交给 AgentCore，后者调用外部 LLM API，通过 SSH exec 通道执行获准的命令，并将结果流式返回前端。
 
 <a id="quick-start"></a>
 ## 快速部署
@@ -430,7 +433,7 @@ test 分支（开发/测试）  ──合并──>  main 分支（生产）
 |--------|----------|
 | [TanXin (@newbietan)](https://github.com/newbietan) | 项目发起与持续维护；Cloudflare Serverless、SSH/SFTP、AI Agent、安全体系、主题系统及工程化建设 |
 | [David xu (@xqdoo00o)](https://github.com/xqdoo00o) | Dropbear 兼容、trzsz 文件传输迁移、PTY 尺寸处理，以及会话退出与重连交互优化 |
-| [vonl1 (@vonl1)](https://github.com/vonl1) | 终端选区自动复制、兼容 Vim 的右键粘贴体验，以及服务器 IPv4/IPv6 掩码与完整地址快捷复制 |
+| [vonl1 (@vonl1)](https://github.com/vonl1) | 终端选区自动复制、兼容 Vim 的右键粘贴体验、服务器 IPv4/IPv6 掩码与完整地址快捷复制，以及服务器操作系统自动识别与品牌图标 |
 
 名单及贡献说明依据 Git 提交历史与已接收的 Pull Request 整理；同一贡献者在历史中可能使用过不同的 Git 作者名称或邮箱。完整记录请参阅 [GitHub Contributors](https://github.com/newbietan/CloudSSH/graphs/contributors)。欢迎通过 Issue 和 Pull Request 参与项目建设。
 

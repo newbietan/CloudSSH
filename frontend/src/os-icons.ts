@@ -32,9 +32,26 @@ const OS_ICONS: Record<string, OSIcon> = {
   windows: { path: 'M0,0H11.377V11.372H0ZM12.623,0H24V11.372H12.623ZM0,12.623H11.377V24H0Zm12.623,0H24V24H12.623', hex: '#0078D4' },
 };
 
-/** suse 复用 opensuse 图标 */
+/** 无独立图标的已识别系统使用最接近的紧凑图标，避免继续扩大单文件前端包体。 */
 const OS_ICON_ALIASES: Record<string, string> = {
   suse: 'opensuse',
+  popos: 'linux',
+  oracle: 'linux',
+  nixos: 'linux',
+  void: 'linux',
+  netbsd: 'linux',
+  solaris: 'linux',
+};
+
+const OS_DISPLAY_NAMES: Record<string, string> = {
+  ubuntu: 'Ubuntu', debian: 'Debian', centos: 'CentOS', fedora: 'Fedora',
+  arch: 'Arch Linux', alpine: 'Alpine Linux', rhel: 'Red Hat Enterprise Linux',
+  rocky: 'Rocky Linux', almalinux: 'AlmaLinux', opensuse: 'openSUSE',
+  suse: 'SUSE Linux', kali: 'Kali Linux', mint: 'Linux Mint', manjaro: 'Manjaro',
+  popos: 'Pop!_OS', oracle: 'Oracle Linux', gentoo: 'Gentoo Linux', nixos: 'NixOS',
+  void: 'Void Linux', raspbian: 'Raspberry Pi OS', macos: 'macOS', windows: 'Windows',
+  freebsd: 'FreeBSD', openbsd: 'OpenBSD', netbsd: 'NetBSD', linux: 'Linux',
+  solaris: 'Solaris',
 };
 
 /**
@@ -45,12 +62,11 @@ export function osIconSvg(os: string | null | undefined): string | null {
   const key = OS_ICON_ALIASES[os] ?? os;
   const icon = OS_ICONS[key];
   if (!icon) return null;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="${icon.hex}" role="img" aria-label="${key}"><path d="${icon.path}"/></svg>`;
+  const label = OS_DISPLAY_NAMES[os] ?? OS_DISPLAY_NAMES[key] ?? key;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="${icon.hex}" role="img" aria-label="${label}"><path d="${icon.path}"/></svg>`;
 }
 
-/** 是否已识别为已知操作系统（供 i18n title / 校验使用） */
-export function isKnownOS(os: string | null | undefined): boolean {
-  if (!os) return false;
-  const key = OS_ICON_ALIASES[os] ?? os;
-  return !!OS_ICONS[key];
+export function osDisplayName(os: string | null | undefined): string | null {
+  if (!os) return null;
+  return OS_DISPLAY_NAMES[os] ?? null;
 }

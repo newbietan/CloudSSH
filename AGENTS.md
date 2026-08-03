@@ -29,8 +29,9 @@ src/
 │   ├── durable-object.ts  # SSHSessionDO - manages SSH sessions
 │   ├── ssh-session.ts     # SSH session logic, multi-channel routing, SFTP handling
 │   ├── sftp-handler.ts    # SFTP protocol ops, task queue, concurrent download, upload tracking
-│   ├── user-db.ts    # UserDBDO - user/server storage（含单层标签持久化）
+│   ├── user-db.ts    # UserDBDO - user/server storage（含标签与 OS 标识持久化）
 │   ├── server-tags.ts # 服务器标签规范化与 SQLite JSON 序列化
+│   ├── os-detect.ts  # 远端操作系统输出解析、规范 key 与持久化白名单
 │   ├── auth.ts       # GitHub OAuth handling
 │   ├── agent/        # AI Agent system
 │   │   ├── core.ts       # Agent control loop (LLM calls, tool execution)
@@ -234,6 +235,7 @@ ci: CI/CD 变更
 15. **Region inference privacy** - Saving or changing a server host calls the third-party IPinfo service and persists the inferred locationHint. Keep the provider name and disclosure synchronized across README/code comments; failures must continue to fall back to Cloudflare's default placement.
 16. **Theme editor ownership** - The full visual editor and JSON export live in `docs/theme-editor/index.html` for GitHub Pages and never authenticate against CloudSSH. `scripts/sync-theme-editor.js` keeps its built-in colors and resolved appearance presets aligned with `frontend/src/theme.ts`; the application and Worker share Theme V2 validation through `src/theme-schema.ts`. The application only imports JSON themes and synchronizes the single custom-theme slot through `/api/user/theme` for signed-in users; later imports replace the previous theme, while anonymous themes remain local.
 17. **Mobile terminal input** - Mobile shortcuts and the iOS keyCode 229 fallback must continue through `TrzszFilter.processTerminalInput`; never send them directly to the WebSocket. Keep touch selection explicit-copy behavior isolated from desktop mouse auto-copy, and debounce visual viewport refits.
+18. **Saved-server OS detection** - Run OS detection only for signed-in saved servers without a persisted result, through a separate non-blocking SSH exec channel after Shell readiness. Never persist `unknown`; host or port changes must clear the stored OS, and background metadata updates must not change `updated_at` or server ordering. Keep backend canonical keys synchronized with frontend labels/icon fallbacks.
 
 ## Deployment Notes
 

@@ -49,7 +49,7 @@ import { SSHAESCTRCipher, SSHAESGCMCipher, SSHHMAC } from '../ssh/crypto';
 import { SSHAuth } from '../ssh/auth';
 import { SSHChannel, type ChannelDataChunk } from '../ssh/channel';
 import { SFTPHandler } from './sftp-handler';
-import { DETECT_OS_COMMAND, parseDetectedOS } from './os-detect';
+import { DETECT_OS_COMMAND, isDetectedOS, parseDetectedOS } from './os-detect';
 import { AgentCore } from './agent/core';
 import { TerminalContext } from './agent/terminal-context';
 import { AgentExecChannel } from './agent/exec-channel';
@@ -1788,7 +1788,15 @@ export class SSHSession {
     this.osDetectInProgress = true;
     try {
       const result = await this.executeAgentCommand(DETECT_OS_COMMAND, 5000);
-      const os = parseDetectedOS(result.stdout + result.stderr);
+      // stderr 可能包含 Shell 或权限错误，不能参与发行版名称解析。
+      const os = parseDetectedOS(result.stdout);
+      if (!isDetectedOS(os)) {
+        this.sendDebug('OS detect returned unknown; leaving it unset for the next connection');
+        return;
+      }
+
+      // 防止同一会话内重复触发；数据库写入失败时，下次新连接仍会再次检测。
+      this.config.os = os;
 
       try {
         if (this.env) {

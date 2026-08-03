@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { DETECT_OS_COMMAND, parseDetectedOS } from '../../src/worker/os-detect';
+import {
+  DETECT_OS_COMMAND,
+  isDetectedOS,
+  parseDetectedOS,
+} from '../../src/worker/os-detect';
 
 describe('parseDetectedOS', () => {
   it('解析 Ubuntu 的 /etc/os-release', () => {
@@ -57,6 +61,10 @@ PRETTY_NAME="My OS"`;
     expect(parseDetectedOS('Linux')).toBe('linux');
   });
 
+  it('识别 Windows OpenSSH 的 %OS% 输出', () => {
+    expect(parseDetectedOS('Windows_NT\r\n')).toBe('windows');
+  });
+
   it('空输出返回 unknown', () => {
     expect(parseDetectedOS('')).toBe('unknown');
     expect(parseDetectedOS(undefined as unknown as string)).toBe('unknown');
@@ -65,5 +73,14 @@ PRETTY_NAME="My OS"`;
   it('DETECT_OS_COMMAND 优先 os-release，回退 uname', () => {
     expect(DETECT_OS_COMMAND).toContain('cat /etc/os-release');
     expect(DETECT_OS_COMMAND).toContain('uname -s');
+    expect(DETECT_OS_COMMAND).toContain('echo %OS%');
+    expect(DETECT_OS_COMMAND).not.toContain('/etc/*-release');
+  });
+
+  it('仅允许已识别的规范 key 持久化', () => {
+    expect(isDetectedOS('ubuntu')).toBe(true);
+    expect(isDetectedOS('windows')).toBe(true);
+    expect(isDetectedOS('unknown')).toBe(false);
+    expect(isDetectedOS(' Ubuntu ')).toBe(false);
   });
 });
