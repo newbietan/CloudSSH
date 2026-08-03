@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-08-03
+
+### Added
+- 登录用户连接尚未识别的已保存服务器后，通过独立且非阻塞的 SSH exec 通道自动检测远端操作系统，并在服务器卡片即时显示对应的系统品牌图标。
+- UserDBDO 服务器记录新增可幂等迁移的 OS 标识字段，并通过受用户归属校验的内部接口持久化规范系统 key。
+- 新增操作系统解析、会话检测与持久化、前端图标回退及浏览器展示回归测试。
+
+### Changed
+- 未识别的 `unknown` 结果不再持久化或通知前端，留待用户下次连接时自然重新探测，不引入额外主动重试机制。
+- 修改服务器主机地址或端口时自动清除旧 OS 结果；后台写入 OS 不再修改 `updated_at`，避免意外改变服务器列表排序。
+- 完善 Windows cmd 输出识别，并为没有独立品牌图标的已识别系统提供紧凑通用图标回退。
+- 更新中英文功能、架构、审计行为说明及贡献者记录。
+
 ## [1.5.2] - 2026-08-03
 
 ### Fixed
