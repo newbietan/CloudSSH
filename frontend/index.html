@@ -42,11 +42,11 @@
     <!-- User Space Page (登录后) -->
     <div id="user-space-section" class="hidden min-h-screen flex-col bg-elevated text-on-surface">
       <!-- TopAppBar -->
-      <header class="flex justify-between items-center w-full px-6 h-16 bg-elevated border-b border-outline-variant z-50">
-        <div class="flex items-center gap-6">
+      <header class="user-space-header flex justify-between items-center w-full px-6 h-16 bg-elevated border-b border-outline-variant z-50 relative">
+        <div class="user-space-brand flex items-center gap-6 min-w-0">
           <h1 class="text-2xl font-bold text-primary-container tracking-tighter cursor-pointer" id="user-space-logo">CloudSSH</h1>
         </div>
-        <div class="flex items-center gap-4 flex-wrap">
+        <div id="user-space-header-actions" class="user-space-header-actions flex items-center gap-4">
           <select id="user-theme-selector" data-theme-selector
             class="theme-selector bg-surface-variant text-on-surface-variant text-xs py-1 px-2 border-none outline-none cursor-pointer"
             data-i18n-aria-label="theme.selector" aria-label="主题与界面风格">
@@ -56,29 +56,35 @@
             <option value="glacier">Glacier · Soft</option>
             <option value="gruvbox">Gruvbox · Dense</option>
           </select>
-          <button data-theme-import class="theme-toolbar-button hover:opacity-80 cursor-pointer p-1 flex items-center justify-center"
+          <button data-theme-import class="theme-toolbar-button user-space-menu-action hover:opacity-80 cursor-pointer p-1 flex items-center justify-center"
             data-i18n-title="terminal.importTheme" title="导入主题">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">upload_file</span>
+            <span class="user-space-action-label" data-i18n="terminal.importTheme">导入主题</span>
           </button>
           <div data-language-switcher></div>
           <div id="user-info" class="flex items-center gap-3">
             <!-- 动态渲染：头像 + 用户名 -->
           </div>
-          <button id="ai-config-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="agent.settings" title="AI Agent 设置">
+          <button id="ai-config-btn" class="user-space-menu-action hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="agent.settings" title="AI Agent 设置">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">psychology</span>
+            <span class="user-space-action-label" data-i18n="agent.settings">AI Agent 设置</span>
           </button>
-          <button id="logout-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center text-error" data-i18n-title="auth.logout" title="退出登录">
+          <button id="logout-btn" class="user-space-menu-action hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center text-error" data-i18n-title="auth.logout" title="退出登录">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">logout</span>
+            <span class="user-space-action-label" data-i18n="auth.logout">退出登录</span>
           </button>
         </div>
+        <button id="user-space-more-btn" type="button" class="user-space-more-button mobile-only" aria-expanded="false" aria-controls="user-space-header-actions" data-i18n-title="terminal.moreActions" data-i18n-aria-label="terminal.moreActions" title="更多操作" aria-label="更多操作">
+          <span class="material-symbols-outlined" aria-hidden="true">more_vert</span>
+        </button>
       </header>
 
       <!-- Server List Area -->
-      <main class="flex-1 p-6 relative overflow-auto custom-scrollbar">
+      <main class="user-space-main flex-1 p-6 relative overflow-auto custom-scrollbar">
         <div class="scanlines pointer-events-none"></div>
         <div class="max-w-5xl mx-auto">
           <!-- 顶部操作栏 -->
-          <div class="flex justify-between items-center mb-6">
+          <div class="server-list-toolbar flex justify-between items-center mb-6">
             <div>
               <h2 class="text-lg font-bold text-primary tracking-[0.1em]" data-i18n="server.list">服务器列表</h2>
               <p class="text-xs text-muted opacity-60 mt-1" data-i18n="server.manage">管理你的 SSH 连接</p>
@@ -142,8 +148,8 @@
       </main>
 
       <!-- Footer -->
-      <footer class="px-6 py-2 flex justify-between items-center z-50 bg-elevated border-t border-outline-variant text-xs h-12">
-        <div class="text-secondary-container opacity-60">© <span id="user-copyright-year"></span> CLOUD_SSH_TERMINAL - https://github.com/newbietan/CloudSSH</div>
+      <footer class="user-space-footer px-6 py-2 flex justify-between items-center z-50 bg-elevated border-t border-outline-variant text-xs h-12">
+        <div class="user-space-footer-source text-secondary-container opacity-60">© <span id="user-copyright-year"></span> CLOUD_SSH_TERMINAL<span class="user-space-footer-url"> - https://github.com/newbietan/CloudSSH</span></div>
         <div class="flex gap-4">
           <a class="text-on-surface-variant opacity-60 hover:opacity-100 transition-opacity" href="https://github.com/newbietan/CloudSSH" data-i18n="common.documentation">文档</a>
         </div>
@@ -151,10 +157,10 @@
     </div>
 
     <!-- Server Modal (添加/编辑) -->
-    <div id="server-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center"
+    <div id="server-modal" class="responsive-modal hidden fixed inset-0 z-[100] flex items-center justify-center"
       role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div class="modal-overlay absolute inset-0" id="modal-backdrop"></div>
-      <div class="cyber-box p-6 shadow-2xl relative z-10 w-full max-w-md mx-4">
+      <div class="responsive-modal-panel cyber-box p-6 shadow-2xl relative z-10 w-full max-w-md mx-4">
         <div class="theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent-secondary)] to-transparent opacity-50"></div>
         <div class="flex items-center justify-between mb-6 pb-4 border-b border-dim">
           <span id="modal-title" class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]" data-i18n="server.add">添加服务器</span>
@@ -333,6 +339,9 @@
           <button type="button" data-terminal-key="tab">Tab</button>
           <button type="button" data-mobile-modifier="ctrl" aria-pressed="false">Ctrl</button>
           <button type="button" data-mobile-modifier="alt" aria-pressed="false">Alt</button>
+          <button id="mobile-copy-btn" type="button" data-i18n-title="terminal.copySelection" title="复制选区"><span class="material-symbols-outlined" aria-hidden="true">content_copy</span></button>
+          <button id="mobile-paste-btn" type="button" data-i18n-title="terminal.paste" title="粘贴"><span class="material-symbols-outlined" aria-hidden="true">content_paste</span></button>
+          <button id="mobile-keyboard-hide-btn" type="button" data-i18n-title="terminal.hideKeyboard" title="收起键盘"><span class="material-symbols-outlined" aria-hidden="true">keyboard_hide</span></button>
           <button type="button" data-terminal-key="arrow_left" data-i18n-title="terminal.arrowLeft" title="左方向键"><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span></button>
           <button type="button" data-terminal-key="arrow_up" data-i18n-title="terminal.arrowUp" title="上方向键"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
           <button type="button" data-terminal-key="arrow_down" data-i18n-title="terminal.arrowDown" title="下方向键"><span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>
@@ -346,9 +355,6 @@
           <button type="button" data-terminal-key="_">_</button>
           <button type="button" data-terminal-key="|">|</button>
           <button type="button" data-terminal-key="~">~</button>
-          <button id="mobile-copy-btn" type="button" data-i18n-title="terminal.copySelection" title="复制选区"><span class="material-symbols-outlined" aria-hidden="true">content_copy</span></button>
-          <button id="mobile-paste-btn" type="button" data-i18n-title="terminal.paste" title="粘贴"><span class="material-symbols-outlined" aria-hidden="true">content_paste</span></button>
-          <button id="mobile-keyboard-hide-btn" type="button" data-i18n-title="terminal.hideKeyboard" title="收起键盘"><span class="material-symbols-outlined" aria-hidden="true">keyboard_hide</span></button>
         </div>
       </nav>
 

@@ -28,6 +28,21 @@ export interface ServerConfig {
 }
 
 export const SERVER_PAGE_SIZE = 9;
+export const TABLET_SERVER_PAGE_SIZE = 6;
+export const MOBILE_SERVER_PAGE_SIZE = 3;
+
+export function resolveServerPageSize(viewportWidth: number, coarsePointer: boolean): number {
+  if (viewportWidth < 768) return MOBILE_SERVER_PAGE_SIZE;
+  if (viewportWidth <= 1180 && coarsePointer) return TABLET_SERVER_PAGE_SIZE;
+  return SERVER_PAGE_SIZE;
+}
+
+function currentServerPageSize(): number {
+  return resolveServerPageSize(
+    window.innerWidth,
+    window.matchMedia('(pointer: coarse)').matches,
+  );
+}
 
 export function normalizeTagsInput(value: string): string[] {
   const tags: string[] = [];
@@ -89,6 +104,7 @@ export class ServerList {
   private searchQuery = '';
   private selectedTag = '';
   private currentPage = 1;
+  private pageSize = currentServerPageSize();
 
   constructor(
     user: UserInfo,
@@ -110,6 +126,14 @@ export class ServerList {
     // 设置用户空间的版权年份
     const yearSpan = document.getElementById('user-copyright-year');
     if (yearSpan) yearSpan.textContent = new Date().getFullYear().toString();
+  }
+
+  refreshPageSize(): void {
+    const nextPageSize = currentServerPageSize();
+    if (nextPageSize === this.pageSize) return;
+    this.pageSize = nextPageSize;
+    this.currentPage = 1;
+    this.renderServerGrid();
   }
 
   // ==================== 渲染用户信息 ====================
@@ -267,7 +291,7 @@ export class ServerList {
     searchEmptyState.classList.add('hidden');
     searchEmptyState.classList.remove('flex');
 
-    const page = paginateServers(filteredServers, this.currentPage);
+    const page = paginateServers(filteredServers, this.currentPage, this.pageSize);
     this.currentPage = page.currentPage;
     const visibleServers = page.items;
 
@@ -337,34 +361,34 @@ export class ServerList {
     const maskedHost = maskIPAddress(server.host);
     const copyIPLabel = this.escapeAttr(t('server.clickToCopyIP'));
     const hostDisplay = maskedHost
-      ? `<button type="button" class="host-ip-badge server-host-badge" id="host-badge-${server.id}" title="${copyIPLabel}" aria-label="${copyIPLabel}">${this.escapeHtml(maskedHost)}:${server.port}</button>`
-      : `<span class="text-on-surface">${this.escapeHtml(server.host)}:${server.port}</span>`;
+      ? `<button type="button" class="host-ip-badge server-host-badge min-w-0 truncate" id="host-badge-${server.id}" title="${copyIPLabel}" aria-label="${copyIPLabel}">${this.escapeHtml(maskedHost)}:${server.port}</button>`
+      : `<span class="text-on-surface min-w-0 truncate">${this.escapeHtml(server.host)}:${server.port}</span>`;
 
     return `
       <div class="server-card p-5 relative group" id="card-${server.id}">
         <div class="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-[var(--border-strong)] to-transparent group-hover:via-[var(--accent)] transition-all duration-300"></div>
 
-        <div class="flex items-start justify-between mb-3">
-          <div class="flex items-center gap-2">
+        <div class="flex items-start justify-between gap-2 mb-3">
+          <div class="flex items-center gap-2 min-w-0 flex-1">
             <span class="material-symbols-outlined text-primary" style="font-size: 20px; font-variation-settings: 'FILL' 0;">dns</span>
-            <h3 class="text-sm font-bold text-primary tracking-[0.05em]">${this.escapeHtml(server.name)}</h3>
+            <h3 class="server-card-title text-sm font-bold text-primary tracking-[0.05em] truncate min-w-0" title="${this.escapeAttr(server.name)}">${this.escapeHtml(server.name)}</h3>
           </div>
-          <span class="text-[10px] font-bold tracking-[0.1em] text-muted border border-dim px-2 py-0.5 flex items-center gap-1">
+          <span class="shrink-0 text-[10px] font-bold tracking-[0.1em] text-muted border border-dim px-2 py-0.5 flex items-center gap-1">
             <span class="material-symbols-outlined" style="font-size: 12px;">${authIcon}</span>
             ${authLabel}
           </span>
         </div>
 
         <div class="space-y-1.5 text-xs text-muted mb-4">
-          <div class="flex items-center gap-2">
+          <div class="server-card-meta-row flex items-center gap-2 min-w-0">
             <span class="text-dim">${t('server.hostLabel')}</span>
             ${hostDisplay}
           </div>
-          <div class="flex items-center gap-2">
+          <div class="server-card-meta-row flex items-center gap-2 min-w-0">
             <span class="text-dim">${t('server.userLabel')}</span>
-            <span class="text-on-surface">${this.escapeHtml(server.username)}</span>
+            <span class="text-on-surface min-w-0 truncate">${this.escapeHtml(server.username)}</span>
           </div>
-          <div class="flex items-center gap-2">
+          <div class="server-card-region-row flex items-center gap-2 min-w-0">
             <span class="text-dim">${t('server.regionLabel')}</span>
             <span class="text-on-surface flex items-center gap-1">
               <span class="material-symbols-outlined" style="font-size: 11px; color: var(--accent-secondary);">${effectiveHint ? 'my_location' : 'explore'}</span>
@@ -376,7 +400,7 @@ export class ServerList {
         </div>
 
         <div class="server-card-actions flex gap-2 pt-3 border-t border-[var(--border)]">
-          <button id="connect-${server.id}" class="cyber-button text-primary flex-1 py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-1" title="${t('common.connect')}">
+          <button id="connect-${server.id}" class="server-connect-button cyber-button text-primary flex-1 min-w-0 py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-1" title="${t('common.connect')}">
             <span class="material-symbols-outlined" style="font-size: 14px;">power_settings_new</span>
             ${t('common.connect')}
           </button>

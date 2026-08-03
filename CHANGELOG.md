@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-08-03
+
+### Changed
+- 服务器列表根据设备类型调整每页数量：手机展示 3 张、触屏平板展示 6 张、桌面端展示 9 张，并在视口跨越断点后安全重算分页。
+- 完善移动端用户空间、服务器卡片、页脚、终端快捷工具栏以及服务器和 AI 配置弹窗的窄屏与安全区布局。
+- 终端字号根据手机、触屏平板和桌面端自动使用 12、13、14px，并在视口或屏幕方向变化后重新适配行列数。
+
+### Fixed
+- 修复移动浏览器自动放大 xterm 文本，导致终端字符过大、列数过少和输出严重换行的问题。
+- 修复移动端 AI 助手标题栏被应用顶栏遮挡、用户无法通过面板按钮返回终端的问题。
+- 修复长服务器名称、主机名或用户名，以及 Google 图标字体加载失败时可能撑破移动端布局的问题。
+
 ## [1.5.0] - 2026-08-02
 
 ### Added

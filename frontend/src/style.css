@@ -8,6 +8,17 @@
   box-sizing: border-box;
 }
 
+/* Material Symbols 字体不可用时，避免图标名称按普通文本撑破布局。 */
+.material-symbols-outlined {
+  display: inline-block;
+  width: 1em;
+  max-width: 1em;
+  flex: 0 0 auto;
+  overflow: hidden;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 :root {
   --bg: #0a0a0a;
   --bg-surface: #121212;
@@ -259,6 +270,11 @@ body.terminal-active {
 #terminal-wrapper {
   border-radius: var(--card-radius);
   box-shadow: var(--shadow-card);
+}
+
+#terminal-area .xterm {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 html:not([data-ui-style="cyberpunk"]) .scanlines,
@@ -549,6 +565,22 @@ html:not([data-ui-style="cyberpunk"]) .flicker {
 }
 
 /* ==================== User Space Styles ==================== */
+
+.user-space-action-label {
+  display: none;
+}
+
+.responsive-modal {
+  height: var(--visual-viewport-height);
+  padding: 16px;
+  overflow: hidden;
+}
+
+.responsive-modal-panel {
+  max-height: calc(var(--visual-viewport-height) - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 
 #server-grid {
   gap: var(--panel-gap);
@@ -1302,6 +1334,10 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   min-width: 280px;
 }
 
+.agent-mobile-back {
+  display: none;
+}
+
 /* ========== Agent Markdown Content (themed) ==========
    Style the DOM output from marked.js. All colors come from CSS variables so
    theme switching only touches :root variables — the markup is untouched. */
@@ -1808,6 +1844,189 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
     display: flex;
   }
 
+  #auth-section {
+    min-height: var(--visual-viewport-height);
+    padding: max(16px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  }
+
+  #user-space-section {
+    height: var(--visual-viewport-height);
+    min-height: var(--visual-viewport-height);
+  }
+
+  #auth-section > main > .cyber-box {
+    padding: 16px;
+  }
+
+  input:not([type='checkbox']):not([type='radio']):not([type='file']),
+  select,
+  textarea,
+  .xterm-helper-textarea {
+    font-size: 16px !important;
+  }
+
+  .user-space-header {
+    height: calc(52px + env(safe-area-inset-top));
+    min-height: calc(52px + env(safe-area-inset-top));
+    padding-top: env(safe-area-inset-top);
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(8px, env(safe-area-inset-right));
+  }
+
+  .user-space-brand h1 {
+    font-size: 19px;
+  }
+
+  .user-space-more-button {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    color: var(--on-surface);
+    border-radius: var(--control-radius);
+  }
+
+  .user-space-header-actions {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: max(8px, env(safe-area-inset-right));
+    z-index: 120;
+    display: none;
+    width: min(300px, calc(100vw - 16px));
+    max-height: calc(var(--visual-viewport-height) - 68px - env(safe-area-inset-top));
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    padding: 8px;
+    overflow-y: auto;
+    color: var(--on-surface);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--modal-radius);
+    box-shadow: var(--shadow-floating);
+  }
+
+  .user-space-header-actions.is-open {
+    display: flex;
+  }
+
+  .user-space-header-actions .theme-selector,
+  .user-space-header-actions .language-toggle,
+  .user-space-menu-action,
+  #user-info {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .user-space-header-actions .theme-selector {
+    padding: 8px 10px;
+  }
+
+  .user-space-header-actions .language-toggle,
+  .user-space-menu-action,
+  #user-info {
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 8px 10px;
+  }
+
+  #user-info {
+    min-width: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  #user-info > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .user-space-action-label {
+    display: inline;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .user-space-main {
+    min-height: 0;
+    padding: 16px 12px;
+  }
+
+  .server-list-toolbar {
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .server-list-toolbar #add-server-btn {
+    flex: 0 0 auto;
+    padding: 8px 10px;
+    letter-spacing: 0.04em;
+  }
+
+  #server-grid .server-card {
+    padding: 14px !important;
+  }
+
+  .server-card-meta-row > :first-child,
+  .server-card-region-row > :first-child {
+    flex: 0 0 auto;
+  }
+
+  .server-card-region-row {
+    flex-wrap: wrap;
+  }
+
+  .server-card-actions {
+    gap: 6px;
+  }
+
+  .server-card-actions .cyber-button {
+    min-width: 40px;
+    min-height: 40px;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .server-connect-button {
+    white-space: nowrap;
+  }
+
+  .user-space-footer {
+    height: auto;
+    min-height: calc(44px + env(safe-area-inset-bottom));
+    gap: 8px;
+    padding: 8px max(12px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    font-size: 10px;
+  }
+
+  .user-space-footer-source {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .user-space-footer-url {
+    display: none;
+  }
+
+  .responsive-modal {
+    align-items: center;
+    padding-top: max(12px, env(safe-area-inset-top));
+    padding-right: max(12px, env(safe-area-inset-right));
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    padding-left: max(12px, env(safe-area-inset-left));
+  }
+
+  .responsive-modal-panel {
+    width: 100%;
+    max-height: calc(var(--visual-viewport-height) - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    margin: 0 !important;
+    padding: 16px !important;
+  }
+
   .terminal-app-header {
     height: 48px;
     min-height: 48px;
@@ -2006,10 +2225,13 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 
   #agent-panel {
     position: fixed;
-    inset: 0;
+    top: 48px;
+    right: 0;
+    bottom: 0;
+    left: 0;
     z-index: 80;
     width: 100% !important;
-    height: var(--visual-viewport-height);
+    height: calc(var(--visual-viewport-height) - 48px);
     max-width: none !important;
     min-width: 0;
     border-left: 0;
@@ -2017,7 +2239,31 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
     padding-right: env(safe-area-inset-right);
   }
 
-  .agent-panel-header,
+  .agent-panel-header {
+    min-height: 48px;
+  }
+
+  .agent-close-button {
+    display: inline-flex;
+    min-height: 40px;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
+  }
+
+  .agent-mobile-back {
+    display: inline-flex;
+  }
+
+  .agent-back-label {
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .agent-desktop-close {
+    display: none;
+  }
+
   .sftp-panel-header {
     padding-top: env(safe-area-inset-top);
     min-height: calc(48px + env(safe-area-inset-top));

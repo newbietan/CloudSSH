@@ -4,10 +4,12 @@ import {
   filterServers,
   normalizeTagsInput,
   paginateServers,
+  resolveServerPageSize,
   type ServerConfig,
 } from '../frontend/src/server-list';
 import { getNetworkQuality } from '../frontend/src/network-quality';
 import { parsePort } from '../frontend/src/port';
+import { resolveTerminalFontSize } from '../frontend/src/terminal-layout';
 
 const servers: ServerConfig[] = [
   {
@@ -37,6 +39,15 @@ const servers: ServerConfig[] = [
 ];
 
 describe('服务器列表搜索', () => {
+  it('手机、触屏平板和桌面端分别使用 3、6、9 张分页', () => {
+    expect(resolveServerPageSize(390, true)).toBe(3);
+    expect(resolveServerPageSize(767, false)).toBe(3);
+    expect(resolveServerPageSize(768, true)).toBe(6);
+    expect(resolveServerPageSize(1180, true)).toBe(6);
+    expect(resolveServerPageSize(1024, false)).toBe(9);
+    expect(resolveServerPageSize(1181, true)).toBe(9);
+  });
+
   it('按名称、主机和用户名进行不区分大小写的过滤', () => {
     expect(filterServers(servers, 'production')).toEqual([servers[0]]);
     expect(filterServers(servers, '10.0.0.8')).toEqual([servers[1]]);
@@ -61,6 +72,17 @@ describe('服务器列表搜索', () => {
       currentPage: 2,
       totalPages: 2,
     });
+  });
+});
+
+describe('终端响应式字号', () => {
+  it('手机、触屏平板和桌面端分别使用 12、13、14px', () => {
+    expect(resolveTerminalFontSize(390, true)).toBe(12);
+    expect(resolveTerminalFontSize(767, false)).toBe(12);
+    expect(resolveTerminalFontSize(768, true)).toBe(13);
+    expect(resolveTerminalFontSize(1180, true)).toBe(13);
+    expect(resolveTerminalFontSize(1024, false)).toBe(14);
+    expect(resolveTerminalFontSize(1181, true)).toBe(14);
   });
 });
 

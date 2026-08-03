@@ -24,6 +24,40 @@ const mobileTerminalController = new MobileTerminalController(
   () => tabManager?.getActiveTab()?.terminal ?? null,
 );
 
+function setUserSpaceMenuOpen(open: boolean): void {
+  document.getElementById('user-space-header-actions')?.classList.toggle('is-open', open);
+  document.getElementById('user-space-more-btn')?.setAttribute('aria-expanded', String(open));
+}
+
+function initUserSpaceMobileMenu(): void {
+  const button = document.getElementById('user-space-more-btn');
+  const menu = document.getElementById('user-space-header-actions');
+  if (!button || !menu) return;
+
+  button.addEventListener('click', () => {
+    setUserSpaceMenuOpen(!menu.classList.contains('is-open'));
+  });
+  menu.addEventListener('click', (event) => {
+    if ((event.target as HTMLElement).closest('button')) setUserSpaceMenuOpen(false);
+  });
+  menu.addEventListener('change', () => setUserSpaceMenuOpen(false));
+  document.addEventListener('pointerdown', (event) => {
+    const target = event.target as Node | null;
+    if (target && (button.contains(target) || menu.contains(target))) return;
+    setUserSpaceMenuOpen(false);
+  }, true);
+}
+
+function initServerPaginationBreakpoints(): void {
+  const queries = [
+    window.matchMedia('(max-width: 767px)'),
+    window.matchMedia('(max-width: 1180px) and (pointer: coarse)'),
+  ];
+  queries.forEach((query) => {
+    query.addEventListener('change', () => serverList?.refreshPageSize());
+  });
+}
+
 /** 获取或初始化 TabManager 单例 */
 function getTabManager(): TabManager {
   if (!tabManager) {
@@ -482,6 +516,8 @@ async function restoreCloudTheme(
 
 async function init(): Promise<void> {
   initI18n();
+  initUserSpaceMobileMenu();
+  initServerPaginationBreakpoints();
   mobileTerminalController.start();
   onLocaleChange(() => {
     if (localStorage.getItem('cloudssh_imported_theme')) ensureCustomOption();

@@ -22,6 +22,7 @@ import {
   type MobileTerminalKey,
   mobileTerminalKeySequence,
 } from './mobile-input';
+import { currentTerminalFontSize } from './terminal-layout';
 
 const TRZSZ_MAX_DATA_CHUNK_SIZE = 2 * 1024 * 1024;
 
@@ -124,7 +125,7 @@ export class SSHTerminal {
     this.terminal = new Terminal({
       cursorBlink: true,
       cursorStyle: 'block',
-      fontSize: 14,
+      fontSize: currentTerminalFontSize(),
       fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
       theme: getActiveTerminalTheme(),
       allowProposedApi: true,
@@ -659,6 +660,10 @@ export class SSHTerminal {
   }
 
   fit(): void {
+    const fontSize = currentTerminalFontSize();
+    if (this.terminal.options.fontSize !== fontSize) {
+      this.terminal.options.fontSize = fontSize;
+    }
     if (!this.mounted || this.container.clientWidth === 0 || this.container.clientHeight === 0) return;
     this.fitAddon.fit();
   }

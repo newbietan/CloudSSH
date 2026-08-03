@@ -276,6 +276,7 @@ export const zhCN = {
   'agent.title': 'AI Agent 助手',
   'agent.settings': 'AI Agent 设置',
   'agent.close': '关闭 Agent 面板',
+  'agent.backToTerminal': '返回终端',
   'agent.placeholder': '描述你希望 Agent 完成的任务…',
   'agent.send': '发送',
   'agent.stop': '停止',

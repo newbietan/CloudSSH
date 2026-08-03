@@ -20,10 +20,10 @@ export class AIConfigPanel {
   private render(): void {
     this.modalEl = document.createElement('div');
     this.modalEl.id = 'ai-config-modal';
-    this.modalEl.className = 'hidden fixed inset-0 z-[100] flex items-center justify-center';
+    this.modalEl.className = 'responsive-modal hidden fixed inset-0 z-[100] flex items-center justify-center';
     this.modalEl.innerHTML = `
       <div class="modal-overlay absolute inset-0" id="ai-modal-backdrop"></div>
-      <div class="cyber-box p-6 shadow-2xl relative z-10 w-full max-w-md mx-4">
+      <div class="responsive-modal-panel cyber-box p-6 shadow-2xl relative z-10 w-full max-w-md mx-4">
         <div class="theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent-secondary)] to-transparent opacity-50"></div>
         <div class="flex items-center justify-between mb-6 pb-4 border-b border-dim">
           <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]" data-i18n="aiConfig.title">AI Agent 设置</span>
