@@ -1,9 +1,10 @@
 import { populateRegionSelect, regionLabel } from './regions';
 import { confirmAction, notify } from './ui-feedback';
-import { onLocaleChange, t } from './i18n';
+import { onLocaleChange, t, type TranslationKey } from './i18n';
 import { parsePort } from './port';
 import { copyTextToClipboard } from './clipboard';
 import { maskIPAddress } from './host-display';
+import { osIconSvg, isKnownOS } from './os-icons';
 
 interface UserInfo {
   id: number;
@@ -23,6 +24,8 @@ export interface ServerConfig {
   region?: string | null;
   inferred_hint?: string | null;
   tags: string[];
+  /** 连接时检测到的远端操作系统（canonical key，如 ubuntu/debian/centos） */
+  os?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -133,6 +136,14 @@ export class ServerList {
     if (nextPageSize === this.pageSize) return;
     this.pageSize = nextPageSize;
     this.currentPage = 1;
+    this.renderServerGrid();
+  }
+
+  /** 连接后由 os_detected 消息回调：更新某台服务器的操作系统并即时重渲染图标 */
+  updateServerOS(serverId: number, os: string | null): void {
+    const server = this.servers.find((s) => s.id === serverId);
+    if (!server || server.os === os) return;
+    server.os = os;
     this.renderServerGrid();
   }
 
@@ -341,6 +352,17 @@ export class ServerList {
     }
   }
 
+  /** 渲染服务器名称前的图标：已识别操作系统 → 品牌 SVG，否则回退到默认 dns 图标 */
+  private renderOSIconMarkup(os: string | null | undefined): string {
+    const svg = osIconSvg(os);
+    if (svg) {
+      const key = isKnownOS(os) ? os! : 'linux';
+      const label = isKnownOS(os) ? t(`os.${key}` as TranslationKey) : t('os.linux');
+      return `<span class="server-os-icon shrink-0" title="${this.escapeAttr(label)}">${svg}</span>`;
+    }
+    return `<span class="material-symbols-outlined text-primary shrink-0" style="font-size: 20px; font-variation-settings: 'FILL' 0;">dns</span>`;
+  }
+
   private renderServerCard(server: ServerConfig): string {
     const authIcon = server.auth_method === 'publickey' ? 'vpn_key' : 'password';
     const authLabel = server.auth_method === 'publickey' ? 'KEY' : 'PWD';
@@ -370,7 +392,7 @@ export class ServerList {
 
         <div class="flex items-start justify-between gap-2 mb-3">
           <div class="flex items-center gap-2 min-w-0 flex-1">
-            <span class="material-symbols-outlined text-primary" style="font-size: 20px; font-variation-settings: 'FILL' 0;">dns</span>
+            ${this.renderOSIconMarkup(server.os)}
             <h3 class="server-card-title text-sm font-bold text-primary tracking-[0.05em] truncate min-w-0" title="${this.escapeAttr(server.name)}">${this.escapeHtml(server.name)}</h3>
           </div>
           <span class="shrink-0 text-[10px] font-bold tracking-[0.1em] text-muted border border-dim px-2 py-0.5 flex items-center gap-1">

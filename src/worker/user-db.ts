@@ -64,6 +64,7 @@ export class UserDBDO {
         region      TEXT DEFAULT NULL,
         inferred_hint TEXT DEFAULT NULL,
         tags        TEXT NOT NULL DEFAULT '[]',
+        os          TEXT DEFAULT NULL,
         created_at  TEXT DEFAULT (datetime('now')),
         updated_at  TEXT DEFAULT (datetime('now'))
       );
@@ -112,6 +113,9 @@ export class UserDBDO {
     if (!serverCols.some((c: any) => c.name === 'tags')) {
       this.db.exec("ALTER TABLE servers ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'");
     }
+    if (!serverCols.some((c: any) => c.name === 'os')) {
+      this.db.exec("ALTER TABLE servers ADD COLUMN os TEXT DEFAULT NULL");
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -159,6 +163,12 @@ export class UserDBDO {
       const connectMatch = path.match(/^\/internal\/servers\/(\d+)\/connect$/);
       if (connectMatch && request.method === 'POST') {
         return this.handleConnectServer(parseInt(connectMatch[1]), request);
+      }
+
+      // /internal/servers/:id/os —— 仅由 SSHSession（可信会话）通过 DO stub 调用
+      const osMatch = path.match(/^\/internal\/servers\/(\d+)\/os$/);
+      if (osMatch && request.method === 'PUT') {
+        return this.handleUpdateServerOS(parseInt(osMatch[1]), request);
       }
 
       // --- 用户自定义主题 ---
@@ -323,7 +333,7 @@ export class UserDBDO {
   private handleGetServers(userId: number): Response {
     const rows = this.db
       .exec(
-        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, created_at, updated_at
+        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, created_at, updated_at
          FROM servers WHERE user_id = ? ORDER BY updated_at DESC`,
         userId
       )
@@ -397,7 +407,7 @@ export class UserDBDO {
     // 获取新创建的记录
     const rows = this.db
       .exec(
-        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, created_at, updated_at
+        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, created_at, updated_at
          FROM servers WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
         body.user_id
       )
@@ -536,7 +546,7 @@ export class UserDBDO {
 
     const row = this.db
       .exec(
-        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, created_at, updated_at
+        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, created_at, updated_at
          FROM servers WHERE id = ?`,
         serverId
       )
@@ -555,6 +565,32 @@ export class UserDBDO {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
 
     this.db.exec('DELETE FROM servers WHERE id = ?', serverId);
+    return Response.json({ success: true });
+  }
+
+  /**
+   * 更新服务器检测到的操作系统标识。
+   * 仅由 SSHSession（已认证会话）通过 DO stub 调用，不对外暴露公开路由。
+   */
+  private async handleUpdateServerOS(serverId: number, request: Request): Promise<Response> {
+    const body = await request.json<{ user_id: number; os: string }>();
+
+    // 验证服务器属于该用户
+    const existing = this.db.exec('SELECT user_id FROM servers WHERE id = ?', serverId).toArray();
+    if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
+    if ((existing[0] as unknown as { user_id: number }).user_id !== body.user_id) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    if (typeof body.os !== 'string' || body.os.length === 0 || body.os.length > 32) {
+      return Response.json({ error: 'Invalid os' }, { status: 400 });
+    }
+
+    this.db.exec(
+      "UPDATE servers SET os = ?, updated_at = datetime('now') WHERE id = ?",
+      body.os,
+      serverId
+    );
     return Response.json({ success: true });
   }
 
@@ -601,7 +637,7 @@ export class UserDBDO {
     const server = rows[0] as unknown as {
       id: number; user_id: number; name: string; host: string;
       port: number; username: string; credential: string; auth_method: string;
-      region: string | null; inferred_hint: string | null;
+      region: string | null; inferred_hint: string | null; os: string | null;
     };
 
     // 解密凭据
@@ -637,6 +673,8 @@ export class UserDBDO {
       expectedFingerprint,
       userId: String(body.user_id),
       githubId: String(github_id),
+      serverId: server.id,
+      os: server.os,
       locationHint,
     };
 

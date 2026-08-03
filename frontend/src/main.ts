@@ -66,6 +66,10 @@ function getTabManager(): TabManager {
       showOfflineUI();
     });
     tabManager.setLoggedIn(isLoggedIn);
+    // 连接后检测到操作系统 → 即时更新服务器列表卡片图标
+    tabManager.setOSDetectedHandler((serverId, os) => {
+      serverList?.updateServerOS(serverId, os);
+    });
 
     // 绑定 new-tab-btn
     bindNewTabButton();
