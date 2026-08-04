@@ -67,7 +67,7 @@
 
 ### Out of the Box
 
-- **One-Click Deployment**: Build and deploy the project with a single command using the Wrangler CLI.
+- **One-Click Deployment**: Simply fork this repository, then complete the project build and deployment with a few clicks in the Cloudflare Dashboard.
 - **Modern Frontend Stack**: TypeScript + Vite + Tailwind CSS, paired with xterm.js to provide a silky smooth terminal experience.
 
 ### Secure and Reliable
@@ -90,9 +90,6 @@
 - **Geek Terminal Experience**: Powered by `@xterm/xterm` and the `@xterm/addon-webgl` hardware acceleration rendering engine, ensuring silky smooth scrolling even with massive log outputs.
 - **Reliable Terminal Clipboard Interaction**: Completing a terminal selection with a mouse automatically copies it, and right-click pastes directly. Touch devices use explicit copy and paste buttons in the shortcut bar to avoid conflicts with long-press selection. Paste data follows xterm.js's native input pipeline, emits bracketed-paste control sequences only when the remote application enables that mode, and normalizes line endings for compatibility with Vim and regular shells.
 - **Mobile Terminal Support**: Phones and tablets get dynamic visual-viewport sizing, soft-keyboard and safe-area handling, iOS Chinese IME compatibility, a compact action bar, one-shot Ctrl/Alt, Esc/Tab/arrows/Home/End/PgUp/PgDn shortcuts, and full-screen Agent/SFTP panels. Users may explicitly request fullscreen landscape; unsupported orientation locks fall back to a manual rotation hint without changing desktop layouts.
-
-> **Mobile usage guidance**: Mobile support is intended primarily for brief operations and emergency access. Because of screen size, soft-keyboard behavior, browser background policies, and touch-input precision, desktop use is still recommended for long-running, frequent, or complex terminal and file-management work.
-
 - **Customizable UI**: Theme V2 includes Standard Dark, Standard Light, Cyberpunk, Glacier, and Gruvbox. The companion [GitHub Pages theme editor](https://newbietan.github.io/CloudSSH/) provides live controls for colors, shape, density, font, shadows, motion, and button/input/card/tab styles, with previews for login, server list, terminal + SFTP, and the AI Agent panel. Themes are imported, exported, backed up, and shared as JSON files. Signed-in users sync imported themes to their account for cross-browser restoration, while anonymous users keep them in the current browser only.
 - **SFTP Graphical File Manager**: Integrated with a complete SFTP v3 file transfer protocol, providing a graphical file browser interface. Supports directory browsing, file upload/download, creating new folders, file renaming, and deletion, plus plain selection, `Cmd/Ctrl` toggle selection, `Shift` range selection, select all, batch file downloads, and batch deletion. Built on the SSH subsystem, it runs alongside terminal sessions without interference and supports download queues and upload cancellation.
 - **Native File Transfer**: Integrated with [trzsz.js](https://github.com/trzsz/trzsz.js), supporting `trz` (upload) / `tsz` (download) commands for file transfer, fully compatible with tmux sessions. Also supports drag-and-drop file upload to the terminal, directory transfer, and resumable transfers. (Requires [trzsz](https://trzsz.github.io/) installed on the remote server)
@@ -102,7 +99,7 @@
 - **Single-Page Multi-Tab Session**: Switch between multiple independent SSH terminal and SFTP instances within a single browser tab, with isolated sandbox environments.
 - **Secure Connection History**: Saves last 5 connection records locally. Credentials (passwords/private keys) can be client-side encrypted using locally derived AES-256-GCM keys.
 - **Dual-Segment Latency & Colo Display**: Instantly and periodically monitor WebSocket RTT (client to CF), physical latency (CF to SSH host), and the current Cloudflare datacenter code (e.g. `CF-LAX`) on the status bar, with green, yellow, and red indicators for network quality.
-- **Smart Region Scheduling (locationHint)**: Queries IPinfo when a server is saved, persists the inferred Durable Object region, and reuses it on connection without another runtime geo lookup. Failures fall back to Cloudflare's default placement, and users may override the region manually. *Note: automatic inference sends target-host information to the third-party IPinfo service. locationHint is a Cloudflare best-effort feature and may fall back to a nearby region when capacity is unavailable.*
+- **Smart Region Scheduling (locationHint)**: Queries IPinfo when a server is saved, persists the inferred Durable Object region, and reuses it on connection without another runtime geo lookup. Failures fall back to Cloudflare's default placement, and users may override the region manually. _Note: automatic inference sends target-host information to the third-party IPinfo service. locationHint is a Cloudflare best-effort feature and may fall back to a nearby region when capacity is unavailable._
 - **In-Terminal Text Search**: Real-time log search support via `Ctrl+Shift+F`.
 - **Terminal Log Export**: Download the entire screen buffer of the active terminal session as a `.txt` file with a single click on the header download button, avoiding browser freezes when selecting long logs.
 - **AI Agent Assistant**: Built-in AI Agent sidebar with BYOK (Bring Your Own Key) support for OpenAI-compatible APIs (e.g., DeepSeek). Provides 8 specialized operations tools: execute commands, read terminal context, detect server environment, list processes, manage systemctl services, manage Docker containers, user confirmation, and structured report output. Selecting terminal text exposes an “Ask AI assistant” action that attaches the complete selection to the current tab's composer instead of sending it immediately. The attachment shows its source and size, can be expanded, replaced, or removed, and is sent only after the user adds a question. Terminal selections are explicitly treated as untrusted analysis data—not action authorization—and cannot override user instructions. Agent code blocks support one-click copy, while safe single-line Shell commands can be filled into the active terminal without being executed automatically. Supports LLM streaming output (character-by-character display). Dangerous commands are automatically blocked or require confirmation in a safe, reject-by-default dialog. **Thinking Process Container**: During multi-step tasks, displays the latest 1-2 commands in real-time, auto-collapses with total step count after completion, expands to show full execution history.
@@ -202,7 +199,6 @@ This project implements a complete SSH-2.0 protocol stack:
 ### Prerequisites
 
 - A Cloudflare account.
-- Node.js 22 environment (matching the project CI).
 - Cloudflare Workers Free Plan enabled (required for TCP Sockets and Durable Objects features).
 
 ### Steps
@@ -267,11 +263,6 @@ A fork can use the built-in `Sync upstream` GitHub Actions workflow to periodica
    pnpm run deploy:test
    ```
 
-| Environment | Command | Default Domain | Description |
-|-------------|---------|---------------|-------------|
-| Production | `pnpm run deploy` | `cloudssh.<subdomain>.workers.dev` | main branch code |
-| Test | `pnpm run deploy:test` | `cloudssh-test.<subdomain>.workers.dev` | test branch code, DO data isolated from production |
-
 > **Note**: Both environments bind to Durable Objects with the same `class_name`, but data is completely isolated due to different Worker names. After deployment, you can bind different custom domains for each environment in the Cloudflare Dashboard (Settings → Domains & Routes).
 
 #### Optional: Configure Turnstile Human Verification
@@ -309,9 +300,7 @@ With GitHub OAuth enabled, users can log in with their GitHub account and save/m
 
 > **Environment Variable Type Recommendation**: It is recommended to set all environment variables as **Secret** type. Secrets are stored in Cloudflare's encrypted storage, separate from code deployments, and will not be overwritten or lost during redeployments. When adding variables in the Dashboard, simply select the "Secret" type.
 
-> **Note**: Server credentials (passwords/private keys) are encrypted with AES-256-GCM in each user's UserDBDO SQLite database. The current encryption key is generated on first use and stored in the same Durable Object database as the ciphertext. This prevents plaintext storage but does not protect against compromise of the entire database. For a saved-server connection, the browser never receives the plaintext credential; the server side transfers it internally through a one-time connection token.
-
-> **Migration note**: Existing deployments should evolve Durable Objects through new, never-reused migration tags in `wrangler.toml`. Delete a Worker only when the environment contains no data that must be retained and you intentionally want to rebuild the entire environment; deletion is not a normal production initialization step.
+> **Note**: Server credentials (passwords/private keys) are encrypted with AES-256-GCM in each user's UserDBDO SQLite database. The current encryption key is generated on first use and stored in the same Durable Object database as the ciphertext. For a saved-server connection, the browser never receives the plaintext credential; the server side transfers it internally through a one-time connection token.
 
 <a id="development"></a>
 ## Development
