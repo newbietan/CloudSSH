@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-08-04
+
+### Changed
+- 将浏览器到 Cloudflare 节点的 RTT 采样间隔由 30 秒缩短至 5 秒，使网络延迟变化能够更及时地反馈到终端状态栏。
+- 上一次 RTT 探测尚未返回时跳过新探测，避免弱网环境下重复采样覆盖计时并产生不准确结果。
+
 ## [1.6.0] - 2026-08-03
 
 ### Added
