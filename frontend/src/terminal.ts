@@ -25,6 +25,7 @@ import {
 import { currentTerminalFontSize } from './terminal-layout';
 
 const TRZSZ_MAX_DATA_CHUNK_SIZE = 2 * 1024 * 1024;
+const RTT_HEARTBEAT_INTERVAL_MS = 5000;
 
 export interface SSHConnectionConfig {
   host: string;
@@ -741,13 +742,13 @@ export class SSHTerminal {
   private startHeartbeat(): void {
     this.stopHeartbeat();
     const sendPing = () => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
+      if (this.ws?.readyState === WebSocket.OPEN && this.lastPingTime === null) {
         this.lastPingTime = performance.now();
         this.ws.send(JSON.stringify({ type: 'ping' }));
       }
     };
     sendPing();
-    this.heartbeatInterval = setInterval(sendPing, 30000);
+    this.heartbeatInterval = setInterval(sendPing, RTT_HEARTBEAT_INTERVAL_MS);
   }
 
   private getTerminalSize(): { cols: number; rows: number } {
