@@ -99,6 +99,9 @@ pnpm run build:frontend
 # Synchronize GitHub Pages theme presets from frontend/src/theme.ts
 pnpm run sync:theme-editor
 
+# Rebuild the GitHub Pages social preview image locally (no generative image service)
+pnpm run build:pages-og
+
 # Run tests
 pnpm test
 

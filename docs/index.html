@@ -1,11 +1,459 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="refresh" content="0;url=theme-editor/">
-  <title>CloudSSH</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#07100d">
+  <meta name="robots" content="index,follow">
+  <meta name="description" content="CloudSSH 是基于 Cloudflare Workers 的 Serverless Web SSH 终端，集成 SFTP、AI 助手、移动端适配和 Theme V2。">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="CloudSSH — Serverless Web SSH Terminal">
+  <meta property="og:description" content="在浏览器中安全连接和管理你的服务器，无需部署传统中转服务。">
+  <meta property="og:url" content="https://newbietan.github.io/CloudSSH/">
+  <meta property="og:image" content="https://newbietan.github.io/CloudSSH/assets/og-cloudssh.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="CloudSSH — Serverless Web SSH Terminal">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="CloudSSH — Serverless Web SSH Terminal">
+  <meta name="twitter:description" content="在浏览器中安全连接和管理你的服务器，无需部署传统中转服务。">
+  <meta name="twitter:image" content="https://newbietan.github.io/CloudSSH/assets/og-cloudssh.png">
+  <link rel="canonical" href="https://newbietan.github.io/CloudSSH/">
+  <link rel="alternate" hreflang="zh-CN" href="https://newbietan.github.io/CloudSSH/?lang=zh-CN">
+  <link rel="alternate" hreflang="en" href="https://newbietan.github.io/CloudSSH/?lang=en-US">
+  <link rel="alternate" hreflang="x-default" href="https://newbietan.github.io/CloudSSH/">
+  <link rel="icon" type="image/svg+xml" href="theme-editor/favicon.svg">
+  <link rel="stylesheet" href="assets/home.css">
+  <noscript><style>.reveal { opacity: 1; transform: none; }</style></noscript>
+  <title>CloudSSH — Serverless Web SSH Terminal</title>
 </head>
 <body>
-  <script>window.location.href = 'theme-editor/';</script>
+  <a class="skip-link" href="#main-content" data-i18n="a11y.skip">跳到主要内容</a>
+
+  <div class="page-grid" aria-hidden="true"></div>
+  <div class="page-glow page-glow--one" aria-hidden="true"></div>
+  <div class="page-glow page-glow--two" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="shell header-inner">
+      <a class="brand" href="#top" aria-label="CloudSSH home">
+        <span class="brand-mark" aria-hidden="true">&gt;_</span>
+        <span>CloudSSH</span>
+      </a>
+
+      <nav class="desktop-nav" data-i18n-aria-label="a11y.primaryNav" aria-label="主要导航">
+        <a href="#features" data-i18n="nav.features">核心能力</a>
+        <a href="#architecture" data-i18n="nav.architecture">架构</a>
+        <a href="#themes" data-i18n="nav.themes">主题</a>
+        <a href="#deploy" data-i18n="nav.deploy">部署</a>
+      </nav>
+
+      <div class="header-actions">
+        <button id="language-toggle" class="language-toggle" type="button" aria-label="Switch to English">
+          <span class="language-toggle__signal" aria-hidden="true">A/文</span>
+          <span id="language-toggle-label">English</span>
+        </button>
+        <a class="header-github" href="https://github.com/newbietan/CloudSSH" target="_blank" rel="noopener noreferrer">
+          <span>GitHub</span>
+          <span aria-hidden="true">↗</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main-content">
+    <section id="top" class="hero shell">
+      <div class="hero-copy reveal">
+        <div class="eyebrow">
+          <span class="live-dot" aria-hidden="true"></span>
+          <span data-i18n="hero.eyebrow">开源 · Serverless · 全球边缘网络</span>
+        </div>
+        <h1>
+          <span data-i18n="hero.titleLine1">把服务器终端，</span>
+          <span class="text-gradient" data-i18n="hero.titleLine2">放进任何浏览器。</span>
+        </h1>
+        <p class="hero-lead" data-i18n="hero.lead">CloudSSH 基于 Cloudflare Workers 与 Durable Objects，在边缘节点完成 SSH 协议处理。无需安装客户端，也无需维护传统中转服务器。</p>
+
+        <div class="hero-actions">
+          <a class="button button--primary" href="https://ssh.newbietan.cn" target="_blank" rel="noopener noreferrer">
+            <span data-i18n="action.production">打开正式演示</span>
+            <span aria-hidden="true">↗</span>
+          </a>
+          <a class="button button--secondary" href="https://sshtest.newbietan.cn" target="_blank" rel="noopener noreferrer">
+            <span data-i18n="action.test">体验测试版本</span>
+            <span class="button-badge" data-i18n="common.test">TEST</span>
+          </a>
+          <a class="text-link" href="https://cte.newbietan.cn/theme-editor/" target="_blank" rel="noopener noreferrer">
+            <span data-i18n="action.themeEditor">在线设计主题</span>
+            <span aria-hidden="true">→</span>
+          </a>
+        </div>
+
+        <dl class="hero-facts">
+          <div>
+            <dt data-i18n="hero.fact1Value">纯 TypeScript</dt>
+            <dd data-i18n="hero.fact1Label">自研 SSH-2.0 协议栈</dd>
+          </div>
+          <div>
+            <dt data-i18n="hero.fact2Value">零传统服务器</dt>
+            <dd data-i18n="hero.fact2Label">Cloudflare 原生架构</dd>
+          </div>
+          <div>
+            <dt data-i18n="hero.fact3Value">桌面 + 移动端</dt>
+            <dd data-i18n="hero.fact3Label">随时访问你的终端</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div class="hero-visual reveal" aria-label="CloudSSH terminal preview" data-i18n-aria-label="a11y.terminalPreview">
+        <div class="terminal-window">
+          <div class="terminal-chrome">
+            <div class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+            <span>cloudssh / edge-session</span>
+            <span class="terminal-region">CF-HKG</span>
+          </div>
+          <div class="terminal-tabs">
+            <span class="terminal-tab terminal-tab--active"><i></i> production-hk</span>
+            <span class="terminal-tab">+ SFTP</span>
+            <span class="terminal-tab">+ AI Agent</span>
+          </div>
+          <div class="terminal-screen" aria-hidden="true">
+            <p><span class="term-muted">[edge]</span> <span class="term-cyan">connected</span> via Cloudflare Workers</p>
+            <p><span class="term-prompt">root@cloud:~#</span> uname -a</p>
+            <p>Linux production-hk 6.8.0 x86_64 GNU/Linux</p>
+            <p><span class="term-prompt">root@cloud:~#</span> systemctl status cloudssh</p>
+            <p><span class="term-green">● active (running)</span> · latency <span class="term-cyan">42ms</span></p>
+            <p><span class="term-prompt">root@cloud:~#</span> <span class="terminal-cursor"></span></p>
+          </div>
+          <div class="terminal-status">
+            <span><i class="status-ok"></i><span data-i18n="terminal.connected">已连接</span></span>
+            <span>SSH · AES-256-GCM</span>
+            <span>RTT 42ms</span>
+          </div>
+        </div>
+        <div class="floating-card floating-card--sftp">
+          <span class="floating-label">SFTP</span>
+          <strong data-i18n="hero.sftpTitle">批量文件管理</strong>
+          <span data-i18n="hero.sftpText">多选 · 队列 · 取消</span>
+        </div>
+        <div class="floating-card floating-card--agent">
+          <span class="floating-label">AI</span>
+          <strong data-i18n="hero.agentTitle">运维智能助手</strong>
+          <span data-i18n="hero.agentText">上下文 · 工具 · 确认</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="portal-strip shell reveal" aria-labelledby="portal-heading">
+      <div class="section-kicker" id="portal-heading" data-i18n="portal.kicker">立即体验</div>
+      <div class="portal-grid">
+        <a class="portal-card" href="https://ssh.newbietan.cn" target="_blank" rel="noopener noreferrer">
+          <span class="portal-index">01</span>
+          <span>
+            <strong data-i18n="portal.productionTitle">正式演示站</strong>
+            <small>ssh.newbietan.cn</small>
+          </span>
+          <span class="portal-arrow" aria-hidden="true">↗</span>
+        </a>
+        <a class="portal-card" href="https://sshtest.newbietan.cn" target="_blank" rel="noopener noreferrer">
+          <span class="portal-index">02</span>
+          <span>
+            <strong data-i18n="portal.testTitle">测试演示站</strong>
+            <small>sshtest.newbietan.cn</small>
+          </span>
+          <span class="portal-arrow" aria-hidden="true">↗</span>
+        </a>
+        <a class="portal-card" href="https://cte.newbietan.cn/theme-editor/" target="_blank" rel="noopener noreferrer">
+          <span class="portal-index">03</span>
+          <span>
+            <strong data-i18n="portal.themeTitle">Theme V2 编辑器</strong>
+            <small data-i18n="portal.themeMeta">设计 · 预览 · 导出 JSON</small>
+          </span>
+          <span class="portal-arrow" aria-hidden="true">→</span>
+        </a>
+      </div>
+    </section>
+
+    <section class="section shell video-section" id="demo">
+      <div class="section-heading reveal">
+        <div>
+          <span class="section-kicker" data-i18n="video.kicker">完整演示</span>
+          <h2 data-i18n="video.title">先看它如何工作，再决定是否部署。</h2>
+        </div>
+        <p data-i18n="video.lead">8 分 27 秒演示从连接服务器、终端操作到文件管理的完整流程。视频可直接在本页播放。</p>
+      </div>
+      <div class="video-frame reveal">
+        <iframe
+          src="https://player.bilibili.com/player.html?bvid=BV1UgMt6UEdF&amp;page=1&amp;high_quality=1&amp;danmaku=0"
+          title="CloudSSH Bilibili demo video"
+          data-i18n-title="video.frameTitle"
+          loading="lazy"
+          scrolling="no"
+          frameborder="0"
+          referrerpolicy="strict-origin-when-cross-origin"
+          allow="autoplay; fullscreen; picture-in-picture"
+          allowfullscreen></iframe>
+        <div class="video-meta">
+          <span>BV1UgMt6UEdF</span>
+          <a href="https://www.bilibili.com/video/BV1UgMt6UEdF" target="_blank" rel="noopener noreferrer">
+            <span data-i18n="video.openBilibili">在 B 站打开</span>
+            <span aria-hidden="true">↗</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section shell" id="features">
+      <div class="section-heading reveal">
+        <div>
+          <span class="section-kicker" data-i18n="features.kicker">不只是一个 Web 终端</span>
+          <h2 data-i18n="features.title">连接、管理、传输与协作，都在一个标签页内。</h2>
+        </div>
+        <p data-i18n="features.lead">CloudSSH 将终端、文件管理与智能运维组合为完整工作流，同时保持部署简单、边界清晰。</p>
+      </div>
+
+      <div class="feature-grid">
+        <article class="feature-card feature-card--wide reveal">
+          <div class="feature-number">01</div>
+          <div class="feature-copy">
+            <h3 data-i18n="feature.sshTitle">浏览器原生 SSH-2.0</h3>
+            <p data-i18n="feature.sshText">纯 TypeScript 协议栈，支持 Curve25519、ECDH、AES-GCM/CTR、Ed25519、ECDSA 与 RSA，无需外部 SSH 库。</p>
+          </div>
+          <div class="algorithm-map" aria-hidden="true">
+            <span>KEX</span><b>curve25519</b>
+            <span>CIPHER</span><b>aes256-gcm</b>
+            <span>HOST KEY</span><b>ed25519 / ecdsa / rsa</b>
+          </div>
+        </article>
+
+        <article class="feature-card reveal">
+          <div class="feature-number">02</div>
+          <h3 data-i18n="feature.sftpTitle">可视化 SFTP</h3>
+          <p data-i18n="feature.sftpText">目录浏览、上传下载、重命名与删除；支持多选、连续选择、批量任务、传输队列和取消。</p>
+          <div class="mini-files" aria-hidden="true">
+            <span><i class="file-check"></i> /var/log</span>
+            <span><i class="file-check"></i> backup.tar</span>
+            <span><i></i> deploy.sh</span>
+          </div>
+        </article>
+
+        <article class="feature-card reveal">
+          <div class="feature-number">03</div>
+          <h3 data-i18n="feature.agentTitle">AI 运维助手</h3>
+          <p data-i18n="feature.agentText">BYOK 接入 OpenAI 兼容模型，理解终端上下文并调用 8 个运维工具；危险命令需要确认，高风险模式直接拦截。</p>
+          <div class="agent-prompt" aria-hidden="true">
+            <span>&gt;</span>
+            <span data-i18n="feature.agentPrompt">分析当前服务状态…</span>
+            <i></i>
+          </div>
+        </article>
+
+        <article class="feature-card reveal">
+          <div class="feature-number">04</div>
+          <h3 data-i18n="feature.mobileTitle">真正可用的移动终端</h3>
+          <p data-i18n="feature.mobileText">适配软键盘、安全区、iOS 输入法、触摸选区和快捷键栏，手机 3 张、平板 6 张、桌面 9 张服务器卡片。</p>
+          <div class="device-row" aria-hidden="true"><span>PHONE</span><span>TABLET</span><span>DESKTOP</span></div>
+        </article>
+
+        <article class="feature-card reveal">
+          <div class="feature-number">05</div>
+          <h3 data-i18n="feature.sessionTitle">多会话与低延迟反馈</h3>
+          <p data-i18n="feature.sessionText">单页面管理多个隔离会话，状态栏同时展示客户端 RTT、Cloudflare 到主机的连接延迟与 Colo 节点。</p>
+          <div class="latency-line" aria-hidden="true"><span>CF-HKG</span><b>5ms</b><span>RTT</span><b>42ms</b></div>
+        </article>
+      </div>
+
+      <div class="capability-grid reveal" aria-labelledby="capability-heading">
+        <div class="capability-intro">
+          <span class="section-kicker" data-i18n="capability.kicker">完整能力版图</span>
+          <h3 id="capability-heading" data-i18n="capability.title">常用能力已经连成一套，而不是散落的功能开关。</h3>
+        </div>
+        <article>
+          <span>IDENTITY</span>
+          <strong data-i18n="capability.identityTitle">身份与服务器管理</strong>
+          <p data-i18n="capability.identityText">GitHub OAuth、已保存服务器、标签筛选与加密凭据存储。</p>
+        </article>
+        <article>
+          <span>TRUST</span>
+          <strong data-i18n="capability.trustTitle">主机信任</strong>
+          <p data-i18n="capability.trustText">首次连接展示 SHA-256 指纹，后续连接检测 Host Key 变化。</p>
+        </article>
+        <article>
+          <span>NETWORK</span>
+          <strong data-i18n="capability.networkTitle">广泛连接兼容</strong>
+          <p data-i18n="capability.networkText">IPv4 / IPv6 双栈，兼容 OpenSSH 与 Dropbear。</p>
+        </article>
+        <article>
+          <span>TRANSFER</span>
+          <strong data-i18n="capability.transferTitle">两种文件流</strong>
+          <p data-i18n="capability.transferText">可视化 SFTP 与 trzsz 原生终端传输并行可用。</p>
+        </article>
+        <article>
+          <span>PRIVACY</span>
+          <strong data-i18n="capability.privacyTitle">隐私展示与区域调度</strong>
+          <p data-i18n="capability.privacyText">IP 视觉掩码减少截图泄露；保存服务器时可借助 IPinfo 优化区域。</p>
+        </article>
+        <article>
+          <span>QUALITY</span>
+          <strong data-i18n="capability.qualityTitle">持续质量门禁</strong>
+          <p data-i18n="capability.qualityText">类型检查、单元与集成测试、可复现构建、E2E 与无障碍回归。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section architecture-section" id="architecture">
+      <div class="shell">
+        <div class="section-heading reveal">
+          <div>
+            <span class="section-kicker" data-i18n="architecture.kicker">架构设计</span>
+            <h2 data-i18n="architecture.title">浏览器到服务器，只有必要的三层。</h2>
+          </div>
+          <p data-i18n="architecture.lead">控制面、会话状态和 TCP 连接都运行在 Cloudflare 原生服务中，不需要常驻 VPS 中转层。</p>
+        </div>
+
+        <div class="architecture-map reveal">
+          <article class="arch-node">
+            <span class="arch-tag" data-i18n="architecture.clientTag">客户端</span>
+            <strong data-i18n="architecture.clientTitle">浏览器</strong>
+            <p>xterm.js · SFTP · Theme V2</p>
+            <div class="arch-protocol">HTTPS / WSS</div>
+          </article>
+          <div class="arch-link" aria-hidden="true"><span></span><b>01</b></div>
+          <article class="arch-node arch-node--accent">
+            <span class="arch-tag">CLOUDFLARE EDGE</span>
+            <strong>Worker + Durable Objects</strong>
+            <p data-i18n="architecture.edgeText">路由、认证、SSH 会话与用户数据</p>
+            <div class="arch-protocol">Web Crypto · TCP Sockets</div>
+          </article>
+          <div class="arch-link" aria-hidden="true"><span></span><b>02</b></div>
+          <article class="arch-node">
+            <span class="arch-tag" data-i18n="architecture.serverTag">目标端</span>
+            <strong data-i18n="architecture.serverTitle">你的 SSH 服务器</strong>
+            <p>OpenSSH · Dropbear · IPv4 / IPv6</p>
+            <div class="arch-protocol">SSH-2.0 / SFTP v3</div>
+          </article>
+        </div>
+
+        <div class="architecture-notes reveal">
+          <div><span>01</span><p data-i18n="architecture.note1">浏览器与边缘节点之间使用 HTTPS/WSS。</p></div>
+          <div><span>02</span><p data-i18n="architecture.note2">Worker 与目标主机之间建立完整加密 SSH 会话。</p></div>
+          <div><span>03</span><p data-i18n="architecture.note3">每个活动会话由独立 Durable Object 管理并彼此隔离。</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section shell theme-section" id="themes">
+      <div class="theme-copy reveal">
+        <span class="section-kicker">THEME V2</span>
+        <h2 data-i18n="themes.title">主题不止换颜色，也改变界面的性格。</h2>
+        <p data-i18n="themes.lead">颜色、形状、密度、字体、阴影、动效和组件风格统一进入版本化主题格式。在线编辑、实时预览，再导出 JSON 到 CloudSSH。</p>
+        <ul class="theme-dimensions">
+          <li data-i18n="themes.dimension1">颜色与对比度</li>
+          <li data-i18n="themes.dimension2">圆角与布局密度</li>
+          <li data-i18n="themes.dimension3">字体、阴影与动效</li>
+          <li data-i18n="themes.dimension4">按钮、输入框、卡片与标签页</li>
+        </ul>
+        <a class="button button--primary" href="https://cte.newbietan.cn/theme-editor/" target="_blank" rel="noopener noreferrer">
+          <span data-i18n="action.openThemeEditor">打开在线主题编辑器</span>
+          <span aria-hidden="true">→</span>
+        </a>
+      </div>
+      <div class="theme-stack reveal" aria-label="Theme V2 presets" data-i18n-aria-label="a11y.themePresets">
+        <div class="theme-sample theme-sample--cyber">
+          <span>CYBERPUNK</span><i></i><i></i><i></i>
+        </div>
+        <div class="theme-sample theme-sample--glacier">
+          <span>GLACIER</span><i></i><i></i><i></i>
+        </div>
+        <div class="theme-sample theme-sample--gruvbox">
+          <span>GRUVBOX</span><i></i><i></i><i></i>
+        </div>
+        <div class="theme-sample theme-sample--standard">
+          <span>STANDARD</span><i></i><i></i><i></i>
+        </div>
+      </div>
+    </section>
+
+    <section class="section security-section" id="security">
+      <div class="shell security-layout">
+        <div class="security-copy reveal">
+          <span class="section-kicker" data-i18n="security.kicker">安全边界</span>
+          <h2 data-i18n="security.title">明确每一段信任，也明确每一项限制。</h2>
+          <p data-i18n="security.lead">CloudSSH 不以“浏览器工具”作为降低安全标准的理由。连接、身份、主机指纹、凭据和 AI 操作分别建立边界。</p>
+          <a class="text-link" href="https://github.com/newbietan/CloudSSH/tree/main/src" target="_blank" rel="noopener noreferrer">
+            <span data-i18n="security.inspectSource">审查安全实现</span><span aria-hidden="true">↗</span>
+          </a>
+        </div>
+        <div class="security-list reveal">
+          <article><span>01</span><div><strong data-i18n="security.item1Title">分段加密</strong><p data-i18n="security.item1Text">浏览器到 Worker 使用 HTTPS/WSS，Worker 到服务器使用 SSH-2.0。</p></div></article>
+          <article><span>02</span><div><strong data-i18n="security.item2Title">TOFU 主机校验</strong><p data-i18n="security.item2Text">首次展示 SHA-256 指纹，后续连接检测 Host Key 变化。</p></div></article>
+          <article><span>03</span><div><strong data-i18n="security.item3Title">凭据内部流转</strong><p data-i18n="security.item3Text">已保存凭据通过一次性令牌在服务端内部传递，不返回浏览器。</p></div></article>
+          <article><span>04</span><div><strong data-i18n="security.item4Title">AI 操作确认</strong><p data-i18n="security.item4Text">危险命令默认要求用户确认，禁止模式直接拒绝执行。</p></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section shell deploy-section" id="deploy">
+      <div class="section-heading reveal">
+        <div>
+          <span class="section-kicker" data-i18n="deploy.kicker">快速部署</span>
+          <h2 data-i18n="deploy.title">从 Fork 到自己的 Web SSH，只需三步。</h2>
+        </div>
+        <p data-i18n="deploy.lead">使用 Cloudflare Dashboard Git 集成或 Wrangler CLI。域名、OAuth 和 Turnstile 都是可选配置。</p>
+      </div>
+      <ol class="deploy-steps">
+        <li class="reveal"><span>01</span><div><strong data-i18n="deploy.step1Title">Fork 仓库</strong><p data-i18n="deploy.step1Text">复制 CloudSSH 到自己的 GitHub 账号，保留后续同步上游的能力。</p></div></li>
+        <li class="reveal"><span>02</span><div><strong data-i18n="deploy.step2Title">连接 Cloudflare</strong><p data-i18n="deploy.step2Text">在 Workers & Pages 中连接仓库，使用项目内置构建配置。</p></div></li>
+        <li class="reveal"><span>03</span><div><strong data-i18n="deploy.step3Title">配置并访问</strong><p data-i18n="deploy.step3Text">按需添加 OAuth、Turnstile 和自定义域名，然后开始连接服务器。</p></div></li>
+      </ol>
+      <div class="deploy-actions reveal">
+        <a class="button button--primary" href="https://github.com/newbietan/CloudSSH#quick-start" target="_blank" rel="noopener noreferrer">
+          <span data-i18n="deploy.readGuide">查看完整部署指南</span><span aria-hidden="true">↗</span>
+        </a>
+        <a class="button button--secondary" href="https://github.com/newbietan/CloudSSH/fork" target="_blank" rel="noopener noreferrer">
+          <span data-i18n="deploy.forkNow">Fork CloudSSH</span><span aria-hidden="true">↗</span>
+        </a>
+      </div>
+    </section>
+
+    <section class="section shell open-source-section">
+      <div class="open-source-panel reveal">
+        <div>
+          <span class="section-kicker">APACHE-2.0 · OPEN SOURCE</span>
+          <h2 data-i18n="openSource.title">代码开放，边界透明，欢迎共同完善。</h2>
+          <p data-i18n="openSource.text">CloudSSH 由 TanXin（@newbietan）发起并持续维护。你可以审查协议实现、安全策略和部署过程，也可以通过 Issue 与 Pull Request 参与项目。</p>
+        </div>
+        <div class="open-source-actions">
+          <a class="button button--primary" href="https://github.com/newbietan/CloudSSH" target="_blank" rel="noopener noreferrer">
+            <span data-i18n="openSource.github">查看 GitHub 仓库</span><span aria-hidden="true">↗</span>
+          </a>
+          <a class="text-link" href="https://github.com/newbietan/CloudSSH/graphs/contributors" target="_blank" rel="noopener noreferrer">
+            <span data-i18n="openSource.contributors">贡献者名单</span><span aria-hidden="true">↗</span>
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell footer-inner">
+      <div>
+        <a class="brand brand--footer" href="#top"><span class="brand-mark" aria-hidden="true">&gt;_</span><span>CloudSSH</span></a>
+        <p data-i18n="footer.tagline">Serverless Web SSH terminal on Cloudflare.</p>
+      </div>
+      <div class="footer-links">
+        <a href="https://ssh.newbietan.cn" target="_blank" rel="noopener noreferrer" data-i18n="footer.production">正式演示</a>
+        <a href="https://sshtest.newbietan.cn" target="_blank" rel="noopener noreferrer" data-i18n="footer.test">测试演示</a>
+        <a href="https://cte.newbietan.cn/theme-editor/" target="_blank" rel="noopener noreferrer" data-i18n="footer.theme">主题编辑器</a>
+        <a href="https://github.com/newbietan/CloudSSH" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </div>
+      <p class="footer-copy">© <span id="current-year">2026</span> TanXin · Apache License 2.0</p>
+    </div>
+  </footer>
+
+  <script src="assets/home.js" defer></script>
 </body>
 </html>
