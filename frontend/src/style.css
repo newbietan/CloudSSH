@@ -343,6 +343,13 @@ html:not([data-ui-style="cyberpunk"]) .flicker {
   color: var(--text-dim);
 }
 
+/* Windows Chromium 的原生下拉面板不会可靠继承 select 背景，需要显式适配主题。 */
+select option,
+select optgroup {
+  background-color: var(--bg-elevated);
+  color: var(--text);
+}
+
 .blinking-cursor::after {
   content: '\2588'; color: var(--accent-secondary);
   animation: blink 1s step-end infinite;

@@ -68,6 +68,9 @@ test('内置主题切换 UI 风格但保持服务器列表结构稳定', async (
   await expect(card).toHaveCSS('border-radius', '0px');
   await expect(grid).toHaveClass(/md:grid-cols-2/);
   await expect(grid).toHaveClass(/lg:grid-cols-3/);
+  await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark');
+  await expect(selector.locator('option[value="cyberpunk"]')).toHaveCSS('background-color', 'rgb(19, 19, 19)');
+  await expect(selector.locator('option[value="cyberpunk"]')).toHaveCSS('color', 'rgb(74, 246, 38)');
 });
 
 test('云端主题恢复不阻塞用户空间首屏，并避免覆盖加载期间的用户选择', async ({ page }) => {
