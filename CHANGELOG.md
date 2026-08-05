@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.2] - 2026-08-05
+
+### Changed
+- 精简中文 README 中重复或过细的介绍，并同步调整英文 README，保持部署、功能与维护说明一致。
+
+### Fixed
+- 修复移动端终端触摸选区与浏览器手势冲突导致无法可靠复制的问题：复制按钮可先进入明确的选择模式，拖动生成选区后再次点击完成复制，并在成功后退出选择模式。
+- 完善旧版剪贴板回退路径的选区、异常清理和焦点恢复，提升受限浏览器中的复制兼容性。
+- 修复 Windows Chromium 下赛博朋克主题原生下拉列表仍使用白色背景的问题，使选项背景和文字颜色跟随当前主题。
+
 ## [1.6.1] - 2026-08-04
 
 ### Changed
