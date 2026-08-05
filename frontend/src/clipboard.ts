@@ -51,23 +51,27 @@ export function copyTextWithExecCommand(
   }
 
   const previousFocus = targetDocument.activeElement;
-  const textarea = targetDocument.createElement('textarea');
-  textarea.value = text;
-  textarea.readOnly = true;
-  textarea.tabIndex = -1;
-  textarea.setAttribute('aria-hidden', 'true');
-  textarea.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;pointer-events:none;';
-  targetDocument.body.appendChild(textarea);
-  textarea.focus({ preventScroll: true });
-  textarea.select();
-
-  let copied = false;
+  let textarea: HTMLTextAreaElement | null = null;
   try {
-    copied = targetDocument.execCommand('copy');
+    textarea = targetDocument.createElement('textarea');
+    textarea.value = text;
+    textarea.readOnly = true;
+    textarea.tabIndex = -1;
+    textarea.setAttribute('aria-hidden', 'true');
+    textarea.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;pointer-events:none;';
+    targetDocument.body.appendChild(textarea);
+    try {
+      textarea.focus({ preventScroll: true });
+    } catch {
+      textarea.focus();
+    }
+    textarea.select();
+    textarea.setSelectionRange(0, text.length);
+    return targetDocument.execCommand('copy');
   } catch {
-    copied = false;
+    return false;
   } finally {
-    textarea.remove();
+    textarea?.remove();
     if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
       try {
         previousFocus.focus({ preventScroll: true });
@@ -76,6 +80,4 @@ export function copyTextWithExecCommand(
       }
     }
   }
-
-  return copied;
 }

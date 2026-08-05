@@ -48,6 +48,11 @@ interface ConnectOptions {
   resetDisplay?: boolean;
 }
 
+interface TerminalCell {
+  column: number;
+  row: number;
+}
+
 export class SSHTerminal {
   private terminal: Terminal;
   private fitAddon: FitAddon;
@@ -82,6 +87,9 @@ export class SSHTerminal {
   private onSelectionChanged?: (selection: string, anchor: TerminalSelectionAnchor | null) => void;
   private selectionAnchor: TerminalSelectionAnchor | null = null;
   private selectionPointerActive = false;
+  private mobileSelectionMode = false;
+  private mobileSelectionPointerId: number | null = null;
+  private mobileSelectionStart: TerminalCell | null = null;
   private mobileModifier: MobileModifier | null = null;
   private imeTextarea: HTMLTextAreaElement | null = null;
   private imePendingBaseline: string | null = null;
@@ -98,16 +106,46 @@ export class SSHTerminal {
     if (event.button !== 0) return;
     this.selectionPointerActive = true;
     this.selectionAnchor = { clientX: event.clientX, clientY: event.clientY };
+    if (this.mobileSelectionMode && event.pointerType !== 'mouse') {
+      const cell = this.getTerminalCell(event.clientX, event.clientY);
+      if (!cell) {
+        this.selectionPointerActive = false;
+        return;
+      }
+      event.preventDefault();
+      this.mobileSelectionPointerId = event.pointerId;
+      this.mobileSelectionStart = cell;
+      try {
+        this.container.setPointerCapture?.(event.pointerId);
+      } catch { /* synthetic events and older browsers may not support capture */ }
+      this.updateMobileSelection(cell);
+    }
   };
   private readonly selectionPointerMoveListener = (event: PointerEvent): void => {
     if (!this.selectionPointerActive) return;
     this.selectionAnchor = { clientX: event.clientX, clientY: event.clientY };
+    if (this.mobileSelectionPointerId === event.pointerId && this.mobileSelectionStart) {
+      event.preventDefault();
+      const cell = this.getTerminalCell(event.clientX, event.clientY);
+      if (cell) this.updateMobileSelection(cell);
+      return;
+    }
     if (this.terminal.hasSelection()) {
       this.notifySelectionChanged();
     }
   };
   private readonly selectionPointerUpListener = (event: PointerEvent): void => {
     if (!this.selectionPointerActive) return;
+    if (this.mobileSelectionPointerId === event.pointerId && this.mobileSelectionStart) {
+      event.preventDefault();
+      const cell = this.getTerminalCell(event.clientX, event.clientY);
+      if (cell) this.updateMobileSelection(cell);
+      this.finishMobileSelectionPointer();
+      this.selectionPointerActive = false;
+      this.selectionAnchor = { clientX: event.clientX, clientY: event.clientY };
+      this.notifySelectionChanged();
+      return;
+    }
     this.selectionPointerActive = false;
     this.selectionAnchor = { clientX: event.clientX, clientY: event.clientY };
     this.notifySelectionChanged();
@@ -116,7 +154,10 @@ export class SSHTerminal {
       void this.copySelectionToClipboard(selection);
     }
   };
-  private readonly selectionPointerCancelListener = (): void => {
+  private readonly selectionPointerCancelListener = (event: PointerEvent): void => {
+    if (this.mobileSelectionPointerId === event.pointerId) {
+      this.finishMobileSelectionPointer();
+    }
     this.selectionPointerActive = false;
   };
 
@@ -246,14 +287,31 @@ export class SSHTerminal {
     this.imeTextarea?.blur();
   }
 
+  hasSelection(): boolean {
+    return this.terminal.hasSelection();
+  }
+
+  isMobileSelectionMode(): boolean {
+    return this.mobileSelectionMode;
+  }
+
+  setMobileSelectionMode(enabled: boolean): void {
+    if (this.mobileSelectionMode === enabled) return;
+    this.mobileSelectionMode = enabled;
+    this.container.classList.toggle('mobile-selection-mode', enabled);
+    if (!enabled) {
+      this.finishMobileSelectionPointer();
+      this.selectionPointerActive = false;
+    }
+  }
+
   async copyCurrentSelection(): Promise<boolean> {
     const selection = this.terminal.getSelection();
     if (!selection) {
       notify(t('terminal.noSelection'), { variant: 'info' });
       return false;
     }
-    await this.copySelectionToClipboard(selection);
-    return true;
+    return this.copySelectionToClipboard(selection);
   }
 
   async pasteFromClipboard(): Promise<boolean> {
@@ -312,14 +370,57 @@ export class SSHTerminal {
     this.onSelectionChanged?.(selection, this.selectionAnchor);
   }
 
+  private getTerminalCell(clientX: number, clientY: number): TerminalCell | null {
+    const screen = this.container.querySelector<HTMLElement>('.xterm-screen');
+    const columns = this.terminal.cols;
+    const rows = this.terminal.rows;
+    if (!screen || columns < 1 || rows < 1) return null;
+
+    const rect = screen.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+
+    const x = Math.min(Math.max(clientX - rect.left, 0), Math.max(0, rect.width - 0.01));
+    const y = Math.min(Math.max(clientY - rect.top, 0), Math.max(0, rect.height - 0.01));
+    const column = Math.min(columns - 1, Math.floor(x / rect.width * columns));
+    const viewportRow = Math.min(rows - 1, Math.floor(y / rect.height * rows));
+    return {
+      column,
+      row: this.terminal.buffer.active.viewportY + viewportRow,
+    };
+  }
+
+  private updateMobileSelection(end: TerminalCell): void {
+    if (!this.mobileSelectionStart) return;
+    const columns = this.terminal.cols;
+    const startOffset = this.mobileSelectionStart.row * columns + this.mobileSelectionStart.column;
+    const endOffset = end.row * columns + end.column;
+    const firstOffset = Math.min(startOffset, endOffset);
+    const lastOffset = Math.max(startOffset, endOffset);
+    this.terminal.select(
+      firstOffset % columns,
+      Math.floor(firstOffset / columns),
+      lastOffset - firstOffset + 1,
+    );
+  }
+
+  private finishMobileSelectionPointer(): void {
+    const pointerId = this.mobileSelectionPointerId;
+    if (pointerId !== null && this.container.hasPointerCapture?.(pointerId)) {
+      this.container.releasePointerCapture?.(pointerId);
+    }
+    this.mobileSelectionPointerId = null;
+    this.mobileSelectionStart = null;
+  }
+
   /** 将选中文字写入剪贴板，并按实际复制结果提供反馈。 */
-  private async copySelectionToClipboard(text: string): Promise<void> {
+  private async copySelectionToClipboard(text: string): Promise<boolean> {
     const copied = await copyTextToClipboard(text);
     if (!copied) {
       notify(t('terminal.copyFailed'), { variant: 'danger' });
-      return;
+      return false;
     }
     notify(t('terminal.copySuccess'), { variant: 'success', duration: 1500 });
+    return true;
   }
 
   mount(): void {
@@ -864,6 +965,7 @@ export class SSHTerminal {
 
   disconnect(): void {
     this.reconnectAttempts = this.maxReconnectAttempts;
+    this.setMobileSelectionMode(false);
     this.resetActiveConnection();
     this.lastConfig = null;
     this.resetTerminalDisplay();

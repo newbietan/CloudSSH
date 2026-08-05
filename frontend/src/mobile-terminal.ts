@@ -15,8 +15,9 @@ export class MobileTerminalController {
   private fitFrame: number | null = null;
   private moreMenu: HTMLElement | null;
   private modifierButtons: HTMLButtonElement[];
+  private activeTerminal: SSHTerminal | null = null;
   private readonly viewportListener = () => this.scheduleViewportUpdate();
-  private readonly terminalStateListener = () => this.syncModifierButtons();
+  private readonly terminalStateListener = () => this.syncTerminalState();
   private readonly outsideMenuListener = (event: PointerEvent) => {
     const target = event.target as Node | null;
     const button = document.getElementById('mobile-more-btn');
@@ -79,7 +80,7 @@ export class MobileTerminalController {
     });
 
     document.getElementById('mobile-copy-btn')?.addEventListener('click', () => {
-      void this.getTerminal()?.copyCurrentSelection();
+      void this.handleCopyAction();
     });
     document.getElementById('mobile-paste-btn')?.addEventListener('click', () => {
       void this.getTerminal()?.pasteFromClipboard();
@@ -90,6 +91,7 @@ export class MobileTerminalController {
 
     onLocaleChange(() => this.updateOrientationLabel());
     this.updateOrientationLabel();
+    this.syncTerminalState();
     this.scheduleViewportUpdate();
   }
 
@@ -131,6 +133,47 @@ export class MobileTerminalController {
       button.classList.toggle('is-active', pressed);
       button.setAttribute('aria-pressed', String(pressed));
     });
+  }
+
+  private syncTerminalState(): void {
+    const terminal = this.getTerminal();
+    if (this.activeTerminal && this.activeTerminal !== terminal) {
+      this.activeTerminal.setMobileSelectionMode(false);
+    }
+    this.activeTerminal = terminal;
+    this.syncModifierButtons();
+    this.syncCopyButton();
+  }
+
+  private syncCopyButton(): void {
+    const button = document.getElementById('mobile-copy-btn');
+    if (!button) return;
+    const active = this.getTerminal()?.isMobileSelectionMode() ?? false;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-pressed', String(active));
+  }
+
+  private async handleCopyAction(): Promise<void> {
+    const terminal = this.getTerminal();
+    if (!terminal) return;
+
+    if (terminal.hasSelection()) {
+      const copied = await terminal.copyCurrentSelection();
+      if (copied) {
+        terminal.setMobileSelectionMode(false);
+        terminal.clearSelection();
+      }
+      this.syncCopyButton();
+      return;
+    }
+
+    const enabled = !terminal.isMobileSelectionMode();
+    terminal.setMobileSelectionMode(enabled);
+    if (enabled) {
+      terminal.blur();
+      notify(t('terminal.mobileSelectionHint'), { variant: 'info' });
+    }
+    this.syncCopyButton();
   }
 
   private updateOrientationLabel(): void {
@@ -179,6 +222,8 @@ export class MobileTerminalController {
   }
 
   leaveTerminal(): void {
+    this.activeTerminal?.setMobileSelectionMode(false);
+    this.syncCopyButton();
     if (this.isTerminalFullscreen()) {
       try { screen.orientation?.unlock?.(); } catch { /* ignore */ }
       void document.exitFullscreen?.();

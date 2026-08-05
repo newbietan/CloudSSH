@@ -277,6 +277,13 @@ body.terminal-active {
   text-size-adjust: 100%;
 }
 
+.mobile-selection-mode .xterm,
+.mobile-selection-mode .xterm-screen,
+.mobile-selection-mode .xterm-screen canvas {
+  touch-action: none;
+  cursor: crosshair;
+}
+
 html:not([data-ui-style="cyberpunk"]) .scanlines,
 html:not([data-ui-style="cyberpunk"]) .scanline {
   display: none;

@@ -78,12 +78,13 @@ test('终端只在正常结束鼠标选区时自动复制', async ({ page }) => 
   expect(result.toastVariant).toBe('success');
 });
 
-test('触摸选区不会自动复制，保留给移动端显式复制按钮', async ({ page }) => {
+test('移动端通过选择模式拖动生成选区并显式复制', async ({ page }) => {
   await mockAnonymousSession(page);
   await page.goto('/?lang=zh-CN');
 
   const result = await page.evaluate(async () => {
     const terminalModule = await (window as any).eval("import('/src/terminal.ts')");
+    const mobileModule = await (window as any).eval("import('/src/mobile-terminal.ts')");
     const root = document.createElement('div');
     root.id = 'terminal-touch-copy-test-root';
     root.style.cssText = 'width:390px;height:320px;';
@@ -98,25 +99,60 @@ test('触摸选区不会自动复制，保留给移动端显式复制按钮', as
 
     const terminal = new terminalModule.SSHTerminal(root.id);
     terminal.mount();
+    const mobileController = new mobileModule.MobileTerminalController(() => terminal);
+    mobileController.start();
     const xterm = (terminal as any).terminal;
-    await new Promise<void>((resolve) => xterm.write('touch', resolve));
-    xterm.select(0, 0, 5);
+    await new Promise<void>((resolve) => xterm.write('touch selection', resolve));
+
+    const copyButton = document.getElementById('mobile-copy-btn')!;
+    copyButton.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const selectionModeEnabled = terminal.isMobileSelectionMode();
+
+    const screen = root.querySelector<HTMLElement>('.xterm-screen')!;
+    const rect = screen.getBoundingClientRect();
+    const cellWidth = rect.width / xterm.cols;
+    const cellHeight = rect.height / xterm.rows;
+    const pointerId = 7;
     root.dispatchEvent(new PointerEvent('pointerdown', {
       bubbles: true,
       button: 0,
       pointerType: 'touch',
-      clientX: 10,
-      clientY: 10,
+      pointerId,
+      clientX: rect.left + cellWidth * 0.5,
+      clientY: rect.top + cellHeight * 0.5,
+    }));
+    root.dispatchEvent(new PointerEvent('pointermove', {
+      bubbles: true,
+      button: 0,
+      pointerType: 'touch',
+      pointerId,
+      clientX: rect.left + cellWidth * 4.5,
+      clientY: rect.top + cellHeight * 0.5,
     }));
     window.dispatchEvent(new PointerEvent('pointerup', {
       button: 0,
       pointerType: 'touch',
-      clientX: 60,
-      clientY: 10,
+      pointerId,
+      clientX: rect.left + cellWidth * 4.5,
+      clientY: rect.top + cellHeight * 0.5,
     }));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    const output = { copiedTexts, selection: xterm.getSelection() };
+    const selectionBeforeCopy = xterm.getSelection();
+    const copiedBeforeButton = [...copiedTexts];
+    copyButton.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const output = {
+      copiedTexts,
+      copiedBeforeButton,
+      selectionBeforeCopy,
+      selectionAfterCopy: xterm.getSelection(),
+      selectionModeEnabled,
+      selectionModeAfterCopy: terminal.isMobileSelectionMode(),
+      copyButtonPressed: copyButton.getAttribute('aria-pressed'),
+    };
     terminal.dispose();
     root.remove();
     if (clipboardDescriptor) {
@@ -127,8 +163,13 @@ test('触摸选区不会自动复制，保留给移动端显式复制按钮', as
     return output;
   });
 
-  expect(result.copiedTexts).toEqual([]);
-  expect(result.selection).toBe('touch');
+  expect(result.selectionModeEnabled).toBe(true);
+  expect(result.selectionBeforeCopy).toBe('touch');
+  expect(result.copiedBeforeButton).toEqual([]);
+  expect(result.copiedTexts).toEqual(['touch']);
+  expect(result.selectionAfterCopy).toBe('');
+  expect(result.selectionModeAfterCopy).toBe(false);
+  expect(result.copyButtonPressed).toBe('false');
 });
 
 test('旧版复制回退准确返回结果并恢复原焦点', async ({ page }) => {
@@ -156,6 +197,13 @@ test('旧版复制回退准确返回结果并恢复原焦点', async ({ page }) 
     const rejected = clipboardModule.copyTextWithExecCommand('hello');
     const focusedAfterFailure = document.activeElement === input;
 
+    const originalSelect = HTMLTextAreaElement.prototype.select;
+    HTMLTextAreaElement.prototype.select = () => { throw new Error('selection unavailable'); };
+    const failedDuringSelection = clipboardModule.copyTextWithExecCommand('hello');
+    const temporaryTextareas = document.querySelectorAll('textarea[aria-hidden="true"][tabindex="-1"]').length;
+    const focusedAfterSelectionError = document.activeElement === input;
+    HTMLTextAreaElement.prototype.select = originalSelect;
+
     input.remove();
     if (execCommandDescriptor) {
       Object.defineProperty(document, 'execCommand', execCommandDescriptor);
@@ -163,14 +211,25 @@ test('旧版复制回退准确返回结果并恢复原焦点', async ({ page }) 
       delete (document as any).execCommand;
     }
 
-    return { copied, rejected, focusedAfterSuccess, focusedAfterFailure };
+    return {
+      copied,
+      rejected,
+      failedDuringSelection,
+      temporaryTextareas,
+      focusedAfterSuccess,
+      focusedAfterFailure,
+      focusedAfterSelectionError,
+    };
   });
 
   expect(result).toEqual({
     copied: true,
     rejected: false,
+    failedDuringSelection: false,
+    temporaryTextareas: 0,
     focusedAfterSuccess: true,
     focusedAfterFailure: true,
+    focusedAfterSelectionError: true,
   });
 });
 
