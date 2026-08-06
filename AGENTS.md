@@ -6,6 +6,7 @@
   - scripts/build-html.js (构建流程)
   - package.json (依赖、脚本命令)
   - src/types.ts (Env 接口、类型定义)
+  - CHANGELOG.md (GitHub Pages 版本时间线数据)
 -->
 
 ## Project Overview
@@ -98,6 +99,9 @@ pnpm run build:frontend
 
 # Synchronize GitHub Pages theme presets from frontend/src/theme.ts
 pnpm run sync:theme-editor
+
+# Synchronize the GitHub Pages release timeline from CHANGELOG.md
+pnpm run sync:pages-changelog
 
 # Rebuild the GitHub Pages social preview image locally (no generative image service)
 pnpm run build:pages-og
@@ -239,6 +243,7 @@ ci: CI/CD 变更
 16. **Theme editor ownership** - The full visual editor and JSON export live in `docs/theme-editor/index.html` for GitHub Pages and never authenticate against CloudSSH. `scripts/sync-theme-editor.js` keeps its built-in colors and resolved appearance presets aligned with `frontend/src/theme.ts`; the application and Worker share Theme V2 validation through `src/theme-schema.ts`. The application only imports JSON themes and synchronizes the single custom-theme slot through `/api/user/theme` for signed-in users; later imports replace the previous theme, while anonymous themes remain local.
 17. **Mobile terminal input** - Mobile shortcuts and the iOS keyCode 229 fallback must continue through `TrzszFilter.processTerminalInput`; never send them directly to the WebSocket. Keep the explicit mobile selection mode isolated from desktop mouse auto-copy, map touch drags through xterm's public selection API instead of native long-press selection, and debounce visual viewport refits.
 18. **Saved-server OS detection** - Run OS detection only for signed-in saved servers without a persisted result, through a separate non-blocking SSH exec channel after Shell readiness. Never persist `unknown`; host or port changes must clear the stored OS, and background metadata updates must not change `updated_at` or server ordering. Keep backend canonical keys synchronized with frontend labels/icon fallbacks.
+19. **Pages changelog ownership** - `CHANGELOG.md` is the single source of truth for the Pages release timeline. `scripts/sync-pages-changelog.js` generates `docs/assets/changelog-data.js`; never edit the generated data directly. The Pages workflow regenerates it when `CHANGELOG.md` changes, and the latest changelog version must match `package.json`.
 
 ## Deployment Notes
 
@@ -304,6 +309,7 @@ CLI: `npx wrangler secret set <SECRET_NAME>`
    - 当需要发布新版本时，根据人类指定的版本号，AI 应在本地修改：
      - `package.json` 中的 `"version": "X.Y.Z"`。
      - `CHANGELOG.md` 头部追加最新的更新日志（格式需为 `## [X.Y.Z] - YYYY-MM-DD`）。
+     - 运行 `pnpm run sync:pages-changelog`，同步生成主页版本时间线；不得直接编辑 `docs/assets/changelog-data.js`。
    - 必须遵循 [Keep a Changelog](https://keepachangelog.com/) 规范组织内容。
 2. **README 导航链接维护**：
    - `README.md` 中的 `更新日志` 链接与 `README_en.md` 中的 `Changelog` 跳转超链接必须保持正常。

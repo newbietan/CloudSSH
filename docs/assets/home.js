@@ -9,6 +9,8 @@ const messages = {
     'nav.architecture': '架构',
     'nav.themes': '主题',
     'nav.deploy': '部署',
+    'nav.changelog': '更新日志',
+    'nav.docs': '完整文档',
     'hero.eyebrow': '开源 · Serverless · 全球边缘网络',
     'hero.titleLine1': '把服务器终端，',
     'hero.titleLine2': '放进任何浏览器。',
@@ -97,16 +99,32 @@ const messages = {
     'security.item4Title': 'AI 操作确认',
     'security.item4Text': '危险命令默认要求用户确认，禁止模式直接拒绝执行。',
     'deploy.kicker': '快速部署',
-    'deploy.title': '从 Fork 到自己的 Web SSH，只需三步。',
-    'deploy.lead': '使用 Cloudflare Dashboard Git 集成或 Wrangler CLI。域名、OAuth 和 Turnstile 都是可选配置。',
+    'deploy.title': '从 Fork 到双环境上线，所有步骤都在这里。',
+    'deploy.lead': '无需跳转 README。这里完整覆盖 Cloudflare Git 集成、Wrangler CLI、上游同步、双环境、Turnstile、GitHub OAuth、域名与迁移。',
     'deploy.step1Title': 'Fork 仓库',
     'deploy.step1Text': '复制 CloudSSH 到自己的 GitHub 账号，保留后续同步上游的能力。',
     'deploy.step2Title': '连接 Cloudflare',
     'deploy.step2Text': '在 Workers & Pages 中连接仓库，使用项目内置构建配置。',
     'deploy.step3Title': '配置并访问',
     'deploy.step3Text': '按需添加 OAuth、Turnstile 和自定义域名，然后开始连接服务器。',
-    'deploy.readGuide': '查看完整部署指南',
     'deploy.forkNow': 'Fork CloudSSH',
+    'deploy.openCloudflare': '打开 Cloudflare 控制台',
+    'changelog.kicker': '版本脉冲',
+    'changelog.title': '每一次升级，都留在时间线上。',
+    'changelog.lead': '直接读取项目的 Keep a Changelog 记录。最新版本优先展示，完整历史可继续展开。',
+    'changelog.loading': '正在载入版本记录…',
+    'changelog.archiveTitle': '查看完整版本档案',
+    'changelog.openSource': '在 GitHub 查看完整更新日志',
+    'changelog.releaseCount': '个已发布版本',
+    'changelog.empty': '暂时无法载入版本记录，请前往 GitHub 查看。',
+    'changelog.added': '新增',
+    'changelog.changed': '变更',
+    'changelog.fixed': '修复',
+    'changelog.improved': '改进',
+    'changelog.note': '说明',
+    'docs.kicker': '深层资料库',
+    'docs.title': 'README 的完整信息，收进一座可展开的知识库。',
+    'docs.lead': '默认只展示项目主线；需要选型、部署或参与开发时，再按模块读取所有技术细节。',
     'openSource.title': '代码开放，边界透明，欢迎共同完善。',
     'openSource.text': 'CloudSSH 由 TanXin（@newbietan）发起并持续维护。你可以审查协议实现、安全策略和部署过程，也可以通过 Issue 与 Pull Request 参与项目。',
     'openSource.github': '查看 GitHub 仓库',
@@ -126,6 +144,8 @@ const messages = {
     'nav.architecture': 'Architecture',
     'nav.themes': 'Themes',
     'nav.deploy': 'Deploy',
+    'nav.changelog': 'Changelog',
+    'nav.docs': 'Full guide',
     'hero.eyebrow': 'Open source · Serverless · Global edge network',
     'hero.titleLine1': 'Put your server terminal',
     'hero.titleLine2': 'in any browser.',
@@ -214,16 +234,32 @@ const messages = {
     'security.item4Title': 'AI action confirmation',
     'security.item4Text': 'Dangerous commands require user confirmation, while prohibited patterns are rejected outright.',
     'deploy.kicker': 'Quick deployment',
-    'deploy.title': 'Three steps from Fork to your own Web SSH.',
-    'deploy.lead': 'Use Cloudflare Dashboard Git integration or Wrangler CLI. Custom domains, OAuth, and Turnstile are optional.',
+    'deploy.title': 'From fork to isolated production and test deployments—all in one guide.',
+    'deploy.lead': 'No README detour: follow the complete Git integration, Wrangler, upstream sync, Turnstile, OAuth, domains, and migration guide right here.',
     'deploy.step1Title': 'Fork the repository',
     'deploy.step1Text': 'Copy CloudSSH to your GitHub account and keep the option to sync future upstream releases.',
     'deploy.step2Title': 'Connect Cloudflare',
     'deploy.step2Text': 'Connect the repository in Workers & Pages and use the build configuration included with the project.',
     'deploy.step3Title': 'Configure and connect',
     'deploy.step3Text': 'Optionally add OAuth, Turnstile, and a custom domain, then start connecting to servers.',
-    'deploy.readGuide': 'Read the full deployment guide',
     'deploy.forkNow': 'Fork CloudSSH',
+    'deploy.openCloudflare': 'Open Cloudflare Dashboard',
+    'changelog.kicker': 'Release pulse',
+    'changelog.title': 'Every upgrade leaves a trace on the timeline.',
+    'changelog.lead': 'Rendered directly from the project’s Keep a Changelog record, with the latest releases first and the full history on demand. Release details preserve the source language.',
+    'changelog.loading': 'Loading release history…',
+    'changelog.archiveTitle': 'Open the complete release archive',
+    'changelog.openSource': 'View the complete changelog on GitHub',
+    'changelog.releaseCount': 'published releases',
+    'changelog.empty': 'Release history is unavailable here. View it on GitHub instead.',
+    'changelog.added': 'Added',
+    'changelog.changed': 'Changed',
+    'changelog.fixed': 'Fixed',
+    'changelog.improved': 'Improved',
+    'changelog.note': 'Note',
+    'docs.kicker': 'Deep archive',
+    'docs.title': 'The complete README, reorganized as an expandable knowledge base.',
+    'docs.lead': 'The main page stays focused. Open individual modules when evaluating, deploying, or contributing to CloudSSH.',
     'openSource.title': 'Open code, transparent boundaries, and room to improve together.',
     'openSource.text': 'CloudSSH was initiated by TanXin (@newbietan), who continues to maintain it. Review the protocol implementation, security policy, and deployment path—or contribute through Issues and Pull Requests.',
     'openSource.github': 'View the GitHub repository',
@@ -236,6 +272,114 @@ const messages = {
 };
 
 const localeStorageKey = 'cloudssh_pages_locale';
+
+const changelogSectionKeys = {
+  Added: 'changelog.added',
+  Changed: 'changelog.changed',
+  Fixed: 'changelog.fixed',
+  Improved: 'changelog.improved',
+  Note: 'changelog.note'
+};
+
+function changelogLabel(dictionary, type) {
+  const key = changelogSectionKeys[type];
+  return key && dictionary[key] ? dictionary[key] : type;
+}
+
+function createChangelogSections(release, dictionary) {
+  const container = document.createElement('div');
+  container.className = 'release-sections';
+
+  release.sections.forEach((section) => {
+    const sectionElement = document.createElement('section');
+    sectionElement.className = `release-section release-section--${section.type.toLowerCase()}`;
+
+    const heading = document.createElement('h3');
+    heading.textContent = changelogLabel(dictionary, section.type);
+    sectionElement.appendChild(heading);
+
+    const list = document.createElement('ul');
+    section.items.forEach((entry) => {
+      const item = document.createElement('li');
+      item.textContent = entry;
+      list.appendChild(item);
+    });
+    sectionElement.appendChild(list);
+    container.appendChild(sectionElement);
+  });
+
+  return container;
+}
+
+function createLatestRelease(release, dictionary, index) {
+  const article = document.createElement('article');
+  article.className = `release-card${index === 0 ? ' release-card--current' : ''}`;
+
+  const header = document.createElement('header');
+  const versionBlock = document.createElement('div');
+  const signal = document.createElement('span');
+  signal.textContent = index === 0 ? 'LATEST_BUILD' : `ARCHIVE_0${index}`;
+  const version = document.createElement('strong');
+  version.textContent = `v${release.version}`;
+  versionBlock.append(signal, version);
+
+  const date = document.createElement('time');
+  date.dateTime = release.date;
+  date.textContent = release.date;
+  header.append(versionBlock, date);
+  article.append(header, createChangelogSections(release, dictionary));
+  return article;
+}
+
+function createArchivedRelease(release, dictionary) {
+  const details = document.createElement('details');
+  details.className = 'release-archive-item';
+
+  const summary = document.createElement('summary');
+  const version = document.createElement('strong');
+  version.textContent = `v${release.version}`;
+  const date = document.createElement('time');
+  date.dateTime = release.date;
+  date.textContent = release.date;
+  const count = document.createElement('span');
+  const itemCount = release.sections.reduce((total, section) => total + section.items.length, 0);
+  count.textContent = `${String(itemCount).padStart(2, '0')} LOGS`;
+  summary.append(version, date, count);
+  details.append(summary, createChangelogSections(release, dictionary));
+  return details;
+}
+
+function renderChangelog(locale) {
+  const latestTarget = document.getElementById('changelog-latest');
+  const historyTarget = document.getElementById('changelog-history');
+  const countTarget = document.getElementById('changelog-count');
+  if (!latestTarget || !historyTarget || !countTarget) return;
+
+  const dictionary = messages[locale] || messages['zh-CN'];
+  const releases = window.CLOUDSSH_CHANGELOG?.releases;
+  latestTarget.replaceChildren();
+  historyTarget.replaceChildren();
+
+  if (!Array.isArray(releases) || releases.length === 0) {
+    const fallback = document.createElement('a');
+    fallback.className = 'changelog-loading';
+    fallback.href = 'https://github.com/newbietan/CloudSSH/blob/main/CHANGELOG.md';
+    fallback.target = '_blank';
+    fallback.rel = 'noopener noreferrer';
+    fallback.textContent = dictionary['changelog.empty'];
+    latestTarget.appendChild(fallback);
+    countTarget.textContent = '';
+    return;
+  }
+
+  releases.slice(0, 3).forEach((release, index) => {
+    latestTarget.appendChild(createLatestRelease(release, dictionary, index));
+  });
+  releases.forEach((release) => {
+    historyTarget.appendChild(createArchivedRelease(release, dictionary));
+  });
+  countTarget.textContent = `${releases.length} ${dictionary['changelog.releaseCount']}`;
+}
 
 function normalizeLocale(value) {
   if (!value) return null;
@@ -286,6 +430,8 @@ function applyLocale(locale, updateUrl = true) {
   if (metaDescription) metaDescription.setAttribute('content', dictionary['meta.description']);
   if (openGraphDescription) openGraphDescription.setAttribute('content', dictionary['meta.description']);
   if (twitterDescription) twitterDescription.setAttribute('content', dictionary['meta.description']);
+
+  renderChangelog(locale);
 
   const toggle = document.getElementById('language-toggle');
   const toggleLabel = document.getElementById('language-toggle-label');

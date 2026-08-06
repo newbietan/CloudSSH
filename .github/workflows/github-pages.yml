@@ -5,6 +5,9 @@ on:
     branches: [test, main]
     paths:
       - 'docs/**'
+      - 'CHANGELOG.md'
+      - 'package.json'
+      - 'scripts/sync-pages-changelog.js'
 
 jobs:
   deploy:
@@ -16,6 +19,9 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Sync changelog data
+        run: node scripts/sync-pages-changelog.js
 
       - name: Setup Pages
         uses: actions/configure-pages@v4

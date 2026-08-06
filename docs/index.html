@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="dark">
-  <meta name="theme-color" content="#07100d">
+  <meta name="theme-color" content="#05020a">
   <meta name="robots" content="index,follow">
   <meta name="description" content="CloudSSH 是基于 Cloudflare Workers 的 Serverless Web SSH 终端，集成 SFTP、AI 助手、移动端适配和 Theme V2。">
   <meta property="og:type" content="website">
@@ -49,6 +49,8 @@
         <a href="#architecture" data-i18n="nav.architecture">架构</a>
         <a href="#themes" data-i18n="nav.themes">主题</a>
         <a href="#deploy" data-i18n="nav.deploy">部署</a>
+        <a href="#changelog" data-i18n="nav.changelog">更新日志</a>
+        <a href="#docs" data-i18n="nav.docs">完整文档</a>
       </nav>
 
       <div class="header-actions">
@@ -400,9 +402,9 @@
       <div class="section-heading reveal">
         <div>
           <span class="section-kicker" data-i18n="deploy.kicker">快速部署</span>
-          <h2 data-i18n="deploy.title">从 Fork 到自己的 Web SSH，只需三步。</h2>
+          <h2 data-i18n="deploy.title">从 Fork 到双环境上线，所有步骤都在这里。</h2>
         </div>
-        <p data-i18n="deploy.lead">使用 Cloudflare Dashboard Git 集成或 Wrangler CLI。域名、OAuth 和 Turnstile 都是可选配置。</p>
+        <p data-i18n="deploy.lead">无需跳转 README。这里完整覆盖 Cloudflare Git 集成、Wrangler CLI、上游同步、双环境、Turnstile、GitHub OAuth、域名与迁移。</p>
       </div>
       <ol class="deploy-steps">
         <li class="reveal"><span>01</span><div><strong data-i18n="deploy.step1Title">Fork 仓库</strong><p data-i18n="deploy.step1Text">复制 CloudSSH 到自己的 GitHub 账号，保留后续同步上游的能力。</p></div></li>
@@ -410,12 +412,399 @@
         <li class="reveal"><span>03</span><div><strong data-i18n="deploy.step3Title">配置并访问</strong><p data-i18n="deploy.step3Text">按需添加 OAuth、Turnstile 和自定义域名，然后开始连接服务器。</p></div></li>
       </ol>
       <div class="deploy-actions reveal">
-        <a class="button button--primary" href="https://github.com/newbietan/CloudSSH#quick-start" target="_blank" rel="noopener noreferrer">
-          <span data-i18n="deploy.readGuide">查看完整部署指南</span><span aria-hidden="true">↗</span>
-        </a>
-        <a class="button button--secondary" href="https://github.com/newbietan/CloudSSH/fork" target="_blank" rel="noopener noreferrer">
+        <a class="button button--primary" href="https://github.com/newbietan/CloudSSH/fork" target="_blank" rel="noopener noreferrer">
           <span data-i18n="deploy.forkNow">Fork CloudSSH</span><span aria-hidden="true">↗</span>
         </a>
+        <a class="button button--secondary" href="https://dash.cloudflare.com/?url=https://github.com/newbietan/CloudSSH" target="_blank" rel="noopener noreferrer">
+          <span data-i18n="deploy.openCloudflare">打开 Cloudflare 控制台</span><span aria-hidden="true">↗</span>
+        </a>
+      </div>
+
+      <div class="deploy-manual reveal">
+        <div class="deploy-manual__header">
+          <div><span>DEPLOYMENT_MANUAL</span><strong>01—06</strong></div>
+          <p class="locale-copy" data-locale-copy="zh-CN">以下教程默认全部展开；完成必选步骤后，再按需配置增强能力。</p>
+          <p class="locale-copy" data-locale-copy="en-US">Every guide is expanded by default. Complete the required path first, then add optional capabilities.</p>
+        </div>
+
+        <div class="locale-copy" data-locale-copy="zh-CN">
+          <details class="deploy-guide" open>
+            <summary><span>01 / 推荐</span><div><strong>通过 GitHub 绑定自动部署</strong><small>无需本地环境 · Cloudflare Dashboard</small></div><i aria-hidden="true"></i></summary>
+            <div class="deploy-guide__body">
+              <div class="deploy-callout deploy-callout--required"><b>前置要求</b><p>准备一个 Cloudflare 账号，并启用支持 TCP Sockets 与 Durable Objects 的 Workers 计划。CloudSSH 的 SSH 会话与用户数据依赖这两项能力。</p></div>
+              <ol class="deploy-instructions">
+                <li><b>Fork 仓库</b><p>点击上方 <em>Fork CloudSSH</em>，将仓库复制到自己的 GitHub 账号。</p></li>
+                <li><b>创建 Worker 应用</b><p>登录 Cloudflare Dashboard，进入 <strong>Workers & Pages → Create application</strong>，连接 GitHub 并选择刚刚 Fork 的仓库。</p></li>
+                <li><b>填写构建配置</b><p>Production branch 设为 <code>main</code>，Build command 填写：</p><pre><code>pnpm run build:frontend</code></pre></li>
+                <li><b>保存并部署</b><p>等待首次构建完成，然后通过默认地址 <code>https://cloudssh.&lt;你的子域&gt;.workers.dev</code> 访问。</p></li>
+                <li><b>绑定域名（可选）</b><p>进入 Worker 的 <strong>Settings → Domains &amp; Routes → Add</strong>，添加自己的域名并等待证书生效。</p></li>
+              </ol>
+              <div class="deploy-environments">
+                <article><span>PRODUCTION</span><strong>cloudssh</strong><p><code>main</code> 分支 · 正式域名 · 生产数据</p></article>
+                <article><span>TEST</span><strong>cloudssh-test</strong><p><code>test</code> 分支 · 测试域名 · 独立数据</p></article>
+              </div>
+              <p class="deploy-tip"><b>双环境提示：</b>为 <code>test</code> 分支再创建一个独立 Worker。两个 Worker 即使绑定相同的 Durable Object class_name，数据仍完全隔离。</p>
+            </div>
+          </details>
+
+          <details class="deploy-guide" open>
+            <summary><span>02 / 可选</span><div><strong>让 Fork 自动同步上游版本</strong><small>每天 04:20 检查 · 也可手动触发</small></div><i aria-hidden="true"></i></summary>
+            <div class="deploy-guide__body">
+              <p>项目内置 <code>Sync upstream</code> GitHub Actions 工作流，默认关闭。启用后，Fork 的 <code>main</code> 更新会触发 Cloudflare Git 集成自动构建。</p>
+              <ol class="deploy-instructions">
+                <li><b>确认部署连接</b><p>Cloudflare Worker 应连接你自己的 Fork，Production branch 为 <code>main</code>，自动构建保持开启。</p></li>
+                <li><b>启用 Actions</b><p>进入 Fork 的 <strong>Actions</strong> 页面启用工作流。较早的 Fork 若没有该工作流，先使用 GitHub 的 <strong>Sync fork</strong> 同步一次。</p></li>
+                <li><b>开启定时同步</b><p>前往 <strong>Settings → Secrets and variables → Actions → Variables</strong>，创建 Repository variable：</p><pre><code>AUTO_SYNC_UPSTREAM=true</code></pre></li>
+                <li><b>立即同步（可选）</b><p>进入 <strong>Actions → Sync upstream → Run workflow</strong> 手动执行；手动执行不要求设置上面的变量。</p></li>
+              </ol>
+              <p class="deploy-tip"><b>同步边界：</b>工作流使用 GitHub Fork 同步接口，不需要 PAT，也不会强制覆盖分支。若 <code>main</code> 与上游冲突，任务会失败并保留你的代码；需要手动解决冲突。域名、密钥和环境变量应保存在 Cloudflare Dashboard，不要提交进仓库。</p>
+            </div>
+          </details>
+
+          <details class="deploy-guide" open>
+            <summary><span>03 / CLI</span><div><strong>使用 Wrangler 本地部署</strong><small>适合开发、调试与可控发布</small></div><i aria-hidden="true"></i></summary>
+            <div class="deploy-guide__body">
+              <ol class="deploy-instructions deploy-instructions--code">
+                <li><b>克隆仓库</b><pre><code>git clone https://github.com/newbietan/CloudSSH.git
+cd CloudSSH</code></pre></li>
+                <li><b>安装根目录和前端依赖</b><pre><code>npm install -g pnpm
+pnpm install
+cd frontend &amp;&amp; pnpm install
+cd ..</code></pre></li>
+                <li><b>授权 Wrangler</b><pre><code>npx wrangler login</code></pre></li>
+                <li><b>部署正式环境</b><pre><code>pnpm run deploy</code></pre></li>
+                <li><b>部署隔离测试环境（可选）</b><pre><code>pnpm run deploy:test</code></pre></li>
+              </ol>
+              <p class="deploy-tip"><b>依赖策略：</b>CI 或可复现部署建议使用 <code>pnpm install --frozen-lockfile</code> 与 <code>pnpm --dir frontend install --frozen-lockfile</code>。构建脚本不会自动安装依赖。</p>
+            </div>
+          </details>
+
+          <details class="deploy-guide" open>
+            <summary><span>04 / 安全</span><div><strong>配置 Cloudflare Turnstile</strong><small>阻止机器人滥用匿名连接</small></div><i aria-hidden="true"></i></summary>
+            <div class="deploy-guide__body">
+              <ol class="deploy-instructions">
+                <li><b>创建 Widget</b><p>在 Cloudflare Dashboard 的 <strong>Turnstile</strong> 页面创建 Widget，并添加实际访问域名。</p></li>
+                <li><b>保存两把密钥</b><p>记录公开的 Site Key 与保密的 Secret Key。</p></li>
+                <li><b>写入 Worker 配置</b><p>进入 <strong>Worker → Settings → Variables and Secrets</strong>，添加：</p><div class="deploy-variable-grid"><code>TURNSTILE_SITEKEY = Site Key</code><code>TURNSTILE_SECRET = Secret Key</code></div></li>
+                <li><b>重新部署</b><p>重新部署当前 Worker，使配置进入新版本。</p></li>
+              </ol>
+              <p class="deploy-tip"><b>类型建议：</b>变量建议统一设为 <strong>Secret</strong> 类型。Turnstile 验证按浏览器会话生效，关闭浏览器后需要重新验证。</p>
+            </div>
+          </details>
+
+          <details class="deploy-guide" open>
+            <summary><span>05 / 账号</span><div><strong>配置 GitHub OAuth 与服务器管理</strong><small>可选登录 · 匿名 SSH 仍可使用</small></div><i aria-hidden="true"></i></summary>
+            <div class="deploy-guide__body">
+              <ol class="deploy-instructions">
+                <li><b>创建 OAuth App</b><p>进入 <strong>GitHub Settings → Developer settings → OAuth Apps → New OAuth App</strong>，填写：</p><div class="deploy-variable-grid"><code>Application name = CloudSSH</code><code>Homepage URL = https://your-domain.com</code><code>Callback URL = https://your-domain.com/api/auth/callback</code></div></li>
+                <li><b>保存 GitHub 密钥</b><p>记录 Client ID，生成 Client Secret 并立即保存——Secret 只完整显示一次。</p></li>
+                <li><b>写入 Worker 配置</b><p>在 <strong>Settings → Variables and Secrets</strong> 添加：</p><div class="deploy-variable-grid"><code>GITHUB_CLIENT_ID = Client ID</code><code>GITHUB_CLIENT_SECRET = Client Secret</code><code>BASE_URL = https://your-domain.com</code></div></li>
+                <li><b>重新部署并验证</b><p>部署后登录入口会自动出现；未配置 OAuth 时入口自动隐藏，不影响匿名连接。</p></li>
+              </ol>
+              <p class="deploy-tip"><b>凭据边界：</b>保存的密码或私钥在每个用户的 UserDBDO SQLite 中使用 AES-256-GCM 加密。一键连接时浏览器不会收到明文凭据，服务端以一次性令牌完成内部传递。</p>
+            </div>
+          </details>
+
+          <details class="deploy-guide deploy-guide--warning" open>
+            <summary><span>06 / 必读</span><div><strong>Secrets、域名与迁移注意事项</strong><small>升级已有环境前请确认</small></div><i aria-hidden="true"></i></summary>
+            <div class="deploy-guide__body">
+              <div class="deploy-checklist">
+                <article><b>Secrets</b><p>Dashboard 路径：<strong>Worker → Settings → Variables and Secrets</strong>。CLI 可使用：</p><pre><code>npx wrangler secret set &lt;SECRET_NAME&gt;</code></pre></article>
+                <article><b>自定义域名</b><p>在 <strong>Settings → Domains &amp; Routes</strong> 分别为 production 与 test 绑定域名。开源仓库的 <code>wrangler.toml</code> 不硬编码个人域名。</p></article>
+                <article><b>BASE_URL</b><p>启用 OAuth 时必须与用户实际访问的协议和域名完全一致，否则回调校验会失败。</p></article>
+                <article><b>Durable Object 迁移</b><p>新增 DO 类必须使用新的、不可复用的 migration tag。正常升级不要删除 Worker；只有确认没有数据需要保留且明确重建环境时才删除。</p></article>
+              </div>
+              <div class="deploy-callout deploy-callout--warning"><b>发布前检查</b><p>确认生产连接 <code>main</code>，测试连接 <code>test</code>；两个环境使用不同 Worker 名称与域名。先在测试环境验证登录、SSH、SFTP 和迁移，再发布生产环境。</p></div>
+            </div>
+          </details>
+        </div>
+
+        <div class="locale-copy" data-locale-copy="en-US">
+          <details class="deploy-guide" open>
+            <summary><span>01 / RECOMMENDED</span><div><strong>Deploy through GitHub integration</strong><small>No local setup · Cloudflare Dashboard</small></div><i aria-hidden="true"></i></summary>
+            <div class="deploy-guide__body">
+              <div class="deploy-callout deploy-callout--required"><b>Prerequisites</b><p>Use a Cloudflare account with a Workers plan that supports TCP Sockets and Durable Objects. CloudSSH relies on both for SSH sessions and user data.</p></div>
+              <ol class="deploy-instructions">
+                <li><b>Fork the repository</b><p>Use the <em>Fork CloudSSH</em> button above to copy the project into your GitHub account.</p></li>
+                <li><b>Create a Worker</b><p>Open Cloudflare Dashboard, go to <strong>Workers &amp; Pages → Create application</strong>, connect GitHub, and select your fork.</p></li>
+                <li><b>Set the build</b><p>Choose <code>main</code> as the production branch and use:</p><pre><code>pnpm run build:frontend</code></pre></li>
+                <li><b>Deploy and visit</b><p>After the first build, open <code>https://cloudssh.&lt;your-subdomain&gt;.workers.dev</code>.</p></li>
+                <li><b>Bind a domain (optional)</b><p>Open <strong>Settings → Domains &amp; Routes → Add</strong>, add your domain, and wait for the certificate.</p></li>
+              </ol>
+              <div class="deploy-environments"><article><span>PRODUCTION</span><strong>cloudssh</strong><p><code>main</code> · production domain · production data</p></article><article><span>TEST</span><strong>cloudssh-test</strong><p><code>test</code> · test domain · isolated data</p></article></div>
+              <p class="deploy-tip"><b>Two environments:</b> create a separate Worker for <code>test</code>. Durable Object data remains fully isolated even when both Workers bind the same class_name.</p>
+            </div>
+          </details>
+
+          <details class="deploy-guide" open>
+            <summary><span>02 / OPTIONAL</span><div><strong>Keep a fork synchronized upstream</strong><small>Daily 04:20 CST check · manual trigger available</small></div><i aria-hidden="true"></i></summary>
+            <div class="deploy-guide__body">
+              <p>The built-in <code>Sync upstream</code> GitHub Actions workflow is disabled by default. Once enabled, main-branch updates in the fork trigger Cloudflare's Git deployment.</p>
+              <ol class="deploy-instructions"><li><b>Check the deployment link</b><p>The Worker must use your fork, <code>main</code> as production, and automatic builds.</p></li><li><b>Enable Actions</b><p>Enable workflows on the fork. Older forks should first use GitHub's <strong>Sync fork</strong> if the workflow is missing.</p></li><li><b>Enable scheduled sync</b><p>Under <strong>Settings → Secrets and variables → Actions → Variables</strong>, create:</p><pre><code>AUTO_SYNC_UPSTREAM=true</code></pre></li><li><b>Sync immediately</b><p>Run <strong>Actions → Sync upstream → Run workflow</strong>. Manual runs do not require the variable.</p></li></ol>
+              <p class="deploy-tip"><b>Sync boundary:</b> the workflow uses GitHub's fork sync API, needs no PAT, and never force-overwrites conflicts. A conflict fails safely and keeps your code. Store domains, keys, and environment values in Cloudflare Dashboard—not in Git.</p>
+            </div>
+          </details>
+
+          <details class="deploy-guide" open>
+            <summary><span>03 / CLI</span><div><strong>Deploy locally with Wrangler</strong><small>Best for development and controlled releases</small></div><i aria-hidden="true"></i></summary>
+            <div class="deploy-guide__body"><ol class="deploy-instructions deploy-instructions--code"><li><b>Clone</b><pre><code>git clone https://github.com/newbietan/CloudSSH.git
+cd CloudSSH</code></pre></li><li><b>Install root and frontend dependencies</b><pre><code>npm install -g pnpm
+pnpm install
+cd frontend &amp;&amp; pnpm install
+cd ..</code></pre></li><li><b>Authorize Wrangler</b><pre><code>npx wrangler login</code></pre></li><li><b>Deploy production</b><pre><code>pnpm run deploy</code></pre></li><li><b>Deploy the isolated test environment</b><pre><code>pnpm run deploy:test</code></pre></li></ol><p class="deploy-tip"><b>Reproducible installs:</b> CI should use <code>pnpm install --frozen-lockfile</code> and <code>pnpm --dir frontend install --frozen-lockfile</code>. Build scripts never install dependencies.</p></div>
+          </details>
+
+          <details class="deploy-guide" open>
+            <summary><span>04 / SECURITY</span><div><strong>Configure Cloudflare Turnstile</strong><small>Reduce automated abuse of anonymous access</small></div><i aria-hidden="true"></i></summary>
+            <div class="deploy-guide__body"><ol class="deploy-instructions"><li><b>Create a widget</b><p>Create one in Cloudflare Dashboard under <strong>Turnstile</strong> and add your live domain.</p></li><li><b>Save both keys</b><p>Keep the public Site Key and confidential Secret Key.</p></li><li><b>Configure the Worker</b><p>Open <strong>Worker → Settings → Variables and Secrets</strong>:</p><div class="deploy-variable-grid"><code>TURNSTILE_SITEKEY = Site Key</code><code>TURNSTILE_SECRET = Secret Key</code></div></li><li><b>Redeploy</b><p>Deploy a new Worker version so the configuration takes effect.</p></li></ol><p class="deploy-tip"><b>Type:</b> store values as <strong>Secret</strong>. Turnstile verification lasts for the browser session and is required again after the browser closes.</p></div>
+          </details>
+
+          <details class="deploy-guide" open>
+            <summary><span>05 / IDENTITY</span><div><strong>Configure GitHub OAuth and saved servers</strong><small>Optional sign-in · anonymous SSH stays available</small></div><i aria-hidden="true"></i></summary>
+            <div class="deploy-guide__body"><ol class="deploy-instructions"><li><b>Create an OAuth App</b><p>Open <strong>GitHub Settings → Developer settings → OAuth Apps → New OAuth App</strong>:</p><div class="deploy-variable-grid"><code>Application name = CloudSSH</code><code>Homepage URL = https://your-domain.com</code><code>Callback URL = https://your-domain.com/api/auth/callback</code></div></li><li><b>Save GitHub credentials</b><p>Copy the Client ID, generate a Client Secret, and save it immediately—the complete secret is shown once.</p></li><li><b>Configure the Worker</b><div class="deploy-variable-grid"><code>GITHUB_CLIENT_ID = Client ID</code><code>GITHUB_CLIENT_SECRET = Client Secret</code><code>BASE_URL = https://your-domain.com</code></div></li><li><b>Redeploy and verify</b><p>The sign-in action appears automatically. Without OAuth, it stays hidden and anonymous SSH continues to work.</p></li></ol><p class="deploy-tip"><b>Credential boundary:</b> saved passwords and keys use AES-256-GCM in each user's UserDBDO SQLite. One-click connections keep plaintext out of the browser and pass an internal one-time token.</p></div>
+          </details>
+
+          <details class="deploy-guide deploy-guide--warning" open>
+            <summary><span>06 / READ FIRST</span><div><strong>Secrets, domains, and migrations</strong><small>Review before upgrading an existing environment</small></div><i aria-hidden="true"></i></summary>
+            <div class="deploy-guide__body"><div class="deploy-checklist"><article><b>Secrets</b><p>Dashboard: <strong>Worker → Settings → Variables and Secrets</strong>. CLI:</p><pre><code>npx wrangler secret set &lt;SECRET_NAME&gt;</code></pre></article><article><b>Custom domains</b><p>Bind separate production and test domains under <strong>Settings → Domains &amp; Routes</strong>. The open-source <code>wrangler.toml</code> does not hard-code personal domains.</p></article><article><b>BASE_URL</b><p>When OAuth is enabled, it must exactly match the protocol and domain users visit or callback validation fails.</p></article><article><b>Durable Object migrations</b><p>Every new DO class needs a new, unique migration tag. Never delete a Worker during normal upgrades; only do so when intentionally rebuilding an environment with no data to retain.</p></article></div><div class="deploy-callout deploy-callout--warning"><b>Pre-release check</b><p>Connect production to <code>main</code> and test to <code>test</code>, using distinct Worker names and domains. Verify sign-in, SSH, SFTP, and migrations in test before production.</p></div></div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="section changelog-section" id="changelog">
+      <div class="shell">
+        <div class="section-heading reveal">
+          <div>
+            <span class="section-kicker" data-i18n="changelog.kicker">版本脉冲</span>
+            <h2 data-i18n="changelog.title">每一次升级，都留在时间线上。</h2>
+          </div>
+          <p data-i18n="changelog.lead">直接读取项目的 Keep a Changelog 记录。最新版本优先展示，完整历史可继续展开。</p>
+        </div>
+
+        <div id="changelog-latest" class="changelog-latest reveal" aria-live="polite">
+          <p class="changelog-loading" data-i18n="changelog.loading">正在载入版本记录…</p>
+        </div>
+
+        <details class="changelog-archive reveal">
+          <summary>
+            <span aria-hidden="true">[ + ]</span>
+            <strong data-i18n="changelog.archiveTitle">查看全部历史版本</strong>
+            <small id="changelog-count"></small>
+          </summary>
+          <div id="changelog-history" class="changelog-history"></div>
+        </details>
+
+        <noscript>
+          <p class="changelog-noscript"><a href="https://github.com/newbietan/CloudSSH/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer" data-i18n="changelog.openSource">在 GitHub 查看完整更新日志</a></p>
+        </noscript>
+      </div>
+    </section>
+
+    <section class="section docs-section" id="docs">
+      <div class="shell">
+        <div class="section-heading reveal">
+          <div>
+            <span class="section-kicker" data-i18n="docs.kicker">深层资料库</span>
+            <h2 data-i18n="docs.title">README 的完整信息，收进一座可展开的知识库。</h2>
+          </div>
+          <p data-i18n="docs.lead">默认只展示项目主线；需要选型、部署或参与开发时，再按模块读取所有技术细节。</p>
+        </div>
+
+        <details class="docs-vault reveal">
+          <summary>
+            <span class="docs-vault__signal" aria-hidden="true">[ + ]</span>
+            <span class="docs-vault__summary-copy">
+              <strong class="locale-copy" data-locale-copy="zh-CN">查看更多 · 展开完整项目文档</strong>
+              <strong class="locale-copy" data-locale-copy="en-US">Explore more · Open the complete project guide</strong>
+              <small class="locale-copy" data-locale-copy="zh-CN">功能全集 / 架构协议 / 部署配置 / 开发指南 / 社区与许可</small>
+              <small class="locale-copy" data-locale-copy="en-US">Full feature set / Architecture / Deployment / Development / Community</small>
+            </span>
+            <span class="docs-vault__action">
+              <span class="docs-vault__open locale-copy" data-locale-copy="zh-CN">进入资料库</span>
+              <span class="docs-vault__open locale-copy" data-locale-copy="en-US">Enter archive</span>
+              <span class="docs-vault__close locale-copy" data-locale-copy="zh-CN">收起资料库</span>
+              <span class="docs-vault__close locale-copy" data-locale-copy="en-US">Close archive</span>
+            </span>
+          </summary>
+
+          <div class="docs-vault__body">
+            <div class="docs-index" aria-hidden="true">
+              <span>ARCHIVE://CLOUDSSH</span>
+              <b>05 MODULES</b>
+              <i></i>
+              <span>ACCESS: PUBLIC</span>
+            </div>
+
+            <div class="locale-copy" data-locale-copy="zh-CN">
+              <details class="doc-module" id="docs-features">
+                <summary><span>01</span><strong>完整功能清单</strong><small>协议、终端、文件、账号、AI 与主题</small></summary>
+                <div class="doc-module__content">
+                  <div class="doc-intro"><b>FEATURE_MATRIX</b><p>以下内容覆盖原完整 README 的全部核心特性，并按使用场景重新分组。</p></div>
+                  <div class="doc-feature-list">
+                    <article><span>01</span><div><strong>纯 TypeScript SSH-2.0</strong><p>自研协议栈，不依赖第三方 SSH 库；全部加密操作基于 Web Crypto API。</p></div></article>
+                    <article><span>02</span><div><strong>多算法与双栈连接</strong><p>支持 Curve25519-SHA256、ECDH-NISTP256、IPv4/IPv6，以及 OpenSSH 与 Dropbear。</p></div></article>
+                    <article><span>03</span><div><strong>密码与私钥认证</strong><p>支持密码、Ed25519、ECDSA P-256/P-384/P-521 与 RSA-SHA2 私钥；旧 ssh-rsa 仅在显式兼容配置下启用。</p></div></article>
+                    <article><span>04</span><div><strong>TOFU 主机校验</strong><p>首次显示 SHA-256 Host Key 指纹并持久化，后续连接检测指纹变化，降低中间人攻击风险。</p></div></article>
+                    <article><span>05</span><div><strong>WebGL 极客终端</strong><p>xterm.js 与 WebGL 加速承载高频日志输出，支持多标签、搜索和完整历史日志导出。</p></div></article>
+                    <article><span>06</span><div><strong>可靠剪贴板交互</strong><p>桌面端选区自动复制、右键粘贴；移动端显式选择模式。粘贴统一经过 xterm 输入管线并兼容 bracketed paste。</p></div></article>
+                    <article><span>07</span><div><strong>移动端深度适配</strong><p>动态视口、安全区、软键盘、iOS IME、一次性 Ctrl/Alt、方向键与可选全屏横屏均经过专门处理。</p></div></article>
+                    <article><span>08</span><div><strong>Theme V2</strong><p>五款内置主题覆盖明暗与赛博朋克风格；在线编辑并导出 JSON，登录用户导入后同步到账号，匿名用户保存在当前浏览器。</p></div></article>
+                    <article><span>09</span><div><strong>可视化 SFTP v3</strong><p>目录浏览、上传下载、重命名、新建与删除；支持 Cmd/Ctrl 切换、Shift 连选、全选、批量队列与取消。</p></div></article>
+                    <article><span>10</span><div><strong>trzsz 原生传输</strong><p>支持 trz/tsz、拖拽上传、目录传输、断点续传与 tmux；远端需安装 trzsz。</p></div></article>
+                    <article><span>11</span><div><strong>GitHub OAuth 与服务器管理</strong><p>登录后可保存服务器、一键连接、按名称/主机/用户名搜索，并使用最多 10 个规范化标签筛选。</p></div></article>
+                    <article><span>12</span><div><strong>服务器系统自动识别</strong><p>已保存服务器首次连接后通过独立 exec 通道后台读取 os-release 或 uname；成功结果持久化，unknown 不保存。</p></div></article>
+                    <article><span>13</span><div><strong>IP 隐私展示</strong><p>IPv4/IPv6 在服务器列表和状态栏中视觉掩码，完整地址仍可快捷复制；掩码不等同于加密或访问控制。</p></div></article>
+                    <article><span>14</span><div><strong>隔离的多会话</strong><p>一个页面并行管理多个终端、SFTP 与 Agent，每个标签的环境和上下文互相隔离。</p></div></article>
+                    <article><span>15</span><div><strong>安全匿名历史</strong><p>最近 5 条匿名连接可选使用本地派生密钥进行 AES-256-GCM 加密后存入 localStorage。</p></div></article>
+                    <article><span>16</span><div><strong>双段延迟与 Colo</strong><p>周期展示客户端至 Cloudflare 的 RTT、Cloudflare 至目标主机的连接延迟和当前数据中心代码。</p></div></article>
+                    <article><span>17</span><div><strong>智能区域调度</strong><p>保存服务器时可通过 IPinfo 推断区域并持久化 locationHint；失败时回退 Cloudflare 默认调度，也可手动覆盖。</p></div></article>
+                    <article><span>18</span><div><strong>BYOK AI 运维助手</strong><p>接入 OpenAI 兼容模型，提供命令执行、终端上下文、环境探测、进程、systemctl、Docker、确认和报告 8 个工具。</p></div></article>
+                    <article><span>19</span><div><strong>受控 AI 上下文与操作</strong><p>终端选区仅作为非可信分析附件；安全命令可填入但不自动执行，危险命令需确认，禁止模式直接拒绝。</p></div></article>
+                    <article><span>20</span><div><strong>工程质量门禁</strong><p>test/main 部署前执行冻结安装、类型检查、单元与集成测试、可复现构建、Playwright E2E 和 axe 无障碍回归。</p></div></article>
+                    <article><span>21</span><div><strong>边缘安全加固</strong><p>内置 IPv6 与保留地址 SSRF 防护；/api/ssh 使用有界的 Worker 实例内存限流削峰，授权仍由 Turnstile 或一次性令牌负责。</p></div></article>
+                    <article><span>22</span><div><strong>Durable Object 会话隔离</strong><p>每个终端会话由独立 DO 管理；浏览器 WebSocket 通过 Hibernation API 接入，但活动的 SSH TCP Socket 会让 DO 在会话期间保持唤醒。</p></div></article>
+                  </div>
+                </div>
+              </details>
+
+              <details class="doc-module" id="docs-architecture">
+                <summary><span>02</span><strong>架构与 SSH 协议</strong><small>核心组件、算法矩阵与完整数据流</small></summary>
+                <div class="doc-module__content">
+                  <div class="doc-pipeline">
+                    <div><b>浏览器</b><span>xterm.js / SFTP / Agent / trzsz</span></div><i>HTTPS · WSS</i>
+                    <div><b>Cloudflare Edge</b><span>Worker / SSHSessionDO / UserDBDO</span></div><i>SSH-2.0 · TCP</i>
+                    <div><b>目标服务器</b><span>OpenSSH / Dropbear / IPv4 / IPv6</span></div>
+                  </div>
+                  <h4>核心组件</h4>
+                  <div class="doc-component-grid">
+                    <article><code>src/worker/index.ts</code><p>HTTP 路由、API 与 WebSocket 升级。</p></article>
+                    <article><code>durable-object.ts</code><p>SSH 会话生命周期与 SSRF 边界。</p></article>
+                    <article><code>user-db.ts</code><p>用户、服务器、Session、标签和加密凭据的 SQLite 存储。</p></article>
+                    <article><code>ip-geo.ts / os-detect.ts</code><p>区域推断与远端操作系统规范化。</p></article>
+                    <article><code>ssh-session.ts / src/ssh/*</code><p>SSH 状态机、密钥交换、加密、认证与通道。</p></article>
+                    <article><code>sftp-handler.ts / sftp.ts</code><p>SFTP v3、任务队列、并发下载与上传取消。</p></article>
+                    <article><code>terminal.ts / mobile-terminal.ts</code><p>终端渲染、剪贴板、移动视口、搜索与延迟。</p></article>
+                    <article><code>tab-manager.ts / server-list.ts</code><p>多会话协调、服务器搜索、标签、分页与隐私展示。</p></article>
+                    <article><code>agent/*</code><p>Agent 控制循环、工具、执行通道、SSRF 与命令安全策略。</p></article>
+                    <article><code>theme-schema.ts / theme.ts</code><p>Theme V2 验证、内置预设与导入同步。</p></article>
+                  </div>
+                  <h4>SSH-2.0 算法矩阵</h4>
+                  <div class="table-scroll"><table><thead><tr><th>层级</th><th>实现</th><th>支持内容</th></tr></thead><tbody>
+                    <tr><td>密钥交换</td><td><code>kex-curve25519.ts / kex-ecdh.ts</code></td><td>curve25519-sha256, ecdh-sha2-nistp256</td></tr>
+                    <tr><td>数据加密</td><td><code>crypto.ts</code></td><td>aes256/128-gcm, aes256/192/128-ctr</td></tr>
+                    <tr><td>完整性</td><td><code>crypto.ts</code></td><td>hmac-sha2-256/512, hmac-sha1</td></tr>
+                    <tr><td>主机密钥</td><td><code>ssh-session.ts</code></td><td>Ed25519, ECDSA P-256/P-384/P-521, RSA</td></tr>
+                    <tr><td>用户认证</td><td><code>auth.ts</code></td><td>密码、Ed25519、ECDSA、RSA-SHA2 私钥</td></tr>
+                    <tr><td>通道</td><td><code>channel.ts</code></td><td>session, SFTP, exec, PTY, shell, window-change</td></tr>
+                  </tbody></table></div>
+                  <h4>端到端数据流</h4>
+                  <ol class="doc-flow">
+                    <li>用户输入主机、账号和凭据，或选择 GitHub 账号中已保存的服务器。</li>
+                    <li>浏览器通过 WebSocket 连接 Worker 与对应 SSHSessionDO。</li>
+                    <li>SSHSessionDO 使用 Cloudflare TCP Sockets 连接目标 SSH 服务。</li>
+                    <li>执行版本交换、密钥交换、认证、打开通道、PTY 与 Shell 协商。</li>
+                    <li>浏览器到 Worker 使用 WSS，Worker 到目标主机使用完整 SSH 加密。</li>
+                    <li>SFTP 在独立 SSH 子系统通道运行，不阻塞终端会话。</li>
+                    <li>符合条件的已保存服务器在 Shell 就绪后通过独立 exec 通道后台识别 OS。</li>
+                    <li>Agent 将用户问题和非可信选区上下文交给外部 LLM，并只通过获准的 exec 操作返回流式结果。</li>
+                  </ol>
+                </div>
+              </details>
+
+              <details class="doc-module" id="docs-deployment">
+                <summary><span>03</span><strong>完整部署与可选配置</strong><small>Cloudflare Git、Wrangler、同步、Turnstile 与 OAuth</small></summary>
+                <div class="doc-module__content doc-columns">
+                  <article><h4>Cloudflare Git 集成（推荐）</h4><p>需要 Cloudflare 账号，并启用支持 TCP Sockets 与 Durable Objects 的 Workers 计划。</p><ol><li>Fork CloudSSH 仓库。</li><li>在 Workers & Pages 创建 Worker 并连接 Fork。</li><li>构建命令设为 <code>pnpm run build:frontend</code>，生产分支设为 <code>main</code>。</li><li>部署后使用 workers.dev 域名或绑定自定义域名。</li></ol><p class="doc-note">测试环境使用 test 分支和独立 Worker；两个环境的 Durable Object 数据隔离。升级已有环境时不要删除 Worker，新迁移必须使用新的 migration tag。</p></article>
+                  <article><h4>Wrangler CLI</h4><pre><code>git clone https://github.com/newbietan/CloudSSH.git
+cd CloudSSH
+corepack enable
+pnpm install --frozen-lockfile
+pnpm --dir frontend install --frozen-lockfile
+npx wrangler login
+pnpm run deploy
+
+# 独立测试环境
+pnpm run deploy:test</code></pre></article>
+                  <article><h4>Fork 自动同步上游</h4><p>内置 Sync upstream 工作流默认关闭。启用 Actions 后，在仓库变量中设置 <code>AUTO_SYNC_UPSTREAM=true</code>，即可每天北京时间 04:20 检查上游 main；也可手动运行。流程不需要 PAT，不会强制覆盖存在冲突的分支。</p></article>
+                  <article><h4>Turnstile</h4><p>在 Cloudflare 创建 Widget，然后把 <code>TURNSTILE_SECRET</code> 与 <code>TURNSTILE_SITEKEY</code> 以 Secret 类型配置到 Worker。验证按浏览器会话生效，关闭浏览器后需重新验证。</p></article>
+                  <article><h4>GitHub OAuth</h4><p>创建 OAuth App，将回调地址设为 <code>&lt;BASE_URL&gt;/api/auth/callback</code>，再配置 <code>GITHUB_CLIENT_ID</code>、<code>GITHUB_CLIENT_SECRET</code> 和 <code>BASE_URL</code>。未配置时登录入口隐藏，匿名连接保持可用。</p></article>
+                  <article><h4>凭据与区域隐私</h4><p>已保存凭据在每用户 UserDBDO SQLite 中以 AES-256-GCM 加密，并通过一次性令牌在服务端内部流转。保存或修改主机时会向第三方 IPinfo 查询区域；失败时回退默认调度。</p></article>
+                </div>
+              </details>
+
+              <details class="doc-module" id="docs-development">
+                <summary><span>04</span><strong>开发指南与技术栈</strong><small>目录、环境、命令、CI/CD 与分支规则</small></summary>
+                <div class="doc-module__content">
+                  <div class="doc-columns">
+                    <article><h4>项目结构</h4><pre><code>CloudSSH/
+├── src/worker/       Worker + Durable Objects
+│   └── agent/        AI 控制循环与安全工具
+├── src/ssh/          SSH-2.0 / SFTP v3
+├── frontend/src/     Vite + xterm.js + Theme V2
+├── docs/             Pages 主页与主题编辑器
+├── scripts/          构建与同步脚本
+├── tests/            Vitest / Playwright / axe
+└── wrangler.toml     Cloudflare 部署配置</code></pre></article>
+                    <article><h4>开始开发</h4><pre><code>git clone https://github.com/&lt;你的用户名&gt;/CloudSSH.git
+cd CloudSSH
+corepack enable
+pnpm install --frozen-lockfile
+pnpm --dir frontend install --frozen-lockfile
+npx wrangler login
+pnpm run dev</code></pre><p>Wrangler Dev 提供 Durable Objects 与 TCP Sockets。本地页面通常位于 <code>http://localhost:8787</code>。</p></article>
+                  </div>
+                  <h4>常用命令</h4>
+                  <div class="table-scroll"><table><tbody>
+                    <tr><td><code>pnpm run dev</code></td><td>构建前端并启动 Wrangler Dev</td></tr><tr><td><code>pnpm run build:frontend</code></td><td>构建并内联生产前端</td></tr><tr><td><code>pnpm run typecheck</code></td><td>Worker 与前端类型检查</td></tr><tr><td><code>pnpm test</code></td><td>Vitest 单元与集成测试</td></tr><tr><td><code>pnpm run test:e2e</code></td><td>Playwright E2E 与 axe 无障碍回归</td></tr><tr><td><code>pnpm run verify</code></td><td>执行完整本地质量门禁</td></tr><tr><td><code>pnpm run deploy:test</code></td><td>部署隔离测试环境</td></tr>
+                  </tbody></table></div>
+                  <div class="doc-stack-grid"><article><b>FRONTEND</b><span>TypeScript · Vite · xterm.js · Tailwind · Theme V2</span></article><article><b>TRANSFER</b><span>SFTP v3 · trzsz.js</span></article><article><b>AI</b><span>BYOK · OpenAI-compatible API</span></article><article><b>EDGE</b><span>Cloudflare Workers · Durable Objects · SQLite</span></article><article><b>QUALITY</b><span>Vitest · Playwright · axe · TypeScript</span></article><article><b>WORKSPACE</b><span>pnpm monorepo</span></article></div>
+                  <p class="doc-note">所有开发直接提交到 <code>test</code>，测试通过后合并到受保护的 <code>main</code>；禁止创建特性分支。提交使用中文 Conventional Commits。Fork 用户如需 GitHub Actions 自动部署，应配置 <code>CLOUDFLARE_API_TOKEN</code> 与 <code>CLOUDFLARE_ACCOUNT_ID</code>，并按需修改工作流中的仓库所有者判断。</p>
+                </div>
+              </details>
+
+              <details class="doc-module" id="docs-community">
+                <summary><span>05</span><strong>社区、贡献者与开源许可</strong><small>作者归属、贡献记录与 Star History</small></summary>
+                <div class="doc-module__content">
+                  <div class="contributors-grid"><article><strong>TanXin <small>@newbietan</small></strong><p>项目发起与持续维护；Cloudflare Serverless、SSH/SFTP、AI Agent、安全体系、主题系统与工程化建设。</p></article><article><strong>David xu <small>@xqdoo00o</small></strong><p>Dropbear 兼容、trzsz 迁移、PTY 尺寸处理及会话退出与重连优化。</p></article><article><strong>vonl1 <small>@vonl1</small></strong><p>终端复制粘贴、Vim 兼容、IPv4/IPv6 隐私展示与服务器 OS 自动识别。</p></article></div>
+                  <div class="license-panel"><h4>Apache License 2.0</h4><p>CloudSSH 由 <a href="https://github.com/newbietan" target="_blank" rel="noopener noreferrer">TanXin (@newbietan)</a> 发起并完成核心架构设计。二次修改、衍生开发或再发布必须保留 <a href="https://github.com/newbietan/CloudSSH/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">LICENSE</a> 与 <a href="https://github.com/newbietan/CloudSSH/blob/main/NOTICE" target="_blank" rel="noopener noreferrer">NOTICE</a> 中的许可证、版权和归属声明，并明确注明基于 CloudSSH 修改及原项目链接。商业使用、修改与再分发以 Apache-2.0 条款为准。</p><div><a class="text-link" href="https://github.com/newbietan/CloudSSH/graphs/contributors" target="_blank" rel="noopener noreferrer">完整贡献记录 ↗</a><a class="text-link" href="https://www.star-history.com/#newbietan/CloudSSH&Date" target="_blank" rel="noopener noreferrer">Star History ↗</a><a class="text-link" href="https://github.com/newbietan/CloudSSH/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">更新日志 ↗</a></div></div>
+                </div>
+              </details>
+            </div>
+
+            <div class="locale-copy" data-locale-copy="en-US">
+              <details class="doc-module">
+                <summary><span>01</span><strong>Complete feature catalog</strong><small>Protocol, terminal, files, accounts, AI, and themes</small></summary>
+                <div class="doc-module__content"><div class="doc-intro"><b>FEATURE_MATRIX</b><p>Everything from the original full README, regrouped by how the product is used.</p></div><div class="doc-feature-list">
+                  <article><span>01</span><div><strong>Pure TypeScript SSH-2.0</strong><p>An in-house stack with Web Crypto and no external SSH library.</p></div></article><article><span>02</span><div><strong>Algorithms and dual stack</strong><p>Curve25519, ECDH, IPv4/IPv6, OpenSSH, and Dropbear support.</p></div></article><article><span>03</span><div><strong>Password and private keys</strong><p>Password, Ed25519, ECDSA P-256/P-384/P-521, and RSA-SHA2 authentication.</p></div></article><article><span>04</span><div><strong>TOFU host verification</strong><p>Persist SHA-256 fingerprints and detect later Host Key changes.</p></div></article><article><span>05</span><div><strong>WebGL terminal</strong><p>xterm.js rendering, multiple tabs, search, and complete history export.</p></div></article><article><span>06</span><div><strong>Reliable clipboard</strong><p>Desktop auto-copy, right-click paste, mobile selection, and bracketed-paste compatibility.</p></div></article><article><span>07</span><div><strong>Mobile-first controls</strong><p>Dynamic viewport, safe areas, iOS IME, modifier keys, navigation keys, and optional landscape.</p></div></article><article><span>08</span><div><strong>Theme V2</strong><p>Five presets plus an online editor; signed-in imports sync to the account while anonymous themes remain local.</p></div></article><article><span>09</span><div><strong>Visual SFTP v3</strong><p>Browse, upload, download, rename, create, delete, multi-select, queue, and cancel.</p></div></article><article><span>10</span><div><strong>Native trzsz transfer</strong><p>trz/tsz, drag and drop, directories, resume support, and tmux compatibility.</p></div></article><article><span>11</span><div><strong>GitHub OAuth and saved servers</strong><p>One-click connections, search, encrypted credentials, and up to ten normalized tags.</p></div></article><article><span>12</span><div><strong>Background OS detection</strong><p>A separate exec channel reads os-release or uname without blocking the shell.</p></div></article><article><span>13</span><div><strong>Private IP display</strong><p>Mask IPv4/IPv6 visually while preserving an explicit full-address copy action.</p></div></article><article><span>14</span><div><strong>Isolated multi-session work</strong><p>Each terminal, SFTP panel, Agent, and context remains isolated per tab.</p></div></article><article><span>15</span><div><strong>Protected anonymous history</strong><p>Optionally encrypt the latest five local connections with AES-256-GCM.</p></div></article><article><span>16</span><div><strong>Two-hop latency and Colo</strong><p>Track client RTT, Cloudflare-to-host latency, and the active edge data center.</p></div></article><article><span>17</span><div><strong>Region-aware placement</strong><p>Use IPinfo to infer locationHint with manual override and safe fallback.</p></div></article><article><span>18</span><div><strong>BYOK operations Agent</strong><p>Eight tools cover commands, context, environment, processes, systemd, Docker, confirmation, and reports.</p></div></article><article><span>19</span><div><strong>Controlled AI actions</strong><p>Selections are untrusted data; safe commands only fill the terminal, dangerous actions require confirmation, and blocked patterns never run.</p></div></article><article><span>20</span><div><strong>Engineering quality gate</strong><p>Frozen installs, type checks, unit/integration tests, reproducible builds, E2E, and axe.</p></div></article><article><span>21</span><div><strong>Edge security hardening</strong><p>IPv6 and reserved-address SSRF protection plus bounded per-isolate SSH traffic shedding; authorization still uses Turnstile or one-time tokens.</p></div></article><article><span>22</span><div><strong>Durable Object isolation</strong><p>Each terminal has an isolated DO. WebSockets enter through Hibernation APIs, while an active outbound SSH socket keeps the session awake.</p></div></article>
+                </div></div>
+              </details>
+              <details class="doc-module"><summary><span>02</span><strong>Architecture and SSH protocol</strong><small>Components, algorithm matrix, and end-to-end flow</small></summary><div class="doc-module__content"><div class="doc-pipeline"><div><b>Browser</b><span>xterm.js / SFTP / Agent / trzsz</span></div><i>HTTPS · WSS</i><div><b>Cloudflare Edge</b><span>Worker / SSHSessionDO / UserDBDO</span></div><i>SSH-2.0 · TCP</i><div><b>Target server</b><span>OpenSSH / Dropbear / IPv4 / IPv6</span></div></div><h4>Core components</h4><div class="doc-component-grid"><article><code>src/worker/index.ts</code><p>HTTP routes, APIs, and WebSocket upgrades.</p></article><article><code>durable-object.ts / user-db.ts</code><p>Session lifecycle, identity, servers, tags, and encrypted credentials.</p></article><article><code>ip-geo.ts / os-detect.ts</code><p>Placement hints and normalized operating-system metadata.</p></article><article><code>ssh-session.ts / src/ssh/*</code><p>Transport state machine, KEX, encryption, authentication, and channels.</p></article><article><code>sftp-handler.ts / sftp.ts</code><p>SFTP v3 operations, queues, concurrent downloads, and cancellation.</p></article><article><code>frontend/src/* / agent/*</code><p>Terminal, mobile UI, sessions, servers, Theme V2, and the operations Agent.</p></article></div><h4>SSH-2.0 matrix</h4><div class="table-scroll"><table><tbody><tr><td>KEX</td><td>curve25519-sha256, ecdh-sha2-nistp256</td></tr><tr><td>Ciphers</td><td>AES-256/128-GCM, AES-256/192/128-CTR</td></tr><tr><td>Integrity</td><td>HMAC-SHA2-256/512, HMAC-SHA1</td></tr><tr><td>Host keys</td><td>Ed25519, ECDSA P-256/P-384/P-521, RSA</td></tr><tr><td>Channels</td><td>session, SFTP, exec, PTY, shell, window-change</td></tr></tbody></table></div><h4>Data flow</h4><ol class="doc-flow"><li>Enter a host and credentials or select a saved server.</li><li>The browser opens a WebSocket to the Worker and SSHSessionDO.</li><li>The Durable Object opens a TCP Socket to the SSH service.</li><li>SSH negotiates version, keys, authentication, channels, PTY, and shell.</li><li>WSS protects browser-to-edge; SSH protects edge-to-host.</li><li>SFTP uses an independent subsystem channel.</li><li>Eligible saved servers run non-blocking OS detection over exec.</li><li>The Agent sends user-approved operations through isolated exec channels.</li></ol></div></details>
+              <details class="doc-module"><summary><span>03</span><strong>Deployment and optional configuration</strong><small>Cloudflare Git, Wrangler, sync, Turnstile, and OAuth</small></summary><div class="doc-module__content doc-columns"><article><h4>Cloudflare Git integration</h4><p>Use a Cloudflare account with Workers features that support TCP Sockets and Durable Objects.</p><ol><li>Fork the repository.</li><li>Create a Worker in Workers & Pages and connect the fork.</li><li>Use <code>pnpm run build:frontend</code> and set <code>main</code> as production.</li><li>Use workers.dev or bind a custom domain.</li></ol><p class="doc-note">Use test and a separate Worker for isolated test data. Never delete an existing Worker during normal upgrades; add new migration tags.</p></article><article><h4>Wrangler CLI</h4><pre><code>git clone https://github.com/newbietan/CloudSSH.git
+cd CloudSSH
+corepack enable
+pnpm install --frozen-lockfile
+pnpm --dir frontend install --frozen-lockfile
+npx wrangler login
+pnpm run deploy
+pnpm run deploy:test</code></pre></article><article><h4>Upstream sync</h4><p>Enable Actions and set <code>AUTO_SYNC_UPSTREAM=true</code> to check upstream main daily at 04:20 China Standard Time. Manual runs need no variable. The workflow uses no PAT and never force-overwrites conflicts.</p></article><article><h4>Turnstile</h4><p>Create a widget and store <code>TURNSTILE_SECRET</code> and <code>TURNSTILE_SITEKEY</code> as Worker secrets. Verification lasts for the browser session.</p></article><article><h4>GitHub OAuth</h4><p>Use <code>&lt;BASE_URL&gt;/api/auth/callback</code> and configure the client ID, client secret, and base URL. Anonymous SSH stays available when OAuth is absent.</p></article><article><h4>Credentials and privacy</h4><p>Saved credentials use AES-256-GCM inside each UserDBDO and server-side one-time tokens. Saving a host can send it to IPinfo for placement inference.</p></article></div></details>
+              <details class="doc-module"><summary><span>04</span><strong>Development guide and stack</strong><small>Structure, setup, commands, CI/CD, and branch rules</small></summary><div class="doc-module__content"><div class="doc-columns"><article><h4>Structure</h4><pre><code>CloudSSH/
+├── src/worker/       Worker + Durable Objects
+├── src/ssh/          SSH-2.0 / SFTP v3
+├── frontend/src/     Vite + xterm.js + Theme V2
+├── docs/             Pages and theme editor
+├── scripts/          Build and sync tooling
+└── tests/            Vitest / Playwright / axe</code></pre></article><article><h4>Start developing</h4><pre><code>git clone https://github.com/&lt;you&gt;/CloudSSH.git
+cd CloudSSH
+corepack enable
+pnpm install --frozen-lockfile
+pnpm --dir frontend install --frozen-lockfile
+npx wrangler login
+pnpm run dev</code></pre><p>Wrangler Dev provides Durable Objects and TCP Sockets, normally at <code>http://localhost:8787</code>.</p></article></div><h4>Commands</h4><div class="table-scroll"><table><tbody><tr><td><code>pnpm run dev</code></td><td>Build and start Wrangler Dev</td></tr><tr><td><code>pnpm run build:frontend</code></td><td>Build and inline production assets</td></tr><tr><td><code>pnpm run typecheck</code></td><td>Worker and frontend checks</td></tr><tr><td><code>pnpm test</code></td><td>Unit and integration tests</td></tr><tr><td><code>pnpm run test:e2e</code></td><td>Playwright and axe</td></tr><tr><td><code>pnpm run verify</code></td><td>Complete local quality gate</td></tr></tbody></table></div><div class="doc-stack-grid"><article><b>FRONTEND</b><span>TypeScript · Vite · xterm.js · Tailwind · Theme V2</span></article><article><b>TRANSFER</b><span>SFTP v3 · trzsz.js</span></article><article><b>AI</b><span>BYOK · OpenAI-compatible API</span></article><article><b>EDGE</b><span>Workers · Durable Objects · SQLite</span></article><article><b>QUALITY</b><span>Vitest · Playwright · axe</span></article><article><b>WORKSPACE</b><span>pnpm monorepo</span></article></div><p class="doc-note">All development lands directly on test, then merges to protected main after validation. Feature branches are prohibited; use Chinese Conventional Commits. Fork deployments should configure <code>CLOUDFLARE_API_TOKEN</code> and <code>CLOUDFLARE_ACCOUNT_ID</code> for Actions.</p></div></details>
+              <details class="doc-module"><summary><span>05</span><strong>Community, contributors, and license</strong><small>Attribution, contribution history, and Star History</small></summary><div class="doc-module__content"><div class="contributors-grid"><article><strong>TanXin <small>@newbietan</small></strong><p>Creator and maintainer; Cloudflare architecture, SSH/SFTP, Agent, security, themes, and engineering.</p></article><article><strong>David xu <small>@xqdoo00o</small></strong><p>Dropbear compatibility, trzsz migration, PTY sizing, exit, and reconnect behavior.</p></article><article><strong>vonl1 <small>@vonl1</small></strong><p>Clipboard behavior, Vim compatibility, IP masking, and server OS detection.</p></article></div><div class="license-panel"><h4>Apache License 2.0</h4><p>CloudSSH was created by <a href="https://github.com/newbietan" target="_blank" rel="noopener noreferrer">TanXin (@newbietan)</a>. Derivative projects and redistribution must retain <a href="https://github.com/newbietan/CloudSSH/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">LICENSE</a> and <a href="https://github.com/newbietan/CloudSSH/blob/main/NOTICE" target="_blank" rel="noopener noreferrer">NOTICE</a>, preserve copyright and attribution, and identify CloudSSH and its original repository. Commercial use, modification, and redistribution follow Apache-2.0.</p><div><a class="text-link" href="https://github.com/newbietan/CloudSSH/graphs/contributors" target="_blank" rel="noopener noreferrer">Contributors ↗</a><a class="text-link" href="https://www.star-history.com/#newbietan/CloudSSH&Date" target="_blank" rel="noopener noreferrer">Star History ↗</a><a class="text-link" href="https://github.com/newbietan/CloudSSH/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Changelog ↗</a></div></div></div></details>
+            </div>
+          </div>
+        </details>
       </div>
     </section>
 
@@ -454,6 +843,7 @@
     </div>
   </footer>
 
+  <script src="assets/changelog-data.js" defer></script>
   <script src="assets/home.js" defer></script>
 </body>
 </html>
