@@ -1,5 +1,12 @@
-import { SSH_MSG_USERAUTH_REQUEST, SSH_MSG_USERAUTH_SUCCESS, SSH_MSG_USERAUTH_FAILURE, AuthResult } from '../types';
-import { encodeString, concat, readUint32 } from './utils';
+import {
+  SSH_MSG_USERAUTH_REQUEST,
+  SSH_MSG_USERAUTH_SUCCESS,
+  SSH_MSG_USERAUTH_FAILURE,
+  SSH_MSG_USERAUTH_INFO_REQUEST,
+  SSH_MSG_USERAUTH_INFO_RESPONSE,
+  AuthResult,
+} from '../types';
+import { encodeString, encodeUint32, concat, readUint32 } from './utils';
 
 // SSH key type constants
 const SSH_ED25519 = 'ssh-ed25519';
@@ -14,6 +21,65 @@ const RSA_ALGO = { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' };
 const ECDSA_P256_ALGO = { name: 'ECDSA', namedCurve: 'P-256' };
 const ECDSA_P384_ALGO = { name: 'ECDSA', namedCurve: 'P-384' };
 const ECDSA_P521_ALGO = { name: 'ECDSA', namedCurve: 'P-521' };
+
+// RFC 4256 fields are controlled by the SSH server. Keep their decoded size
+// bounded before forwarding them to the browser.
+const MAX_KEYBOARD_INTERACTIVE_PACKET_BYTES = 256 * 1024;
+const MAX_KEYBOARD_INTERACTIVE_NAME_BYTES = 16 * 1024;
+const MAX_KEYBOARD_INTERACTIVE_INSTRUCTION_BYTES = 64 * 1024;
+const MAX_KEYBOARD_INTERACTIVE_LANGUAGE_BYTES = 1024;
+const MAX_KEYBOARD_INTERACTIVE_PROMPTS = 32;
+const MAX_KEYBOARD_INTERACTIVE_PROMPT_BYTES = 16 * 1024;
+const MAX_KEYBOARD_INTERACTIVE_RESPONSE_BYTES = 64 * 1024;
+
+export interface KeyboardInteractivePrompt {
+  text: string;
+  echo: boolean;
+}
+
+export interface KeyboardInteractiveInfoRequest {
+  name: string;
+  instruction: string;
+  language: string;
+  prompts: KeyboardInteractivePrompt[];
+}
+
+interface DecodedSSHString {
+  value: string;
+  nextOffset: number;
+}
+
+function decodeSSHStringStrict(
+  payload: Uint8Array,
+  offset: number,
+  field: string,
+  maxBytes: number,
+): DecodedSSHString {
+  if (offset > payload.length - 4) {
+    throw new Error(`Malformed keyboard-interactive info request: truncated ${field} length`);
+  }
+
+  const length = readUint32(payload, offset);
+  if (length > maxBytes) {
+    throw new Error(`Malformed keyboard-interactive info request: ${field} exceeds size limit`);
+  }
+
+  const valueOffset = offset + 4;
+  if (length > payload.length - valueOffset) {
+    throw new Error(`Malformed keyboard-interactive info request: truncated ${field}`);
+  }
+
+  let value: string;
+  try {
+    value = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(
+      payload.subarray(valueOffset, valueOffset + length),
+    );
+  } catch {
+    throw new Error(`Malformed keyboard-interactive info request: invalid UTF-8 in ${field}`);
+  }
+
+  return { value, nextOffset: valueOffset + length };
+}
 
 interface ParsedKey {
   signingKey: CryptoKey;
@@ -42,6 +108,135 @@ export class SSHAuth {
     ];
 
     return concat(...parts);
+  }
+
+  /** Build RFC 4256 SSH_MSG_USERAUTH_REQUEST for keyboard-interactive auth. */
+  static buildKeyboardInteractiveAuthRequest(username: string): Uint8Array {
+    return concat(
+      new Uint8Array([SSH_MSG_USERAUTH_REQUEST]),
+      encodeString(username),
+      encodeString('ssh-connection'),
+      encodeString('keyboard-interactive'),
+      encodeString(''), // language tag (deprecated by RFC 4256)
+      encodeString(''), // no preferred submethods
+    );
+  }
+
+  /**
+   * Parse an RFC 4256 SSH_MSG_USERAUTH_INFO_REQUEST payload.
+   *
+   * Every server-controlled field is length-bounded, decoded as strict UTF-8,
+   * and the payload must be consumed exactly. This prevents truncated packets,
+   * oversized browser prompts, and hidden trailing data from being accepted.
+   */
+  static parseKeyboardInteractiveInfoRequest(
+    payload: Uint8Array,
+  ): KeyboardInteractiveInfoRequest {
+    if (payload.length === 0 || payload[0] !== SSH_MSG_USERAUTH_INFO_REQUEST) {
+      throw new Error('Unexpected keyboard-interactive message type');
+    }
+    if (payload.length > MAX_KEYBOARD_INTERACTIVE_PACKET_BYTES) {
+      throw new Error('Malformed keyboard-interactive info request: packet exceeds size limit');
+    }
+
+    let offset = 1;
+    const name = decodeSSHStringStrict(
+      payload,
+      offset,
+      'name',
+      MAX_KEYBOARD_INTERACTIVE_NAME_BYTES,
+    );
+    offset = name.nextOffset;
+
+    const instruction = decodeSSHStringStrict(
+      payload,
+      offset,
+      'instruction',
+      MAX_KEYBOARD_INTERACTIVE_INSTRUCTION_BYTES,
+    );
+    offset = instruction.nextOffset;
+
+    const language = decodeSSHStringStrict(
+      payload,
+      offset,
+      'language',
+      MAX_KEYBOARD_INTERACTIVE_LANGUAGE_BYTES,
+    );
+    offset = language.nextOffset;
+
+    if (offset > payload.length - 4) {
+      throw new Error('Malformed keyboard-interactive info request: truncated prompt count');
+    }
+    const promptCount = readUint32(payload, offset);
+    offset += 4;
+    if (promptCount > MAX_KEYBOARD_INTERACTIVE_PROMPTS) {
+      throw new Error('Malformed keyboard-interactive info request: too many prompts');
+    }
+
+    const prompts: KeyboardInteractivePrompt[] = [];
+    for (let index = 0; index < promptCount; index++) {
+      const prompt = decodeSSHStringStrict(
+        payload,
+        offset,
+        `prompt ${index + 1}`,
+        MAX_KEYBOARD_INTERACTIVE_PROMPT_BYTES,
+      );
+      offset = prompt.nextOffset;
+      if (prompt.value.length === 0) {
+        throw new Error(`Malformed keyboard-interactive info request: prompt ${index + 1} is empty`);
+      }
+
+      if (offset >= payload.length) {
+        throw new Error(`Malformed keyboard-interactive info request: missing echo flag for prompt ${index + 1}`);
+      }
+      const echoByte = payload[offset++];
+      if (echoByte !== 0 && echoByte !== 1) {
+        throw new Error(`Malformed keyboard-interactive info request: invalid echo flag for prompt ${index + 1}`);
+      }
+
+      prompts.push({ text: prompt.value, echo: echoByte === 1 });
+    }
+
+    if (offset !== payload.length) {
+      throw new Error('Malformed keyboard-interactive info request: trailing data');
+    }
+
+    return {
+      name: name.value,
+      instruction: instruction.value,
+      language: language.value,
+      prompts,
+    };
+  }
+
+  /** Build an RFC 4256 SSH_MSG_USERAUTH_INFO_RESPONSE payload. */
+  static buildKeyboardInteractiveInfoResponse(responses: string[]): Uint8Array {
+    if (!Array.isArray(responses) || responses.length > MAX_KEYBOARD_INTERACTIVE_PROMPTS) {
+      throw new Error('Invalid keyboard-interactive responses: too many responses');
+    }
+
+    const encodedResponses: Uint8Array[] = [];
+    let totalBytes = 1 + 4;
+    for (const response of responses) {
+      if (typeof response !== 'string') {
+        throw new Error('Invalid keyboard-interactive responses: every response must be a string');
+      }
+      const encoded = encodeString(response);
+      if (encoded.length - 4 > MAX_KEYBOARD_INTERACTIVE_RESPONSE_BYTES) {
+        throw new Error('Invalid keyboard-interactive responses: response exceeds size limit');
+      }
+      totalBytes += encoded.length;
+      if (totalBytes > MAX_KEYBOARD_INTERACTIVE_PACKET_BYTES) {
+        throw new Error('Invalid keyboard-interactive responses: packet exceeds size limit');
+      }
+      encodedResponses.push(encoded);
+    }
+
+    return concat(
+      new Uint8Array([SSH_MSG_USERAUTH_INFO_RESPONSE]),
+      encodeUint32(responses.length),
+      ...encodedResponses,
+    );
   }
 
   /**
@@ -707,6 +902,9 @@ export class SSHAuth {
   }
 
   static handleResponse(payload: Uint8Array): AuthResult {
+    if (payload.length === 0) {
+      throw new Error('Unexpected empty auth response');
+    }
     const msgType = payload[0];
 
     switch (msgType) {
@@ -714,13 +912,41 @@ export class SSHAuth {
         return { success: true };
 
       case SSH_MSG_USERAUTH_FAILURE: {
+        if (payload.length < 5) {
+          throw new Error('Malformed USERAUTH_FAILURE: truncated method list length');
+        }
         const len = readUint32(payload, 1);
-        const methods = new TextDecoder().decode(
-          payload.slice(5, 5 + len)
-        );
+        if (len > payload.length - 5) {
+          throw new Error('Malformed USERAUTH_FAILURE: truncated method list');
+        }
+
+        const partialSuccessOffset = 5 + len;
+        if (payload.length < partialSuccessOffset + 1) {
+          throw new Error('Malformed USERAUTH_FAILURE: missing partial success flag');
+        }
+        if (payload.length > partialSuccessOffset + 1) {
+          throw new Error('Malformed USERAUTH_FAILURE: trailing data');
+        }
+
+        let methods: string;
+        try {
+          methods = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(
+            payload.subarray(5, 5 + len),
+          );
+        } catch {
+          throw new Error('Malformed USERAUTH_FAILURE: invalid method list encoding');
+        }
+
+        const partialSuccessByte = payload[partialSuccessOffset];
+        if (partialSuccessByte !== 0 && partialSuccessByte !== 1) {
+          throw new Error('Malformed USERAUTH_FAILURE: invalid partial success flag');
+        }
+        const partialSuccess = partialSuccessByte === 1;
+
         return {
           success: false,
-          allowedMethods: methods.split(','),
+          allowedMethods: methods === '' ? [] : methods.split(','),
+          partialSuccess,
         };
       }
 

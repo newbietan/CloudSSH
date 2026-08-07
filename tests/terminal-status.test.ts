@@ -11,7 +11,13 @@ describe('SSH 状态国际化', () => {
     expect(localizedSSHMessage('正在使用密钥认证...', 'auth_public_key'))
       .toBe('Authenticating with a public key…');
     expect(localizedSSHMessage('认证失败：用户名或密码错误', 'auth_failed'))
-      .toBe('Authentication failed: incorrect username or password');
+      .toBe('Authentication failed: the username, credential, or interactive response was rejected');
+    expect(localizedSSHMessage('服务器要求交互式认证', 'auth_interactive_required'))
+      .toBe('The server requires interactive authentication');
+    expect(localizedSSHMessage('交互式认证失败', 'auth_interactive_failed'))
+      .toBe('Interactive authentication failed: the server rejected the response');
+    expect(localizedSSHMessage('等待响应超时', 'auth_interactive_timeout'))
+      .toBe('Timed out waiting for an interactive authentication response');
   });
 
   it('保留指纹和错误详情等动态参数', () => {

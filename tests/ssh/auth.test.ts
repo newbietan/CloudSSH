@@ -91,11 +91,12 @@ describe('SSHAuth', () => {
     it('should handle USERAUTH_FAILURE', () => {
       const methods = 'publickey,password';
       const methodsBytes = new TextEncoder().encode(methods);
-      const payload = new Uint8Array(5 + methodsBytes.length);
+      const payload = new Uint8Array(6 + methodsBytes.length);
       payload[0] = 51; // SSH_MSG_USERAUTH_FAILURE
 
       new DataView(payload.buffer).setUint32(1, methodsBytes.length, false);
       payload.set(methodsBytes, 5);
+      payload[payload.length - 1] = 0; // partial success = false
 
       const result = SSHAuth.handleResponse(payload);
 

@@ -37,6 +37,8 @@ export interface ECDHResult {
 export interface AuthResult {
   success: boolean;
   allowedMethods?: string[];
+  /** RFC 4252: whether a previous authentication step partially succeeded. */
+  partialSuccess?: boolean;
 }
 
 export interface SSHConnectionConfig {
@@ -162,6 +164,11 @@ export const SSH_MSG_KEX_ECDH_REPLY = 31;
 export const SSH_MSG_USERAUTH_REQUEST = 50;
 export const SSH_MSG_USERAUTH_FAILURE = 51;
 export const SSH_MSG_USERAUTH_SUCCESS = 52;
+// User-auth message numbers 60/61 are method-specific. These names apply only
+// while keyboard-interactive is active; 60 is PK_OK/PASSWD_CHANGEREQ in the
+// publickey/password methods and must be disambiguated by session state.
+export const SSH_MSG_USERAUTH_INFO_REQUEST = 60;
+export const SSH_MSG_USERAUTH_INFO_RESPONSE = 61;
 export const SSH_MSG_GLOBAL_REQUEST = 80;
 export const SSH_MSG_REQUEST_SUCCESS = 81;
 export const SSH_MSG_REQUEST_FAILURE = 82;

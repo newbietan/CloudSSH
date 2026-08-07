@@ -51,7 +51,7 @@ src/
 │   ├── kex-curve25519.ts  # Curve25519-SHA256 key exchange
 │   ├── kex-ecdh.ts   # ECDH-NISTP256 key exchange
 │   ├── algorithms.ts # Supported algorithm definitions
-│   ├── auth.ts       # Authentication methods (password, Ed25519/ECDSA/RSA private keys)
+│   ├── auth.ts       # Authentication methods (password, RFC 4256 keyboard-interactive, Ed25519/ECDSA/RSA private keys)
 │   ├── channel.ts    # SSH channels (session + SFTP subsystem + exec)
 │   ├── crypto.ts     # AES-GCM/CTR cipher, HMAC implementations
 │   ├── keys.ts       # Key derivation per RFC 4253
@@ -65,6 +65,7 @@ frontend/
 ├── src/
 │   ├── main.ts       # Frontend entry point (routing, theme, event handlers)
 │   ├── terminal.ts   # xterm.js terminal setup (search, dynamic RTT latency, log export)
+│   ├── auth-challenge-dialog.ts # RFC 4256 multi-round authentication prompt UI
 │   ├── mobile-terminal.ts # Mobile viewport, shortcut toolbar, clipboard and landscape controller
 │   ├── mobile-input.ts # Pure iOS IME diff and one-shot modifier helpers
 │   ├── tab-manager.ts # Tab manager (multi-session terminal/SFTP/Agent coordinator)
@@ -236,6 +237,7 @@ ci: CI/CD 变更
 16. **Theme editor ownership** - The full visual editor and JSON export live in `docs/theme-editor/index.html` for GitHub Pages and never authenticate against CloudSSH. `scripts/sync-theme-editor.js` keeps its built-in colors and resolved appearance presets aligned with `frontend/src/theme.ts`; the application and Worker share Theme V2 validation through `src/theme-schema.ts`. The application only imports JSON themes and synchronizes the single custom-theme slot through `/api/user/theme` for signed-in users; later imports replace the previous theme, while anonymous themes remain local.
 17. **Mobile terminal input** - Mobile shortcuts and the iOS keyCode 229 fallback must continue through `TrzszFilter.processTerminalInput`; never send them directly to the WebSocket. Keep the explicit mobile selection mode isolated from desktop mouse auto-copy, map touch drags through xterm's public selection API instead of native long-press selection, and debounce visual viewport refits.
 18. **Saved-server OS detection** - Run OS detection only for signed-in saved servers without a persisted result, through a separate non-blocking SSH exec channel after Shell readiness. Never persist `unknown`; host or port changes must clear the stored OS, and background metadata updates must not change `updated_at` or server ordering. Keep backend canonical keys synchronized with frontend labels/icon fallbacks.
+19. **Keyboard-interactive authentication** - RFC 4256 challenges are event-driven during the SSH auth state. Keep method-specific message type 60 disambiguated by the active auth method, use `partial_success` to advance bounded multi-factor stages, bind browser responses to one random challenge ID and originating WebSocket, never log responses, clear pending challenges on timeout/reconnect/close, and require explicit user action before substituting a stored password.
 
 ## Deployment Notes
 

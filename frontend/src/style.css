@@ -880,6 +880,197 @@ select optgroup {
   filter: brightness(1.12);
 }
 
+/* RFC 4256 keyboard-interactive authentication */
+.auth-challenge-dialog {
+  --challenge-color: var(--accent-secondary);
+  width: min(540px, calc(100vw - 32px));
+  max-width: none;
+  max-height: min(760px, calc(var(--visual-viewport-height) - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
+  margin: auto;
+  padding: 0;
+  color: var(--on-surface);
+  background: transparent;
+  border: 0;
+  overflow: visible;
+}
+
+.auth-challenge-dialog::backdrop {
+  background: var(--modal-overlay);
+  backdrop-filter: blur(var(--surface-blur));
+  animation: app-dialog-backdrop-in var(--motion-normal) ease-out;
+}
+
+.auth-challenge-dialog[open] .auth-challenge-dialog__panel {
+  animation: app-dialog-in var(--motion-normal) ease-out;
+}
+
+.auth-challenge-dialog__panel {
+  position: relative;
+  max-height: min(760px, calc(var(--visual-viewport-height) - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
+  padding: 22px;
+  background: var(--bg-surface);
+  border: 1px solid color-mix(in srgb, var(--challenge-color) 50%, var(--border));
+  border-radius: var(--modal-radius);
+  box-shadow: var(--shadow-modal);
+  overflow: auto;
+}
+
+.auth-challenge-dialog__accent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--challenge-color), transparent);
+}
+
+.auth-challenge-dialog__header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.auth-challenge-dialog__icon {
+  color: var(--challenge-color);
+  font-size: 22px;
+  font-variation-settings: 'FILL' 1;
+}
+
+.auth-challenge-dialog__title {
+  color: var(--challenge-color);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.auth-challenge-dialog__target {
+  margin-top: 15px;
+  padding: 9px 11px;
+  color: var(--on-surface);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  background: var(--bg-terminal);
+  border: 1px solid var(--border);
+  border-radius: var(--control-radius);
+  overflow-wrap: anywhere;
+}
+
+.auth-challenge-dialog__description {
+  margin-top: 14px;
+  color: var(--on-surface-variant);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.auth-challenge-dialog__warning {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.auth-challenge-dialog__name {
+  margin-top: 10px;
+  color: var(--on-surface);
+  font-weight: 700;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.auth-challenge-dialog__instruction {
+  margin-top: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.auth-challenge-dialog__prompts {
+  display: grid;
+  gap: 15px;
+  margin-top: 17px;
+}
+
+.auth-challenge-dialog__label {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.auth-challenge-dialog__input {
+  width: 100%;
+  padding: 10px 11px;
+  color: var(--on-surface);
+  font: inherit;
+  font-size: 14px;
+  background: var(--bg-terminal);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--control-radius);
+  outline: none;
+  transition: border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
+}
+
+.auth-challenge-dialog__input:focus {
+  border-color: var(--challenge-color);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--challenge-color) 18%, transparent);
+}
+
+.auth-challenge-dialog__hint {
+  margin-top: 14px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.auth-challenge-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 20px;
+}
+
+.auth-challenge-dialog__button {
+  min-width: 88px;
+  padding: 9px 14px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border-radius: var(--control-radius);
+  cursor: pointer;
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease, filter var(--motion-fast) ease;
+}
+
+.auth-challenge-dialog__button:focus-visible {
+  outline: 2px solid var(--challenge-color);
+  outline-offset: 2px;
+}
+
+.auth-challenge-dialog__button--cancel {
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+}
+
+.auth-challenge-dialog__button--stored {
+  color: var(--challenge-color);
+  background: color-mix(in srgb, var(--challenge-color) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--challenge-color) 55%, var(--border));
+}
+
+.auth-challenge-dialog__button--submit {
+  color: var(--bg);
+  background: var(--challenge-color);
+  border: 1px solid var(--challenge-color);
+}
+
+.auth-challenge-dialog__button:hover { filter: brightness(1.12); }
+
 @keyframes app-dialog-in {
   from { opacity: 0; transform: translateY(10px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -896,12 +1087,21 @@ select optgroup {
   .app-dialog__panel { padding: 19px 17px; }
   .app-dialog__actions { flex-direction: column-reverse; }
   .app-dialog__button { width: 100%; }
+  .auth-challenge-dialog {
+    width: calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right));
+    max-height: calc(var(--visual-viewport-height) - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+  .auth-challenge-dialog__panel { padding: 19px 17px; }
+  .auth-challenge-dialog__actions { flex-direction: column; }
+  .auth-challenge-dialog__button { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .app-toast,
   .app-dialog[open] .app-dialog__panel,
-  .app-dialog::backdrop {
+  .app-dialog::backdrop,
+  .auth-challenge-dialog[open] .auth-challenge-dialog__panel,
+  .auth-challenge-dialog::backdrop {
     animation: none;
     transition: none;
   }

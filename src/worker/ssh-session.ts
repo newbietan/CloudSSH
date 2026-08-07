@@ -8,6 +8,7 @@ import {
   SSH_MSG_EXT_INFO,
   SSH_MSG_USERAUTH_SUCCESS,
   SSH_MSG_USERAUTH_FAILURE,
+  SSH_MSG_USERAUTH_INFO_REQUEST,
   SSH_MSG_GLOBAL_REQUEST,
   SSH_MSG_REQUEST_FAILURE,
   SSH_MSG_REQUEST_SUCCESS,
@@ -57,6 +58,17 @@ import type { Env } from '../types';
 
 const LOCAL_WINDOW_ADJUST_THRESHOLD = 512 * 1024;
 const KEEPALIVE_REQUEST_NAME = new TextEncoder().encode('keepalive@openssh.com');
+const AUTH_CHALLENGE_TIMEOUT_MS = 2 * 60 * 1000;
+const MAX_KEYBOARD_INTERACTIVE_ROUNDS = 8;
+const MAX_PARTIAL_AUTHENTICATION_STAGES = 8;
+
+type ActiveAuthMethod = 'password' | 'publickey' | 'keyboard-interactive';
+
+interface PendingAuthChallenge {
+  id: string;
+  prompts: Array<{ text: string; echo: boolean }>;
+  timeout: ReturnType<typeof setTimeout>;
+}
 
 export class SSHSession {
   private readonly textEncoder = new TextEncoder();
@@ -103,6 +115,13 @@ export class SSHSession {
    * 客户端公钥认证时据此选择 RSA 签名算法。为空数组表示未收到（含不支持 ext-info 的旧服务器）。
    */
   private serverSigAlgs: string[] = [];
+
+  /** 当前认证方式用于区分 msg 60 在 publickey/password/RFC 4256 中的不同语义。 */
+  private activeAuthMethod: ActiveAuthMethod | null = null;
+  private attemptedAuthMethods: Set<ActiveAuthMethod> = new Set();
+  private keyboardInteractiveRounds: number = 0;
+  private partialAuthenticationStages: number = 0;
+  private pendingAuthChallenge: PendingAuthChallenge | null = null;
 
   private state: 'connecting' | 'version' | 'kex' | 'auth' | 'shell' | 'shell-requested' | 'ready'
     = 'connecting';
@@ -996,26 +1015,240 @@ export class SSHSession {
   }
 
   private async authenticate(): Promise<void> {
-    let authRequest: Uint8Array;
+    const initialMethod: ActiveAuthMethod =
+      this.config.authMethod === 'publickey'
+        ? 'publickey'
+        : 'password';
+    const started = await this.authenticateWithMethod(initialMethod);
+    if (!started) this.failAuthentication();
+  }
 
-    if (this.config.authMethod === 'publickey' && this.config.privateKey) {
-      this.sendStatus('正在使用密钥认证...', 'auth_public_key');
-      authRequest = await SSHAuth.buildPublicKeyAuthRequest(
-        this.config.username,
-        this.config.privateKey,
-        this.sessionID!,
-        this.serverSigAlgs,            // 传入 server-sig-algs 协商 RSA 签名算法
-        false,                         // allowLegacyRsaSha1: 默认禁用 SHA-1
-      );
-    } else {
-      authRequest = SSHAuth.buildPasswordAuthRequest(
-        this.config.username,
-        this.config.password
-      );
+  private canUseAuthMethod(method: ActiveAuthMethod): boolean {
+    switch (method) {
+      case 'publickey':
+        return this.config.authMethod === 'publickey'
+          && Boolean(this.config.privateKey && this.sessionID);
+      case 'password':
+        return this.config.authMethod !== 'publickey' && Boolean(this.config.password);
+      case 'keyboard-interactive':
+        return true;
+    }
+  }
+
+  private async authenticateWithMethod(method: ActiveAuthMethod): Promise<boolean> {
+    if (this.attemptedAuthMethods.has(method) || !this.canUseAuthMethod(method)) {
+      return false;
     }
 
-    const packet = await this.buildEncryptedPacket(authRequest);
-    await this.writeSocket(packet);
+    let authRequest: Uint8Array;
+    switch (method) {
+      case 'publickey':
+        this.sendStatus('正在使用密钥认证...', 'auth_public_key');
+        authRequest = await SSHAuth.buildPublicKeyAuthRequest(
+          this.config.username,
+          this.config.privateKey!,
+          this.sessionID!,
+          this.serverSigAlgs,
+          false,
+        );
+        break;
+      case 'password':
+        authRequest = SSHAuth.buildPasswordAuthRequest(
+          this.config.username,
+          this.config.password,
+        );
+        break;
+      case 'keyboard-interactive':
+        this.clearPendingAuthChallenge();
+        this.sendStatus('服务器要求交互式认证', 'auth_interactive_required');
+        authRequest = SSHAuth.buildKeyboardInteractiveAuthRequest(this.config.username);
+        break;
+    }
+
+    this.activeAuthMethod = method;
+    this.attemptedAuthMethods.add(method);
+    await this.sendEncrypted(authRequest);
+    return true;
+  }
+
+  private selectNextAuthMethod(
+    allowedMethods: string[],
+    previousMethod: ActiveAuthMethod | null,
+  ): ActiveAuthMethod | null {
+    const configuredFirst: ActiveAuthMethod[] = this.config.authMethod === 'publickey'
+      ? ['publickey', 'keyboard-interactive']
+      : ['password', 'keyboard-interactive'];
+    const candidates = configuredFirst.filter((method) =>
+      allowedMethods.includes(method)
+      && !this.attemptedAuthMethods.has(method)
+      && this.canUseAuthMethod(method)
+    );
+
+    return candidates.find((method) => method !== previousMethod)
+      ?? candidates[0]
+      ?? null;
+  }
+
+  private failAuthentication(
+    message?: string,
+    event?: string,
+  ): void {
+    const wasInteractive = this.activeAuthMethod === 'keyboard-interactive';
+    this.clearPendingAuthChallenge();
+    this.activeAuthMethod = null;
+    this.sendError(
+      message ?? (wasInteractive
+        ? '交互式认证失败：服务器拒绝了响应'
+        : '认证失败：用户名、凭据或交互式响应无效'),
+      event ?? (wasInteractive ? 'auth_interactive_failed' : 'auth_failed'),
+    );
+    this.close();
+  }
+
+  private clearPendingAuthChallenge(): void {
+    if (!this.pendingAuthChallenge) return;
+    clearTimeout(this.pendingAuthChallenge.timeout);
+    this.pendingAuthChallenge = null;
+  }
+
+  private async handleKeyboardInteractiveInfoRequest(payload: Uint8Array): Promise<void> {
+    if (this.activeAuthMethod !== 'keyboard-interactive') {
+      this.failAuthentication(
+        '服务器发送了当前认证方式不支持的交互消息',
+        'auth_interactive_protocol_error',
+      );
+      return;
+    }
+    if (this.pendingAuthChallenge) {
+      this.failAuthentication(
+        '服务器在上一轮响应前发送了新的交互式认证请求',
+        'auth_interactive_protocol_error',
+      );
+      return;
+    }
+    if (this.keyboardInteractiveRounds >= MAX_KEYBOARD_INTERACTIVE_ROUNDS) {
+      this.failAuthentication(
+        '交互式认证轮次过多，连接已终止',
+        'auth_interactive_limit',
+      );
+      return;
+    }
+
+    let request: ReturnType<typeof SSHAuth.parseKeyboardInteractiveInfoRequest>;
+    try {
+      request = SSHAuth.parseKeyboardInteractiveInfoRequest(payload);
+    } catch {
+      this.failAuthentication(
+        '服务器发送了无效的交互式认证请求',
+        'auth_interactive_protocol_error',
+      );
+      return;
+    }
+
+    this.keyboardInteractiveRounds++;
+    const id = crypto.randomUUID();
+    const timeout = setTimeout(() => {
+      if (this.pendingAuthChallenge?.id !== id) return;
+      this.pendingAuthChallenge = null;
+      this.sendError('等待交互式认证响应超时', 'auth_interactive_timeout');
+      this.close();
+    }, AUTH_CHALLENGE_TIMEOUT_MS);
+
+    this.pendingAuthChallenge = {
+      id,
+      prompts: request.prompts.map((prompt) => ({ ...prompt })),
+      timeout,
+    };
+
+    try {
+      this.ws.send(JSON.stringify({
+        type: 'auth_challenge',
+        id,
+        name: request.name,
+        instruction: request.instruction,
+        prompts: request.prompts,
+        canUseStoredPassword: Boolean(
+          this.config.password
+          && this.config.authMethod !== 'publickey'
+          && request.prompts.length === 1
+          && !request.prompts[0].echo
+        ),
+      }));
+    } catch {
+      this.clearPendingAuthChallenge();
+      this.close();
+    }
+  }
+
+  private async handleKeyboardInteractiveResponse(message: Record<string, unknown>): Promise<void> {
+    if (this.state !== 'auth' || this.activeAuthMethod !== 'keyboard-interactive') return;
+
+    const pending = this.pendingAuthChallenge;
+    if (!pending || typeof message.id !== 'string' || message.id !== pending.id) {
+      this.sendError('交互式认证响应已过期或不匹配', 'auth_interactive_stale');
+      return;
+    }
+
+    let responses: string[];
+    if (message.useStoredPassword === true) {
+      if (
+        !this.config.password
+        || this.config.authMethod === 'publickey'
+        || pending.prompts.length !== 1
+        || pending.prompts[0].echo
+        || Object.prototype.hasOwnProperty.call(message, 'responses')
+      ) {
+        this.failAuthentication(
+          '当前交互式认证请求不能使用已保存密码',
+          'auth_interactive_invalid_response',
+        );
+        return;
+      }
+      responses = [this.config.password];
+    } else {
+      if (
+        !Array.isArray(message.responses)
+        || message.responses.length !== pending.prompts.length
+        || !message.responses.every((response) => typeof response === 'string')
+      ) {
+        this.failAuthentication(
+          '交互式认证响应数量或格式无效',
+          'auth_interactive_invalid_response',
+        );
+        return;
+      }
+      responses = message.responses as string[];
+    }
+
+    let responsePayload: Uint8Array;
+    try {
+      responsePayload = SSHAuth.buildKeyboardInteractiveInfoResponse(responses);
+    } catch {
+      this.failAuthentication(
+        '交互式认证响应超过安全限制',
+        'auth_interactive_invalid_response',
+      );
+      return;
+    }
+
+    this.clearPendingAuthChallenge();
+    try {
+      await this.sendEncrypted(responsePayload);
+    } catch {
+      this.sendError('发送交互式认证响应失败', 'auth_interactive_send_failed');
+      this.close();
+    }
+  }
+
+  private handleKeyboardInteractiveCancel(message: Record<string, unknown>): void {
+    if (this.state !== 'auth' || this.activeAuthMethod !== 'keyboard-interactive') return;
+    const pending = this.pendingAuthChallenge;
+    if (!pending || typeof message.id !== 'string' || message.id !== pending.id) return;
+
+    this.clearPendingAuthChallenge();
+    this.activeAuthMethod = null;
+    this.sendStatus('交互式认证已取消', 'auth_interactive_cancelled');
+    this.close(true);
   }
 
   private async handleAuthPacket(msgType: number, payload: Uint8Array): Promise<void> {
@@ -1044,15 +1277,83 @@ export class SSHSession {
         break;
 
       case SSH_MSG_USERAUTH_SUCCESS:
+        this.clearPendingAuthChallenge();
+        this.activeAuthMethod = null;
         this.sendStatus('认证成功', 'auth_success');
         this.state = 'shell';
         this.startKeepalive();
         await this.openShell();
         break;
 
-      case SSH_MSG_USERAUTH_FAILURE:
-        this.sendError('认证失败：用户名或密码错误', 'auth_failed');
-        this.close();
+      case SSH_MSG_USERAUTH_FAILURE: {
+        if (this.pendingAuthChallenge) {
+          this.failAuthentication(
+            '服务器在等待交互式认证响应时提前结束了当前认证步骤',
+            'auth_interactive_protocol_error',
+          );
+          break;
+        }
+
+        let allowedMethods: string[];
+        let partialSuccess = false;
+        try {
+          const result = SSHAuth.handleResponse(payload);
+          allowedMethods = result.allowedMethods ?? [];
+          partialSuccess = result.partialSuccess === true;
+        } catch {
+          this.failAuthentication(
+            '服务器发送了无效的认证失败响应',
+            'auth_interactive_protocol_error',
+          );
+          break;
+        }
+
+        this.sendDebug(
+          `Authentication failure: allowed=[${allowedMethods.join(',')}], partial=${partialSuccess}`,
+        );
+        const previousMethod = this.activeAuthMethod;
+        if (partialSuccess) {
+          this.partialAuthenticationStages++;
+          if (this.partialAuthenticationStages > MAX_PARTIAL_AUTHENTICATION_STAGES) {
+            this.failAuthentication(
+              '多因素认证步骤过多，连接已终止',
+              'auth_interactive_limit',
+            );
+            break;
+          }
+          // A partial success starts a new authentication factor. Methods that
+          // failed only because the server required a different order may now
+          // be attempted again (for example keyboard-interactive,publickey).
+          this.attemptedAuthMethods.clear();
+        }
+
+        const nextMethod = this.selectNextAuthMethod(allowedMethods, previousMethod);
+        if (nextMethod && await this.authenticateWithMethod(nextMethod)) {
+          break;
+        }
+
+        this.failAuthentication();
+        break;
+      }
+
+      case SSH_MSG_USERAUTH_INFO_REQUEST:
+        if (this.activeAuthMethod === 'keyboard-interactive') {
+          await this.handleKeyboardInteractiveInfoRequest(payload);
+        } else if (this.activeAuthMethod === 'password') {
+          // Message number 60 is SSH_MSG_USERAUTH_PASSWD_CHANGEREQ in the
+          // password method (RFC 4252), not an RFC 4256 INFO_REQUEST.
+          this.failAuthentication(
+            '服务器要求更改已过期密码，当前版本暂不支持在认证期间修改密码',
+            'auth_password_change_required',
+          );
+        } else {
+          // With publickey it is SSH_MSG_USERAUTH_PK_OK. CloudSSH always sends
+          // the signature in its first request, so this response is unexpected.
+          this.failAuthentication(
+            '服务器返回了意外的公钥认证确认',
+            'auth_protocol_error',
+          );
+        }
         break;
 
       case SSH_MSG_UNIMPLEMENTED:
@@ -1388,6 +1689,14 @@ export class SSHSession {
       }
 
       if (parsed && typeof parsed === 'object') {
+        if (parsed.type === 'auth_response') {
+          await this.handleKeyboardInteractiveResponse(parsed);
+          return;
+        }
+        if (parsed.type === 'auth_cancel') {
+          this.handleKeyboardInteractiveCancel(parsed);
+          return;
+        }
         if (parsed.type === 'ping') {
           this.ws.send(JSON.stringify({ type: 'pong' }));
           return;
@@ -2028,6 +2337,8 @@ export class SSHSession {
   }
 
   close(normal: boolean = false): void {
+    this.clearPendingAuthChallenge();
+    this.activeAuthMethod = null;
     if (this.keepaliveInterval) {
       clearInterval(this.keepaliveInterval);
       this.keepaliveInterval = null;

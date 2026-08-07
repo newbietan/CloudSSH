@@ -8,6 +8,10 @@ import '@xterm/xterm/css/xterm.css';
 import { copyTextToClipboard } from './clipboard';
 import { t } from './i18n';
 import { notify } from './ui-feedback';
+import {
+  AuthChallengeDialog,
+  type AuthChallengeSubmission,
+} from './auth-challenge-dialog';
 import { centerTerminalText } from './terminal-text';
 import { localizedSSHMessage } from './terminal-status';
 import {
@@ -25,6 +29,16 @@ import {
 import { currentTerminalFontSize } from './terminal-layout';
 
 const TRZSZ_MAX_DATA_CHUNK_SIZE = 2 * 1024 * 1024;
+const NON_RETRIABLE_AUTH_EVENTS = new Set([
+  'auth_failed',
+  'auth_interactive_protocol_error',
+  'auth_interactive_limit',
+  'auth_interactive_timeout',
+  'auth_interactive_invalid_response',
+  'auth_interactive_failed',
+  'auth_password_change_required',
+  'auth_protocol_error',
+]);
 const RTT_HEARTBEAT_INTERVAL_MS = 5000;
 
 export interface SSHConnectionConfig {
@@ -59,6 +73,7 @@ export class SSHTerminal {
   private webglAddon!: WebglAddon;
   private searchAddon: SearchAddon;
   private ws: WebSocket | null = null;
+  private authChallengeDialog: AuthChallengeDialog | null = null;
   private container: HTMLElement;
   private disposables: { dispose(): void }[] = [];
   private terminalDisposables: { dispose(): void }[] = [];
@@ -578,12 +593,14 @@ export class SSHTerminal {
     }
 
     return new Promise((resolve, reject) => {
-      this.ws = new WebSocket(wsUrl.toString());
-      this.ws.binaryType = 'arraybuffer';
+      const socket = new WebSocket(wsUrl.toString());
+      this.ws = socket;
+      socket.binaryType = 'arraybuffer';
 
-      this.ws.onopen = () => {
+      socket.onopen = () => {
+        if (socket !== this.ws) return;
         this.terminal.writeln(`\x1b[32m[+] ${t('terminal.wsSendingCredentials')}\x1b[0m`);
-        this.ws?.send(JSON.stringify({
+        socket.send(JSON.stringify({
           host: config.host,
           port: config.port,
           username: config.username,
@@ -657,9 +674,15 @@ export class SSHTerminal {
     });
 
     this.ws.onmessage = (event) => {
+      if (socket !== this.ws) return;
       if (typeof event.data === 'string') {
         try {
           const msg = JSON.parse(event.data);
+          if (msg.type === 'auth_challenge') {
+            this.handleAuthChallenge(socket, msg);
+            return;
+          }
+
           if (msg.type === 'sftp_attach') {
             this.sftpAttachUrl = msg.url || null;
             return;
@@ -674,6 +697,7 @@ export class SSHTerminal {
             case 'status':
               this.terminal.writeln(`\x1b[32m[*] ${localizedSSHMessage(msg.message, msg.event, msg.params)}\x1b[0m`);
               if (msg.event === 'auth_success' || msg.message === '认证成功') {
+                this.authChallengeDialog?.dismiss();
                 this.reconnectAttempts = 0;
                 const statusText = document.getElementById('status-text');
                 if (statusText) statusText.innerHTML = `<span class="w-2 h-2 bg-[var(--accent)] inline-block animate-pulse"></span> ${t('auth.statusOnline')}`;
@@ -683,6 +707,11 @@ export class SSHTerminal {
               }
               break;
             case 'error':
+              if (NON_RETRIABLE_AUTH_EVENTS.has(msg.event)) {
+                this.canReconnect = false;
+                this.clearReconnectTimeout();
+                this.authChallengeDialog?.dismiss();
+              }
               this.terminal.writeln(`\x1b[31m[!] ${localizedSSHMessage(msg.message, msg.event, msg.params)}\x1b[0m`);
               break;
             case 'debug':
@@ -719,6 +748,7 @@ export class SSHTerminal {
     this.ws.onclose = (event) => {
       if (socket !== this.ws) return;
 
+      this.authChallengeDialog?.dismiss();
       this.stopHeartbeat();
       this.terminal.writeln(
         `\x1b[33m[*] ${t('terminal.connectionClosed', { code: event.code })}\x1b[0m`
@@ -739,6 +769,7 @@ export class SSHTerminal {
     };
 
     this.ws.onerror = () => {
+      if (socket === this.ws) this.authChallengeDialog?.dismiss();
       this.terminal.writeln(`\x1b[31m[!] ${t('terminal.connectionError')}\x1b[0m`);
       if (rejectFn) rejectFn(new Error(t('terminal.wsFailed')));
     };
@@ -767,6 +798,46 @@ export class SSHTerminal {
         this.trzszFilter?.setTerminalColumns(cols);
       })
     );
+  }
+
+  private handleAuthChallenge(socket: WebSocket, payload: unknown): void {
+    if (socket !== this.ws) return;
+
+    this.authChallengeDialog ??= new AuthChallengeDialog();
+    const shown = this.authChallengeDialog.show(payload, {
+      host: this.lastConfig?.host ?? '',
+      port: this.lastConfig?.port ?? 22,
+      onSubmit: (submission: AuthChallengeSubmission) => {
+        // The callback belongs to the socket that produced this challenge. A
+        // reconnect must never receive a stale password or one-time code.
+        if (socket !== this.ws || socket.readyState !== WebSocket.OPEN) return;
+        socket.send(JSON.stringify(submission));
+      },
+      onCancel: (id: string) => {
+        if (socket !== this.ws) return;
+        this.canReconnect = false;
+        this.clearReconnectTimeout();
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'auth_cancel', id }));
+        }
+      },
+    });
+
+    if (!shown) {
+      this.canReconnect = false;
+      this.terminal.writeln(`\x1b[31m[!] ${t('authChallenge.invalid')}\x1b[0m`);
+      if (socket.readyState === WebSocket.OPEN) {
+        const id = typeof payload === 'object' && payload !== null
+          && typeof (payload as { id?: unknown }).id === 'string'
+          ? (payload as { id: string }).id
+          : null;
+        if (id) {
+          socket.send(JSON.stringify({ type: 'auth_cancel', id }));
+        } else {
+          socket.close(1000, 'Invalid authentication challenge');
+        }
+      }
+    }
   }
 
   fit(): void {
@@ -923,6 +994,7 @@ export class SSHTerminal {
   }
 
   private resetActiveConnection(): void {
+    this.authChallengeDialog?.dismiss();
     this.stopHeartbeat();
     this.clearReconnectTimeout();
     this.disposeConnectionDisposables();
@@ -973,6 +1045,8 @@ export class SSHTerminal {
 
   dispose(): void {
     this.disconnect();
+    this.authChallengeDialog?.destroy();
+    this.authChallengeDialog = null;
     window.removeEventListener('resize', this.resizeListener);
     this.container.removeEventListener('pointerdown', this.selectionPointerDownListener, true);
     this.container.removeEventListener('pointermove', this.selectionPointerMoveListener, true);

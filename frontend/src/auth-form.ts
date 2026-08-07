@@ -466,6 +466,8 @@ export class ConnectionForm {
     const username = (document.getElementById('username') as HTMLInputElement).value;
     const password = (document.getElementById('password') as HTMLInputElement).value;
     const privateKey = (document.getElementById('private-key') as HTMLTextAreaElement).value;
+    const selectedPassword = this.authMode === 'password' ? password : undefined;
+    const selectedPrivateKey = this.authMode === 'key' ? privateKey : undefined;
     const remember = (document.getElementById('remember-me') as HTMLInputElement).checked;
     // 匿名路径区域选择（仅作为 manual override；系统不会对此路径自动推断）
     const anonRegionSelect = document.getElementById('anon-region') as HTMLSelectElement | null;
@@ -509,8 +511,8 @@ export class ConnectionForm {
         host,
         port: port.toString(),
         username,
-        password,
-        privateKey: this.authMode === 'key' ? privateKey : undefined,
+        password: selectedPassword ?? '',
+        privateKey: selectedPrivateKey,
         authMethod: this.authMode === 'key' ? 'publickey' : 'password',
       });
     }
@@ -570,9 +572,9 @@ export class ConnectionForm {
         host,
         port,
         username,
-        password,
+        password: selectedPassword,
         authMethod: this.authMode === 'key' ? 'publickey' : 'password',
-        privateKey,
+        privateKey: selectedPrivateKey,
         expectedFingerprint: expectedFingerprint || undefined,
         locationHint: regionValue || undefined,
       });
