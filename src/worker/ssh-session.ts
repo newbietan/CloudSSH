@@ -1092,6 +1092,7 @@ export class SSHSession {
   private failAuthentication(
     message?: string,
     event?: string,
+    normalClose: boolean = false,
   ): void {
     const wasInteractive = this.activeAuthMethod === 'keyboard-interactive';
     this.clearPendingAuthChallenge();
@@ -1102,7 +1103,7 @@ export class SSHSession {
         : '认证失败：用户名、凭据或交互式响应无效'),
       event ?? (wasInteractive ? 'auth_interactive_failed' : 'auth_failed'),
     );
-    this.close();
+    this.close(normalClose);
   }
 
   private clearPendingAuthChallenge(): void {
@@ -1312,6 +1313,8 @@ export class SSHSession {
           `Authentication failure: allowed=[${allowedMethods.join(',')}], partial=${partialSuccess}`,
         );
         const previousMethod = this.activeAuthMethod;
+        const configuredPrimaryMethod: ActiveAuthMethod =
+          this.config.authMethod === 'publickey' ? 'publickey' : 'password';
         if (partialSuccess) {
           this.partialAuthenticationStages++;
           if (this.partialAuthenticationStages > MAX_PARTIAL_AUTHENTICATION_STAGES) {
@@ -1325,6 +1328,17 @@ export class SSHSession {
           // failed only because the server required a different order may now
           // be attempted again (for example keyboard-interactive,publickey).
           this.attemptedAuthMethods.clear();
+        } else if (
+          previousMethod === configuredPrimaryMethod
+          && allowedMethods.includes(configuredPrimaryMethod)
+        ) {
+          // The configured credential was rejected and the server still
+          // offers the same method. Do not reinterpret that rejection as an
+          // interactive challenge merely because keyboard-interactive is
+          // also advertised.
+          this.sendDebug(`Configured authentication method rejected: ${configuredPrimaryMethod}`);
+          this.failAuthentication(undefined, 'auth_failed', true);
+          break;
         }
 
         const nextMethod = this.selectNextAuthMethod(allowedMethods, previousMethod);
@@ -1332,7 +1346,9 @@ export class SSHSession {
           break;
         }
 
-        this.failAuthentication();
+        // A server-side credential rejection is an expected authentication
+        // outcome, not an internal WebSocket failure.
+        this.failAuthentication(undefined, undefined, true);
         break;
       }
 

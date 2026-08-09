@@ -96,7 +96,7 @@ describe('SSHSession keyboard-interactive authentication', () => {
     vi.useRealTimers();
   });
 
-  it('falls back once when password auth advertises keyboard-interactive', async () => {
+  it('does not reinterpret a rejected configured method as keyboard-interactive', async () => {
     const { session, sendEncrypted, ws } = createSession();
     (session as any).activeAuthMethod = 'password';
     (session as any).attemptedAuthMethods.add('password');
@@ -104,6 +104,24 @@ describe('SSHSession keyboard-interactive authentication', () => {
     await (session as any).handleAuthPacket(
       51,
       buildFailure('publickey,keyboard-interactive,password'),
+    );
+
+    expect(sendEncrypted).not.toHaveBeenCalled();
+    expect(sentJson(ws)).toMatchObject({
+      type: 'error',
+      event: 'auth_failed',
+    });
+    expect(ws.close).toHaveBeenCalledWith(1000);
+  });
+
+  it('falls back once when the server no longer offers the configured method', async () => {
+    const { session, sendEncrypted, ws } = createSession();
+    (session as any).activeAuthMethod = 'password';
+    (session as any).attemptedAuthMethods.add('password');
+
+    await (session as any).handleAuthPacket(
+      51,
+      buildFailure('publickey,keyboard-interactive'),
     );
 
     expect(sendEncrypted).toHaveBeenCalledOnce();
@@ -117,7 +135,11 @@ describe('SSHSession keyboard-interactive authentication', () => {
     // A later RFC 4256 failure is terminal and must not start a retry loop.
     await (session as any).handleAuthPacket(51, buildFailure('keyboard-interactive'));
     expect(sendEncrypted).toHaveBeenCalledOnce();
-    expect(ws.close).toHaveBeenCalledWith(1011);
+    expect(sentJson(ws)).toMatchObject({
+      type: 'error',
+      event: 'auth_interactive_failed',
+    });
+    expect(ws.close).toHaveBeenCalledWith(1000);
   });
 
   it('never selects a credential method the user did not choose', async () => {
@@ -133,7 +155,7 @@ describe('SSHSession keyboard-interactive authentication', () => {
     );
 
     expect(passwordCase.sendEncrypted).not.toHaveBeenCalled();
-    expect(passwordCase.ws.close).toHaveBeenCalledWith(1011);
+    expect(passwordCase.ws.close).toHaveBeenCalledWith(1000);
 
     const publicKeyCase = createSession();
     (publicKeyCase.session as any).config.authMethod = 'publickey';
@@ -148,7 +170,7 @@ describe('SSHSession keyboard-interactive authentication', () => {
     );
 
     expect(publicKeyCase.sendEncrypted).not.toHaveBeenCalled();
-    expect(publicKeyCase.ws.close).toHaveBeenCalledWith(1011);
+    expect(publicKeyCase.ws.close).toHaveBeenCalledWith(1000);
   });
 
   it('uses partial success to advance ordered multi-factor authentication stages', async () => {
