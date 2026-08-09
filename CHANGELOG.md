@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.3] - 2026-08-09
+
+### Added
+- 新增 RFC 4256 `keyboard-interactive` 交互式认证支持，可安全处理单轮、多轮、零提示和多提示挑战，并支持基于 `partial_success` 的有界多因素认证流程。
+- 新增独立交互式认证弹窗，将服务端提示与终端输入隔离；响应绑定随机 challenge ID 和来源 WebSocket，支持超时、取消及用户明确选择后使用已保存密码。
+
+### Changed
+- 收紧认证方法自动切换策略：仅当服务端不再提供用户选择的主认证方式，或上一认证因子已部分成功时，才进入 `keyboard-interactive`，不增加额外重试机制。
+- 普通服务端凭据拒绝改为预期连接结束，不再使用表示内部异常的 WebSocket `1011` 关闭码。
+
+### Fixed
+- 修复服务端同时声明普通认证与 `keyboard-interactive` 时，普通凭据被拒绝后被错误解释成交互式认证请求，最终导致 Alpine 等服务器显示误导性错误并关闭连接的问题。
+- 修复交互式认证最终失败时错误归因不清的问题，同时保留格式异常、状态错乱和超限场景的失败关闭保护。
+
 ## [1.6.2] - 2026-08-05
 
 ### Changed
