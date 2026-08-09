@@ -1,7 +1,7 @@
 <div align="center">
   <img src="./logo.svg" alt="CloudSSH" width="480">
   <p>一个基于 Cloudflare Workers 的 Serverless Web SSH 终端：通过浏览器直接连接和管理你的服务器。</p>
-  <p><b>极致轻量 · 开箱即用 · 赛博朋克 UI</b></p>
+  <p><b>极致轻量 · 开箱即用 · 赛博朋克 UI22</b></p>
   <p>
     <a href="https://github.com/newbietan/CloudSSH/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/newbietan/CloudSSH?style=flat&logo=github"></a>
     <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg"></a>
