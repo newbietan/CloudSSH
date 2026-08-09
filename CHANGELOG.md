@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.4] - 2026-08-09
+
+### Security
+- 完善 Agent 危险命令边界识别，确保命令位于 `;`、`&&`、`||`、管道、括号或换行之后且没有额外空格时，仍会执行既有的强制拦截或用户确认策略。
+- 收紧 SSH 与 SFTP WebSocket 升级的同源校验：匿名连接、一次性令牌连接和 SFTP attach 均拒绝缺失或不匹配的 `Origin`，正常同源浏览器连接保持不变。
+
 ## [1.6.3] - 2026-08-09
 
 ### Added

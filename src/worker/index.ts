@@ -587,6 +587,10 @@ async function handleAIRoute(request: Request, url: URL, env: Env): Promise<Resp
 
 // ==================== SSH connection handlers ====================
 
+function hasSameWebSocketOrigin(request: Request, url: URL): boolean {
+  return request.headers.get('Origin') === url.origin;
+}
+
 async function handleSSHConnection(request: Request, env: Env): Promise<Response> {
   const upgradeHeader = request.headers.get('Upgrade');
   if (upgradeHeader !== 'websocket') {
@@ -599,11 +603,8 @@ async function handleSSHConnection(request: Request, env: Env): Promise<Response
   const url = new URL(request.url);
 
   // Prevent Cross-Site WebSocket Hijacking / Quota Leeching
-  const origin = request.headers.get('Origin');
-  if (origin) {
-    if (origin !== url.origin) {
-      return new Response('Forbidden', { status: 403 });
-    }
+  if (!hasSameWebSocketOrigin(request, url)) {
+    return new Response('Forbidden', { status: 403 });
   }
 
   const sessionName = `session:${Date.now()}:${Math.random()}`;
@@ -635,13 +636,11 @@ async function handleTokenSSHConnection(request: Request, env: Env, token: strin
     return Response.json({ error: 'Expected WebSocket upgrade' }, { status: 426 });
   }
 
+  const url = new URL(request.url);
+
   // Prevent Cross-Site WebSocket Hijacking
-  const origin = request.headers.get('Origin');
-  if (origin) {
-    const url = new URL(request.url);
-    if (origin !== url.origin) {
-      return new Response('Forbidden', { status: 403 });
-    }
+  if (!hasSameWebSocketOrigin(request, url)) {
+    return new Response('Forbidden', { status: 403 });
   }
 
   // 从 UserDBDO 消费 token，获取连接配置
@@ -693,15 +692,11 @@ async function handleSFTPAttachConnection(request: Request, env: Env): Promise<R
     return Response.json({ error: 'Expected WebSocket upgrade' }, { status: 426 });
   }
 
-  const origin = request.headers.get('Origin');
-  if (origin) {
-    const url = new URL(request.url);
-    if (origin !== url.origin) {
-      return new Response('Forbidden', { status: 403 });
-    }
+  const url = new URL(request.url);
+  if (!hasSameWebSocketOrigin(request, url)) {
+    return new Response('Forbidden', { status: 403 });
   }
 
-  const url = new URL(request.url);
   const sessionName = url.searchParams.get('session');
   const token = url.searchParams.get('token');
   if (!sessionName || !token) {

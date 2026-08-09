@@ -530,6 +530,23 @@ describe('安全 — 跨站 WebSocket 劫持（CSWSH）', () => {
 
     expect(res.status).toBe(403);
   });
+
+  it.each([
+    ['匿名 SSH', '/api/ssh'],
+    ['一次性 token SSH', '/api/ssh?token=987:one-time-token'],
+    ['SFTP attach', '/api/ssh/sftp?session=session-1&token=attach-token'],
+  ])('%s 缺少 Origin → 403 Forbidden', async (_name, path) => {
+    const worker = await loadWorker();
+    const env = makeEnv();
+    const req = makeRequest(path, {
+      headers: { Upgrade: 'websocket' },
+    });
+
+    const res = await worker.fetch(req, env);
+
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe('Forbidden');
+  });
 });
 
 // =====================================================================

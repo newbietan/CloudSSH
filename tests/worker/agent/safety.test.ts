@@ -15,6 +15,21 @@ describe('safety — isBlockedCommand (黑名单极度危险操作)', () => {
     expect(isBlockedCommand('rm -fr /').blocked).toBe(true);
     expect(isBlockedCommand('rm -r -f /').blocked).toBe(true);
     expect(isBlockedCommand('rm -rfv /').blocked).toBe(true);
+    expect(isBlockedCommand('rm -rf --preserve-root=all /').blocked).toBe(true);
+  });
+
+  it('Shell 控制符后的高危删除同样必须直接拦截', () => {
+    const commands = [
+      'true;rm -rf /',
+      'true&&rm -rf /',
+      'true||rm -rf /',
+      'printf x|rm -rf /',
+      'true\nrm -rf /',
+      '(rm -rf /)',
+    ];
+    for (const cmd of commands) {
+      expect(isBlockedCommand(cmd).blocked, `cmd="${cmd}"`).toBe(true);
+    }
   });
 
   it('常规命令应当直接放行', () => {
@@ -56,6 +71,19 @@ describe('safety — needsConfirmation (高风险操作需要确认)', () => {
     expect(needsConfirmation('rm file || echo "failed"').required).toBe(true);
     expect(needsConfirmation('cat file | rm -rf').required).toBe(true);
     expect(needsConfirmation('cd /; rm file').required).toBe(true);
+  });
+
+  it('无空格组合命令中包含高风险命令时必须确认', () => {
+    const commands = [
+      'true;rm -rf /tmp/test',
+      'true&&rm -rf /tmp/test',
+      'true||rm -rf /tmp/test',
+      'printf x|rm -rf /tmp/test',
+      'true\nrm -rf /tmp/test',
+    ];
+    for (const cmd of commands) {
+      expect(needsConfirmation(cmd).required, `cmd="${cmd}"`).toBe(true);
+    }
   });
 
   it('一般的命令、查询、安装操作应当由 AI 大脑自己判断，底层免确认', () => {
