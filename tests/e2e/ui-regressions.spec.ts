@@ -1,6 +1,31 @@
 import { expect, test } from '@playwright/test';
 import { blockOptionalThirdPartyAssets } from './helpers';
 
+test('强制 GitHub 登录模式隐藏匿名连接表单', async ({ page }) => {
+  await blockOptionalThirdPartyAssets(page);
+  await page.route('**/api/auth/me', (route) =>
+    route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"unauthorized"}' }),
+  );
+  await page.route('**/api/config', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        turnstileEnabled: false,
+        sitekey: '',
+        githubAuthEnabled: true,
+        githubAuthRequired: true,
+      }),
+    }),
+  );
+
+  await page.goto('/');
+
+  await expect(page.locator('#github-auth-required-panel')).toBeVisible();
+  await expect(page.locator('#github-login-btn')).toBeVisible();
+  await expect(page.locator('#connection-form')).toHaveCount(0);
+});
+
 test('AI 配置首次点击立即显示，配置数据异步加载', async ({ page }) => {
   await blockOptionalThirdPartyAssets(page);
   await page.route('**/api/user/theme', (route) =>
@@ -83,6 +108,7 @@ test('Turnstile 跟随 Standard Light 和后续主题切换', async ({ page }) =
         turnstileEnabled: true,
         sitekey: 'test-site-key',
         githubAuthEnabled: false,
+        githubAuthRequired: false,
       }),
     }),
   );

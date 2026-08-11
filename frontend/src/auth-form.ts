@@ -89,9 +89,14 @@ export class ConnectionForm {
         turnstileEnabled: boolean;
         sitekey: string;
         githubAuthEnabled: boolean;
+        githubAuthRequired: boolean;
       };
       this.turnstileEnabled = config.turnstileEnabled;
       this.turnstileSitekey = config.sitekey;
+      if (config.githubAuthRequired) {
+        this.renderGitHubAuthRequired(config.githubAuthEnabled);
+        return;
+      }
       if (this.turnstileEnabled && this.turnstileSitekey) {
         this.renderTurnstile();
       }
@@ -102,6 +107,26 @@ export class ConnectionForm {
     } catch {
       // Config endpoint not available, skip Turnstile
     }
+  }
+
+  private renderGitHubAuthRequired(githubAuthEnabled: boolean): void {
+    const container = document.getElementById('connection-form-container');
+    if (!container) return;
+
+    container.innerHTML = `
+      <div class="flex min-h-[320px] flex-col items-center justify-center gap-5 px-4 text-center" id="github-auth-required-panel">
+        <span class="material-symbols-outlined text-[var(--accent)]" style="font-size: 42px;" aria-hidden="true">lock</span>
+        <div class="space-y-2">
+          <h2 class="text-sm font-bold tracking-[0.1em] text-on-surface" data-i18n="auth.githubRequired">此 CloudSSH 实例需要 GitHub 登录</h2>
+          <p class="mx-auto max-w-md text-xs leading-6 text-muted" data-i18n="auth.githubRequiredHint">登录成功且账号获得管理员授权后，才能使用 SSH 和账号功能。</p>
+        </div>
+        ${githubAuthEnabled
+          ? '<span id="github-login-placeholder"></span>'
+          : '<p class="text-xs text-error" data-i18n="auth.githubNotConfigured">管理员尚未完整配置 GitHub OAuth，当前无法登录。</p>'}
+      </div>
+    `;
+    translateDocument(container);
+    if (githubAuthEnabled) this.renderGitHubLoginButton();
   }
 
   private renderGitHubLoginButton(): void {

@@ -7,12 +7,13 @@ import type { Env } from '../../src/types';
 // CloudSSH worker 外层接缝的安全回归测试。聚焦"关键安全领域"，
 // 不追求全分支覆盖——有状态组件走人工测试。
 // 
-// 用例覆盖五类高危漏洞：
+// 用例覆盖六类高危漏洞/访问控制边界：
 //   1. CSRF        — OAuth 回调 state 校验
-//   2. IDOR/越权   — handler 强制覆盖 body.user_id、DO 层二次归属校验
-//   3. SSRF 接缝   — AI base_url 经 validateBaseUrl 在路由层拦截
-//   4. 签名伪造    — cf_verified cookie HMAC 完整性
-//   5. CSWSH       — 跨站 WebSocket 劫持（Origin 校验）
+//   2. GitHub 策略 — 登录白名单、强制登录及 token 归属
+//   3. IDOR/越权   — handler 强制覆盖 body.user_id、DO 层二次归属校验
+//   4. SSRF 接缝   — AI base_url 经 validateBaseUrl 在路由层拦截
+//   5. 签名伪造    — cf_verified cookie HMAC 完整性
+//   6. CSWSH       — 跨站 WebSocket 劫持（Origin 校验）
 //   附：一次性 token 防重放、SFTP attach 鉴权、速率限制
 // 
 // 全部走 default export 的 fetch 入口，不导出内部函数，最接近真实
@@ -127,7 +128,195 @@ describe('安全 — OAuth 回调 CSRF 防护', () => {
 });
 
 // =====================================================================
-// 2. index.ts — IDOR / 越权防护（handler 覆盖 body.user_id + DO 二次校验）
+// 2. GitHub 访问策略（OAuth 白名单 + 强制登录）
+// =====================================================================
+
+describe('安全 — GitHub 用户白名单', () => {
+  function mockOAuthUser(githubId: number, login = 'alice') {
+    fetchMock
+      .mockResolvedValueOnce(Response.json({ access_token: 'oauth-token' }))
+      .mockResolvedValueOnce(Response.json({
+        id: githubId,
+        login,
+        avatar_url: 'https://avatars.example/alice.png',
+      }));
+  }
+
+  function makeOAuthUserDbStub(githubId: number) {
+    return makeDOStub(async (request) => {
+      if (request.url.includes('/internal/oauth-user')) {
+        return Response.json({ id: 12, github_id: githubId, username: 'alice', avatar_url: '' });
+      }
+      if (request.url.includes('/internal/session/create')) {
+        return Response.json({ token: `${githubId}:session-token` });
+      }
+      return Response.json({ error: 'not mocked' }, { status: 500 });
+    });
+  }
+
+  it.each([
+    ['未配置白名单', undefined],
+    ['GitHub ID 在白名单中', '42, 100'],
+  ])('%s时允许 OAuth 登录', async (_name, allowedIds) => {
+    const worker = await loadWorker();
+    const userDbStub = makeOAuthUserDbStub(42);
+    const env = makeEnv({
+      GITHUB_CLIENT_ID: 'cid',
+      GITHUB_CLIENT_SECRET: 'csec',
+      GITHUB_ALLOWED_USER_IDS: allowedIds,
+      userDbStub,
+    });
+    mockOAuthUser(42);
+
+    const res = await worker.fetch(makeRequest('/api/auth/callback?code=code&state=state', {
+      cookies: { oauth_state: 'state' },
+    }), env);
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get('set-cookie')).toContain('session=42:session-token');
+    expect(userDbStub.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('GitHub ID 不在白名单中时拒绝登录且不写入用户数据', async () => {
+    const worker = await loadWorker();
+    const userDbStub = makeOAuthUserDbStub(42);
+    const env = makeEnv({
+      GITHUB_CLIENT_ID: 'cid',
+      GITHUB_CLIENT_SECRET: 'csec',
+      GITHUB_ALLOWED_USER_IDS: '7,8',
+      userDbStub,
+    });
+    mockOAuthUser(42);
+
+    const res = await worker.fetch(makeRequest('/api/auth/callback?code=code&state=state', {
+      cookies: { oauth_state: 'state' },
+    }), env);
+
+    expect(res.status).toBe(403);
+    expect(await res.text()).toMatch(/not allowed/i);
+    expect(res.headers.get('set-cookie')).toContain('oauth_state=;');
+    expect(userDbStub.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['空白名单', ''],
+    ['包含非法值', '42,alice'],
+  ])('%s采用 fail-closed', async (_name, allowedIds) => {
+    const worker = await loadWorker();
+    const userDbStub = makeOAuthUserDbStub(42);
+    const env = makeEnv({
+      GITHUB_CLIENT_ID: 'cid',
+      GITHUB_CLIENT_SECRET: 'csec',
+      GITHUB_ALLOWED_USER_IDS: allowedIds,
+      userDbStub,
+    });
+    mockOAuthUser(42);
+
+    const res = await worker.fetch(makeRequest('/api/auth/callback?code=code&state=state', {
+      cookies: { oauth_state: 'state' },
+    }), env);
+
+    expect([403, 503]).toContain(res.status);
+    expect(userDbStub.fetch).not.toHaveBeenCalled();
+  });
+
+  it('白名单变更后既有 session 立即失效', async () => {
+    const worker = await loadWorker();
+    const userDbStub = makeDOStub(() => Response.json({
+      id: 12,
+      github_id: 42,
+      username: 'alice',
+      avatar_url: '',
+    }));
+    const makeSessionRequest = () => makeRequest('/api/auth/me', {
+      cookies: { session: '42:existing-session' },
+    });
+
+    const allowed = await worker.fetch(makeSessionRequest(), makeEnv({
+      GITHUB_ALLOWED_USER_IDS: '42',
+      userDbStub,
+    }));
+    expect(allowed.status).toBe(200);
+
+    const denied = await worker.fetch(makeSessionRequest(), makeEnv({
+      GITHUB_ALLOWED_USER_IDS: '7',
+      userDbStub,
+    }));
+    expect(denied.status).toBe(401);
+  });
+});
+
+describe('安全 — 强制 GitHub 登录模式', () => {
+  it.each([
+    [undefined, false],
+    ['false', false],
+    ['true', true],
+    ['ture', true],
+  ])('REQUIRE_GITHUB_AUTH=%s 时 /api/config 返回 %s', async (value, expected) => {
+    const worker = await loadWorker();
+    const res = await worker.fetch(makeRequest('/api/config'), makeEnv({
+      REQUIRE_GITHUB_AUTH: value,
+    }));
+    expect((await res.json()).githubAuthRequired).toBe(expected);
+  });
+
+  it('强制登录时拒绝匿名 SSH WebSocket', async () => {
+    const worker = await loadWorker();
+    const sshSessionStub = makeDOStub(() => new Response('forwarded'));
+    const env = makeEnv({ REQUIRE_GITHUB_AUTH: 'true', sshSessionStub });
+    const req = makeRequest('/api/ssh', {
+      headers: { Upgrade: 'websocket', Origin: 'https://cloudssh.test' },
+    });
+
+    const res = await worker.fetch(req, env);
+
+    expect(res.status).toBe(401);
+    expect(sshSessionStub.fetch).not.toHaveBeenCalled();
+  });
+
+  it('强制登录时允许白名单内的有效 session 建立 SSH WebSocket', async () => {
+    const worker = await loadWorker();
+    const userDbStub = makeDOStub(() => Response.json({
+      id: 12,
+      github_id: 42,
+      username: 'alice',
+      avatar_url: '',
+    }));
+    const sshSessionStub = makeDOStub(() => new Response('forwarded'));
+    const env = makeEnv({
+      REQUIRE_GITHUB_AUTH: 'true',
+      GITHUB_ALLOWED_USER_IDS: '42',
+      userDbStub,
+      sshSessionStub,
+    });
+    const req = makeRequest('/api/ssh', {
+      headers: { Upgrade: 'websocket', Origin: 'https://cloudssh.test' },
+      cookies: { session: '42:session-token' },
+    });
+
+    const res = await worker.fetch(req, env);
+
+    expect(res.status).toBe(200);
+    expect(sshSessionStub.fetch).toHaveBeenCalledOnce();
+  });
+
+  it('未开启强制登录时保持匿名 SSH 可用', async () => {
+    const worker = await loadWorker();
+    const sshSessionStub = makeDOStub(() => new Response('forwarded'));
+    const env = makeEnv({ sshSessionStub });
+    const req = makeRequest('/api/ssh', {
+      headers: { Upgrade: 'websocket', Origin: 'https://cloudssh.test' },
+    });
+
+    const res = await worker.fetch(req, env);
+
+    expect(res.status).toBe(200);
+    expect(sshSessionStub.fetch).toHaveBeenCalledOnce();
+  });
+});
+
+// =====================================================================
+// 3. index.ts — IDOR / 越权防护（handler 覆盖 body.user_id + DO 二次校验）
 // =====================================================================
 
 describe('安全 — 越权防护（IDOR）', () => {
@@ -342,7 +531,7 @@ describe('安全 — 自定义主题接口边界', () => {
 });
 
 // =====================================================================
-// 3. SSRF 接缝 — AI base_url 在路由层经 validateBaseUrl 拦截
+// 4. SSRF 接缝 — AI base_url 在路由层经 validateBaseUrl 拦截
 // =====================================================================
 
 describe('安全 — SSRF 接缝（AI base_url）', () => {
@@ -421,7 +610,7 @@ describe('安全 — SSRF 接缝（AI base_url）', () => {
 });
 
 // =====================================================================
-// 4. 签名伪造 — cf_verified cookie HMAC 完整性
+// 5. 签名伪造 — cf_verified cookie HMAC 完整性
 // =====================================================================
 
 describe('安全 — cf_verified 签名伪造', () => {
@@ -511,7 +700,7 @@ describe('安全 — cf_verified 签名伪造', () => {
 });
 
 // =====================================================================
-// 5. CSWSH — 跨站 WebSocket 劫持（Origin 校验）
+// 6. CSWSH — 跨站 WebSocket 劫持（Origin 校验）
 // =====================================================================
 
 describe('安全 — 跨站 WebSocket 劫持（CSWSH）', () => {
@@ -589,6 +778,85 @@ describe('安全 — 一次性 token 与接缝鉴权', () => {
       userId: '12',
       githubId: '987',
     }));
+  });
+
+  it('白名单变更后拒绝尚未消费的一次性连接 token', async () => {
+    const worker = await loadWorker();
+    const userDbStub = makeDOStub(() => Response.json({
+      host: 'ssh.example.com',
+      port: 22,
+      username: 'alice',
+      password: 'secret',
+      userId: '12',
+      githubId: '987',
+    }));
+    const sshSessionStub = makeDOStub(() => new Response('forwarded'));
+    const env = makeEnv({
+      GITHUB_ALLOWED_USER_IDS: '42',
+      userDbStub,
+      sshSessionStub,
+    });
+    const req = makeRequest('/api/ssh?token=987:one-time-token', {
+      headers: { Upgrade: 'websocket', Origin: 'https://cloudssh.test' },
+    });
+
+    const res = await worker.fetch(req, env);
+
+    expect(res.status).toBe(403);
+    expect(sshSessionStub.fetch).not.toHaveBeenCalled();
+  });
+
+  it('强制登录时一次性连接 token 仍要求有效 session', async () => {
+    const worker = await loadWorker();
+    const userDbStub = makeDOStub(() => Response.json({ error: 'not authenticated' }, { status: 401 }));
+    const env = makeEnv({ REQUIRE_GITHUB_AUTH: 'true', userDbStub });
+    const req = makeRequest('/api/ssh?token=987:one-time-token', {
+      headers: { Upgrade: 'websocket', Origin: 'https://cloudssh.test' },
+    });
+
+    const res = await worker.fetch(req, env);
+
+    expect(res.status).toBe(401);
+  });
+
+  it('强制登录时一次性连接 token 必须属于当前 GitHub 用户', async () => {
+    const worker = await loadWorker();
+    const userDbStub = makeDOStub((request) => {
+      if (request.url.includes('/internal/session/verify')) {
+        return Response.json({
+          id: 12,
+          github_id: 42,
+          username: 'alice',
+          avatar_url: '',
+        });
+      }
+      if (request.url.includes('/internal/connect-token/consume')) {
+        return Response.json({
+          host: 'ssh.example.com',
+          port: 22,
+          username: 'bob',
+          password: 'secret',
+          userId: '99',
+          githubId: '987',
+        });
+      }
+      return Response.json({ error: 'not mocked' }, { status: 500 });
+    });
+    const sshSessionStub = makeDOStub(() => new Response('forwarded'));
+    const env = makeEnv({
+      REQUIRE_GITHUB_AUTH: 'true',
+      userDbStub,
+      sshSessionStub,
+    });
+    const req = makeRequest('/api/ssh?token=987:one-time-token', {
+      headers: { Upgrade: 'websocket', Origin: 'https://cloudssh.test' },
+      cookies: { session: '42:session-token' },
+    });
+
+    const res = await worker.fetch(req, env);
+
+    expect(res.status).toBe(403);
+    expect(sshSessionStub.fetch).not.toHaveBeenCalled();
   });
 
   it('伪造的 connect token → 403 Invalid or expired connection token', async () => {

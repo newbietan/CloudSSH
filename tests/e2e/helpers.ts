@@ -19,6 +19,7 @@ export async function mockAnonymousSession(page: Page): Promise<void> {
         turnstileEnabled: false,
         sitekey: '',
         githubAuthEnabled: false,
+        githubAuthRequired: false,
       }),
     }),
   );

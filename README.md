@@ -304,9 +304,25 @@ Fork 仓库可以通过内置的 `Sync upstream` GitHub Actions 工作流，定�
    - `BASE_URL` = `https://your-domain.com`（你的部署域名）
    - `GITHUB_CLIENT_SECRET` = 你的 Client Secret
 
+   还可以按部署用途添加以下两个独立的可选配置：
+
+   - `GITHUB_ALLOWED_USER_IDS`：允许登录的 GitHub **数字用户 ID**，多个 ID 使用英文逗号分隔，例如 `83105156,6236783`。未配置时不限制 GitHub 账号；配置为空或包含非正整数时采用 fail-closed，拒绝所有 GitHub 登录。
+   - `REQUIRE_GITHUB_AUTH`：设置为 `true` 时禁用匿名 SSH，所有 SSH WebSocket 都必须带有有效 GitHub session；未配置或设置为 `false` 时保留匿名连接。
+
+   可以访问 `https://api.github.com/users/<GitHub用户名>`，读取响应中的 `id` 字段获得稳定的数字用户 ID。推荐使用数字 ID 而不是可能变更的登录名。
+
+   | 配置组合 | GitHub 登录 | 匿名 SSH |
+   |----------|-------------|----------|
+   | 两项都不配置 | 所有 GitHub 用户 | 允许 |
+   | 仅配置 `GITHUB_ALLOWED_USER_IDS` | 仅白名单用户 | 允许 |
+   | 仅配置 `REQUIRE_GITHUB_AUTH=true` | 所有 GitHub 用户 | 禁止 |
+   | 两项同时配置 | 仅白名单用户 | 禁止（私有实例模式） |
+
 3. **重新部署**：保存环境变量后重新部署当前 Worker。仓库中的 Durable Object migration 会负责初始化所需类和数据库，不需要删除已有 Worker。
 
-> **环境变量类型建议**：建议将所有环境变量都设置为 **Secret** 类型。Secrets 存储在 Cloudflare 加密存储中，与代码部署分离，重新部署时不会被覆盖或丢失。在 Dashboard 添加变量时，选择 "Secret" 类型即可。
+> **环境变量类型建议**：`GITHUB_CLIENT_SECRET` 必须使用 **Secret** 类型；`GITHUB_ALLOWED_USER_IDS` 和 `REQUIRE_GITHUB_AUTH` 不包含密钥，可使用普通文本变量。Secrets 存储在 Cloudflare 加密存储中，与代码部署分离，重新部署时不会被覆盖或丢失。
+
+> **访问策略说明**：修改 `GITHUB_ALLOWED_USER_IDS` 后，已签发 session 会在下一次请求时重新检查并立即失效；已建立的 SSH WebSocket 不会被主动中断。`REQUIRE_GITHUB_AUTH=true` 依赖 GitHub OAuth，请同时正确配置 Client ID、Client Secret 和 `BASE_URL`。
 
 > **说明**：服务器凭据（密码/私钥）在每用户 UserDBDO SQLite 中使用 AES-256-GCM 加密存储。当前加密密钥在首次使用时自动生成，并与密文保存在同一个 Durable Object 数据库中。一键连接已保存服务器时，浏览器不会收到明文凭据，服务端通过一次性连接令牌完成内部传递。
 

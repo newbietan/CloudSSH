@@ -7,6 +7,8 @@ import {
   handleLogout,
   handleGetMe,
   getAuthenticatedUser,
+  isGitHubAuthRequired,
+  isGitHubUserAllowed,
 } from './auth';
 
 export { SSHSessionDO } from './durable-object';
@@ -283,7 +285,8 @@ export default {
       return Response.json({
         turnstileEnabled: !!env.TURNSTILE_SECRET,
         sitekey: env.TURNSTILE_SITEKEY || '',
-        githubAuthEnabled: !!env.GITHUB_CLIENT_ID,
+        githubAuthEnabled: !!(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
+        githubAuthRequired: isGitHubAuthRequired(env),
       });
     }
 
@@ -607,6 +610,10 @@ async function handleSSHConnection(request: Request, env: Env): Promise<Response
     return new Response('Forbidden', { status: 403 });
   }
 
+  if (isGitHubAuthRequired(env) && !await getAuthenticatedUser(request, env)) {
+    return Response.json({ error: 'GitHub authentication required' }, { status: 401 });
+  }
+
   const sessionName = `session:${Date.now()}:${Math.random()}`;
   const doId = env.SSH_SESSION.idFromName(sessionName);
   // 匿名路径不做自动推断（Worker 在 upgrade 时拿不到 host）；
@@ -643,6 +650,14 @@ async function handleTokenSSHConnection(request: Request, env: Env, token: strin
     return new Response('Forbidden', { status: 403 });
   }
 
+  const githubAuthRequired = isGitHubAuthRequired(env);
+  const authenticatedUser = githubAuthRequired
+    ? await getAuthenticatedUser(request, env)
+    : null;
+  if (githubAuthRequired && !authenticatedUser) {
+    return Response.json({ error: 'GitHub authentication required' }, { status: 401 });
+  }
+
   // 从 UserDBDO 消费 token，获取连接配置
   const [githubId] = token.split(':');
   if (!githubId) {
@@ -660,6 +675,15 @@ async function handleTokenSSHConnection(request: Request, env: Env, token: strin
   }
 
   const config = await tokenRes.json<SSHConnectionConfig>();
+  if (!isGitHubUserAllowed(env, config.githubId ?? '')) {
+    return Response.json({ error: 'GitHub account is not allowed' }, { status: 403 });
+  }
+  if (
+    authenticatedUser
+    && String(authenticatedUser.github_id) !== String(config.githubId)
+  ) {
+    return Response.json({ error: 'Connection token does not belong to this GitHub account' }, { status: 403 });
+  }
 
   const sessionName = `session:${Date.now()}:${Math.random()}`;
   const doId = env.SSH_SESSION.idFromName(sessionName);

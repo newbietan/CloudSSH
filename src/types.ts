@@ -116,6 +116,10 @@ export interface Env {
   // GitHub OAuth（可选，未配置则登录功能自动禁用）
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
+  // GitHub 登录白名单（可选，逗号分隔的数字 GitHub user ID；未配置则不限制）
+  GITHUB_ALLOWED_USER_IDS?: string;
+  // 是否强制 GitHub 登录后才能使用 SSH（可选，默认 false）
+  REQUIRE_GITHUB_AUTH?: string;
   BASE_URL?: string;
   // 主机密钥验证严格模式（默认 true，设为 false 可跳过签名验证失败）
   STRICT_HOST_KEY_VERIFY?: string;

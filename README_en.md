@@ -296,9 +296,25 @@ With GitHub OAuth enabled, users can log in with their GitHub account and save/m
    - `BASE_URL` = `https://your-domain.com` (your deployed domain)
    - `GITHUB_CLIENT_SECRET` = your Client Secret
 
+   The following two independent settings are optional:
+
+   - `GITHUB_ALLOWED_USER_IDS`: Comma-separated GitHub **numeric user IDs** allowed to sign in, for example `83105156,6236783`. When omitted, every GitHub account may sign in. An empty or malformed configured value fails closed and denies every GitHub sign-in.
+   - `REQUIRE_GITHUB_AUTH`: Set to `true` to disable anonymous SSH and require a valid GitHub session for every SSH WebSocket. When omitted or set to `false`, anonymous connections remain available.
+
+   Open `https://api.github.com/users/<github-username>` and use the response's `id` field to find the stable numeric user ID. Numeric IDs are recommended instead of changeable login names.
+
+   | Configuration | GitHub sign-in | Anonymous SSH |
+   |---------------|----------------|---------------|
+   | Neither setting | All GitHub users | Allowed |
+   | `GITHUB_ALLOWED_USER_IDS` only | Allowlisted users only | Allowed |
+   | `REQUIRE_GITHUB_AUTH=true` only | All GitHub users | Disabled |
+   | Both settings | Allowlisted users only | Disabled (private-instance mode) |
+
 3. **Redeploy**: Save the variables and redeploy the existing Worker. The Durable Object migration in the repository initializes the required classes and database; deleting the existing Worker is not required.
 
-> **Environment Variable Type Recommendation**: It is recommended to set all environment variables as **Secret** type. Secrets are stored in Cloudflare's encrypted storage, separate from code deployments, and will not be overwritten or lost during redeployments. When adding variables in the Dashboard, simply select the "Secret" type.
+> **Environment Variable Type Recommendation**: `GITHUB_CLIENT_SECRET` must use the **Secret** type. `GITHUB_ALLOWED_USER_IDS` and `REQUIRE_GITHUB_AUTH` contain no credentials and may use plain-text variables. Secrets are stored in Cloudflare's encrypted storage, separate from code deployments, and will not be overwritten or lost during redeployments.
+
+> **Access Policy Note**: After `GITHUB_ALLOWED_USER_IDS` changes, existing sessions are checked again and become invalid on their next request; already established SSH WebSockets are not terminated. `REQUIRE_GITHUB_AUTH=true` depends on GitHub OAuth, so configure the Client ID, Client Secret, and `BASE_URL` together.
 
 > **Note**: Server credentials (passwords/private keys) are encrypted with AES-256-GCM in each user's UserDBDO SQLite database. The current encryption key is generated on first use and stored in the same Durable Object database as the ciphertext. For a saved-server connection, the browser never receives the plaintext credential; the server side transfers it internally through a one-time connection token.
 

@@ -12,6 +12,8 @@ watch_dir = "."
 
 # 下述注释的配置推荐采用环境变量的形式在 Cloudflare Dashboard 中直接添加：
 # - GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET（GitHub OAuth）
+# - GITHUB_ALLOWED_USER_IDS（可选，逗号分隔的 GitHub 数字用户 ID 白名单）
+# - REQUIRE_GITHUB_AUTH（可选，true 时禁用匿名 SSH，要求 GitHub 登录）
 # - TURNSTILE_SECRET / TURNSTILE_SITEKEY（Bot 验证）
 # - BASE_URL（OAuth 回调地址，需与实际域名一致）
 

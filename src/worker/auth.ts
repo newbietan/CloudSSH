@@ -29,6 +29,66 @@ function getUserDBStub(env: Env, githubId: string | number): DurableObjectStub {
   return env.USER_DB.get(id);
 }
 
+interface GitHubAccessPolicy {
+  restricted: boolean;
+  valid: boolean;
+  allowedIds: Set<string>;
+}
+
+/**
+ * 解析可选 GitHub ID 白名单。
+ * - 未配置：不限制 GitHub 用户。
+ * - 已配置但为空：拒绝所有 GitHub 用户。
+ * - 含非法值：配置无效并 fail closed，避免误开放实例。
+ */
+export function getGitHubAccessPolicy(env: Env): GitHubAccessPolicy {
+  const raw = env.GITHUB_ALLOWED_USER_IDS;
+  if (raw === undefined) {
+    return { restricted: false, valid: true, allowedIds: new Set() };
+  }
+
+  if (raw.trim() === '') {
+    return { restricted: true, valid: true, allowedIds: new Set() };
+  }
+
+  const entries = raw.split(',').map((entry) => entry.trim());
+  const allowedIds = new Set<string>();
+  for (const entry of entries) {
+    if (!/^[1-9]\d*$/.test(entry)) {
+      return { restricted: true, valid: false, allowedIds: new Set() };
+    }
+    allowedIds.add(entry);
+  }
+
+  return { restricted: true, valid: true, allowedIds };
+}
+
+export function isGitHubUserAllowed(env: Env, githubId: string | number): boolean {
+  const policy = getGitHubAccessPolicy(env);
+  if (!policy.valid) return false;
+  return !policy.restricted || policy.allowedIds.has(String(githubId));
+}
+
+/**
+ * 未配置、空字符串或 "false" 保持匿名模式；其他非空值均按开启处理
+ *（fail closed），防止运维拼写错误意外重新开放匿名 SSH。
+ */
+export function isGitHubAuthRequired(env: Env): boolean {
+  const raw = env.REQUIRE_GITHUB_AUTH;
+  if (raw === undefined || raw.trim() === '') return false;
+  return raw.trim().toLowerCase() !== 'false';
+}
+
+function oauthFailure(message: string, status: number): Response {
+  return new Response(message, {
+    status,
+    headers: {
+      'Content-Type': 'text/plain;charset=UTF-8',
+      'Set-Cookie': 'oauth_state=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0',
+    },
+  });
+}
+
 // ==================== Session 中间件 ====================
 
 /**
@@ -50,7 +110,8 @@ export async function getAuthenticatedUser(request: Request, env: Env): Promise<
   }));
 
   if (!res.ok) return null;
-  return res.json<UserInfo>();
+  const user = await res.json<UserInfo>();
+  return isGitHubUserAllowed(env, user.github_id) ? user : null;
 }
 
 // ==================== OAuth 路由处理 ====================
@@ -144,6 +205,14 @@ export async function handleGitHubCallback(request: Request, env: Env): Promise<
     login: string;
     avatar_url: string;
   }>();
+
+  const accessPolicy = getGitHubAccessPolicy(env);
+  if (!accessPolicy.valid) {
+    return oauthFailure('GitHub access allowlist is invalid', 503);
+  }
+  if (accessPolicy.restricted && !accessPolicy.allowedIds.has(String(githubUser.id))) {
+    return oauthFailure('This GitHub account is not allowed to access CloudSSH', 403);
+  }
 
   // 4. 创建/更新用户
   const stub = getUserDBStub(env, githubUser.id);
