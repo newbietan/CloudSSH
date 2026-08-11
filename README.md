@@ -309,7 +309,16 @@ Fork 仓库可以通过内置的 `Sync upstream` GitHub Actions 工作流，定�
    - `GITHUB_ALLOWED_USER_IDS`：允许登录的 GitHub **数字用户 ID**，多个 ID 使用英文逗号分隔，例如 `83105156,6236783`。未配置时不限制 GitHub 账号；配置为空或包含非正整数时采用 fail-closed，拒绝所有 GitHub 登录。
    - `REQUIRE_GITHUB_AUTH`：设置为 `true` 时禁用匿名 SSH，所有 SSH WebSocket 都必须带有有效 GitHub session；未配置或设置为 `false` 时保留匿名连接。
 
-   可以访问 `https://api.github.com/users/<GitHub用户名>`，读取响应中的 `id` 字段获得稳定的数字用户 ID。推荐使用数字 ID 而不是可能变更的登录名。
+   **获取 GitHub 数字用户 ID**：
+
+   - 浏览器访问 `https://api.github.com/users/octocat`（将 `octocat` 替换为实际用户名），在返回的 JSON 中读取 `id` 字段。例如响应中的 `"id": 583231` 表示数字用户 ID 为 `583231`。
+   - 或在命令行执行：
+
+     ```bash
+     curl -s https://api.github.com/users/octocat | jq '.id'
+     ```
+
+   请填写 `id`，不要填写用户名或 `node_id`。数字 ID 不会随用户名修改而变化；多个账号的 ID 使用英文逗号分隔。
 
    | 配置组合 | GitHub 登录 | 匿名 SSH |
    |----------|-------------|----------|

@@ -301,7 +301,16 @@ With GitHub OAuth enabled, users can log in with their GitHub account and save/m
    - `GITHUB_ALLOWED_USER_IDS`: Comma-separated GitHub **numeric user IDs** allowed to sign in, for example `83105156,6236783`. When omitted, every GitHub account may sign in. An empty or malformed configured value fails closed and denies every GitHub sign-in.
    - `REQUIRE_GITHUB_AUTH`: Set to `true` to disable anonymous SSH and require a valid GitHub session for every SSH WebSocket. When omitted or set to `false`, anonymous connections remain available.
 
-   Open `https://api.github.com/users/<github-username>` and use the response's `id` field to find the stable numeric user ID. Numeric IDs are recommended instead of changeable login names.
+   **Find a GitHub numeric user ID**:
+
+   - Open `https://api.github.com/users/octocat` in a browser (replace `octocat` with the actual username) and read the `id` field in the returned JSON. For example, `"id": 583231` means the numeric user ID is `583231`.
+   - Or run:
+
+     ```bash
+     curl -s https://api.github.com/users/octocat | jq '.id'
+     ```
+
+   Use `id`, not the username or `node_id`. The numeric ID does not change when the username changes; separate multiple IDs with commas.
 
    | Configuration | GitHub sign-in | Anonymous SSH |
    |---------------|----------------|---------------|
