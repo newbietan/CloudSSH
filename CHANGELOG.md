@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-08-11
+
+### Added
+- 新增可选的 `GITHUB_ALLOWED_USER_IDS` 配置，支持使用稳定的 GitHub 数字用户 ID 限制可登录账号；未配置时保持原有的不限账号行为。
+- 新增可选的 `REQUIRE_GITHUB_AUTH` 配置，启用后禁止匿名 SSH，并在未登录页面展示明确的 GitHub 登录要求；与账号白名单组合后可将实例设为仅限指定 GitHub 用户使用。
+
+### Changed
+- 完善中英文部署文档，说明四种访问策略组合、GitHub 数字用户 ID 的获取方式、环境变量类型以及策略变更对现有会话和连接的影响。
+- 收紧前端构建产物校验：缺失或重复的 JavaScript、CSS 资源会直接导致构建失败，避免生成不完整的 Worker 内嵌页面。
+- 完善本地开发、Cloudflare 上传和编辑器临时文件的忽略规则，并收紧服务器保存响应的前端类型处理。
+
+### Security
+- GitHub 白名单在 OAuth 回调、既有 session 和一次性连接令牌路径持续校验；强制登录模式同时验证令牌所属账号，配置为空或格式非法时采用 fail-closed。
+- 将前端 HTML 清理依赖 DOMPurify 升级至 3.4.13，纳入上游安全修复。
+
 ## [1.6.4] - 2026-08-09
 
 ### Security
