@@ -67,6 +67,7 @@
   --motion-slow: 320ms;
   --hover-lift: -2px;
   --visual-viewport-height: 100vh;
+  --visual-viewport-offset-top: 0px;
 }
 
 @supports (height: 100dvh) {
@@ -2248,6 +2249,13 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
     padding-right: max(8px, env(safe-area-inset-right));
   }
 
+  #terminal-section {
+    position: fixed;
+    top: var(--visual-viewport-offset-top);
+    right: 0;
+    left: 0;
+  }
+
   .terminal-app-title {
     font-size: 17px;
   }
@@ -2360,6 +2368,15 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
     padding: 2px 4px 4px !important;
   }
 
+  #terminal-area .xterm-screen,
+  #terminal-area .xterm-screen canvas {
+    touch-action: none;
+  }
+
+  html.mobile-keyboard-open .terminal-status-bar {
+    display: none;
+  }
+
   .terminal-status-details {
     min-width: 0;
     flex: 1;
@@ -2393,6 +2410,10 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
     color: var(--on-surface);
     background: var(--bg-elevated);
     border-top: 1px solid var(--border-strong);
+  }
+
+  html.mobile-keyboard-open .mobile-terminal-toolbar {
+    padding-bottom: 0;
   }
 
   .mobile-terminal-toolbar-scroll {

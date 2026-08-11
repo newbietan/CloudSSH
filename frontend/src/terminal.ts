@@ -67,6 +67,18 @@ interface TerminalCell {
   row: number;
 }
 
+interface MobileScrollGesture {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  lastY: number;
+  remainder: number;
+  active: boolean;
+}
+
+const MOBILE_SCROLL_START_THRESHOLD_PX = 10;
+const MOBILE_VIEWPORT_QUERY = '(max-width: 767px), (max-width: 1180px) and (pointer: coarse)';
+
 export class SSHTerminal {
   private terminal: Terminal;
   private fitAddon: FitAddon;
@@ -105,11 +117,13 @@ export class SSHTerminal {
   private mobileSelectionMode = false;
   private mobileSelectionPointerId: number | null = null;
   private mobileSelectionStart: TerminalCell | null = null;
+  private mobileScrollGesture: MobileScrollGesture | null = null;
   private mobileModifier: MobileModifier | null = null;
   private imeTextarea: HTMLTextAreaElement | null = null;
   private imePendingBaseline: string | null = null;
   private imePendingHandled = false;
   private imeKeyupTimer: ReturnType<typeof setTimeout> | null = null;
+  private viewportRestoreFrame: number | null = null;
   private readonly contextMenuPasteListener = async (event: MouseEvent): Promise<void> => {
     if (window.matchMedia?.('(pointer: coarse)').matches) return;
     event.preventDefault();
@@ -134,7 +148,9 @@ export class SSHTerminal {
         this.container.setPointerCapture?.(event.pointerId);
       } catch { /* synthetic events and older browsers may not support capture */ }
       this.updateMobileSelection(cell);
+      return;
     }
+    this.beginMobileScroll(event);
   };
   private readonly selectionPointerMoveListener = (event: PointerEvent): void => {
     if (!this.selectionPointerActive) return;
@@ -145,6 +161,7 @@ export class SSHTerminal {
       if (cell) this.updateMobileSelection(cell);
       return;
     }
+    if (this.updateMobileScroll(event)) return;
     if (this.terminal.hasSelection()) {
       this.notifySelectionChanged();
     }
@@ -161,6 +178,11 @@ export class SSHTerminal {
       this.notifySelectionChanged();
       return;
     }
+    const handledMobileScroll = this.finishMobileScroll(event.pointerId);
+    if (handledMobileScroll) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
     this.selectionPointerActive = false;
     this.selectionAnchor = { clientX: event.clientX, clientY: event.clientY };
     this.notifySelectionChanged();
@@ -173,12 +195,19 @@ export class SSHTerminal {
     if (this.mobileSelectionPointerId === event.pointerId) {
       this.finishMobileSelectionPointer();
     }
+    this.finishMobileScroll(event.pointerId);
     this.selectionPointerActive = false;
   };
 
   constructor(containerId: string) {
     this.container = document.getElementById(containerId)!;
-    this.resizeListener = () => this.fit();
+    this.resizeListener = () => {
+      // visualViewport 的连续变化由 MobileTerminalController 稳定后统一处理，
+      // 桌面端和不支持 visualViewport 的浏览器仍保留直接适配。
+      const mobileViewportManaged = Boolean(window.visualViewport)
+        && (window.matchMedia?.(MOBILE_VIEWPORT_QUERY).matches ?? false);
+      if (!mobileViewportManaged) this.fit();
+    };
 
     this.terminal = new Terminal({
       cursorBlink: true,
@@ -317,6 +346,8 @@ export class SSHTerminal {
     if (!enabled) {
       this.finishMobileSelectionPointer();
       this.selectionPointerActive = false;
+    } else {
+      this.finishMobileScroll();
     }
   }
 
@@ -425,6 +456,73 @@ export class SSHTerminal {
     }
     this.mobileSelectionPointerId = null;
     this.mobileSelectionStart = null;
+  }
+
+  private beginMobileScroll(event: PointerEvent): void {
+    if (event.pointerType === 'mouse' || this.mobileSelectionMode) return;
+    const target = event.target;
+    if (!(target instanceof Element) || !target.closest('.xterm-screen')) return;
+    // 备用屏幕和远端鼠标协议由远端应用控制，不能把滑动误当作本地历史滚动。
+    if (this.terminal.buffer.active.type !== 'normal'
+      || this.terminal.modes.mouseTrackingMode !== 'none') return;
+
+    this.mobileScrollGesture = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastY: event.clientY,
+      remainder: 0,
+      active: false,
+    };
+  }
+
+  private updateMobileScroll(event: PointerEvent): boolean {
+    const gesture = this.mobileScrollGesture;
+    if (!gesture || gesture.pointerId !== event.pointerId) return false;
+
+    if (!gesture.active) {
+      const distanceX = Math.abs(event.clientX - gesture.startX);
+      const distanceY = Math.abs(event.clientY - gesture.startY);
+      if (distanceY < MOBILE_SCROLL_START_THRESHOLD_PX) return false;
+      if (distanceX > distanceY) {
+        this.finishMobileScroll(event.pointerId);
+        return false;
+      }
+      gesture.active = true;
+      try {
+        this.container.setPointerCapture?.(event.pointerId);
+      } catch { /* synthetic events and older browsers may not support capture */ }
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const cellHeight = this.getTerminalCellHeight();
+    if (cellHeight <= 0) return true;
+
+    gesture.remainder += gesture.lastY - event.clientY;
+    gesture.lastY = event.clientY;
+    const lines = Math.trunc(gesture.remainder / cellHeight);
+    if (lines !== 0) {
+      this.terminal.scrollLines(lines);
+      gesture.remainder -= lines * cellHeight;
+    }
+    return true;
+  }
+
+  private finishMobileScroll(pointerId?: number): boolean {
+    const gesture = this.mobileScrollGesture;
+    if (!gesture || (pointerId !== undefined && gesture.pointerId !== pointerId)) return false;
+    if (this.container.hasPointerCapture?.(gesture.pointerId)) {
+      this.container.releasePointerCapture?.(gesture.pointerId);
+    }
+    this.mobileScrollGesture = null;
+    return gesture.active;
+  }
+
+  private getTerminalCellHeight(): number {
+    const screen = this.container.querySelector<HTMLElement>('.xterm-screen');
+    if (!screen || this.terminal.rows < 1) return 0;
+    return screen.getBoundingClientRect().height / this.terminal.rows;
   }
 
   /** 将选中文字写入剪贴板，并按实际复制结果提供反馈。 */
@@ -840,13 +938,39 @@ export class SSHTerminal {
     }
   }
 
-  fit(): void {
+  fit(): boolean {
     const fontSize = currentTerminalFontSize();
     if (this.terminal.options.fontSize !== fontSize) {
       this.terminal.options.fontSize = fontSize;
     }
-    if (!this.mounted || this.container.clientWidth === 0 || this.container.clientHeight === 0) return;
+    if (!this.mounted || this.container.clientWidth === 0 || this.container.clientHeight === 0) return false;
+    const dimensions = this.fitAddon.proposeDimensions();
+    if (!dimensions
+      || (dimensions.cols === this.terminal.cols && dimensions.rows === this.terminal.rows)) return false;
+
+    const buffer = this.terminal.buffer.active;
+    const bufferType = buffer.type;
+    const wasAtBottom = buffer.viewportY >= buffer.baseY;
+    const distanceFromBottom = Math.max(0, buffer.baseY - buffer.viewportY);
     this.fitAddon.fit();
+    const restoreViewport = () => {
+      const resizedBuffer = this.terminal.buffer.active;
+      if (resizedBuffer.type !== bufferType) return;
+      if (wasAtBottom) {
+        this.terminal.scrollToBottom();
+      } else {
+        this.terminal.scrollToLine(Math.max(0, resizedBuffer.baseY - distanceFromBottom));
+      }
+    };
+    restoreViewport();
+    if (this.viewportRestoreFrame !== null) cancelAnimationFrame(this.viewportRestoreFrame);
+    this.viewportRestoreFrame = requestAnimationFrame(() => {
+      this.viewportRestoreFrame = null;
+      // xterm 的自定义滚动视口会在 resize 后下一帧同步 scrollHeight，
+      // 再恢复一次可避免初次恢复被旧的滚动范围截断。
+      restoreViewport();
+    });
+    return true;
   }
 
   private processTerminalInput(data: string): void {
@@ -1057,6 +1181,8 @@ export class SSHTerminal {
     this.imeTextarea?.removeEventListener('keyup', this.imeKeyupListener, true);
     this.imeTextarea?.removeEventListener('compositionstart', this.imeCompositionStartListener, true);
     this.clearIMEPendingInput();
+    if (this.viewportRestoreFrame !== null) cancelAnimationFrame(this.viewportRestoreFrame);
+    this.viewportRestoreFrame = null;
     this.imeTextarea = null;
     this.themeCleanup();
     this.terminalDisposables.forEach(d => d.dispose());

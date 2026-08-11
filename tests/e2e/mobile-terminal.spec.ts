@@ -89,6 +89,171 @@ test('移动端终端使用紧凑布局并提供完整快捷键入口', async ({
   await expect(page.locator('#theme-selector')).toBeHidden();
 });
 
+test('软键盘动画使用可视视口并只在尺寸稳定后适配终端', async ({ page }) => {
+  await page.addInitScript(() => {
+    class TestVisualViewport extends EventTarget {
+      width = 390;
+      height = 844;
+      offsetLeft = 0;
+      offsetTop = 0;
+      pageLeft = 0;
+      pageTop = 0;
+      scale = 1;
+    }
+    const viewport = new TestVisualViewport();
+    Object.defineProperty(window, 'visualViewport', {
+      configurable: true,
+      value: viewport,
+    });
+    (window as any).__setTestVisualViewport = (height: number, offsetTop: number) => {
+      viewport.height = height;
+      viewport.offsetTop = offsetTop;
+      viewport.dispatchEvent(new Event('resize'));
+      viewport.dispatchEvent(new Event('scroll'));
+    };
+  });
+  await mockAnonymousSession(page);
+  await page.goto('/?lang=zh-CN');
+
+  const result = await page.evaluate(async () => {
+    document.getElementById('auth-section')?.classList.add('hidden');
+    const section = document.getElementById('terminal-section')!;
+    section.classList.remove('hidden');
+    section.classList.add('flex');
+    document.body.classList.add('terminal-active');
+
+    const mobileModule = await (window as any).eval("import('/src/mobile-terminal.ts')");
+    let fitCount = 0;
+    const terminal = {
+      fit: () => { fitCount += 1; },
+      getMobileModifier: () => null,
+      isMobileSelectionMode: () => false,
+      setMobileSelectionMode: () => undefined,
+    };
+    const controller = new mobileModule.MobileTerminalController(() => terminal);
+    controller.start();
+    await new Promise((resolve) => setTimeout(resolve, 160));
+    fitCount = 0;
+
+    (window as any).__setTestVisualViewport(720, 4);
+    (window as any).__setTestVisualViewport(610, 8);
+    (window as any).__setTestVisualViewport(500, 12);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const fitCountDuringAnimation = fitCount;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const rootStyle = document.documentElement.style;
+    const sectionRect = section.getBoundingClientRect();
+    return {
+      fitCountDuringAnimation,
+      finalFitCount: fitCount,
+      viewportHeight: rootStyle.getPropertyValue('--visual-viewport-height'),
+      viewportOffsetTop: rootStyle.getPropertyValue('--visual-viewport-offset-top'),
+      keyboardOpen: document.documentElement.classList.contains('mobile-keyboard-open'),
+      statusHidden: getComputedStyle(document.querySelector('.terminal-status-bar')!).display,
+      sectionTop: Math.round(sectionRect.top),
+      sectionHeight: Math.round(sectionRect.height),
+    };
+  });
+
+  expect(result.fitCountDuringAnimation).toBe(0);
+  expect(result.finalFitCount).toBe(1);
+  expect(result.viewportHeight).toBe('500px');
+  expect(result.viewportOffsetTop).toBe('12px');
+  expect(result.keyboardOpen).toBe(true);
+  expect(result.statusHidden).toBe('none');
+  expect(result.sectionTop).toBe(12);
+  expect(result.sectionHeight).toBe(500);
+});
+
+test('移动端可单指滑动终端历史且调整尺寸后保留阅读位置', async ({ page }) => {
+  await mockAnonymousSession(page);
+  await page.goto('/?lang=zh-CN');
+
+  const result = await page.evaluate(async () => {
+    const terminalModule = await (window as any).eval("import('/src/terminal.ts')");
+    const root = document.createElement('div');
+    root.id = 'mobile-scroll-test-root';
+    root.style.cssText = 'position:fixed;left:0;top:0;width:390px;height:320px;';
+    document.body.appendChild(root);
+    const terminal = new terminalModule.SSHTerminal(root.id);
+    terminal.mount();
+    const xterm = (terminal as any).terminal;
+    const lines = Array.from({ length: 120 }, (_, index) => `line ${index}\r\n`).join('');
+    await new Promise<void>((resolve) => xterm.write(lines, resolve));
+    xterm.scrollToBottom();
+
+    const initial = {
+      baseY: xterm.buffer.active.baseY,
+      viewportY: xterm.buffer.active.viewportY,
+    };
+    root.style.height = '280px';
+    terminal.fit();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const bottomAfterFit = {
+      baseY: xterm.buffer.active.baseY,
+      viewportY: xterm.buffer.active.viewportY,
+    };
+
+    root.style.height = '320px';
+    terminal.fit();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const screen = root.querySelector<HTMLElement>('.xterm-screen')!;
+    const rect = screen.getBoundingClientRect();
+    const pointerId = 74;
+    const dispatchTouch = (target: EventTarget, type: string, x: number, y: number) => {
+      target.dispatchEvent(new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        pointerType: 'touch',
+        pointerId,
+        clientX: x,
+        clientY: y,
+      }));
+    };
+
+    dispatchTouch(screen, 'pointerdown', rect.left + 100, rect.top + 80);
+    dispatchTouch(screen, 'pointermove', rect.left + 101, rect.top + 155);
+    dispatchTouch(window, 'pointerup', rect.left + 101, rect.top + 155);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const afterSwipe = {
+      baseY: xterm.buffer.active.baseY,
+      viewportY: xterm.buffer.active.viewportY,
+    };
+
+    const distanceBeforeFit = afterSwipe.baseY - afterSwipe.viewportY;
+    root.style.height = '240px';
+    terminal.fit();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const distanceAfterFit = xterm.buffer.active.baseY - xterm.buffer.active.viewportY;
+
+    const beforeTap = xterm.buffer.active.viewportY;
+    dispatchTouch(screen, 'pointerdown', rect.left + 100, rect.top + 80);
+    dispatchTouch(window, 'pointerup', rect.left + 100, rect.top + 80);
+    const afterTap = xterm.buffer.active.viewportY;
+
+    terminal.dispose();
+    root.remove();
+    return {
+      initial,
+      afterSwipe,
+      distanceBeforeFit,
+      distanceAfterFit,
+      beforeTap,
+      afterTap,
+      bottomAfterFit,
+    };
+  });
+
+  expect(result.initial.baseY).toBeGreaterThan(0);
+  expect(result.initial.viewportY).toBe(result.initial.baseY);
+  expect(result.afterSwipe.viewportY).toBeLessThan(result.afterSwipe.baseY);
+  expect(result.distanceAfterFit).toBe(result.distanceBeforeFit);
+  expect(result.afterTap).toBe(result.beforeTap);
+  expect(result.bottomAfterFit.viewportY).toBe(result.bottomAfterFit.baseY);
+});
+
 test('终端字号随手机、触屏平板和桌面宽度调整且不受文本自动放大影响', async ({ page }) => {
   await mockAnonymousSession(page);
   await page.goto('/');
@@ -114,6 +279,7 @@ test('终端字号随手机、触屏平板和桌面宽度调整且不受文本�
   expect(initial.textSizeAdjust).toBe('100%');
 
   await page.setViewportSize({ width: 844, height: 390 });
+  await page.evaluate(() => (window as any).__responsiveFontTerminal.fit());
   await expect.poll(() => page.evaluate(() =>
     (window as any).__responsiveFontTerminal.terminal.options.fontSize,
   )).toBe(13);

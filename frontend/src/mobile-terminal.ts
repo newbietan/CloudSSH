@@ -5,6 +5,10 @@ import { notify } from './ui-feedback';
 
 type TerminalGetter = () => SSHTerminal | null;
 
+const VIEWPORT_FIT_STABLE_DELAY_MS = 120;
+const SOFT_KEYBOARD_MIN_OCCLUSION_PX = 120;
+const MOBILE_LAYOUT_QUERY = '(max-width: 767px), (max-width: 1180px) and (pointer: coarse)';
+
 const TERMINAL_KEY_ACTIONS = new Set<MobileTerminalKey>([
   'escape', 'tab', 'arrow_up', 'arrow_down', 'arrow_right',
   'arrow_left', 'home', 'end', 'page_up', 'page_down',
@@ -12,11 +16,16 @@ const TERMINAL_KEY_ACTIONS = new Set<MobileTerminalKey>([
 
 export class MobileTerminalController {
   private viewportFrame: number | null = null;
-  private fitFrame: number | null = null;
+  private fitTimer: ReturnType<typeof setTimeout> | null = null;
+  private maximumViewportHeight = 0;
   private moreMenu: HTMLElement | null;
   private modifierButtons: HTMLButtonElement[];
   private activeTerminal: SSHTerminal | null = null;
   private readonly viewportListener = () => this.scheduleViewportUpdate();
+  private readonly viewportResetListener = () => {
+    this.maximumViewportHeight = 0;
+    this.scheduleViewportUpdate();
+  };
   private readonly terminalStateListener = () => this.syncTerminalState();
   private readonly outsideMenuListener = (event: PointerEvent) => {
     const target = event.target as Node | null;
@@ -34,9 +43,10 @@ export class MobileTerminalController {
 
   start(): void {
     window.addEventListener('resize', this.viewportListener, { passive: true });
-    window.addEventListener('orientationchange', this.viewportListener, { passive: true });
+    window.addEventListener('orientationchange', this.viewportResetListener, { passive: true });
     window.visualViewport?.addEventListener('resize', this.viewportListener, { passive: true });
-    document.addEventListener('fullscreenchange', this.viewportListener);
+    window.visualViewport?.addEventListener('scroll', this.viewportListener, { passive: true });
+    document.addEventListener('fullscreenchange', this.viewportResetListener);
     document.addEventListener('cloudssh:mobile-modifier-change', this.terminalStateListener);
     document.addEventListener('cloudssh:active-terminal-change', this.terminalStateListener);
     document.addEventListener('pointerdown', this.outsideMenuListener, true);
@@ -99,20 +109,33 @@ export class MobileTerminalController {
     if (this.viewportFrame !== null) cancelAnimationFrame(this.viewportFrame);
     this.viewportFrame = requestAnimationFrame(() => {
       this.viewportFrame = null;
-      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-      document.documentElement.style.setProperty('--visual-viewport-height', `${Math.round(viewportHeight)}px`);
-      this.scheduleFit();
+      const visualViewport = window.visualViewport;
+      const viewportHeight = Math.max(1, Math.round(visualViewport?.height ?? window.innerHeight));
+      const viewportOffsetTop = Math.max(0, Math.round(visualViewport?.offsetTop ?? 0));
+      const isMobileLayout = window.matchMedia?.(MOBILE_LAYOUT_QUERY).matches ?? false;
+
+      if (this.maximumViewportHeight === 0 || viewportHeight > this.maximumViewportHeight) {
+        this.maximumViewportHeight = viewportHeight;
+      }
+      const keyboardOpen = isMobileLayout
+        && this.maximumViewportHeight - viewportHeight >= SOFT_KEYBOARD_MIN_OCCLUSION_PX;
+
+      const root = document.documentElement;
+      root.style.setProperty('--visual-viewport-height', `${viewportHeight}px`);
+      root.style.setProperty('--visual-viewport-offset-top', `${viewportOffsetTop}px`);
+      root.classList.toggle('mobile-keyboard-open', keyboardOpen);
+      this.scheduleStableFit();
       this.updateOrientationLabel();
     });
   }
 
-  private scheduleFit(): void {
+  private scheduleStableFit(): void {
     if (!document.body.classList.contains('terminal-active')) return;
-    if (this.fitFrame !== null) cancelAnimationFrame(this.fitFrame);
-    this.fitFrame = requestAnimationFrame(() => {
-      this.fitFrame = null;
+    if (this.fitTimer !== null) clearTimeout(this.fitTimer);
+    this.fitTimer = setTimeout(() => {
+      this.fitTimer = null;
       this.getTerminal()?.fit();
-    });
+    }, VIEWPORT_FIT_STABLE_DELAY_MS);
   }
 
   private toggleMoreMenu(): void {
@@ -143,6 +166,7 @@ export class MobileTerminalController {
     this.activeTerminal = terminal;
     this.syncModifierButtons();
     this.syncCopyButton();
+    this.scheduleStableFit();
   }
 
   private syncCopyButton(): void {
@@ -228,6 +252,7 @@ export class MobileTerminalController {
       try { screen.orientation?.unlock?.(); } catch { /* ignore */ }
       void document.exitFullscreen?.();
     }
+    document.documentElement.classList.remove('mobile-keyboard-open');
     this.hideMoreMenu();
   }
 
