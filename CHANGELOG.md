@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] - 2026-08-11
+
+### Changed
+- 移动端终端改为统一使用 `VisualViewport` 的高度与顶部偏移定位可视区域，并在软键盘动画稳定后再调整终端行列数，减少远端 PTY 连续 resize 引起的闪烁和内容跳动。
+- 软键盘打开时隐藏非必要的终端状态栏并避免重复叠加底部安全区，为终端内容和快捷工具栏保留更多可用空间。
+
+### Fixed
+- 修复 Android Chrome、Edge 等移动浏览器打开软键盘后部分终端内容被遮挡、提示符位置不稳定的问题。
+- 修复移动端无法在终端内容区域单指滑动查看历史记录的问题；滑动与文本选择、备用屏幕及远端鼠标协议保持隔离。
+- 修复终端尺寸变化后可能丢失当前阅读位置的问题：位于底部时继续跟随提示符，查看历史时保留相对滚动位置。
+
 ## [1.7.0] - 2026-08-11
 
 ### Added
