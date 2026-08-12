@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.3] - 2026-08-12
+
+### Changed
+- 移动端页面从后台返回后主动执行带随机 ID 的有界 WebSocket 心跳验证，不再仅凭 `readyState` 判断 SSH 会话可用性；失活连接会进入统一的指数退避重连流程。
+- 匿名会话使用当前内存连接配置重新建立 SSH；登录用户的已保存服务器会重新申请一次性连接令牌，并仅在收到 `shell_ready` 后恢复在线状态和终端输入。
+- iOS 输入法兼容回归改为模拟 Safari 的真实事件时序，并在 Chromium 与 iPhone WebKit 中覆盖空格、英文/中文标点、连续空格替换和重复发送防护。
+
+### Fixed
+- 修复手机浏览器切换到后台十几秒后返回时，界面显示已经重连但终端仍无法操作、必须关闭网页重新连接的问题。
+- 修复已保存服务器断线后复用失效的一次性令牌，导致自动重连无法恢复的问题。
+- 修复 iOS Safari 使用中文输入法时，空格、`.`、`、` 等非组合字符因 `keydown` 与 `keyup` 键码不一致而被丢弃的问题。
+
 ## [1.7.2] - 2026-08-12
 
 ### Changed
