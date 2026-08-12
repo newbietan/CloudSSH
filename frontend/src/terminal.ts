@@ -1077,8 +1077,10 @@ export class SSHTerminal {
     }
   };
 
-  private readonly imeKeyupListener = (event: KeyboardEvent): void => {
-    if (event.keyCode !== 229 || this.imePendingBaseline === null) return;
+  private readonly imeKeyupListener = (_event: KeyboardEvent): void => {
+    // iOS 中文输入法只保证 keydown 使用 229；对应 keyup 可能是空格的 32、
+    // 标点的 0，或其他实际键码。只要存在待处理的 229 周期就应检查差异。
+    if (this.imePendingBaseline === null) return;
     if (this.imeKeyupTimer !== null) clearTimeout(this.imeKeyupTimer);
     // 让 xterm 自己在 keyup 或先前的 0ms fallback 中优先消费输入。
     this.imeKeyupTimer = setTimeout(() => {

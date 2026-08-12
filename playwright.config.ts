@@ -18,8 +18,8 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
     {
-      name: 'webkit-auth',
-      testMatch: /(?:auth-challenge|connection-recovery)\.spec\.ts/,
+      name: 'webkit-mobile',
+      testMatch: /(?:auth-challenge|connection-recovery|ios-ime)\.spec\.ts/,
       use: { ...devices['iPhone 13'] },
     },
   ],
