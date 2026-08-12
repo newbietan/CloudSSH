@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.2] - 2026-08-12
+
+### Changed
+- SSH 用户认证改为先发送 RFC 4252 `none` 探测，根据服务端实际声明的方法选择普通密码、公钥或 `keyboard-interactive`；对未返回方法列表的非标准服务端保留有界兼容回退。
+- 交互式认证挑战增加浏览器展示确认：服务端先等待 10 秒确认弹窗已显示，再开始计算 2 分钟用户响应时间；认证超时使用正常关闭，避免旧版前端反复重连并触发服务商侧封禁。
+- 认证回归测试扩展到 Chromium 与移动 WebKit，并在部署质量门禁中安装和执行对应浏览器测试。
+
+### Fixed
+- 修复 Serv00 等仅通过 `keyboard-interactive` 提供密码验证的服务器可能先消耗一次普通密码认证、随后仍无法正确进入交互式认证的问题。
+- 修复浏览器处理认证控制消息异常时被误当作终端文本输出，以及无效挑战未可靠取消、仍可能自动重连的问题。
+- 修复交互式认证弹窗尚未展示与用户已看到但尚未作答共用同一超时，导致慢速设备或浏览器兼容问题难以准确诊断的问题。
+
 ## [1.7.1] - 2026-08-11
 
 ### Changed
