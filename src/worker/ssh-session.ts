@@ -58,15 +58,17 @@ import type { Env } from '../types';
 
 const LOCAL_WINDOW_ADJUST_THRESHOLD = 512 * 1024;
 const KEEPALIVE_REQUEST_NAME = new TextEncoder().encode('keepalive@openssh.com');
-const AUTH_CHALLENGE_TIMEOUT_MS = 2 * 60 * 1000;
+const AUTH_CHALLENGE_ACK_TIMEOUT_MS = 10 * 1000;
+const AUTH_CHALLENGE_RESPONSE_TIMEOUT_MS = 2 * 60 * 1000;
 const MAX_KEYBOARD_INTERACTIVE_ROUNDS = 8;
 const MAX_PARTIAL_AUTHENTICATION_STAGES = 8;
 
-type ActiveAuthMethod = 'password' | 'publickey' | 'keyboard-interactive';
+type ActiveAuthMethod = 'none' | 'password' | 'publickey' | 'keyboard-interactive';
 
 interface PendingAuthChallenge {
   id: string;
   prompts: Array<{ text: string; echo: boolean }>;
+  phase: 'awaiting_ack' | 'awaiting_response';
   timeout: ReturnType<typeof setTimeout>;
 }
 
@@ -1015,16 +1017,19 @@ export class SSHSession {
   }
 
   private async authenticate(): Promise<void> {
-    const initialMethod: ActiveAuthMethod =
-      this.config.authMethod === 'publickey'
-        ? 'publickey'
-        : 'password';
-    const started = await this.authenticateWithMethod(initialMethod);
-    if (!started) this.failAuthentication();
+    // RFC 4252 §5.2: ask the server which methods may continue before
+    // sending a password or signature. This avoids wasting a credential
+    // attempt on hosts such as Serv00 that expose password verification only
+    // through keyboard-interactive.
+    this.activeAuthMethod = 'none';
+    this.attemptedAuthMethods.add('none');
+    await this.sendEncrypted(SSHAuth.buildNoneAuthRequest(this.config.username));
   }
 
   private canUseAuthMethod(method: ActiveAuthMethod): boolean {
     switch (method) {
+      case 'none':
+        return true;
       case 'publickey':
         return this.config.authMethod === 'publickey'
           && Boolean(this.config.privateKey && this.sessionID);
@@ -1042,6 +1047,9 @@ export class SSHSession {
 
     let authRequest: Uint8Array;
     switch (method) {
+      case 'none':
+        authRequest = SSHAuth.buildNoneAuthRequest(this.config.username);
+        break;
       case 'publickey':
         this.sendStatus('正在使用密钥认证...', 'auth_public_key');
         authRequest = await SSHAuth.buildPublicKeyAuthRequest(
@@ -1078,8 +1086,14 @@ export class SSHSession {
     const configuredFirst: ActiveAuthMethod[] = this.config.authMethod === 'publickey'
       ? ['publickey', 'keyboard-interactive']
       : ['password', 'keyboard-interactive'];
+    // RFC 4252 allows a server to omit the list in a failure response. Keep
+    // compatibility with such servers after the harmless "none" probe by
+    // falling back to the user's configured primary method.
+    const effectiveAllowedMethods = previousMethod === 'none' && allowedMethods.length === 0
+      ? configuredFirst
+      : allowedMethods;
     const candidates = configuredFirst.filter((method) =>
-      allowedMethods.includes(method)
+      effectiveAllowedMethods.includes(method)
       && !this.attemptedAuthMethods.has(method)
       && this.canUseAuthMethod(method)
     );
@@ -1151,13 +1165,20 @@ export class SSHSession {
     const timeout = setTimeout(() => {
       if (this.pendingAuthChallenge?.id !== id) return;
       this.pendingAuthChallenge = null;
-      this.sendError('等待交互式认证响应超时', 'auth_interactive_timeout');
-      this.close();
-    }, AUTH_CHALLENGE_TIMEOUT_MS);
+      this.sendError(
+        '浏览器未确认显示交互式认证请求，请刷新页面后重试',
+        'auth_interactive_client_unavailable',
+      );
+      // Authentication timeouts are expected application outcomes. A normal
+      // close also prevents older frontends from reconnecting repeatedly and
+      // triggering provider-side IP bans.
+      this.close(true);
+    }, AUTH_CHALLENGE_ACK_TIMEOUT_MS);
 
     this.pendingAuthChallenge = {
       id,
       prompts: request.prompts.map((prompt) => ({ ...prompt })),
+      phase: 'awaiting_ack',
       timeout,
     };
 
@@ -1179,6 +1200,28 @@ export class SSHSession {
       this.clearPendingAuthChallenge();
       this.close();
     }
+  }
+
+  private handleKeyboardInteractiveAck(message: Record<string, unknown>): void {
+    if (this.state !== 'auth' || this.activeAuthMethod !== 'keyboard-interactive') return;
+
+    const pending = this.pendingAuthChallenge;
+    if (!pending || typeof message.id !== 'string' || message.id !== pending.id) {
+      this.sendError('交互式认证确认已过期或不匹配', 'auth_interactive_stale');
+      return;
+    }
+    if (pending.phase === 'awaiting_response') return;
+
+    clearTimeout(pending.timeout);
+    pending.phase = 'awaiting_response';
+    const id = pending.id;
+    pending.timeout = setTimeout(() => {
+      if (this.pendingAuthChallenge?.id !== id) return;
+      this.pendingAuthChallenge = null;
+      this.sendError('等待交互式认证响应超时', 'auth_interactive_timeout');
+      this.close(true);
+    }, AUTH_CHALLENGE_RESPONSE_TIMEOUT_MS);
+    this.sendDebug('Browser displayed the interactive authentication challenge');
   }
 
   private async handleKeyboardInteractiveResponse(message: Record<string, unknown>): Promise<void> {
@@ -1362,11 +1405,16 @@ export class SSHSession {
             '服务器要求更改已过期密码，当前版本暂不支持在认证期间修改密码',
             'auth_password_change_required',
           );
-        } else {
+        } else if (this.activeAuthMethod === 'publickey') {
           // With publickey it is SSH_MSG_USERAUTH_PK_OK. CloudSSH always sends
           // the signature in its first request, so this response is unexpected.
           this.failAuthentication(
             '服务器返回了意外的公钥认证确认',
+            'auth_protocol_error',
+          );
+        } else {
+          this.failAuthentication(
+            '服务器在认证方式探测阶段返回了意外消息',
             'auth_protocol_error',
           );
         }
@@ -1705,6 +1753,10 @@ export class SSHSession {
       }
 
       if (parsed && typeof parsed === 'object') {
+        if (parsed.type === 'auth_challenge_ack') {
+          this.handleKeyboardInteractiveAck(parsed);
+          return;
+        }
         if (parsed.type === 'auth_response') {
           await this.handleKeyboardInteractiveResponse(parsed);
           return;

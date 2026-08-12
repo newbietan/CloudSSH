@@ -191,6 +191,7 @@ export const zhCN = {
   'terminal.status.authInteractiveCancelled': '交互式认证已取消',
   'terminal.status.authInteractiveProtocolError': '服务器发送了无效或不符合当前流程的交互式认证消息',
   'terminal.status.authInteractiveLimit': '交互式认证轮次过多，连接已终止',
+  'terminal.status.authInteractiveClientUnavailable': '浏览器未能显示交互式认证请求，请刷新页面后重试',
   'terminal.status.authInteractiveTimeout': '等待交互式认证响应超时',
   'terminal.status.authInteractiveStale': '交互式认证响应已过期或不匹配',
   'terminal.status.authInteractiveInvalidResponse': '交互式认证响应无效',

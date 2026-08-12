@@ -18,6 +18,8 @@ describe('SSH 状态国际化', () => {
       .toBe('Interactive authentication failed: the server rejected the response');
     expect(localizedSSHMessage('等待响应超时', 'auth_interactive_timeout'))
       .toBe('Timed out waiting for an interactive authentication response');
+    expect(localizedSSHMessage('浏览器未展示', 'auth_interactive_client_unavailable'))
+      .toBe('The browser could not display the interactive authentication request. Refresh the page and try again.');
   });
 
   it('保留指纹和错误详情等动态参数', () => {

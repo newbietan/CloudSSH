@@ -9,6 +9,7 @@ const SSH_EVENT_KEYS: Record<string, TranslationKey> = {
   auth_interactive_cancelled: 'terminal.status.authInteractiveCancelled',
   auth_interactive_protocol_error: 'terminal.status.authInteractiveProtocolError',
   auth_interactive_limit: 'terminal.status.authInteractiveLimit',
+  auth_interactive_client_unavailable: 'terminal.status.authInteractiveClientUnavailable',
   auth_interactive_timeout: 'terminal.status.authInteractiveTimeout',
   auth_interactive_stale: 'terminal.status.authInteractiveStale',
   auth_interactive_invalid_response: 'terminal.status.authInteractiveInvalidResponse',

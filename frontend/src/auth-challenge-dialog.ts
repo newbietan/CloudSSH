@@ -33,6 +33,7 @@ export type AuthChallengeSubmission =
 export interface AuthChallengeDialogOptions {
   host: string;
   port: number;
+  onShown: (id: string) => void;
   onSubmit: (submission: AuthChallengeSubmission) => void;
   onCancel: (id: string) => void;
 }
@@ -305,6 +306,8 @@ export class AuthChallengeDialog {
       onCancel(challengeId);
       return true;
     }
+
+    options.onShown(challenge.id);
 
     requestAnimationFrame(() => {
       if (this.dialog !== dialog) return;

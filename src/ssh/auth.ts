@@ -94,6 +94,19 @@ interface ParsedKey {
 }
 
 export class SSHAuth {
+  /**
+   * Build the RFC 4252 "none" probe used to discover the authentication
+   * methods the server actually permits before sending any credential.
+   */
+  static buildNoneAuthRequest(username: string): Uint8Array {
+    return concat(
+      new Uint8Array([SSH_MSG_USERAUTH_REQUEST]),
+      encodeString(username),
+      encodeString('ssh-connection'),
+      encodeString('none'),
+    );
+  }
+
   static buildPasswordAuthRequest(
     username: string,
     password: string

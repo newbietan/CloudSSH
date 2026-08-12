@@ -34,6 +34,29 @@ function readString(
 }
 
 describe('SSHAuth keyboard-interactive (RFC 4256)', () => {
+  describe('buildNoneAuthRequest', () => {
+    it('encodes an RFC 4252 method-discovery request without credentials', () => {
+      const packet = SSHAuth.buildNoneAuthRequest('alice');
+
+      expect(packet[0]).toBe(50);
+      let offset = 1;
+      const username = readString(packet, offset);
+      offset = username.nextOffset;
+      const service = readString(packet, offset);
+      offset = service.nextOffset;
+      const method = readString(packet, offset);
+      offset = method.nextOffset;
+
+      expect({ username: username.value, service: service.value, method: method.value }).toEqual({
+        username: 'alice',
+        service: 'ssh-connection',
+        method: 'none',
+      });
+      expect(offset).toBe(packet.length);
+      expect(new TextDecoder().decode(packet)).not.toContain('saved-secret');
+    });
+  });
+
   describe('buildKeyboardInteractiveAuthRequest', () => {
     it('encodes the username, service, method, language and submethods', () => {
       const packet = SSHAuth.buildKeyboardInteractiveAuthRequest('用户@example');

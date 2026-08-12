@@ -93,6 +93,7 @@ describe('keyboard-interactive 浏览器交互边界', () => {
     expect(styleSource).toContain('.auth-challenge-dialog::backdrop');
     expect(styleSource).toContain('var(--visual-viewport-height)');
     expect(dialogSource).toContain('if (!opened)');
+    expect(dialogSource).toContain('options.onShown(challenge.id)');
     expect(dialogSource).toContain('onCancel(challengeId)');
   });
 
@@ -120,12 +121,16 @@ describe('keyboard-interactive 浏览器交互边界', () => {
     expect(terminalSource).toMatch(/onmessage = \(event\) => \{\s*if \(socket !== this\.ws\) return;/);
     expect(terminalSource).toContain('if (socket !== this.ws || socket.readyState !== WebSocket.OPEN) return;');
     expect(terminalSource).toContain('socket.send(JSON.stringify(submission))');
+    expect(terminalSource).toContain("socket.send(JSON.stringify({ type: 'auth_challenge_ack', id }))");
     expect(terminalSource).toContain("socket.send(JSON.stringify({ type: 'auth_cancel', id }))");
     expect(terminalSource).toMatch(/onCancel:[\s\S]*?this\.canReconnect = false/);
     expect(terminalSource).toContain('NON_RETRIABLE_AUTH_EVENTS');
+    expect(terminalSource).toContain("'auth_interactive_client_unavailable'");
     expect(terminalSource).toContain("'auth_interactive_failed'");
     expect(terminalSource).toContain("'auth_failed'");
     expect(terminalSource).toContain("socket.close(1000, 'Invalid authentication challenge')");
+    expect(terminalSource).toContain('this.rejectAuthChallenge(socket, msg)');
+    expect(terminalSource).toContain('Only parsing failures are terminal output');
   });
 
   it('只提交用户当前选定认证方式对应的凭据', () => {

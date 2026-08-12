@@ -96,6 +96,34 @@ describe('SSHSession keyboard-interactive authentication', () => {
     vi.useRealTimers();
   });
 
+  it('discovers methods with none before sending credentials and selects Serv00 keyboard-interactive', async () => {
+    const { session, sendEncrypted } = createSession('top-secret');
+
+    await (session as any).authenticate();
+    expect(sendEncrypted).toHaveBeenCalledOnce();
+    expect(readAuthMethod(sendEncrypted.mock.calls[0][0])).toBe('none');
+    expect(new TextDecoder().decode(sendEncrypted.mock.calls[0][0])).not.toContain('top-secret');
+
+    await (session as any).handleAuthPacket(
+      51,
+      buildFailure('publickey,keyboard-interactive'),
+    );
+    expect(sendEncrypted).toHaveBeenCalledTimes(2);
+    expect(readAuthMethod(sendEncrypted.mock.calls[1][0])).toBe('keyboard-interactive');
+  });
+
+  it('selects the configured password after discovery and tolerates an omitted method list', async () => {
+    const advertised = createSession();
+    await (advertised.session as any).authenticate();
+    await (advertised.session as any).handleAuthPacket(51, buildFailure('password'));
+    expect(readAuthMethod(advertised.sendEncrypted.mock.calls[1][0])).toBe('password');
+
+    const omitted = createSession();
+    await (omitted.session as any).authenticate();
+    await (omitted.session as any).handleAuthPacket(51, buildFailure(''));
+    expect(readAuthMethod(omitted.sendEncrypted.mock.calls[1][0])).toBe('password');
+  });
+
   it('does not reinterpret a rejected configured method as keyboard-interactive', async () => {
     const { session, sendEncrypted, ws } = createSession();
     (session as any).activeAuthMethod = 'password';
@@ -351,20 +379,41 @@ describe('SSHSession keyboard-interactive authentication', () => {
     expect(publicKeyCase.ws.close).toHaveBeenCalledWith(1011);
   });
 
-  it('times out safely and cancellation closes normally without reconnect semantics', async () => {
+  it('distinguishes an undisplayed challenge from a displayed but unanswered challenge', async () => {
+    const unavailableCase = createSession();
+    (unavailableCase.session as any).activeAuthMethod = 'keyboard-interactive';
+    await (unavailableCase.session as any).handleAuthPacket(
+      60,
+      buildInfoRequest([{ text: 'OTP: ', echo: false }]),
+    );
+    await vi.advanceTimersByTimeAsync(10 * 1000);
+    expect(sentJson(unavailableCase.ws)).toMatchObject({
+      type: 'error',
+      event: 'auth_interactive_client_unavailable',
+    });
+    expect(unavailableCase.ws.close).toHaveBeenCalledWith(1000);
+
     const timeoutCase = createSession();
     (timeoutCase.session as any).activeAuthMethod = 'keyboard-interactive';
     await (timeoutCase.session as any).handleAuthPacket(
       60,
       buildInfoRequest([{ text: 'OTP: ', echo: false }]),
     );
+    const timeoutChallenge = sentJson(timeoutCase.ws);
+    await timeoutCase.session.handleWebSocketMessage(JSON.stringify({
+      type: 'auth_challenge_ack',
+      id: timeoutChallenge.id,
+    }));
+    expect((timeoutCase.session as any).pendingAuthChallenge.phase).toBe('awaiting_response');
     await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
     expect(sentJson(timeoutCase.ws)).toMatchObject({
       type: 'error',
       event: 'auth_interactive_timeout',
     });
-    expect(timeoutCase.ws.close).toHaveBeenCalledWith(1011);
+    expect(timeoutCase.ws.close).toHaveBeenCalledWith(1000);
+  });
 
+  it('cancellation closes normally without reconnect semantics', async () => {
     const cancelCase = createSession();
     (cancelCase.session as any).activeAuthMethod = 'keyboard-interactive';
     await (cancelCase.session as any).handleAuthPacket(
@@ -401,6 +450,15 @@ describe('SSHSession keyboard-interactive authentication', () => {
     await (publicKeyContext.session as any).handleAuthPacket(60, new Uint8Array([60]));
     expect(publicKeyContext.ws.close).toHaveBeenCalledWith(1011);
     expect(sentJson(publicKeyContext.ws)).toMatchObject({
+      type: 'error',
+      event: 'auth_protocol_error',
+    });
+
+    const discoveryContext = createSession();
+    (discoveryContext.session as any).activeAuthMethod = 'none';
+    await (discoveryContext.session as any).handleAuthPacket(60, new Uint8Array([60]));
+    expect(discoveryContext.ws.close).toHaveBeenCalledWith(1011);
+    expect(sentJson(discoveryContext.ws)).toMatchObject({
       type: 'error',
       event: 'auth_protocol_error',
     });

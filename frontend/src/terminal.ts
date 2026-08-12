@@ -33,6 +33,7 @@ const NON_RETRIABLE_AUTH_EVENTS = new Set([
   'auth_failed',
   'auth_interactive_protocol_error',
   'auth_interactive_limit',
+  'auth_interactive_client_unavailable',
   'auth_interactive_timeout',
   'auth_interactive_invalid_response',
   'auth_interactive_failed',
@@ -774,8 +775,17 @@ export class SSHTerminal {
     this.ws.onmessage = (event) => {
       if (socket !== this.ws) return;
       if (typeof event.data === 'string') {
+        let msg: any;
         try {
-          const msg = JSON.parse(event.data);
+          msg = JSON.parse(event.data);
+        } catch {
+          // Only parsing failures are terminal output. Exceptions raised by
+          // control-message handlers must never be swallowed as text.
+          this.trzszFilter!.processServerOutput(event.data);
+          return;
+        }
+
+        try {
           if (msg.type === 'auth_challenge') {
             this.handleAuthChallenge(socket, msg);
             return;
@@ -834,9 +844,11 @@ export class SSHTerminal {
               this.onOSDetectedHandler?.(msg.serverId, msg.os);
               return;
           }
-        } catch {
-          // Non-JSON string data — pass through trzsz filter
-          this.trzszFilter!.processServerOutput(event.data);
+        } catch (error) {
+          console.error('WebSocket control message handling failed', error);
+          if (msg?.type === 'auth_challenge') {
+            this.rejectAuthChallenge(socket, msg);
+          }
         }
       } else {
         this.trzszFilter!.processServerOutput(event.data);
@@ -905,6 +917,10 @@ export class SSHTerminal {
     const shown = this.authChallengeDialog.show(payload, {
       host: this.lastConfig?.host ?? '',
       port: this.lastConfig?.port ?? 22,
+      onShown: (id: string) => {
+        if (socket !== this.ws || socket.readyState !== WebSocket.OPEN) return;
+        socket.send(JSON.stringify({ type: 'auth_challenge_ack', id }));
+      },
       onSubmit: (submission: AuthChallengeSubmission) => {
         // The callback belongs to the socket that produced this challenge. A
         // reconnect must never receive a stale password or one-time code.
@@ -922,19 +938,26 @@ export class SSHTerminal {
     });
 
     if (!shown) {
-      this.canReconnect = false;
-      this.terminal.writeln(`\x1b[31m[!] ${t('authChallenge.invalid')}\x1b[0m`);
-      if (socket.readyState === WebSocket.OPEN) {
-        const id = typeof payload === 'object' && payload !== null
-          && typeof (payload as { id?: unknown }).id === 'string'
-          ? (payload as { id: string }).id
-          : null;
-        if (id) {
-          socket.send(JSON.stringify({ type: 'auth_cancel', id }));
-        } else {
-          socket.close(1000, 'Invalid authentication challenge');
-        }
-      }
+      this.rejectAuthChallenge(socket, payload);
+    }
+  }
+
+  private rejectAuthChallenge(socket: WebSocket, payload: unknown): void {
+    if (socket !== this.ws) return;
+    this.canReconnect = false;
+    this.clearReconnectTimeout();
+    this.authChallengeDialog?.dismiss();
+    this.terminal.writeln(`\x1b[31m[!] ${t('authChallenge.invalid')}\x1b[0m`);
+    if (socket.readyState !== WebSocket.OPEN) return;
+
+    const id = typeof payload === 'object' && payload !== null
+      && typeof (payload as { id?: unknown }).id === 'string'
+      ? (payload as { id: string }).id
+      : null;
+    if (id) {
+      socket.send(JSON.stringify({ type: 'auth_cancel', id }));
+    } else {
+      socket.close(1000, 'Invalid authentication challenge');
     }
   }
 

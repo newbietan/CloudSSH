@@ -17,6 +17,11 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      name: 'webkit-auth',
+      testMatch: 'auth-challenge.spec.ts',
+      use: { ...devices['iPhone 13'] },
+    },
   ],
   webServer: {
     command: 'pnpm --dir frontend exec vite --host 127.0.0.1 --port 4173',
