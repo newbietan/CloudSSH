@@ -1766,7 +1766,10 @@ export class SSHSession {
           return;
         }
         if (parsed.type === 'ping') {
-          this.ws.send(JSON.stringify({ type: 'pong' }));
+          const id = typeof parsed.id === 'string' && parsed.id.length <= 128
+            ? parsed.id
+            : undefined;
+          this.ws.send(JSON.stringify({ type: 'pong', ...(id ? { id } : {}) }));
           return;
         }
         if (parsed.type === 'resize') {

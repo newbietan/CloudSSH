@@ -181,6 +181,8 @@ export const zhCN = {
   'terminal.reconnectWait': '{seconds} 秒后重连（第 {attempt}/{max} 次）…',
   'terminal.reconnecting': '正在重新连接…',
   'terminal.reconnectFailed': '重新连接失败',
+  'terminal.resumeChecking': '页面已回到前台，正在检查 SSH 连接…',
+  'terminal.resumeStale': '原连接已失去响应，正在重新建立 SSH 会话…',
   'terminal.copySuccess': '已复制',
   'terminal.copyFailed': '无法写入剪贴板，请检查浏览器权限或确认正在使用 HTTPS。',
   'terminal.status.versionExchange': '正在交换 SSH 版本…',

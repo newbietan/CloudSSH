@@ -258,6 +258,7 @@ test('右键粘贴遵循终端的 bracketed paste 模式并统一换行', async 
       readyState: WebSocket.OPEN,
       close: () => undefined,
     };
+    (terminal as any).sessionReady = true;
     const pasted: string[] = [];
     const inputDisposable = xterm.onData((data: string) => pasted.push(data));
 

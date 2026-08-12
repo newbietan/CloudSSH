@@ -85,7 +85,7 @@ pnpm run verify
 
 ## 当前限制
 
-- Playwright 目前只运行 Chromium，尚未覆盖 Firefox、WebKit 和移动端项目。
+- Playwright 的完整界面与无障碍回归主要运行 Chromium；认证挑战和移动端后台连接恢复另在 WebKit 设备项目中执行。Firefox 尚未纳入当前质量门禁。
 - 浏览器 E2E 主要通过 mock API 验证前端行为，尚未连接真实 OpenSSH/Dropbear 和 SFTP 服务。
 - SSHSessionDO、SSH 会话状态机、SFTP 数据流和 AgentCore 等运行态模块的覆盖率仍偏低。
 - 新增协议状态、WebSocket 消息或安全边界时，应优先补充运行时错误、取消、超时和畸形输入测试，而不仅验证成功路径。

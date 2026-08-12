@@ -19,7 +19,7 @@ export default defineConfig({
     },
     {
       name: 'webkit-auth',
-      testMatch: 'auth-challenge.spec.ts',
+      testMatch: /(?:auth-challenge|connection-recovery)\.spec\.ts/,
       use: { ...devices['iPhone 13'] },
     },
   ],

@@ -96,6 +96,16 @@ describe('SSHSession keyboard-interactive authentication', () => {
     vi.useRealTimers();
   });
 
+  it('回传有界心跳 ID，供浏览器前台恢复时排除过期 pong', async () => {
+    const { session, ws } = createSession();
+
+    await session.handleWebSocketMessage(JSON.stringify({ type: 'ping', id: 'resume-probe-1' }));
+    expect(sentJson(ws)).toEqual({ type: 'pong', id: 'resume-probe-1' });
+
+    await session.handleWebSocketMessage(JSON.stringify({ type: 'ping', id: 'x'.repeat(129) }));
+    expect(sentJson(ws)).toEqual({ type: 'pong' });
+  });
+
   it('discovers methods with none before sending credentials and selects Serv00 keyboard-interactive', async () => {
     const { session, sendEncrypted } = createSession('top-secret');
 

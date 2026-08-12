@@ -5,7 +5,7 @@ import {
   normalizeImportedTheme,
   THEME_MAX_BYTES,
 } from './theme';
-import type { SSHTerminal } from './terminal';
+import type { SSHHostInfo, SSHTerminal } from './terminal';
 import { ConnectionForm } from './auth-form';
 import { ServerList } from './server-list';
 import { TabManager } from './tab-manager';
@@ -184,7 +184,7 @@ function showUserSpace(user: { id: number; github_id: number; username: string; 
       showAuthSection();
     },
     // onConnect 回调 — 在当前页面创建新标签
-    (wsUrl: string, serverName: string, hostInfo?: { host: string; port: number; username?: string }) => {
+    (wsUrl: string, serverName: string, hostInfo?: SSHHostInfo) => {
       showTerminalFromServer(wsUrl, serverName, hostInfo);
     }
   );
@@ -233,7 +233,7 @@ function showOfflineUI(): void {
 function showTerminalWithNewTab(
   label: string,
   displayLabel: string,
-  hostInfo?: { host: string; port: number; username?: string }
+  hostInfo?: SSHHostInfo,
 ): { tab: ReturnType<TabManager['createTab']>; terminal: SSHTerminal } {
   document.getElementById('auth-section')!.classList.add('hidden');
   document.getElementById('user-space-section')!.classList.add('hidden');
@@ -251,7 +251,7 @@ function showTerminalWithNewTab(
 function showTerminalFromServer(
   wsUrl: string,
   serverName: string,
-  hostInfo?: { host: string; port: number; username?: string },
+  hostInfo?: SSHHostInfo,
 ): void {
   if (!validateWsUrl(wsUrl)) {
     notify(t('server.invalidWs'), {
@@ -272,7 +272,30 @@ function showTerminalFromServer(
   // 通过 wsUrl（含 one-time-token）建立连接
   const ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
-  terminal.connectWithWebSocket(ws, hostInfo);
+  const serverId = hostInfo?.serverId;
+  const reconnectFactory = serverId
+    ? () => requestSavedServerWebSocket(serverId)
+    : undefined;
+  terminal.connectWithWebSocket(ws, hostInfo, { reconnectFactory });
+}
+
+async function requestSavedServerWebSocket(serverId: number): Promise<WebSocket> {
+  const response = await fetch(`/api/servers/${serverId}/connect`, { method: 'POST' });
+  if (!response.ok) {
+    const contentType = response.headers.get('content-type') || '';
+    const message = contentType.includes('application/json')
+      ? (await response.json() as { error?: string }).error
+      : null;
+    throw new Error(message || `Connection failed (${response.status})`);
+  }
+
+  const { wsUrl } = await response.json() as { wsUrl?: unknown };
+  if (typeof wsUrl !== 'string' || !validateWsUrl(wsUrl)) {
+    throw new Error(t('server.invalidWs'));
+  }
+  const socket = new WebSocket(wsUrl);
+  socket.binaryType = 'arraybuffer';
+  return socket;
 }
 
 // ==================== 断开连接处理 ====================

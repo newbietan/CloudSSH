@@ -85,10 +85,10 @@ export class TabManager {
     const terminal = new SSHTerminal(terminalInner.id);
 
     // 设置会话关闭回调
-    terminal.setSessionClosedHandler(() => {
+    terminal.setSessionClosedHandler((_event, willReconnect) => {
       const tab = this.tabs.get(id);
       if (tab) {
-        tab.state = 'disconnected';
+        tab.state = willReconnect ? 'connecting' : 'disconnected';
         this.renderTabBar();
         if (this.activeTabId === id) {
           this.updateStatusBar(tab);

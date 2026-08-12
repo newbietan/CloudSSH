@@ -5,6 +5,7 @@ import { parsePort } from './port';
 import { copyTextToClipboard } from './clipboard';
 import { maskIPAddress } from './host-display';
 import { osDisplayName, osIconSvg } from './os-icons';
+import type { SSHHostInfo } from './terminal';
 
 interface UserInfo {
   id: number;
@@ -116,7 +117,7 @@ export class ServerList {
   private user: UserInfo;
   private servers: ServerConfig[] = [];
   private onLogout: () => void;
-  private onConnect: (wsUrl: string, serverName: string, hostInfo?: { host: string; port: number; username?: string }) => void;
+  private onConnect: (wsUrl: string, serverName: string, hostInfo?: SSHHostInfo) => void;
   private editingServerId: number | null = null;
   private editingOriginalAuthMethod: ServerConfig['auth_method'] | null = null;
   private modalAuthMode: 'password' | 'key' = 'password';
@@ -128,7 +129,7 @@ export class ServerList {
   constructor(
     user: UserInfo,
     onLogout: () => void,
-    onConnect: (wsUrl: string, serverName: string, hostInfo?: { host: string; port: number; username?: string }) => void
+    onConnect: (wsUrl: string, serverName: string, hostInfo?: SSHHostInfo) => void
   ) {
     this.user = user;
     this.onLogout = onLogout;
@@ -488,6 +489,7 @@ export class ServerList {
         host: server.host,
         port: server.port,
         username: server.username,
+        serverId: server.id,
       });
     } catch (e) {
       notify(e instanceof Error ? e.message : String(e), {

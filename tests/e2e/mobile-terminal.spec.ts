@@ -378,6 +378,7 @@ test('iOS keyCode 229 在 keyup 后准确补发输入法文本和多字符删除
     (terminal as any).trzszFilter = {
       processTerminalInput: (data: string) => payloads.push(data),
     };
+    (terminal as any).sessionReady = true;
     const textarea = root.querySelector<HTMLTextAreaElement>('.xterm-helper-textarea')!;
     const keyEvent = (type: 'keydown' | 'keyup') => {
       const event = new KeyboardEvent(type, { bubbles: true, key: '。' });

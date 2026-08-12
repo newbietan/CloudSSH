@@ -166,7 +166,8 @@ export class SSHSessionDO {
         return;
       }
       if (msg.type === 'ping') {
-        ws.send(JSON.stringify({ type: 'pong' }));
+        const id = typeof msg.id === 'string' && msg.id.length <= 128 ? msg.id : undefined;
+        ws.send(JSON.stringify({ type: 'pong', ...(id ? { id } : {}) }));
         return;
       }
 

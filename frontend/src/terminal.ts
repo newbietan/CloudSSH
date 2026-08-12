@@ -41,6 +41,17 @@ const NON_RETRIABLE_AUTH_EVENTS = new Set([
   'auth_protocol_error',
 ]);
 const RTT_HEARTBEAT_INTERVAL_MS = 5000;
+const HEARTBEAT_RESPONSE_TIMEOUT_MS = 10_000;
+
+export interface SSHHostInfo {
+  host: string;
+  port: number;
+  username?: string;
+  /** 登录用户保存的服务器 ID，用于断线后重新申请一次性连接令牌。 */
+  serverId?: number;
+}
+
+export type ReconnectWebSocketFactory = () => Promise<WebSocket>;
 
 export interface SSHConnectionConfig {
   host: string;
@@ -61,6 +72,10 @@ export interface TerminalSelectionAnchor {
 
 interface ConnectOptions {
   resetDisplay?: boolean;
+}
+
+interface WebSocketConnectOptions extends ConnectOptions {
+  reconnectFactory?: ReconnectWebSocketFactory;
 }
 
 interface TerminalCell {
@@ -97,9 +112,12 @@ export class SSHTerminal {
   private maxReconnectAttempts: number = 5;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private lastConfig: SSHConnectionConfig | null = null;
+  private lastHostInfo: SSHHostInfo | null = null;
+  private reconnectWebSocketFactory: ReconnectWebSocketFactory | null = null;
   private canReconnect: boolean = true;
+  private sessionReady: boolean = false;
   private restoreCursorBlinkAfterReturnPrompt: boolean = false;
-  private onSessionClosed?: (event: CloseEvent) => void;
+  private onSessionClosed?: (event: CloseEvent, willReconnect: boolean) => void;
   private onSessionReady?: () => void;
   private onAgentFrameHandler?: (msg: any) => void;
   private onOSDetectedHandler?: (serverId: number, os: string) => void;
@@ -110,6 +128,9 @@ export class SSHTerminal {
   private cfLatency: number | null = null;
   private cfColo: string | null = null;
   private lastPingTime: number | null = null;
+  private pendingHeartbeatId: string | null = null;
+  private heartbeatResponseTimeout: ReturnType<typeof setTimeout> | null = null;
+  private pageHiddenAt: number | null = null;
   private wsLatency: number | null = null;
   private onLatencyUpdated?: (cfLatency: number | null, cfColo: string | null, wsLatency: number | null) => void;
   private onSelectionChanged?: (selection: string, anchor: TerminalSelectionAnchor | null) => void;
@@ -199,6 +220,22 @@ export class SSHTerminal {
     this.finishMobileScroll(event.pointerId);
     this.selectionPointerActive = false;
   };
+  private readonly visibilityChangeListener = (): void => {
+    if (document.visibilityState === 'hidden') {
+      this.pageHiddenAt = Date.now();
+      // 后台页面可能冻结所有定时器。清除旧探测，回到前台后重新验证，
+      // 避免一个在后台过期的计时器把仍健康的连接误判为断线。
+      this.stopHeartbeat();
+      return;
+    }
+    this.verifyConnectionAfterResume();
+  };
+  private readonly pageShowListener = (): void => {
+    if (document.visibilityState !== 'hidden') this.verifyConnectionAfterResume();
+  };
+  private readonly onlineListener = (): void => {
+    if (document.visibilityState !== 'hidden') this.verifyConnectionAfterResume();
+  };
 
   constructor(containerId: string) {
     this.container = document.getElementById(containerId)!;
@@ -254,6 +291,9 @@ export class SSHTerminal {
     });
 
     window.addEventListener('resize', this.resizeListener);
+    document.addEventListener('visibilitychange', this.visibilityChangeListener);
+    window.addEventListener('pageshow', this.pageShowListener);
+    window.addEventListener('online', this.onlineListener);
 
     // 右键粘贴（选区已通过鼠标松手自动复制到剪贴板）
     this.container.addEventListener('contextmenu', this.contextMenuPasteListener);
@@ -274,7 +314,7 @@ export class SSHTerminal {
     });
   }
 
-  setSessionClosedHandler(handler: (event: CloseEvent) => void): void {
+  setSessionClosedHandler(handler: (event: CloseEvent, willReconnect: boolean) => void): void {
     this.onSessionClosed = handler;
   }
 
@@ -298,7 +338,7 @@ export class SSHTerminal {
 
   /** 通过与物理键盘相同的 trzsz 输入管线发送移动端快捷键。 */
   sendInput(data: string): boolean {
-    if (!data || this.ws?.readyState !== WebSocket.OPEN || !this.trzszFilter) return false;
+    if (!data || !this.sessionReady || this.ws?.readyState !== WebSocket.OPEN || !this.trzszFilter) return false;
     this.processTerminalInput(data);
     this.terminal.focus();
     return true;
@@ -364,7 +404,7 @@ export class SSHTerminal {
   async pasteFromClipboard(): Promise<boolean> {
     try {
       const text = await navigator.clipboard.readText();
-      if (!text || this.ws?.readyState !== WebSocket.OPEN) return false;
+      if (!text || !this.sessionReady || this.ws?.readyState !== WebSocket.OPEN) return false;
       // xterm 会统一换行，并且仅在远端显式启用 bracketed paste 时添加控制序列。
       // paste() 还会经过 onData/trzsz 输入管线，与键盘粘贴保持一致。
       this.setMobileModifier(null);
@@ -380,7 +420,7 @@ export class SSHTerminal {
   /** 将文本填入当前远端终端输入行，不附加回车。 */
   fillInput(text: string): boolean {
     if (!text || /[\r\n]/.test(text)) return false;
-    if (this.ws?.readyState !== WebSocket.OPEN || !this.trzszFilter) return false;
+    if (!this.sessionReady || this.ws?.readyState !== WebSocket.OPEN || !this.trzszFilter) return false;
 
     this.trzszFilter.processTerminalInput(text);
     this.terminal.focus();
@@ -674,7 +714,10 @@ export class SSHTerminal {
   async connect(config: SSHConnectionConfig, options: ConnectOptions = {}): Promise<void> {
     this.resetActiveConnection();
     this.lastConfig = config;
+    this.lastHostInfo = null;
+    this.reconnectWebSocketFactory = null;
     this.canReconnect = true;
+    this.sessionReady = false;
     if (options.resetDisplay !== false) {
       this.showConnectingBanner();
     }
@@ -722,28 +765,38 @@ export class SSHTerminal {
     });
   }
 
-  connectWithWebSocket(ws: WebSocket, hostInfo?: { host: string; port: number }): void {
+  connectWithWebSocket(
+    ws: WebSocket,
+    hostInfo?: SSHHostInfo,
+    options: WebSocketConnectOptions = {},
+  ): void {
     this.resetActiveConnection();
-    this.lastConfig = hostInfo ? { host: hostInfo.host, port: hostInfo.port, username: '' } : null;
-    this.canReconnect = false;
+    this.lastConfig = null;
+    this.lastHostInfo = hostInfo ?? null;
+    this.reconnectWebSocketFactory = options.reconnectFactory ?? null;
+    this.canReconnect = Boolean(this.reconnectWebSocketFactory);
+    this.sessionReady = false;
     this.ws = ws;
     ws.binaryType = 'arraybuffer';
-    this.showConnectingBanner();
+    if (options.resetDisplay !== false) {
+      this.showConnectingBanner();
+    }
 
     const termStatus = document.getElementById('term-status');
     if (termStatus) termStatus.innerHTML = `<div class="w-2 h-2 bg-primary-container animate-pulse"></div> ${t('terminal.connecting')}`;
 
-    ws.onopen = () => {
+    const handleOpen = () => {
+      if (ws !== this.ws) return;
       this.terminal.writeln(`\x1b[32m[+] ${t('terminal.wsAuthenticating')}\x1b[0m`);
       this.sendResize();
       this.startHeartbeat();
     };
+    ws.onopen = handleOpen;
+    this.setupWebSocketHandlers();
 
     if (ws.readyState === WebSocket.OPEN) {
-      this.sendResize();
+      handleOpen();
     }
-
-    this.setupWebSocketHandlers();
   }
 
   private setupWebSocketHandlers(rejectFn?: (reason?: any) => void): void {
@@ -764,7 +817,7 @@ export class SSHTerminal {
         }
       },
       sendToServer: (data: string | Uint8Array) => {
-        if (this.ws?.readyState === WebSocket.OPEN) {
+        if (this.sessionReady && this.ws?.readyState === WebSocket.OPEN) {
           this.ws.send(data);
         }
       },
@@ -806,11 +859,10 @@ export class SSHTerminal {
               this.terminal.writeln(`\x1b[32m[*] ${localizedSSHMessage(msg.message, msg.event, msg.params)}\x1b[0m`);
               if (msg.event === 'auth_success' || msg.message === '认证成功') {
                 this.authChallengeDialog?.dismiss();
-                this.reconnectAttempts = 0;
-                const statusText = document.getElementById('status-text');
-                if (statusText) statusText.innerHTML = `<span class="w-2 h-2 bg-[var(--accent)] inline-block animate-pulse"></span> ${t('auth.statusOnline')}`;
               }
               if (msg.event === 'shell_ready' || msg.message === 'Shell 已就绪') {
+                this.sessionReady = true;
+                this.reconnectAttempts = 0;
                 this.onSessionReady?.();
               }
               break;
@@ -829,11 +881,7 @@ export class SSHTerminal {
               this.handleHostKey(msg.fingerprint);
               break;
             case 'pong':
-              if (this.lastPingTime !== null) {
-                this.wsLatency = Math.round(performance.now() - this.lastPingTime);
-                this.lastPingTime = null;
-                this.onLatencyUpdated?.(this.cfLatency, this.cfColo, this.wsLatency);
-              }
+              this.handleHeartbeatResponse(msg);
               break;
             case 'rtt':
               this.cfLatency = msg.latency;
@@ -860,6 +908,7 @@ export class SSHTerminal {
 
       this.authChallengeDialog?.dismiss();
       this.stopHeartbeat();
+      this.sessionReady = false;
       this.terminal.writeln(
         `\x1b[33m[*] ${t('terminal.connectionClosed', { code: event.code })}\x1b[0m`
       );
@@ -868,12 +917,9 @@ export class SSHTerminal {
       const statusText = document.getElementById('status-text');
       if (statusText) statusText.innerHTML = `<span class="w-2 h-2 bg-surface-dot inline-block"></span> ${t('auth.statusOffline')}`;
       
-      if (event.code === 1000) {
-        this.onSessionClosed?.(event);
-        return;
-      }
-
-      if (this.canReconnect && this.lastConfig && this.reconnectAttempts < this.maxReconnectAttempts) {
+      const willReconnect = event.code !== 1000 && this.hasReconnectStrategy();
+      this.onSessionClosed?.(event, willReconnect);
+      if (willReconnect) {
         this.scheduleReconnect();
       }
     };
@@ -897,7 +943,7 @@ export class SSHTerminal {
     // Binary input support
     this.disposables.push(
       this.terminal.onBinary((data) => {
-        this.trzszFilter!.processBinaryInput(data);
+        if (this.sessionReady) this.trzszFilter!.processBinaryInput(data);
       })
     );
 
@@ -997,7 +1043,7 @@ export class SSHTerminal {
   }
 
   private processTerminalInput(data: string): void {
-    if (!this.trzszFilter) return;
+    if (!this.sessionReady || !this.trzszFilter) return;
     const transformed = applyMobileModifier(data, this.mobileModifier);
     if (transformed.consumed) this.setMobileModifier(null);
     this.trzszFilter.processTerminalInput(transformed.data);
@@ -1060,14 +1106,85 @@ export class SSHTerminal {
 
   private startHeartbeat(): void {
     this.stopHeartbeat();
-    const sendPing = () => {
-      if (this.ws?.readyState === WebSocket.OPEN && this.lastPingTime === null) {
-        this.lastPingTime = performance.now();
-        this.ws.send(JSON.stringify({ type: 'ping' }));
+    if (document.visibilityState === 'hidden') return;
+    this.sendHeartbeatProbe();
+    this.heartbeatInterval = setInterval(
+      () => this.sendHeartbeatProbe(),
+      RTT_HEARTBEAT_INTERVAL_MS,
+    );
+  }
+
+  private sendHeartbeatProbe(): void {
+    const socket = this.ws;
+    if (
+      document.visibilityState === 'hidden'
+      || socket?.readyState !== WebSocket.OPEN
+      || this.pendingHeartbeatId !== null
+    ) return;
+
+    const id = crypto.randomUUID();
+    this.pendingHeartbeatId = id;
+    this.lastPingTime = performance.now();
+    socket.send(JSON.stringify({ type: 'ping', id }));
+    this.heartbeatResponseTimeout = setTimeout(() => {
+      if (socket !== this.ws || this.pendingHeartbeatId !== id) return;
+      this.pendingHeartbeatId = null;
+      this.heartbeatResponseTimeout = null;
+      this.lastPingTime = null;
+      if (document.visibilityState === 'hidden') return;
+      this.recoverUnresponsiveConnection(socket);
+    }, HEARTBEAT_RESPONSE_TIMEOUT_MS);
+  }
+
+  private handleHeartbeatResponse(message: { id?: unknown }): void {
+    if (this.pendingHeartbeatId === null || this.lastPingTime === null) return;
+    // 新后端会回传探测 ID；保留对尚未升级后端无 ID pong 的兼容。
+    if (typeof message.id === 'string' && message.id !== this.pendingHeartbeatId) return;
+    if (this.heartbeatResponseTimeout) {
+      clearTimeout(this.heartbeatResponseTimeout);
+      this.heartbeatResponseTimeout = null;
+    }
+    this.pendingHeartbeatId = null;
+    this.wsLatency = Math.round(performance.now() - this.lastPingTime);
+    this.lastPingTime = null;
+    this.onLatencyUpdated?.(this.cfLatency, this.cfColo, this.wsLatency);
+  }
+
+  private verifyConnectionAfterResume(): void {
+    const returnedFromBackground = this.pageHiddenAt !== null;
+    this.pageHiddenAt = null;
+    const socket = this.ws;
+    if (!socket) return;
+
+    if (socket.readyState === WebSocket.OPEN) {
+      if (returnedFromBackground) {
+        this.terminal.writeln(`\x1b[33m[*] ${t('terminal.resumeChecking')}\x1b[0m`);
       }
-    };
-    sendPing();
-    this.heartbeatInterval = setInterval(sendPing, RTT_HEARTBEAT_INTERVAL_MS);
+      this.startHeartbeat();
+      return;
+    }
+
+    if (
+      socket.readyState === WebSocket.CLOSED
+      && this.hasReconnectStrategy()
+      && this.reconnectTimeout === null
+    ) {
+      this.scheduleReconnect();
+    }
+  }
+
+  private recoverUnresponsiveConnection(socket: WebSocket): void {
+    if (socket !== this.ws) return;
+    this.terminal.writeln(`\x1b[31m[!] ${t('terminal.resumeStale')}\x1b[0m`);
+    const event = new CloseEvent('close', {
+      code: 4000,
+      reason: 'Heartbeat timeout',
+      wasClean: false,
+    });
+    const willReconnect = this.hasReconnectStrategy();
+    this.onSessionClosed?.(event, willReconnect);
+    this.resetActiveConnection();
+    if (willReconnect) this.scheduleReconnect();
   }
 
   private getTerminalSize(): { cols: number; rows: number } {
@@ -1126,6 +1243,12 @@ export class SSHTerminal {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
+    if (this.heartbeatResponseTimeout) {
+      clearTimeout(this.heartbeatResponseTimeout);
+      this.heartbeatResponseTimeout = null;
+    }
+    this.pendingHeartbeatId = null;
+    this.lastPingTime = null;
   }
 
   private disposeConnectionDisposables(): void {
@@ -1150,15 +1273,21 @@ export class SSHTerminal {
     this.ws = null;
     this.sftpAttachUrl = null;
     this.trzszFilter = null;
+    this.sessionReady = false;
 
     this.cfLatency = null;
     this.cfColo = null;
-    this.lastPingTime = null;
     this.wsLatency = null;
 
     if (socket && socket.readyState !== WebSocket.CLOSED && socket.readyState !== WebSocket.CLOSING) {
       socket.close(1000);
     }
+  }
+
+  private hasReconnectStrategy(): boolean {
+    return this.canReconnect
+      && this.reconnectAttempts < this.maxReconnectAttempts
+      && Boolean(this.lastConfig || this.reconnectWebSocketFactory);
   }
 
   private scheduleReconnect(): void {
@@ -1178,6 +1307,29 @@ export class SSHTerminal {
         } catch (e) {
           this.terminal.writeln(`\x1b[31m[!] ${t('terminal.reconnectFailed')}\x1b[0m`);
         }
+      } else if (this.reconnectWebSocketFactory) {
+        this.terminal.writeln(`\x1b[32m[+] ${t('terminal.reconnecting')}\x1b[0m`);
+        const reconnectFactory = this.reconnectWebSocketFactory;
+        try {
+          const socket = await reconnectFactory();
+          // 用户可能在令牌请求期间主动关闭标签或发起另一条连接。
+          // 这时丢弃迟到的 socket，避免页面被已经取消的重连重新拉起。
+          if (
+            this.reconnectWebSocketFactory !== reconnectFactory
+            || !this.canReconnect
+            || this.reconnectAttempts >= this.maxReconnectAttempts
+          ) {
+            socket.close(1000);
+            return;
+          }
+          this.connectWithWebSocket(socket, this.lastHostInfo ?? undefined, {
+            resetDisplay: false,
+            reconnectFactory,
+          });
+        } catch {
+          this.terminal.writeln(`\x1b[31m[!] ${t('terminal.reconnectFailed')}\x1b[0m`);
+          if (this.hasReconnectStrategy()) this.scheduleReconnect();
+        }
       }
     }, delay);
   }
@@ -1187,6 +1339,8 @@ export class SSHTerminal {
     this.setMobileSelectionMode(false);
     this.resetActiveConnection();
     this.lastConfig = null;
+    this.lastHostInfo = null;
+    this.reconnectWebSocketFactory = null;
     this.resetTerminalDisplay();
   }
 
@@ -1195,6 +1349,9 @@ export class SSHTerminal {
     this.authChallengeDialog?.destroy();
     this.authChallengeDialog = null;
     window.removeEventListener('resize', this.resizeListener);
+    document.removeEventListener('visibilitychange', this.visibilityChangeListener);
+    window.removeEventListener('pageshow', this.pageShowListener);
+    window.removeEventListener('online', this.onlineListener);
     this.container.removeEventListener('pointerdown', this.selectionPointerDownListener, true);
     this.container.removeEventListener('pointermove', this.selectionPointerMoveListener, true);
     window.removeEventListener('pointerup', this.selectionPointerUpListener, true);
