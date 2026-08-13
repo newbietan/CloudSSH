@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] - 2026-08-13
+
+### Changed
+- SSH 主机指纹发生变化时展示目标主机、已知指纹和新指纹，只有用户明确确认后才替换对应记录并重新连接；取消确认继续保留原信任记录。
+- 已保存服务器在信任新指纹后重新申请一次性连接令牌，匿名连接则更新当前内存配置；多级跳板连接继续使用完整路由身份隔离相同私网地址。
+
+### Fixed
+- 修复服务端在完成主机密钥签名验证前就通知浏览器保存指纹，可能污染匿名连接本地信任记录的问题。
+- 修复已保存服务器首次连接未可靠持久化主机指纹，以及服务器重装或轮换主机密钥后缺少规范重新信任入口、导致连接持续失败的问题。
+
+### Security
+- 首次或变更后的主机指纹只有在 SSH 密钥交换签名验证成功后才允许持久化；签名未验证的指纹不会写入信任记录，也不能通过确认流程替换旧指纹。
+
 ## [1.8.0] - 2026-08-13
 
 ### Added
