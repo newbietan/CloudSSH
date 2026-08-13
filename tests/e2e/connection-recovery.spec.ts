@@ -239,6 +239,85 @@ test('手机回到前台后淘汰僵尸连接并为保存服务器刷新令牌',
   expect(recovered.sockets[1].url).toContain('token=42:test-2');
 });
 
+test('主机指纹变更必须明确确认后更新精确路由并刷新保存服务器令牌', async ({ page }) => {
+  const oldFingerprint = `SHA256:${'A'.repeat(43)}`;
+  const newFingerprint = `SHA256:${'B'.repeat(43)}`;
+  const routeIdentity = 'jump:7@bastion.example.com:22|vps.example.com';
+  let connectRequests = 0;
+  const knownHostUpdates: Array<Record<string, unknown>> = [];
+
+  await page.route('**/api/servers/7/connect', (route) => {
+    connectRequests += 1;
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ wsUrl: `ws://127.0.0.1:4173/api/ssh?token=42:host-key-${connectRequests}` }),
+    });
+  });
+  await page.route('**/api/known-hosts', async (route) => {
+    if (route.request().method() === 'POST') {
+      knownHostUpdates.push(route.request().postDataJSON());
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"success":true}' });
+      return;
+    }
+    await route.fulfill({ status: 404 });
+  });
+
+  await page.goto('/?lang=zh-CN');
+  await page.locator('#connect-7').click();
+  await expect(page.locator('#term-status')).toContainText('已连接');
+
+  await page.evaluate(({ oldFingerprint, newFingerprint, routeIdentity }) => {
+    void (window as any).eval("import('/src/main.ts')").then((module: any) => {
+      const terminal = module.getTabManager().getActiveTab().terminal as any;
+      const socket = terminal.ws;
+      void terminal.handleChangedHostKey(socket, {
+        type: 'host_key_changed',
+        fingerprint: newFingerprint,
+        expectedFingerprint: oldFingerprint,
+        keyType: 'ssh-ed25519',
+        host: routeIdentity,
+        displayHost: 'vps.example.com',
+        port: 22,
+      });
+      socket.close(1000, 'Host key changed');
+    });
+  }, { oldFingerprint, newFingerprint, routeIdentity });
+
+  const dialog = page.locator('.app-dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText(oldFingerprint);
+  await expect(dialog).toContainText(newFingerprint);
+  await dialog.locator('.app-dialog__button--cancel').click();
+  expect(knownHostUpdates).toEqual([]);
+  expect(connectRequests).toBe(1);
+
+  await page.evaluate(({ oldFingerprint, newFingerprint, routeIdentity }) => {
+    void (window as any).eval("import('/src/main.ts')").then((module: any) => {
+      const terminal = module.getTabManager().getActiveTab().terminal as any;
+      void terminal.handleChangedHostKey(terminal.ws, {
+        type: 'host_key_changed',
+        fingerprint: newFingerprint,
+        expectedFingerprint: oldFingerprint,
+        keyType: 'ssh-ed25519',
+        host: routeIdentity,
+        displayHost: 'vps.example.com',
+        port: 22,
+      });
+    });
+  }, { oldFingerprint, newFingerprint, routeIdentity });
+
+  await expect(dialog).toBeVisible();
+  await dialog.locator('.app-dialog__button--confirm').click();
+  await expect.poll(() => knownHostUpdates).toEqual([{
+    host: routeIdentity,
+    port: 22,
+    fingerprint: newFingerprint,
+  }]);
+  await expect.poll(() => connectRequests).toBe(2);
+  await expect(page.locator('#term-status')).toContainText('已连接');
+});
+
 test('认证成功但 Shell 未就绪时不显示在线且拒绝终端输入', async ({ page }) => {
   await page.goto('/?lang=zh-CN');
 

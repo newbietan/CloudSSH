@@ -778,40 +778,7 @@ export class SSHSession {
     this.hostKeyFingerprint = 'SHA256:' + btoa(String.fromCharCode(...fpHash)).replace(/=+$/, '');
     this.sendDebug(`Host key fingerprint: ${this.hostKeyFingerprint} (${this.hostKeyType})`);
 
-    // --- known_hosts verification (TOFU) ---
-    // Send fingerprint with key type to frontend for storage
-    try {
-      this.ws.send(JSON.stringify({
-        type: 'host_key',
-        fingerprint: this.hostKeyFingerprint,
-        keyType: this.hostKeyType,
-        host: this.config.knownHostIdentity || this.config.host,
-        port: this.config.port,
-      }));
-    } catch (e) { /* ws closed */ }
-
-    // Compare against expected fingerprint if provided
-    if (this.config.expectedFingerprint) {
-      if (this.config.expectedFingerprint !== this.hostKeyFingerprint) {
-        this.sendError('主机密钥指纹变更！请确认是否为预期行为。', 'host_key_changed');
-        this.sendError(`已知指纹: ${this.config.expectedFingerprint}`, 'host_key_known', { fingerprint: this.config.expectedFingerprint });
-        this.sendError(`实际指纹: ${this.hostKeyFingerprint} (${this.hostKeyType})`, 'host_key_actual', {
-          fingerprint: this.hostKeyFingerprint,
-          keyType: this.hostKeyType,
-        });
-        this.sendError('连接已阻断。如需信任新密钥，请在服务器列表中删除该服务器的已知主机记录后重试。', 'host_key_trust_instruction');
-        this.close();
-        return;
-      }
-      this.sendStatus(`主机密钥验证通过 (${this.hostKeyType}) ✓`, 'host_key_accepted');
-    } else {
-      this.sendStatus(`服务器指纹: ${this.hostKeyFingerprint} (${this.hostKeyType})（首次连接，已记录）`, 'host_key_first_seen', {
-        fingerprint: this.hostKeyFingerprint,
-        keyType: this.hostKeyType,
-      });
-    }
-
-    // Verify host key signature to confirm exchange hash is correct
+    // Verify possession of the presented host key before comparing or persisting its fingerprint.
     let sigVerified: boolean | null = false;
     try {
       sigVerified = await this.verifyHostKeySignature(hostKey, signature, H);
@@ -844,6 +811,8 @@ export class SSHSession {
       }
     }
 
+    if (!this.finalizeHostKeyTrust(sigVerified === true)) return;
+
     if (!this.sessionID) {
       this.sessionID = H;
       this.sendDebug('Session ID set');
@@ -864,6 +833,85 @@ export class SSHSession {
       macS2C.keyLength
     );
     this.sendDebug('Keys derived, waiting for NEWKEYS');
+  }
+
+  /**
+   * 完成 TOFU 判定。只有服务器已证明持有当前主机私钥时，才允许浏览器记录或替换指纹。
+   */
+  private finalizeHostKeyTrust(signatureVerified: boolean): boolean {
+    const expectedFingerprint = this.config.expectedFingerprint;
+    const host = this.config.knownHostIdentity || this.config.host;
+    const commonMessage = {
+      fingerprint: this.hostKeyFingerprint,
+      keyType: this.hostKeyType,
+      host,
+      port: this.config.port,
+      displayHost: this.config.host,
+    };
+
+    if (expectedFingerprint && expectedFingerprint !== this.hostKeyFingerprint) {
+      if (signatureVerified) {
+        try {
+          this.ws.send(JSON.stringify({
+            type: 'host_key_changed',
+            ...commonMessage,
+            expectedFingerprint,
+          }));
+        } catch { /* WebSocket 已关闭 */ }
+      }
+      this.sendError('主机密钥指纹变更！请确认是否为预期行为。', 'host_key_changed');
+      this.sendError(`已知指纹: ${expectedFingerprint}`, 'host_key_known', {
+        fingerprint: expectedFingerprint,
+      });
+      this.sendError(`实际指纹: ${this.hostKeyFingerprint} (${this.hostKeyType})`, 'host_key_actual', {
+        fingerprint: this.hostKeyFingerprint,
+        keyType: this.hostKeyType,
+      });
+      this.sendError(
+        signatureVerified
+          ? '连接已阻断。请在确认对话框中核对并决定是否信任新指纹。'
+          : '连接已阻断，且主机密钥签名未通过验证，无法信任新指纹。',
+        signatureVerified ? 'host_key_trust_instruction' : 'host_key_unverified_instruction',
+      );
+      this.close(true);
+      return false;
+    }
+
+    if (expectedFingerprint) {
+      if (signatureVerified) {
+        this.sendStatus(`主机密钥验证通过 (${this.hostKeyType}) ✓`, 'host_key_accepted');
+      } else {
+        this.sendStatus(
+          `已知主机指纹匹配 (${this.hostKeyType})，但签名未验证`,
+          'host_key_fingerprint_matched_unverified',
+          { keyType: this.hostKeyType },
+        );
+      }
+      return true;
+    }
+
+    if (!signatureVerified) {
+      this.sendStatus(
+        `服务器指纹: ${this.hostKeyFingerprint} (${this.hostKeyType})（签名未验证，未记录）`,
+        'host_key_not_saved',
+        { fingerprint: this.hostKeyFingerprint, keyType: this.hostKeyType },
+      );
+      return true;
+    }
+
+    try {
+      this.ws.send(JSON.stringify({
+        type: 'host_key_verified',
+        ...commonMessage,
+        firstSeen: true,
+      }));
+    } catch { /* WebSocket 已关闭 */ }
+    this.sendStatus(
+      `服务器指纹: ${this.hostKeyFingerprint} (${this.hostKeyType})（首次连接，验证通过）`,
+      'host_key_first_seen',
+      { fingerprint: this.hostKeyFingerprint, keyType: this.hostKeyType },
+    );
+    return true;
   }
 
   private async verifyHostKeySignature(

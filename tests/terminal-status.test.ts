@@ -28,6 +28,14 @@ describe('SSH 状态国际化', () => {
       keyType: 'ssh-ed25519',
     })).toBe('Actual fingerprint: SHA256:example (ssh-ed25519)');
 
+    expect(localizedSSHMessage('后端回退消息', 'host_key_not_saved', {
+      fingerprint: 'SHA256:example',
+      keyType: 'ssh-ed25519',
+    })).toBe('Server fingerprint: SHA256:example (ssh-ed25519, signature unverified, not saved)');
+
+    expect(localizedSSHMessage('后端回退消息', 'host_key_unverified_instruction'))
+      .toBe('Connection blocked because the host-key signature could not be verified. The new fingerprint cannot be trusted.');
+
     expect(localizedSSHMessage('后端回退消息', 'packet_error', {
       message: 'invalid packet',
     })).toBe('Packet processing error: invalid packet');
