@@ -1,10 +1,19 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { blockOptionalThirdPartyAssets } from './helpers';
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
+    // Playwright WebKit 的 iPhone 设备描述目前仍报告 maxTouchPoints=0，
+    // 与真实 iOS Safari 不一致；在测试夹具中补齐触控能力。
+    if (/iPhone|iPad|iPod/.test(navigator.userAgent) && navigator.maxTouchPoints === 0) {
+      Object.defineProperty(navigator, 'maxTouchPoints', {
+        configurable: true,
+        value: 5,
+      });
+    }
+
     interface TestSocketState {
       url: string;
       sent: unknown[];
@@ -80,6 +89,11 @@ test.beforeEach(async ({ page }) => {
       writable: true,
       value: TestWebSocket,
     });
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => (window as any).__testVisibilityState ?? 'visible',
+    });
   });
 
   await blockOptionalThirdPartyAssets(page);
@@ -119,6 +133,67 @@ test.beforeEach(async ({ page }) => {
       updated_at: '2026-08-12T00:00:00Z',
     }]),
   }));
+});
+
+async function simulateBackgroundReturn(page: Page): Promise<{ output: string; sent: unknown[] }> {
+  return page.evaluate(async () => {
+    const terminalModule = await (window as any).eval("import('/src/terminal.ts')");
+    const root = document.createElement('div');
+    root.id = `resume-test-${crypto.randomUUID()}`;
+    root.style.cssText = 'position:fixed;inset:0;width:390px;height:320px;';
+    document.body.appendChild(root);
+
+    const sent: unknown[] = [];
+    const written: string[] = [];
+    const terminal = new terminalModule.SSHTerminal(root.id) as any;
+    terminal.mount();
+    const originalWriteln = terminal.terminal.writeln.bind(terminal.terminal);
+    terminal.terminal.writeln = (data: string) => {
+      written.push(data);
+      originalWriteln(data);
+    };
+    terminal.ws = {
+      readyState: WebSocket.OPEN,
+      send: (data: string) => {
+        try { sent.push(JSON.parse(data)); } catch { sent.push(data); }
+      },
+      close: () => undefined,
+    };
+
+    (window as any).__testVisibilityState = 'hidden';
+    document.dispatchEvent(new Event('visibilitychange'));
+    (window as any).__testVisibilityState = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    terminal.dispose();
+    root.remove();
+    delete (window as any).__testVisibilityState;
+    return { output: written.join('\n'), sent };
+  });
+}
+
+test('移动触控环境回到前台时检查 SSH 连接', async ({ page }) => {
+  await page.goto('/?lang=zh-CN');
+
+  const result = await simulateBackgroundReturn(page);
+
+  expect(result.output).toContain('页面已回到前台，正在检查 SSH 连接');
+  expect(result.sent).toContainEqual(expect.objectContaining({ type: 'ping' }));
+});
+
+test.describe('桌面端页面切换', () => {
+  test.use({ viewport: { width: 1440, height: 900 }, hasTouch: false });
+
+  test('不触发移动端 SSH 恢复检查', async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', '桌面端回归由 Desktop Chrome 项目覆盖');
+    await page.goto('/?lang=zh-CN');
+
+    const result = await simulateBackgroundReturn(page);
+
+    expect(result.output).not.toContain('页面已回到前台，正在检查 SSH 连接');
+    expect(result.sent).not.toContainEqual(expect.objectContaining({ type: 'ping' }));
+  });
 });
 
 test('手机回到前台后淘汰僵尸连接并为保存服务器刷新令牌', async ({ page }) => {
