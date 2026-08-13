@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-08-13
+
+### Added
+- 新增面向登录用户已保存服务器的 SSH 跳板机支持，通过标准 RFC 4254 `direct-tcpip` 通道逐层建立嵌套 SSH，最多允许 3 台跳板服务器。
+- 最终目标服务器的终端、SFTP、AI Agent exec 和操作系统识别统一复用完整跳板链；中间节点仅负责 SSH 认证和 TCP 转发，不打开 PTY 或业务通道。
+- 服务器配置支持选择跳板服务器并展示多级连接路径，后端生成不可变的外层入口到最终目标连接链，每一跳独立完成认证和主机指纹验证。
+
+### Changed
+- Durable Object 区域调度和公网地址检查改为以 Cloudflare 直接连接的最外层跳板为准；内网目标仅允许出现在服务端解析的已保存跳板链中。
+- 移动端后台恢复监听仅在设备具备触点且主指针为粗粒度时启用，Android、iPhone 和 iPad 仍会在回到前台后执行带随机 ID 的有界心跳验证。
+
+### Fixed
+- 修复普通 PC 切换浏览器标签页时误输出“页面已回到前台，正在检查 SSH 连接”并发送不必要恢复探测的问题。
+
+### Security
+- 跳板关系限制在同一 GitHub 用户空间，拒绝匿名注入、跨用户引用、自引用、循环和超深链路；路径级 known-host 身份避免不同内网中相同地址的主机指纹发生冲突。
+
 ## [1.7.3] - 2026-08-12
 
 ### Changed
