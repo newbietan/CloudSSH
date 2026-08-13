@@ -27,6 +27,7 @@ export interface ServerConfig {
   tags: string[];
   /** 连接时检测到的远端操作系统（canonical key，如 ubuntu/debian/centos） */
   os?: string | null;
+  jump_server_id?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -40,6 +41,7 @@ interface ServerSavePayload {
   tags: string[];
   credential?: string;
   region?: string;
+  jump_server_id?: number | null;
 }
 
 interface ServerSaveResponse {
@@ -395,6 +397,13 @@ export class ServerList {
           `<span class="text-[9px] text-primary border border-[var(--border-strong)] px-1.5 py-0.5">#${this.escapeHtml(tag)}</span>`
         ).join('')}</div>`
       : '';
+    const jumpNames = this.getJumpPath(server);
+    const jumpMarkup = jumpNames.length > 0
+      ? `<div class="server-card-meta-row flex items-center gap-2 min-w-0">
+          <span class="text-dim">${t('server.jumpPath')}</span>
+          <span class="text-on-surface min-w-0 truncate" title="${this.escapeAttr(jumpNames.join(' → '))}">${jumpNames.map((name) => this.escapeHtml(name)).join(' → ')}</span>
+        </div>`
+      : '';
 
     const maskedHost = maskIPAddress(server.host);
     const copyIPLabel = this.escapeAttr(t('server.clickToCopyIP'));
@@ -426,6 +435,7 @@ export class ServerList {
             <span class="text-dim">${t('server.userLabel')}</span>
             <span class="text-on-surface min-w-0 truncate">${this.escapeHtml(server.username)}</span>
           </div>
+          ${jumpMarkup}
           <div class="server-card-region-row flex items-center gap-2 min-w-0">
             <span class="text-dim">${t('server.regionLabel')}</span>
             <span class="text-on-surface flex items-center gap-1">
@@ -528,7 +538,10 @@ export class ServerList {
         method: 'DELETE',
       });
 
-      if (!res.ok) throw new Error('Delete failed');
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(error.error || t('server.deleteFailed', { message: res.status }));
+      }
 
       // 等待动画完成后移除
       await new Promise((r) => setTimeout(r, 300));
@@ -559,6 +572,7 @@ export class ServerList {
       <span class="material-symbols-outlined" style="font-size: 18px;">save</span>
       ${mode === 'add' ? t('server.save') : t('server.update')}
     `;
+    this.populateJumpHostSelect(server?.jump_server_id ?? null);
 
     // 填充表单
     if (mode === 'edit' && server) {
@@ -640,6 +654,59 @@ export class ServerList {
     keySection.style.display = mode === 'key' ? '' : 'none';
   }
 
+  private getJumpPath(server: ServerConfig): string[] {
+    const byId = new Map(this.servers.map((item) => [item.id, item]));
+    const names: string[] = [];
+    const seen = new Set<number>([server.id]);
+    let currentId = server.jump_server_id ?? null;
+    while (currentId !== null && names.length < 3 && !seen.has(currentId)) {
+      seen.add(currentId);
+      const current = byId.get(currentId);
+      if (!current) break;
+      names.unshift(current.name);
+      currentId = current.jump_server_id ?? null;
+    }
+    return names;
+  }
+
+  private populateJumpHostSelect(selectedId: number | null): void {
+    const select = document.getElementById('server-jump-host') as HTMLSelectElement | null;
+    if (!select) return;
+    select.innerHTML = '';
+    const direct = document.createElement('option');
+    direct.value = '';
+    direct.textContent = t('server.jumpHostNone');
+    select.appendChild(direct);
+
+    const byId = new Map(this.servers.map((item) => [item.id, item]));
+    for (const candidate of this.servers) {
+      if (candidate.id === this.editingServerId) continue;
+      const seen = new Set<number>();
+      let current: ServerConfig | undefined = candidate;
+      let depth = 0;
+      let invalid = false;
+      while (current) {
+        if (seen.has(current.id) || current.id === this.editingServerId) {
+          invalid = true;
+          break;
+        }
+        seen.add(current.id);
+        depth++;
+        if (depth > 3) {
+          invalid = true;
+          break;
+        }
+        current = current.jump_server_id ? byId.get(current.jump_server_id) : undefined;
+      }
+      if (invalid) continue;
+      const option = document.createElement('option');
+      option.value = String(candidate.id);
+      option.textContent = candidate.name;
+      select.appendChild(option);
+    }
+    select.value = selectedId ? String(selectedId) : '';
+  }
+
   private async handleSubmit(): Promise<void> {
     const name = (document.getElementById('server-name') as HTMLInputElement).value.trim();
     const host = (document.getElementById('server-host') as HTMLInputElement).value.trim();
@@ -649,6 +716,8 @@ export class ServerList {
     const password = (document.getElementById('server-password') as HTMLInputElement).value;
     const privateKey = (document.getElementById('server-private-key') as HTMLTextAreaElement).value;
     const tags = normalizeTagsInput((document.getElementById('server-tags') as HTMLInputElement).value);
+    const jumpValue = (document.getElementById('server-jump-host') as HTMLSelectElement | null)?.value || '';
+    const jumpServerId = jumpValue ? Number(jumpValue) : null;
 
     if (!name || !host || !username) {
       notify(t('server.detailsRequired'), {
@@ -703,6 +772,7 @@ export class ServerList {
         username,
         auth_method: authMethod,
         tags,
+        jump_server_id: jumpServerId,
       };
       if (credential) body.credential = credential;
 

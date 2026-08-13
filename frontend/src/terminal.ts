@@ -687,9 +687,11 @@ export class SSHTerminal {
 
   // ==================== known_hosts (TOFU) ====================
 
-  private handleHostKey(fingerprint: string): void {
+  private handleHostKey(fingerprint: string, host?: string, port?: number): void {
     if (!this.lastConfig) return;
-    const key = `${this.lastConfig.host}:${this.lastConfig.port}`;
+    const knownHost = host || this.lastConfig.host;
+    const knownPort = Number.isInteger(port) ? port! : this.lastConfig.port;
+    const key = `${knownHost}:${knownPort}`;
 
     // 存储到 localStorage（匿名用户）
     try {
@@ -704,8 +706,8 @@ export class SSHTerminal {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        host: this.lastConfig.host,
-        port: this.lastConfig.port,
+        host: knownHost,
+        port: knownPort,
         fingerprint,
       }),
     }).catch(() => { /* 未登录或网络错误，忽略 */ });
@@ -878,7 +880,7 @@ export class SSHTerminal {
               this.terminal.writeln(`\x1b[90m[DEBUG] ${msg.message}\x1b[0m`);
               break;
             case 'host_key':
-              this.handleHostKey(msg.fingerprint);
+              this.handleHostKey(msg.fingerprint, msg.host, msg.port);
               break;
             case 'pong':
               this.handleHeartbeatResponse(msg);
@@ -959,10 +961,20 @@ export class SSHTerminal {
   private handleAuthChallenge(socket: WebSocket, payload: unknown): void {
     if (socket !== this.ws) return;
 
+    const challengeTarget = typeof payload === 'object' && payload !== null
+      ? payload as { host?: unknown; port?: unknown }
+      : {};
+    const challengeHost = typeof challengeTarget.host === 'string'
+      ? challengeTarget.host
+      : this.lastConfig?.host ?? '';
+    const challengePort = typeof challengeTarget.port === 'number' && Number.isInteger(challengeTarget.port)
+      ? challengeTarget.port
+      : this.lastConfig?.port ?? 22;
+
     this.authChallengeDialog ??= new AuthChallengeDialog();
     const shown = this.authChallengeDialog.show(payload, {
-      host: this.lastConfig?.host ?? '',
-      port: this.lastConfig?.port ?? 22,
+      host: challengeHost,
+      port: challengePort,
       onShown: (id: string) => {
         if (socket !== this.ws || socket.readyState !== WebSocket.OPEN) return;
         socket.send(JSON.stringify({ type: 'auth_challenge_ack', id }));

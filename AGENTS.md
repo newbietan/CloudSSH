@@ -28,8 +28,9 @@ src/
 │   ├── index.ts      # Main worker entry (request routing, bounded in-memory SSH rate limiting)
 │   ├── durable-object.ts  # SSHSessionDO - manages SSH sessions
 │   ├── ssh-session.ts     # SSH session logic, multi-channel routing, SFTP handling
+│   ├── direct-tcpip-stream.ts # RFC 4254 direct-tcpip 背压字节流，用于嵌套 SSH 跳板链
 │   ├── sftp-handler.ts    # SFTP protocol ops, task queue, concurrent download, upload tracking
-│   ├── user-db.ts    # UserDBDO - user/server storage（含标签与 OS 标识持久化）
+│   ├── user-db.ts    # UserDBDO - user/server storage（含标签、OS 与跳板关系持久化）
 │   ├── server-tags.ts # 服务器标签规范化与 SQLite JSON 序列化
 │   ├── os-detect.ts  # 远端操作系统输出解析、规范 key 与持久化白名单
 │   ├── auth.ts       # GitHub OAuth handling
@@ -52,7 +53,7 @@ src/
 │   ├── kex-ecdh.ts   # ECDH-NISTP256 key exchange
 │   ├── algorithms.ts # Supported algorithm definitions
 │   ├── auth.ts       # Authentication methods (password, RFC 4256 keyboard-interactive, Ed25519/ECDSA/RSA private keys)
-│   ├── channel.ts    # SSH channels (session + SFTP subsystem + exec)
+│   ├── channel.ts    # SSH channels (session + direct-tcpip + SFTP subsystem + exec)
 │   ├── crypto.ts     # AES-GCM/CTR cipher, HMAC implementations
 │   ├── keys.ts       # Key derivation per RFC 4253
 │   ├── utils.ts      # Binary utilities
@@ -158,8 +159,8 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 | `/api/auth/callback` | GET | No | OAuth callback, creates user + session |
 | `/api/auth/logout` | POST | No | Logout, clears session |
 | `/api/auth/me` | GET | Yes | Returns current user info |
-| `/api/servers` | GET/POST | Yes | List or create saved servers（含单层 `tags`） |
-| `/api/servers/:id` | PUT/DELETE | Yes | Update or delete a server（含标签更新） |
+| `/api/servers` | GET/POST | Yes | List or create saved servers（含 `tags` 与可选 `jump_server_id`） |
+| `/api/servers/:id` | PUT/DELETE | Yes | Update or delete a server（含标签和跳板关系校验） |
 | `/api/servers/:id/connect` | POST | Yes | Generate one-time-token, return WebSocket URL |
 | `/api/user/theme` | GET/PUT | Yes | Get or replace the signed-in user's single custom theme |
 | `/api/known-hosts` | GET/POST/DELETE | Yes | Known host fingerprint CRUD (TOFU) |
@@ -242,6 +243,7 @@ ci: CI/CD 变更
 19. **Keyboard-interactive authentication** - Begin user authentication with the RFC 4252 `none` probe and choose only methods advertised by the server, while retaining the bounded compatibility fallback for servers that omit the list. RFC 4256 challenges are event-driven during the SSH auth state. Keep method-specific message type 60 disambiguated by the active auth method, use `partial_success` to advance bounded multi-factor stages, and only fall back without partial success when the server no longer offers the configured primary method. Bind browser responses and `auth_challenge_ack` display acknowledgements to one random challenge ID and originating WebSocket, distinguish an undisplayed challenge from an acknowledged but unanswered challenge, never log responses, clear pending challenges on timeout/reconnect/close, require explicit user action before substituting a stored password, and close authentication timeouts normally so older frontends cannot reconnect repeatedly. Treat ordinary server-side credential rejection as an expected close rather than WebSocket error 1011.
 20. **WebSocket origin boundary** - `/api/ssh` (anonymous and one-time-token paths) and `/api/ssh/sftp` are browser-only, same-origin endpoints. Reject WebSocket upgrades when `Origin` is missing or differs from the request URL origin, and keep regression coverage synchronized across all three paths.
 21. **GitHub access policy** - `GITHUB_ALLOWED_USER_IDS` contains stable numeric GitHub IDs and is rechecked during OAuth callback and every session verification; omitted means unrestricted, while an empty or malformed configured value fails closed. `REQUIRE_GITHUB_AUTH=true` disables anonymous SSH and requires a valid session for direct and one-time-token SSH upgrades, but does not terminate already established WebSockets. Never expose the allowlist through `/api/config`.
+22. **SSH jump chains** - Jump hosts are available only to signed-in users through saved-server `jump_server_id` relations. Resolve one immutable outer-to-target chain in UserDBDO, reject cross-user references, cycles, deletion of referenced hops, and more than 3 jump hosts. Apply public-address SSRF checks only to the outermost Cloudflare TCP destination; anonymous clients must never inject `jumpHosts`. Every intermediate SSHSession authenticates without opening a Shell and exposes only RFC 4254 `direct-tcpip`; terminal, SFTP, Agent exec, and OS detection belong to the final session. Preserve nested channel backpressure, close the full chain on any-hop failure, and scope known-host identities by the complete route so equal private addresses behind different bastions do not collide.
 
 ## Deployment Notes
 

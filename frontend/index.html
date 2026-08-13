@@ -205,6 +205,13 @@
             </div>
           </div>
           <div>
+            <label for="server-jump-host" class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="server.jumpHost">跳板服务器</label>
+            <select id="server-jump-host" class="terminal-input text-[13px] cursor-pointer" style="border:1px solid var(--border-strong);border-bottom:1px solid var(--border-strong);padding:6px 8px;">
+              <option value="" data-i18n="server.jumpHostNone">不使用跳板（直连）</option>
+            </select>
+            <div class="text-[10px] text-muted mt-1" data-i18n="server.jumpHostHint">可选择已保存服务器；最多递归跳转 3 级</div>
+          </div>
+          <div>
             <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.method">认证方式</label>
             <div class="flex gap-2 mb-3">
               <button type="button" id="modal-auth-tab-password" class="auth-tab auth-tab-active px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all" data-i18n="common.password">密码</button>

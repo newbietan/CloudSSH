@@ -39,6 +39,7 @@ export class SSHSessionDO {
   private state: DurableObjectState;
   private env: Env;
   private sessions: Map<WebSocket, SSHSession> = new Map();
+  private sessionChains: Map<WebSocket, SSHSession[]> = new Map();
   private sftpSessions: Map<WebSocket, SSHSession> = new Map();
   private sftpAttachTokens: Map<string, SSHSession> = new Map();
   private _pendingTimeouts: Map<WebSocket, ReturnType<typeof setTimeout>> = new Map();
@@ -180,6 +181,9 @@ export class SSHSessionDO {
       const config = msg as SSHConnectionConfig;
       // Strip userId from client-supplied config (anonymous flow — userId only set via trusted token flow)
       delete config.userId;
+      // Jump chains are resolved only from authenticated saved-server tokens.
+      delete config.jumpHosts;
+      delete config.knownHostIdentity;
 
       if (!config.host || !config.username || (!config.password && !config.privateKey)) {
         ws.send(JSON.stringify({ type: 'error', message: 'Missing credentials' }));
@@ -200,8 +204,10 @@ export class SSHSessionDO {
   async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean): Promise<void> {
     const session = this.sessions.get(ws);
     if (session) {
-      session.close();
+      const chain = this.sessionChains.get(ws) || [session];
+      for (const item of [...chain].reverse()) item.close();
       this.sessions.delete(ws);
+      this.sessionChains.delete(ws);
       this.deleteAttachTokensForSession(session);
     }
     const sftpSession = this.sftpSessions.get(ws);
@@ -229,16 +235,20 @@ export class SSHSessionDO {
     config: SSHConnectionConfig,
     attachToken?: string
   ): Promise<void> {
+    const chainSessions: SSHSession[] = [];
     try {
-      if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) {
+      const jumpHosts = config.jumpHosts || [];
+      if (jumpHosts.length > 3) throw new Error('最多允许 3 级 SSH 跳转');
+      const outer = jumpHosts[0] || config;
+      if (!Number.isInteger(outer.port) || outer.port < 1 || outer.port > 65535) {
         throw new Error('端口必须是 1-65535 之间的整数');
       }
-      // --- SSRF Protection ---
-      if (isBlockedHost(config.host)) {
+      // SSRF checks apply to the only address reached directly from Cloudflare.
+      // Private destinations are allowed only inside a trusted saved-server chain.
+      if (isBlockedHost(outer.host)) {
         throw new Error('禁止连接内网或保留地址 (SSRF 防护)');
       }
-      // DNS rebinding defence: resolve hostname and check resolved IPs
-      const dnsCheck = await checkHostResolved(config.host);
+      const dnsCheck = await checkHostResolved(outer.host);
       if (dnsCheck.blocked) {
         throw new Error(dnsCheck.reason!);
       }
@@ -246,16 +256,21 @@ export class SSHSessionDO {
         23, 80, 443, 25, 465, 587, 110, 143, 993, 995,
         3306, 5432, 6379, 9200, 11211, 27017, 5060,
       ];
-      if (BLOCKED_PORTS.includes(config.port)) {
-        throw new Error(`端口 ${config.port} 存在安全风险，已被禁止连接`);
+      for (const node of [...jumpHosts, config]) {
+        if (!Number.isInteger(node.port) || node.port < 1 || node.port > 65535) {
+          throw new Error('端口必须是 1-65535 之间的整数');
+        }
+        if (BLOCKED_PORTS.includes(node.port)) {
+          throw new Error(`端口 ${node.port} 存在安全风险，已被禁止连接`);
+        }
       }
 
       const { connect } = await import('cloudflare:sockets');
-      const hostname = config.host.includes(':') ? `[${config.host}]` : config.host;
+      const hostname = outer.host.includes(':') ? `[${outer.host}]` : outer.host;
       
       const startTime = Date.now();
-      const socket = connect({ hostname, port: config.port });
-      await socket.opened;
+      let transport: any = connect({ hostname, port: outer.port });
+      await transport.opened;
       const latency = Date.now() - startTime;
 
       const colo = this.websocketColos.get(ws) || 'UNKNOWN';
@@ -269,7 +284,75 @@ export class SSHSessionDO {
         config.rows = pendingSize.rows;
       }
       const sftpAttachUrl = this.pendingAttachUrls.get(ws);
-      const session = new SSHSession(ws, socket, config, strictVerify, debugMode, sftpAttachUrl, this.env, config.userId, config.githubId);
+
+      for (let index = 0; index < jumpHosts.length; index++) {
+        const hop = jumpHosts[index];
+        try {
+          ws.send(JSON.stringify({
+            type: 'status',
+            event: 'jump_hop_connecting',
+            message: `正在连接跳板服务器 ${hop.name}`,
+            params: { index: index + 1, total: jumpHosts.length, name: hop.name, host: hop.host, port: hop.port },
+          }));
+        } catch {}
+        const hopConfig: SSHConnectionConfig = {
+          host: hop.host,
+          port: hop.port,
+          username: hop.username,
+          password: hop.password,
+          authMethod: hop.authMethod,
+          privateKey: hop.privateKey,
+          expectedFingerprint: hop.expectedFingerprint,
+          knownHostIdentity: hop.knownHostIdentity,
+          userId: config.userId,
+          githubId: config.githubId,
+        };
+        const hopSession = new SSHSession(
+          ws,
+          transport,
+          hopConfig,
+          strictVerify,
+          debugMode,
+          undefined,
+          this.env,
+          config.userId,
+          config.githubId,
+          { openShellOnAuth: false, ownsWebSocket: false },
+        );
+        chainSessions.push(hopSession);
+        this.sessionChains.set(ws, chainSessions);
+        this.sessions.set(ws, hopSession);
+        await hopSession.startHandshake();
+        await hopSession.waitUntilAuthenticated();
+
+        const destination = jumpHosts[index + 1] || config;
+        transport = await hopSession.openDirectTcpip(destination.host, destination.port);
+      }
+
+      const finalConfig = { ...config, jumpHosts: undefined };
+      if (jumpHosts.length > 0) {
+        try {
+          ws.send(JSON.stringify({
+            type: 'status',
+            event: 'jump_target_connecting',
+            message: `正在通过跳板连接目标服务器 ${config.host}:${config.port}`,
+            params: { host: config.host, port: config.port },
+          }));
+        } catch {}
+      }
+      const session = new SSHSession(
+        ws,
+        transport,
+        finalConfig,
+        strictVerify,
+        debugMode,
+        sftpAttachUrl,
+        this.env,
+        config.userId,
+        config.githubId,
+      );
+      chainSessions.push(session);
+      this.sessionChains.set(ws, chainSessions);
       this.sessions.set(ws, session);
 
       // 向前端发送双段延迟的物理基准延迟
@@ -288,10 +371,15 @@ export class SSHSessionDO {
       await session.startHandshake();
 
     } catch (error) {
+      for (const session of [...chainSessions].reverse()) session.close();
+      this.sessionChains.delete(ws);
+      this.sessions.delete(ws);
       const errMsg = error instanceof Error ? error.message : String(error);
+      const normalClose = typeof error === 'object' && error !== null
+        && (error as { normalClose?: unknown }).normalClose === true;
       try {
-        ws.send(JSON.stringify({ type: 'error', message: `连接失败: ${errMsg}` }));
-        ws.close(1011, 'SSH connection failed');
+        if (!normalClose) ws.send(JSON.stringify({ type: 'error', message: `连接失败: ${errMsg}` }));
+        ws.close(normalClose ? 1000 : 1011, normalClose ? 'SSH authentication ended' : 'SSH connection failed');
       } catch (e) { console.error('Failed to notify client of SSH error:', e); }
     }
   }

@@ -687,8 +687,8 @@ async function handleTokenSSHConnection(request: Request, env: Env, token: strin
 
   const sessionName = `session:${Date.now()}:${Math.random()}`;
   const doId = env.SSH_SESSION.idFromName(sessionName);
-  // Token 路径：locationHint 由 user-db.handleConnectServer 一次性计算并写入 config
-  // （优先级：用户手动 region → DB 持久化的 inferred_hint → undefined）
+  // Token 路径：locationHint 由 user-db.handleConnectServer 按最外层直连节点计算并写入 config
+  // （优先级：入口服务器手动 region → 入口 DB 持久化 inferred_hint → undefined）
   // 这里仅做白名单过滤，连接阶段不会再次调用 IPinfo
   const hint = validateRegion(config.locationHint);
   const doStub = hint

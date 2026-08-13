@@ -1,6 +1,8 @@
 import { t, type TranslationKey, type TranslationParams } from './i18n';
 
 const SSH_EVENT_KEYS: Record<string, TranslationKey> = {
+  jump_hop_connecting: 'terminal.status.jumpHopConnecting',
+  jump_target_connecting: 'terminal.status.jumpTargetConnecting',
   version_exchange: 'terminal.status.versionExchange',
   version_ready: 'terminal.status.versionReady',
   auth_public_key: 'terminal.status.authPublicKey',

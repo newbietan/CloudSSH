@@ -54,6 +54,7 @@ import { DETECT_OS_COMMAND, isDetectedOS, parseDetectedOS } from './os-detect';
 import { AgentCore } from './agent/core';
 import { TerminalContext } from './agent/terminal-context';
 import { AgentExecChannel } from './agent/exec-channel';
+import { DirectTcpipStream } from './direct-tcpip-stream';
 import type { Env } from '../types';
 
 const LOCAL_WINDOW_ADJUST_THRESHOLD = 512 * 1024;
@@ -70,6 +71,13 @@ interface PendingAuthChallenge {
   prompts: Array<{ text: string; echo: boolean }>;
   phase: 'awaiting_ack' | 'awaiting_response';
   timeout: ReturnType<typeof setTimeout>;
+}
+
+export interface SSHSessionOptions {
+  /** Tunnel hops authenticate without allocating a PTY, Shell, SFTP, or Agent. */
+  openShellOnAuth?: boolean;
+  /** Only the final nested session owns the browser WebSocket lifecycle. */
+  ownsWebSocket?: boolean;
 }
 
 export class SSHSession {
@@ -125,7 +133,7 @@ export class SSHSession {
   private partialAuthenticationStages: number = 0;
   private pendingAuthChallenge: PendingAuthChallenge | null = null;
 
-  private state: 'connecting' | 'version' | 'kex' | 'auth' | 'shell' | 'shell-requested' | 'ready'
+  private state: 'connecting' | 'version' | 'kex' | 'auth' | 'tunnel-ready' | 'shell' | 'shell-requested' | 'ready'
     = 'connecting';
   private hostKeyFingerprint: string = '';
   private hostKeyType: string = 'unknown';
@@ -149,11 +157,25 @@ export class SSHSession {
   private terminalContext: TerminalContext = new TerminalContext();
   private agentCore: AgentCore | null = null;
   private activeExecChannels: Map<number, AgentExecChannel> = new Map();
+  private directTcpipStreams: Map<number, DirectTcpipStream> = new Map();
+  private pendingDirectTcpip: Map<number, {
+    resolve: (stream: DirectTcpipStream) => void;
+    reject: (error: Error) => void;
+    timeout: ReturnType<typeof setTimeout>;
+  }> = new Map();
+  private channelWindowWaiters: Map<number, Array<() => void>> = new Map();
   private confirmationResolve: ((approved: boolean) => void) | null = null;
   private env: Env | null = null;
   private userId: string | null = null;
   private githubId: string | null = null;
   private osDetectInProgress: boolean = false;
+  private readonly openShellOnAuth: boolean;
+  private readonly ownsWebSocket: boolean;
+  private authenticatedResolve!: () => void;
+  private authenticatedReject!: (error: Error) => void;
+  private readonly authenticatedPromise: Promise<void>;
+  private authenticatedSettled = false;
+  private closed = false;
 
   constructor(
     ws: WebSocket,
@@ -165,6 +187,7 @@ export class SSHSession {
     env?: Env,
     userId?: string,
     githubId?: string,
+    options: SSHSessionOptions = {},
   ) {
     this.ws = ws;
     this.socket = socket;
@@ -175,6 +198,13 @@ export class SSHSession {
     this.env = env || null;
     this.userId = userId || null;
     this.githubId = githubId || null;
+    this.openShellOnAuth = options.openShellOnAuth !== false;
+    this.ownsWebSocket = options.ownsWebSocket !== false;
+    this.authenticatedPromise = new Promise<void>((resolve, reject) => {
+      this.authenticatedResolve = resolve;
+      this.authenticatedReject = reject;
+    });
+    void this.authenticatedPromise.catch(() => {});
 
     this.transport = new SSHTransport();
     this.packetParser = new SSHPacketParser();
@@ -191,6 +221,55 @@ export class SSHSession {
     await this.writeSocket(this.textEncoder.encode('SSH-2.0-CloudSSH_1.0\r\n'));
 
     this.startReading();
+  }
+
+  waitUntilAuthenticated(): Promise<void> {
+    return this.authenticatedPromise;
+  }
+
+  /** Open an RFC 4254 direct-tcpip byte stream through an authenticated hop. */
+  async openDirectTcpip(host: string, port: number): Promise<DirectTcpipStream> {
+    if (this.state !== 'tunnel-ready') {
+      throw new Error('SSH jump host is not ready for TCP forwarding');
+    }
+    if (!host || !Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error('Invalid direct-tcpip destination');
+    }
+
+    const channelID = this.nextChannelID++;
+    const channel = new SSHChannel();
+    this.channels.set(channelID, channel);
+
+    const stream = new DirectTcpipStream(
+      (data) => this.sendDirectTcpipData(channelID, channel, data),
+      () => this.closeDirectTcpipChannel(channelID, channel),
+      (bytes) => this.queueLocalWindowAdjust(bytes, channel),
+    );
+    this.directTcpipStreams.set(channelID, stream);
+
+    const opened = new Promise<DirectTcpipStream>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingDirectTcpip.delete(channelID);
+        this.directTcpipStreams.delete(channelID);
+        this.channels.delete(channelID);
+        stream.remoteClose(new Error('direct-tcpip channel open timed out'));
+        reject(new Error('跳板服务器建立目标转发通道超时'));
+      }, 15_000);
+      this.pendingDirectTcpip.set(channelID, { resolve, reject, timeout });
+    });
+
+    try {
+      await this.sendEncrypted(channel.buildOpenDirectTcpip(channelID, host, port));
+    } catch (error) {
+      const pending = this.pendingDirectTcpip.get(channelID);
+      if (pending) clearTimeout(pending.timeout);
+      this.pendingDirectTcpip.delete(channelID);
+      this.directTcpipStreams.delete(channelID);
+      this.channels.delete(channelID);
+      stream.remoteClose(error instanceof Error ? error : new Error(String(error)));
+      throw error;
+    }
+    return opened;
   }
 
   attachSFTPWebSocket(ws: WebSocket): void {
@@ -295,6 +374,7 @@ export class SSHSession {
       try {
         this.ws.send(JSON.stringify({ type: 'error', message: 'SSH 连接异常: ' + errMsg }));
       } catch (e) { this.sendDebug(() => `Send error to client failed: ${e instanceof Error ? e.message : e}`); }
+      this.close();
     }
   }
 
@@ -466,6 +546,7 @@ export class SSHSession {
 
       case 'shell':
       case 'shell-requested':
+      case 'tunnel-ready':
       case 'ready':
         await this.handleSessionPacket(msgType, packet.payload);
         break;
@@ -700,7 +781,13 @@ export class SSHSession {
     // --- known_hosts verification (TOFU) ---
     // Send fingerprint with key type to frontend for storage
     try {
-      this.ws.send(JSON.stringify({ type: 'host_key', fingerprint: this.hostKeyFingerprint, keyType: this.hostKeyType }));
+      this.ws.send(JSON.stringify({
+        type: 'host_key',
+        fingerprint: this.hostKeyFingerprint,
+        keyType: this.hostKeyType,
+        host: this.config.knownHostIdentity || this.config.host,
+        port: this.config.port,
+      }));
     } catch (e) { /* ws closed */ }
 
     // Compare against expected fingerprint if provided
@@ -1189,6 +1276,8 @@ export class SSHSession {
         name: request.name,
         instruction: request.instruction,
         prompts: request.prompts,
+        host: this.config.host,
+        port: this.config.port,
         canUseStoredPassword: Boolean(
           this.config.password
           && this.config.authMethod !== 'publickey'
@@ -1324,9 +1413,17 @@ export class SSHSession {
         this.clearPendingAuthChallenge();
         this.activeAuthMethod = null;
         this.sendStatus('认证成功', 'auth_success');
-        this.state = 'shell';
         this.startKeepalive();
-        await this.openShell();
+        if (this.openShellOnAuth) {
+          this.state = 'shell';
+          this.authenticatedSettled = true;
+          this.authenticatedResolve();
+          await this.openShell();
+        } else {
+          this.state = 'tunnel-ready';
+          this.authenticatedSettled = true;
+          this.authenticatedResolve();
+        }
         break;
 
       case SSH_MSG_USERAUTH_FAILURE: {
@@ -1451,7 +1548,14 @@ export class SSHSession {
         channel.handleOpenConfirmation(payload);
         this.sendDebug(`CHANNEL_OPEN_CONFIRMATION: channelID=${channelID}, remoteChannelID=${channel.getRemoteChannelID()}, isSFTP=${this.sftpHandler && channelID === this.sftpHandler.getChannelID()}`);
 
-        if (channel === this.shellChannel) {
+        const directPending = this.pendingDirectTcpip.get(channelID);
+        if (directPending) {
+          clearTimeout(directPending.timeout);
+          this.pendingDirectTcpip.delete(channelID);
+          const stream = this.directTcpipStreams.get(channelID);
+          if (stream) directPending.resolve(stream);
+          else directPending.reject(new Error('direct-tcpip stream disappeared'));
+        } else if (channel === this.shellChannel) {
           // Shell channel: send PTY request
           const ptyReq = channel.buildPTYRequest(this.terminalSize.cols, this.terminalSize.rows);
           await this.sendEncrypted(ptyReq);
@@ -1481,7 +1585,17 @@ export class SSHSession {
 
         this.channels.delete(channelID);
 
-        if (this.sftpHandler && channelID === this.sftpHandler.getChannelID()) {
+        const directPending = this.pendingDirectTcpip.get(channelID);
+        const directStream = this.directTcpipStreams.get(channelID);
+        if (directPending || directStream) {
+          if (directPending) {
+            clearTimeout(directPending.timeout);
+            directPending.reject(new Error(`跳板服务器拒绝 TCP 转发：${description || `reason ${reasonCode}`}`));
+            this.pendingDirectTcpip.delete(channelID);
+          }
+          directStream?.remoteClose(new Error(description || `direct-tcpip rejected (${reasonCode})`));
+          this.directTcpipStreams.delete(channelID);
+        } else if (this.sftpHandler && channelID === this.sftpHandler.getChannelID()) {
           // SFTP channel open failed - notify frontend, don't close terminal
           this.sendDebug(`SFTP channel open failed: reason=${reasonCode}, desc=${description}`);
           this.sendSFTPError('init', '服务器不支持 SFTP: ' + description);
@@ -1566,7 +1680,11 @@ export class SSHSession {
           return;
         }
 
-        if (channel === this.shellChannel) {
+        const directStream = this.directTcpipStreams.get(channelID);
+        if (directStream) {
+          const forwardedData = channel.handleChannelData(payload);
+          directStream.push(forwardedData);
+        } else if (channel === this.shellChannel) {
           // Shell channel data - forward to terminal
           if (this.state === 'shell-requested') {
             if (this.shellReadyTimeout) {
@@ -1635,6 +1753,11 @@ export class SSHSession {
         const channel = this.getChannelByID(channelID);
         if (channel) {
           channel.handleWindowAdjust(payload);
+          const waiters = this.channelWindowWaiters.get(channelID);
+          if (waiters) {
+            this.channelWindowWaiters.delete(channelID);
+            for (const wake of waiters) wake();
+          }
           if (channel === this.shellChannel) {
             void this.flushChannelDataQueue();
           } else if (this.sftpHandler && channelID === this.sftpHandler.getChannelID()) {
@@ -1658,6 +1781,10 @@ export class SSHSession {
             this.sftpHandler.dispose();
             this.sftpHandler = null;
             this.channels.delete(channelID);
+          }
+          const directStream = this.directTcpipStreams.get(channelID);
+          if (directStream) {
+            directStream.remoteEof();
           }
           const execCh = this.activeExecChannels.get(channelID);
           if (execCh) {
@@ -1688,6 +1815,14 @@ export class SSHSession {
           }
 
           this.channels.delete(channelID);
+          const directStream = this.directTcpipStreams.get(channelID);
+          if (directStream) {
+            directStream.remoteClose();
+            this.directTcpipStreams.delete(channelID);
+            const waiters = this.channelWindowWaiters.get(channelID);
+            this.channelWindowWaiters.delete(channelID);
+            if (waiters) for (const wake of waiters) wake();
+          }
           if (this.sftpHandler && channelID === this.sftpHandler.getChannelID()) {
             this.sftpHandler.onChannelClosed();
             this.sftpHandler = null;
@@ -2069,6 +2204,45 @@ export class SSHSession {
     }
   }
 
+  private async sendDirectTcpipData(
+    channelID: number,
+    channel: SSHChannel,
+    data: Uint8Array,
+  ): Promise<void> {
+    let offset = 0;
+    while (offset < data.length) {
+      if (!this.directTcpipStreams.has(channelID) || channel.isClosed()) {
+        throw new Error('direct-tcpip channel closed while writing');
+      }
+      const chunk = channel.takeChannelDataChunk(data, offset);
+      if (!chunk) {
+        await new Promise<void>((resolve) => {
+          const waiters = this.channelWindowWaiters.get(channelID) || [];
+          waiters.push(resolve);
+          this.channelWindowWaiters.set(channelID, waiters);
+        });
+        continue;
+      }
+      await this.sendEncryptedChannelData(chunk, channel);
+      offset += chunk.bytesConsumed;
+    }
+  }
+
+  private async closeDirectTcpipChannel(channelID: number, channel: SSHChannel): Promise<void> {
+    this.directTcpipStreams.delete(channelID);
+    this.channels.delete(channelID);
+    const waiters = this.channelWindowWaiters.get(channelID);
+    this.channelWindowWaiters.delete(channelID);
+    if (waiters) for (const wake of waiters) wake();
+    if (channel.isClosed()) return;
+    try {
+      await this.sendEncrypted(channel.buildEof());
+      await this.sendEncrypted(channel.buildClose());
+    } catch {
+      // The parent SSH session may already be closing.
+    }
+  }
+
   private async handleResize(cols: unknown, rows: unknown): Promise<void> {
     if (!this.updateTerminalSize(cols, rows)) return;
     if (this.state !== 'ready') return;
@@ -2408,6 +2582,14 @@ export class SSHSession {
   }
 
   close(normal: boolean = false): void {
+    if (this.closed) return;
+    this.closed = true;
+    if (!this.authenticatedSettled) {
+      this.authenticatedSettled = true;
+      const error = new Error('SSH session closed before authentication completed') as Error & { normalClose?: boolean };
+      error.normalClose = normal;
+      this.authenticatedReject(error);
+    }
     this.clearPendingAuthChallenge();
     this.activeAuthMethod = null;
     if (this.keepaliveInterval) {
@@ -2433,6 +2615,18 @@ export class SSHSession {
       execCh.onClose();
     }
     this.activeExecChannels.clear();
+    for (const [channelID, pending] of this.pendingDirectTcpip) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error('SSH jump session closed'));
+      this.directTcpipStreams.get(channelID)?.remoteClose(new Error('SSH jump session closed'));
+    }
+    this.pendingDirectTcpip.clear();
+    for (const stream of this.directTcpipStreams.values()) stream.remoteClose();
+    this.directTcpipStreams.clear();
+    for (const waiters of this.channelWindowWaiters.values()) {
+      for (const wake of waiters) wake();
+    }
+    this.channelWindowWaiters.clear();
     if (this.confirmationResolve) {
       this.confirmationResolve(false);
       this.confirmationResolve = null;
@@ -2446,6 +2640,8 @@ export class SSHSession {
     try { this.socket.close(); } catch (e) { this.sendDebug(() => `Close TCP socket: ${e instanceof Error ? e.message : e}`); }
     try { this.sftpWs?.close(normal ? 1000 : 1011); } catch (e) { this.sendDebug(() => `Close SFTP ws: ${e instanceof Error ? e.message : e}`); }
     this.sftpWs = null;
-    try { this.ws.close(normal ? 1000 : 1011); } catch (e) { this.sendDebug(() => `Close SSH ws: ${e instanceof Error ? e.message : e}`); }
+    if (this.ownsWebSocket) {
+      try { this.ws.close(normal ? 1000 : 1011); } catch (e) { this.sendDebug(() => `Close SSH ws: ${e instanceof Error ? e.message : e}`); }
+    }
   }
 }
