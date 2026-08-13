@@ -51,6 +51,8 @@ export interface SSHConnectionConfig {
   cols?: number;
   rows?: number;
   expectedFingerprint?: string;
+  /** Path-scoped known-host identity; defaults to host for direct connections. */
+  knownHostIdentity?: string;
   userId?: string;
   githubId?: string;
   /** 已保存服务器的记录 ID（token 路径下由 handleConnectServer 填充，供 OS 检测持久化） */
@@ -65,6 +67,21 @@ export interface SSHConnectionConfig {
    * 连接时仅做白名单过滤（实际取值由 user-db.handleConnectServer 计算）。
    */
   locationHint?: string;
+  /** Saved jump hosts ordered from the public entry hop toward this target. */
+  jumpHosts?: SSHJumpHostConfig[];
+}
+
+export interface SSHJumpHostConfig {
+  serverId: number;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  authMethod: 'password' | 'publickey';
+  privateKey: string;
+  expectedFingerprint?: string;
+  knownHostIdentity: string;
 }
 
 /**
@@ -150,6 +167,8 @@ export interface ServerConfig {
   tags: string[];
   /** 连接时检测到的远端操作系统（canonical key，如 ubuntu/debian/centos） */
   os?: string | null;
+  /** Optional saved server used as the immediate SSH jump host. */
+  jump_server_id?: number | null;
   created_at: string;
   updated_at: string;
 }

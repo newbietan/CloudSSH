@@ -9,6 +9,7 @@ import {
 import { encodeString, readUint32, writeUint32 } from './utils';
 
 const SESSION_FIELD = encodeString('session');
+const DIRECT_TCPIP_FIELD = encodeString('direct-tcpip');
 const PTY_REQ_FIELD = encodeString('pty-req');
 const SHELL_FIELD = encodeString('shell');
 const SUBSYSTEM_FIELD = encodeString('subsystem');
@@ -64,6 +65,37 @@ export class SSHChannel {
     writeUint32(payload, offset, this.localWindowSize);
     offset += 4;
     writeUint32(payload, offset, this.maxPacketSize);
+    return payload;
+  }
+
+  /** RFC 4254 §7.2: request a TCP connection from the SSH server. */
+  buildOpenDirectTcpip(
+    channelID: number,
+    host: string,
+    port: number,
+    originHost: string = '127.0.0.1',
+    originPort: number = 0,
+  ): Uint8Array {
+    this.localChannelID = channelID;
+    const hostField = encodeString(host);
+    const originHostField = encodeString(originHost);
+    const payload = new Uint8Array(
+      1 + DIRECT_TCPIP_FIELD.length + 12 + hostField.length + 4 + originHostField.length + 4,
+    );
+    let offset = 0;
+    payload[offset++] = SSH_MSG_CHANNEL_OPEN;
+    offset = writeBytes(payload, offset, DIRECT_TCPIP_FIELD);
+    writeUint32(payload, offset, this.localChannelID);
+    offset += 4;
+    writeUint32(payload, offset, this.localWindowSize);
+    offset += 4;
+    writeUint32(payload, offset, this.maxPacketSize);
+    offset += 4;
+    offset = writeBytes(payload, offset, hostField);
+    writeUint32(payload, offset, port);
+    offset += 4;
+    offset = writeBytes(payload, offset, originHostField);
+    writeUint32(payload, offset, originPort);
     return payload;
   }
 

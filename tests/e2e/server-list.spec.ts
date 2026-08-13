@@ -106,3 +106,22 @@ test('已识别服务器显示系统图标，未识别服务器保留默认图�
   await expect(secondCard.locator('.server-os-icon')).toHaveCount(0);
   await expect(secondCard.locator('.material-symbols-outlined').first()).toHaveText('dns');
 });
+
+test('展示多级跳转路径并在编辑时排除自身跳板', async ({ page }) => {
+  await page.unroute('**/api/servers');
+  const jumpServers = servers.map((server) => ({
+    ...server,
+    jump_server_id: server.id === 2 ? 1 : server.id === 3 ? 2 : null,
+  }));
+  await page.route('**/api/servers', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(jumpServers) }),
+  );
+  await page.goto('/?lang=zh-CN');
+
+  await expect(page.locator('#card-3')).toContainText('Server 01 → Server 02');
+  await page.locator('#edit-3').click();
+  const jumpSelect = page.locator('#server-jump-host');
+  await expect(jumpSelect).toHaveValue('2');
+  await expect(jumpSelect.locator('option[value="3"]')).toHaveCount(0);
+  await expect(jumpSelect.locator('option[value="2"]')).toHaveText('Server 02');
+});

@@ -86,6 +86,7 @@
 - **Multi-Algorithm Key Exchange**: Supports Curve25519-SHA256 (preferred) and ECDH-NISTP256 KEX algorithms, compatible with various SSH servers (including Dropbear).
 - **IPv4/IPv6 Dual Stack**: Full support for both IPv4 and IPv6 address connections, including automatic handling of IPv6 bracket notation.
 - **Multiple Auth Methods**: Supports standard SSH password authentication, multi-round RFC 4256 `keyboard-interactive` authentication, and OpenSSH-format Ed25519, ECDSA P-256/P-384/P-521, and RSA private keys. Interactive authentication supports passwords, OTPs, multiple prompts, and a second factor after public-key authentication. Server prompts appear in a connection-bound safety dialog, and a saved password is substituted only after an explicit user action. RSA uses RSA-SHA2-256/512 by default; legacy `ssh-rsa` SHA-1 is allowed only through explicit compatibility configuration.
+- **SSH Jump Hosts / Bastions**: Signed-in users may select another saved server as a jump host. CloudSSH builds each layer with the standard RFC 4254 `direct-tcpip` channel and does not require `ssh`, `nc`, or `socat` on the remote host. Up to 3 jump hosts are supported; the final target's terminal, SFTP, and AI Agent use the complete encrypted chain. Authentication and path-scoped host-key verification run independently at every hop.
 - **MitM Protection (TOFU)**: Automatically extracts and prints the server's Host Key (SHA-256 fingerprint) on the first connection, supporting Ed25519/ECDSA/RSA signature verification, and caches known host keys locally and via API to prevent MitM on future connections.
 - **Geek Terminal Experience**: Powered by `@xterm/xterm` and the `@xterm/addon-webgl` hardware acceleration rendering engine, ensuring silky smooth scrolling even with massive log outputs.
 - **Reliable Terminal Clipboard Interaction**: Completing a terminal selection with a mouse automatically copies it, and right-click pastes directly. On touch devices, tapping Copy in the shortcut bar enters selection mode; drag across terminal text and tap Copy again to finish, avoiding unreliable long-press selection, while Paste remains a separate action. Paste data follows xterm.js's native input pipeline, emits bracketed-paste control sequences only when the remote application enables that mode, and normalizes line endings for compatibility with Vim and regular shells.
@@ -151,6 +152,7 @@ flowchart TB
 | **IP Geo Inference** | `src/worker/ip-geo.ts` | Infers target IP region at save time, maps to Cloudflare DO locationHint |
 | **OS Detection** | `src/worker/os-detect.ts` | Parses remote system identity and normalizes persistable OS keys |
 | **SSHSession** | `src/worker/ssh-session.ts` | SSH protocol state machine (connect→version→kex→auth→interactive) |
+| **SSH Jump Stream** | `src/worker/direct-tcpip-stream.ts` | Backpressured duplex byte stream that runs nested SSH over an RFC 4254 `direct-tcpip` channel |
 | **SSH Protocol Stack** | `src/ssh/*.ts` | Pure TypeScript SSH-2.0 implementation (transport, crypto, auth, channels) |
 | **SFTP Handler** | `src/worker/sftp-handler.ts` | SFTP protocol operations, task queue, concurrent downloads, upload tracking and cancellation |
 | **SFTP Protocol** | `src/ssh/sftp.ts` / `sftp-types.ts` | SFTP v3 protocol client, packet parsing and type definitions |
@@ -179,15 +181,15 @@ This project implements a complete SSH-2.0 protocol stack:
 | **Integrity** | `crypto.ts` | hmac-sha2-256, hmac-sha2-512, hmac-sha1 |
 | **Host Keys** | `ssh-session.ts` | Ed25519, ECDSA P-256/P-384/P-521, RSA |
 | **User Auth** | `auth.ts` | Password and RFC 4256 keyboard-interactive; Ed25519, ECDSA P-256/P-384/P-521, and RSA-SHA2 private-key authentication |
-| **Channel Management** | `channel.ts` | Session channel, SFTP subsystem, PTY, shell, window-change |
+| **Channel Management** | `channel.ts` | Session, `direct-tcpip`, SFTP subsystem, PTY, shell, and window-change channels |
 | **SFTP Protocol** | `sftp.ts` / `sftp-types.ts` | SFTP v3 file transfer protocol (directory browsing, upload, download, delete, rename) |
 
 ### Data Flow
 
 1. The user enters the host IP, username, and password on the frontend (or selects a saved server via GitHub OAuth).
 2. The frontend establishes a WebSocket connection with the backend Durable Object.
-3. SSHSessionDO receives the credentials and establishes a TCP connection with the target SSH server using `@cloudflare/sockets`.
-4. SSHSession executes the complete SSH protocol negotiation (version exchange → key exchange → authentication → channel open → PTY → Shell).
+3. SSHSessionDO receives the credentials and uses `@cloudflare/sockets` to connect to the direct target or outermost jump host.
+4. When a jump path exists, SSHSession authenticates each hop and carries the next SSH session over RFC 4254 `direct-tcpip`; only the final target opens PTY, Shell, SFTP, and Agent exec channels.
 5. Terminal data travels over WSS between the browser and Worker, and over SSH between the Worker and target server; the Worker bridges the two protocol segments and processes SSH.
 6. SFTP file management runs on a separate SSH subsystem channel, supporting directory browsing, file upload/download, and other operations.
 7. For a saved server without an OS record, SSHSession performs one read-only system check through a separate exec channel after the Shell is ready. Recognized results are stored in UserDBDO and sent to the frontend; unknown results are not stored.
@@ -326,6 +328,17 @@ With GitHub OAuth enabled, users can log in with their GitHub account and save/m
 > **Access Policy Note**: After `GITHUB_ALLOWED_USER_IDS` changes, existing sessions are checked again and become invalid on their next request; already established SSH WebSockets are not terminated. `REQUIRE_GITHUB_AUTH=true` depends on GitHub OAuth, so configure the Client ID, Client Secret, and `BASE_URL` together.
 
 > **Note**: Server credentials (passwords/private keys) are encrypted with AES-256-GCM in each user's UserDBDO SQLite database. The current encryption key is generated on first use and stored in the same Durable Object database as the ciphertext. For a saved-server connection, the browser never receives the plaintext credential; the server side transfers it internally through a one-time connection token.
+
+##### Using SSH Jump Hosts
+
+Jump hosts require no additional environment variables, but GitHub OAuth and saved servers must be enabled:
+
+1. Save the outermost public jump host A, which Cloudflare can reach directly.
+2. Save target B and select A in the **Jump host** field. B may use a private address that is reachable only from A.
+3. For a multi-hop path such as C → A → B, configure C as A's jump host, then configure A as B's jump host. CloudSSH resolves the relation recursively and permits at most 3 jump hosts.
+4. Connect to B from the server list. Terminal, SFTP, and AI Agent channels open only on final target B; a failure at any hop closes or rebuilds the complete chain.
+
+Every server in a jump relation must belong to the same GitHub user. Self-references and cycles are rejected, and a jump host cannot be deleted while another server references it. Public-address SSRF checks and Durable Object region placement use the outermost address reached directly by Cloudflare; private targets are accepted only inside a server-resolved saved chain, and anonymous clients cannot submit jump configuration. TOFU host-key verification runs at every hop, with private target records scoped by the complete jump path.
 
 <a id="development"></a>
 ## Development

@@ -88,6 +88,7 @@
 - **多算法密钥交换**：支持 Curve25519-SHA256（优先）和 ECDH-NISTP256 两种 KEX 算法，适配各类 SSH 服务器（包括 Dropbear）。
 - **IPv4/IPv6 双栈**：完整支持 IPv4 和 IPv6 地址连接，包括 IPv6 方括号格式自动处理。
 - **多种认证方式**：支持标准 SSH 密码认证、RFC 4256 `keyboard-interactive` 多轮交互认证，以及 OpenSSH 格式的 Ed25519、ECDSA P-256/P-384/P-521 和 RSA 私钥认证。交互认证支持密码、OTP、多字段提示与公钥后的二次验证；服务器提示会在绑定当前连接的安全对话框中展示，已保存密码仅在用户明确选择后代填。RSA 默认使用 RSA-SHA2-256/512，只有显式兼容配置才允许旧 `ssh-rsa` SHA-1。
+- **SSH 跳板机/堡垒机**：登录用户可以为已保存服务器选择另一台已保存服务器作为跳板。CloudSSH 使用标准 RFC 4254 `direct-tcpip` 通道逐层建立 SSH，不依赖远端安装 `ssh`、`nc` 或 `socat`；支持最多 3 级跳转，最终目标的终端、SFTP 与 AI Agent 均复用完整加密链路。每一跳独立认证和验证路径隔离的主机指纹。
 - **防范中间人攻击 (TOFU)**：首次连接自动提取服务器 Host Key（SHA-256 指纹）并显示，支持 Ed25519/ECDSA/RSA 签名验证，并在本地及 API 持久化缓存已知主机指纹以防范二次连接的欺骗风险。
 - **全功能极客终端**：基于 `@xterm/xterm` 与 `@xterm/addon-webgl` 硬件加速渲染引擎，保证海量日志输出顺滑不卡顿。
 - **可靠的终端剪贴板交互**：鼠标完成终端选区后自动复制，右键可直接粘贴；触摸设备点击快捷键栏的复制按钮进入选择模式，拖动选择文本后再次点击完成复制，避免依赖不稳定的长按选区，粘贴则使用独立按钮。粘贴统一经过 xterm.js 原生输入管线，仅在远端应用启用 bracketed paste 模式时发送对应控制序列，并自动规范化换行，兼容 Vim 等交互式编辑器和普通 Shell。
@@ -154,6 +155,7 @@ flowchart TB
 | **IP 地理推断**      | `src/worker/ip-geo.ts`                                | 保存服务器时推断目标 IP 所在区域，映射到 Cloudflare DO locationHint                                                             |
 | **操作系统识别**     | `src/worker/os-detect.ts`                             | 解析远端系统标识、规范化可持久化 OS key                                                                                         |
 | **SSHSession**       | `src/worker/ssh-session.ts`                           | SSH 协议状态机（连接→版本→密钥交换→认证→交互）                                                                                  |
+| **SSH 跳板字节流**   | `src/worker/direct-tcpip-stream.ts`                   | 将 RFC 4254 `direct-tcpip` 通道封装为可嵌套 SSH 的背压双向字节流                                                               |
 | **SSH 协议栈**       | `src/ssh/*.ts`                                        | 纯 TypeScript SSH-2.0 实现（传输层、加密、认证、通道）                                                                          |
 | **SFTP 处理器**      | `src/worker/sftp-handler.ts`                          | SFTP 协议操作、任务队列、并发下载、上传跟踪与取消支持                                                                           |
 | **SFTP 协议实现**    | `src/ssh/sftp.ts` / `sftp-types.ts`                   | SFTP v3 协议客户端、包解析与类型定义                                                                                            |
@@ -182,15 +184,15 @@ flowchart TB
 | **完整性校验** | `crypto.ts`                         | hmac-sha2-256, hmac-sha2-512, hmac-sha1                       |
 | **主机密钥**   | `ssh-session.ts`                    | Ed25519, ECDSA P-256/P-384/P-521, RSA                         |
 | **用户认证**   | `auth.ts`                           | 密码、RFC 4256 keyboard-interactive；Ed25519、ECDSA P-256/P-384/P-521、RSA-SHA2 私钥认证 |
-| **通道管理**   | `channel.ts`                        | session channel, SFTP subsystem, PTY, shell, window-change    |
+| **通道管理**   | `channel.ts`                        | session、`direct-tcpip`、SFTP subsystem、PTY、shell、window-change |
 | **SFTP 协议**  | `sftp.ts` / `sftp-types.ts`         | SFTP v3 文件传输协议（目录浏览、上传、下载、删除、重命名）    |
 
 ### 数据流
 
 1. 用户在前端输入主机 IP、账号和密码（或通过 GitHub OAuth 选择已保存的服务器）。
 2. 前端与后端的 Durable Object 建立 WebSocket 连接。
-3. SSHSessionDO 接收凭据，使用 `@cloudflare/sockets` 与目标 SSH 服务器建立 TCP 连接。
-4. SSHSession 执行完整的 SSH 协议协商（版本交换→密钥交换→认证→打开通道→PTY→Shell）。
+3. SSHSessionDO 接收凭据，使用 `@cloudflare/sockets` 与直连目标或最外层跳板建立 TCP 连接。
+4. 如配置跳板，SSHSession 逐层认证并通过 RFC 4254 `direct-tcpip` 通道承载下一套 SSH；仅最终目标打开 PTY、Shell、SFTP 与 Agent exec 通道。
 5. 终端数据在浏览器与 Worker 之间通过 WSS 传输，在 Worker 与目标服务器之间通过 SSH 加密传输；Worker 负责两段协议之间的转发和 SSH 协议处理。
 6. SFTP 文件管理通过独立的 SSH 子系统通道运行，支持目录浏览、文件上传/下载等操作。
 7. 对尚无 OS 记录的已保存服务器，SSHSession 在 Shell 就绪后通过独立 exec 通道进行一次只读系统识别；成功结果写入 UserDBDO 并通知前端更新卡片，未知结果不保存。
@@ -334,6 +336,17 @@ Fork 仓库可以通过内置的 `Sync upstream` GitHub Actions 工作流，定�
 > **访问策略说明**：修改 `GITHUB_ALLOWED_USER_IDS` 后，已签发 session 会在下一次请求时重新检查并立即失效；已建立的 SSH WebSocket 不会被主动中断。`REQUIRE_GITHUB_AUTH=true` 依赖 GitHub OAuth，请同时正确配置 Client ID、Client Secret 和 `BASE_URL`。
 
 > **说明**：服务器凭据（密码/私钥）在每用户 UserDBDO SQLite 中使用 AES-256-GCM 加密存储。当前加密密钥在首次使用时自动生成，并与密文保存在同一个 Durable Object 数据库中。一键连接已保存服务器时，浏览器不会收到明文凭据，服务端通过一次性连接令牌完成内部传递。
+
+##### 使用 SSH 跳板服务器
+
+SSH 跳转不需要额外环境变量，但必须启用 GitHub OAuth 并使用已保存服务器：
+
+1. 先保存最外层可由 Cloudflare 直接访问的公网跳板服务器 A。
+2. 再保存目标服务器 B，在“跳板服务器”中选择 A；B 可以填写只能从 A 访问的内网地址。
+3. 如需多级路径，例如 C → A → B，可先把 A 的跳板设置为 C，再让 B 选择 A。系统会递归解析路径，最多允许 3 台跳板服务器。
+4. 从服务器列表连接 B。终端、SFTP 和 AI Agent 只在最终目标 B 上运行；任意一跳断开时会重建或关闭整条链路。
+
+跳板关系必须位于同一 GitHub 用户空间，不能形成自引用或循环。正在被其他服务器引用的跳板不能直接删除。SSRF 公网检查与 Durable Object 区域调度均以 Cloudflare 直接连接的最外层入口为准；内网地址只能出现在由服务端解析的已保存跳板链中，匿名连接不能提交跳板配置。每一跳都会独立执行 TOFU 主机指纹验证，内网目标的记录按完整跳转路径隔离。
 
 <a id="development"></a>
 

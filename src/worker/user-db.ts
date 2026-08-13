@@ -1,9 +1,25 @@
-import { Env, UserInfo, ServerConfig, SSHConnectionConfig, ALLOWED_LOCATION_HINTS } from '../types';
+import { Env, UserInfo, ServerConfig, SSHConnectionConfig, SSHJumpHostConfig, ALLOWED_LOCATION_HINTS } from '../types';
 import { inferLocationHint, type InferResult } from './ip-geo';
 import { deserializeServerRow, serializeServerTags } from './server-tags';
 import { isDetectedOS } from './os-detect';
 
 const AUTH_METHODS = new Set(['password', 'publickey']);
+const MAX_JUMP_HOSTS = 3;
+
+interface StoredServerRow {
+  id: number;
+  user_id: number;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  credential: string;
+  auth_method: string;
+  region: string | null;
+  inferred_hint: string | null;
+  os: string | null;
+  jump_server_id: number | null;
+}
 
 /**
  * UserDBDO — 按 GitHub 用户 ID 命名并隔离的用户数据库 Durable Object
@@ -66,6 +82,7 @@ export class UserDBDO {
         inferred_hint TEXT DEFAULT NULL,
         tags        TEXT NOT NULL DEFAULT '[]',
         os          TEXT DEFAULT NULL,
+        jump_server_id INTEGER DEFAULT NULL,
         created_at  TEXT DEFAULT (datetime('now')),
         updated_at  TEXT DEFAULT (datetime('now'))
       );
@@ -117,6 +134,10 @@ export class UserDBDO {
     if (!serverCols.some((c: any) => c.name === 'os')) {
       this.db.exec("ALTER TABLE servers ADD COLUMN os TEXT DEFAULT NULL");
     }
+    if (!serverCols.some((c: any) => c.name === 'jump_server_id')) {
+      this.db.exec("ALTER TABLE servers ADD COLUMN jump_server_id INTEGER DEFAULT NULL");
+    }
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_servers_jump ON servers(jump_server_id)');
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -334,13 +355,40 @@ export class UserDBDO {
   private handleGetServers(userId: number): Response {
     const rows = this.db
       .exec(
-        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, created_at, updated_at
+        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, jump_server_id, created_at, updated_at
          FROM servers WHERE user_id = ? ORDER BY updated_at DESC`,
         userId
       )
       .toArray();
 
     return Response.json(rows.map((row: Record<string, unknown>) => deserializeServerRow(row)) as unknown as ServerConfig[]);
+  }
+
+  private validateJumpChain(userId: number, targetServerId: number | null, jumpServerId: number | null): string | null {
+    if (jumpServerId === null) return null;
+    if (!Number.isInteger(jumpServerId) || jumpServerId <= 0) return '无效的跳板服务器';
+
+    const seen = new Set<number>();
+    if (targetServerId !== null) seen.add(targetServerId);
+    let currentId: number | null = jumpServerId;
+    let depth = 0;
+
+    while (currentId !== null) {
+      if (seen.has(currentId)) return '跳板服务器关系不能形成循环';
+      seen.add(currentId);
+      depth++;
+      if (depth > MAX_JUMP_HOSTS) return `最多允许 ${MAX_JUMP_HOSTS} 级 SSH 跳转`;
+
+      const rows = this.db.exec(
+        'SELECT user_id, jump_server_id FROM servers WHERE id = ?',
+        currentId,
+      ).toArray();
+      if (rows.length === 0) return '所选跳板服务器不存在';
+      const row = rows[0] as unknown as { user_id: number; jump_server_id: number | null };
+      if (row.user_id !== userId) return '不能使用其他用户的服务器作为跳板';
+      currentId = row.jump_server_id ?? null;
+    }
+    return null;
   }
 
   private async handleAddServer(request: Request): Promise<Response> {
@@ -354,6 +402,7 @@ export class UserDBDO {
       auth_method: string;
       region?: string;
       tags?: unknown;
+      jump_server_id?: number | null;
     }>();
 
     const port = body.port ?? 22;
@@ -366,6 +415,9 @@ export class UserDBDO {
     if (typeof body.credential !== 'string' || body.credential.length === 0) {
       return Response.json({ error: '认证凭据不能为空' }, { status: 400 });
     }
+    const jumpServerId = body.jump_server_id ?? null;
+    const jumpError = this.validateJumpChain(body.user_id, null, jumpServerId);
+    if (jumpError) return Response.json({ error: jumpError }, { status: 400 });
 
     const region = (ALLOWED_LOCATION_HINTS as readonly string[]).includes(body.region || '')
       ? body.region || null
@@ -391,8 +443,13 @@ export class UserDBDO {
       inferDebug.push('[IP-GEO] 已手动指定区域，跳过推断');
     }
 
+    // Encryption and IP inference may yield; re-check the saved relation at
+    // the write boundary to keep the maximum depth invariant.
+    const currentJumpError = this.validateJumpChain(body.user_id, null, jumpServerId);
+    if (currentJumpError) return Response.json({ error: currentJumpError }, { status: 400 });
+
     this.db.exec(
-      'INSERT INTO servers (user_id, name, host, port, username, credential, auth_method, region, inferred_hint, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO servers (user_id, name, host, port, username, credential, auth_method, region, inferred_hint, tags, jump_server_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       body.user_id,
       body.name,
       body.host,
@@ -402,13 +459,14 @@ export class UserDBDO {
       body.auth_method,
       region,
       inferredHint,           // 系统推断值（可 NULL）
-      serializeServerTags(body.tags)
+      serializeServerTags(body.tags),
+      jumpServerId,
     );
 
     // 获取新创建的记录
     const rows = this.db
       .exec(
-        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, created_at, updated_at
+        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, jump_server_id, created_at, updated_at
          FROM servers WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
         body.user_id
       )
@@ -433,11 +491,12 @@ export class UserDBDO {
       auth_method?: string;
       region?: string;
       tags?: unknown;
+      jump_server_id?: number | null;
     }>();
 
     // 验证服务器属于该用户
     const existing = this.db.exec(
-      'SELECT user_id, host, port, auth_method, region, inferred_hint FROM servers WHERE id = ?',
+      'SELECT user_id, host, port, auth_method, region, inferred_hint, jump_server_id FROM servers WHERE id = ?',
       serverId,
     ).toArray();
     if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
@@ -448,6 +507,7 @@ export class UserDBDO {
       auth_method: string;
       region: string | null;
       inferred_hint: string | null;
+      jump_server_id: number | null;
     };
     if (current.user_id !== body.user_id)
       return Response.json({ error: 'Forbidden' }, { status: 403 });
@@ -463,6 +523,10 @@ export class UserDBDO {
       && body.auth_method !== current.auth_method
       && !hasNewCredential) {
       return Response.json({ error: '切换认证方式时必须同时提供对应凭据' }, { status: 400 });
+    }
+    if (body.jump_server_id !== undefined) {
+      const jumpError = this.validateJumpChain(body.user_id, serverId, body.jump_server_id);
+      if (jumpError) return Response.json({ error: jumpError }, { status: 400 });
     }
 
     const normalizedRegion = body.region !== undefined
@@ -544,8 +608,18 @@ export class UserDBDO {
       updates.push('tags = ?');
       values.push(serializeServerTags(body.tags));
     }
+    if (body.jump_server_id !== undefined) {
+      updates.push('jump_server_id = ?');
+      values.push(body.jump_server_id);
+    }
 
     if (updates.length > 0) {
+      // Credential encryption and region inference may yield; validate again
+      // immediately before the write so concurrent updates cannot create a cycle.
+      if (body.jump_server_id !== undefined) {
+        const jumpError = this.validateJumpChain(body.user_id, serverId, body.jump_server_id);
+        if (jumpError) return Response.json({ error: jumpError }, { status: 400 });
+      }
       updates.push("updated_at = datetime('now')");
       values.push(serverId);
       this.db.exec(`UPDATE servers SET ${updates.join(', ')} WHERE id = ?`, ...values);
@@ -553,7 +627,7 @@ export class UserDBDO {
 
     const row = this.db
       .exec(
-        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, created_at, updated_at
+        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, jump_server_id, created_at, updated_at
          FROM servers WHERE id = ?`,
         serverId
       )
@@ -570,6 +644,17 @@ export class UserDBDO {
     if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
     if ((existing[0] as unknown as { user_id: number }).user_id !== body.user_id)
       return Response.json({ error: 'Forbidden' }, { status: 403 });
+
+    const references = this.db.exec(
+      'SELECT name FROM servers WHERE user_id = ? AND jump_server_id = ? ORDER BY name LIMIT 5',
+      body.user_id,
+      serverId,
+    ).toArray() as unknown as Array<{ name: string }>;
+    if (references.length > 0) {
+      return Response.json({
+        error: `该服务器正被 ${references.map((row) => row.name).join('、')} 用作跳板，请先解除引用`,
+      }, { status: 409 });
+    }
 
     this.db.exec('DELETE FROM servers WHERE id = ?', serverId);
     return Response.json({ success: true });
@@ -637,32 +722,53 @@ export class UserDBDO {
   private async handleConnectServer(serverId: number, request: Request): Promise<Response> {
     const body = await request.json<{ user_id: number }>();
 
-    // 验证服务器属于该用户
-    const rows = this.db.exec('SELECT * FROM servers WHERE id = ? AND user_id = ?', serverId, body.user_id).toArray();
-    if (rows.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
-
-    const server = rows[0] as unknown as {
-      id: number; user_id: number; name: string; host: string;
-      port: number; username: string; credential: string; auth_method: string;
-      region: string | null; inferred_hint: string | null; os: string | null;
-    };
-
-    // 解密凭据
-    const credential = await this.decryptCredential(server.credential, body.user_id);
-
-    // 查询已知主机指纹（TOFU 验证）
-    let expectedFingerprint: string | undefined;
-    const khRows = this.db.exec(
-      'SELECT fingerprint FROM known_hosts WHERE user_id = ? AND host = ? AND port = ?',
-      body.user_id, server.host, server.port
-    ).toArray();
-    if (khRows.length > 0) {
-      expectedFingerprint = (khRows[0] as unknown as { fingerprint: string }).fingerprint;
+    // Resolve the saved relation into one bounded, immutable outer-to-target chain.
+    const reversed: StoredServerRow[] = [];
+    const seen = new Set<number>();
+    let currentId: number | null = serverId;
+    while (currentId !== null) {
+      if (seen.has(currentId)) {
+        return Response.json({ error: '跳板服务器关系存在循环' }, { status: 400 });
+      }
+      seen.add(currentId);
+      const rows = this.db.exec('SELECT * FROM servers WHERE id = ?', currentId).toArray();
+      if (rows.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
+      const row = rows[0] as unknown as StoredServerRow;
+      if (row.user_id !== body.user_id) return Response.json({ error: 'Forbidden' }, { status: 403 });
+      reversed.push(row);
+      if (reversed.length > MAX_JUMP_HOSTS + 1) {
+        return Response.json({ error: `最多允许 ${MAX_JUMP_HOSTS} 级 SSH 跳转` }, { status: 400 });
+      }
+      currentId = row.jump_server_id ?? null;
     }
 
-    // 计算 DO locationHint：
-    // 优先级：用户手动覆盖 (region) > 系统推断持久化值 (inferred_hint) > 无 hint（Auto）
-    const locationHint = server.region || server.inferred_hint || undefined;
+    const chain = reversed.reverse();
+    const target = chain[chain.length - 1];
+    const pathSegments: string[] = [];
+    const resolved = await Promise.all(chain.map(async (server, index) => {
+      const identity = index === 0
+        ? server.host
+        : `jump:${pathSegments.join('>')}|${server.host}`;
+      pathSegments.push(`${server.id}@${server.host}:${server.port}`);
+      const credential = await this.decryptCredential(server.credential, body.user_id);
+      const khRows = this.db.exec(
+        'SELECT fingerprint FROM known_hosts WHERE user_id = ? AND host = ? AND port = ?',
+        body.user_id,
+        identity,
+        server.port,
+      ).toArray();
+      return {
+        server,
+        identity,
+        credential,
+        expectedFingerprint: khRows.length > 0
+          ? (khRows[0] as unknown as { fingerprint: string }).fingerprint
+          : undefined,
+      };
+    }));
+
+    const outermost = chain[0];
+    const locationHint = outermost.region || outermost.inferred_hint || undefined;
 
     const userRows = this.db.exec('SELECT github_id FROM users WHERE id = ?', body.user_id).toArray();
     if (userRows.length === 0) return Response.json({ error: 'User not found' }, { status: 404 });
@@ -670,19 +776,34 @@ export class UserDBDO {
 
     // 生成 one-time-token
     const token = `${github_id}:${crypto.randomUUID()}`;
+    const jumpHosts: SSHJumpHostConfig[] = resolved.slice(0, -1).map((node) => ({
+      serverId: node.server.id,
+      name: node.server.name,
+      host: node.server.host,
+      port: node.server.port,
+      username: node.server.username,
+      password: node.server.auth_method === 'password' ? node.credential : '',
+      authMethod: node.server.auth_method === 'publickey' ? 'publickey' : 'password',
+      privateKey: node.server.auth_method === 'publickey' ? node.credential : '',
+      expectedFingerprint: node.expectedFingerprint,
+      knownHostIdentity: node.identity,
+    }));
+    const targetNode = resolved[resolved.length - 1];
     const config: SSHConnectionConfig = {
-      host: server.host,
-      port: server.port,
-      username: server.username,
-      password: server.auth_method === 'password' ? credential : '',
-      authMethod: server.auth_method === 'publickey' ? 'publickey' : 'password',
-      privateKey: server.auth_method === 'publickey' ? credential : '',
-      expectedFingerprint,
+      host: target.host,
+      port: target.port,
+      username: target.username,
+      password: target.auth_method === 'password' ? targetNode.credential : '',
+      authMethod: target.auth_method === 'publickey' ? 'publickey' : 'password',
+      privateKey: target.auth_method === 'publickey' ? targetNode.credential : '',
+      expectedFingerprint: targetNode.expectedFingerprint,
+      knownHostIdentity: targetNode.identity,
       userId: String(body.user_id),
       githubId: String(github_id),
-      serverId: server.id,
-      os: server.os,
+      serverId: target.id,
+      os: target.os,
       locationHint,
+      jumpHosts,
     };
 
     // 防止 token 数量无限增长
