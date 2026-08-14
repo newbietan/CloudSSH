@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.2] - 2026-08-14
+
+### Changed
+- SSH 跳板链仅由 Cloudflare 直接连接的最外层入口执行 IPinfo 区域推断，下游内网服务器不再保存或查询自身区域，避免无效请求和内网主机信息外发。
+- 服务器管理界面在选择跳板服务器后停用区域选项，并以“由跳板入口决定”“随跳板”明确展示实际调度规则；切回直连时恢复自动或手动区域配置。
+
+### Fixed
+- 修复新增或修改跳板链下游服务器时仍会触发区域推断，以及直连与跳板模式切换后可能残留无效区域信息的问题。
+- 修复内网目标区域推断失败时显示误导性警告的问题，改为提示连接区域由跳板链入口统一决定。
+
 ## [1.8.1] - 2026-08-13
 
 ### Changed
