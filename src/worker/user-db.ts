@@ -419,9 +419,12 @@ export class UserDBDO {
     const jumpError = this.validateJumpChain(body.user_id, null, jumpServerId);
     if (jumpError) return Response.json({ error: jumpError }, { status: 400 });
 
-    const region = (ALLOWED_LOCATION_HINTS as readonly string[]).includes(body.region || '')
+    const requestedRegion = (ALLOWED_LOCATION_HINTS as readonly string[]).includes(body.region || '')
       ? body.region || null
       : null;
+    // 只有 Cloudflare 直接建立 TCP 连接的跳板链入口需要区域偏好。
+    // 下游节点的区域由最外层入口决定，保存自身区域只会产生误导和无效查询。
+    const region = jumpServerId === null ? requestedRegion : null;
 
     // 加密凭据
     const encrypted = await this.encryptCredential(body.credential, body.user_id);
@@ -431,7 +434,9 @@ export class UserDBDO {
     // 失败时返回 null，连接时退化为 Auto
     let inferredHint: string | null = null;
     let inferDebug: string[] = [];
-    if (region === null) {
+    if (jumpServerId !== null) {
+      inferDebug.push('[IP-GEO] 当前服务器通过跳板连接，区域由最外层入口决定，跳过推断');
+    } else if (region === null) {
       try {
         const result = await inferLocationHint(body.host);
         inferredHint = result.hint ?? null;
@@ -524,17 +529,24 @@ export class UserDBDO {
       && !hasNewCredential) {
       return Response.json({ error: '切换认证方式时必须同时提供对应凭据' }, { status: 400 });
     }
-    if (body.jump_server_id !== undefined) {
-      const jumpError = this.validateJumpChain(body.user_id, serverId, body.jump_server_id);
-      if (jumpError) return Response.json({ error: jumpError }, { status: 400 });
-    }
+    const nextJumpServerId = body.jump_server_id !== undefined
+      ? body.jump_server_id
+      : current.jump_server_id;
+    const jumpError = this.validateJumpChain(body.user_id, serverId, nextJumpServerId);
+    if (jumpError) return Response.json({ error: jumpError }, { status: 400 });
 
-    const normalizedRegion = body.region !== undefined
+    // 历史下游节点可能残留区域值；从跳板切回直连且请求未显式指定区域时，
+    // 应回到 Auto，而不是复用一个此前从未参与连接调度的旧值。
+    const requestedRegion = body.region !== undefined
       ? ((ALLOWED_LOCATION_HINTS as readonly string[]).includes(body.region) ? body.region : null)
-      : current.region;
+      : (current.jump_server_id === null ? current.region : null);
+    const normalizedRegion = nextJumpServerId === null ? requestedRegion : null;
+    const isDirect = nextJumpServerId === null;
+    const becameDirect = current.jump_server_id !== null && isDirect;
     const hostChanged = body.host !== undefined && body.host !== current.host;
     const portChanged = body.port !== undefined && body.port !== current.port;
-    const switchedToAuto = body.region !== undefined
+    const switchedToAuto = isDirect
+      && body.region !== undefined
       && normalizedRegion === null
       && current.region !== null;
 
@@ -550,30 +562,27 @@ export class UserDBDO {
       updates.push('host = ?');
       values.push(body.host);
     }
-    if (hostChanged) {
-      // 手动区域无需推断；Auto 模式仅在主机实际变化时重新查询
-      let newInferred: string | null = null;
-      if (normalizedRegion === null) {
-        try {
-          const result = await inferLocationHint(body.host!);
-          newInferred = result.hint ?? null;
-        } catch {
-          newInferred = null;
-        }
-      }
-      updates.push('inferred_hint = ?');
-      values.push(newInferred);
-    } else if (switchedToAuto && current.inferred_hint === null) {
-      // 手动模式新增的记录没有推断值，首次切回 Auto 时补做一次查询
+    const shouldInfer = isDirect
+      && normalizedRegion === null
+      && (hostChanged || becameDirect || (switchedToAuto && current.inferred_hint === null));
+    if (shouldInfer) {
       let newInferred: string | null = null;
       try {
-        const result = await inferLocationHint(current.host);
+        const result = await inferLocationHint(body.host ?? current.host);
         newInferred = result.hint ?? null;
       } catch {
         newInferred = null;
       }
       updates.push('inferred_hint = ?');
       values.push(newInferred);
+    } else if (!isDirect && current.inferred_hint !== null) {
+      // 切换为跳板连接或编辑历史下游节点时，顺带清理不再生效的推断值。
+      updates.push('inferred_hint = ?');
+      values.push(null);
+    } else if (isDirect && normalizedRegion !== null && (hostChanged || becameDirect)) {
+      // 主机变化或从跳板切回手动直连时，旧推断值不能继续代表当前入口。
+      updates.push('inferred_hint = ?');
+      values.push(null);
     }
     if (body.port !== undefined) {
       if (!Number.isInteger(body.port) || body.port < 1 || body.port > 65535) {
@@ -599,8 +608,11 @@ export class UserDBDO {
       updates.push('auth_method = ?');
       values.push(body.auth_method);
     }
-    if (body.region !== undefined) {
-      // 空字符串视为 Auto（清空手动覆盖）；白名单校验非法值
+    if (!isDirect && current.region !== null) {
+      updates.push('region = ?');
+      values.push(null);
+    } else if (body.region !== undefined || becameDirect) {
+      // 空字符串视为 Auto；下游节点始终清空区域，由跳板链入口统一决定。
       updates.push('region = ?');
       values.push(normalizedRegion);
     }
@@ -616,10 +628,8 @@ export class UserDBDO {
     if (updates.length > 0) {
       // Credential encryption and region inference may yield; validate again
       // immediately before the write so concurrent updates cannot create a cycle.
-      if (body.jump_server_id !== undefined) {
-        const jumpError = this.validateJumpChain(body.user_id, serverId, body.jump_server_id);
-        if (jumpError) return Response.json({ error: jumpError }, { status: 400 });
-      }
+      const currentJumpError = this.validateJumpChain(body.user_id, serverId, nextJumpServerId);
+      if (currentJumpError) return Response.json({ error: currentJumpError }, { status: 400 });
       updates.push("updated_at = datetime('now')");
       values.push(serverId);
       this.db.exec(`UPDATE servers SET ${updates.join(', ')} WHERE id = ?`, ...values);

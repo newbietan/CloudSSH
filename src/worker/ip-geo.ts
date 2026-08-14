@@ -3,7 +3,8 @@ import { ALLOWED_LOCATION_HINTS } from '../types';
 /**
  * 自动推断 SSH 目标服务器对应的 Cloudflare DO locationHint。
  *
- * 该函数仅在 **保存服务器** 时被调用一次，结果持久化入 `servers.inferred_hint` 列；
+ * 该函数仅在保存或修改 **Cloudflare 直接连接的跳板链入口** 时调用，
+ * 结果持久化入 `servers.inferred_hint` 列；配置了跳板的下游节点不会查询 IPinfo。
  * 后续连接时直接读 DB，**不再运行时查询 IPinfo**，不增加连接阶段的外部查询延迟。
  *
  * fetch 带 `cf.cacheEverything + cacheTtl` 让 Cloudflare 边缘缓存 IPinfo 响应 24h，

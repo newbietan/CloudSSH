@@ -102,7 +102,7 @@
 - **单页面多标签会话管理**：支持在单个页面内开启与切换多个独立的 SSH 终端与 SFTP 文件管理器，各会话环境和状态完全隔离，并在个性化主题编辑器中进行了联动适配。
 - **安全匿名历史记录**：本地存储最近 5 条匿名连接，且敏感凭证可选使用本地派生的密钥进行 AES-256-GCM 安全加密存储至 `localStorage`，提供一键回填与清除。
 - **双段延迟与 Colo 展示**：状态栏即时且周期性地展示当前 RTT（客户端至 Cloudflare）、物理延迟（Cloudflare 至主机）以及 Cloudflare 当前服务的数据中心代码（如 `CF-LAX`），并通过绿、黄、红三色状态点提示网络质量。
-- **智能区域调度（locationHint）**：保存服务器时通过 IPinfo 查询目标主机的地理信息并持久化 DO 部署区域，连接时直接读取数据库，不再执行外部地理查询；查询失败时自动退化为 Cloudflare 默认调度，也可手动覆盖区域偏好。_注意：自动推断会把目标主机信息发送给第三方 IPinfo；locationHint 是 Cloudflare 的 best-effort 特性，当目标区域 DO 容量不足时会 fallback 到最近可用区域。_
+- **智能区域调度（locationHint）**：保存直连服务器时通过 IPinfo 查询主机地理信息并持久化 DO 部署区域，连接时直接读取数据库，不再执行外部地理查询；使用 SSH 跳板时仅对 Cloudflare 直接连接的最外层入口进行推断，下游内网服务器不会触发查询，其区域设置由入口统一决定。查询失败时自动退化为 Cloudflare 默认调度，也可为直连入口手动覆盖区域偏好。_注意：自动推断会把直连入口的主机信息发送给第三方 IPinfo；locationHint 是 Cloudflare 的 best-effort 特性，当目标区域 DO 容量不足时会 fallback 到最近可用区域。_
 - **终端文本检索**：支持使用快捷键 `Ctrl+Shift+F` 呼出搜索框，实时检索终端历史日志。
 - **终端日志一键导出**：支持通过顶栏的下载按钮，将当前活跃会话终端的完整屏幕历史 buffer 一键导出并下载为 `.txt` 文本文件，解决长日志在浏览器下鼠标选取容易卡顿的痛点。
 - **AI 智能助手**：内置 AI Agent 侧边栏，支持 BYOK（自带 API Key）接入 OpenAI 兼容接口（如 DeepSeek）。提供 8 个专业运维工具：执行命令、读取终端上下文、探测服务器环境、进程列表、systemctl 服务管理、Docker 容器管理、用户确认、结构化报告输出。选择终端内容后可在选区末端点击“询问 AI 助手”，将完整选区作为当前标签独立的待发送上下文附件；附件支持来源和行数展示、展开预览、替换与移除，只有用户补充问题后才会发送。终端选区会被明确标记为非可信分析数据，不代表操作授权，也不能覆盖用户指令。Agent 代码块支持一键复制，安全的 Shell 单行命令可填入当前终端且不会自动执行。支持 LLM 流式输出（逐字显示），危险命令自动拦截或通过默认拒绝的安全对话框确认。**思考过程容器**：多步骤任务执行时，实时预览最近 1-2 条命令，完成后自动折叠显示总步骤数，支持展开查看完整执行历史。
@@ -152,7 +152,7 @@ flowchart TB
 | **Worker 入口**      | `src/worker/index.ts`                                 | HTTP 路由、API 处理、WebSocket 升级                                                                                             |
 | **SSHSessionDO**     | `src/worker/durable-object.ts`                        | SSH 会话生命周期管理、SSRF 防护                                                                                                 |
 | **UserDBDO**         | `src/worker/user-db.ts`                               | 按 GitHub 用户隔离的用户数据、Session、服务器配置、规范化标签与凭据存储（SQLite）                                               |
-| **IP 地理推断**      | `src/worker/ip-geo.ts`                                | 保存服务器时推断目标 IP 所在区域，映射到 Cloudflare DO locationHint                                                             |
+| **IP 地理推断**      | `src/worker/ip-geo.ts`                                | 保存 Cloudflare 直连入口时推断其 IP 所在区域，映射到 Cloudflare DO locationHint；跳板链下游节点不查询                           |
 | **操作系统识别**     | `src/worker/os-detect.ts`                             | 解析远端系统标识、规范化可持久化 OS key                                                                                         |
 | **SSHSession**       | `src/worker/ssh-session.ts`                           | SSH 协议状态机（连接→版本→密钥交换→认证→交互）                                                                                  |
 | **SSH 跳板字节流**   | `src/worker/direct-tcpip-stream.ts`                   | 将 RFC 4254 `direct-tcpip` 通道封装为可嵌套 SSH 的背压双向字节流                                                               |
@@ -346,7 +346,7 @@ SSH 跳转不需要额外环境变量，但必须启用 GitHub OAuth 并使用�
 3. 如需多级路径，例如 C → A → B，可先把 A 的跳板设置为 C，再让 B 选择 A。系统会递归解析路径，最多允许 3 台跳板服务器。
 4. 从服务器列表连接 B。终端、SFTP 和 AI Agent 只在最终目标 B 上运行；任意一跳断开时会重建或关闭整条链路。
 
-跳板关系必须位于同一 GitHub 用户空间，不能形成自引用或循环。正在被其他服务器引用的跳板不能直接删除。SSRF 公网检查与 Durable Object 区域调度均以 Cloudflare 直接连接的最外层入口为准；内网地址只能出现在由服务端解析的已保存跳板链中，匿名连接不能提交跳板配置。每一跳都会独立执行 TOFU 主机指纹验证，内网目标的记录按完整跳转路径隔离。
+跳板关系必须位于同一 GitHub 用户空间，不能形成自引用或循环。正在被其他服务器引用的跳板不能直接删除。SSRF 公网检查与 Durable Object 区域调度均以 Cloudflare 直接连接的最外层入口为准；只有该入口会执行自动区域推断，选择跳板后下游服务器的区域选项会停用，也不会向 IPinfo 发送其内网主机信息。内网地址只能出现在由服务端解析的已保存跳板链中，匿名连接不能提交跳板配置。每一跳都会独立执行 TOFU 主机指纹验证，内网目标的记录按完整跳转路径隔离。
 
 <a id="development"></a>
 

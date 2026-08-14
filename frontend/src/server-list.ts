@@ -244,6 +244,7 @@ export class ServerList {
     // Modal 认证方式切换
     document.getElementById('modal-auth-tab-password')?.addEventListener('click', () => this.setModalAuthMode('password'));
     document.getElementById('modal-auth-tab-key')?.addEventListener('click', () => this.setModalAuthMode('key'));
+    document.getElementById('server-jump-host')?.addEventListener('change', () => this.updateRegionControls());
 
   }
 
@@ -385,13 +386,16 @@ export class ServerList {
     const authIcon = server.auth_method === 'publickey' ? 'vpn_key' : 'password';
     const authLabel = server.auth_method === 'publickey' ? 'KEY' : 'PWD';
 
-    // 区域信息：用户手动覆盖优先，其次系统推断，都没有则显示 Auto
-    const effectiveHint = server.region || server.inferred_hint || '';
+    // 下游节点自身的区域不参与调度；连接区域始终由跳板链入口决定。
+    const usesJumpHost = server.jump_server_id !== null && server.jump_server_id !== undefined;
+    const effectiveHint = usesJumpHost ? '' : (server.region || server.inferred_hint || '');
     const isManual = !!server.region;
-    const regionLabelText = regionLabel(effectiveHint);
-    const regionTag = effectiveHint
-      ? (isManual ? t('server.regionManual') : t('server.regionAuto'))
-      : t('server.regionAuto');
+    const regionLabelText = usesJumpHost ? t('server.regionViaJump') : regionLabel(effectiveHint);
+    const regionTag = usesJumpHost
+      ? t('server.regionInherited')
+      : effectiveHint
+        ? (isManual ? t('server.regionManual') : t('server.regionAuto'))
+        : t('server.regionAuto');
     const tagMarkup = (server.tags || []).length > 0
       ? `<div class="flex flex-wrap gap-1 mt-3">${server.tags.map((tag) =>
           `<span class="text-[9px] text-primary border border-[var(--border-strong)] px-1.5 py-0.5">#${this.escapeHtml(tag)}</span>`
@@ -439,7 +443,7 @@ export class ServerList {
           <div class="server-card-region-row flex items-center gap-2 min-w-0">
             <span class="text-dim">${t('server.regionLabel')}</span>
             <span class="text-on-surface flex items-center gap-1">
-              <span class="material-symbols-outlined" style="font-size: 11px; color: var(--accent-secondary);">${effectiveHint ? 'my_location' : 'explore'}</span>
+              <span class="material-symbols-outlined" style="font-size: 11px; color: var(--accent-secondary);">${usesJumpHost ? 'route' : effectiveHint ? 'my_location' : 'explore'}</span>
               ${this.escapeHtml(regionLabelText)}
             </span>
             <span class="text-[9px] text-dim border border-dim px-1 py-0.5 ml-0.5">${regionTag}</span>
@@ -596,13 +600,9 @@ export class ServerList {
       if (regionSelect) {
         populateRegionSelect(regionSelect, server.region || '');
       }
-      // 显示系统推断值（仅编辑时，让用户了解 DB 持久化的 hint）
       if (inferredInfo) {
-        if (server.inferred_hint) {
-          inferredInfo.textContent = t('server.regionInferred', { region: regionLabel(server.inferred_hint) });
-        } else {
-          inferredInfo.textContent = '';
-        }
+        // 旧版本可能为下游节点保存过提示；该值不代表实际连接入口，不能回显。
+        inferredInfo.dataset.inferredHint = server.jump_server_id ? '' : (server.inferred_hint || '');
       }
     } else {
       // 清空表单
@@ -619,8 +619,10 @@ export class ServerList {
       const regionSelect = document.getElementById('server-region') as HTMLSelectElement | null;
       const inferredInfo = document.getElementById('server-region-inferred');
       if (regionSelect) populateRegionSelect(regionSelect, '');
-      if (inferredInfo) inferredInfo.textContent = '';
+      if (inferredInfo) inferredInfo.dataset.inferredHint = '';
     }
+
+    this.updateRegionControls();
 
     modal.classList.remove('hidden');
     modal.classList.add('flex');
@@ -707,6 +709,29 @@ export class ServerList {
     select.value = selectedId ? String(selectedId) : '';
   }
 
+  private updateRegionControls(): void {
+    const jumpSelect = document.getElementById('server-jump-host') as HTMLSelectElement | null;
+    const regionSelect = document.getElementById('server-region') as HTMLSelectElement | null;
+    const inferredInfo = document.getElementById('server-region-inferred');
+    if (!jumpSelect || !regionSelect || !inferredInfo) return;
+
+    const usesJumpHost = jumpSelect.value !== '';
+    regionSelect.disabled = usesJumpHost;
+    regionSelect.classList.toggle('cursor-not-allowed', usesJumpHost);
+    regionSelect.classList.toggle('opacity-60', usesJumpHost);
+    if (usesJumpHost) {
+      // 下游节点没有独立的连接区域；切回直连时从 Auto 重新开始。
+      regionSelect.value = '';
+      inferredInfo.textContent = t('server.regionViaJumpHint');
+      return;
+    }
+
+    const inferredHint = inferredInfo.dataset.inferredHint || '';
+    inferredInfo.textContent = inferredHint
+      ? t('server.regionInferred', { region: regionLabel(inferredHint) })
+      : '';
+  }
+
   private async handleSubmit(): Promise<void> {
     const name = (document.getElementById('server-name') as HTMLInputElement).value.trim();
     const host = (document.getElementById('server-host') as HTMLInputElement).value.trim();
@@ -776,9 +801,9 @@ export class ServerList {
       };
       if (credential) body.credential = credential;
 
-      // 区域偏好：空字符串表示 Auto（让系统自动推断）
+      // 只有 Cloudflare 直连入口才提交区域偏好；下游节点由跳板链入口决定。
       const regionSelect = document.getElementById('server-region') as HTMLSelectElement | null;
-      if (regionSelect) {
+      if (regionSelect && jumpServerId === null) {
         body.region = regionSelect.value || '';
       }
 
@@ -818,18 +843,22 @@ export class ServerList {
       // 非调试模式：用简短 toast 提示推断结果，让用户知道区域调度已生效
       // POST 与 PUT 路径后端均会返回最新记录（含 inferred_hint 字段）
       if (!debugLines) {
-        const inferred = responseData.inferred_hint || null;
-        const userRegion = body.region || null;
-        if (userRegion || inferred) {
-          // 用户手动指定优先显示手动值，否则显示系统推断值
-          const hint = userRegion || inferred;
-          notify(t('server.savedRegion', { region: regionLabel(hint) }), { variant: 'success' });
+        if (jumpServerId !== null) {
+          notify(t('server.savedViaJump'), { variant: 'success' });
         } else {
-          // 推断失败（私网 IP / 限流 / 未命中映射表）
-          notify(t('server.savedAuto'), {
-            title: t('feedback.success'),
-            variant: 'warning',
-          });
+          const inferred = responseData.inferred_hint || null;
+          const userRegion = body.region || null;
+          if (userRegion || inferred) {
+            // 用户手动指定优先显示手动值，否则显示系统推断值
+            const hint = userRegion || inferred;
+            notify(t('server.savedRegion', { region: regionLabel(hint) }), { variant: 'success' });
+          } else {
+            // 推断失败（私网 IP / 限流 / 未命中映射表）
+            notify(t('server.savedAuto'), {
+              title: t('feedback.success'),
+              variant: 'warning',
+            });
+          }
         }
       }
 

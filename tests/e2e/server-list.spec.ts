@@ -119,9 +119,18 @@ test('展示多级跳转路径并在编辑时排除自身跳板', async ({ page 
   await page.goto('/?lang=zh-CN');
 
   await expect(page.locator('#card-3')).toContainText('Server 01 → Server 02');
+  await expect(page.locator('#card-3')).toContainText('由跳板入口决定');
+  await expect(page.locator('#card-3')).toContainText('随跳板');
   await page.locator('#edit-3').click();
   const jumpSelect = page.locator('#server-jump-host');
+  const regionSelect = page.locator('#server-region');
   await expect(jumpSelect).toHaveValue('2');
   await expect(jumpSelect.locator('option[value="3"]')).toHaveCount(0);
   await expect(jumpSelect.locator('option[value="2"]')).toHaveText('Server 02');
+  await expect(regionSelect).toBeDisabled();
+  await expect(page.locator('#server-region-inferred')).toContainText('不会查询当前内网主机');
+
+  await jumpSelect.selectOption('');
+  await expect(regionSelect).toBeEnabled();
+  await expect(regionSelect).toHaveValue('');
 });
