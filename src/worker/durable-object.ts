@@ -53,12 +53,25 @@ export class SSHSessionDO {
   }
 
   async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    if (url.pathname === '/internal/revoke-share' && request.method === 'POST') {
+      const body = await request.json<{ shareId?: string }>();
+      if (!body.shareId) return new Response('Invalid share', { status: 400 });
+      let revoked = false;
+      for (const [ws, session] of this.sessions) {
+        if (!session.belongsToShare(body.shareId)) continue;
+        revoked = true;
+        session.close(true);
+        try { ws.close(1000, 'Shared session revoked'); } catch {}
+      }
+      return Response.json({ success: true, revoked });
+    }
+
     const upgradeHeader = request.headers.get('Upgrade');
     if (upgradeHeader !== 'websocket') {
       return new Response('Expected WebSocket', { status: 400 });
     }
 
-    const url = new URL(request.url);
     if (url.pathname === '/api/ssh/sftp') {
       return this.handleSFTPAttach(request, url);
     }
@@ -184,6 +197,7 @@ export class SSHSessionDO {
       // Jump chains are resolved only from authenticated saved-server tokens.
       delete config.jumpHosts;
       delete config.knownHostIdentity;
+      delete config.sessionPolicy;
 
       if (!config.host || !config.username || (!config.password && !config.privateKey)) {
         ws.send(JSON.stringify({ type: 'error', message: 'Missing credentials' }));
@@ -276,7 +290,11 @@ export class SSHSessionDO {
       const colo = this.websocketColos.get(ws) || 'UNKNOWN';
       this.websocketColos.delete(ws);
 
-      const strictVerify = this.env.STRICT_HOST_KEY_VERIFY !== 'false';
+      // Capability links never inherit the ordinary-session escape hatch: every
+      // hop must prove possession of its already trusted host key.
+      const strictVerify = config.sessionPolicy?.source === 'share'
+        ? true
+        : this.env.STRICT_HOST_KEY_VERIFY !== 'false';
       const debugMode = this.env.DEBUG_MODE === 'true';
       const pendingSize = this.pendingTerminalSizes.get(ws);
       if (pendingSize) {
@@ -317,7 +335,12 @@ export class SSHSessionDO {
           this.env,
           config.userId,
           config.githubId,
-          { openShellOnAuth: false, ownsWebSocket: false },
+          {
+            openShellOnAuth: false,
+            ownsWebSocket: false,
+            allowKeyboardInteractive: config.sessionPolicy?.source !== 'share',
+            waitUntil: (promise) => this.state.waitUntil(promise),
+          },
         );
         chainSessions.push(hopSession);
         this.sessionChains.set(ws, chainSessions);
@@ -350,6 +373,7 @@ export class SSHSessionDO {
         this.env,
         config.userId,
         config.githubId,
+        { waitUntil: (promise) => this.state.waitUntil(promise) },
       );
       chainSessions.push(session);
       this.sessionChains.set(ws, chainSessions);

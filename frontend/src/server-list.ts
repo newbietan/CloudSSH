@@ -6,6 +6,7 @@ import { copyTextToClipboard } from './clipboard';
 import { maskIPAddress } from './host-display';
 import { osDisplayName, osIconSvg } from './os-icons';
 import type { SSHHostInfo } from './terminal';
+import { ShareManager } from './share-manager';
 
 interface UserInfo {
   id: number;
@@ -127,6 +128,8 @@ export class ServerList {
   private selectedTag = '';
   private currentPage = 1;
   private pageSize = currentServerPageSize();
+  private sharingEnabled = false;
+  private readonly shareManager = new ShareManager();
 
   constructor(
     user: UserInfo,
@@ -143,7 +146,8 @@ export class ServerList {
   private async init(): Promise<void> {
     this.renderUserInfo();
     this.bindEvents();
-    await this.fetchServers();
+    await Promise.all([this.fetchSharingConfig(), this.fetchServers()]);
+    this.renderServerGrid();
 
     // 设置用户空间的版权年份
     const yearSpan = document.getElementById('user-copyright-year');
@@ -267,6 +271,17 @@ export class ServerList {
     }
   }
 
+  private async fetchSharingConfig(): Promise<void> {
+    try {
+      const response = await fetch('/api/config');
+      if (!response.ok) return;
+      const config = await response.json() as { sshSharingEnabled?: boolean };
+      this.sharingEnabled = config.sshSharingEnabled === true;
+    } catch {
+      this.sharingEnabled = false;
+    }
+  }
+
   // ==================== 渲染服务器卡片 ====================
 
   private renderServerGrid(): void {
@@ -334,6 +349,9 @@ export class ServerList {
     visibleServers.forEach((server) => {
       document.getElementById(`connect-${server.id}`)?.addEventListener('click', () => this.connectServer(server.id));
       document.getElementById(`edit-${server.id}`)?.addEventListener('click', () => this.showModal('edit', server));
+      document.getElementById(`share-${server.id}`)?.addEventListener('click', () => {
+        void this.shareManager.open(server.id, server.name);
+      });
       document.getElementById(`delete-${server.id}`)?.addEventListener('click', () => this.deleteServer(server.id));
       const hostBadge = document.getElementById(`host-badge-${server.id}`);
       if (hostBadge) {
@@ -414,6 +432,11 @@ export class ServerList {
     const hostDisplay = maskedHost
       ? `<button type="button" class="host-ip-badge server-host-badge min-w-0 truncate" id="host-badge-${server.id}" title="${copyIPLabel}" aria-label="${copyIPLabel}">${this.escapeHtml(maskedHost)}:${server.port}</button>`
       : `<span class="text-on-surface min-w-0 truncate">${this.escapeHtml(server.host)}:${server.port}</span>`;
+    const shareButton = this.sharingEnabled
+      ? `<button id="share-${server.id}" class="cyber-button text-primary py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] flex items-center justify-center" title="${t('share.create')}">
+          <span class="material-symbols-outlined" style="font-size:14px">share</span>
+        </button>`
+      : '';
 
     return `
       <div class="server-card p-5 relative group" id="card-${server.id}">
@@ -459,6 +482,7 @@ export class ServerList {
           <button id="edit-${server.id}" class="cyber-button text-primary py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] flex items-center justify-center" title="${t('common.edit')}">
             <span class="material-symbols-outlined" style="font-size: 14px;">edit</span>
           </button>
+          ${shareButton}
           <button id="delete-${server.id}" class="cyber-button py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] flex items-center justify-center text-error border-[var(--error)] hover:bg-[var(--error)] hover:text-[var(--bg)]" title="${t('common.delete')}">
             <span class="material-symbols-outlined" style="font-size: 14px;">delete</span>
           </button>

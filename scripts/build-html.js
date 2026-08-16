@@ -22,7 +22,15 @@ try {
   execFileSync(process.execPath, ['scripts/sync-theme-editor.js'], { cwd: rootDir, stdio: 'inherit' });
   // Dependencies are installed explicitly by developers/CI. Keeping installs out
   // of the build makes production artifacts deterministic and offline-buildable.
-  execFileSync('pnpm', ['run', 'build'], { cwd: frontendDir, stdio: 'inherit' });
+  const executableSuffix = process.platform === 'win32' ? '.cmd' : '';
+  execFileSync(path.join(frontendDir, 'node_modules', '.bin', `tsc${executableSuffix}`), [], {
+    cwd: frontendDir,
+    stdio: 'inherit',
+  });
+  execFileSync(path.join(frontendDir, 'node_modules', '.bin', `vite${executableSuffix}`), ['build'], {
+    cwd: frontendDir,
+    stdio: 'inherit',
+  });
 
   console.log('Inlining assets...');
   // 2. Read dist/index.html

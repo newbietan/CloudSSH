@@ -87,6 +87,7 @@
 - **IPv4/IPv6 Dual Stack**: Full support for both IPv4 and IPv6 address connections, including automatic handling of IPv6 bracket notation.
 - **Multiple Auth Methods**: Supports standard SSH password authentication, multi-round RFC 4256 `keyboard-interactive` authentication, and OpenSSH-format Ed25519, ECDSA P-256/P-384/P-521, and RSA private keys. Interactive authentication supports passwords, OTPs, multiple prompts, and a second factor after public-key authentication. Server prompts appear in a connection-bound safety dialog, and a saved password is substituted only after an explicit user action. RSA uses RSA-SHA2-256/512 by default; legacy `ssh-rsa` SHA-1 is allowed only through explicit compatibility configuration.
 - **SSH Jump Hosts / Bastions**: Signed-in users may select another saved server as a jump host. CloudSSH builds each layer with the standard RFC 4254 `direct-tcpip` channel and does not require `ssh`, `nc`, or `socat` on the remote host. Up to 3 jump hosts are supported; the final target's terminal, SFTP, and AI Agent use the complete encrypted chain. Authentication and path-scoped host-key verification run independently at every hop.
+- **One-Time SSH Access Sharing**: Optionally lets signed-in users share saved servers. The link contains only a 256-bit random capability, never the host, username, password, private key, or jump route. Only its hash is stored; it can be claimed once and has separate claim and session lifetimes. Shared sessions allow the terminal and SFTP while the backend disables AI Agent, OS detection, host-key mutation, and reconnect. Owners can revoke live access and review share-only lifecycle, SFTP, and terminal-output records.
 - **MitM Protection (TOFU)**: Automatically extracts and prints the server's Host Key (SHA-256 fingerprint) on the first connection, supporting Ed25519/ECDSA/RSA signature verification, and caches known host keys locally and via API to prevent MitM on future connections.
 - **Geek Terminal Experience**: Powered by `@xterm/xterm` and the `@xterm/addon-webgl` hardware acceleration rendering engine, ensuring silky smooth scrolling even with massive log outputs.
 - **Reliable Terminal Clipboard Interaction**: Completing a terminal selection with a mouse automatically copies it, and right-click pastes directly. On touch devices, tapping Copy in the shortcut bar enters selection mode; drag across terminal text and tap Copy again to finish, avoiding unreliable long-press selection, while Paste remains a separate action. Paste data follows xterm.js's native input pipeline, emits bracketed-paste control sequences only when the remote application enables that mode, and normalizes line endings for compatibility with Vim and regular shells.
@@ -124,6 +125,7 @@ flowchart TB
         Worker["Worker<br/>Routing + API"]
         SSH_DO["SSHSessionDO<br/>SSH Session Management"]
         User_DO["UserDBDO<br/>User Data Management"]
+        Share_DO["SSHShareDO<br/>Share Capability + Audit"]
         AgentCore["AgentCore<br/>AI Control Loop"]
     end
 
@@ -137,6 +139,8 @@ flowchart TB
     Trzsz <-->|"trzsz Protocol"| UI
     Worker <-->|"WebSocket"| SSH_DO
     Worker <-->|"Internal API"| User_DO
+    Worker <-->|"Claim / Revoke / Read Audit"| Share_DO
+    SSH_DO -->|"Lifecycle / SFTP / Terminal Output"| Share_DO
     SSH_DO <-->|"TCP Socket<br/>@cloudflare/sockets"| SSH
     SSH_DO <-->|"Exec Channel"| AgentCore
     AgentCore <-->|"LLM API"| External["External LLM Service"]
@@ -149,6 +153,7 @@ flowchart TB
 | **Worker Entry** | `src/worker/index.ts` | HTTP routing, API handling, WebSocket upgrade |
 | **SSHSessionDO** | `src/worker/durable-object.ts` | SSH session lifecycle management, SSRF protection |
 | **UserDBDO** | `src/worker/user-db.ts` | Per-GitHub-user data, sessions, server configs, normalized tags, and encrypted credentials (SQLite) |
+| **SSHShareDO** | `src/worker/share-do.ts` | One-time capability, short-lived connection ticket, expiry/revocation state, and the share-session-only audit log |
 | **IP Geo Inference** | `src/worker/ip-geo.ts` | Infers the Cloudflare-direct entry IP at save time and maps it to a DO locationHint; downstream jump nodes are not queried |
 | **OS Detection** | `src/worker/os-detect.ts` | Parses remote system identity and normalizes persistable OS keys |
 | **SSHSession** | `src/worker/ssh-session.ts` | SSH protocol state machine (connect→version→kex→auth→interactive) |
@@ -160,6 +165,7 @@ flowchart TB
 | **Mobile Controller** | `frontend/src/mobile-terminal.ts` / `mobile-input.ts` | Dynamic viewport sizing, iOS IME fallback, touch shortcuts, clipboard actions, and optional fullscreen landscape |
 | **Tab Manager** | `frontend/src/tab-manager.ts` | Single-page coordinator for isolated terminal, SFTP, Agent, and pending-context state in each session tab, including copyable masked-IP display |
 | **Server List** | `frontend/src/server-list.ts` | Server-card management, search, tag filtering, private IP display, and pagination with 9 items per page |
+| **SSH Share UI** | `frontend/src/share-manager.ts` / `share-session.ts` | Owner-side creation, revocation, and audit viewing plus explicit recipient consent and one-time claim |
 | **Host Display** | `frontend/src/host-display.ts` | Validates IPv4/IPv6 literals and produces consistent privacy-masked display text |
 | **SFTP Panel** | `frontend/src/sftp-panel.ts` | Graphical file manager UI with multi-selection, batch download/delete, transfer queues, and cancellation |
 | **AI Agent** | `src/worker/agent/core.ts` | AI control loop: LLM streaming calls, tool execution, environment detection, terminal context reading |
@@ -194,6 +200,7 @@ This project implements a complete SSH-2.0 protocol stack:
 6. SFTP file management runs on a separate SSH subsystem channel, supporting directory browsing, file upload/download, and other operations.
 7. For a saved server without an OS record, SSHSession performs one read-only system check through a separate exec channel after the Shell is ready. Recognized results are stored in UserDBDO and sent to the frontend; unknown results are not stored.
 8. The AI Agent receives the user question and optional terminal-selection context via WebSocket. The selection is marked as untrusted analysis data before AgentCore calls the external LLM API, executes approved commands through SSH exec channels, and streams results back to the frontend.
+9. A one-time share is atomically claimed by SSHShareDO and exchanged for a short-lived connection ticket. The share session writes lifecycle, SFTP, and terminal-output events to its isolated audit store, and closes on expiry, revocation, or audit failure.
 
 <a id="quick-start"></a>
 ## Quick Deployment
@@ -302,6 +309,7 @@ With GitHub OAuth enabled, users can log in with their GitHub account and save/m
 
    - `GITHUB_ALLOWED_USER_IDS`: Comma-separated GitHub **numeric user IDs** allowed to sign in, for example `83105156,6236783`. When omitted, every GitHub account may sign in. An empty or malformed configured value fails closed and denies every GitHub sign-in.
    - `REQUIRE_GITHUB_AUTH`: Set to `true` to disable anonymous SSH and require a valid GitHub session for every SSH WebSocket. When omitted or set to `false`, anonymous connections remain available.
+   - `ENABLE_SSH_SHARING`: Set to `true` to let signed-in users create one-time links for saved servers. It is disabled by default. Enabling it explicitly permits a bearer of the share capability to open an audited SSH session without signing in to GitHub.
 
    **Find a GitHub numeric user ID**:
 
@@ -326,6 +334,18 @@ With GitHub OAuth enabled, users can log in with their GitHub account and save/m
 > **Environment Variable Type Recommendation**: `GITHUB_CLIENT_SECRET` must use the **Secret** type. `GITHUB_ALLOWED_USER_IDS` and `REQUIRE_GITHUB_AUTH` contain no credentials and may use plain-text variables. Secrets are stored in Cloudflare's encrypted storage, separate from code deployments, and will not be overwritten or lost during redeployments.
 
 > **Access Policy Note**: After `GITHUB_ALLOWED_USER_IDS` changes, existing sessions are checked again and become invalid on their next request; already established SSH WebSockets are not terminated. `REQUIRE_GITHUB_AUTH=true` depends on GitHub OAuth, so configure the Client ID, Client Secret, and `BASE_URL` together.
+
+##### Using One-Time SSH Sharing
+
+1. Configure GitHub OAuth, set `ENABLE_SSH_SHARING=true` on the Worker, and redeploy.
+2. Connect normally to the target and every jump host first so all route-scoped host fingerprints are trusted.
+3. Select Share on the server card, then choose a claim window (5/15/30/60 minutes) and maximum session duration (15/30/60/120 minutes).
+4. Copy the generated link immediately and send it through a trusted channel. CloudSSH does not retain the plaintext capability, so the same link cannot be displayed again.
+5. The recipient opens the link and accepts terminal-output and SFTP recording before claiming it. A link can be claimed once; refresh, disconnect, or tab closure cannot reconnect it.
+6. The owner can reopen Share management to inspect status and audit records or revoke a pending/live share. Revoking a live share closes both terminal and SFTP.
+
+> [!WARNING]
+> Although the capability contains no SSH metadata, possession grants a full Shell and SFTP session using the owner's saved credential, so protect it like a temporary password. Sharing requires trusted fingerprints for the complete route and stops on fingerprint changes or `keyboard-interactive`/MFA challenges. Audit stores server PTY output rather than raw keyboard input: it usually shows shell-echoed commands but cannot prove every command executed with echo disabled, inside scripts, or through encoded input. Do not treat it as host-level enhanced auditing. A session is closed if its 5 MiB recording limit is reached or audit writes fail.
 
 > **Note**: Server credentials (passwords/private keys) are encrypted with AES-256-GCM in each user's UserDBDO SQLite database. The current encryption key is generated on first use and stored in the same Durable Object database as the ciphertext. For a saved-server connection, the browser never receives the plaintext credential; the server side transfers it internally through a one-time connection token.
 

@@ -117,6 +117,23 @@ export class UserDBDO {
         api_key_last4  TEXT,
         updated_at     TEXT DEFAULT (datetime('now'))
       );
+
+      CREATE TABLE IF NOT EXISTS ssh_shares (
+        id                  TEXT PRIMARY KEY,
+        user_id             INTEGER NOT NULL REFERENCES users(id),
+        -- 不与 servers 设外键：服务器删除后仍需保留已结束分享的审计索引。
+        server_id           INTEGER NOT NULL,
+        share_ref           TEXT NOT NULL,
+        expires_at          INTEGER NOT NULL,
+        max_session_seconds INTEGER NOT NULL,
+        status              TEXT NOT NULL DEFAULT 'unused',
+        claimed_at          INTEGER,
+        active_at           INTEGER,
+        closed_at           INTEGER,
+        created_at          INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ssh_shares_user_server
+        ON ssh_shares(user_id, server_id, created_at DESC);
     `);
 
     // === Migration: 给既有 servers 表追加 region / inferred_hint 列（幂等） ===
@@ -185,6 +202,33 @@ export class UserDBDO {
       const connectMatch = path.match(/^\/internal\/servers\/(\d+)\/connect$/);
       if (connectMatch && request.method === 'POST') {
         return this.handleConnectServer(parseInt(connectMatch[1]), request);
+      }
+
+      // /internal/servers/:id/share-config —— 仅由 SSHShareDO 兑换一次性分享时调用
+      const shareConfigMatch = path.match(/^\/internal\/servers\/(\d+)\/share-config$/);
+      if (shareConfigMatch && request.method === 'POST') {
+        return this.handleShareConnectionConfig(parseInt(shareConfigMatch[1]), request);
+      }
+
+      // /internal/servers/:id/shares —— 分享元数据归所有者 UserDBDO 管理
+      const serverSharesMatch = path.match(/^\/internal\/servers\/(\d+)\/shares$/);
+      if (serverSharesMatch) {
+        const serverId = parseInt(serverSharesMatch[1]);
+        if (request.method === 'GET') {
+          const userId = Number(url.searchParams.get('user_id'));
+          return this.handleListShares(serverId, userId);
+        }
+        if (request.method === 'POST') return this.handleCreateShare(serverId, request);
+      }
+
+      const shareMatch = path.match(/^\/internal\/shares\/([^/]+)$/);
+      if (shareMatch && request.method === 'GET') {
+        const userId = Number(url.searchParams.get('user_id'));
+        return this.handleGetShare(shareMatch[1], userId);
+      }
+      const shareStatusMatch = path.match(/^\/internal\/shares\/([^/]+)\/status$/);
+      if (shareStatusMatch && request.method === 'PUT') {
+        return this.handleUpdateShareStatus(shareStatusMatch[1], request);
       }
 
       // /internal/servers/:id/os —— 仅由 SSHSession（可信会话）通过 DO stub 调用
@@ -666,6 +710,16 @@ export class UserDBDO {
       }, { status: 409 });
     }
 
+    const activeShares = Number(this.db.exec(
+      `SELECT COUNT(*) AS count FROM ssh_shares
+       WHERE user_id = ? AND server_id = ? AND status IN ('unused', 'claimed', 'active')`,
+      body.user_id,
+      serverId,
+    ).one().count);
+    if (activeShares > 0) {
+      return Response.json({ error: '该服务器仍有待使用或活动的分享，请先撤销分享' }, { status: 409 });
+    }
+
     this.db.exec('DELETE FROM servers WHERE id = ?', serverId);
     return Response.json({ success: true });
   }
@@ -694,6 +748,277 @@ export class UserDBDO {
       serverId
     );
     return Response.json({ success: true });
+  }
+
+  // ==================== 一次性 SSH 分享 ====================
+
+  private handleListShares(serverId: number, userId: number): Response {
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return Response.json({ error: 'Invalid user_id' }, { status: 400 });
+    }
+    const server = this.db.exec(
+      'SELECT user_id FROM servers WHERE id = ?',
+      serverId,
+    ).toArray();
+    if (server.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
+    if ((server[0] as unknown as { user_id: number }).user_id !== userId) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    const now = Date.now();
+    this.db.exec(
+      `UPDATE ssh_shares SET status = 'expired', closed_at = ?
+       WHERE user_id = ? AND server_id = ? AND status = 'unused' AND expires_at <= ?`,
+      now,
+      userId,
+      serverId,
+      now,
+    );
+    const rows = this.db.exec(
+      `SELECT id, server_id, expires_at, max_session_seconds, status,
+              claimed_at, active_at, closed_at, created_at
+       FROM ssh_shares WHERE user_id = ? AND server_id = ?
+       ORDER BY created_at DESC LIMIT 50`,
+      userId,
+      serverId,
+    ).toArray();
+    return Response.json(rows.map((row: Record<string, unknown>) => ({
+      id: row.id,
+      serverId: row.server_id,
+      expiresAt: row.expires_at,
+      maxSessionSeconds: row.max_session_seconds,
+      status: row.status,
+      claimedAt: row.claimed_at,
+      activeAt: row.active_at,
+      closedAt: row.closed_at,
+      createdAt: row.created_at,
+    })));
+  }
+
+  private async handleCreateShare(serverId: number, request: Request): Promise<Response> {
+    const body = await request.json<{
+      user_id: number;
+      share_id: string;
+      share_ref: string;
+      expires_at: number;
+      max_session_seconds: number;
+    }>();
+    return this.createShareRecord(serverId, body);
+  }
+
+  private async createShareRecord(serverId: number, body: {
+    user_id: number;
+    share_id: string;
+    share_ref: string;
+    expires_at: number;
+    max_session_seconds: number;
+  }): Promise<Response> {
+    if (!Number.isInteger(body.user_id) || !body.share_id || !body.share_ref) {
+      return Response.json({ error: 'Invalid share request' }, { status: 400 });
+    }
+    const now = Date.now();
+    if (!Number.isFinite(body.expires_at) || body.expires_at < now + 60_000 || body.expires_at > now + 60 * 60_000) {
+      return Response.json({ error: '分享链接有效期必须在 1-60 分钟之间' }, { status: 400 });
+    }
+    if (!Number.isInteger(body.max_session_seconds)
+      || body.max_session_seconds < 300
+      || body.max_session_seconds > 7200) {
+      return Response.json({ error: '分享会话时长必须在 5-120 分钟之间' }, { status: 400 });
+    }
+    const validation = this.validateShareableServer(serverId, body.user_id);
+    if (validation instanceof Response) return validation;
+    const activeCount = Number(this.db.exec(
+      `SELECT COUNT(*) AS count FROM ssh_shares
+       WHERE user_id = ? AND status IN ('unused', 'claimed', 'active') AND expires_at > ?`,
+      body.user_id,
+      now,
+    ).one().count);
+    if (activeCount >= 10) {
+      return Response.json({ error: '待使用或活动分享数量已达上限，请先撤销旧分享' }, { status: 429 });
+    }
+    this.db.exec(
+      `INSERT INTO ssh_shares (
+        id, user_id, server_id, share_ref, expires_at,
+        max_session_seconds, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'unused', ?)`,
+      body.share_id,
+      body.user_id,
+      serverId,
+      body.share_ref,
+      body.expires_at,
+      body.max_session_seconds,
+      now,
+    );
+    return Response.json({
+      id: body.share_id,
+      shareRef: body.share_ref,
+      serverName: validation.serverName,
+      expiresAt: body.expires_at,
+      maxSessionSeconds: body.max_session_seconds,
+    }, { status: 201 });
+  }
+
+  private validateShareableServer(
+    serverId: number,
+    userId: number,
+  ): { serverName: string } | Response {
+    const seen = new Set<number>();
+    const reversed: StoredServerRow[] = [];
+    let currentId: number | null = serverId;
+    while (currentId !== null) {
+      if (seen.has(currentId)) {
+        return Response.json({ error: '跳板服务器关系存在循环' }, { status: 400 });
+      }
+      seen.add(currentId);
+      const rows = this.db.exec('SELECT * FROM servers WHERE id = ?', currentId).toArray();
+      if (rows.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
+      const row = rows[0] as unknown as StoredServerRow;
+      if (row.user_id !== userId) return Response.json({ error: 'Forbidden' }, { status: 403 });
+      reversed.push(row);
+      if (reversed.length > MAX_JUMP_HOSTS + 1) {
+        return Response.json({ error: `最多允许 ${MAX_JUMP_HOSTS} 级 SSH 跳转` }, { status: 400 });
+      }
+      currentId = row.jump_server_id ?? null;
+    }
+
+    const chain = reversed.reverse();
+    const pathSegments: string[] = [];
+    for (let index = 0; index < chain.length; index++) {
+      const server = chain[index];
+      const identity = index === 0 ? server.host : `jump:${pathSegments.join('>')}|${server.host}`;
+      pathSegments.push(`${server.id}@${server.host}:${server.port}`);
+      const known = this.db.exec(
+        'SELECT fingerprint FROM known_hosts WHERE user_id = ? AND host = ? AND port = ?',
+        userId,
+        identity,
+        server.port,
+      ).toArray();
+      if (known.length === 0) {
+        return Response.json({
+          error: '创建分享前，请先通过普通连接验证目标服务器及全部跳板节点的主机指纹',
+        }, { status: 409 });
+      }
+    }
+    return { serverName: chain[chain.length - 1].name };
+  }
+
+  private handleGetShare(shareId: string, userId: number): Response {
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return Response.json({ error: 'Invalid user_id' }, { status: 400 });
+    }
+    const rows = this.db.exec(
+      `SELECT id, user_id, server_id, share_ref, expires_at, max_session_seconds,
+              status, claimed_at, active_at, closed_at, created_at
+       FROM ssh_shares WHERE id = ?`,
+      shareId,
+    ).toArray();
+    if (rows.length === 0) return Response.json({ error: 'Share not found' }, { status: 404 });
+    const row = rows[0] as Record<string, unknown>;
+    if (Number(row.user_id) !== userId) return Response.json({ error: 'Forbidden' }, { status: 403 });
+    return Response.json({
+      id: row.id,
+      serverId: row.server_id,
+      shareRef: row.share_ref,
+      expiresAt: row.expires_at,
+      maxSessionSeconds: row.max_session_seconds,
+      status: row.status,
+      claimedAt: row.claimed_at,
+      activeAt: row.active_at,
+      closedAt: row.closed_at,
+      createdAt: row.created_at,
+    });
+  }
+
+  private async handleUpdateShareStatus(shareId: string, request: Request): Promise<Response> {
+    const body = await request.json<{
+      user_id: number;
+      status: string;
+      claimed_at?: number;
+      active_at?: number;
+      closed_at?: number;
+    }>();
+    const allowed = new Set(['unused', 'claimed', 'active', 'closed', 'revoked', 'expired']);
+    if (!Number.isInteger(body.user_id) || !allowed.has(body.status)) {
+      return Response.json({ error: 'Invalid share status update' }, { status: 400 });
+    }
+    const rows = this.db.exec('SELECT user_id FROM ssh_shares WHERE id = ?', shareId).toArray();
+    if (rows.length === 0) return Response.json({ error: 'Share not found' }, { status: 404 });
+    if ((rows[0] as unknown as { user_id: number }).user_id !== body.user_id) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    this.db.exec(
+      `UPDATE ssh_shares SET status = ?,
+       claimed_at = COALESCE(?, claimed_at),
+       active_at = COALESCE(?, active_at),
+       closed_at = COALESCE(?, closed_at)
+       WHERE id = ?`,
+      body.status,
+      body.claimed_at ?? null,
+      body.active_at ?? null,
+      body.closed_at ?? null,
+      shareId,
+    );
+    return Response.json({ success: true });
+  }
+
+  private async handleShareConnectionConfig(serverId: number, request: Request): Promise<Response> {
+    const body = await request.json<{
+      user_id: number;
+      share_id: string;
+      share_ref: string;
+      session_expires_at: number;
+    }>();
+    if (!body.share_id || !body.share_ref || !Number.isFinite(body.session_expires_at)) {
+      return Response.json({ error: 'Invalid share session policy' }, { status: 400 });
+    }
+    const metadata = this.db.exec(
+      `SELECT user_id, server_id, share_ref, status FROM ssh_shares WHERE id = ?`,
+      body.share_id,
+    ).toArray();
+    if (metadata.length === 0) return Response.json({ error: 'Share not found' }, { status: 404 });
+    const row = metadata[0] as unknown as {
+      user_id: number;
+      server_id: number;
+      share_ref: string;
+      status: string;
+    };
+    if (row.user_id !== body.user_id || row.server_id !== serverId || row.share_ref !== body.share_ref) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    if (row.status !== 'claimed' && row.status !== 'active') {
+      return Response.json({ error: 'Share is no longer active' }, { status: 409 });
+    }
+
+    const tokenResponse = await this.handleConnectServer(serverId, new Request('http://internal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: body.user_id }),
+    }));
+    if (!tokenResponse.ok) return tokenResponse;
+    const { token } = await tokenResponse.json<{ token: string }>();
+    const configResponse = await this.handleConsumeToken(new Request('http://internal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    }));
+    if (!configResponse.ok) return configResponse;
+    const config = await configResponse.json<SSHConnectionConfig>();
+    if (!config.expectedFingerprint || (config.jumpHosts || []).some((hop) => !hop.expectedFingerprint)) {
+      return Response.json({
+        error: '分享会话要求目标服务器及全部跳板节点已有可信主机指纹',
+      }, { status: 409 });
+    }
+    config.sessionPolicy = {
+      source: 'share',
+      shareId: body.share_id,
+      shareRef: body.share_ref,
+      allowAgent: false,
+      allowSftp: true,
+      allowMetadataMutation: false,
+      allowHostKeyMutation: false,
+      allowReconnect: false,
+      sessionExpiresAt: body.session_expires_at,
+    };
+    return Response.json(config);
   }
 
   // ==================== 用户自定义主题 ====================

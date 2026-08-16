@@ -27,6 +27,7 @@ src/
 ├── worker/           # Cloudflare Worker entry and Durable Objects
 │   ├── index.ts      # Main worker entry (request routing, bounded in-memory SSH rate limiting)
 │   ├── durable-object.ts  # SSHSessionDO - manages SSH sessions
+│   ├── share-do.ts    # SSHShareDO - one-time capability lifecycle and share-only audit log
 │   ├── ssh-session.ts     # SSH session logic, multi-channel routing, SFTP handling
 │   ├── direct-tcpip-stream.ts # RFC 4254 direct-tcpip 背压字节流，用于嵌套 SSH 跳板链
 │   ├── sftp-handler.ts    # SFTP protocol ops, task queue, concurrent download, upload tracking
@@ -75,6 +76,8 @@ frontend/
 │   ├── sftp-selection.ts # Pure multi-selection state model
 │   ├── auth-form.ts  # Auth form & encrypted anonymous credentials storage/autofill
 │   ├── server-list.ts # Server UI (tags, search, 9-card pagination, CRUD/connect)
+│   ├── share-manager.ts # Owner UI for creating, revoking, and auditing one-time shares
+│   ├── share-session.ts # Public one-time share landing and claim flow
 │   ├── agent/
 │   │   ├── agent-panel.ts  # AI assistant sidebar (context attachments, streaming, Markdown, confirmations)
 │   │   └── terminal-selection-context.ts # Selection snapshots and untrusted-data prompt boundary
@@ -131,7 +134,7 @@ The frontend is **NOT** served separately in production. The build process:
 
 ## Durable Objects
 
-Two Durable Objects handle state:
+Three Durable Objects handle state:
 
 1. **SSHSessionDO** (`src/worker/durable-object.ts`)
    - Manages WebSocket ↔ TCP socket connections
@@ -142,6 +145,10 @@ Two Durable Objects handle state:
    - SQLite-based user and server storage
    - GitHub OAuth user management
 
+3. **SSHShareDO** (`src/worker/share-do.ts`)
+   - Owns one random capability's one-time claim, short-lived connection ticket, expiry, and revocation state
+   - Stores the append-only lifecycle, SFTP, and terminal-output audit log for that share session
+
 ## Environment Variables
 
 Required for optional features (configured in `wrangler.toml` or Cloudflare Dashboard):
@@ -149,6 +156,7 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` - GitHub OAuth
 - `GITHUB_ALLOWED_USER_IDS` - Optional comma-separated numeric GitHub user ID allowlist; omitted means unrestricted GitHub login
 - `REQUIRE_GITHUB_AUTH` - Optional; `true` disables anonymous SSH and requires a valid GitHub session
+- `ENABLE_SSH_SHARING` - Optional; `true` enables one-time audited SSH sharing for signed-in owners (disabled by default)
 - `TURNSTILE_SECRET` / `TURNSTILE_SITEKEY` - Bot verification
 - `BASE_URL` - OAuth callback URL
 
@@ -163,6 +171,10 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 | `/api/servers` | GET/POST | Yes | List or create saved servers（含 `tags` 与可选 `jump_server_id`） |
 | `/api/servers/:id` | PUT/DELETE | Yes | Update or delete a server（含标签和跳板关系校验） |
 | `/api/servers/:id/connect` | POST | Yes | Generate one-time-token, return WebSocket URL |
+| `/api/servers/:id/shares` | GET/POST | Yes | List or create one-time SSH shares for a saved server |
+| `/api/shares/:id` | DELETE | Yes | Revoke a share owned by the current user |
+| `/api/shares/:id/audit` | GET | Yes | Read the paginated audit log for an owned share |
+| `/api/share/claim` | POST | No | Atomically claim a capability token and return a short-lived WebSocket ticket |
 | `/api/user/theme` | GET/PUT | Yes | Get or replace the signed-in user's single custom theme |
 | `/api/known-hosts` | GET/POST/DELETE | Yes | Known host fingerprint CRUD (TOFU) |
 | `/api/ai/config` | GET/PUT | Yes | Get or save AI LLM config |
@@ -246,6 +258,7 @@ ci: CI/CD 变更
 21. **GitHub access policy** - `GITHUB_ALLOWED_USER_IDS` contains stable numeric GitHub IDs and is rechecked during OAuth callback and every session verification; omitted means unrestricted, while an empty or malformed configured value fails closed. `REQUIRE_GITHUB_AUTH=true` disables anonymous SSH and requires a valid session for direct and one-time-token SSH upgrades, but does not terminate already established WebSockets. Never expose the allowlist through `/api/config`.
 22. **SSH jump chains** - Jump hosts are available only to signed-in users through saved-server `jump_server_id` relations. Resolve one immutable outer-to-target chain in UserDBDO, reject cross-user references, cycles, deletion of referenced hops, and more than 3 jump hosts. Apply public-address SSRF checks only to the outermost Cloudflare TCP destination; anonymous clients must never inject `jumpHosts`. Every intermediate SSHSession authenticates without opening a Shell and exposes only RFC 4254 `direct-tcpip`; terminal, SFTP, Agent exec, and OS detection belong to the final session. Preserve nested channel backpressure, close the full chain on any-hop failure, and scope known-host identities by the complete route so equal private addresses behind different bastions do not collide.
 23. **SSH host-key TOFU** - Never publish or persist a first-seen/replacement fingerprint before its KEX host-key signature succeeds. A changed fingerprint must close normally without automatic retry, display the old/new values for explicit user confirmation, and replace only the exact route-scoped identity. Saved-server confirmation must update the cloud record before requesting a fresh one-time token; anonymous confirmation may update only the current in-memory config and local record. Cancellation or persistence failure must leave the previous trust record intact.
+24. **One-time SSH sharing** - Sharing is disabled unless `ENABLE_SSH_SHARING=true`. A link contains only a 256-bit capability, persists only its hash, can be claimed once, and exchanges for a one-minute connection ticket. Creation requires route-scoped verified host fingerprints for the target and every jump hop. Share policy is issued only by SSHShareDO/UserDBDO and must disable Agent, OS detection, host-key mutation, metadata mutation, keyboard-interactive auth, and reconnect while permitting only Terminal and optional SFTP. Record lifecycle, structured SFTP requests/results, and terminal output (not raw keystrokes); stop the session if audit storage fails or reaches 5 MiB/5000 events. Revocation and expiry must close the live SSHSessionDO. Preserve completed audit metadata if its saved-server record is later deleted.
 
 ## Deployment Notes
 
@@ -258,7 +271,7 @@ ci: CI/CD 变更
 | Production | `cloudssh` | `main` | `<name>.workers.dev` + 自定义域名 |
 | Test | `cloudssh-test` | `test` | `<name>-test.workers.dev` + 自定义域名 |
 
-两个环境的 Durable Objects（SSHSessionDO、UserDBDO）数据完全隔离。
+两个环境的 Durable Objects（SSHSessionDO、UserDBDO、SSHShareDO）数据完全隔离。
 
 ### 部署方式
 
@@ -292,6 +305,7 @@ pnpm run deploy:test     # 部署 test 环境
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` - GitHub OAuth
 - `GITHUB_ALLOWED_USER_IDS` - 可选，逗号分隔的 GitHub 数字用户 ID 白名单
 - `REQUIRE_GITHUB_AUTH` - 可选，设为 `true` 时禁用匿名 SSH 并要求有效 GitHub session
+- `ENABLE_SSH_SHARING` - 可选，设为 `true` 时允许登录用户创建一次性、受审计的 SSH 分享（默认关闭）
 - `TURNSTILE_SECRET` / `TURNSTILE_SITEKEY` - Bot 验证
 - `BASE_URL` - OAuth 回调地址（需与实际域名一致）
 

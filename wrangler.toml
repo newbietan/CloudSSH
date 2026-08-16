@@ -14,6 +14,7 @@ watch_dir = "."
 # - GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET（GitHub OAuth）
 # - GITHUB_ALLOWED_USER_IDS（可选，逗号分隔的 GitHub 数字用户 ID 白名单）
 # - REQUIRE_GITHUB_AUTH（可选，true 时禁用匿名 SSH，要求 GitHub 登录）
+# - ENABLE_SSH_SHARING（可选，true 时允许登录用户创建一次性 SSH 分享）
 # - TURNSTILE_SECRET / TURNSTILE_SITEKEY（Bot 验证）
 # - BASE_URL（OAuth 回调地址，需与实际域名一致）
 
@@ -25,11 +26,19 @@ class_name = "SSHSessionDO"
 name = "USER_DB"
 class_name = "UserDBDO"
 
-# 首次部署通过 migration tag 初始化两个 SQLite Durable Object 类；
+[[durable_objects.bindings]]
+name = "SSH_SHARE"
+class_name = "SSHShareDO"
+
+# 首次部署及后续迁移通过 migration tag 初始化 SQLite Durable Object 类；
 # 已有环境新增或变更 DO 类时必须追加新的、不可复用的 migration tag
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["SSHSessionDO", "UserDBDO"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["SSHShareDO"]
 
 # ========== Test 环境 ==========
 # test 分支部署到独立 Worker；DO 类绑定相同，但实例与数据和生产环境隔离
@@ -47,3 +56,7 @@ class_name = "SSHSessionDO"
 [[env.test.durable_objects.bindings]]
 name = "USER_DB"
 class_name = "UserDBDO"
+
+[[env.test.durable_objects.bindings]]
+name = "SSH_SHARE"
+class_name = "SSHShareDO"

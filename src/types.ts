@@ -69,6 +69,22 @@ export interface SSHConnectionConfig {
   locationHint?: string;
   /** Saved jump hosts ordered from the public entry hop toward this target. */
   jumpHosts?: SSHJumpHostConfig[];
+  /** 仅可由 Worker 内部的一次性分享兑换流程写入，客户端输入必须剥离。 */
+  sessionPolicy?: SSHSessionPolicy;
+}
+
+export interface SSHSessionPolicy {
+  source: 'share';
+  shareId: string;
+  /** 用于定位独立 SSHShareDO 的不透明引用，不包含用户或服务器信息。 */
+  shareRef: string;
+  allowAgent: false;
+  allowSftp: boolean;
+  allowMetadataMutation: false;
+  allowHostKeyMutation: false;
+  allowReconnect: false;
+  /** 分享会话的绝对结束时间（Unix 毫秒）。 */
+  sessionExpiresAt: number;
 }
 
 export interface SSHJumpHostConfig {
@@ -126,6 +142,7 @@ export function normalizeTerminalSize(cols: unknown, rows: unknown): TerminalSiz
 export interface Env {
   SSH_SESSION: DurableObjectNamespace;
   USER_DB: DurableObjectNamespace;
+  SSH_SHARE: DurableObjectNamespace;
   MAX_CONNECTIONS?: string;
   IDLE_TIMEOUT?: string;
   TURNSTILE_SECRET?: string;
@@ -142,6 +159,8 @@ export interface Env {
   STRICT_HOST_KEY_VERIFY?: string;
   // 调试模式（设为 true 启用调试日志输出到前端）
   DEBUG_MODE?: string;
+  // 一次性 SSH 分享（默认关闭；true 时登录用户可创建分享链接）
+  ENABLE_SSH_SHARING?: string;
 }
 
 export interface UserInfo {

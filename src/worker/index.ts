@@ -13,6 +13,7 @@ import {
 
 export { SSHSessionDO } from './durable-object';
 export { UserDBDO } from './user-db';
+export { SSHShareDO } from './share-do';
 
 const RATE_LIMIT_MAX = 10;      // max requests per window
 const RATE_LIMIT_WINDOW = 60000; // 1 minute window
@@ -146,6 +147,24 @@ function getUserDBStub(env: Env, githubId: string | number): DurableObjectStub {
   return env.USER_DB.get(id);
 }
 
+function isSSHSharingEnabled(env: Env): boolean {
+  return env.ENABLE_SSH_SHARING === 'true';
+}
+
+async function hashShareToken(token: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  let binary = '';
+  for (const byte of new Uint8Array(digest)) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function createShareToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
 /**
  * 校验 locationHint 值是否在 Cloudflare DO 允许的列表内（白名单）。
  * 返回符合规范的 hint 字符串；非法/空值返回 undefined（DO get() 退化为默认调度）。
@@ -176,6 +195,18 @@ export default {
 
     if (url.pathname === '/api/auth/me') {
       return handleGetMe(request, env);
+    }
+
+    // ==================== 一次性 SSH 分享公开兑换 ====================
+
+    if (url.pathname === '/api/share/claim' && request.method === 'POST') {
+      return handleShareClaim(request, url, env);
+    }
+
+    // ==================== 分享管理与审计（需认证） ====================
+
+    if (url.pathname.startsWith('/api/shares/')) {
+      return handleShareOwnerRoute(request, url, env);
     }
 
     // ==================== Servers Routes (需认证) ====================
@@ -252,6 +283,14 @@ export default {
       if (connectToken) {
         return handleTokenSSHConnection(request, env, connectToken);
       }
+      const shareRef = url.searchParams.get('share_ref');
+      const shareTicket = url.searchParams.get('share_ticket');
+      if (shareRef || shareTicket) {
+        if (!shareRef || !shareTicket) {
+          return Response.json({ error: 'Missing share connection ticket' }, { status: 403 });
+        }
+        return handleShareSSHConnection(request, env, shareRef, shareTicket);
+      }
 
       // Verify Turnstile if secret is configured
       if (env.TURNSTILE_SECRET) {
@@ -287,6 +326,7 @@ export default {
         sitekey: env.TURNSTILE_SITEKEY || '',
         githubAuthEnabled: !!(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
         githubAuthRequired: isGitHubAuthRequired(env),
+        sshSharingEnabled: isSSHSharingEnabled(env),
       });
     }
 
@@ -334,6 +374,88 @@ async function handleServersRoute(request: Request, url: URL, env: Env): Promise
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }));
+  }
+
+  // /api/servers/:id/connect
+  const sharesMatch = url.pathname.match(/^\/api\/servers\/(\d+)\/shares$/);
+  if (sharesMatch) {
+    if (!isSSHSharingEnabled(env)) {
+      return Response.json({ error: 'SSH sharing is disabled' }, { status: 404 });
+    }
+    const serverId = sharesMatch[1];
+    if (request.method === 'GET') {
+      return stub.fetch(new Request(
+        `http://internal/internal/servers/${serverId}/shares?user_id=${user.id}`,
+        { method: 'GET' },
+      ));
+    }
+    if (request.method === 'POST') {
+      const body = await request.json<{ expiresInMinutes?: number; maxSessionMinutes?: number }>();
+      const expiresInMinutes = Number(body.expiresInMinutes);
+      const maxSessionMinutes = Number(body.maxSessionMinutes);
+      if (![5, 15, 30, 60].includes(expiresInMinutes)) {
+        return Response.json({ error: 'Invalid share expiry' }, { status: 400 });
+      }
+      if (![15, 30, 60, 120].includes(maxSessionMinutes)) {
+        return Response.json({ error: 'Invalid maximum session duration' }, { status: 400 });
+      }
+
+      const token = createShareToken();
+      const shareRef = await hashShareToken(token);
+      const shareId = crypto.randomUUID();
+      const expiresAt = Date.now() + expiresInMinutes * 60_000;
+      const metadataResponse = await stub.fetch(new Request(
+        `http://internal/internal/servers/${serverId}/shares`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: user.id,
+            share_id: shareId,
+            share_ref: shareRef,
+            expires_at: expiresAt,
+            max_session_seconds: maxSessionMinutes * 60,
+          }),
+        },
+      ));
+      if (!metadataResponse.ok) return metadataResponse;
+      const metadata = await metadataResponse.json<{
+        serverName: string;
+        expiresAt: number;
+        maxSessionSeconds: number;
+      }>();
+
+      const shareStub = env.SSH_SHARE.get(env.SSH_SHARE.idFromName(shareRef));
+      const initResponse = await shareStub.fetch(new Request('http://internal/internal/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shareId,
+          tokenHash: shareRef,
+          ownerUserId: user.id,
+          ownerGithubId: String(user.github_id),
+          serverId: Number(serverId),
+          serverName: metadata.serverName,
+          expiresAt,
+          maxSessionSeconds: maxSessionMinutes * 60,
+        }),
+      }));
+      if (!initResponse.ok) {
+        await stub.fetch(new Request(`http://internal/internal/shares/${shareId}/status`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: user.id, status: 'revoked', closed_at: Date.now() }),
+        })).catch(() => null);
+        return Response.json({ error: 'Failed to initialize share link' }, { status: 500 });
+      }
+      return Response.json({
+        id: shareId,
+        url: `${url.origin}/#/share/${token}`,
+        expiresAt,
+        maxSessionSeconds: maxSessionMinutes * 60,
+      }, { status: 201 });
+    }
+    return new Response('Method Not Allowed', { status: 405 });
   }
 
   // /api/servers/:id/connect
@@ -631,6 +753,127 @@ async function handleSSHConnection(request: Request, env: Env): Promise<Response
   headers.delete('x-ssh-config'); // 防御：禁止匿名连接通过 HTTP 头注入配置
 
   return stub.fetch(new Request(doUrl.toString(), { headers }));
+}
+
+async function handleShareClaim(request: Request, url: URL, env: Env): Promise<Response> {
+  if (!isSSHSharingEnabled(env)) {
+    return Response.json({ error: 'SSH sharing is disabled' }, { status: 404 });
+  }
+  const retryAfter = getRateLimitRetryAfter(request.headers.get('CF-Connecting-IP'));
+  if (retryAfter !== null) {
+    return new Response('Too Many Requests', {
+      status: 429,
+      headers: { 'Retry-After': String(retryAfter) },
+    });
+  }
+  let body: { token?: string };
+  try {
+    body = await request.json<{ token?: string }>();
+  } catch {
+    return Response.json({ error: 'Invalid request body' }, { status: 400 });
+  }
+  if (typeof body.token !== 'string' || !/^[A-Za-z0-9_-]{40,128}$/.test(body.token)) {
+    return Response.json({ error: 'Invalid share link' }, { status: 400 });
+  }
+  const shareRef = await hashShareToken(body.token);
+  const shareStub = env.SSH_SHARE.get(env.SSH_SHARE.idFromName(shareRef));
+  const claimResponse = await shareStub.fetch(new Request('http://internal/internal/claim', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: body.token }),
+  }));
+  if (!claimResponse.ok) return claimResponse;
+  const claim = await claimResponse.json<{
+    ticket: string;
+    serverName: string;
+    sessionExpiresAt: number;
+  }>();
+  return Response.json({
+    wsUrl: `${url.protocol === 'https:' ? 'wss:' : 'ws:'}//${url.host}/api/ssh?share_ref=${encodeURIComponent(shareRef)}&share_ticket=${encodeURIComponent(claim.ticket)}`,
+    serverName: claim.serverName,
+    sessionExpiresAt: claim.sessionExpiresAt,
+  });
+}
+
+async function handleShareOwnerRoute(request: Request, url: URL, env: Env): Promise<Response> {
+  if (!isSSHSharingEnabled(env)) {
+    return Response.json({ error: 'SSH sharing is disabled' }, { status: 404 });
+  }
+  const user = await getAuthenticatedUser(request, env);
+  if (!user) return Response.json({ error: 'Authentication required' }, { status: 401 });
+  const match = url.pathname.match(/^\/api\/shares\/([^/]+)(?:\/audit)?$/);
+  if (!match) return new Response('Not Found', { status: 404 });
+  const shareId = decodeURIComponent(match[1]);
+  const ownerStub = getUserDBStub(env, user.github_id);
+  const metadataResponse = await ownerStub.fetch(new Request(
+    `http://internal/internal/shares/${encodeURIComponent(shareId)}?user_id=${user.id}`,
+    { method: 'GET' },
+  ));
+  if (!metadataResponse.ok) return metadataResponse;
+  const metadata = await metadataResponse.json<{ shareRef: string }>();
+  const shareStub = env.SSH_SHARE.get(env.SSH_SHARE.idFromName(metadata.shareRef));
+
+  if (url.pathname.endsWith('/audit') && request.method === 'GET') {
+    const after = Math.max(0, Number(url.searchParams.get('after')) || 0);
+    const limit = Math.min(500, Math.max(1, Number(url.searchParams.get('limit')) || 500));
+    return shareStub.fetch(new Request(
+      `http://internal/internal/owner-view?owner_user_id=${user.id}&after=${after}&limit=${limit}`,
+      { method: 'GET' },
+    ));
+  }
+  if (!url.pathname.endsWith('/audit') && request.method === 'DELETE') {
+    return shareStub.fetch(new Request('http://internal/internal/revoke', { method: 'POST' }));
+  }
+  return new Response('Method Not Allowed', { status: 405 });
+}
+
+async function handleShareSSHConnection(
+  request: Request,
+  env: Env,
+  shareRef: string,
+  ticket: string,
+): Promise<Response> {
+  if (!isSSHSharingEnabled(env)) {
+    return Response.json({ error: 'SSH sharing is disabled' }, { status: 404 });
+  }
+  if (request.headers.get('Upgrade') !== 'websocket') {
+    return Response.json({ error: 'Expected WebSocket upgrade' }, { status: 426 });
+  }
+  const url = new URL(request.url);
+  if (!hasSameWebSocketOrigin(request, url)) return new Response('Forbidden', { status: 403 });
+  if (!/^[A-Za-z0-9_-]{40,128}$/.test(shareRef) || !/^[A-Za-z0-9_-]{40,128}$/.test(ticket)) {
+    return Response.json({ error: 'Invalid share connection ticket' }, { status: 400 });
+  }
+
+  const sessionName = `share-session:${crypto.randomUUID()}`;
+  const shareStub = env.SSH_SHARE.get(env.SSH_SHARE.idFromName(shareRef));
+  const configResponse = await shareStub.fetch(new Request('http://internal/internal/connect/consume', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ticket, sessionName }),
+  }));
+  if (!configResponse.ok) return configResponse;
+  const { config } = await configResponse.json<{ config: SSHConnectionConfig; serverName: string }>();
+  if (!config.sessionPolicy || config.sessionPolicy.shareRef !== shareRef) {
+    return Response.json({ error: 'Invalid share session policy' }, { status: 500 });
+  }
+  if (!isGitHubUserAllowed(env, config.githubId ?? '')) {
+    return Response.json({ error: 'Share owner is no longer allowed' }, { status: 403 });
+  }
+
+  const doId = env.SSH_SESSION.idFromName(sessionName);
+  const hint = validateRegion(config.locationHint);
+  const sessionStub = hint
+    ? env.SSH_SESSION.get(doId, { locationHint: hint } as any)
+    : env.SSH_SESSION.get(doId);
+  const doUrl = new URL(request.url);
+  doUrl.searchParams.delete('share_ref');
+  doUrl.searchParams.delete('share_ticket');
+  doUrl.searchParams.set('session', sessionName);
+  const headers = new Headers(request.headers);
+  headers.set('x-cloudflare-colo', (request as any).cf?.colo || 'UNKNOWN');
+  headers.set('x-ssh-config', encodeURIComponent(JSON.stringify(config)));
+  return sessionStub.fetch(new Request(doUrl.toString(), { headers }));
 }
 
 /**

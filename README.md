@@ -89,6 +89,7 @@
 - **IPv4/IPv6 双栈**：完整支持 IPv4 和 IPv6 地址连接，包括 IPv6 方括号格式自动处理。
 - **多种认证方式**：支持标准 SSH 密码认证、RFC 4256 `keyboard-interactive` 多轮交互认证，以及 OpenSSH 格式的 Ed25519、ECDSA P-256/P-384/P-521 和 RSA 私钥认证。交互认证支持密码、OTP、多字段提示与公钥后的二次验证；服务器提示会在绑定当前连接的安全对话框中展示，已保存密码仅在用户明确选择后代填。RSA 默认使用 RSA-SHA2-256/512，只有显式兼容配置才允许旧 `ssh-rsa` SHA-1。
 - **SSH 跳板机/堡垒机**：登录用户可以为已保存服务器选择另一台已保存服务器作为跳板。CloudSSH 使用标准 RFC 4254 `direct-tcpip` 通道逐层建立 SSH，不依赖远端安装 `ssh`、`nc` 或 `socat`；支持最多 3 级跳转，最终目标的终端、SFTP 与 AI Agent 均复用完整加密链路。每一跳独立认证和验证路径隔离的主机指纹。
+- **一次性 SSH 授权分享**：可选启用登录用户的服务器分享。链接只包含 256 位随机能力凭证，不携带主机、用户名、密码、私钥或跳板信息；凭证仅保存哈希、只能领取一次且具有独立的领取有效期与会话最长时间。分享会话允许终端和 SFTP，服务端强制禁用 AI Agent、OS 检测、主机指纹修改与自动重连；所有者可以实时撤销，并查看仅针对分享会话生成的生命周期、SFTP 操作与终端输出记录。
 - **防范中间人攻击 (TOFU)**：首次连接自动提取服务器 Host Key（SHA-256 指纹）并显示，支持 Ed25519/ECDSA/RSA 签名验证，并在本地及 API 持久化缓存已知主机指纹以防范二次连接的欺骗风险。
 - **全功能极客终端**：基于 `@xterm/xterm` 与 `@xterm/addon-webgl` 硬件加速渲染引擎，保证海量日志输出顺滑不卡顿。
 - **可靠的终端剪贴板交互**：鼠标完成终端选区后自动复制，右键可直接粘贴；触摸设备点击快捷键栏的复制按钮进入选择模式，拖动选择文本后再次点击完成复制，避免依赖不稳定的长按选区，粘贴则使用独立按钮。粘贴统一经过 xterm.js 原生输入管线，仅在远端应用启用 bracketed paste 模式时发送对应控制序列，并自动规范化换行，兼容 Vim 等交互式编辑器和普通 Shell。
@@ -127,6 +128,7 @@ flowchart TB
         Worker["Worker<br/>路由 + API"]
         SSH_DO["SSHSessionDO<br/>SSH 会话管理"]
         User_DO["UserDBDO<br/>用户数据管理"]
+        Share_DO["SSHShareDO<br/>分享凭证 + 会话审计"]
         AgentCore["AgentCore<br/>AI 控制循环"]
     end
 
@@ -140,6 +142,8 @@ flowchart TB
     Trzsz <-->|"trzsz 协议"| UI
     Worker <-->|"WebSocket"| SSH_DO
     Worker <-->|"Internal API"| User_DO
+    Worker <-->|"领取 / 撤销 / 查看审计"| Share_DO
+    SSH_DO -->|"生命周期 / SFTP / 终端输出"| Share_DO
     SSH_DO <-->|"TCP Socket<br/>@cloudflare/sockets"| SSH
     SSH_DO <-->|"Exec Channel"| AgentCore
     AgentCore <-->|"LLM API"| External["外部 LLM 服务"]
@@ -152,6 +156,7 @@ flowchart TB
 | **Worker 入口**      | `src/worker/index.ts`                                 | HTTP 路由、API 处理、WebSocket 升级                                                                                             |
 | **SSHSessionDO**     | `src/worker/durable-object.ts`                        | SSH 会话生命周期管理、SSRF 防护                                                                                                 |
 | **UserDBDO**         | `src/worker/user-db.ts`                               | 按 GitHub 用户隔离的用户数据、Session、服务器配置、规范化标签与凭据存储（SQLite）                                               |
+| **SSHShareDO**       | `src/worker/share-do.ts`                              | 一次性能力凭证、短期连接票据、过期/撤销状态以及分享会话专用审计日志                                                       |
 | **IP 地理推断**      | `src/worker/ip-geo.ts`                                | 保存 Cloudflare 直连入口时推断其 IP 所在区域，映射到 Cloudflare DO locationHint；跳板链下游节点不查询                           |
 | **操作系统识别**     | `src/worker/os-detect.ts`                             | 解析远端系统标识、规范化可持久化 OS key                                                                                         |
 | **SSHSession**       | `src/worker/ssh-session.ts`                           | SSH 协议状态机（连接→版本→密钥交换→认证→交互）                                                                                  |
@@ -163,6 +168,7 @@ flowchart TB
 | **移动端控制器**     | `frontend/src/mobile-terminal.ts` / `mobile-input.ts` | 动态视口、iOS IME 补偿、触摸快捷键、剪贴板操作及可选全屏横屏                                                                    |
 | **标签管理器**       | `frontend/src/tab-manager.ts`                         | 单页面多会话标签页管理器，协调不同标签页内的终端、SFTP 与 Agent 实例及上下文隔离，并展示可复制的掩码 IP                         |
 | **服务器列表**       | `frontend/src/server-list.ts`                         | 服务器卡片管理、搜索、标签筛选、IP 隐私展示及每页 9 项分页                                                                      |
+| **SSH 分享界面**     | `frontend/src/share-manager.ts` / `share-session.ts`  | 所有者创建、撤销与查看审计；接收者显式确认审计后一次性领取分享会话                                                     |
 | **主机地址展示**     | `frontend/src/host-display.ts`                        | 校验 IPv4/IPv6 字面量并生成统一的隐私掩码文本                                                                                   |
 | **SFTP 面板**        | `frontend/src/sftp-panel.ts`                          | 图形化文件管理器 UI，支持多选、批量下载/删除、上传下载队列和取消操作                                                            |
 | **AI Agent**         | `src/worker/agent/core.ts`                            | AI 控制循环：LLM 流式调用、工具执行、环境探测、终端上下文读取                                                                   |
@@ -197,6 +203,7 @@ flowchart TB
 6. SFTP 文件管理通过独立的 SSH 子系统通道运行，支持目录浏览、文件上传/下载等操作。
 7. 对尚无 OS 记录的已保存服务器，SSHSession 在 Shell 就绪后通过独立 exec 通道进行一次只读系统识别；成功结果写入 UserDBDO 并通知前端更新卡片，未知结果不保存。
 8. AI 助手通过 WebSocket 接收用户问题及可选的终端选区上下文；选区被标记为非可信分析数据后交给 AgentCore，后者调用外部 LLM API，通过 SSH exec 通道执行获准的命令，并将结果流式返回前端。
+9. 一次性分享链接先由 SSHShareDO 原子领取并换取短期连接票据；分享会话的生命周期、SFTP 操作和终端输出写入独立审计库，失效、撤销或审计不可用时终止连接。
 
 <a id="quick-start"></a>
 
@@ -310,6 +317,7 @@ Fork 仓库可以通过内置的 `Sync upstream` GitHub Actions 工作流，定�
 
    - `GITHUB_ALLOWED_USER_IDS`：允许登录的 GitHub **数字用户 ID**，多个 ID 使用英文逗号分隔，例如 `83105156,6236783`。未配置时不限制 GitHub 账号；配置为空或包含非正整数时采用 fail-closed，拒绝所有 GitHub 登录。
    - `REQUIRE_GITHUB_AUTH`：设置为 `true` 时禁用匿名 SSH，所有 SSH WebSocket 都必须带有有效 GitHub session；未配置或设置为 `false` 时保留匿名连接。
+   - `ENABLE_SSH_SHARING`：设置为 `true` 时允许登录用户为已保存服务器创建一次性分享链接；默认关闭。启用即表示管理员明确允许持有分享凭证的接收者在不登录 GitHub 的情况下建立受审计 SSH 会话。
 
    **获取 GitHub 数字用户 ID**：
 
@@ -334,6 +342,18 @@ Fork 仓库可以通过内置的 `Sync upstream` GitHub Actions 工作流，定�
 > **环境变量类型建议**：`GITHUB_CLIENT_SECRET` 必须使用 **Secret** 类型；`GITHUB_ALLOWED_USER_IDS` 和 `REQUIRE_GITHUB_AUTH` 不包含密钥，可使用普通文本变量。Secrets 存储在 Cloudflare 加密存储中，与代码部署分离，重新部署时不会被覆盖或丢失。
 
 > **访问策略说明**：修改 `GITHUB_ALLOWED_USER_IDS` 后，已签发 session 会在下一次请求时重新检查并立即失效；已建立的 SSH WebSocket 不会被主动中断。`REQUIRE_GITHUB_AUTH=true` 依赖 GitHub OAuth，请同时正确配置 Client ID、Client Secret 和 `BASE_URL`。
+
+##### 使用一次性 SSH 分享
+
+1. 配置 GitHub OAuth，并在 Worker 环境变量中设置 `ENABLE_SSH_SHARING=true` 后重新部署。
+2. 所有者先通过普通连接成功连接目标服务器及全部跳板节点，使路径范围内的主机指纹完成验证。
+3. 在服务器卡片点击分享按钮，选择链接领取有效期（5/15/30/60 分钟）和会话最长时间（15/30/60/120 分钟）。
+4. 创建后立即复制链接并通过可信渠道发送。CloudSSH 不保存明文分享凭证，关闭创建结果后无法再次查看同一链接。
+5. 接收者打开链接，确认终端输出和 SFTP 操作会被记录后领取授权。链接只能成功领取一次；刷新、断开或关闭页面后不能重新连接。
+6. 所有者可再次打开服务器的分享管理，查看状态及审计记录，或撤销待领取/活动分享。撤销活动分享会同时关闭终端和 SFTP。
+
+> [!WARNING]
+> 分享凭证虽然不包含 SSH 隐私数据，但其持有者可使用所有者保存的凭据获得完整 Shell 和 SFTP 权限，应按临时密码保护。分享只允许已有可信主机指纹的连接链，遇到指纹变化或 `keyboard-interactive`/MFA 挑战时会终止。审计记录保存服务端返回的 PTY 输出而不保存原始键盘输入，因此通常能看到 Shell 回显的命令，但不能保证捕获关闭回显、脚本内部或经编码执行的所有命令；不要将其描述为目标机级强审计。单次记录上限为 5 MiB，达到上限或审计写入失败时会关闭分享会话。
 
 > **说明**：服务器凭据（密码/私钥）在每用户 UserDBDO SQLite 中使用 AES-256-GCM 加密存储。当前加密密钥在首次使用时自动生成，并与密文保存在同一个 Durable Object 数据库中。一键连接已保存服务器时，浏览器不会收到明文凭据，服务端通过一次性连接令牌完成内部传递。
 

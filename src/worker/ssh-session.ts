@@ -63,6 +63,10 @@ const AUTH_CHALLENGE_ACK_TIMEOUT_MS = 10 * 1000;
 const AUTH_CHALLENGE_RESPONSE_TIMEOUT_MS = 2 * 60 * 1000;
 const MAX_KEYBOARD_INTERACTIVE_ROUNDS = 8;
 const MAX_PARTIAL_AUTHENTICATION_STAGES = 8;
+// Keep every JSON audit event safely below ShareDO's request-size ceiling even
+// when the terminal output consists entirely of four-byte Unicode characters.
+const SHARE_AUDIT_FLUSH_CHARS = 8 * 1024;
+const SHARE_AUDIT_FLUSH_MS = 1000;
 
 type ActiveAuthMethod = 'none' | 'password' | 'publickey' | 'keyboard-interactive';
 
@@ -78,6 +82,10 @@ export interface SSHSessionOptions {
   openShellOnAuth?: boolean;
   /** Only the final nested session owns the browser WebSocket lifecycle. */
   ownsWebSocket?: boolean;
+  /** Share routes disable interactive prompts on every jump hop as well as the target. */
+  allowKeyboardInteractive?: boolean;
+  /** Keeps final audit writes alive after a WebSocket/SSH close event returns. */
+  waitUntil?: (promise: Promise<unknown>) => void;
 }
 
 export class SSHSession {
@@ -169,8 +177,18 @@ export class SSHSession {
   private userId: string | null = null;
   private githubId: string | null = null;
   private osDetectInProgress: boolean = false;
+  private readonly auditTextDecoder = new TextDecoder();
+  private shareAuditBuffer = '';
+  private shareAuditFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  private shareAuditWrite: Promise<boolean> = Promise.resolve(true);
+  private shareAuditStarted = false;
+  private shareAuditClosed = false;
+  private shareSessionExpiryTimer: ReturnType<typeof setTimeout> | null = null;
+  private sftpAuditContext = new Map<string, Record<string, unknown>>();
   private readonly openShellOnAuth: boolean;
   private readonly ownsWebSocket: boolean;
+  private readonly allowKeyboardInteractive: boolean;
+  private readonly waitUntil?: (promise: Promise<unknown>) => void;
   private authenticatedResolve!: () => void;
   private authenticatedReject!: (error: Error) => void;
   private readonly authenticatedPromise: Promise<void>;
@@ -200,6 +218,8 @@ export class SSHSession {
     this.githubId = githubId || null;
     this.openShellOnAuth = options.openShellOnAuth !== false;
     this.ownsWebSocket = options.ownsWebSocket !== false;
+    this.allowKeyboardInteractive = options.allowKeyboardInteractive !== false;
+    this.waitUntil = options.waitUntil;
     this.authenticatedPromise = new Promise<void>((resolve, reject) => {
       this.authenticatedResolve = resolve;
       this.authenticatedReject = reject;
@@ -225,6 +245,11 @@ export class SSHSession {
 
   waitUntilAuthenticated(): Promise<void> {
     return this.authenticatedPromise;
+  }
+
+  belongsToShare(shareId: string): boolean {
+    return this.config.sessionPolicy?.source === 'share'
+      && this.config.sessionPolicy.shareId === shareId;
   }
 
   /** Open an RFC 4254 direct-tcpip byte stream through an authenticated hop. */
@@ -850,7 +875,8 @@ export class SSHSession {
     };
 
     if (expectedFingerprint && expectedFingerprint !== this.hostKeyFingerprint) {
-      if (signatureVerified) {
+      const mayReplaceHostKey = this.config.sessionPolicy?.allowHostKeyMutation !== false;
+      if (signatureVerified && mayReplaceHostKey) {
         try {
           this.ws.send(JSON.stringify({
             type: 'host_key_changed',
@@ -868,10 +894,16 @@ export class SSHSession {
         keyType: this.hostKeyType,
       });
       this.sendError(
-        signatureVerified
+        signatureVerified && mayReplaceHostKey
           ? '连接已阻断。请在确认对话框中核对并决定是否信任新指纹。'
-          : '连接已阻断，且主机密钥签名未通过验证，无法信任新指纹。',
-        signatureVerified ? 'host_key_trust_instruction' : 'host_key_unverified_instruction',
+          : signatureVerified
+            ? '连接已阻断。分享会话不允许替换所有者已信任的主机指纹。'
+            : '连接已阻断，且主机密钥签名未通过验证，无法信任新指纹。',
+        signatureVerified && mayReplaceHostKey
+          ? 'host_key_trust_instruction'
+          : signatureVerified
+            ? 'host_key_share_change_blocked'
+            : 'host_key_unverified_instruction',
       );
       this.close(true);
       return false;
@@ -1171,7 +1203,8 @@ export class SSHSession {
       case 'password':
         return this.config.authMethod !== 'publickey' && Boolean(this.config.password);
       case 'keyboard-interactive':
-        return true;
+        // 分享会话不能把所有者保存的密码交由接收者决定如何响应远端挑战。
+        return this.allowKeyboardInteractive && this.config.sessionPolicy?.source !== 'share';
     }
   }
 
@@ -1671,10 +1704,10 @@ export class SSHSession {
           const shellReq = this.shellChannel.buildShellRequest();
           await this.sendEncrypted(shellReq);
           this.state = 'shell-requested';
-          this.shellReadyTimeout = setTimeout(() => {
+          this.shellReadyTimeout = setTimeout(async () => {
             if (this.state === 'shell-requested') {
               this.state = 'ready';
-              this.onShellReady();
+              await this.onShellReady();
             }
           }, 3000);
         } else if (channelID === this.shellChannel.getLocalChannelID() && this.state === 'shell-requested') {
@@ -1684,7 +1717,7 @@ export class SSHSession {
             this.shellReadyTimeout = null;
           }
           this.state = 'ready';
-          this.onShellReady();
+          await this.onShellReady();
         } else if (this.sftpHandler && channelID === this.sftpHandler.getChannelID()) {
           // SFTP subsystem request confirmed - send SFTP init
           this.sendDebug(`SFTP CHANNEL_SUCCESS received, calling onSubsystemReady`);
@@ -1740,10 +1773,11 @@ export class SSHSession {
               this.shellReadyTimeout = null;
             }
             this.state = 'ready';
-            this.onShellReady();
+            await this.onShellReady();
           }
           const outputData = channel.handleChannelData(payload);
           try { this.ws.send(outputData); } catch (e) { this.sendDebug(() => `Send shell output failed: ${e instanceof Error ? e.message : e}`); }
+          this.recordShareTerminalOutput(outputData);
           this.queueLocalWindowAdjust(outputData.length, channel);
           // Feed terminal context for Agent
           try { this.terminalContext.appendOutput(this.textDecoder.decode(outputData)); } catch {}
@@ -1779,6 +1813,7 @@ export class SSHSession {
           offset += 4;
           const stderrData = payload.subarray(offset, offset + dataLen);
           try { this.ws.send(stderrData); } catch (e) { this.sendDebug(() => `Send stderr output failed: ${e instanceof Error ? e.message : e}`); }
+          this.recordShareTerminalOutput(stderrData);
           this.queueLocalWindowAdjust(stderrData.length, channel);
         } else {
           // Exec channel extended data (stderr for Agent)
@@ -1972,10 +2007,12 @@ export class SSHSession {
       }
 
       if (this.state !== 'ready') return;
+      if (this.config.sessionPolicy?.source === 'share' && !this.shareAuditStarted) return;
 
       this.enqueueChannelData(this.textEncoder.encode(data));
     } else {
       if (this.state !== 'ready') return;
+      if (this.config.sessionPolicy?.source === 'share' && !this.shareAuditStarted) return;
 
       this.enqueueChannelData(new Uint8Array(data));
     }
@@ -2002,11 +2039,13 @@ export class SSHSession {
       }
 
       if (parsed.type === 'sftp_download_cancel') {
+        if (!(await this.auditSFTPRequest(parsed))) return;
         this.sftpHandler?.cancelDownload();
         return;
       }
 
       if (parsed.type === 'sftp_upload_cancel') {
+        if (!(await this.auditSFTPRequest(parsed))) return;
         void this.sftpHandler?.uploadCancel();
         return;
       }
@@ -2033,6 +2072,11 @@ export class SSHSession {
       return;
     }
 
+    if (this.config.sessionPolicy?.source === 'share' && !this.config.sessionPolicy.allowSftp) {
+      this.sendSFTPError(this.getSFTPOperation(msg.type), '当前分享会话不允许使用 SFTP');
+      return;
+    }
+
     if (msg.type === 'sftp_init') {
       await this.openSFTPChannel();
       return;
@@ -2042,6 +2086,8 @@ export class SSHSession {
       this.sendSFTPError(this.getSFTPOperation(msg.type), 'SFTP 未初始化，请先发送 sftp_init');
       return;
     }
+
+    if (!(await this.auditSFTPRequest(msg))) return;
 
     switch (msg.type) {
       case 'sftp_list':
@@ -2102,6 +2148,7 @@ export class SSHSession {
       },
       (msg: any) => {
         this.sendDebug(() => `SFTP sendJSON: type=${msg.type}`);
+        this.auditSFTPResult(msg);
         this.sendSFTPJSON(msg);
       },
       (data: Uint8Array) => {
@@ -2133,6 +2180,7 @@ export class SSHSession {
 
   private sendSFTPAttachUrl(): void {
     if (!this.sftpAttachUrl) return;
+    if (this.config.sessionPolicy?.source === 'share' && !this.config.sessionPolicy.allowSftp) return;
     try {
       this.ws.send(JSON.stringify({ type: 'sftp_attach', url: this.sftpAttachUrl }));
     } catch (e) { this.sendDebug(() => `Send sftp_attach url failed: ${e instanceof Error ? e.message : e}`); }
@@ -2164,6 +2212,70 @@ export class SSHSession {
       default:
         return 'protocol';
     }
+  }
+
+  private async auditSFTPRequest(msg: Record<string, unknown>): Promise<boolean> {
+    if (this.config.sessionPolicy?.source !== 'share') return true;
+    const operation = this.getSFTPOperation(typeof msg.type === 'string' ? msg.type : undefined);
+    const auditable = new Set(['download', 'upload', 'delete', 'rename', 'mkdir', 'rmdir']);
+    if (!auditable.has(operation)) return true;
+    if (msg.type === 'sftp_upload_end') return true;
+
+    const details: Record<string, unknown> = { operation };
+    if (typeof msg.path === 'string') details.path = msg.path.slice(0, 4096);
+    if (typeof msg.oldPath === 'string') details.oldPath = msg.oldPath.slice(0, 4096);
+    if (typeof msg.newPath === 'string') details.newPath = msg.newPath.slice(0, 4096);
+    if (typeof msg.size === 'number' && Number.isFinite(msg.size)) details.size = Math.max(0, Math.floor(msg.size));
+    if (msg.type === 'sftp_download_cancel' || msg.type === 'sftp_upload_cancel') {
+      details.cancelled = true;
+    } else {
+      this.sftpAuditContext.set(operation, details);
+    }
+    const recorded = await this.writeShareAudit('sftp.request', details);
+    if (!recorded) {
+      this.sendSFTPError(operation, '审计记录写入失败，分享会话已终止');
+      this.close(true);
+    }
+    return recorded;
+  }
+
+  private auditSFTPResult(msg: Record<string, unknown>): void {
+    if (this.config.sessionPolicy?.source !== 'share' || typeof msg.type !== 'string') return;
+    const successTypes: Record<string, string> = {
+      sftp_download_done: 'download',
+      sftp_upload_complete: 'upload',
+      sftp_delete_result: 'delete',
+      sftp_rename_result: 'rename',
+      sftp_mkdir_result: 'mkdir',
+      sftp_rmdir_result: 'rmdir',
+    };
+    const cancelledTypes: Record<string, string> = {
+      sftp_download_cancelled: 'download',
+      sftp_upload_cancelled: 'upload',
+    };
+    let operation = successTypes[msg.type];
+    let success = true;
+    let cancelled = false;
+    if (!operation && cancelledTypes[msg.type]) {
+      operation = cancelledTypes[msg.type];
+      cancelled = true;
+    }
+    if (msg.type === 'sftp_error' && typeof msg.operation === 'string') {
+      operation = msg.operation;
+      success = false;
+    }
+    if (!operation || !this.sftpAuditContext.has(operation)) return;
+    const details: Record<string, unknown> = {
+      ...this.sftpAuditContext.get(operation),
+      success,
+      ...(cancelled ? { cancelled: true } : {}),
+    };
+    if (typeof msg.size === 'number' && Number.isFinite(msg.size)) details.transferredSize = Math.max(0, Math.floor(msg.size));
+    if (!success && typeof msg.message === 'string') details.error = msg.message.slice(0, 512);
+    this.sftpAuditContext.delete(operation);
+    this.runShareBackground(this.writeShareAudit('sftp.result', details).then((recorded) => {
+      if (!recorded) this.close(true);
+    }));
   }
 
   private sendSFTPError(operation: string, message: string): void {
@@ -2370,12 +2482,129 @@ export class SSHSession {
     }
   }
 
+  // ==================== 分享会话审计 ====================
+
+  private writeShareAudit(eventType: string, details: Record<string, unknown>): Promise<boolean> {
+    const policy = this.config.sessionPolicy;
+    if (policy?.source !== 'share' || !this.env?.SSH_SHARE) return Promise.resolve(false);
+    const operation = this.shareAuditWrite.then(async () => {
+      try {
+        const stub = this.env!.SSH_SHARE.get(this.env!.SSH_SHARE.idFromName(policy.shareRef));
+        const response = await stub.fetch(new Request('http://internal/internal/audit/event', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ eventType, occurredAt: Date.now(), details }),
+        }));
+        return response.ok;
+      } catch {
+        return false;
+      }
+    });
+    this.shareAuditWrite = operation.catch(() => false);
+    return operation;
+  }
+
+  private recordShareTerminalOutput(data: Uint8Array): void {
+    if (!this.shareAuditStarted || this.config.sessionPolicy?.source !== 'share' || data.length === 0) return;
+    this.shareAuditBuffer += this.auditTextDecoder.decode(data, { stream: true });
+    if (this.shareAuditBuffer.length >= SHARE_AUDIT_FLUSH_CHARS) {
+      this.runShareBackground(this.flushShareAuditOutput());
+      return;
+    }
+    if (!this.shareAuditFlushTimer) {
+      this.shareAuditFlushTimer = setTimeout(() => {
+        this.shareAuditFlushTimer = null;
+        this.runShareBackground(this.flushShareAuditOutput());
+      }, SHARE_AUDIT_FLUSH_MS);
+    }
+  }
+
+  private async flushShareAuditOutput(): Promise<boolean> {
+    if (this.shareAuditFlushTimer) {
+      clearTimeout(this.shareAuditFlushTimer);
+      this.shareAuditFlushTimer = null;
+    }
+    let text = this.shareAuditBuffer;
+    this.shareAuditBuffer = '';
+    if (!text) return true;
+    while (text.length > 0) {
+      const chunk = text.slice(0, SHARE_AUDIT_FLUSH_CHARS);
+      text = text.slice(SHARE_AUDIT_FLUSH_CHARS);
+      const recorded = await this.writeShareAudit('terminal.output', { text: chunk });
+      if (!recorded) {
+        if (!this.closed) {
+          this.sendError('分享会话审计写入失败或已达到容量上限，连接已终止', 'share_audit_unavailable');
+          this.close(true);
+        }
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private notifyShareSessionClosed(normal: boolean): void {
+    const policy = this.config.sessionPolicy;
+    if (policy?.source !== 'share' || !this.env?.SSH_SHARE || this.shareAuditClosed) return;
+    this.shareAuditClosed = true;
+    this.runShareBackground(this.flushShareAuditOutput().finally(async () => {
+      try {
+        const stub = this.env!.SSH_SHARE.get(this.env!.SSH_SHARE.idFromName(policy.shareRef));
+        await stub.fetch(new Request('http://internal/internal/session/closed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ normal }),
+        }));
+      } catch {}
+    }));
+  }
+
+  private runShareBackground(promise: Promise<unknown>): void {
+    const guarded = promise.catch(() => undefined);
+    if (this.waitUntil) this.waitUntil(guarded);
+  }
+
   // ==================== 操作系统检测 ====================
 
-  /** Shell 就绪统一入口：发送状态并触发远端 OS 检测（尽力而为，不阻塞就绪流程） */
-  private onShellReady(): void {
+  /** Shell 就绪统一入口。分享会话必须先建立审计，再允许浏览器输入。 */
+  private async onShellReady(): Promise<void> {
+    if (this.config.sessionPolicy?.source === 'share') {
+      if (this.shareAuditStarted) return;
+      const recorded = await this.writeShareAudit('session.started', {
+        audited: true,
+        sftpAllowed: this.config.sessionPolicy.allowSftp,
+        agentAllowed: false,
+      });
+      if (!recorded) {
+        this.sendError('分享会话审计不可用，连接已终止', 'share_audit_unavailable');
+        this.close(true);
+        return;
+      }
+      this.shareAuditStarted = true;
+      const remaining = this.config.sessionPolicy.sessionExpiresAt - Date.now();
+      if (remaining <= 0) {
+        this.sendError('分享会话已过期', 'share_session_expired');
+        this.close(true);
+        return;
+      }
+      this.shareSessionExpiryTimer = setTimeout(() => {
+        this.sendError('分享会话已达到最长使用时间', 'share_session_expired');
+        this.close(true);
+      }, remaining);
+      try {
+        this.ws.send(JSON.stringify({
+          type: 'session_capabilities',
+          source: 'share',
+          agent: false,
+          sftp: this.config.sessionPolicy.allowSftp,
+          audited: true,
+          expiresAt: this.config.sessionPolicy.sessionExpiresAt,
+        }));
+      } catch {}
+    }
     this.sendStatus('Shell 已就绪', 'shell_ready');
-    void this.detectRemoteOS();
+    if (this.config.sessionPolicy?.allowMetadataMutation !== false) {
+      void this.detectRemoteOS();
+    }
   }
 
   /**
@@ -2383,6 +2612,7 @@ export class SSHSession {
    * 仅对已登录用户的已保存服务器执行；解析/持久化失败都不影响 SSH 会话。
    */
   private async detectRemoteOS(): Promise<void> {
+    if (this.config.sessionPolicy?.source === 'share') return;
     // 已保存服务器（token 路径才有 serverId）、未检测过、且未在进行中
     if (!this.config.serverId || !this.userId || !this.githubId || this.config.os || this.osDetectInProgress) {
       return;
@@ -2433,6 +2663,10 @@ export class SSHSession {
   // ==================== Agent Integration ====================
 
   private async handleAgentStart(userMessage: string, userId?: string, requestedLocale?: string): Promise<void> {
+    if (this.config.sessionPolicy?.source === 'share') {
+      this.sendAgentFrame({ type: 'agent_frame', subType: 'error', message: '分享会话不允许使用 AI Agent' });
+      return;
+    }
     if (this.state !== 'ready') {
       this.sendAgentFrame({ type: 'agent_frame', subType: 'error', message: 'SSH 连接未就绪' });
       return;
@@ -2632,6 +2866,7 @@ export class SSHSession {
   close(normal: boolean = false): void {
     if (this.closed) return;
     this.closed = true;
+    this.notifyShareSessionClosed(normal);
     if (!this.authenticatedSettled) {
       this.authenticatedSettled = true;
       const error = new Error('SSH session closed before authentication completed') as Error & { normalClose?: boolean };
@@ -2651,6 +2886,14 @@ export class SSHSession {
     if (this.shellReadyTimeout) {
       clearTimeout(this.shellReadyTimeout);
       this.shellReadyTimeout = null;
+    }
+    if (this.shareSessionExpiryTimer) {
+      clearTimeout(this.shareSessionExpiryTimer);
+      this.shareSessionExpiryTimer = null;
+    }
+    if (this.shareAuditFlushTimer) {
+      clearTimeout(this.shareAuditFlushTimer);
+      this.shareAuditFlushTimer = null;
     }
     if (this.sftpHandler) {
       this.sftpHandler.dispose();

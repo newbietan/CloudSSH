@@ -13,6 +13,12 @@ import { AIConfigPanel } from './ai-config';
 import { notify } from './ui-feedback';
 import { initI18n, onLocaleChange, t } from './i18n';
 import { MobileTerminalController } from './mobile-terminal';
+import {
+  renderShareEnded,
+  renderShareLanding,
+  takeShareTokenFromLocation,
+  type ClaimedShare,
+} from './share-session';
 
 // ==================== 全局状态 ====================
 
@@ -20,6 +26,7 @@ let tabManager: TabManager | null = null;
 let connectionForm: ConnectionForm | null = null;
 let serverList: ServerList | null = null;
 let isLoggedIn = false;
+let sharedSessionMode = false;
 const mobileTerminalController = new MobileTerminalController(
   () => tabManager?.getActiveTab()?.terminal ?? null,
 );
@@ -206,6 +213,11 @@ function showConnectionPage(): void {
 }
 
 function showOfflineUI(): void {
+  if (sharedSessionMode) {
+    deactivateTerminalView();
+    renderShareEnded();
+    return;
+  }
   if (isTerminalTab()) {
     mobileTerminalController.leaveTerminal();
     window.close();
@@ -277,6 +289,23 @@ function showTerminalFromServer(
     ? () => requestSavedServerWebSocket(serverId)
     : undefined;
   terminal.connectWithWebSocket(ws, hostInfo, { reconnectFactory });
+}
+
+function showSharedTerminal(claim: ClaimedShare): void {
+  if (!validateWsUrl(claim.wsUrl)) {
+    renderShareEnded();
+    return;
+  }
+  sharedSessionMode = true;
+  isLoggedIn = false;
+  document.getElementById('agent-toggle-btn')?.classList.add('hidden');
+  const tabBar = document.getElementById('tab-bar');
+  if (tabBar) tabBar.style.display = 'none';
+  const { terminal } = showTerminalWithNewTab(claim.serverName, claim.serverName);
+  terminal.mount();
+  const socket = new WebSocket(claim.wsUrl);
+  socket.binaryType = 'arraybuffer';
+  terminal.connectWithWebSocket(socket);
 }
 
 async function requestSavedServerWebSocket(serverId: number): Promise<WebSocket> {
@@ -556,6 +585,12 @@ async function init(): Promise<void> {
   const copyrightYearSpan = document.getElementById('copyright-year');
   if (copyrightYearSpan) {
     copyrightYearSpan.textContent = new Date().getFullYear().toString();
+  }
+
+  const shareToken = takeShareTokenFromLocation();
+  if (shareToken) {
+    renderShareLanding(shareToken, showSharedTerminal);
+    return;
   }
 
   // 独立终端标签页模式：URL 包含 wsUrl 参数
