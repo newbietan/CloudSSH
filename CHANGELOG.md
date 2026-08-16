@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-08-16
+
+### Added
+- 新增可选的一次性 SSH 授权分享：登录用户可为已保存服务器创建仅含 256 位随机能力凭证的临时链接，凭证仅保存哈希、只能领取一次，并分别限制领取窗口和最长会话时间。
+- 新增分享管理与接收者确认界面；所有者可查看待领取、活动、结束、撤销和过期状态，实时撤销活动连接，接收者明确同意审计后才能进入终端。
+- 新增独立 `SSHShareDO`，负责原子领取、短期连接票据、过期/撤销状态以及分享会话专用审计；审计覆盖会话生命周期、SFTP 请求与结果、终端 PTY 输出和对应时间。
+
+### Changed
+- 分享会话仅开放终端和 SFTP，禁用 AI Agent、自动重连、操作系统检测、元数据更新、主机指纹替换以及目标机和全部跳板节点的 `keyboard-interactive` 认证。
+- 前端内联构建直接调用已安装的 TypeScript 与 Vite 二进制，不再由构建命令隐式触发依赖安装。
+- 更新中英文部署及使用文档，说明 `ENABLE_SSH_SHARING` 默认关闭、能力链接的权限边界和 PTY 输出审计的适用范围。
+
+### Security
+- 分享链强制使用已经验证的路径级主机指纹，并始终启用严格主机密钥签名验证；指纹变化、审计写入失败、达到 5 MiB/5000 事件上限或授权到期时立即终止连接。
+- 原始分享凭证不会发送到 SSH Durable Object 或持久层；领取后只签发 60 秒有效的一次性 WebSocket 连接票据，浏览器会在展示确认页前将凭证从地址栏移除。
+
+关联 Issue：#84（本次发布不自动关闭该 Issue）。
+
 ## [1.8.2] - 2026-08-14
 
 ### Changed
