@@ -84,6 +84,7 @@
 
 - **Pure TypeScript SSH-2.0 Implementation**: Fully self-developed SSH protocol stack, with no dependency on any third-party SSH libraries, implementing all cryptographic operations based on Web Crypto API.
 - **Multi-Algorithm Key Exchange**: Supports Curve25519-SHA256 (preferred) and ECDH-NISTP256 KEX algorithms, compatible with various SSH servers (including Dropbear).
+- **Reliable Key Transitions and Packet Framing**: Re-evaluates encryption and authentication state for every packet, including servers that return `SSH_MSG_NEWKEYS` and the first encrypted packet in the same TCP chunk.
 - **IPv4/IPv6 Dual Stack**: Full support for both IPv4 and IPv6 address connections, including automatic handling of IPv6 bracket notation.
 - **Multiple Auth Methods**: Supports standard SSH password authentication, multi-round RFC 4256 `keyboard-interactive` authentication, and OpenSSH-format Ed25519, ECDSA P-256/P-384/P-521, and RSA private keys. Interactive authentication supports passwords, OTPs, multiple prompts, and a second factor after public-key authentication. Server prompts appear in a connection-bound safety dialog, and a saved password is substituted only after an explicit user action. RSA uses RSA-SHA2-256/512 by default; legacy `ssh-rsa` SHA-1 is allowed only through explicit compatibility configuration.
 - **SSH Jump Hosts / Bastions**: Signed-in users may select another saved server as a jump host. CloudSSH builds each layer with the standard RFC 4254 `direct-tcpip` channel and does not require `ssh`, `nc`, or `socat` on the remote host. Up to 3 jump hosts are supported; the final target's terminal, SFTP, and AI Agent use the complete encrypted chain. Authentication and path-scoped host-key verification run independently at every hop.
@@ -479,6 +480,7 @@ Thank you to the following contributors for improving CloudSSH's code, compatibi
 | [TanXin (@newbietan)](https://github.com/newbietan) | Project creator and maintainer; Cloudflare Serverless architecture, SSH/SFTP, AI Agent, security, theming, and engineering infrastructure |
 | [David xu (@xqdoo00o)](https://github.com/xqdoo00o) | Dropbear compatibility, migration to trzsz file transfer, PTY sizing, and session exit/reconnection improvements |
 | [vonl1 (@vonl1)](https://github.com/vonl1) | Terminal selection auto-copy, Vim-compatible right-click paste, masked IPv4/IPv6 display with quick full-address copy, and automatic server OS detection with branded icons |
+| [Leon Xu (@xuthuslei)](https://github.com/xuthuslei) | Fixed encryption-state transitions and packet parsing when `SSH_MSG_NEWKEYS` and the first encrypted packet arrive in the same TCP chunk |
 
 The list and contribution summaries are based on Git history and accepted Pull Requests; one contributor may appear under multiple historical Git author names or email addresses. See [GitHub Contributors](https://github.com/newbietan/CloudSSH/graphs/contributors) for the complete record. Issues and Pull Requests are welcome.
 

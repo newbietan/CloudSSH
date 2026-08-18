@@ -86,6 +86,7 @@
 
 - **纯 TypeScript SSH-2.0 实现**：完全自研的 SSH 协议栈，不依赖任何第三方 SSH 库，基于 Web Crypto API 实现全部加密操作。
 - **多算法密钥交换**：支持 Curve25519-SHA256（优先）和 ECDH-NISTP256 两种 KEX 算法，适配各类 SSH 服务器（包括 Dropbear）。
+- **可靠的密钥切换与分包处理**：逐包读取当前加密与认证状态，兼容服务端将 `SSH_MSG_NEWKEYS` 和首个加密包合并在同一 TCP 数据块中返回的情况。
 - **IPv4/IPv6 双栈**：完整支持 IPv4 和 IPv6 地址连接，包括 IPv6 方括号格式自动处理。
 - **多种认证方式**：支持标准 SSH 密码认证、RFC 4256 `keyboard-interactive` 多轮交互认证，以及 OpenSSH 格式的 Ed25519、ECDSA P-256/P-384/P-521 和 RSA 私钥认证。交互认证支持密码、OTP、多字段提示与公钥后的二次验证；服务器提示会在绑定当前连接的安全对话框中展示，已保存密码仅在用户明确选择后代填。RSA 默认使用 RSA-SHA2-256/512，只有显式兼容配置才允许旧 `ssh-rsa` SHA-1。
 - **SSH 跳板机/堡垒机**：登录用户可以为已保存服务器选择另一台已保存服务器作为跳板。CloudSSH 使用标准 RFC 4254 `direct-tcpip` 通道逐层建立 SSH，不依赖远端安装 `ssh`、`nc` 或 `socat`；支持最多 3 级跳转，最终目标的终端、SFTP 与 AI Agent 均复用完整加密链路。每一跳独立认证和验证路径隔离的主机指纹。
@@ -498,6 +499,7 @@ test 分支（开发/测试）  ──合并──>  main 分支（生产）
 | [TanXin (@newbietan)](https://github.com/newbietan) | 项目发起与持续维护；Cloudflare Serverless、SSH/SFTP、AI Agent、安全体系、主题系统及工程化建设                            |
 | [David xu (@xqdoo00o)](https://github.com/xqdoo00o) | Dropbear 兼容、trzsz 文件传输迁移、PTY 尺寸处理，以及会话退出与重连交互优化                                              |
 | [vonl1 (@vonl1)](https://github.com/vonl1)          | 终端选区自动复制、兼容 Vim 的右键粘贴体验、服务器 IPv4/IPv6 掩码与完整地址快捷复制，以及服务器操作系统自动识别与品牌图标 |
+| [Leon Xu (@xuthuslei)](https://github.com/xuthuslei)    | 修复 `SSH_MSG_NEWKEYS` 与首个加密包同批到达时的加密状态切换和数据包解析兼容问题                                       |
 
 名单及贡献说明依据 Git 提交历史与已接收的 Pull Request 整理；同一贡献者在历史中可能使用过不同的 Git 作者名称或邮箱。完整记录请参阅 [GitHub Contributors](https://github.com/newbietan/CloudSSH/graphs/contributors)。欢迎通过 Issue 和 Pull Request 参与项目建设。
 
