@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.1] - 2026-08-18
+
+### Fixed
+
+- 修复服务端将 `SSH_MSG_NEWKEYS` 与首个加密包放在同一 TCP 数据块返回时，SSH 会话沿用旧分包参数并报出超大 `packet_length` 的问题。
+- 密钥切换后逐包重新读取 AES-GCM 或 AES-CTR/HMAC 的块大小、认证标签和 MAC 长度，避免错误解析已加密数据。
+
+### Changed
+
+- 新增覆盖 AES-GCM、AES-CTR/HMAC 状态切换及真实同批加密数据的回归测试。
+- 更新中英文兼容性说明，并补充本次修复的贡献者信息。
+
 ## [1.9.0] - 2026-08-16
 
 ### Added

@@ -1,3 +1,4 @@
+/// <reference lib="es2022" />
 import { expect, test } from '@playwright/test';
 import { blockOptionalThirdPartyAssets } from './helpers';
 
@@ -113,6 +114,10 @@ test.describe('响应式断点边界', () => {
 
 test('移动端服务器卡片不会被长文本撑宽且表单弹窗在视口内滚动', async ({ page }) => {
   await page.goto('/?lang=zh-CN');
+  await expect(page.locator('.server-card')).toHaveCount(3);
+  await expect.poll(() => page.locator('#card-1 .server-card-title').evaluate((title) =>
+    getComputedStyle(title).overflow,
+  )).toBe('hidden');
 
   const cardLayout = await page.locator('#card-1').evaluate((card) => {
     const title = card.querySelector<HTMLElement>('.server-card-title')!;
