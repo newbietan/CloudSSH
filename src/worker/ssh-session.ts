@@ -495,14 +495,20 @@ export class SSHSession {
   }
 
   private async processPackets(): Promise<void> {
-    const cipher = this.decryptCipher ? getCipherSpec(this.negotiatedCipherS2C) : null;
-    const blockSize = cipher ? cipher.blockSize : 8;
-    const hasAuthTag = !!cipher?.aead;
-    const macLength = this.decryptCipher && !hasAuthTag ? getMacSpec(this.negotiatedMacS2C).length : 0;
-    const hasDecrypt = !!this.decryptCipher;
-    this.sendDebug(() => `processPackets: blockSize=${blockSize}, hasDecrypt=${hasDecrypt}, bufferLen=${this.packetParser.getBufferLength()}`);
-
     while (true) {
+      // Encryption state changes after handling SSH_MSG_NEWKEYS
+      // (handlePacket -> enableEncryption). The first encrypted packet can
+      // arrive in the same read chunk as NEWKEYS, so these parameters MUST be
+      // recomputed for every packet. If they go stale, the ciphertext's first
+      // bytes are misread as packet_length, e.g. "Packet length 965473881
+      // exceeds maximum allowed size 262144".
+      const cipher = this.decryptCipher ? getCipherSpec(this.negotiatedCipherS2C) : null;
+      const blockSize = cipher ? cipher.blockSize : 8;
+      const hasAuthTag = !!cipher?.aead;
+      const macLength = this.decryptCipher && !hasAuthTag ? getMacSpec(this.negotiatedMacS2C).length : 0;
+      const hasDecrypt = !!this.decryptCipher;
+      this.sendDebug(() => `processPackets: blockSize=${blockSize}, hasDecrypt=${hasDecrypt}, bufferLen=${this.packetParser.getBufferLength()}`);
+
       try {
         const packet = await this.packetParser.nextPacket(
           blockSize,
