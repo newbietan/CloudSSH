@@ -323,6 +323,8 @@ release: 发布新版本
 
 28. **Frontend i18n** - 所有面向用户的文案走 `frontend/src/i18n` 的 `t()` / `data-i18n` / `data-i18n-title` / `data-i18n-placeholder` 管线并同步 `locales/zh-CN.ts` 与 `en-US.ts`；语言解析支持 URL 参数、localStorage（`cloudssh_locale`）与浏览器语言回退。新增文案时保持两端词条对齐，勿硬编码中文到模板字符串。
 
+29. **CI paths-ignore 作用域** - `deploy.yml` 的 `paths-ignore` 使用标准 glob：`*` 不匹配 `/`，因此 `*.md` 只覆盖仓库根目录的 Markdown，`tests/` 等子目录下的文档变更（如 `tests/README.md`）会照常触发部署流水线。忽略目录内文件必须用 `**/*.md` / `**/*.png` 等跨目录模式；修改 `deploy.yml` 本身会触发一次校验运行（属于预期行为，且能验证新过滤规则）。
+
 ## Deployment Notes
 
 ### 双环境部署
