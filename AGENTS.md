@@ -278,7 +278,7 @@ perf: 性能优化
 docs: 文档更新
 chore: 构建/配置变更
 ci: CI/CD 变更
-release: 发布新版本
+release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流和文档更新版本`）
 ```
 
 ### 分支用途
@@ -407,11 +407,11 @@ CLI: `npx wrangler secret set <SECRET_NAME>`
    - `README.md` 中的 `更新日志` 链接与 `README_en.md` 中的 `Changelog` 跳转超链接必须保持正常。
 3. **发布流程（从版本指定到上线，按顺序执行）**：
    1. 用户明确指定发布版本号（如 v1.10.1）后，AI 按第 1 条更新版本文件与 CHANGELOG，并提交推送：
-      - 提交信息遵循 `release: 发布 vX.Y.Z 版本` 格式，正文注明本次版本更新要点与验证结果（typecheck / test / verify）。
+      - 提交信息遵循 `release: 发布 vX.Y.Z <主题>版本` 格式（主题概括本次版本的核心改动，如 `release: 发布 v1.10.2 工作流和文档更新版本`），正文注明本次版本更新要点与验证结果（typecheck / test / verify）。
       - 提交前确认工作区干净或只暂存版本与 CHANGELOG 相关文件，避免混入无关改动（如格式化漂移）。
       - 推送 `test` 分支：`git push origin test`（触发测试环境自动部署）。
    2. 创建 PR 合并 `test` 到 `main`：
-      - 标题遵循 `release: 发布 vX.Y.Z 版本` 格式。
+      - 标题遵循 `release: 发布 vX.Y.Z <主题>版本` 格式（与提交信息主题一致）。
       - 正文必须说明本次版本的更新内容：包含提交列表、关联 Issue/PR、验证结果。
    3. **PR 的审核与合并由用户手动完成**：AI 创建 PR 后应等待用户审核并合并，不得自行合并或使用管理员旁路合并。
    4. 用户合并 PR 到 `main` 后（生产环境自动部署），AI 执行以下命令同步本地分支：
