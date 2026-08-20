@@ -45,6 +45,9 @@ export class TabManager {
   /** 连接后检测到远端操作系统时触发（用于更新服务器列表图标） */
   private onOSDetected?: (serverId: number, os: string) => void;
 
+  /** 标签数量变化时触发（用于同步返回终端按钮显隐等） */
+  private onTabsChanged?: () => void;
+
   constructor(tabBarId: string, terminalAreaId: string) {
     this.tabBarEl = document.getElementById(tabBarId)!;
     this.terminalAreaEl = document.getElementById(terminalAreaId)!;
@@ -61,6 +64,10 @@ export class TabManager {
 
   setOSDetectedHandler(handler: (serverId: number, os: string) => void): void {
     this.onOSDetected = handler;
+  }
+
+  setTabsChangedHandler(handler: () => void): void {
+    this.onTabsChanged = handler;
   }
 
   // ==================== 创建标签 ====================
@@ -198,6 +205,7 @@ export class TabManager {
     });
     this.switchTab(id);
     this.renderTabBar();
+    this.tabsChanged();
 
     return tab;
   }
@@ -264,6 +272,7 @@ export class TabManager {
 
     this.renderTabBar();
     this.updateSelectionAction();
+    this.tabsChanged();
   }
 
   closeAllTabs(): void {
@@ -289,6 +298,7 @@ export class TabManager {
     this.renderTabBar();
     this.updateSelectionAction();
     this.onAllTabsClosed?.();
+    this.tabsChanged();
   }
 
   // ==================== 获取当前活跃标签 ====================
@@ -366,28 +376,27 @@ export class TabManager {
   renderTabBar(): void {
     // 保留 new-tab-btn，清除其他标签按钮
     const newTabBtn = this.tabBarEl.querySelector('#new-tab-btn');
-    this.tabBarEl.innerHTML = '';
+    this.tabBarEl.replaceChildren();
 
-    this.tabs.forEach((tab) => {
+    for (const tab of this.tabs.values()) {
       const tabEl = document.createElement('div');
       tabEl.className = `tab-item${tab.id === this.activeTabId ? ' active' : ''}${tab.state === 'disconnected' ? ' disconnected' : ''}`;
       tabEl.dataset.tabId = tab.id;
 
       // 状态指示点
-      const dotClass =
-        tab.state === 'connected'
-          ? 'tab-dot-connected'
-          : tab.state === 'connecting'
-            ? 'tab-dot-connecting'
-            : 'tab-dot-disconnected';
+      const dot = document.createElement('span');
+      dot.className = `tab-dot ${this.tabDotClass(tab.state)}`;
 
-      tabEl.innerHTML = `
-        <span class="tab-dot ${dotClass}"></span>
-        <span class="tab-label">${this.escapeHtml(tab.label)}</span>
-        <button class="tab-close" title="${t('terminal.closeTab')}">
-          <span class="material-symbols-outlined" style="font-size:14px;">close</span>
-        </button>
-      `;
+      const label = document.createElement('span');
+      label.className = 'tab-label';
+      label.textContent = tab.label;
+
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'tab-close';
+      closeBtn.title = t('terminal.closeTab');
+      closeBtn.appendChild(this.createIcon('close', '14px'));
+
+      tabEl.append(dot, label, closeBtn);
 
       // 点击标签切换
       tabEl.addEventListener('click', (e) => {
@@ -397,13 +406,13 @@ export class TabManager {
       });
 
       // 关闭按钮
-      tabEl.querySelector('.tab-close')!.addEventListener('click', (e) => {
+      closeBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         this.closeTab(tab.id);
       });
 
       this.tabBarEl.appendChild(tabEl);
-    });
+    }
 
     // 追加 new-tab-btn
     if (newTabBtn) {
@@ -413,9 +422,30 @@ export class TabManager {
       btn.id = 'new-tab-btn';
       btn.className = 'tab-new-btn';
       btn.title = t('terminal.newConnection');
-      btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px;">add</span>';
+      btn.appendChild(this.createIcon('add', '16px'));
       this.tabBarEl.appendChild(btn);
     }
+  }
+
+  private tabDotClass(state: TabState): string {
+    if (state === 'connected') return 'tab-dot-connected';
+    if (state === 'connecting') return 'tab-dot-connecting';
+    return 'tab-dot-disconnected';
+  }
+
+  private createIcon(name: string, size: string): HTMLSpanElement {
+    const icon = document.createElement('span');
+    icon.className = 'material-symbols-outlined';
+    icon.style.fontSize = size;
+    icon.textContent = name;
+    return icon;
+  }
+
+  private setStatusIndicator(el: HTMLElement | null, dotClass: string, text: string): void {
+    if (!el) return;
+    const dot = document.createElement('span');
+    dot.className = `${dotClass} inline-block`;
+    el.replaceChildren(dot, document.createTextNode(text));
   }
 
   // ==================== 状态栏同步 ====================
@@ -431,21 +461,24 @@ export class TabManager {
       if (termHost) {
         const masked = maskIPAddress(tab.hostInfo.host);
         if (masked) {
-          const copyIPLabel = this.escapeAttr(t('terminal.clickToCopyIP'));
-          termHost.innerHTML = `${t('terminal.hostLabel')}<button type="button" class="host-ip-badge" title="${copyIPLabel}" aria-label="${copyIPLabel}">${this.escapeHtml(masked)}</button>`;
-          const badge = termHost.querySelector('.host-ip-badge') as HTMLButtonElement | null;
-          if (badge) {
-            badge.addEventListener('click', async () => {
-              const ok = await copyTextToClipboard(tab.hostInfo!.host);
-              if (ok) {
-                badge.classList.add('host-ip-copied');
-                setTimeout(() => badge.classList.remove('host-ip-copied'), 800);
-                notify(t('terminal.ipCopied'), { variant: 'success', duration: 1500 });
-              } else {
-                notify(t('terminal.ipCopyFailed'), { variant: 'danger' });
-              }
-            });
-          }
+          const copyIPLabel = t('terminal.clickToCopyIP');
+          const badge = document.createElement('button');
+          badge.type = 'button';
+          badge.className = 'host-ip-badge';
+          badge.title = copyIPLabel;
+          badge.setAttribute('aria-label', copyIPLabel);
+          badge.textContent = masked;
+          termHost.replaceChildren(document.createTextNode(t('terminal.hostLabel')), badge);
+          badge.addEventListener('click', async () => {
+            const ok = await copyTextToClipboard(tab.hostInfo!.host);
+            if (ok) {
+              badge.classList.add('host-ip-copied');
+              setTimeout(() => badge.classList.remove('host-ip-copied'), 800);
+              notify(t('terminal.ipCopied'), { variant: 'success', duration: 1500 });
+            } else {
+              notify(t('terminal.ipCopyFailed'), { variant: 'danger' });
+            }
+          });
         } else {
           termHost.textContent = t('terminal.host', { value: tab.hostInfo.host });
         }
@@ -462,39 +495,60 @@ export class TabManager {
     }
 
     if (tab.state === 'connected') {
-      if (termStatus)
-        termStatus.innerHTML = `<div class="w-2 h-2 bg-primary-container"></div> ${t('terminal.connected')}`;
-      if (statusText)
-        statusText.innerHTML = `<span class="w-2 h-2 bg-[var(--accent)] inline-block animate-pulse"></span> ${t('auth.statusOnline')}`;
+      this.setStatusIndicator(termStatus, 'w-2 h-2 bg-primary-container', t('terminal.connected'));
+      this.setStatusIndicator(
+        statusText,
+        'w-2 h-2 bg-[var(--accent)] animate-pulse',
+        t('auth.statusOnline')
+      );
     } else if (tab.state === 'connecting') {
-      if (termStatus)
-        termStatus.innerHTML = `<div class="w-2 h-2 bg-primary-container animate-pulse"></div> ${t('terminal.connecting')}`;
+      this.setStatusIndicator(
+        termStatus,
+        'w-2 h-2 bg-primary-container animate-pulse',
+        t('terminal.connecting')
+      );
     } else {
-      if (termStatus)
-        termStatus.innerHTML = `<div class="w-2 h-2 bg-[var(--error)]"></div> ${t('terminal.disconnected')}`;
-      if (statusText)
-        statusText.innerHTML = `<span class="w-2 h-2 bg-surface-dot inline-block"></span> ${t('auth.statusOffline')}`;
+      this.setStatusIndicator(termStatus, 'w-2 h-2 bg-[var(--error)]', t('terminal.disconnected'));
+      this.setStatusIndicator(statusText, 'w-2 h-2 bg-surface-dot', t('auth.statusOffline'));
     }
 
     // 更新状态栏显示延迟信息
     const termInfo = document.getElementById('term-info');
     if (termInfo) {
       if (tab.state === 'connected') {
-        const latencyItems: string[] = [];
+        const latencyItems: { label: string; quality: string }[] = [];
         if (tab.cfLatency !== undefined) {
-          const quality = getNetworkQuality(tab.cfLatency, 'cf');
-          latencyItems.push(
-            `<span class="network-latency-item"><span class="network-quality-dot network-quality-${quality}" aria-hidden="true"></span>CF-${this.escapeHtml(tab.cfColo || 'UNK')}: ${tab.cfLatency}ms</span>`
-          );
+          latencyItems.push({
+            label: `CF-${tab.cfColo || 'UNK'}: ${tab.cfLatency}ms`,
+            quality: getNetworkQuality(tab.cfLatency, 'cf'),
+          });
         }
         if (tab.wsLatency !== undefined) {
-          const quality = getNetworkQuality(tab.wsLatency, 'ws');
-          latencyItems.push(
-            `<span class="network-latency-item"><span class="network-quality-dot network-quality-${quality}" aria-hidden="true"></span>RTT: ${tab.wsLatency}ms</span>`
-          );
+          latencyItems.push({
+            label: `RTT: ${tab.wsLatency}ms`,
+            quality: getNetworkQuality(tab.wsLatency, 'ws'),
+          });
         }
         if (latencyItems.length > 0) {
-          termInfo.innerHTML = `⚡ ${latencyItems.join('<span class="network-latency-separator" aria-hidden="true">|</span>')}`;
+          const fragment = document.createDocumentFragment();
+          fragment.appendChild(document.createTextNode('⚡ '));
+          for (const [index, item] of latencyItems.entries()) {
+            if (index > 0) {
+              const separator = document.createElement('span');
+              separator.className = 'network-latency-separator';
+              separator.setAttribute('aria-hidden', 'true');
+              separator.textContent = '|';
+              fragment.appendChild(separator);
+            }
+            const itemEl = document.createElement('span');
+            itemEl.className = 'network-latency-item';
+            const dot = document.createElement('span');
+            dot.className = `network-quality-dot network-quality-${item.quality}`;
+            dot.setAttribute('aria-hidden', 'true');
+            itemEl.append(dot, document.createTextNode(item.label));
+            fragment.appendChild(itemEl);
+          }
+          termInfo.replaceChildren(fragment);
         } else {
           termInfo.textContent = '';
         }
@@ -537,19 +591,7 @@ export class TabManager {
     button.style.top = `${Math.max(terminalBounds.top + viewportPadding, top)}px`;
   }
 
-  // ==================== 工具函数 ====================
-
-  private escapeHtml(text: string): string {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-  private escapeAttr(text: string): string {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/"/g, '&quot;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+  private tabsChanged(): void {
+    this.onTabsChanged?.();
   }
 }

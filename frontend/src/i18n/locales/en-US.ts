@@ -209,6 +209,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'terminal.snippets': 'Command snippets',
   'terminal.disconnect': 'Disconnect',
   'terminal.newConnection': 'New connection',
+  'terminal.backToTerminal': 'Back to terminal',
   'terminal.connected': 'Connected',
   'terminal.connecting': 'Connecting',
   'terminal.disconnected': 'Disconnected',

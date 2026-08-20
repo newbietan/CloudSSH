@@ -2414,6 +2414,11 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
     margin-bottom: 16px;
   }
 
+  /* 窄屏下“返回终端”按钮只保留图标，避免工具栏溢出 */
+  .back-to-terminal-label {
+    display: none;
+  }
+
   .server-list-toolbar #add-server-btn {
     flex: 0 0 auto;
     padding: 8px 10px;

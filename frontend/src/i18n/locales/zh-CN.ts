@@ -165,6 +165,7 @@ export const zhCN = {
   'terminal.snippets': '命令片段',
   'terminal.disconnect': '断开连接',
   'terminal.newConnection': '新建连接',
+  'terminal.backToTerminal': '返回终端',
   'terminal.connected': '已连接',
   'terminal.connecting': '连接中',
   'terminal.disconnected': '已断开',

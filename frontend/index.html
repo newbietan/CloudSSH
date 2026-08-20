@@ -1,392 +1,1094 @@
-<!DOCTYPE html>
+<!doctype html>
 <html class="dark" lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
-  <meta name="color-scheme" content="dark light" />
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <title>CloudSSH</title>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/src/style.css" />
-  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
-</head>
-<body class="min-h-screen font-body text-sm">
-  <div id="app">
-    <!-- Login Page (匿名连接) -->
-    <div id="auth-section" class="min-h-screen flex items-center justify-center p-6 relative overflow-y-auto">
-      <div class="scanlines"></div>
-      <div class="flicker"></div>
-      <main class="w-full max-w-md relative z-10">
-        <div class="mb-8 text-center">
-          <div class="text-3xl font-bold text-primary tracking-tighter mb-2">CloudSSH<span class="blinking-cursor"></span></div>
-        </div>
-        <div class="cyber-box p-6 shadow-2xl relative">
-          <div class="theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent opacity-50"></div>
-          <div class="flex items-center justify-between mb-8 pb-4 border-b border-dim">
-            <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]" data-i18n="auth.connectionParameters">连接参数</span>
-            <div class="flex items-center gap-3">
-              <div data-language-switcher></div>
-              <span class="material-symbols-outlined text-[var(--accent-secondary)]" style="font-variation-settings: 'FILL' 0;">terminal</span>
-            </div>
-          </div>
-          <div id="connection-form-container"></div>
-        </div>
-        <div class="mt-8 text-center text-[13px] text-muted opacity-60" data-i18n="auth.systemReady">系统就绪，等待输入。</div>
-        <div class="mt-4 text-center">
-          <a href="https://github.com/newbietan/CloudSSH" class="text-[13px] text-primary opacity-60 hover:opacity-100 transition-colors tracking-widest uppercase">[ GitHub Open Source ]</a>
-        </div>
-      </main>
-    </div>
-
-    <!-- User Space Page (登录后) -->
-    <div id="user-space-section" class="hidden min-h-screen flex-col bg-elevated text-on-surface">
-      <!-- TopAppBar -->
-      <header class="user-space-header flex justify-between items-center w-full px-6 h-16 bg-elevated border-b border-outline-variant z-50 relative">
-        <div class="user-space-brand flex items-center gap-6 min-w-0">
-          <h1 class="text-2xl font-bold text-primary-container tracking-tighter cursor-pointer" id="user-space-logo">CloudSSH</h1>
-        </div>
-        <div id="user-space-header-actions" class="user-space-header-actions flex items-center gap-4">
-          <select id="user-theme-selector" data-theme-selector
-            class="theme-selector bg-surface-variant text-on-surface-variant text-xs py-1 px-2 border-none outline-none cursor-pointer"
-            data-i18n-aria-label="theme.selector" aria-label="主题与界面风格">
-            <option value="standard-dark">Standard Dark</option>
-            <option value="standard-light">Standard Light</option>
-            <option value="cyberpunk">Cyberpunk</option>
-            <option value="glacier">Glacier · Soft</option>
-            <option value="gruvbox">Gruvbox · Dense</option>
-          </select>
-          <button data-theme-import class="theme-toolbar-button user-space-menu-action hover:opacity-80 cursor-pointer p-1 flex items-center justify-center"
-            data-i18n-title="terminal.importTheme" title="导入主题">
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">upload_file</span>
-            <span class="user-space-action-label" data-i18n="terminal.importTheme">导入主题</span>
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>CloudSSH</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+    <script
+      src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+      async
+      defer
+    ></script>
+  </head>
+  <body class="min-h-screen font-body text-sm">
+    <div id="app">
+      <!-- Login Page (匿名连接) -->
+      <div
+        id="auth-section"
+        class="min-h-screen flex items-center justify-center p-6 relative overflow-y-auto"
+      >
+        <div class="scanlines"></div>
+        <div class="flicker"></div>
+        <main class="w-full max-w-md relative z-10">
+          <button
+            id="back-to-terminal-from-auth-btn"
+            class="hidden cyber-button text-primary py-2 px-3 text-xs font-bold tracking-[0.1em] uppercase flex items-center gap-1.5 mx-auto mb-4"
+            data-i18n-title="terminal.backToTerminal"
+            title="返回终端"
+          >
+            <span class="material-symbols-outlined" style="font-size: 16px"
+              >arrow_back</span
+            >
+            <span
+              class="back-to-terminal-label"
+              data-i18n="terminal.backToTerminal"
+              >返回终端</span
+            >
           </button>
-          <div data-language-switcher></div>
-          <div id="user-info" class="flex items-center gap-3">
-            <!-- 动态渲染：头像 + 用户名 -->
-          </div>
-          <button id="ai-config-btn" class="user-space-menu-action hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="agent.settings" title="AI Agent 设置">
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">psychology</span>
-            <span class="user-space-action-label" data-i18n="agent.settings">AI Agent 设置</span>
-          </button>
-          <button id="logout-btn" class="user-space-menu-action hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center text-error" data-i18n-title="auth.logout" title="退出登录">
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">logout</span>
-            <span class="user-space-action-label" data-i18n="auth.logout">退出登录</span>
-          </button>
-        </div>
-        <button id="user-space-more-btn" type="button" class="user-space-more-button mobile-only" aria-expanded="false" aria-controls="user-space-header-actions" data-i18n-title="terminal.moreActions" data-i18n-aria-label="terminal.moreActions" title="更多操作" aria-label="更多操作">
-          <span class="material-symbols-outlined" aria-hidden="true">more_vert</span>
-        </button>
-      </header>
-
-      <!-- Server List Area -->
-      <main class="user-space-main flex-1 p-6 relative overflow-auto custom-scrollbar">
-        <div class="scanlines pointer-events-none"></div>
-        <div class="max-w-5xl mx-auto">
-          <!-- 顶部操作栏 -->
-          <div class="server-list-toolbar flex justify-between items-center mb-6">
-            <div>
-              <h2 class="text-lg font-bold text-primary tracking-[0.1em]" data-i18n="server.list">服务器列表</h2>
-              <p class="text-xs text-muted opacity-60 mt-1" data-i18n="server.manage">管理你的 SSH 连接</p>
+          <div class="mb-8 text-center">
+            <div class="text-3xl font-bold text-primary tracking-tighter mb-2">
+              CloudSSH<span class="blinking-cursor"></span>
             </div>
-            <button id="add-server-btn" class="cyber-button text-primary py-2 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center gap-2">
-              <span class="material-symbols-outlined" style="font-size: 16px;">add</span>
-              <span data-i18n="server.add">添加服务器</span>
-            </button>
           </div>
-          <!-- 服务器搜索（仅在存在服务器时显示） -->
-          <div id="server-search-wrapper" class="hidden mb-4">
-            <div class="flex flex-col sm:flex-row gap-3">
-              <div class="relative flex-1 max-w-md">
-                <label for="server-search" class="sr-only" data-i18n="server.searchLabel">搜索服务器</label>
-                <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-dim pointer-events-none" style="font-size: 17px;" aria-hidden="true">search</span>
-                <input id="server-search" type="search"
-                  class="terminal-input text-[13px] w-full"
-                  style="padding-left: 36px; padding-right: 38px;"
-                  data-i18n-placeholder="server.searchPlaceholder"
-                  placeholder="按名称、主机或用户名搜索"
-                  autocomplete="off">
-                <button id="server-search-clear" type="button"
-                  class="hidden absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-primary p-1"
-                  data-i18n-aria-label="server.clearSearch"
-                  aria-label="清空搜索">
-                  <span class="material-symbols-outlined" style="font-size: 16px;" aria-hidden="true">close</span>
-                </button>
-              </div>
-              <div id="server-tag-filter-wrapper" class="hidden sm:w-52">
-                <label for="server-tag-filter" class="sr-only" data-i18n="server.tagFilter">按标签筛选</label>
-                <select id="server-tag-filter" class="terminal-input text-[13px] w-full cursor-pointer" data-i18n-aria-label="server.tagFilter" aria-label="按标签筛选"></select>
+          <div class="cyber-box p-6 shadow-2xl relative">
+            <div
+              class="theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent opacity-50"
+            ></div>
+            <div
+              class="flex items-center justify-between mb-8 pb-4 border-b border-dim"
+            >
+              <span
+                class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]"
+                data-i18n="auth.connectionParameters"
+                >连接参数</span
+              >
+              <div class="flex items-center gap-3">
+                <div data-language-switcher></div>
+                <span
+                  class="material-symbols-outlined text-[var(--accent-secondary)]"
+                  style="font-variation-settings: &quot;FILL&quot; 0"
+                  >terminal</span
+                >
               </div>
             </div>
+            <div id="connection-form-container"></div>
           </div>
-          <!-- 服务器卡片网格 -->
-          <div id="server-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <!-- 由 JS 动态渲染 -->
+          <div
+            class="mt-8 text-center text-[13px] text-muted opacity-60"
+            data-i18n="auth.systemReady"
+          >
+            系统就绪，等待输入。
           </div>
-          <nav id="server-pagination" class="hidden items-center justify-center gap-3 mt-6" data-i18n-aria-label="server.pagination" aria-label="服务器列表分页">
-            <button id="server-page-prev" type="button" class="cyber-button px-3 py-1.5 text-xs disabled:opacity-30" data-i18n="server.previousPage">上一页</button>
-            <span id="server-page-info" class="text-xs text-muted" aria-live="polite"></span>
-            <button id="server-page-next" type="button" class="cyber-button px-3 py-1.5 text-xs disabled:opacity-30" data-i18n="server.nextPage">下一页</button>
-          </nav>
-          <!-- 搜索无结果状态 -->
-          <div id="server-search-empty" class="hidden flex-col items-center justify-center py-16">
-            <span class="material-symbols-outlined text-dim mb-3" style="font-size: 48px;" aria-hidden="true">search_off</span>
-            <p class="text-muted text-sm tracking-[0.08em] mb-2" data-i18n="server.noMatches">没有匹配的服务器</p>
-            <p class="text-dim text-xs" data-i18n="server.noMatchesHint">请尝试其他名称、主机或用户名</p>
+          <div class="mt-4 text-center">
+            <a
+              href="https://github.com/newbietan/CloudSSH"
+              class="text-[13px] text-primary opacity-60 hover:opacity-100 transition-colors tracking-widest uppercase"
+              >[ GitHub Open Source ]</a
+            >
           </div>
-          <!-- 空状态 -->
-          <div id="empty-state" class="hidden flex-col items-center justify-center py-20">
-            <span class="material-symbols-outlined text-dim mb-4" style="font-size: 64px; font-variation-settings: 'FILL' 0;">dns</span>
-            <p class="text-muted text-sm tracking-[0.1em] mb-2" data-i18n="server.none">尚未配置服务器</p>
-            <p class="text-dim text-xs mb-6" data-i18n="server.noneHint">添加一台服务器即可开始使用</p>
-              <button id="empty-add-btn" class="cyber-button text-primary py-2 px-6 text-xs font-bold tracking-[0.1em] uppercase flex items-center gap-2">
-              <span class="material-symbols-outlined" style="font-size: 16px;">add</span>
-              <span data-i18n="server.addFirst">添加第一台服务器</span>
-            </button>
-          </div>
-        </div>
-      </main>
-
-      <!-- Footer -->
-      <footer class="user-space-footer px-6 py-2 flex justify-between items-center z-50 bg-elevated border-t border-outline-variant text-xs h-12">
-        <div class="user-space-footer-source text-secondary-container opacity-60">© <span id="user-copyright-year"></span> CLOUD_SSH_TERMINAL<span class="user-space-footer-url"> - https://github.com/newbietan/CloudSSH</span></div>
-        <div class="flex gap-4">
-          <a class="text-on-surface-variant opacity-60 hover:opacity-100 transition-opacity" href="https://github.com/newbietan/CloudSSH" data-i18n="common.documentation">文档</a>
-        </div>
-      </footer>
-    </div>
-
-    <!-- Server Modal (添加/编辑) -->
-    <div id="server-modal" class="responsive-modal hidden fixed inset-0 z-[100] flex items-center justify-center"
-      role="dialog" aria-modal="true" aria-labelledby="modal-title">
-      <div class="modal-overlay absolute inset-0" id="modal-backdrop"></div>
-      <div class="responsive-modal-panel cyber-box p-6 shadow-2xl relative z-10 w-full max-w-md mx-4">
-        <div class="theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent-secondary)] to-transparent opacity-50"></div>
-        <div class="flex items-center justify-between mb-6 pb-4 border-b border-dim">
-          <span id="modal-title" class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]" data-i18n="server.add">添加服务器</span>
-          <button id="modal-close-btn" class="text-muted hover:text-primary transition-colors cursor-pointer" data-i18n-aria-label="common.close" aria-label="关闭">
-            <span class="material-symbols-outlined" style="font-size: 20px;" aria-hidden="true">close</span>
-          </button>
-        </div>
-        <form id="server-form" class="space-y-4">
-          <div>
-            <label for="server-name" class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="server.name">服务器名称</label>
-            <div class="flex items-center">
-              <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px;">label</span>
-              <input id="server-name" class="terminal-input text-[13px]" data-i18n-placeholder="server.namePlaceholder" placeholder="我的服务器" type="text" required>
-            </div>
-          </div>
-          <div>
-            <label for="server-tags" class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="server.tags">标签</label>
-            <input id="server-tags" class="terminal-input text-[13px] w-full" type="text" data-i18n-placeholder="server.tagsPlaceholder" placeholder="生产, 数据库, 亚太" maxlength="249">
-            <div class="text-[10px] text-muted mt-1" data-i18n="server.tagsHint">使用逗号分隔，最多 10 个标签</div>
-          </div>
-          <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
-            <div class="sm:col-span-3">
-              <label for="server-host" class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.host">主机地址</label>
-              <div class="flex items-center">
-                <span class="text-muted mr-2">&gt;</span>
-                <input id="server-host" class="terminal-input text-[13px]" placeholder="192.168.1.1" type="text" required>
-              </div>
-            </div>
-            <div class="sm:col-span-1">
-              <label for="server-port" class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.port">端口</label>
-              <div class="flex items-center">
-                <span class="text-muted mr-2">:</span>
-                <input id="server-port" class="terminal-input text-[13px]" placeholder="22" type="number" inputmode="numeric" min="1" max="65535" step="1" value="22" required>
-              </div>
-            </div>
-          </div>
-          <div>
-            <label for="server-username" class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.user">用户名</label>
-            <div class="flex items-center">
-              <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px;">person</span>
-              <input id="server-username" class="terminal-input text-[13px]" placeholder="root" type="text" required>
-            </div>
-          </div>
-          <div>
-            <label for="server-jump-host" class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="server.jumpHost">跳板服务器</label>
-            <select id="server-jump-host" class="terminal-input text-[13px] cursor-pointer" style="border:1px solid var(--border-strong);border-bottom:1px solid var(--border-strong);padding:6px 8px;">
-              <option value="" data-i18n="server.jumpHostNone">不使用跳板（直连）</option>
-            </select>
-            <div class="text-[10px] text-muted mt-1" data-i18n="server.jumpHostHint">可选择已保存服务器；最多递归跳转 3 级</div>
-          </div>
-          <div>
-            <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.method">认证方式</label>
-            <div class="flex gap-2 mb-3">
-              <button type="button" id="modal-auth-tab-password" class="auth-tab auth-tab-active px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all" data-i18n="common.password">密码</button>
-              <button type="button" id="modal-auth-tab-key" class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all" data-i18n="common.privateKey">私钥</button>
-            </div>
-            <div id="modal-password-section">
-              <div class="flex items-center">
-                <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px;">key</span>
-                <input id="server-password" class="terminal-input text-[13px]" placeholder="••••••••" type="password" data-i18n-aria-label="common.password" aria-label="密码">
-              </div>
-            </div>
-            <div id="modal-key-section" style="display:none;">
-              <textarea id="server-private-key" class="terminal-input text-[11px] w-full" rows="4" data-i18n-placeholder="auth.keyPlaceholder" data-i18n-aria-label="common.privateKey" aria-label="私钥" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...粘贴私钥内容...&#10;-----END OPENSSH PRIVATE KEY-----" style="resize:vertical;border:1px solid var(--border-strong);padding:8px;"></textarea>
-            </div>
-          </div>
-          <div>
-            <label for="server-region" class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.regionHint">连接区域</label>
-            <select id="server-region" class="terminal-input text-[13px] cursor-pointer" aria-describedby="server-region-inferred" style="border:1px solid var(--border-strong);border-bottom:1px solid var(--border-strong);padding:6px 8px;">
-              <option value="" data-i18n="region.auto">自动（保存时由系统推断）</option>
-            </select>
-            <div id="server-region-inferred" class="text-[10px] text-muted mt-1"></div>
-          </div>
-          <div class="pt-2">
-            <button id="server-submit-btn" class="cyber-button w-full py-3 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-2 bg-primary text-on-primary" type="submit">
-              <span class="material-symbols-outlined" style="font-size: 18px;">save</span>
-              <span data-i18n="server.save">保存服务器</span>
-            </button>
-          </div>
-        </form>
+        </main>
       </div>
-    </div>
 
-    <!-- Terminal Page -->
-    <div id="terminal-section" class="hidden h-screen flex-col bg-background text-on-surface">
-      <!-- TopAppBar -->
-      <header class="terminal-app-header flex justify-between items-center w-full px-6 h-16 bg-background border-b border-outline-variant z-50 relative">
-        <div class="flex items-center gap-6">
-          <h1 class="terminal-app-title text-2xl font-bold text-primary-container tracking-tighter cursor-pointer">CloudSSH</h1>
-        </div>
-        <div class="terminal-header-actions flex items-center gap-2 sm:gap-4 text-primary-container flex-wrap">
-          <select id="theme-selector" data-theme-selector
-            class="desktop-terminal-action theme-selector bg-surface-variant text-on-surface-variant text-xs py-1 px-2 border-none outline-none cursor-pointer"
-            data-i18n-aria-label="theme.selector" aria-label="主题与界面风格">
-            <option value="standard-dark">Standard Dark</option>
-            <option value="standard-light">Standard Light</option>
-            <option value="cyberpunk">Cyberpunk</option>
-            <option value="glacier">Glacier · Soft</option>
-            <option value="gruvbox">Gruvbox · Dense</option>
-          </select>
-          <button id="import-theme-btn" data-theme-import class="desktop-terminal-action theme-toolbar-button hover:opacity-80 cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.importTheme" title="导入主题">
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">upload_file</span>
-          </button>
-          <input type="file" id="import-theme-input" accept=".json" class="hidden">
-          <button id="sftp-toggle-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.sftp" title="SFTP 文件管理器">
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">folder_open</span>
-          </button>
-          <button id="search-btn" class="desktop-terminal-action hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.search" title="搜索（Ctrl+Shift+F）">
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">search</span>
-          </button>
-          <button id="export-btn" class="desktop-terminal-action hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.export" title="导出终端日志">
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">download</span>
-          </button>
-          <button id="snippet-toggle-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.snippets" title="Command snippets">
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">terminal</span>
-          </button>
-          <button id="agent-toggle-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center hidden" data-i18n-title="terminal.agent" title="AI Agent 助手">
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">psychology</span>
-          </button>
-          <button id="disconnect-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center" data-i18n-title="terminal.disconnect" title="断开连接">
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">power_settings_new</span>
-          </button>
-          <button id="mobile-more-btn" type="button" class="mobile-only mobile-header-button" aria-expanded="false" aria-controls="mobile-more-menu" data-i18n-title="terminal.moreActions" title="更多操作">
-            <span class="material-symbols-outlined" aria-hidden="true">more_vert</span>
-          </button>
-        </div>
-        <div id="mobile-more-menu" class="mobile-more-menu mobile-only hidden">
-          <label class="mobile-more-theme-row">
-            <span data-i18n="theme.selector">主题与界面风格</span>
-            <select id="mobile-theme-selector" data-theme-selector class="theme-selector" data-i18n-aria-label="theme.selector" aria-label="主题与界面风格">
+      <!-- User Space Page (登录后) -->
+      <div
+        id="user-space-section"
+        class="hidden min-h-screen flex-col bg-elevated text-on-surface"
+      >
+        <!-- TopAppBar -->
+        <header
+          class="user-space-header flex justify-between items-center w-full px-6 h-16 bg-elevated border-b border-outline-variant z-50 relative"
+        >
+          <div class="user-space-brand flex items-center gap-6 min-w-0">
+            <h1
+              class="text-2xl font-bold text-primary-container tracking-tighter cursor-pointer"
+              id="user-space-logo"
+            >
+              CloudSSH
+            </h1>
+          </div>
+          <div
+            id="user-space-header-actions"
+            class="user-space-header-actions flex items-center gap-4"
+          >
+            <select
+              id="user-theme-selector"
+              data-theme-selector
+              class="theme-selector bg-surface-variant text-on-surface-variant text-xs py-1 px-2 border-none outline-none cursor-pointer"
+              data-i18n-aria-label="theme.selector"
+              aria-label="主题与界面风格"
+            >
               <option value="standard-dark">Standard Dark</option>
               <option value="standard-light">Standard Light</option>
               <option value="cyberpunk">Cyberpunk</option>
               <option value="glacier">Glacier · Soft</option>
               <option value="gruvbox">Gruvbox · Dense</option>
             </select>
-          </label>
-          <button id="mobile-search-btn" type="button">
-            <span class="material-symbols-outlined" aria-hidden="true">search</span><span data-i18n="terminal.searchMobile">搜索</span>
-          </button>
-          <button id="mobile-snippets-btn" type="button">
-            <span class="material-symbols-outlined" aria-hidden="true">terminal</span><span data-i18n="snippets.title">Command snippets</span>
-          </button>
-          <button id="mobile-export-btn" type="button">
-            <span class="material-symbols-outlined" aria-hidden="true">download</span><span data-i18n="terminal.export">导出终端日志</span>
-          </button>
-          <button type="button" data-theme-import>
-            <span class="material-symbols-outlined" aria-hidden="true">upload_file</span><span data-i18n="terminal.importTheme">导入主题</span>
-          </button>
-          <button id="mobile-landscape-btn" type="button">
-            <span class="material-symbols-outlined" aria-hidden="true">screen_rotation</span><span data-mobile-landscape-label data-i18n="terminal.landscapeMode">全屏横屏</span>
-          </button>
-        </div>
-      </header>
-
-      <!-- Tab Bar（标签栏） -->
-      <div id="tab-bar" class="flex items-center bg-background border-b border-outline-variant px-2 h-9 overflow-x-auto custom-scrollbar gap-0.5"
-           style="scrollbar-width: thin;">
-        <!-- 由 TabManager 动态渲染标签 -->
-        <button id="new-tab-btn" class="tab-new-btn" data-i18n-title="terminal.newConnection" title="新建连接">
-          <span class="material-symbols-outlined" style="font-size:16px;">add</span>
-        </button>
-      </div>
-
-      <!-- Main Terminal -->
-      <main class="terminal-main flex-1 relative bg-surface-container-lowest overflow-hidden">
-        <div class="absolute inset-0 scanline pointer-events-none z-10 opacity-30"></div>
-        <div id="terminal-wrapper" class="h-full w-full border border-outline-variant bg-[var(--bg)] p-2 lg:p-4 overflow-hidden font-code text-[13px] text-primary-container relative z-0 flex flex-col">
-          <!-- Status Bar -->
-          <div class="terminal-status-bar flex justify-between items-center border-b border-[var(--border)] pb-2 mb-4 text-on-surface-variant opacity-80 text-[11px]">
-            <div class="terminal-status-details flex gap-2 sm:gap-6 flex-wrap">
-              <span id="term-status" class="flex items-center gap-1"><div class="w-2 h-2 bg-primary-container"></div> 已连接</span>
-              <span id="term-host" class="truncate max-w-[200px]">主机：-</span>
-              <span id="term-user" class="truncate max-w-[120px]">用户：-</span>
-              <span id="term-port">端口：-</span>
+            <button
+              data-theme-import
+              class="theme-toolbar-button user-space-menu-action hover:opacity-80 cursor-pointer p-1 flex items-center justify-center"
+              data-i18n-title="terminal.importTheme"
+              title="导入主题"
+            >
+              <span
+                class="material-symbols-outlined"
+                style="font-variation-settings: &quot;FILL&quot; 0"
+                >upload_file</span
+              >
+              <span
+                class="user-space-action-label"
+                data-i18n="terminal.importTheme"
+                >导入主题</span
+              >
+            </button>
+            <div data-language-switcher></div>
+            <div id="user-info" class="flex items-center gap-3">
+              <!-- 动态渲染：头像 + 用户名 -->
             </div>
-            <div>
-              <span id="term-info"></span>
+            <button
+              id="ai-config-btn"
+              class="user-space-menu-action hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center"
+              data-i18n-title="agent.settings"
+              title="AI Agent 设置"
+            >
+              <span
+                class="material-symbols-outlined"
+                style="font-variation-settings: &quot;FILL&quot; 0"
+                >psychology</span
+              >
+              <span class="user-space-action-label" data-i18n="agent.settings"
+                >AI Agent 设置</span
+              >
+            </button>
+            <button
+              id="logout-btn"
+              class="user-space-menu-action hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center text-error"
+              data-i18n-title="auth.logout"
+              title="退出登录"
+            >
+              <span
+                class="material-symbols-outlined"
+                style="font-variation-settings: &quot;FILL&quot; 0"
+                >logout</span
+              >
+              <span class="user-space-action-label" data-i18n="auth.logout"
+                >退出登录</span
+              >
+            </button>
+          </div>
+          <button
+            id="user-space-more-btn"
+            type="button"
+            class="user-space-more-button mobile-only"
+            aria-expanded="false"
+            aria-controls="user-space-header-actions"
+            data-i18n-title="terminal.moreActions"
+            data-i18n-aria-label="terminal.moreActions"
+            title="更多操作"
+            aria-label="更多操作"
+          >
+            <span class="material-symbols-outlined" aria-hidden="true"
+              >more_vert</span
+            >
+          </button>
+        </header>
+
+        <!-- Server List Area -->
+        <main
+          class="user-space-main flex-1 p-6 relative overflow-auto custom-scrollbar"
+        >
+          <div class="scanlines pointer-events-none"></div>
+          <div class="max-w-5xl mx-auto">
+            <!-- 顶部操作栏 -->
+            <div
+              class="server-list-toolbar flex justify-between items-center mb-6"
+            >
+              <div>
+                <h2
+                  class="text-lg font-bold text-primary tracking-[0.1em]"
+                  data-i18n="server.list"
+                >
+                  服务器列表
+                </h2>
+                <p
+                  class="text-xs text-muted opacity-60 mt-1"
+                  data-i18n="server.manage"
+                >
+                  管理你的 SSH 连接
+                </p>
+              </div>
+              <div class="flex items-center gap-2">
+                <button
+                  id="back-to-terminal-btn"
+                  class="hidden cyber-button text-primary py-2 px-3 text-xs font-bold tracking-[0.1em] uppercase flex items-center gap-1.5"
+                  data-i18n-title="terminal.backToTerminal"
+                  title="返回终端"
+                >
+                  <span
+                    class="material-symbols-outlined"
+                    style="font-size: 16px"
+                    >arrow_back</span
+                  >
+                  <span
+                    class="back-to-terminal-label"
+                    data-i18n="terminal.backToTerminal"
+                    >返回终端</span
+                  >
+                </button>
+                <button
+                  id="add-server-btn"
+                  class="cyber-button text-primary py-2 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center gap-2"
+                >
+                  <span
+                    class="material-symbols-outlined"
+                    style="font-size: 16px"
+                    >add</span
+                  >
+                  <span data-i18n="server.add">添加服务器</span>
+                </button>
+              </div>
+            </div>
+            <!-- 服务器搜索（仅在存在服务器时显示） -->
+            <div id="server-search-wrapper" class="hidden mb-4">
+              <div class="flex flex-col sm:flex-row gap-3">
+                <div class="relative flex-1 max-w-md">
+                  <label
+                    for="server-search"
+                    class="sr-only"
+                    data-i18n="server.searchLabel"
+                    >搜索服务器</label
+                  >
+                  <span
+                    class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-dim pointer-events-none"
+                    style="font-size: 17px"
+                    aria-hidden="true"
+                    >search</span
+                  >
+                  <input
+                    id="server-search"
+                    type="search"
+                    class="terminal-input text-[13px] w-full"
+                    style="padding-left: 36px; padding-right: 38px"
+                    data-i18n-placeholder="server.searchPlaceholder"
+                    placeholder="按名称、主机或用户名搜索"
+                    autocomplete="off"
+                  />
+                  <button
+                    id="server-search-clear"
+                    type="button"
+                    class="hidden absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-primary p-1"
+                    data-i18n-aria-label="server.clearSearch"
+                    aria-label="清空搜索"
+                  >
+                    <span
+                      class="material-symbols-outlined"
+                      style="font-size: 16px"
+                      aria-hidden="true"
+                      >close</span
+                    >
+                  </button>
+                </div>
+                <div id="server-tag-filter-wrapper" class="hidden sm:w-52">
+                  <label
+                    for="server-tag-filter"
+                    class="sr-only"
+                    data-i18n="server.tagFilter"
+                    >按标签筛选</label
+                  >
+                  <select
+                    id="server-tag-filter"
+                    class="terminal-input text-[13px] w-full cursor-pointer"
+                    data-i18n-aria-label="server.tagFilter"
+                    aria-label="按标签筛选"
+                  ></select>
+                </div>
+              </div>
+            </div>
+            <!-- 服务器卡片网格 -->
+            <div
+              id="server-grid"
+              class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+            >
+              <!-- 由 JS 动态渲染 -->
+            </div>
+            <nav
+              id="server-pagination"
+              class="hidden items-center justify-center gap-3 mt-6"
+              data-i18n-aria-label="server.pagination"
+              aria-label="服务器列表分页"
+            >
+              <button
+                id="server-page-prev"
+                type="button"
+                class="cyber-button px-3 py-1.5 text-xs disabled:opacity-30"
+                data-i18n="server.previousPage"
+              >
+                上一页
+              </button>
+              <span
+                id="server-page-info"
+                class="text-xs text-muted"
+                aria-live="polite"
+              ></span>
+              <button
+                id="server-page-next"
+                type="button"
+                class="cyber-button px-3 py-1.5 text-xs disabled:opacity-30"
+                data-i18n="server.nextPage"
+              >
+                下一页
+              </button>
+            </nav>
+            <!-- 搜索无结果状态 -->
+            <div
+              id="server-search-empty"
+              class="hidden flex-col items-center justify-center py-16"
+            >
+              <span
+                class="material-symbols-outlined text-dim mb-3"
+                style="font-size: 48px"
+                aria-hidden="true"
+                >search_off</span
+              >
+              <p
+                class="text-muted text-sm tracking-[0.08em] mb-2"
+                data-i18n="server.noMatches"
+              >
+                没有匹配的服务器
+              </p>
+              <p class="text-dim text-xs" data-i18n="server.noMatchesHint">
+                请尝试其他名称、主机或用户名
+              </p>
+            </div>
+            <!-- 空状态 -->
+            <div
+              id="empty-state"
+              class="hidden flex-col items-center justify-center py-20"
+            >
+              <span
+                class="material-symbols-outlined text-dim mb-4"
+                style="
+                  font-size: 64px;
+                  font-variation-settings: &quot;FILL&quot; 0;
+                "
+                >dns</span
+              >
+              <p
+                class="text-muted text-sm tracking-[0.1em] mb-2"
+                data-i18n="server.none"
+              >
+                尚未配置服务器
+              </p>
+              <p class="text-dim text-xs mb-6" data-i18n="server.noneHint">
+                添加一台服务器即可开始使用
+              </p>
+              <button
+                id="empty-add-btn"
+                class="cyber-button text-primary py-2 px-6 text-xs font-bold tracking-[0.1em] uppercase flex items-center gap-2"
+              >
+                <span class="material-symbols-outlined" style="font-size: 16px"
+                  >add</span
+                >
+                <span data-i18n="server.addFirst">添加第一台服务器</span>
+              </button>
             </div>
           </div>
-          <!-- Terminal Area (TabManager 在此动态创建每个标签的容器) -->
-          <div id="terminal-area" class="flex-1 overflow-hidden relative"></div>
-        </div>
-      </main>
+        </main>
 
-      <nav id="mobile-terminal-toolbar" class="mobile-terminal-toolbar mobile-only" data-i18n-aria-label="terminal.mobileKeyboard" aria-label="终端快捷键">
-        <div class="mobile-terminal-toolbar-scroll">
-          <button type="button" data-terminal-key="escape">Esc</button>
-          <button type="button" data-terminal-key="tab">Tab</button>
-          <button type="button" data-mobile-modifier="ctrl" aria-pressed="false">Ctrl</button>
-          <button type="button" data-mobile-modifier="alt" aria-pressed="false">Alt</button>
-          <button id="mobile-copy-btn" type="button" data-i18n-title="terminal.copySelection" title="复制选区" aria-pressed="false"><span class="material-symbols-outlined" aria-hidden="true">content_copy</span></button>
-          <button id="mobile-paste-btn" type="button" data-i18n-title="terminal.paste" title="粘贴"><span class="material-symbols-outlined" aria-hidden="true">content_paste</span></button>
-          <button id="mobile-keyboard-hide-btn" type="button" data-i18n-title="terminal.hideKeyboard" title="收起键盘"><span class="material-symbols-outlined" aria-hidden="true">keyboard_hide</span></button>
-          <button type="button" data-terminal-key="arrow_left" data-i18n-title="terminal.arrowLeft" title="左方向键"><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span></button>
-          <button type="button" data-terminal-key="arrow_up" data-i18n-title="terminal.arrowUp" title="上方向键"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
-          <button type="button" data-terminal-key="arrow_down" data-i18n-title="terminal.arrowDown" title="下方向键"><span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>
-          <button type="button" data-terminal-key="arrow_right" data-i18n-title="terminal.arrowRight" title="右方向键"><span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></button>
-          <button type="button" data-terminal-key="home">Home</button>
-          <button type="button" data-terminal-key="end">End</button>
-          <button type="button" data-terminal-key="page_up">PgUp</button>
-          <button type="button" data-terminal-key="page_down">PgDn</button>
-          <button type="button" data-terminal-key="/">/</button>
-          <button type="button" data-terminal-key="-">-</button>
-          <button type="button" data-terminal-key="_">_</button>
-          <button type="button" data-terminal-key="|">|</button>
-          <button type="button" data-terminal-key="~">~</button>
-        </div>
-      </nav>
+        <!-- Footer -->
+        <footer
+          class="user-space-footer px-6 py-2 flex justify-between items-center z-50 bg-elevated border-t border-outline-variant text-xs h-12"
+        >
+          <div
+            class="user-space-footer-source text-secondary-container opacity-60"
+          >
+            © <span id="user-copyright-year"></span> CLOUD_SSH_TERMINAL<span
+              class="user-space-footer-url"
+            >
+              - https://github.com/newbietan/CloudSSH</span
+            >
+          </div>
+          <div class="flex gap-4">
+            <a
+              class="text-on-surface-variant opacity-60 hover:opacity-100 transition-opacity"
+              href="https://github.com/newbietan/CloudSSH"
+              data-i18n="common.documentation"
+              >文档</a
+            >
+          </div>
+        </footer>
+      </div>
 
-      <button id="ask-ai-selection-btn" type="button"
-        class="ask-ai-selection-float hidden cyber-button text-primary px-2 py-1 text-[11px] font-bold items-center gap-1"
-        data-i18n-title="terminal.askAISelection" title="询问 AI 助手">
-        <span class="material-symbols-outlined" style="font-size: 16px; font-variation-settings: 'FILL' 0;" aria-hidden="true">quick_phrases</span>
-        <span data-i18n="terminal.askAISelection">询问 AI 助手</span>
-      </button>
-
-      <!-- Footer -->
-      <footer class="terminal-footer px-6 py-2 flex justify-between items-center z-50 bg-elevated border-t border-outline-variant text-xs h-12 shrink-0">
-        <div class="text-secondary-container opacity-60">© <span id="copyright-year"></span> CLOUD_SSH_TERMINAL - https://github.com/newbietan/CloudSSH</div>
-        <div class="flex gap-4">
-          <a class="text-on-surface-variant opacity-60 hover:opacity-100 transition-opacity" href="https://github.com/newbietan/CloudSSH" data-i18n="common.documentation">文档</a>
+      <!-- Server Modal (添加/编辑) -->
+      <div
+        id="server-modal"
+        class="responsive-modal hidden fixed inset-0 z-[100] flex items-center justify-center"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+      >
+        <div class="modal-overlay absolute inset-0" id="modal-backdrop"></div>
+        <div
+          class="responsive-modal-panel cyber-box p-6 shadow-2xl relative z-10 w-full max-w-md mx-4"
+        >
+          <div
+            class="theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent-secondary)] to-transparent opacity-50"
+          ></div>
+          <div
+            class="flex items-center justify-between mb-6 pb-4 border-b border-dim"
+          >
+            <span
+              id="modal-title"
+              class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]"
+              data-i18n="server.add"
+              >添加服务器</span
+            >
+            <button
+              id="modal-close-btn"
+              class="text-muted hover:text-primary transition-colors cursor-pointer"
+              data-i18n-aria-label="common.close"
+              aria-label="关闭"
+            >
+              <span
+                class="material-symbols-outlined"
+                style="font-size: 20px"
+                aria-hidden="true"
+                >close</span
+              >
+            </button>
+          </div>
+          <form id="server-form" class="space-y-4">
+            <div>
+              <label
+                for="server-name"
+                class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                data-i18n="server.name"
+                >服务器名称</label
+              >
+              <div class="flex items-center">
+                <span
+                  class="material-symbols-outlined text-muted mr-2"
+                  style="font-size: 16px"
+                  >label</span
+                >
+                <input
+                  id="server-name"
+                  class="terminal-input text-[13px]"
+                  data-i18n-placeholder="server.namePlaceholder"
+                  placeholder="我的服务器"
+                  type="text"
+                  required
+                />
+              </div>
+            </div>
+            <div>
+              <label
+                for="server-tags"
+                class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                data-i18n="server.tags"
+                >标签</label
+              >
+              <input
+                id="server-tags"
+                class="terminal-input text-[13px] w-full"
+                type="text"
+                data-i18n-placeholder="server.tagsPlaceholder"
+                placeholder="生产, 数据库, 亚太"
+                maxlength="249"
+              />
+              <div
+                class="text-[10px] text-muted mt-1"
+                data-i18n="server.tagsHint"
+              >
+                使用逗号分隔，最多 10 个标签
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div class="sm:col-span-3">
+                <label
+                  for="server-host"
+                  class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                  data-i18n="auth.host"
+                  >主机地址</label
+                >
+                <div class="flex items-center">
+                  <span class="text-muted mr-2">&gt;</span>
+                  <input
+                    id="server-host"
+                    class="terminal-input text-[13px]"
+                    placeholder="192.168.1.1"
+                    type="text"
+                    required
+                  />
+                </div>
+              </div>
+              <div class="sm:col-span-1">
+                <label
+                  for="server-port"
+                  class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                  data-i18n="auth.port"
+                  >端口</label
+                >
+                <div class="flex items-center">
+                  <span class="text-muted mr-2">:</span>
+                  <input
+                    id="server-port"
+                    class="terminal-input text-[13px]"
+                    placeholder="22"
+                    type="number"
+                    inputmode="numeric"
+                    min="1"
+                    max="65535"
+                    step="1"
+                    value="22"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+            <div>
+              <label
+                for="server-username"
+                class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                data-i18n="auth.user"
+                >用户名</label
+              >
+              <div class="flex items-center">
+                <span
+                  class="material-symbols-outlined text-muted mr-2"
+                  style="font-size: 16px"
+                  >person</span
+                >
+                <input
+                  id="server-username"
+                  class="terminal-input text-[13px]"
+                  placeholder="root"
+                  type="text"
+                  required
+                />
+              </div>
+            </div>
+            <div>
+              <label
+                for="server-jump-host"
+                class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                data-i18n="server.jumpHost"
+                >跳板服务器</label
+              >
+              <select
+                id="server-jump-host"
+                class="terminal-input text-[13px] cursor-pointer"
+                style="
+                  border: 1px solid var(--border-strong);
+                  border-bottom: 1px solid var(--border-strong);
+                  padding: 6px 8px;
+                "
+              >
+                <option value="" data-i18n="server.jumpHostNone">
+                  不使用跳板（直连）
+                </option>
+              </select>
+              <div
+                class="text-[10px] text-muted mt-1"
+                data-i18n="server.jumpHostHint"
+              >
+                可选择已保存服务器；最多递归跳转 3 级
+              </div>
+            </div>
+            <div>
+              <label
+                class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                data-i18n="auth.method"
+                >认证方式</label
+              >
+              <div class="flex gap-2 mb-3">
+                <button
+                  type="button"
+                  id="modal-auth-tab-password"
+                  class="auth-tab auth-tab-active px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all"
+                  data-i18n="common.password"
+                >
+                  密码
+                </button>
+                <button
+                  type="button"
+                  id="modal-auth-tab-key"
+                  class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all"
+                  data-i18n="common.privateKey"
+                >
+                  私钥
+                </button>
+              </div>
+              <div id="modal-password-section">
+                <div class="flex items-center">
+                  <span
+                    class="material-symbols-outlined text-muted mr-2"
+                    style="font-size: 16px"
+                    >key</span
+                  >
+                  <input
+                    id="server-password"
+                    class="terminal-input text-[13px]"
+                    placeholder="••••••••"
+                    type="password"
+                    data-i18n-aria-label="common.password"
+                    aria-label="密码"
+                  />
+                </div>
+              </div>
+              <div id="modal-key-section" style="display: none">
+                <textarea
+                  id="server-private-key"
+                  class="terminal-input text-[11px] w-full"
+                  rows="4"
+                  data-i18n-placeholder="auth.keyPlaceholder"
+                  data-i18n-aria-label="common.privateKey"
+                  aria-label="私钥"
+                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...粘贴私钥内容...&#10;-----END OPENSSH PRIVATE KEY-----"
+                  style="
+                    resize: vertical;
+                    border: 1px solid var(--border-strong);
+                    padding: 8px;
+                  "
+                ></textarea>
+              </div>
+            </div>
+            <div>
+              <label
+                for="server-region"
+                class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                data-i18n="auth.regionHint"
+                >连接区域</label
+              >
+              <select
+                id="server-region"
+                class="terminal-input text-[13px] cursor-pointer"
+                aria-describedby="server-region-inferred"
+                style="
+                  border: 1px solid var(--border-strong);
+                  border-bottom: 1px solid var(--border-strong);
+                  padding: 6px 8px;
+                "
+              >
+                <option value="" data-i18n="region.auto">
+                  自动（保存时由系统推断）
+                </option>
+              </select>
+              <div
+                id="server-region-inferred"
+                class="text-[10px] text-muted mt-1"
+              ></div>
+            </div>
+            <div class="pt-2">
+              <button
+                id="server-submit-btn"
+                class="cyber-button w-full py-3 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-2 bg-primary text-on-primary"
+                type="submit"
+              >
+                <span class="material-symbols-outlined" style="font-size: 18px"
+                  >save</span
+                >
+                <span data-i18n="server.save">保存服务器</span>
+              </button>
+            </div>
+          </form>
         </div>
-      </footer>
+      </div>
+
+      <!-- Terminal Page -->
+      <div
+        id="terminal-section"
+        class="hidden h-screen flex-col bg-background text-on-surface"
+      >
+        <!-- TopAppBar -->
+        <header
+          class="terminal-app-header flex justify-between items-center w-full px-6 h-16 bg-background border-b border-outline-variant z-50 relative"
+        >
+          <div class="flex items-center gap-6">
+            <h1
+              class="terminal-app-title text-2xl font-bold text-primary-container tracking-tighter cursor-pointer"
+            >
+              CloudSSH
+            </h1>
+          </div>
+          <div
+            class="terminal-header-actions flex items-center gap-2 sm:gap-4 text-primary-container flex-wrap"
+          >
+            <select
+              id="theme-selector"
+              data-theme-selector
+              class="desktop-terminal-action theme-selector bg-surface-variant text-on-surface-variant text-xs py-1 px-2 border-none outline-none cursor-pointer"
+              data-i18n-aria-label="theme.selector"
+              aria-label="主题与界面风格"
+            >
+              <option value="standard-dark">Standard Dark</option>
+              <option value="standard-light">Standard Light</option>
+              <option value="cyberpunk">Cyberpunk</option>
+              <option value="glacier">Glacier · Soft</option>
+              <option value="gruvbox">Gruvbox · Dense</option>
+            </select>
+            <button
+              id="import-theme-btn"
+              data-theme-import
+              class="desktop-terminal-action theme-toolbar-button hover:opacity-80 cursor-pointer p-1 flex items-center justify-center"
+              data-i18n-title="terminal.importTheme"
+              title="导入主题"
+            >
+              <span
+                class="material-symbols-outlined"
+                style="font-variation-settings: &quot;FILL&quot; 0"
+                >upload_file</span
+              >
+            </button>
+            <input
+              type="file"
+              id="import-theme-input"
+              accept=".json"
+              class="hidden"
+            />
+            <button
+              id="sftp-toggle-btn"
+              class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center"
+              data-i18n-title="terminal.sftp"
+              title="SFTP 文件管理器"
+            >
+              <span
+                class="material-symbols-outlined"
+                style="font-variation-settings: &quot;FILL&quot; 0"
+                >folder_open</span
+              >
+            </button>
+            <button
+              id="search-btn"
+              class="desktop-terminal-action hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center"
+              data-i18n-title="terminal.search"
+              title="搜索（Ctrl+Shift+F）"
+            >
+              <span
+                class="material-symbols-outlined"
+                style="font-variation-settings: &quot;FILL&quot; 0"
+                >search</span
+              >
+            </button>
+            <button
+              id="export-btn"
+              class="desktop-terminal-action hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center"
+              data-i18n-title="terminal.export"
+              title="导出终端日志"
+            >
+              <span
+                class="material-symbols-outlined"
+                style="font-variation-settings: &quot;FILL&quot; 0"
+                >download</span
+              >
+            </button>
+            <button
+              id="snippet-toggle-btn"
+              class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center"
+              data-i18n-title="terminal.snippets"
+              title="Command snippets"
+            >
+              <span
+                class="material-symbols-outlined"
+                style="font-variation-settings: &quot;FILL&quot; 0"
+                >terminal</span
+              >
+            </button>
+            <button
+              id="agent-toggle-btn"
+              class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center hidden"
+              data-i18n-title="terminal.agent"
+              title="AI Agent 助手"
+            >
+              <span
+                class="material-symbols-outlined"
+                style="font-variation-settings: &quot;FILL&quot; 0"
+                >psychology</span
+              >
+            </button>
+            <button
+              id="disconnect-btn"
+              class="hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center"
+              data-i18n-title="terminal.disconnect"
+              title="断开连接"
+            >
+              <span
+                class="material-symbols-outlined"
+                style="font-variation-settings: &quot;FILL&quot; 0"
+                >power_settings_new</span
+              >
+            </button>
+            <button
+              id="mobile-more-btn"
+              type="button"
+              class="mobile-only mobile-header-button"
+              aria-expanded="false"
+              aria-controls="mobile-more-menu"
+              data-i18n-title="terminal.moreActions"
+              title="更多操作"
+            >
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >more_vert</span
+              >
+            </button>
+          </div>
+          <div
+            id="mobile-more-menu"
+            class="mobile-more-menu mobile-only hidden"
+          >
+            <label class="mobile-more-theme-row">
+              <span data-i18n="theme.selector">主题与界面风格</span>
+              <select
+                id="mobile-theme-selector"
+                data-theme-selector
+                class="theme-selector"
+                data-i18n-aria-label="theme.selector"
+                aria-label="主题与界面风格"
+              >
+                <option value="standard-dark">Standard Dark</option>
+                <option value="standard-light">Standard Light</option>
+                <option value="cyberpunk">Cyberpunk</option>
+                <option value="glacier">Glacier · Soft</option>
+                <option value="gruvbox">Gruvbox · Dense</option>
+              </select>
+            </label>
+            <button id="mobile-search-btn" type="button">
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >search</span
+              ><span data-i18n="terminal.searchMobile">搜索</span>
+            </button>
+            <button id="mobile-snippets-btn" type="button">
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >terminal</span
+              ><span data-i18n="snippets.title">Command snippets</span>
+            </button>
+            <button id="mobile-export-btn" type="button">
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >download</span
+              ><span data-i18n="terminal.export">导出终端日志</span>
+            </button>
+            <button type="button" data-theme-import>
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >upload_file</span
+              ><span data-i18n="terminal.importTheme">导入主题</span>
+            </button>
+            <button id="mobile-landscape-btn" type="button">
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >screen_rotation</span
+              ><span
+                data-mobile-landscape-label
+                data-i18n="terminal.landscapeMode"
+                >全屏横屏</span
+              >
+            </button>
+          </div>
+        </header>
+
+        <!-- Tab Bar（标签栏） -->
+        <div
+          id="tab-bar"
+          class="flex items-center bg-background border-b border-outline-variant px-2 h-9 overflow-x-auto custom-scrollbar gap-0.5"
+          style="scrollbar-width: thin"
+        >
+          <!-- 由 TabManager 动态渲染标签 -->
+          <button
+            id="new-tab-btn"
+            class="tab-new-btn"
+            data-i18n-title="terminal.newConnection"
+            title="新建连接"
+          >
+            <span class="material-symbols-outlined" style="font-size: 16px"
+              >add</span
+            >
+          </button>
+        </div>
+
+        <!-- Main Terminal -->
+        <main
+          class="terminal-main flex-1 relative bg-surface-container-lowest overflow-hidden"
+        >
+          <div
+            class="absolute inset-0 scanline pointer-events-none z-10 opacity-30"
+          ></div>
+          <div
+            id="terminal-wrapper"
+            class="h-full w-full border border-outline-variant bg-[var(--bg)] p-2 lg:p-4 overflow-hidden font-code text-[13px] text-primary-container relative z-0 flex flex-col"
+          >
+            <!-- Status Bar -->
+            <div
+              class="terminal-status-bar flex justify-between items-center border-b border-[var(--border)] pb-2 mb-4 text-on-surface-variant opacity-80 text-[11px]"
+            >
+              <div
+                class="terminal-status-details flex gap-2 sm:gap-6 flex-wrap"
+              >
+                <span id="term-status" class="flex items-center gap-1"
+                  ><div class="w-2 h-2 bg-primary-container"></div>
+                  已连接</span
+                >
+                <span id="term-host" class="truncate max-w-[200px]"
+                  >主机：-</span
+                >
+                <span id="term-user" class="truncate max-w-[120px]"
+                  >用户：-</span
+                >
+                <span id="term-port">端口：-</span>
+              </div>
+              <div>
+                <span id="term-info"></span>
+              </div>
+            </div>
+            <!-- Terminal Area (TabManager 在此动态创建每个标签的容器) -->
+            <div
+              id="terminal-area"
+              class="flex-1 overflow-hidden relative"
+            ></div>
+          </div>
+        </main>
+
+        <nav
+          id="mobile-terminal-toolbar"
+          class="mobile-terminal-toolbar mobile-only"
+          data-i18n-aria-label="terminal.mobileKeyboard"
+          aria-label="终端快捷键"
+        >
+          <div class="mobile-terminal-toolbar-scroll">
+            <button type="button" data-terminal-key="escape">Esc</button>
+            <button type="button" data-terminal-key="tab">Tab</button>
+            <button
+              type="button"
+              data-mobile-modifier="ctrl"
+              aria-pressed="false"
+            >
+              Ctrl
+            </button>
+            <button
+              type="button"
+              data-mobile-modifier="alt"
+              aria-pressed="false"
+            >
+              Alt
+            </button>
+            <button
+              id="mobile-copy-btn"
+              type="button"
+              data-i18n-title="terminal.copySelection"
+              title="复制选区"
+              aria-pressed="false"
+            >
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >content_copy</span
+              >
+            </button>
+            <button
+              id="mobile-paste-btn"
+              type="button"
+              data-i18n-title="terminal.paste"
+              title="粘贴"
+            >
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >content_paste</span
+              >
+            </button>
+            <button
+              id="mobile-keyboard-hide-btn"
+              type="button"
+              data-i18n-title="terminal.hideKeyboard"
+              title="收起键盘"
+            >
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >keyboard_hide</span
+              >
+            </button>
+            <button
+              type="button"
+              data-terminal-key="arrow_left"
+              data-i18n-title="terminal.arrowLeft"
+              title="左方向键"
+            >
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >arrow_back</span
+              >
+            </button>
+            <button
+              type="button"
+              data-terminal-key="arrow_up"
+              data-i18n-title="terminal.arrowUp"
+              title="上方向键"
+            >
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >arrow_upward</span
+              >
+            </button>
+            <button
+              type="button"
+              data-terminal-key="arrow_down"
+              data-i18n-title="terminal.arrowDown"
+              title="下方向键"
+            >
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >arrow_downward</span
+              >
+            </button>
+            <button
+              type="button"
+              data-terminal-key="arrow_right"
+              data-i18n-title="terminal.arrowRight"
+              title="右方向键"
+            >
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >arrow_forward</span
+              >
+            </button>
+            <button type="button" data-terminal-key="home">Home</button>
+            <button type="button" data-terminal-key="end">End</button>
+            <button type="button" data-terminal-key="page_up">PgUp</button>
+            <button type="button" data-terminal-key="page_down">PgDn</button>
+            <button type="button" data-terminal-key="/">/</button>
+            <button type="button" data-terminal-key="-">-</button>
+            <button type="button" data-terminal-key="_">_</button>
+            <button type="button" data-terminal-key="|">|</button>
+            <button type="button" data-terminal-key="~">~</button>
+          </div>
+        </nav>
+
+        <button
+          id="ask-ai-selection-btn"
+          type="button"
+          class="ask-ai-selection-float hidden cyber-button text-primary px-2 py-1 text-[11px] font-bold items-center gap-1"
+          data-i18n-title="terminal.askAISelection"
+          title="询问 AI 助手"
+        >
+          <span
+            class="material-symbols-outlined"
+            style="font-size: 16px; font-variation-settings: &quot;FILL&quot; 0"
+            aria-hidden="true"
+            >quick_phrases</span
+          >
+          <span data-i18n="terminal.askAISelection">询问 AI 助手</span>
+        </button>
+
+        <!-- Footer -->
+        <footer
+          class="terminal-footer px-6 py-2 flex justify-between items-center z-50 bg-elevated border-t border-outline-variant text-xs h-12 shrink-0"
+        >
+          <div class="text-secondary-container opacity-60">
+            © <span id="copyright-year"></span> CLOUD_SSH_TERMINAL -
+            https://github.com/newbietan/CloudSSH
+          </div>
+          <div class="flex gap-4">
+            <a
+              class="text-on-surface-variant opacity-60 hover:opacity-100 transition-opacity"
+              href="https://github.com/newbietan/CloudSSH"
+              data-i18n="common.documentation"
+              >文档</a
+            >
+          </div>
+        </footer>
+      </div>
     </div>
-  </div>
-  <script type="module" src="/src/main.ts"></script>
-</body>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>
