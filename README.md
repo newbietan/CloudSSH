@@ -37,7 +37,7 @@
     <br/>
     <img src="https://img.shields.io/badge/%E2%96%B6_%E7%82%B9%E5%87%BB%E6%92%AD%E6%94%BE%E8%A7%86%E9%A2%91-00A1D6?style=for-the-badge&logo=bilibili&logoColor=white" alt="播放" />
   </a>
-  <p><sub>视频时长 8:27 · 演示 CloudSSH 完整使用流程</sub></p>
+  <p><sub>视频时长 19:48 · 演示 CloudSSH 完整使用流程</sub></p>
 </div>
 
 ## 目录
@@ -48,7 +48,7 @@
 - [快速部署](#quick-start)
   - [GitHub 绑定自动部署](#方式一通过-github-绑定自动部署推荐)
     - [自动同步上游版本](#可选自动同步上游版本)
-  - [本地命令行部署](#方式二本地命令行部署)
+  - [可配置环境变量](#可配置环境变量)
   - [配置 Turnstile](#可选配置-turnstile-人机验证)
   - [配置 GitHub OAuth](#可选配置-github-oauth-登录与服务器管理)
 - [开发说明](#development)
@@ -63,22 +63,21 @@
 
 ### 极致 Serverless
 
-- **零服务器成本**：纯前端部署 + Cloudflare Workers，无需自建后端服务器。
-- **边缘加速**：得益于 Cloudflare 的全球边缘网络，随时随地享受低延迟的 SSH 连接。
+- **零服务器成本**：纯前端 + Cloudflare Workers，无需自建后端服务器。
+- **边缘加速**：全球边缘网络就近接入，随时随地享受低延迟的 SSH 连接。
 
 ### 开箱即用
 
-- **一键部署**：仅需Fork本仓库，再在 Cloudflare Dashboard 点击几下即可完成项目构建与部署。
-- **现代化前端技术栈**：TypeScript + Vite + Tailwind CSS，配合 xterm.js 提供丝滑的终端体验。
+- **一键部署**：Fork 仓库后在 Cloudflare Dashboard 绑定 GitHub 即可自动构建部署，无需本地环境。
+- **现代技术栈**：TypeScript + Vite + Tailwind CSS + xterm.js，兼顾性能与可维护性。
 
 ### 安全可靠
 
-- **分段加密传输**：浏览器与 Cloudflare Worker 之间使用 HTTPS/WSS，Worker 与目标主机之间使用完整的 SSH-2.0 协议；SSH 段支持 Curve25519-SHA256（优先）和 ECDH-NISTP256 密钥交换、AES-256-GCM（优先）/ AES-128-GCM / AES-256-CTR 数据加密，以及 HMAC-SHA2-256/512 完整性校验。
-- **多算法主机密钥验证**：支持 Ed25519、ECDSA P-256/P-384/P-521、RSA 签名验证，首次连接展示 SHA-256 指纹（TOFU 模式）。
-- **安全加固体系**：内置针对 IPv6 与保留地址的 SSRF 防护；`/api/ssh` 使用有界的 Worker 实例内存限流进行流量削峰，连接授权仍由 Turnstile 或一次性连接令牌负责；已保存的服务器凭据在每用户 Durable Object SQLite 中使用 AES-256-GCM 加密存储。
-- **人机验证**：支持 Cloudflare Turnstile 验证，防止恶意机器人滥用。
-- **隔离的会话状态**：每个 SSH 终端会话由独立的 Cloudflare Durable Object 管理；浏览器侧 WebSocket 使用 Hibernation API 接入方式，但活动的 SSH 出站 TCP 连接会使该 Durable Object 在会话期间保持唤醒。
-- **已保存凭据内部流转**：一键连接已保存服务器时，凭据由 UserDBDO 在服务端解密，并通过一次性连接令牌在 Worker 与 SSHSessionDO 之间传递；浏览器不会收到明文凭据。匿名连接或首次保存服务器时，用户输入仍会通过 HTTPS/WSS 发送到 Worker。
+- **双段加密**：浏览器 ↔ Worker 走 HTTPS/WSS；Worker ↔ 服务器走完整 SSH-2.0 协议（Curve25519-SHA256/ECDH-NISTP256 密钥交换、AES-256-GCM/CTR 加密、HMAC-SHA2 完整性校验）。
+- **主机指纹验证**：Ed25519/ECDSA P-256/P-384/P-521/RSA 签名校验，首次连接展示 SHA-256 指纹（TOFU）。
+- **多层防护**：IPv6/保留地址 SSRF + DNS 防重绑定、Worker 内存限流削峰、Turnstile 人机验证；已保存凭据在每用户 SQLite 中以 AES-256-GCM 加密存储。
+- **会话隔离**：每个终端会话由独立 Durable Object 管理，活动 SSH TCP 连接使会话保持唤醒。
+- **凭据内部流转**：一键连接时服务端解密凭据并经一次性令牌内部传递到会话，浏览器全程不接触明文。
 
 <a id="features"></a>
 
@@ -98,10 +97,12 @@
 - **个性化 UI**：Theme V2 系统提供 Standard Dark、Standard Light、Cyberpunk、Glacier、Gruvbox 五款内置主题。配套 [GitHub Pages 主题编辑器](https://newbietan.github.io/CloudSSH/)可实时调整颜色、形状、密度、字体、阴影、动效及按钮/输入框/卡片/标签页样式，并预览登录页、服务器列表、终端 + SFTP 和 AI Agent 面板。主题通过 JSON 文件导入、导出、备份与分享；登录用户在应用中导入后会同步到账号并可跨浏览器恢复，匿名用户仅保存在当前浏览器。
 - **SFTP 图形化文件管理**：集成完整的 SFTP v3 文件传输协议，提供图形化文件浏览器界面。支持目录浏览、文件上传/下载、新建文件夹、文件重命名与删除等操作；支持普通单选、`Cmd/Ctrl` 切换选择、`Shift` 连选、全选，以及批量下载文件和批量删除。基于 SSH 子系统实现，与终端会话并行运行，互不干扰，支持下载队列及上传取消。
 - **原生文件传输**：集成 [trzsz.js](https://github.com/trzsz/trzsz.js)，支持 `trz`（上传）/ `tsz`（下载）命令进行文件传输，兼容 tmux 会话。还支持拖拽文件到终端窗口直接上传、目录传输及断点续传等高级功能。（需远程服务器安装 [trzsz](https://trzsz.github.io/)）
-- **GitHub OAuth 集成**：支持 GitHub 登录，用户可保存和管理常用 SSH 服务器，实现一键连接；服务器支持最多 10 个规范化标签，列表可按名称、主机地址、用户名即时搜索并按标签筛选，每页固定展示 9 张服务器卡片。
+- **中英文界面**：内置简体中文与英文两套 UI 词条，自动跟随浏览器语言并提供手动切换，选择通过 URL 参数或本地存储（`cloudssh_locale`）持久化。
+- **GitHub OAuth 集成**：支持 GitHub 登录，用户可保存和管理常用 SSH 服务器，实现一键连接；服务器支持最多 10 个规范化标签，列表可按名称、主机地址、用户名即时搜索并按标签筛选，分页随设备自适应（桌面每页 9 张、平板 6 张、移动端 3 张卡片）。
+- **自定义命令片段库**：登录用户可将常用命令按名称保存为片段并通过服务端搜索复用，片段按 `user_id` 行级隔离存储于 `UserDBDO`（名称≤50、命令≤2000、每用户≤100 条），匿名用户自动降级到本地 `localStorage`；支持填入终端、填入并执行、编辑与删除，桌面与移动端均可在工具栏访问，一次性分享会话中自动隐藏。
 - **服务器系统自动识别**：登录用户首次连接尚未识别的已保存服务器时，CloudSSH 会在终端就绪后通过独立 SSH exec 通道读取 `/etc/os-release` 或 `uname`，并在服务器卡片显示对应系统图标。检测在后台执行，不阻塞终端；只有成功识别的结果才会保存，未识别结果会留待下次连接重新探测，修改主机地址或端口也会清除旧结果。匿名连接不执行该检测。该只读命令可能出现在目标服务器的 SSH 审计日志中。
 - **IP 隐私展示与快捷复制**：服务器列表和连接状态栏会对有效 IPv4/IPv6 地址进行视觉掩码，减少演示或截图时意外暴露完整地址的风险；可通过鼠标点击或键盘操作复制用于连接的完整 IP。域名保持原样显示，视觉掩码不等同于加密或访问控制。
-- **单页面多标签会话管理**：支持在单个页面内开启与切换多个独立的 SSH 终端与 SFTP 文件管理器，各会话环境和状态完全隔离，并在个性化主题编辑器中进行了联动适配。
+- **单页面多标签会话管理**：支持在单个页面内开启与切换多个独立的 SSH 终端与 SFTP 文件管理器，各会话环境和状态完全隔离，并在个性化主题编辑器中进行了联动适配。进入服务器列表或匿名连接页后可随时通过工具栏/表单顶部按钮一键返回已建立的 SSH 会话，终端界面隐藏时也可直接按 `Esc` 快速返回；按钮随标签数量联动显隐。
 - **安全匿名历史记录**：本地存储最近 5 条匿名连接，且敏感凭证可选使用本地派生的密钥进行 AES-256-GCM 安全加密存储至 `localStorage`，提供一键回填与清除。
 - **双段延迟与 Colo 展示**：状态栏即时且周期性地展示当前 RTT（客户端至 Cloudflare）、物理延迟（Cloudflare 至主机）以及 Cloudflare 当前服务的数据中心代码（如 `CF-LAX`），并通过绿、黄、红三色状态点提示网络质量。
 - **智能区域调度（locationHint）**：保存直连服务器时通过 IPinfo 查询主机地理信息并持久化 DO 部署区域，连接时直接读取数据库，不再执行外部地理查询；使用 SSH 跳板时仅对 Cloudflare 直接连接的最外层入口进行推断，下游内网服务器不会触发查询，其区域设置由入口统一决定。查询失败时自动退化为 Cloudflare 默认调度，也可为直连入口手动覆盖区域偏好。_注意：自动推断会把直连入口的主机信息发送给第三方 IPinfo；locationHint 是 Cloudflare 的 best-effort 特性，当目标区域 DO 容量不足时会 fallback 到最近可用区域。_
@@ -150,62 +151,6 @@ flowchart TB
     AgentCore <-->|"LLM API"| External["外部 LLM 服务"]
 ```
 
-### 核心组件
-
-| 组件                 | 文件                                                  | 职责                                                                                                                            |
-| -------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| **Worker 入口**      | `src/worker/index.ts`                                 | HTTP 路由、API 处理、WebSocket 升级                                                                                             |
-| **SSHSessionDO**     | `src/worker/durable-object.ts`                        | SSH 会话生命周期管理、SSRF 防护                                                                                                 |
-| **UserDBDO**         | `src/worker/user-db.ts`                               | 按 GitHub 用户隔离的用户数据、Session、服务器配置、规范化标签与凭据存储（SQLite）                                               |
-| **SSHShareDO**       | `src/worker/share-do.ts`                              | 一次性能力凭证、短期连接票据、过期/撤销状态以及分享会话专用审计日志                                                       |
-| **IP 地理推断**      | `src/worker/ip-geo.ts`                                | 保存 Cloudflare 直连入口时推断其 IP 所在区域，映射到 Cloudflare DO locationHint；跳板链下游节点不查询                           |
-| **操作系统识别**     | `src/worker/os-detect.ts`                             | 解析远端系统标识、规范化可持久化 OS key                                                                                         |
-| **SSHSession**       | `src/worker/ssh-session.ts`                           | SSH 协议状态机（连接→版本→密钥交换→认证→交互）                                                                                  |
-| **SSH 跳板字节流**   | `src/worker/direct-tcpip-stream.ts`                   | 将 RFC 4254 `direct-tcpip` 通道封装为可嵌套 SSH 的背压双向字节流                                                               |
-| **SSH 协议栈**       | `src/ssh/*.ts`                                        | 纯 TypeScript SSH-2.0 实现（传输层、加密、认证、通道）                                                                          |
-| **SFTP 处理器**      | `src/worker/sftp-handler.ts`                          | SFTP 协议操作、任务队列、并发下载、上传跟踪与取消支持                                                                           |
-| **SFTP 协议实现**    | `src/ssh/sftp.ts` / `sftp-types.ts`                   | SFTP v3 协议客户端、包解析与类型定义                                                                                            |
-| **前端终端**         | `frontend/src/terminal.ts`                            | xterm.js 封装、原生右键粘贴、实时双段延迟心跳、网络质量三色提示、终端搜索、选区询问 Agent 及 WebSocket 交互                     |
-| **移动端控制器**     | `frontend/src/mobile-terminal.ts` / `mobile-input.ts` | 动态视口、iOS IME 补偿、触摸快捷键、剪贴板操作及可选全屏横屏                                                                    |
-| **标签管理器**       | `frontend/src/tab-manager.ts`                         | 单页面多会话标签页管理器，协调不同标签页内的终端、SFTP 与 Agent 实例及上下文隔离，并展示可复制的掩码 IP                         |
-| **服务器列表**       | `frontend/src/server-list.ts`                         | 服务器卡片管理、搜索、标签筛选、IP 隐私展示及每页 9 项分页                                                                      |
-| **SSH 分享界面**     | `frontend/src/share-manager.ts` / `share-session.ts`  | 所有者创建、撤销与查看审计；接收者显式确认审计后一次性领取分享会话                                                     |
-| **主机地址展示**     | `frontend/src/host-display.ts`                        | 校验 IPv4/IPv6 字面量并生成统一的隐私掩码文本                                                                                   |
-| **SFTP 面板**        | `frontend/src/sftp-panel.ts`                          | 图形化文件管理器 UI，支持多选、批量下载/删除、上传下载队列和取消操作                                                            |
-| **AI Agent**         | `src/worker/agent/core.ts`                            | AI 控制循环：LLM 流式调用、工具执行、环境探测、终端上下文读取                                                                   |
-| **Agent 工具**       | `src/worker/agent/tools.ts`                           | 8 个运维工具定义（执行命令、终端上下文、环境探测、进程列表、服务管理、Docker 管理、用户确认、报告输出）                         |
-| **Agent 安全**       | `src/worker/agent/safety.ts`                          | 两层安全策略：直接拦截（rm -rf /、fork bomb 等）+ 弹窗确认（rm、shutdown、iptables 等）                                         |
-| **Agent 面板**       | `frontend/src/agent/agent-panel.ts`                   | AI 助手侧边栏 UI，支持终端选区上下文附件、流式输出、Markdown 渲染、代码块复制与安全填入终端、可折叠思考过程容器和安全确认对话框 |
-| **Agent 选区上下文** | `frontend/src/agent/terminal-selection-context.ts`    | 保留终端选区快照、统计展示信息，并将用户问题与非授权安全边界组合为模型请求                                                      |
-| **AI 配置**          | `frontend/src/ai-config.ts`                           | AI 模型配置弹窗，支持 Base URL / API Key / 模型选择                                                                             |
-| **区域选项**         | `frontend/src/regions.ts`                             | DO locationHint 区域选项共享组件，供服务器管理和匿名连接表单共用                                                                |
-
-### SSH 协议实现
-
-本项目实现了完整的 SSH-2.0 协议栈：
-
-| 层级           | 实现                                | 支持算法                                                      |
-| -------------- | ----------------------------------- | ------------------------------------------------------------- |
-| **密钥交换**   | `kex-curve25519.ts` / `kex-ecdh.ts` | curve25519-sha256, ecdh-sha2-nistp256                         |
-| **数据加密**   | `crypto.ts`                         | aes256-gcm, aes128-gcm, aes256-ctr, aes192-ctr, aes128-ctr    |
-| **完整性校验** | `crypto.ts`                         | hmac-sha2-256, hmac-sha2-512, hmac-sha1                       |
-| **主机密钥**   | `ssh-session.ts`                    | Ed25519, ECDSA P-256/P-384/P-521, RSA                         |
-| **用户认证**   | `auth.ts`                           | 密码、RFC 4256 keyboard-interactive；Ed25519、ECDSA P-256/P-384/P-521、RSA-SHA2 私钥认证 |
-| **通道管理**   | `channel.ts`                        | session、`direct-tcpip`、SFTP subsystem、PTY、shell、window-change |
-| **SFTP 协议**  | `sftp.ts` / `sftp-types.ts`         | SFTP v3 文件传输协议（目录浏览、上传、下载、删除、重命名）    |
-
-### 数据流
-
-1. 用户在前端输入主机 IP、账号和密码（或通过 GitHub OAuth 选择已保存的服务器）。
-2. 前端与后端的 Durable Object 建立 WebSocket 连接。
-3. SSHSessionDO 接收凭据，使用 `@cloudflare/sockets` 与直连目标或最外层跳板建立 TCP 连接。
-4. 如配置跳板，SSHSession 逐层认证并通过 RFC 4254 `direct-tcpip` 通道承载下一套 SSH；仅最终目标打开 PTY、Shell、SFTP 与 Agent exec 通道。
-5. 终端数据在浏览器与 Worker 之间通过 WSS 传输，在 Worker 与目标服务器之间通过 SSH 加密传输；Worker 负责两段协议之间的转发和 SSH 协议处理。
-6. SFTP 文件管理通过独立的 SSH 子系统通道运行，支持目录浏览、文件上传/下载等操作。
-7. 对尚无 OS 记录的已保存服务器，SSHSession 在 Shell 就绪后通过独立 exec 通道进行一次只读系统识别；成功结果写入 UserDBDO 并通知前端更新卡片，未知结果不保存。
-8. AI 助手通过 WebSocket 接收用户问题及可选的终端选区上下文；选区被标记为非可信分析数据后交给 AgentCore，后者调用外部 LLM API，通过 SSH exec 通道执行获准的命令，并将结果流式返回前端。
-9. 一次性分享链接先由 SSHShareDO 原子领取并换取短期连接票据；分享会话的生命周期、SFTP 操作和终端输出写入独立审计库，失效、撤销或审计不可用时终止连接。
-
 <a id="quick-start"></a>
 
 ## 快速部署
@@ -247,41 +192,22 @@ Fork 仓库可以通过内置的 `Sync upstream` GitHub Actions 工作流，定�
 
 > **同步说明**：工作流使用 GitHub 提供的 Fork 同步接口，不需要 PAT，也不会强制覆盖分支。若你的 `main` 与上游存在无法自动合并的冲突，任务会失败并保留现有代码，需要手动解决冲突。建议不要直接修改部署用的 `main` 分支，并将域名、密钥及环境变量保存在 Cloudflare Dashboard 中。
 
-#### 方式二：本地命令行部署
+#### 可配置环境变量
 
-1. **克隆仓库**
+所有可选功能均由 Worker 环境变量控制，可在 Cloudflare Dashboard 的 Settings → Variables and Secrets 中添加（敏感项建议选择 **Secret** 类型），保存后重新部署生效：
 
-   ```bash
-   git clone https://github.com/newbietan/CloudSSH.git
-   cd CloudSSH
-   ```
+| 环境变量 | 必填 | 说明 |
+| --- | --- | --- |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | 启用 GitHub 登录时必填 | GitHub OAuth 应用凭据 |
+| `BASE_URL` | 启用 GitHub 登录时必填 | OAuth 回调地址，需与实际部署域名一致 |
+| `GITHUB_ALLOWED_USER_IDS` | 可选 | 允许登录的 GitHub 数字用户 ID 白名单（逗号分隔）；未配置不限制，配置为空或非正整数时 fail-closed |
+| `REQUIRE_GITHUB_AUTH` | 可选 | 设为 `true` 时禁用匿名 SSH，所有连接均要求有效 GitHub 登录 |
+| `ENABLE_SSH_SHARING` | 可选 | 设为 `true` 时启用一次性 SSH 分享（默认关闭） |
+| `TURNSTILE_SECRET` / `TURNSTILE_SITEKEY` | 可选 | Cloudflare Turnstile 人机验证密钥 |
+| `STRICT_HOST_KEY_VERIFY` | 可选 | 主机密钥签名验证：设为 `false` 跳过验证失败（默认 `true`，fail-closed） |
+| `DEBUG_MODE` | 可选 | 设为 `true` 时输出调试信息（`wrangler.toml` 默认 `false`） |
 
-2. **安装依赖**
-
-   ```bash
-   npm install -g pnpm
-   pnpm install
-   cd frontend && pnpm install
-   ```
-
-3. **登录 Cloudflare**
-
-   ```bash
-   npx wrangler login
-   ```
-
-4. **部署生产环境**
-
-   ```bash
-   pnpm run deploy
-   ```
-
-5. **部署测试环境**（可选）
-   ```bash
-   pnpm run deploy:test
-   ```
-
-> **说明**：两个环境的 Durable Objects 虽然绑定相同的 class_name，但因 Worker 名称不同，数据完全隔离。部署完成后可在 Cloudflare Dashboard 中分别绑定不同的自定义域名（Settings → Domains & Routes）。
+> **说明**：如需本地命令行部署或调试 Worker，请参考 [开发说明](#development) 中的本地开发部分。
 
 #### 可选：配置 Turnstile 人机验证
 
@@ -331,14 +257,14 @@ Fork 仓库可以通过内置的 `Sync upstream` GitHub Actions 工作流，定�
 
    请填写 `id`，不要填写用户名或 `node_id`。数字 ID 不会随用户名修改而变化；多个账号的 ID 使用英文逗号分隔。
 
-   | 配置组合 | GitHub 登录 | 匿名 SSH |
-   |----------|-------------|----------|
-   | 两项都不配置 | 所有 GitHub 用户 | 允许 |
-   | 仅配置 `GITHUB_ALLOWED_USER_IDS` | 仅白名单用户 | 允许 |
-   | 仅配置 `REQUIRE_GITHUB_AUTH=true` | 所有 GitHub 用户 | 禁止 |
-   | 两项同时配置 | 仅白名单用户 | 禁止（私有实例模式） |
+| 配置组合 | GitHub 登录 | 匿名 SSH |
+| ---------- | ------------- | ---------- |
+| 两项都不配置 | 所有 GitHub 用户 | 允许 |
+| 仅配置 `GITHUB_ALLOWED_USER_IDS` | 仅白名单用户 | 允许 |
+| 仅配置 `REQUIRE_GITHUB_AUTH=true` | 所有 GitHub 用户 | 禁止 |
+| 两项同时配置 | 仅白名单用户 | 禁止（私有实例模式） |
 
-3. **重新部署**：保存环境变量后重新部署当前 Worker。仓库中的 Durable Object migration 会负责初始化所需类和数据库，不需要删除已有 Worker。
+1. **重新部署**：保存环境变量后重新部署当前 Worker。仓库中的 Durable Object migration 会负责初始化所需类和数据库，不需要删除已有 Worker。
 
 > **环境变量类型建议**：`GITHUB_CLIENT_SECRET` 必须使用 **Secret** 类型；`GITHUB_ALLOWED_USER_IDS` 和 `REQUIRE_GITHUB_AUTH` 不包含密钥，可使用普通文本变量。Secrets 存储在 Cloudflare 加密存储中，与代码部署分离，重新部署时不会被覆盖或丢失。
 
@@ -382,15 +308,20 @@ CloudSSH/
 ├── src/                    # 后端源码 (Cloudflare Worker)
 │   ├── ssh/                # SSH 协议纯实现层（传输、加密、认证、通道、SFTP）
 │   └── worker/             # Worker 入口和 Durable Objects
-│       └── agent/          # AI Agent 控制循环、工具、安全检测
+│       ├── agent/          # AI Agent 控制循环、工具、安全检测
+│       ├── dns-check.ts    # DNS 防重绑定 SSRF 防护
+│       └── ip-geo.ts       # IPinfo 区域推断 → locationHint
 ├── frontend/               # 前端源码 (独立 workspace)
 │   └── src/                # TypeScript + xterm.js + trzsz
-│       └── agent/          # AI 助手侧边栏 UI
+│       ├── agent/          # AI 助手侧边栏 UI
+│       └── i18n/           # 中英文词条与语言解析
 ├── docs/                   # GitHub Pages 静态资源
 │   └── theme-editor/       # 可视化主题编辑器
 ├── scripts/                # 构建脚本
-├── tests/                  # Vitest、Playwright 与 axe 回归测试
-├── .github/workflows/      # CI/CD 自动部署配置
+├── tests/                  # Vitest 单元/集成 + Playwright E2E 与 axe 回归（build/ e2e/ ssh/ worker/）
+├── .github/workflows/      # CI/CD 自动部署配置（deploy / github-pages / sync-upstream）
+├── biome.json              # 代码格式与 lint 约定
+├── playwright.config.ts    # 浏览器 E2E 测试配置
 ├── pnpm-workspace.yaml     # pnpm 工作区配置
 └── wrangler.toml           # Cloudflare 部署配置
 ```
@@ -449,15 +380,15 @@ pnpm run dev
 
 #### 常用开发命令
 
-| 命令                      | 说明                                         |
+| 命令 | 说明 |
 | ------------------------- | -------------------------------------------- |
-| `pnpm run dev`            | 构建前端 + 启动 Wrangler 开发服务器          |
-| `pnpm run build:frontend` | 仅构建前端（输出到 `frontend/dist/`）        |
-| `pnpm run typecheck`      | 检查 Worker 与前端 TypeScript 类型           |
-| `pnpm test`               | 运行 Vitest 单元与集成测试                   |
-| `pnpm run test:e2e`       | 运行 Playwright 浏览器 E2E 与 axe 无障碍测试 |
-| `pnpm run verify`         | 依次执行类型检查、测试、生产构建和浏览器 E2E |
-| `pnpm run deploy:test`    | 构建并部署到隔离的测试环境                   |
+| `pnpm run dev` | 构建前端 + 启动 Wrangler 开发服务器 |
+| `pnpm run build:frontend` | 仅构建前端（输出到 `frontend/dist/`） |
+| `pnpm run typecheck` | 检查 Worker 与前端 TypeScript 类型 |
+| `pnpm test` | 运行 Vitest 单元与集成测试 |
+| `pnpm run test:e2e` | 运行 Playwright 浏览器 E2E 与 axe 无障碍测试 |
+| `pnpm run verify` | 依次执行类型检查、测试、生产构建和浏览器 E2E |
+| `pnpm run deploy:test` | 构建并部署到隔离的测试环境 |
 
 #### 提交变更的流程
 
@@ -477,16 +408,17 @@ test 分支（开发/测试）  ──合并──>  main 分支（生产）
 
 ### 技术栈
 
-| 层级         | 技术                                                 | 说明                                                                                         |
+| 层级           | 技术                                                   | 说明                                                                                           |
 | ------------ | ---------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| **前端**     | TypeScript + Vite + xterm.js                         | Web 终端模拟器，WebGL 硬件加速                                                               |
-| **UI 框架**  | Tailwind CSS（Vite/PostCSS 本地构建）+ Theme V2 系统 | 应用支持内置主题切换、自定义主题 JSON 导入及登录账号同步；主题编辑与导出由 GitHub Pages 提供 |
-| **文件传输** | trzsz.js                                             | 支持 trz/tsz 命令、拖拽上传、断点续传                                                        |
-| **AI 助手**  | BYOK + OpenAI 兼容接口                               | 自带 API Key，支持 DeepSeek 等兼容模型                                                       |
-| **后端**     | Cloudflare Workers                                   | Serverless 边缘计算                                                                          |
-| **会话管理** | Durable Objects                                      | SSH 会话隔离；浏览器 WebSocket 使用 Hibernation API 接入，活动出站 TCP 期间不休眠            |
-| **数据存储** | Durable Objects SQLite                               | 用户数据、服务器配置                                                                         |
-| **包管理**   | pnpm (workspace)                                     | Monorepo 依赖管理                                                                            |
+| **前端**       | TypeScript + Vite + xterm.js                         | Web 终端模拟器，WebGL 硬件加速                                                                         |
+| **国际化**      | 自研轻量 i18n（`frontend/src/i18n`）                       | 简体中文 / English 双语言界面，浏览器语言自动识别与手动切换                                                          |
+| **UI 框架**    | Tailwind CSS（Vite/PostCSS 本地构建）+ Theme V2 系统         | 应用支持内置主题切换、自定义主题 JSON 导入及登录账号同步；主题编辑与导出由 GitHub Pages 提供                                     |
+| **文件传输**     | trzsz.js                                             | 支持 trz/tsz 命令、拖拽上传、断点续传                                                                      |
+| **AI 助手**    | BYOK + OpenAI 兼容接口                                   | 自带 API Key，支持 DeepSeek 等兼容模型                                                                 |
+| **后端**       | Cloudflare Workers                                   | Serverless 边缘计算                                                                              |
+| **会话管理**     | Durable Objects                                      | SSH 会话隔离；浏览器 WebSocket 使用 Hibernation API 接入，活动出站 TCP 期间不休眠                                  |
+| **数据存储**     | Durable Objects SQLite                               | 用户数据、服务器配置                                                                                   |
+| **包管理**      | pnpm (workspace)                                     | Monorepo 依赖管理                                                                                |
 
 <a id="contributors"></a>
 
@@ -494,12 +426,12 @@ test 分支（开发/测试）  ──合并──>  main 分支（生产）
 
 感谢以下贡献者对 CloudSSH 的代码、兼容性和用户体验所做的贡献：
 
-| 贡献者                                              | 主要贡献                                                                                                                 |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| [TanXin (@newbietan)](https://github.com/newbietan) | 项目发起与持续维护；Cloudflare Serverless、SSH/SFTP、AI Agent、安全体系、主题系统及工程化建设                            |
-| [David xu (@xqdoo00o)](https://github.com/xqdoo00o) | Dropbear 兼容、trzsz 文件传输迁移、PTY 尺寸处理，以及会话退出与重连交互优化                                              |
-| [vonl1 (@vonl1)](https://github.com/vonl1)          | 终端选区自动复制、兼容 Vim 的右键粘贴体验、服务器 IPv4/IPv6 掩码与完整地址快捷复制，以及服务器操作系统自动识别与品牌图标 |
-| [Leon Xu (@xuthuslei)](https://github.com/xuthuslei)    | 修复 `SSH_MSG_NEWKEYS` 与首个加密包同批到达时的加密状态切换和数据包解析兼容问题                                       |
+| 贡献者                                                  | 主要贡献                                                                                                                     |
+| ---------------------------------------------------  | ------------------------------------------------------------------------------------------------------------------------ |
+| [TanXin (@newbietan)](https://github.com/newbietan)  | 项目发起与持续维护；Cloudflare Serverless、SSH/SFTP、AI Agent、安全体系、主题系统及工程化建设                                                        |
+| [David xu (@xqdoo00o)](https://github.com/xqdoo00o)  | Dropbear 兼容、trzsz 文件传输迁移、PTY 尺寸处理，以及会话退出与重连交互优化                                                                          |
+| [vonl1 (@vonl1)](https://github.com/vonl1)           | 终端选区自动复制、兼容 Vim 的右键粘贴体验、服务器 IPv4/IPv6 掩码与完整地址快捷复制，以及服务器操作系统自动识别与品牌图标                                                     |
+| [Leon Xu (@xuthuslei)](https://github.com/xuthuslei) | 修复 `SSH_MSG_NEWKEYS` 与首个加密包同批到达时的加密状态切换和数据包解析兼容问题                                                                        |
 
 名单及贡献说明依据 Git 提交历史与已接收的 Pull Request 整理；同一贡献者在历史中可能使用过不同的 Git 作者名称或邮箱。完整记录请参阅 [GitHub Contributors](https://github.com/newbietan/CloudSSH/graphs/contributors)。欢迎通过 Issue 和 Pull Request 参与项目建设。
 

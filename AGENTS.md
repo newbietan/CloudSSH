@@ -6,6 +6,7 @@
   - scripts/build-html.js (构建流程)
   - package.json (依赖、脚本命令)
   - src/types.ts (Env 接口、类型定义)
+  - biome.json (代码格式与 lint 约定)
 -->
 
 ## Project Overview
@@ -35,6 +36,8 @@ src/
 │   ├── server-tags.ts # 服务器标签规范化与 SQLite JSON 序列化
 │   ├── os-detect.ts  # 远端操作系统输出解析、规范 key 与持久化白名单
 │   ├── auth.ts       # GitHub OAuth handling
+│   ├── dns-check.ts  # DNS-over-HTTPS 解析 + 统一 IP 块检查（DNS rebinding 防重绑定 SSRF 防护）
+│   ├── ip-geo.ts     # 保存直连服务器时 IPinfo 区域推断，映射为 DO locationHint
 │   ├── agent/        # AI Agent system
 │   │   ├── core.ts       # Agent control loop (LLM calls, tool execution)
 │   │   ├── tools.ts      # 8 tool definitions (execute_command, detect_environment, list_processes, service_manage, docker_manage, etc.)
@@ -66,28 +69,54 @@ src/
 
 frontend/
 ├── src/
-│   ├── main.ts       # Frontend entry point (routing, theme, event handlers)
-│   ├── terminal.ts   # xterm.js terminal setup (search, dynamic RTT latency, log export)
+│   ├── main.ts            # Frontend entry point (路由、theme、i18n、事件处理、Esc 快速返回终端)
+│   ├── terminal.ts        # xterm.js terminal setup (search, dynamic RTT latency, log export, 选区->Agent)
+│   ├── terminal-layout.ts # 响应式终端字体与视口尺寸（桌面/平板/移动）
+│   ├── terminal-status.ts # SSH 状态事件 → i18n 文案翻译与状态栏渲染
+│   ├── terminal-text.ts   # 终端等宽文本宽度计算（CJK 全角/Emoji 占 2 列）
+│   ├── network-quality.ts # 双段延迟阈值与网络质量分级（good/fair/poor）
+│   ├── clipboard.ts       # Clipboard API 写入与旧版 execCommand 回退
+│   ├── ui-feedback.ts     # 轻量通知/toast 反馈组件
+│   ├── host-display.ts    # IPv4/IPv6 字面量校验与隐私掩码文本
+│   ├── os-icons.ts        # 操作系统品牌图标（内嵌 simple-icons SVG）
+│   ├── port.ts            # 端口解析与 1-65535 校验
+│   ├── regions.ts         # DO locationHint 区域选项共享数据（Auto + 白名单）
+│   ├── theme.ts           # Theme V2 内置主题、UI CSS 变量与外观预设
 │   ├── auth-challenge-dialog.ts # RFC 4256 multi-round authentication prompt UI
 │   ├── mobile-terminal.ts # Mobile viewport, shortcut toolbar, clipboard and landscape controller
-│   ├── mobile-input.ts # Pure iOS IME diff and one-shot modifier helpers
-│   ├── known-hosts.ts # 已验证主机指纹消息校验、本地/云端 TOFU 持久化
-│   ├── tab-manager.ts # Tab manager (multi-session terminal/SFTP/Agent coordinator)
-│   ├── sftp-panel.ts # SFTP file manager UI (multi-select, batch actions, queue, cancel)
-│   ├── sftp-selection.ts # Pure multi-selection state model
-│   ├── auth-form.ts  # Auth form & encrypted anonymous credentials storage/autofill
-│   ├── server-list.ts # Server UI (tags, search, 9-card pagination, CRUD/connect)
-│   ├── share-manager.ts # Owner UI for creating, revoking, and auditing one-time shares
-│   ├── share-session.ts # Public one-time share landing and claim flow
+│   ├── mobile-input.ts    # Pure iOS IME diff and one-shot modifier helpers
+│   ├── known-hosts.ts     # 已验证主机指纹消息校验、本地/云端 TOFU 持久化
+│   ├── tab-manager.ts     # Tab manager (multi-session terminal/SFTP/Agent coordinator, 返回终端按钮联动)
+│   ├── sftp-panel.ts      # SFTP file manager UI (multi-select, batch actions, queue, cancel)
+│   ├── sftp-selection.ts  # Pure multi-selection state model
+│   ├── auth-form.ts       # Auth form & encrypted anonymous credentials storage/autofill
+│   ├── server-list.ts     # Server UI (tags, search, responsive 9/6/3-card pagination, CRUD/connect)
+│   ├── share-manager.ts   # Owner UI for creating, revoking, and auditing one-time shares
+│   ├── share-session.ts   # Public one-time share landing and claim flow
 │   ├── agent/
-│   │   ├── agent-panel.ts  # AI assistant sidebar (context attachments, streaming, Markdown, confirmations)
+│   │   ├── agent-panel.ts # AI assistant sidebar (context attachments, streaming, Markdown, confirmations)
+│   │   ├── code-actions.ts # Agent 代码块语言归一化与 Shell 单行命令可填性判定
 │   │   └── terminal-selection-context.ts # Selection snapshots and untrusted-data prompt boundary
 │   ├── snippet-manager.ts # 命令片段库面板（云端/本地双后端、填入/填入并执行、编辑/删除）
 │   ├── snippet-store.ts   # 片段存储层（RemoteSnippetStore + LocalSnippetStore + 错误映射）
-│   ├── ai-config.ts  # AI model configuration modal
-│   ├── style.css     # Global styles (CSS variable theme system)
-│   └── turnstile.d.ts # Turnstile type declarations
-└── vite.config.ts    # Dev proxy to localhost:8787
+│   ├── ai-config.ts       # AI model configuration modal
+│   ├── i18n/
+│   │   ├── index.ts        # 语言解析、词条查询（t）与 locale 变更通知
+│   │   └── locales/        # zh-CN.ts / en-US.ts 词条字典
+│   ├── style.css           # Global styles (CSS variable theme system)
+│   └── turnstile.d.ts      # Turnstile type declarations
+└── vite.config.ts          # Dev proxy to localhost:8787（+ esbuild minifySyntax 关闭以规避 xterm 6 DECRQM bug）
+```
+
+tests/
+
+```
+├── README.md            # 测试套件说明（目录结构、运行命令）
+├── build/               # 生产构建、可复现性与无原生弹窗回归
+├── e2e/                 # Chromium Playwright 交互与 axe 无障碍检查
+├── ssh/                 # SSH 算法、认证、KEX、加密、通道与测试密钥夹具
+├── worker/              # Worker 路由、安全、DNS 防重绑定、UserDB/标签/片段/跳板/分享策略测试
+└── *.test.ts            # 前端源码级回归（i18n、剪贴板、SFTP 选择、主题、终端状态/文本等）
 ```
 
 ## Development Commands
@@ -111,8 +140,17 @@ pnpm run sync:theme-editor
 # Run tests
 pnpm test
 
+# Generate coverage report (output to coverage/)
+pnpm run test:coverage
+
+# Watch mode for tests
+pnpm run test:watch
+
 # Run worker + frontend type checks
 pnpm run typecheck
+
+# Type-check worker or frontend separately
+pnpm run typecheck:worker / pnpm run typecheck:frontend
 
 # Run browser E2E and accessibility tests
 pnpm run test:e2e
@@ -162,11 +200,15 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 - `ENABLE_SSH_SHARING` - Optional; `true` enables one-time audited SSH sharing for signed-in owners (disabled by default)
 - `TURNSTILE_SECRET` / `TURNSTILE_SITEKEY` - Bot verification
 - `BASE_URL` - OAuth callback URL
+- `STRICT_HOST_KEY_VERIFY` - Optional; `false` skips host-key signature verification failures (default true, fails closed)
+- `DEBUG_MODE` - Optional; `true` appends debug info to API responses（wrangler.toml `[vars]` 已声明 `DEBUG_MODE`）
+
+> 注意：`Env` 中声明的 `MAX_CONNECTIONS` / `IDLE_TIMEOUT` 属预留变量，当前代码未读取，切勿依赖。
 
 ## API Routes
 
 | Route | Method | Auth | Description |
-|-------|--------|------|-------------|
+| ------- | -------- | ------ | ------------- |
 | `/api/auth/github` | GET | No | GitHub OAuth redirect |
 | `/api/auth/callback` | GET | No | OAuth callback, creates user + session |
 | `/api/auth/logout` | POST | No | Logout, clears session |
@@ -192,12 +234,19 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 
 ## Testing
 
-Tests use Vitest. Run with:
+Tests use Vitest for unit/integration and Playwright + axe for browser E2E:
+
 ```bash
-pnpm test
+pnpm test            # Vitest 单元与集成测试
+pnpm run test:coverage  # 覆盖率（输出到 coverage/）
+pnpm run test:e2e    # Playwright 浏览器 E2E 与 axe 无障碍检查
+pnpm run verify      # typecheck + test + build:frontend + test:e2e 完整门禁
 ```
 
-Test files should be in `tests/` directory with `.test.ts` extension.
+- 测试文件位于 `tests/` 目录，`.test.ts` 后缀（详见 Key Directories 中的 `tests/` 结构）。
+- `tests/ssh/fixtures/` 中的私钥只用于公开协议测试，绝不可用于真实服务器。
+- E2E 首次运行需安装浏览器：`pnpm exec playwright install chromium`。
+- 新增前端文案必须同时提供 zh-CN/en-US 词条，`i18n.test.ts` 会校验两端词条对齐。
 
 ## Git 工作流规范
 
@@ -235,7 +284,7 @@ release: 发布新版本
 ### 分支用途
 
 | 分支 | 用途 | 可直接推送 |
-|------|------|-----------|
+| ------ | ------ | ----------- |
 | `test` | 所有开发、测试、PR 合入 | ✅ |
 | `main` | 生产环境，仅通过 test 合入 | ❌（保护分支） |
 
@@ -252,7 +301,7 @@ release: 发布新版本
 9. **SSH rate limiting** - `/api/ssh` uses a bounded, Worker-isolate in-memory limiter for traffic shedding. It skips requests without `CF-Connecting-IP`; Turnstile and one-time tokens remain the connection authorization controls.
 10. **Tailwind is built locally** - `frontend/postcss.config.cjs` and `frontend/tailwind.config.cjs` generate Tailwind CSS during Vite builds. Do not reintroduce `cdn.tailwindcss.com`; keep content scan paths and theme variable mappings synchronized when adding frontend source locations or theme tokens.
 11. **Builds never install dependencies** - run `pnpm install --frozen-lockfile` before build/deploy. `scripts/build-html.js` requires exactly one JS and one CSS bundle so every production asset is inlined deterministically.
-12. **Server list organization** - server tags are stored as normalized JSON in SQLite, filtered client-side, and rendered with 9 items per page. Search/tag changes must reset pagination to page 1.
+12. **Server list organization** - server tags are stored as normalized JSON in SQLite, filtered client-side, and rendered with responsive pagination（桌面端每页 9 张、平板 6 张、移动端 3 张，三档常量见 `frontend/src/server-list.ts`）。Search/tag changes must reset pagination to page 1.
 13. **SFTP selection model** - file selection supports single, Cmd/Ctrl toggle, Shift range and select-all. Batch download reuses the sequential download queue; batch delete waits for all delete/rmdir results before refreshing.
 14. **Agent terminal selection context** - “Ask AI assistant” attaches one immutable selection snapshot per tab and never sends it by itself. New selections replace the pending snapshot; successful sends and session teardown clear it. Preserve the untrusted-data/non-authorization boundary in `terminal-selection-context.ts`.
 15. **Region inference privacy** - Saving or changing a Cloudflare-direct server host calls the third-party IPinfo service and persists the inferred locationHint. Servers with `jump_server_id` are downstream nodes: never query their hosts, ignore and clear their own region hints, and infer once if they later become direct Auto entries. Keep the provider name and disclosure synchronized across README/code comments; failures must continue to fall back to Cloudflare's default placement.
@@ -264,9 +313,15 @@ release: 发布新版本
 21. **GitHub access policy** - `GITHUB_ALLOWED_USER_IDS` contains stable numeric GitHub IDs and is rechecked during OAuth callback and every session verification; omitted means unrestricted, while an empty or malformed configured value fails closed. `REQUIRE_GITHUB_AUTH=true` disables anonymous SSH and requires a valid session for direct and one-time-token SSH upgrades, but does not terminate already established WebSockets. Never expose the allowlist through `/api/config`.
 22. **SSH jump chains** - Jump hosts are available only to signed-in users through saved-server `jump_server_id` relations. Resolve one immutable outer-to-target chain in UserDBDO, reject cross-user references, cycles, deletion of referenced hops, and more than 3 jump hosts. Apply public-address SSRF checks only to the outermost Cloudflare TCP destination; anonymous clients must never inject `jumpHosts`. Every intermediate SSHSession authenticates without opening a Shell and exposes only RFC 4254 `direct-tcpip`; terminal, SFTP, Agent exec, and OS detection belong to the final session. Preserve nested channel backpressure, close the full chain on any-hop failure, and scope known-host identities by the complete route so equal private addresses behind different bastions do not collide.
 23. **SSH host-key TOFU** - Never publish or persist a first-seen/replacement fingerprint before its KEX host-key signature succeeds. A changed fingerprint must close normally without automatic retry, display the old/new values for explicit user confirmation, and replace only the exact route-scoped identity. Saved-server confirmation must update the cloud record before requesting a fresh one-time token; anonymous confirmation may update only the current in-memory config and local record. Cancellation or persistence failure must leave the previous trust record intact.
-25. **Command snippets** - 按 `user_id` 行级隔离存于 UserDBDO（名称≤50、命令≤2000、每用户≤100 条），所有 CRUD 均 `WHERE user_id = ?`；匿名用户降级 `localStorage`（`cloudssh_snippets`）。插入默认不自动回车（`insertSnippet` 单行走 `fillInput`、多行走 `xterm paste`），一次性分享会话中隐藏入口。
+24. **Command snippets** - 按 `user_id` 行级隔离存于 UserDBDO（名称≤50、命令≤2000、每用户≤100 条），所有 CRUD 均 `WHERE user_id = ?`；匿名用户降级 `localStorage`（`cloudssh_snippets`）。插入默认不自动回车（`insertSnippet` 单行走 `fillInput`、多行走 `xterm paste`），一次性分享会话中隐藏入口。
 
-24. **One-time SSH sharing** - Sharing is disabled unless `ENABLE_SSH_SHARING=true`. A link contains only a 256-bit capability, persists only its hash, can be claimed once, and exchanges for a one-minute connection ticket. Creation requires route-scoped verified host fingerprints for the target and every jump hop. Share policy is issued only by SSHShareDO/UserDBDO and must disable Agent, OS detection, host-key mutation, metadata mutation, keyboard-interactive auth, and reconnect while permitting only Terminal and optional SFTP. Record lifecycle, structured SFTP requests/results, and terminal output (not raw keystrokes); stop the session if audit storage fails or reaches 5 MiB/5000 events. Revocation and expiry must close the live SSHSessionDO. Preserve completed audit metadata if its saved-server record is later deleted.
+25. **One-time SSH sharing** - Sharing is disabled unless `ENABLE_SSH_SHARING=true`. A link contains only a 256-bit capability, persists only its hash, can be claimed once, and exchanges for a one-minute connection ticket. Creation requires route-scoped verified host fingerprints for the target and every jump hop. Share policy is issued only by SSHShareDO/UserDBDO and must disable Agent, OS detection, host-key mutation, metadata mutation, keyboard-interactive auth, and reconnect while permitting only Terminal and optional SFTP. Record lifecycle, structured SFTP requests/results, and terminal output (not raw keystrokes); stop the session if audit storage fails or reaches 5 MiB/5000 events. Revocation and expiry must close the live SSHSessionDO. Preserve completed audit metadata if its saved-server record is later deleted.
+
+26. **DNS rebinding SSRF defense** - Address-string checks (`isBlockedHost` / `validateBaseUrl`) alone can be bypassed by domains resolving to private/reserved IPs. `src/worker/dns-check.ts` resolves hostnames via DNS-over-HTTPS (1.1.1.1) and checks every resolved IP against a unified block list covering IPv6 edge cases; it gates both SSH outbound targets (`durable-object.ts`) and AI `base_url` (`agent/ssrf.ts`). When adding address families or reserved ranges, keep the DoH block list and the string-level checks synchronized.
+
+27. **Biome formatting convention** - `biome.json`（single 引号、`lineWidth: 100`）自 v1.10.0 起是代码格式基准，相关 lint 规则（`noUnusedVariables`/`useConst` 等）应保持通过；CI 质量门禁不执行 Biome，以 `typecheck` + `test` + 可复现构建 + E2E 为准。
+
+28. **Frontend i18n** - 所有面向用户的文案走 `frontend/src/i18n` 的 `t()` / `data-i18n` / `data-i18n-title` / `data-i18n-placeholder` 管线并同步 `locales/zh-CN.ts` 与 `en-US.ts`；语言解析支持 URL 参数、localStorage（`cloudssh_locale`）与浏览器语言回退。新增文案时保持两端词条对齐，勿硬编码中文到模板字符串。
 
 ## Deployment Notes
 
@@ -275,7 +330,7 @@ release: 发布新版本
 项目支持 production 和 test 两个独立环境同时运行在 Cloudflare 上：
 
 | 环境 | Worker 名称 | 分支 | 域名 |
-|------|------------|------|------|
+| ------ | ------------ | ------ | ------ |
 | Production | `cloudssh` | `main` | `<name>.workers.dev` + 自定义域名 |
 | Test | `cloudssh-test` | `test` | `<name>-test.workers.dev` + 自定义域名 |
 
@@ -284,6 +339,7 @@ release: 发布新版本
 ### 部署方式
 
 **方式一：Cloudflare Dashboard（推荐）**
+
 1. 构建前端：`pnpm run build:frontend`
 2. 进入 Cloudflare Dashboard → Workers
 3. 创建/选择 worker（production 用 `cloudssh`，test 用 `cloudssh-test`）
@@ -292,24 +348,32 @@ release: 发布新版本
 6. 如需自定义域名，在 Settings → Domains & Routes 中绑定
 
 **方式二：Wrangler CLI**
+
 ```bash
 pnpm run deploy          # 部署 production
 pnpm run deploy:test     # 部署 test 环境
 ```
 
 **方式三：GitHub Actions（CI/CD）**
+
 - `test` 分支 push → 自动部署到 `cloudssh-test`
 - `main` 分支 push → 自动部署到 `cloudssh`
+- `docs/**` 变更 → 发布 GitHub Pages 主题编辑器（`github-pages.yml`）
+- Fork 定时同步上游 `main`（`sync-upstream.yml`，默认关闭，由 `AUTO_SYNC_UPSTREAM` 仓库变量开启）
+
+> 部署门禁（`deploy.yml`）依次执行：冻结锁文件安装 → Playwright 浏览器安装 → `typecheck` → `test` → `build:frontend` → `test:e2e` → 按分支部署；任一环节失败即阻断部署。
 
 ### 自定义域名
 
 `wrangler.toml` 中不硬编码自定义域名（开源项目，每人域名不同）。默认使用 Cloudflare 提供的 `workers.dev` 域名。如需绑定自定义域名：
+
 - 在 Cloudflare Dashboard → Workers → 你的 Worker → Settings → Domains & Routes 中添加
 - 或在 `wrangler.toml` 中添加 `[[routes]]` 配置（仅本地使用，勿提交到仓库）
 
 ### Secrets 配置
 
 通过 Cloudflare Dashboard 或 wrangler CLI 设置：
+
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` - GitHub OAuth
 - `GITHUB_ALLOWED_USER_IDS` - 可选，逗号分隔的 GitHub 数字用户 ID 白名单
 - `REQUIRE_GITHUB_AUTH` - 可选，设为 `true` 时禁用匿名 SSH 并要求有效 GitHub session
@@ -349,8 +413,10 @@ CLI: `npx wrangler secret set <SECRET_NAME>`
       - 正文必须说明本次版本的更新内容：包含提交列表、关联 Issue/PR、验证结果。
    3. **PR 的审核与合并由用户手动完成**：AI 创建 PR 后应等待用户审核并合并，不得自行合并或使用管理员旁路合并。
    4. 用户合并 PR 到 `main` 后（生产环境自动部署），AI 执行以下命令同步本地分支：
+
       ```bash
       git fetch origin && git reset --hard origin/main && git push origin test --force
       ```
+
       - 该操作使本地 `test` 分支与已发布的 `main` 完全一致。
       - 若此前还有未发布的 `test` 提交，会被强制覆盖，请确认已合并完成后再执行。
