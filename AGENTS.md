@@ -229,6 +229,7 @@ perf: 性能优化
 docs: 文档更新
 chore: 构建/配置变更
 ci: CI/CD 变更
+release: 发布新版本
 ```
 
 ### 分支用途
@@ -333,7 +334,23 @@ CLI: `npx wrangler secret set <SECRET_NAME>`
    - 严禁 AI 助手自主决定或递增版本号。
    - 当需要发布新版本时，根据人类指定的版本号，AI 应在本地修改：
      - `package.json` 中的 `"version": "X.Y.Z"`。
+     - `frontend/package.json` 中的 `"version": "X.Y.Z"`（与根目录保持一致）。
      - `CHANGELOG.md` 头部追加最新的更新日志（格式需为 `## [X.Y.Z] - YYYY-MM-DD`）。
    - 必须遵循 [Keep a Changelog](https://keepachangelog.com/) 规范组织内容。
 2. **README 导航链接维护**：
    - `README.md` 中的 `更新日志` 链接与 `README_en.md` 中的 `Changelog` 跳转超链接必须保持正常。
+3. **发布流程（从版本指定到上线，按顺序执行）**：
+   1. 用户明确指定发布版本号（如 v1.10.1）后，AI 按第 1 条更新版本文件与 CHANGELOG，并提交推送：
+      - 提交信息遵循 `release: 发布 vX.Y.Z 版本` 格式，正文注明本次版本更新要点与验证结果（typecheck / test / verify）。
+      - 提交前确认工作区干净或只暂存版本与 CHANGELOG 相关文件，避免混入无关改动（如格式化漂移）。
+      - 推送 `test` 分支：`git push origin test`（触发测试环境自动部署）。
+   2. 创建 PR 合并 `test` 到 `main`：
+      - 标题遵循 `release: 发布 vX.Y.Z 版本` 格式。
+      - 正文必须说明本次版本的更新内容：包含提交列表、关联 Issue/PR、验证结果。
+   3. **PR 的审核与合并由用户手动完成**：AI 创建 PR 后应等待用户审核并合并，不得自行合并或使用管理员旁路合并。
+   4. 用户合并 PR 到 `main` 后（生产环境自动部署），AI 执行以下命令同步本地分支：
+      ```bash
+      git fetch origin && git reset --hard origin/main && git push origin test --force
+      ```
+      - 该操作使本地 `test` 分支与已发布的 `main` 完全一致。
+      - 若此前还有未发布的 `test` 提交，会被强制覆盖，请确认已合并完成后再执行。
