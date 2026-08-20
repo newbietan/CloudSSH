@@ -1,0 +1,6 @@
+---
+extends: default
+rules:
+  line-length:
+    # SHA 锁定的 GitHub Actions 引用（40 位哈希 + 版本注释）天然超 80 字符
+    max: 200
