@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.2] - 2026-08-20
+
+### Changed
+
+- 精简 README 结构：核心优势要点化（重点、全面不啰嗦）；架构说明仅保留系统架构图，移除核心组件 / SSH 协议实现 / 数据流三个小节；快速部署移除本地命令行部署方式，中英文档同步调整。
+- 快速部署新增「可配置环境变量」汇总表，涵盖 GitHub OAuth、登录白名单、强制登录、一次性分享、Turnstile、主机密钥验证与调试模式等全部可配置变量。
+- 更新文档配套内容：演示视频时长（8:27 → 19:48）；`AGENTS.md` 目录树补齐前端/后端新模块、环境变量、tests/ 结构与 5 条新坑位（DNS 防重绑定、Biome 约定、i18n、CI 作用域等）；`tests/README.md` 补充 7 个新测试文件与覆盖范围。
+
+### Fixed
+
+- 修复 GitHub Actions 部署工作流 `paths-ignore` 作用域：标准 glob 的 `*` 不匹配 `/`，原 `*.md` 只忽略仓库根目录文档，导致 `tests/README.md` 等子目录文档变更误触发完整部署流水线；改为 `**/*.md`、`**/*.png` 等跨目录模式。
+- 将 GitHub Actions 引用按 SHA 锁定（`actions/checkout`、`actions/setup-node`、`pnpm/action-setup`、`actions/configure-pages`、`actions/upload-pages-artifact`、`actions/deploy-pages`），杜绝 tag 可变引用带来的供应链投毒风险；新增 `.yamllint` 放宽行宽限制以承载 40 位哈希引用。
+
+### Docs
+
+- 完善发布流程规范：`release` 提交信息与 PR 标题支持主题化描述（`release: 发布 vX.Y.Z <主题>版本`，如 `release: 发布 v1.10.2 工作流和文档更新版本`）。
+
 ## [1.10.1] - 2026-08-20
 
 ### Added
