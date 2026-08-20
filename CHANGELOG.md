@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-08-20
+
+### Added
+
+- 新增自定义命令片段库（#90）：支持按名称保存常用命令，登录用户按 `user_id` 行级隔离存储于 `UserDBDO`，匿名用户降级至本地 `localStorage`；名称≤50、命令≤2000、每用户≤100 条。
+- 片段库提供填入终端、填入并执行、编辑与删除操作，桌面端与移动端均可通过工具栏入口访问，一次性分享会话中自动隐藏。
+- 新增 `src/snippet-schema.ts` 共享校验模块，实现云端与本地一致的限额与输入规范化。
+- 新增 `tests/snippet-schema.test.ts`、`tests/worker/user-db-snippets.test.ts` 与 `tests/snippet-local-store.test.ts`，覆盖校验、隔离、上限与匿名降级。
+
+### Changed
+
+- 彻底统一代码格式：新增 `biome.json`（`single` 引号、`lineWidth: 100`），全量格式化 123 个文件，后续变更不再出现引号风格抖动。
+- 同步更新 `AGENTS.md` 的关键目录、API 路由表与常见坑位说明。
+
+### Fixed
+
+- 将 `UserDBDO` 与 `index.ts` 中裸 `new URL(request.url)` 统一封装为带 `try/catch` 的 `parseRequestUrl`，非法 URL 统一 400 拒绝。
+- 将 `terminal.ts` 中 `innerHTML` 状态栏与搜索框重构为纯 DOM 构造，消除 XSS 误报并通过 `insertSnippet` 复用 `fillInput` / `paste` 管线。
+
 ## [1.9.1] - 2026-08-18
 
 ### Fixed
