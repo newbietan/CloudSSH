@@ -61,15 +61,11 @@ function truncateCodePoints(value: string, maxLength: number): string {
 export function sanitizeAuthChallengeText(
   value: string,
   maxLength: number,
-  multiline = false,
+  multiline = false
 ): string {
-  let sanitized = value
-    .replace(/\r\n?/g, '\n')
-    .replace(DANGEROUS_CONTROL_CHARACTERS, '');
+  let sanitized = value.replace(/\r\n?/g, '\n').replace(DANGEROUS_CONTROL_CHARACTERS, '');
 
-  sanitized = multiline
-    ? sanitized.replace(/\t/g, '  ')
-    : sanitized.replace(/[\n\t]+/g, ' ');
+  sanitized = multiline ? sanitized.replace(/\t/g, '  ') : sanitized.replace(/[\n\t]+/g, ' ');
 
   return truncateCodePoints(sanitized, maxLength);
 }
@@ -77,7 +73,11 @@ export function sanitizeAuthChallengeText(
 /** Validate the WebSocket payload and bound every remote-controlled UI field. */
 export function normalizeAuthChallengeMessage(value: unknown): AuthChallengeMessage | null {
   if (!isRecord(value) || value.type !== 'auth_challenge') return null;
-  if (typeof value.id !== 'string' || value.id.length < 1 || value.id.length > MAX_CHALLENGE_ID_LENGTH) {
+  if (
+    typeof value.id !== 'string' ||
+    value.id.length < 1 ||
+    value.id.length > MAX_CHALLENGE_ID_LENGTH
+  ) {
     return null;
   }
   if (typeof value.name !== 'string' || typeof value.instruction !== 'string') return null;
@@ -97,14 +97,11 @@ export function normalizeAuthChallengeMessage(value: unknown): AuthChallengeMess
   return {
     type: 'auth_challenge',
     id: value.id,
-    name: sanitizeAuthChallengeText(
-      value.name,
-      MAX_CHALLENGE_NAME_LENGTH,
-    ),
+    name: sanitizeAuthChallengeText(value.name, MAX_CHALLENGE_NAME_LENGTH),
     instruction: sanitizeAuthChallengeText(
       value.instruction,
       MAX_CHALLENGE_INSTRUCTION_LENGTH,
-      true,
+      true
     ),
     prompts,
     canUseStoredPassword: value.canUseStoredPassword === true,
@@ -115,7 +112,7 @@ function appendTextElement(
   parent: HTMLElement,
   tagName: keyof HTMLElementTagNameMap,
   className: string,
-  text: string,
+  text: string
 ): HTMLElement {
   const element = document.createElement(tagName);
   element.className = className;
@@ -126,7 +123,8 @@ function appendTextElement(
 
 function formatTarget(host: string, port: number): string {
   const safeHost = sanitizeAuthChallengeText(host, 512);
-  const displayHost = safeHost.includes(':') && !safeHost.startsWith('[') ? `[${safeHost}]` : safeHost;
+  const displayHost =
+    safeHost.includes(':') && !safeHost.startsWith('[') ? `[${safeHost}]` : safeHost;
   return t('authChallenge.target', { host: displayHost || t('authChallenge.unknownHost'), port });
 }
 
@@ -166,29 +164,44 @@ export class AuthChallengeDialog {
       header,
       'span',
       'auth-challenge-dialog__icon material-symbols-outlined',
-      'key',
+      'key'
     );
     icon.setAttribute('aria-hidden', 'true');
-    const title = appendTextElement(header, 'h2', 'auth-challenge-dialog__title', t('authChallenge.title'));
+    const title = appendTextElement(
+      header,
+      'h2',
+      'auth-challenge-dialog__title',
+      t('authChallenge.title')
+    );
     title.id = titleId;
 
     const target = appendTextElement(
       form,
       'p',
       'auth-challenge-dialog__target',
-      formatTarget(options.host, options.port),
+      formatTarget(options.host, options.port)
     );
     target.setAttribute('aria-label', target.textContent ?? '');
 
     const description = document.createElement('div');
     description.className = 'auth-challenge-dialog__description';
     description.id = descriptionId;
-    appendTextElement(description, 'p', 'auth-challenge-dialog__warning', t('authChallenge.remoteRequest'));
+    appendTextElement(
+      description,
+      'p',
+      'auth-challenge-dialog__warning',
+      t('authChallenge.remoteRequest')
+    );
     if (challenge.name) {
       appendTextElement(description, 'p', 'auth-challenge-dialog__name', challenge.name);
     }
     if (challenge.instruction) {
-      appendTextElement(description, 'p', 'auth-challenge-dialog__instruction', challenge.instruction);
+      appendTextElement(
+        description,
+        'p',
+        'auth-challenge-dialog__instruction',
+        challenge.instruction
+      );
     }
 
     const promptList = document.createElement('div');
@@ -223,7 +236,7 @@ export class AuthChallengeDialog {
       form,
       'p',
       'auth-challenge-dialog__hint',
-      t('authChallenge.sensitiveHint'),
+      t('authChallenge.sensitiveHint')
     );
     sensitiveHint.id = `auth-challenge-hint-${sequence}`;
 
@@ -233,21 +246,21 @@ export class AuthChallengeDialog {
       actions,
       'button',
       'auth-challenge-dialog__button auth-challenge-dialog__button--cancel',
-      t('common.cancel'),
+      t('common.cancel')
     ) as HTMLButtonElement;
     cancelButton.type = 'button';
 
     let storedPasswordButton: HTMLButtonElement | null = null;
     if (
-      challenge.canUseStoredPassword
-      && challenge.prompts.length === 1
-      && !challenge.prompts[0].echo
+      challenge.canUseStoredPassword &&
+      challenge.prompts.length === 1 &&
+      !challenge.prompts[0].echo
     ) {
       storedPasswordButton = appendTextElement(
         actions,
         'button',
         'auth-challenge-dialog__button auth-challenge-dialog__button--stored',
-        t('authChallenge.useStoredPassword'),
+        t('authChallenge.useStoredPassword')
       ) as HTMLButtonElement;
       storedPasswordButton.type = 'button';
     }
@@ -256,7 +269,7 @@ export class AuthChallengeDialog {
       actions,
       'button',
       'auth-challenge-dialog__button auth-challenge-dialog__button--submit',
-      t(challenge.prompts.length === 0 ? 'authChallenge.continue' : 'authChallenge.respond'),
+      t(challenge.prompts.length === 0 ? 'authChallenge.continue' : 'authChallenge.respond')
     ) as HTMLButtonElement;
     submitButton.type = 'submit';
 

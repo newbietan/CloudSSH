@@ -1,10 +1,11 @@
-import { loadKnownFingerprint } from './known-hosts';
-import type { TabManager } from './tab-manager';
-import { populateRegionSelect, regionLabel } from './regions';
-import { notify } from './ui-feedback';
 import { onLocaleChange, t, translateDocument } from './i18n';
+import { loadKnownFingerprint } from './known-hosts';
 import { parsePort } from './port';
-import { getActiveColorScheme, onColorSchemeChange, type ColorScheme } from './theme';
+import { populateRegionSelect, regionLabel } from './regions';
+import type { TabManager } from './tab-manager';
+import { type ColorScheme, getActiveColorScheme, onColorSchemeChange } from './theme';
+import { notify } from './ui-feedback';
+
 // --- Credential encryption helpers ---
 async function deriveKey(salt: Uint8Array): Promise<CryptoKey> {
   const raw = new TextEncoder().encode(window.location.origin + ':cloudssh');
@@ -23,7 +24,9 @@ async function encryptCredentials(data: object): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await deriveKey(salt);
   const encoded = new TextEncoder().encode(JSON.stringify(data));
-  const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded));
+  const encrypted = new Uint8Array(
+    await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded)
+  );
   const combined = new Uint8Array(salt.length + iv.length + encrypted.length);
   combined.set(salt, 0);
   combined.set(iv, salt.length);
@@ -33,9 +36,18 @@ async function encryptCredentials(data: object): Promise<string> {
   return btoa(binary);
 }
 
-async function decryptCredentials(stored: string): Promise<{ host: string; port: string; username: string; password: string; privateKey?: string; authMethod?: string } | null> {
+async function decryptCredentials(
+  stored: string
+): Promise<{
+  host: string;
+  port: string;
+  username: string;
+  password: string;
+  privateKey?: string;
+  authMethod?: string;
+} | null> {
   try {
-    const raw = Uint8Array.from(atob(stored), c => c.charCodeAt(0));
+    const raw = Uint8Array.from(atob(stored), (c) => c.charCodeAt(0));
     const salt = raw.slice(0, 16);
     const iv = raw.slice(16, 28);
     const data = raw.slice(28);
@@ -65,10 +77,10 @@ export class ConnectionForm {
     this.render();
     onColorSchemeChange((colorScheme) => {
       if (
-        this.turnstileEnabled
-        && this.turnstileSitekey
-        && !this.turnstileVerified
-        && this.turnstileTheme !== colorScheme
+        this.turnstileEnabled &&
+        this.turnstileSitekey &&
+        !this.turnstileVerified &&
+        this.turnstileTheme !== colorScheme
       ) {
         this.renderTurnstile();
       }
@@ -120,9 +132,11 @@ export class ConnectionForm {
           <h2 class="text-sm font-bold tracking-[0.1em] text-on-surface" data-i18n="auth.githubRequired">此 CloudSSH 实例需要 GitHub 登录</h2>
           <p class="mx-auto max-w-md text-xs leading-6 text-muted" data-i18n="auth.githubRequiredHint">登录成功且账号获得管理员授权后，才能使用 SSH 和账号功能。</p>
         </div>
-        ${githubAuthEnabled
-          ? '<span id="github-login-placeholder"></span>'
-          : '<p class="text-xs text-error" data-i18n="auth.githubNotConfigured">管理员尚未完整配置 GitHub OAuth，当前无法登录。</p>'}
+        ${
+          githubAuthEnabled
+            ? '<span id="github-login-placeholder"></span>'
+            : '<p class="text-xs text-error" data-i18n="auth.githubNotConfigured">管理员尚未完整配置 GitHub OAuth，当前无法登录。</p>'
+        }
       </div>
     `;
     translateDocument(container);
@@ -362,8 +376,9 @@ export class ConnectionForm {
 
     recent.forEach((item, index) => {
       const itemEl = document.createElement('div');
-      itemEl.className = 'flex justify-between items-center text-xs p-2 border border-dim bg-surface/50 hover:bg-surface hover:border-[var(--accent)] transition-all cursor-pointer group relative';
-      
+      itemEl.className =
+        'flex justify-between items-center text-xs p-2 border border-dim bg-surface/50 hover:bg-surface hover:border-[var(--accent)] transition-all cursor-pointer group relative';
+
       const authLabel = item.authMethod === 'publickey' ? 'KEY' : 'PWD';
       const labelText = `${item.username}@${item.host}:${item.port}`;
 
@@ -394,7 +409,14 @@ export class ConnectionForm {
     });
   }
 
-  private async fillConnection(item: { host: string; port: number; username: string; authMethod: 'password' | 'publickey'; encryptedCred?: string; region?: string }): Promise<void> {
+  private async fillConnection(item: {
+    host: string;
+    port: number;
+    username: string;
+    authMethod: 'password' | 'publickey';
+    encryptedCred?: string;
+    region?: string;
+  }): Promise<void> {
     (document.getElementById('host') as HTMLInputElement).value = item.host || '';
     (document.getElementById('port') as HTMLInputElement).value = (item.port || 22).toString();
     (document.getElementById('username') as HTMLInputElement).value = item.username || '';
@@ -415,7 +437,8 @@ export class ConnectionForm {
       const cred = await decryptCredentials(item.encryptedCred);
       if (cred) {
         (document.getElementById('password') as HTMLInputElement).value = cred.password || '';
-        (document.getElementById('private-key') as HTMLTextAreaElement).value = cred.privateKey || '';
+        (document.getElementById('private-key') as HTMLTextAreaElement).value =
+          cred.privateKey || '';
         (document.getElementById('remember-me') as HTMLInputElement).checked = true;
       } else {
         (document.getElementById('password') as HTMLInputElement).value = '';
@@ -435,7 +458,7 @@ export class ConnectionForm {
     try {
       recent = raw ? JSON.parse(raw) : [];
     } catch {}
-    
+
     if (index >= 0 && index < recent.length) {
       recent.splice(index, 1);
       localStorage.setItem('cloudssh_recent_connections', JSON.stringify(recent));
@@ -499,38 +522,55 @@ export class ConnectionForm {
     const regionValue = anonRegionSelect ? anonRegionSelect.value : '';
 
     if (!host || !username) {
-      notify(t('auth.validationHostUser'), { title: t('auth.incompleteConnection'), variant: 'warning' });
-      (document.getElementById(!host ? 'host' : 'username') as HTMLInputElement)?.focus();
+      notify(t('auth.validationHostUser'), {
+        title: t('auth.incompleteConnection'),
+        variant: 'warning',
+      });
+      (document.getElementById(host ? 'username' : 'host') as HTMLInputElement)?.focus();
       return;
     }
 
     if (port === null) {
-      notify(t('auth.validationPort'), { title: t('auth.incompleteConnection'), variant: 'warning' });
+      notify(t('auth.validationPort'), {
+        title: t('auth.incompleteConnection'),
+        variant: 'warning',
+      });
       portInput.focus();
       return;
     }
 
     if (this.authMode === 'password' && !password) {
-      notify(t('auth.validationPassword'), { title: t('auth.incompleteCredentials'), variant: 'warning' });
+      notify(t('auth.validationPassword'), {
+        title: t('auth.incompleteCredentials'),
+        variant: 'warning',
+      });
       (document.getElementById('password') as HTMLInputElement)?.focus();
       return;
     }
 
     if (this.authMode === 'key' && !privateKey) {
-      notify(t('auth.validationPrivateKey'), { title: t('auth.incompleteCredentials'), variant: 'warning' });
+      notify(t('auth.validationPrivateKey'), {
+        title: t('auth.incompleteCredentials'),
+        variant: 'warning',
+      });
       (document.getElementById('private-key') as HTMLTextAreaElement)?.focus();
       return;
     }
 
     // Check Turnstile if enabled
     if (this.turnstileEnabled && !this.turnstileVerified) {
-      notify(t('auth.turnstileRequired'), { title: t('auth.verificationRequired'), variant: 'warning' });
-      document.getElementById('turnstile-container')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      notify(t('auth.turnstileRequired'), {
+        title: t('auth.verificationRequired'),
+        variant: 'warning',
+      });
+      document
+        .getElementById('turnstile-container')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
 
     // 保存连接历史与凭据
-    let encryptedCred: string | undefined = undefined;
+    let encryptedCred: string | undefined;
     if (remember) {
       encryptedCred = await encryptCredentials({
         host,
@@ -558,12 +598,12 @@ export class ConnectionForm {
       username,
       authMethod: this.authMode === 'key' ? 'publickey' : 'password',
       timestamp: Date.now(),
-      ...(regionValue ? { region: regionValue } : {}),   // 区域偏好持久化到 recent
+      ...(regionValue ? { region: regionValue } : {}), // 区域偏好持久化到 recent
       ...(encryptedCred ? { encryptedCred } : {}),
     };
 
     // 去重：如果已有相同 id 记录，先删除
-    recent = recent.filter(r => r.id !== id);
+    recent = recent.filter((r) => r.id !== id);
     // 插入头部
     recent.unshift(newRecord);
     // 限制最近 5 条
@@ -606,7 +646,8 @@ export class ConnectionForm {
     } catch (error) {
       // 连接失败时关闭该标签
       tm.closeTab(tab.id);
-      document.getElementById('status-text')!.innerHTML = `<span class="w-2 h-2 bg-surface-dot inline-block"></span> ${t('auth.statusOffline')}`;
+      document.getElementById('status-text')!.innerHTML =
+        `<span class="w-2 h-2 bg-surface-dot inline-block"></span> ${t('auth.statusOffline')}`;
     }
   }
 }

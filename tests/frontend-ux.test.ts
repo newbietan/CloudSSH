@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import { getNetworkQuality } from '../frontend/src/network-quality';
+import { osDisplayName, osIconSvg } from '../frontend/src/os-icons';
+import { parsePort } from '../frontend/src/port';
 import {
   filterServers,
   normalizeTagsInput,
@@ -7,10 +10,7 @@ import {
   resolveServerPageSize,
   type ServerConfig,
 } from '../frontend/src/server-list';
-import { getNetworkQuality } from '../frontend/src/network-quality';
-import { parsePort } from '../frontend/src/port';
 import { resolveTerminalFontSize } from '../frontend/src/terminal-layout';
-import { osDisplayName, osIconSvg } from '../frontend/src/os-icons';
 import { DETECTED_OS_KEYS } from '../src/worker/os-detect';
 
 const servers: ServerConfig[] = [
@@ -82,8 +82,10 @@ describe('服务器列表搜索', () => {
 
   it('支持标签筛选、标签输入规范化和分页边界修正', () => {
     expect(filterServers(servers, '', 'database')).toEqual([servers[1]]);
-    expect(normalizeTagsInput(' Production, production，data   base '))
-      .toEqual(['Production', 'data base']);
+    expect(normalizeTagsInput(' Production, production，data   base ')).toEqual([
+      'Production',
+      'data base',
+    ]);
     expect(paginateServers(servers, 99, 1)).toEqual({
       items: [servers[1]],
       currentPage: 2,
@@ -118,11 +120,11 @@ describe('连接表单提交与端口校验', () => {
   it('使用标准 submit 事件，私钥文本框中的 Enter 不会被全局捕获', () => {
     const authSource = readFileSync(
       new URL('../frontend/src/auth-form.ts', import.meta.url),
-      'utf8',
+      'utf8'
     );
     const serverSource = readFileSync(
       new URL('../frontend/src/server-list.ts', import.meta.url),
-      'utf8',
+      'utf8'
     );
     const html = readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
 
@@ -139,21 +141,25 @@ describe('连接表单提交与端口校验', () => {
 describe('Agent 危险确认交互', () => {
   const agentSource = readFileSync(
     new URL('../frontend/src/agent/agent-panel.ts', import.meta.url),
-    'utf8',
+    'utf8'
   );
   const confirmDialogSource = agentSource.slice(
     agentSource.indexOf('private showConfirmDialog'),
-    agentSource.indexOf('private convertStreamToThoughtStep'),
+    agentSource.indexOf('private convertStreamToThoughtStep')
   );
   const tabManagerSource = readFileSync(
     new URL('../frontend/src/tab-manager.ts', import.meta.url),
-    'utf8',
+    'utf8'
   );
 
   it('使用 alertdialog 语义并默认聚焦拒绝按钮', () => {
     expect(confirmDialogSource).toContain("el.setAttribute('role', 'alertdialog')");
-    expect(confirmDialogSource).toContain("el.setAttribute('aria-labelledby', 'agent-confirm-title')");
-    expect(confirmDialogSource).toContain("el.setAttribute('aria-describedby', 'agent-confirm-description')");
+    expect(confirmDialogSource).toContain(
+      "el.setAttribute('aria-labelledby', 'agent-confirm-title')"
+    );
+    expect(confirmDialogSource).toContain(
+      "el.setAttribute('aria-describedby', 'agent-confirm-description')"
+    );
     expect(confirmDialogSource).toContain('requestAnimationFrame(() => rejectButton.focus())');
   });
 
@@ -196,20 +202,17 @@ describe('网络质量三色提示', () => {
 describe('终端选区询问 Agent', () => {
   const tabManagerSource = readFileSync(
     new URL('../frontend/src/tab-manager.ts', import.meta.url),
-    'utf8',
+    'utf8'
   );
   const terminalSource = readFileSync(
     new URL('../frontend/src/terminal.ts', import.meta.url),
-    'utf8',
+    'utf8'
   );
   const agentSource = readFileSync(
     new URL('../frontend/src/agent/agent-panel.ts', import.meta.url),
-    'utf8',
+    'utf8'
   );
-  const indexSource = readFileSync(
-    new URL('../frontend/index.html', import.meta.url),
-    'utf8',
-  );
+  const indexSource = readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
 
   it('监听完整选区并在点击入口后附加到 Agent 输入区', () => {
     expect(terminalSource).toContain('this.terminal.onSelectionChange');
@@ -224,7 +227,7 @@ describe('终端选区询问 Agent', () => {
   it('在鼠标选区末端显示浮动入口，取消选区后隐藏', () => {
     const toolbar = indexSource.slice(
       indexSource.indexOf('<!-- TopAppBar -->'),
-      indexSource.indexOf('<!-- Tab Bar'),
+      indexSource.indexOf('<!-- Tab Bar')
     );
     expect(toolbar).not.toContain('ask-ai-selection-btn');
     expect(indexSource).toContain('class="ask-ai-selection-float hidden');
@@ -238,11 +241,11 @@ describe('终端选区询问 Agent', () => {
   it('没有对选区或外部消息进行长度截断', () => {
     const selectionFlow = tabManagerSource.slice(
       tabManagerSource.indexOf('askAIAboutActiveSelection'),
-      tabManagerSource.indexOf('// ==================== 渲染标签栏'),
+      tabManagerSource.indexOf('// ==================== 渲染标签栏')
     );
     const sendMessageFlow = agentSource.slice(
       agentSource.indexOf('sendMessage(text: string)'),
-      agentSource.indexOf('private updateInputState'),
+      agentSource.indexOf('private updateInputState')
     );
     expect(selectionFlow).not.toMatch(/slice|substring|maxLength|truncate/i);
     expect(sendMessageFlow).not.toMatch(/slice|substring|maxLength|truncate/i);

@@ -104,7 +104,9 @@ export class ShareManager {
     modal.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') this.close();
     });
-    document.getElementById('share-create-btn')?.addEventListener('click', () => void this.createShare());
+    document
+      .getElementById('share-create-btn')
+      ?.addEventListener('click', () => void this.createShare());
   }
 
   private close(): void {
@@ -115,8 +117,12 @@ export class ShareManager {
 
   private async createShare(): Promise<void> {
     const button = document.getElementById('share-create-btn') as HTMLButtonElement | null;
-    const expiresInMinutes = Number((document.getElementById('share-expiry') as HTMLSelectElement).value);
-    const maxSessionMinutes = Number((document.getElementById('share-session-duration') as HTMLSelectElement).value);
+    const expiresInMinutes = Number(
+      (document.getElementById('share-expiry') as HTMLSelectElement).value
+    );
+    const maxSessionMinutes = Number(
+      (document.getElementById('share-session-duration') as HTMLSelectElement).value
+    );
     if (button) button.disabled = true;
     try {
       const response = await fetch(`/api/servers/${this.serverId}/shares`, {
@@ -124,7 +130,11 @@ export class ShareManager {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ expiresInMinutes, maxSessionMinutes }),
       });
-      const payload = await response.json().catch(() => ({})) as { url?: string; expiresAt?: number; error?: string };
+      const payload = (await response.json().catch(() => ({}))) as {
+        url?: string;
+        expiresAt?: number;
+        error?: string;
+      };
       if (!response.ok || !payload.url) throw new Error(payload.error || t('share.createFailed'));
       const linkBox = document.getElementById('share-created-link');
       if (linkBox) {
@@ -140,12 +150,16 @@ export class ShareManager {
         (document.getElementById('share-created-url') as HTMLInputElement).value = payload.url;
         document.getElementById('share-copy-btn')?.addEventListener('click', async () => {
           const copied = await copyTextToClipboard(payload.url!);
-          notify(copied ? t('share.copied') : t('terminal.copyFailed'), { variant: copied ? 'success' : 'danger' });
+          notify(copied ? t('share.copied') : t('terminal.copyFailed'), {
+            variant: copied ? 'success' : 'danger',
+          });
         });
       }
       await this.loadShares();
     } catch (error) {
-      notify(error instanceof Error ? error.message : t('share.createFailed'), { variant: 'danger' });
+      notify(error instanceof Error ? error.message : t('share.createFailed'), {
+        variant: 'danger',
+      });
     } finally {
       if (button) button.disabled = false;
     }
@@ -157,15 +171,17 @@ export class ShareManager {
     container.innerHTML = `<p class="text-xs text-muted">${t('common.loading')}</p>`;
     try {
       const response = await fetch(`/api/servers/${this.serverId}/shares`);
-      const shares = await response.json() as ShareSummary[] & { error?: string };
-      if (!response.ok) throw new Error((shares as unknown as { error?: string }).error || t('share.loadFailed'));
+      const shares = (await response.json()) as ShareSummary[] & { error?: string };
+      if (!response.ok)
+        throw new Error((shares as unknown as { error?: string }).error || t('share.loadFailed'));
       if (shares.length === 0) {
         container.innerHTML = `<p class="text-xs text-muted">${t('share.none')}</p>`;
         return;
       }
-      container.innerHTML = shares.map((share) => {
-        const revocable = ['unused', 'claimed', 'active'].includes(share.status);
-        return `<div class="border border-[var(--border)] p-3" data-share-id="${escapeHtml(share.id)}">
+      container.innerHTML = shares
+        .map((share) => {
+          const revocable = ['unused', 'claimed', 'active'].includes(share.status);
+          return `<div class="border border-[var(--border)] p-3" data-share-id="${escapeHtml(share.id)}">
           <div class="flex items-center justify-between gap-3">
             <div class="min-w-0">
               <div class="text-xs text-on-surface">${t(`share.status.${share.status}` as never)}</div>
@@ -178,7 +194,8 @@ export class ShareManager {
             </div>
           </div>
         </div>`;
-      }).join('');
+        })
+        .join('');
       container.querySelectorAll<HTMLElement>('[data-share-audit]').forEach((button) => {
         button.addEventListener('click', () => void this.loadAudit(button.dataset.shareAudit!));
       });
@@ -199,9 +216,11 @@ export class ShareManager {
       variant: 'danger',
     });
     if (!confirmed) return;
-    const response = await fetch(`/api/shares/${encodeURIComponent(shareId)}`, { method: 'DELETE' });
+    const response = await fetch(`/api/shares/${encodeURIComponent(shareId)}`, {
+      method: 'DELETE',
+    });
     if (!response.ok) {
-      const error = await response.json().catch(() => ({})) as { error?: string };
+      const error = (await response.json().catch(() => ({}))) as { error?: string };
       notify(error.error || t('share.revokeFailed'), { variant: 'danger' });
       return;
     }
@@ -220,15 +239,18 @@ export class ShareManager {
       let hasMore = true;
       let share: { status: string; auditBytes: number } | null = null;
       while (hasMore && events.length < 5000) {
-        const response = await fetch(`/api/shares/${encodeURIComponent(shareId)}/audit?after=${after}&limit=500`);
-        const payload = await response.json().catch(() => ({})) as {
+        const response = await fetch(
+          `/api/shares/${encodeURIComponent(shareId)}/audit?after=${after}&limit=500`
+        );
+        const payload = (await response.json().catch(() => ({}))) as {
           share?: { status: string; auditBytes: number };
           events?: AuditEvent[];
           hasMore?: boolean;
           nextAfter?: number;
           error?: string;
         };
-        if (!response.ok || !payload.share || !payload.events) throw new Error(payload.error || t('share.auditFailed'));
+        if (!response.ok || !payload.share || !payload.events)
+          throw new Error(payload.error || t('share.auditFailed'));
         share = payload.share;
         events.push(...payload.events);
         hasMore = payload.hasMore === true;
@@ -236,10 +258,12 @@ export class ShareManager {
         if (next <= after) break;
         after = next;
       }
-      const output = stripTerminalControls(events
-        .filter((event) => event.eventType === 'terminal.output')
-        .map((event) => String(event.details.text ?? ''))
-        .join(''));
+      const output = stripTerminalControls(
+        events
+          .filter((event) => event.eventType === 'terminal.output')
+          .map((event) => String(event.details.text ?? ''))
+          .join('')
+      );
       const structured = events.filter((event) => event.eventType !== 'terminal.output');
       view.innerHTML = `
         <div class="flex items-center justify-between mb-3">
@@ -262,9 +286,12 @@ export class ShareManager {
     if (event.eventType === 'sftp.request' || event.eventType === 'sftp.result') {
       const operation = String(details.operation || 'sftp');
       const path = String(details.path || details.oldPath || '');
-      const result = event.eventType === 'sftp.result'
-        ? (details.success === true ? t('share.auditSuccess') : t('share.auditFailure'))
-        : t('share.auditRequested');
+      const result =
+        event.eventType === 'sftp.result'
+          ? details.success === true
+            ? t('share.auditSuccess')
+            : t('share.auditFailure')
+          : t('share.auditRequested');
       return `SFTP ${operation}${path ? ` ${path}` : ''} · ${result}`;
     }
     return t(`share.event.${event.eventType}` as never);

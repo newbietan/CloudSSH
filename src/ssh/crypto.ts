@@ -53,30 +53,53 @@ export class SSHAESGCMCipher {
     return algorithm;
   }
 
-  async encrypt(plaintext: Uint8Array, _seqNum?: number, aad?: Uint8Array, _commit: boolean = true): Promise<Uint8Array> {
+  async encrypt(
+    plaintext: Uint8Array,
+    _seqNum?: number,
+    aad?: Uint8Array,
+    _commit: boolean = true
+  ): Promise<Uint8Array> {
     if (!this.key) throw new Error('Cipher not initialized');
     const algorithm = this.getAlgorithm(aad);
 
     const encrypted = new Uint8Array(
-      await crypto.subtle.encrypt(algorithm as unknown as SubtleCryptoEncryptAlgorithm, this.key, plaintext)
+      await crypto.subtle.encrypt(
+        algorithm as unknown as SubtleCryptoEncryptAlgorithm,
+        this.key,
+        plaintext
+      )
     );
 
     this.incIV();
     return encrypted;
   }
 
-  async decrypt(ciphertext: Uint8Array, _seqNum?: number, aad?: Uint8Array, _commit: boolean = true): Promise<Uint8Array | null> {
+  async decrypt(
+    ciphertext: Uint8Array,
+    _seqNum?: number,
+    aad?: Uint8Array,
+    _commit: boolean = true
+  ): Promise<Uint8Array | null> {
     if (!this.key) throw new Error('Cipher not initialized');
     const algorithm = this.getAlgorithm(aad);
 
     try {
       const decrypted = new Uint8Array(
-        await crypto.subtle.decrypt(algorithm as unknown as SubtleCryptoEncryptAlgorithm, this.key, ciphertext)
+        await crypto.subtle.decrypt(
+          algorithm as unknown as SubtleCryptoEncryptAlgorithm,
+          this.key,
+          ciphertext
+        )
       );
       this.incIV();
       return decrypted;
     } catch (e) {
-      console.error('[CRYPTO] Decrypt failed, ciphertextLen:', ciphertext?.length, 'error:', e instanceof Error ? e.message : String(e));
+      console.error(
+        '[CRYPTO] Decrypt failed, ciphertextLen:',
+        ciphertext?.length,
+        'error:',
+        e instanceof Error ? e.message : String(e)
+      );
       return null;
     }
   }
@@ -115,7 +138,12 @@ export class SSHAESCTRCipher {
     }
   }
 
-  async encrypt(plaintext: Uint8Array, _seqNum?: number, _aad?: Uint8Array, commit: boolean = true): Promise<Uint8Array> {
+  async encrypt(
+    plaintext: Uint8Array,
+    _seqNum?: number,
+    _aad?: Uint8Array,
+    commit: boolean = true
+  ): Promise<Uint8Array> {
     if (!this.key) throw new Error('Cipher not initialized');
     const counter = new Uint8Array(this.counter);
     const encrypted = new Uint8Array(
@@ -131,7 +159,12 @@ export class SSHAESCTRCipher {
     return encrypted;
   }
 
-  async decrypt(ciphertext: Uint8Array, _seqNum?: number, _aad?: Uint8Array, commit: boolean = true): Promise<Uint8Array | null> {
+  async decrypt(
+    ciphertext: Uint8Array,
+    _seqNum?: number,
+    _aad?: Uint8Array,
+    commit: boolean = true
+  ): Promise<Uint8Array | null> {
     if (!this.key) throw new Error('Cipher not initialized');
     const counter = new Uint8Array(this.counter);
     try {
@@ -147,7 +180,12 @@ export class SSHAESCTRCipher {
       }
       return decrypted;
     } catch (e) {
-      console.error('[CRYPTO] AES-CTR decrypt failed, ciphertextLen:', ciphertext?.length, 'error:', e instanceof Error ? e.message : String(e));
+      console.error(
+        '[CRYPTO] AES-CTR decrypt failed, ciphertextLen:',
+        ciphertext?.length,
+        'error:',
+        e instanceof Error ? e.message : String(e)
+      );
       return null;
     }
   }

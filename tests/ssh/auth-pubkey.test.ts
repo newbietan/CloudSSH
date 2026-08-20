@@ -9,11 +9,12 @@
  * fixture 由 ssh-keygen 生成（无口令 OpenSSH 新格式），通过 git 提交测试用，
  * 不含任何真实凭据。
  */
-import { describe, it, expect } from 'vitest';
+
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
 import { SSHAuth } from '../../src/ssh/auth';
-import { readUint32, encodeString, concat } from '../../src/ssh/utils';
+import { concat, encodeString, readUint32 } from '../../src/ssh/utils';
 
 const FIXTURES_DIR = join(__dirname, 'fixtures');
 
@@ -98,10 +99,16 @@ function parseUserAuthRequest(packet: Uint8Array, sessionID: Uint8Array): Parsed
   const dataToSign = concat(encodeString(sessionID), requestBody);
 
   return {
-    username, service, method, hasSig,
-    requestAlgo, publicKeyBlob,
-    signatureAlgo, signatureValue,
-    dataToSign, requestBody,
+    username,
+    service,
+    method,
+    hasSig,
+    requestAlgo,
+    publicKeyBlob,
+    signatureAlgo,
+    signatureValue,
+    dataToSign,
+    requestBody,
   };
 }
 
@@ -115,21 +122,25 @@ function publicKeyBlobType(blob: Uint8Array): string {
 describe('SSHAuth.buildPublicKeyAuthRequest — RSA', () => {
   it('request algorithm 与 signature algorithm 一致（RFC 8332 核心要求）', async () => {
     const packet = await SSHAuth.buildPublicKeyAuthRequest(
-      'testuser', RSA_KEY, SESSION_ID,
-      ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa'],  // server-sig-algs
-      false,
+      'testuser',
+      RSA_KEY,
+      SESSION_ID,
+      ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa'], // server-sig-algs
+      false
     );
     const parsed = parseUserAuthRequest(packet, SESSION_ID);
 
     expect(parsed.requestAlgo).toBe(parsed.signatureAlgo);
-    expect(parsed.requestAlgo).not.toBe('ssh-rsa');  // 不得用 SHA-1
+    expect(parsed.requestAlgo).not.toBe('ssh-rsa'); // 不得用 SHA-1
   });
 
   it('server-sig-algs 含 rsa-sha2-512 时优先选 512', async () => {
     const packet = await SSHAuth.buildPublicKeyAuthRequest(
-      'testuser', RSA_KEY, SESSION_ID,
+      'testuser',
+      RSA_KEY,
+      SESSION_ID,
       ['rsa-sha2-512', 'rsa-sha2-256'],
-      false,
+      false
     );
     const parsed = parseUserAuthRequest(packet, SESSION_ID);
 
@@ -139,9 +150,11 @@ describe('SSHAuth.buildPublicKeyAuthRequest — RSA', () => {
 
   it('server-sig-algs 仅含 rsa-sha2-256 时选 256', async () => {
     const packet = await SSHAuth.buildPublicKeyAuthRequest(
-      'testuser', RSA_KEY, SESSION_ID,
+      'testuser',
+      RSA_KEY,
+      SESSION_ID,
       ['rsa-sha2-256'],
-      false,
+      false
     );
     const parsed = parseUserAuthRequest(packet, SESSION_ID);
 
@@ -151,9 +164,11 @@ describe('SSHAuth.buildPublicKeyAuthRequest — RSA', () => {
 
   it('未收到 server-sig-algs 时默认 rsa-sha2-256（不静默降级 SHA-1）', async () => {
     const packet = await SSHAuth.buildPublicKeyAuthRequest(
-      'testuser', RSA_KEY, SESSION_ID,
-      [],   // 未收到 ext-info
-      false,
+      'testuser',
+      RSA_KEY,
+      SESSION_ID,
+      [], // 未收到 ext-info
+      false
     );
     const parsed = parseUserAuthRequest(packet, SESSION_ID);
 
@@ -163,19 +178,17 @@ describe('SSHAuth.buildPublicKeyAuthRequest — RSA', () => {
 
   it('allowLegacyRsaSha1=false 且 server 仅支持 ssh-rsa 时抛 fatal', async () => {
     await expect(
-      SSHAuth.buildPublicKeyAuthRequest(
-        'testuser', RSA_KEY, SESSION_ID,
-        ['ssh-rsa'],
-        false,
-      )
+      SSHAuth.buildPublicKeyAuthRequest('testuser', RSA_KEY, SESSION_ID, ['ssh-rsa'], false)
     ).rejects.toThrow(/no_supported_rsa_signature_algorithm/);
   });
 
   it('allowLegacyRsaSha1=true 且 server 仅支持 ssh-rsa 时使用 SHA-1（明确兼容模式）', async () => {
     const packet = await SSHAuth.buildPublicKeyAuthRequest(
-      'testuser', RSA_KEY, SESSION_ID,
+      'testuser',
+      RSA_KEY,
+      SESSION_ID,
       ['ssh-rsa'],
-      true,
+      true
     );
     const parsed = parseUserAuthRequest(packet, SESSION_ID);
 
@@ -185,9 +198,11 @@ describe('SSHAuth.buildPublicKeyAuthRequest — RSA', () => {
 
   it('公钥 blob 内部类型始终为 ssh-rsa（不变）', async () => {
     const packet = await SSHAuth.buildPublicKeyAuthRequest(
-      'testuser', RSA_KEY, SESSION_ID,
+      'testuser',
+      RSA_KEY,
+      SESSION_ID,
       ['rsa-sha2-256'],
-      false,
+      false
     );
     const parsed = parseUserAuthRequest(packet, SESSION_ID);
 
@@ -201,16 +216,24 @@ describe('SSHAuth.buildPublicKeyAuthRequest — RSA', () => {
       [['rsa-sha2-512'], 'SHA-512'],
     ] as [string[], 'SHA-256' | 'SHA-512'][]) {
       const packet = await SSHAuth.buildPublicKeyAuthRequest(
-        'testuser', RSA_KEY, SESSION_ID, serverAlgs, false,
+        'testuser',
+        RSA_KEY,
+        SESSION_ID,
+        serverAlgs,
+        false
       );
       const parsed = parseUserAuthRequest(packet, SESSION_ID);
 
       // 从公钥 blob 重建 JWK，验证签名
-      let off = 4 + 'ssh-rsa'.length;  // skip "ssh-rsa"
-      const eLen = readUint32(parsed.publicKeyBlob, off); off += 4;
-      let e = parsed.publicKeyBlob.subarray(off, off + eLen); off += eLen;
-      const nLen = readUint32(parsed.publicKeyBlob, off); off += 4;
-      let n = parsed.publicKeyBlob.subarray(off, off + nLen); off += nLen;
+      let off = 4 + 'ssh-rsa'.length; // skip "ssh-rsa"
+      const eLen = readUint32(parsed.publicKeyBlob, off);
+      off += 4;
+      let e = parsed.publicKeyBlob.subarray(off, off + eLen);
+      off += eLen;
+      const nLen = readUint32(parsed.publicKeyBlob, off);
+      off += 4;
+      let n = parsed.publicKeyBlob.subarray(off, off + nLen);
+      off += nLen;
       // mpint 可能含前导 0（最高位为 1 时补位的符号位），JWK 不接受前导 0
       while (e.length > 1 && e[0] === 0) e = e.subarray(1);
       while (n.length > 1 && n[0] === 0) n = n.subarray(1);
@@ -222,10 +245,17 @@ describe('SSHAuth.buildPublicKeyAuthRequest — RSA', () => {
       };
       const jwk = { kty: 'RSA', e: b64url(e), n: b64url(n), ext: true };
       const pubKey = await crypto.subtle.importKey(
-        'jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash }, false, ['verify'],
+        'jwk',
+        jwk,
+        { name: 'RSASSA-PKCS1-v1_5', hash },
+        false,
+        ['verify']
       );
       const ok = await crypto.subtle.verify(
-        'RSASSA-PKCS1-v1_5', pubKey, parsed.signatureValue, parsed.dataToSign,
+        'RSASSA-PKCS1-v1_5',
+        pubKey,
+        parsed.signatureValue,
+        parsed.dataToSign
       );
       expect(ok).toBe(true);
     }
@@ -259,33 +289,44 @@ describe('SSHAuth.buildPublicKeyAuthRequest — ECDSA', () => {
   });
 
   it('非 raw 长度的有效 DER 签名仍可转换为 SSH 格式', () => {
-    const derSignature = new Uint8Array([
-      0x30, 0x06,
-      0x02, 0x01, 0x01,
-      0x02, 0x01, 0x02,
-    ]);
+    const derSignature = new Uint8Array([0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x02]);
 
     const sshSignature = convertWebCryptoSignature(derSignature, 32);
 
-    expect(sshSignature).toEqual(concat(
-      encodeString(new Uint8Array([0x01])),
-      encodeString(new Uint8Array([0x02])),
-    ));
+    expect(sshSignature).toEqual(
+      concat(encodeString(new Uint8Array([0x01])), encodeString(new Uint8Array([0x02])))
+    );
   });
 
   // 三曲线参数：[key, keyType, namedCurve, hash, coordBytes]
   const ECDSA_CASES = [
-    { key: ECDSA_256_KEY, keyType: 'ecdsa-sha2-nistp256', curve: 'P-256', hash: 'SHA-256', coordBytes: 32 },
-    { key: ECDSA_384_KEY, keyType: 'ecdsa-sha2-nistp384', curve: 'P-384', hash: 'SHA-384', coordBytes: 48 },
-    { key: ECDSA_521_KEY, keyType: 'ecdsa-sha2-nistp521', curve: 'P-521', hash: 'SHA-512', coordBytes: 66 },
+    {
+      key: ECDSA_256_KEY,
+      keyType: 'ecdsa-sha2-nistp256',
+      curve: 'P-256',
+      hash: 'SHA-256',
+      coordBytes: 32,
+    },
+    {
+      key: ECDSA_384_KEY,
+      keyType: 'ecdsa-sha2-nistp384',
+      curve: 'P-384',
+      hash: 'SHA-384',
+      coordBytes: 48,
+    },
+    {
+      key: ECDSA_521_KEY,
+      keyType: 'ecdsa-sha2-nistp521',
+      curve: 'P-521',
+      hash: 'SHA-512',
+      coordBytes: 66,
+    },
   ] as const;
 
   for (const c of ECDSA_CASES) {
     describe(`${c.keyType}`, () => {
       it('request 与 signature algorithm 都是该曲线 keyType', async () => {
-        const packet = await SSHAuth.buildPublicKeyAuthRequest(
-          'testuser', c.key, SESSION_ID,
-        );
+        const packet = await SSHAuth.buildPublicKeyAuthRequest('testuser', c.key, SESSION_ID);
         const parsed = parseUserAuthRequest(packet, SESSION_ID);
 
         expect(parsed.requestAlgo).toBe(c.keyType);
@@ -293,35 +334,41 @@ describe('SSHAuth.buildPublicKeyAuthRequest — ECDSA', () => {
       });
 
       it('公钥 blob 内部类型为对应 keyType', async () => {
-        const packet = await SSHAuth.buildPublicKeyAuthRequest(
-          'testuser', c.key, SESSION_ID,
-        );
+        const packet = await SSHAuth.buildPublicKeyAuthRequest('testuser', c.key, SESSION_ID);
         const parsed = parseUserAuthRequest(packet, SESSION_ID);
         expect(publicKeyBlobType(parsed.publicKeyBlob)).toBe(c.keyType);
       });
 
       it(`使用 ${c.hash} 哈希验签通过（端到端互操作）`, async () => {
-        const packet = await SSHAuth.buildPublicKeyAuthRequest(
-          'testuser', c.key, SESSION_ID,
-        );
+        const packet = await SSHAuth.buildPublicKeyAuthRequest('testuser', c.key, SESSION_ID);
         const parsed = parseUserAuthRequest(packet, SESSION_ID);
 
         // 从公钥 blob 解析 raw point
         let off = 4 + c.keyType.length;
-        const curveLen = readUint32(parsed.publicKeyBlob, off); off += 4 + curveLen;
-        const ptLen = readUint32(parsed.publicKeyBlob, off); off += 4;
+        const curveLen = readUint32(parsed.publicKeyBlob, off);
+        off += 4 + curveLen;
+        const ptLen = readUint32(parsed.publicKeyBlob, off);
+        off += 4;
         const rawPoint = parsed.publicKeyBlob.subarray(off, off + ptLen);
 
         const pubKey = await crypto.subtle.importKey(
-          'raw', rawPoint, { name: 'ECDSA', namedCurve: c.curve }, false, ['verify'],
+          'raw',
+          rawPoint,
+          { name: 'ECDSA', namedCurve: c.curve },
+          false,
+          ['verify']
         );
 
         // SSH 签名 sigValue 是 string(r)||string(s)，需要转回 raw r||s
         let so = 0;
-        const rLen = readUint32(parsed.signatureValue, so); so += 4;
-        let r = parsed.signatureValue.subarray(so, so + rLen); so += rLen;
-        const sLen = readUint32(parsed.signatureValue, so); so += 4;
-        let s = parsed.signatureValue.subarray(so, so + sLen); so += sLen;
+        const rLen = readUint32(parsed.signatureValue, so);
+        so += 4;
+        let r = parsed.signatureValue.subarray(so, so + rLen);
+        so += rLen;
+        const sLen = readUint32(parsed.signatureValue, so);
+        so += 4;
+        let s = parsed.signatureValue.subarray(so, so + sLen);
+        so += sLen;
 
         if (r.length > c.coordBytes && r[0] === 0) r = r.subarray(1);
         if (s.length > c.coordBytes && s[0] === 0) s = s.subarray(1);
@@ -330,7 +377,10 @@ describe('SSHAuth.buildPublicKeyAuthRequest — ECDSA', () => {
         rawSig.set(s, c.coordBytes * 2 - s.length);
 
         const ok = await crypto.subtle.verify(
-          { name: 'ECDSA', hash: c.hash }, pubKey, rawSig, parsed.dataToSign,
+          { name: 'ECDSA', hash: c.hash },
+          pubKey,
+          rawSig,
+          parsed.dataToSign
         );
         expect(ok).toBe(true);
       });
@@ -339,24 +389,32 @@ describe('SSHAuth.buildPublicKeyAuthRequest — ECDSA', () => {
 
   it('RFC 5656: P-384 必须用 SHA-384（不能用 SHA-256，否则验签必败）', async () => {
     // 故意用错误哈希 SHA-256 验 P-384 签名 —— 期望失败，证明签名确实使用了正确哈希
-    const packet = await SSHAuth.buildPublicKeyAuthRequest(
-      'testuser', ECDSA_384_KEY, SESSION_ID,
-    );
+    const packet = await SSHAuth.buildPublicKeyAuthRequest('testuser', ECDSA_384_KEY, SESSION_ID);
     const parsed = parseUserAuthRequest(packet, SESSION_ID);
 
     let off = 4 + 'ecdsa-sha2-nistp384'.length;
-    const curveLen = readUint32(parsed.publicKeyBlob, off); off += 4 + curveLen;
-    const ptLen = readUint32(parsed.publicKeyBlob, off); off += 4;
+    const curveLen = readUint32(parsed.publicKeyBlob, off);
+    off += 4 + curveLen;
+    const ptLen = readUint32(parsed.publicKeyBlob, off);
+    off += 4;
     const rawPoint = parsed.publicKeyBlob.subarray(off, off + ptLen);
 
     const pubKey = await crypto.subtle.importKey(
-      'raw', rawPoint, { name: 'ECDSA', namedCurve: 'P-384' }, false, ['verify'],
+      'raw',
+      rawPoint,
+      { name: 'ECDSA', namedCurve: 'P-384' },
+      false,
+      ['verify']
     );
     let so = 0;
-    const rLen = readUint32(parsed.signatureValue, so); so += 4;
-    let r = parsed.signatureValue.subarray(so, so + rLen); so += rLen;
-    const sLen = readUint32(parsed.signatureValue, so); so += 4;
-    let s = parsed.signatureValue.subarray(so, so + sLen); so += sLen;
+    const rLen = readUint32(parsed.signatureValue, so);
+    so += 4;
+    let r = parsed.signatureValue.subarray(so, so + rLen);
+    so += rLen;
+    const sLen = readUint32(parsed.signatureValue, so);
+    so += 4;
+    let s = parsed.signatureValue.subarray(so, so + sLen);
+    so += sLen;
     if (r.length > 48 && r[0] === 0) r = r.subarray(1);
     if (s.length > 48 && s[0] === 0) s = s.subarray(1);
     const rawSig = new Uint8Array(96);
@@ -365,7 +423,10 @@ describe('SSHAuth.buildPublicKeyAuthRequest — ECDSA', () => {
 
     // ★ 故意用错误的 SHA-256 —— 必须 verify=false
     const ok = await crypto.subtle.verify(
-      { name: 'ECDSA', hash: 'SHA-256' }, pubKey, rawSig, parsed.dataToSign,
+      { name: 'ECDSA', hash: 'SHA-256' },
+      pubKey,
+      rawSig,
+      parsed.dataToSign
     );
     expect(ok).toBe(false);
   });
@@ -375,16 +436,14 @@ describe('SSHAuth.buildPublicKeyAuthRequest — ECDSA', () => {
     // 这里用一个不可达的间接测试：parseECDSAKey 已经覆盖了曲线校验
     // 直接验证 build PublicKeyAuthRequest 对 OpenSSH 格式但未知 key 抛错
     await expect(
-      SSHAuth.buildPublicKeyAuthRequest('testuser', 'not a key', SESSION_ID),
+      SSHAuth.buildPublicKeyAuthRequest('testuser', 'not a key', SESSION_ID)
     ).rejects.toThrow();
   });
 });
 
 describe('SSHAuth.buildPublicKeyAuthRequest — Ed25519（回归验证）', () => {
   it('request 与 signature algorithm 均为 ssh-ed25519 且可验签', async () => {
-    const packet = await SSHAuth.buildPublicKeyAuthRequest(
-      'testuser', ED25519_KEY, SESSION_ID,
-    );
+    const packet = await SSHAuth.buildPublicKeyAuthRequest('testuser', ED25519_KEY, SESSION_ID);
     const parsed = parseUserAuthRequest(packet, SESSION_ID);
 
     expect(parsed.requestAlgo).toBe('ssh-ed25519');
@@ -392,11 +451,17 @@ describe('SSHAuth.buildPublicKeyAuthRequest — Ed25519（回归验证）', () =
 
     // 公钥 blob: string("ssh-ed25519"), string(pubkey 32 bytes)
     let off = 4 + 'ssh-ed25519'.length;
-    const pkLen = readUint32(parsed.publicKeyBlob, off); off += 4;
+    const pkLen = readUint32(parsed.publicKeyBlob, off);
+    off += 4;
     const pub = parsed.publicKeyBlob.subarray(off, off + pkLen);
 
     const pubKey = await crypto.subtle.importKey('raw', pub, 'Ed25519', false, ['verify']);
-    const ok = await crypto.subtle.verify('Ed25519', pubKey, parsed.signatureValue, parsed.dataToSign);
+    const ok = await crypto.subtle.verify(
+      'Ed25519',
+      pubKey,
+      parsed.signatureValue,
+      parsed.dataToSign
+    );
     expect(ok).toBe(true);
   });
 });

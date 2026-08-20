@@ -15,7 +15,7 @@ export class DirectTcpipStream {
   constructor(
     private readonly writeChannelData: (data: Uint8Array) => Promise<void>,
     private readonly closeChannel: () => Promise<void>,
-    private readonly onRead: (bytes: number) => void,
+    private readonly onRead: (bytes: number) => void
   ) {
     this.readable = new ReadableStream<Uint8Array>({
       start: (controller) => {
@@ -73,7 +73,9 @@ export class DirectTcpipStream {
     if (this.closed) return;
     this.closed = true;
     this.pendingReads = [];
-    try { this.controller?.close(); } catch {}
+    try {
+      this.controller?.close();
+    } catch {}
     this.controller = null;
     void this.closeChannel().catch(() => {});
   }

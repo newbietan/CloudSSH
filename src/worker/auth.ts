@@ -1,4 +1,4 @@
-import { Env, UserInfo } from '../types';
+import type { Env, UserInfo } from '../types';
 
 /**
  * GitHub OAuth 流程处理 + Session 中间件
@@ -103,11 +103,13 @@ export async function getAuthenticatedUser(request: Request, env: Env): Promise<
   if (!githubId) return null;
 
   const stub = getUserDBStub(env, githubId);
-  const res = await stub.fetch(new Request('http://internal/internal/session/verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: sessionToken }),
-  }));
+  const res = await stub.fetch(
+    new Request('http://internal/internal/session/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: sessionToken }),
+    })
+  );
 
   if (!res.ok) return null;
   const user = await res.json<UserInfo>();
@@ -216,32 +218,42 @@ export async function handleGitHubCallback(request: Request, env: Env): Promise<
 
   // 4. 创建/更新用户
   const stub = getUserDBStub(env, githubUser.id);
-  const userDbRes = await stub.fetch(new Request('http://internal/internal/oauth-user', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      github_id: githubUser.id,
-      username: githubUser.login,
-      avatar_url: githubUser.avatar_url,
-    }),
-  }));
+  const userDbRes = await stub.fetch(
+    new Request('http://internal/internal/oauth-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        github_id: githubUser.id,
+        username: githubUser.login,
+        avatar_url: githubUser.avatar_url,
+      }),
+    })
+  );
 
   const user = await userDbRes.json<UserInfo>();
 
   // 5. 创建 session
-  const sessionRes = await stub.fetch(new Request('http://internal/internal/session/create', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: user.id }),
-  }));
+  const sessionRes = await stub.fetch(
+    new Request('http://internal/internal/session/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: user.id }),
+    })
+  );
 
   const sessionData = await sessionRes.json<{ token: string }>();
 
   // 6. Set-Cookie + 重定向到首页
   const responseHeaders = new Headers();
   responseHeaders.set('Location', baseUrl || '/');
-  responseHeaders.append('Set-Cookie', `session=${sessionData.token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`);
-  responseHeaders.append('Set-Cookie', `oauth_state=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);
+  responseHeaders.append(
+    'Set-Cookie',
+    `session=${sessionData.token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`
+  );
+  responseHeaders.append(
+    'Set-Cookie',
+    `oauth_state=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
+  );
 
   return new Response(null, {
     status: 302,
@@ -262,11 +274,13 @@ export async function handleLogout(request: Request, env: Env): Promise<Response
       return Response.json({ success: true });
     }
     const stub = getUserDBStub(env, githubId);
-    await stub.fetch(new Request('http://internal/internal/session/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: sessionToken }),
-    }));
+    await stub.fetch(
+      new Request('http://internal/internal/session/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: sessionToken }),
+      })
+    );
   }
 
   return new Response(JSON.stringify({ success: true }), {

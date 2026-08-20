@@ -20,9 +20,9 @@ export function diffTextareaInput(oldValue: string, newValue: string): string {
 
   let commonPrefixLength = 0;
   while (
-    commonPrefixLength < oldValue.length
-    && commonPrefixLength < newValue.length
-    && oldValue.charCodeAt(commonPrefixLength) === newValue.charCodeAt(commonPrefixLength)
+    commonPrefixLength < oldValue.length &&
+    commonPrefixLength < newValue.length &&
+    oldValue.charCodeAt(commonPrefixLength) === newValue.charCodeAt(commonPrefixLength)
   ) {
     commonPrefixLength++;
   }
@@ -34,7 +34,7 @@ export function diffTextareaInput(oldValue: string, newValue: string): string {
 /** 将移动端一次性 Ctrl/Alt 状态应用到下一段终端输入。 */
 export function applyMobileModifier(
   data: string,
-  modifier: MobileModifier | null,
+  modifier: MobileModifier | null
 ): { data: string; consumed: boolean } {
   if (!modifier || !data) return { data, consumed: false };
 
@@ -45,9 +45,7 @@ export function applyMobileModifier(
   if (data.length !== 1) return { data, consumed: true };
   if (data === ' ') return { data: '\x00', consumed: true };
   const originalCode = data.charCodeAt(0);
-  const code = originalCode >= 97 && originalCode <= 122
-    ? originalCode - 32
-    : originalCode;
+  const code = originalCode >= 97 && originalCode <= 122 ? originalCode - 32 : originalCode;
   if (code >= 64 && code <= 95) {
     return { data: String.fromCharCode(code & 0x1f), consumed: true };
   }
@@ -59,7 +57,7 @@ export function applyMobileModifier(
 export function mobileTerminalKeySequence(
   key: MobileTerminalKey,
   applicationCursorMode: boolean,
-  modifier: MobileModifier | null,
+  modifier: MobileModifier | null
 ): string {
   if (key === 'escape') return modifier === 'alt' ? '\x1b\x1b' : '\x1b';
   if (key === 'tab') return '\t';
@@ -84,7 +82,11 @@ export function mobileTerminalKeySequence(
   return applicationCursorMode ? `\x1bO${final}` : `\x1b[${final}`;
 }
 
-export function isIOSLike(navigatorLike: Pick<Navigator, 'userAgent' | 'platform' | 'maxTouchPoints'>): boolean {
-  return /iPad|iPhone|iPod/.test(navigatorLike.userAgent)
-    || (navigatorLike.platform === 'MacIntel' && navigatorLike.maxTouchPoints > 1);
+export function isIOSLike(
+  navigatorLike: Pick<Navigator, 'userAgent' | 'platform' | 'maxTouchPoints'>
+): boolean {
+  return (
+    /iPad|iPhone|iPod/.test(navigatorLike.userAgent) ||
+    (navigatorLike.platform === 'MacIntel' && navigatorLike.maxTouchPoints > 1)
+  );
 }

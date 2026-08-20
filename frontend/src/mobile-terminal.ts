@@ -1,6 +1,6 @@
-import type { SSHTerminal } from './terminal';
-import type { MobileModifier, MobileTerminalKey } from './mobile-input';
 import { onLocaleChange, t } from './i18n';
+import type { MobileModifier, MobileTerminalKey } from './mobile-input';
+import type { SSHTerminal } from './terminal';
 import { notify } from './ui-feedback';
 
 type TerminalGetter = () => SSHTerminal | null;
@@ -10,8 +10,16 @@ const SOFT_KEYBOARD_MIN_OCCLUSION_PX = 120;
 const MOBILE_LAYOUT_QUERY = '(max-width: 767px), (max-width: 1180px) and (pointer: coarse)';
 
 const TERMINAL_KEY_ACTIONS = new Set<MobileTerminalKey>([
-  'escape', 'tab', 'arrow_up', 'arrow_down', 'arrow_right',
-  'arrow_left', 'home', 'end', 'page_up', 'page_down',
+  'escape',
+  'tab',
+  'arrow_up',
+  'arrow_down',
+  'arrow_right',
+  'arrow_left',
+  'home',
+  'end',
+  'page_up',
+  'page_down',
 ]);
 
 export class MobileTerminalController {
@@ -37,7 +45,7 @@ export class MobileTerminalController {
   constructor(private readonly getTerminal: TerminalGetter) {
     this.moreMenu = document.getElementById('mobile-more-menu');
     this.modifierButtons = Array.from(
-      document.querySelectorAll<HTMLButtonElement>('[data-mobile-modifier]'),
+      document.querySelectorAll<HTMLButtonElement>('[data-mobile-modifier]')
     );
   }
 
@@ -51,7 +59,9 @@ export class MobileTerminalController {
     document.addEventListener('cloudssh:active-terminal-change', this.terminalStateListener);
     document.addEventListener('pointerdown', this.outsideMenuListener, true);
 
-    document.getElementById('mobile-more-btn')?.addEventListener('click', () => this.toggleMoreMenu());
+    document
+      .getElementById('mobile-more-btn')
+      ?.addEventListener('click', () => this.toggleMoreMenu());
     document.getElementById('mobile-search-btn')?.addEventListener('click', () => {
       this.getTerminal()?.toggleSearch();
       this.hideMoreMenu();
@@ -117,8 +127,9 @@ export class MobileTerminalController {
       if (this.maximumViewportHeight === 0 || viewportHeight > this.maximumViewportHeight) {
         this.maximumViewportHeight = viewportHeight;
       }
-      const keyboardOpen = isMobileLayout
-        && this.maximumViewportHeight - viewportHeight >= SOFT_KEYBOARD_MIN_OCCLUSION_PX;
+      const keyboardOpen =
+        isMobileLayout &&
+        this.maximumViewportHeight - viewportHeight >= SOFT_KEYBOARD_MIN_OCCLUSION_PX;
 
       const root = document.documentElement;
       root.style.setProperty('--visual-viewport-height', `${viewportHeight}px`);
@@ -213,7 +224,11 @@ export class MobileTerminalController {
 
   private async requestLandscape(): Promise<void> {
     if (this.isTerminalFullscreen()) {
-      try { screen.orientation?.unlock?.(); } catch { /* ignore */ }
+      try {
+        screen.orientation?.unlock?.();
+      } catch {
+        /* ignore */
+      }
       await document.exitFullscreen?.();
       return;
     }
@@ -235,10 +250,10 @@ export class MobileTerminalController {
         notify(t('terminal.rotateManually'), { variant: 'info' });
       }
     } catch {
-      if (!this.isTerminalFullscreen()) {
-        notify(t('terminal.landscapeUnsupported'), { variant: 'warning' });
-      } else {
+      if (this.isTerminalFullscreen()) {
         notify(t('terminal.rotateManually'), { variant: 'info' });
+      } else {
+        notify(t('terminal.landscapeUnsupported'), { variant: 'warning' });
       }
     } finally {
       this.scheduleViewportUpdate();
@@ -249,7 +264,11 @@ export class MobileTerminalController {
     this.activeTerminal?.setMobileSelectionMode(false);
     this.syncCopyButton();
     if (this.isTerminalFullscreen()) {
-      try { screen.orientation?.unlock?.(); } catch { /* ignore */ }
+      try {
+        screen.orientation?.unlock?.();
+      } catch {
+        /* ignore */
+      }
       void document.exitFullscreen?.();
     }
     document.documentElement.classList.remove('mobile-keyboard-open');

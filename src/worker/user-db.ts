@@ -1,7 +1,15 @@
-import { Env, UserInfo, ServerConfig, SSHConnectionConfig, SSHJumpHostConfig, ALLOWED_LOCATION_HINTS } from '../types';
-import { inferLocationHint, type InferResult } from './ip-geo';
-import { deserializeServerRow, serializeServerTags } from './server-tags';
+import { normalizeSnippetInput, SNIPPET_MAX_COUNT } from '../snippet-schema';
+import {
+  ALLOWED_LOCATION_HINTS,
+  type Env,
+  type ServerConfig,
+  type SSHConnectionConfig,
+  type SSHJumpHostConfig,
+  type UserInfo,
+} from '../types';
+import { type InferResult, inferLocationHint } from './ip-geo';
 import { isDetectedOS } from './os-detect';
+import { deserializeServerRow, serializeServerTags } from './server-tags';
 
 const AUTH_METHODS = new Set(['password', 'publickey']);
 const MAX_JUMP_HOSTS = 3;
@@ -35,7 +43,8 @@ export class UserDBDO {
   private env: Env;
   private db: any; // SqlStorage (DO SQLite)
   // one-time-token 内存存储：token → { config, expiresAt }
-  private connectTokens: Map<string, { config: SSHConnectionConfig; expiresAt: number }> = new Map();
+  private connectTokens: Map<string, { config: SSHConnectionConfig; expiresAt: number }> =
+    new Map();
   private static readonly MAX_CONNECT_TOKENS = 1000;
   private derivedKeyCache: Map<number, CryptoKey> = new Map();
 
@@ -118,6 +127,17 @@ export class UserDBDO {
         updated_at     TEXT DEFAULT (datetime('now'))
       );
 
+      CREATE TABLE IF NOT EXISTS command_snippets (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL REFERENCES users(id),
+        name        TEXT NOT NULL,
+        command     TEXT NOT NULL,
+        created_at  TEXT DEFAULT (datetime('now')),
+        updated_at  TEXT DEFAULT (datetime('now'))
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_command_snippets_user ON command_snippets(user_id);
+
       CREATE TABLE IF NOT EXISTS ssh_shares (
         id                  TEXT PRIMARY KEY,
         user_id             INTEGER NOT NULL REFERENCES users(id),
@@ -138,30 +158,30 @@ export class UserDBDO {
 
     // === Migration: 给既有 servers 表追加 region / inferred_hint 列（幂等） ===
     // SQLite 没有 ADD COLUMN IF NOT EXISTS，用 PRAGMA table_info 守卫
-    const serverCols = this.db.exec("PRAGMA table_info(servers)").toArray();
+    const serverCols = this.db.exec('PRAGMA table_info(servers)').toArray();
     if (!serverCols.some((c: any) => c.name === 'region')) {
-      this.db.exec("ALTER TABLE servers ADD COLUMN region TEXT DEFAULT NULL");
+      this.db.exec('ALTER TABLE servers ADD COLUMN region TEXT DEFAULT NULL');
     }
     if (!serverCols.some((c: any) => c.name === 'inferred_hint')) {
-      this.db.exec("ALTER TABLE servers ADD COLUMN inferred_hint TEXT DEFAULT NULL");
+      this.db.exec('ALTER TABLE servers ADD COLUMN inferred_hint TEXT DEFAULT NULL');
     }
     if (!serverCols.some((c: any) => c.name === 'tags')) {
       this.db.exec("ALTER TABLE servers ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'");
     }
     if (!serverCols.some((c: any) => c.name === 'os')) {
-      this.db.exec("ALTER TABLE servers ADD COLUMN os TEXT DEFAULT NULL");
+      this.db.exec('ALTER TABLE servers ADD COLUMN os TEXT DEFAULT NULL');
     }
     if (!serverCols.some((c: any) => c.name === 'jump_server_id')) {
-      this.db.exec("ALTER TABLE servers ADD COLUMN jump_server_id INTEGER DEFAULT NULL");
+      this.db.exec('ALTER TABLE servers ADD COLUMN jump_server_id INTEGER DEFAULT NULL');
     }
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_servers_jump ON servers(jump_server_id)');
   }
 
   async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-    const path = url.pathname;
-
     try {
+      const url = new URL(request.url);
+      const path = url.pathname;
+
       // --- 用户管理 ---
       if (path === '/internal/oauth-user' && request.method === 'POST') {
         return this.handleOAuthUser(request);
@@ -259,13 +279,35 @@ export class UserDBDO {
         if (!userIdStr) return Response.json({ error: 'Missing user_id' }, { status: 400 });
         const userId = parseInt(userIdStr);
         if (isNaN(userId)) return Response.json({ error: 'Invalid user_id' }, { status: 400 });
-        return this.handleGetKnownHosts(userId, url.searchParams.get('host'), url.searchParams.get('port'));
+        return this.handleGetKnownHosts(
+          userId,
+          url.searchParams.get('host'),
+          url.searchParams.get('port')
+        );
       }
       if (path === '/internal/known-hosts' && request.method === 'POST') {
         return this.handleUpsertKnownHost(request);
       }
       if (path === '/internal/known-hosts' && request.method === 'DELETE') {
         return this.handleDeleteKnownHost(request);
+      }
+
+      // --- 命令片段管理 ---
+      if (path === '/internal/snippets' && request.method === 'GET') {
+        const userIdStr = url.searchParams.get('user_id');
+        if (!userIdStr) return Response.json({ error: 'Missing user_id' }, { status: 400 });
+        const userId = parseInt(userIdStr);
+        if (isNaN(userId)) return Response.json({ error: 'Invalid user_id' }, { status: 400 });
+        return this.handleGetSnippets(userId);
+      }
+      if (path === '/internal/snippets' && request.method === 'POST') {
+        return this.handleCreateSnippet(request);
+      }
+      const snippetMatch = path.match(/^\/internal\/snippets\/(\d+)$/);
+      if (snippetMatch) {
+        const snippetId = parseInt(snippetMatch[1]);
+        if (request.method === 'PUT') return this.handleUpdateSnippet(snippetId, request);
+        if (request.method === 'DELETE') return this.handleDeleteSnippet(snippetId, request);
       }
 
       // --- AI 配置管理 ---
@@ -361,10 +403,18 @@ export class UserDBDO {
     // 7 天过期
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    this.db.exec('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)', token, user_id, expiresAt);
+    this.db.exec(
+      'INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)',
+      token,
+      user_id,
+      expiresAt
+    );
 
     // 清理该用户的过期 session
-    this.db.exec("DELETE FROM sessions WHERE user_id = ? AND expires_at < datetime('now')", user_id);
+    this.db.exec(
+      "DELETE FROM sessions WHERE user_id = ? AND expires_at < datetime('now')",
+      user_id
+    );
 
     return Response.json({ token, expires_at: expiresAt });
   }
@@ -405,10 +455,18 @@ export class UserDBDO {
       )
       .toArray();
 
-    return Response.json(rows.map((row: Record<string, unknown>) => deserializeServerRow(row)) as unknown as ServerConfig[]);
+    return Response.json(
+      rows.map((row: Record<string, unknown>) =>
+        deserializeServerRow(row)
+      ) as unknown as ServerConfig[]
+    );
   }
 
-  private validateJumpChain(userId: number, targetServerId: number | null, jumpServerId: number | null): string | null {
+  private validateJumpChain(
+    userId: number,
+    targetServerId: number | null,
+    jumpServerId: number | null
+  ): string | null {
     if (jumpServerId === null) return null;
     if (!Number.isInteger(jumpServerId) || jumpServerId <= 0) return '无效的跳板服务器';
 
@@ -423,10 +481,9 @@ export class UserDBDO {
       depth++;
       if (depth > MAX_JUMP_HOSTS) return `最多允许 ${MAX_JUMP_HOSTS} 级 SSH 跳转`;
 
-      const rows = this.db.exec(
-        'SELECT user_id, jump_server_id FROM servers WHERE id = ?',
-        currentId,
-      ).toArray();
+      const rows = this.db
+        .exec('SELECT user_id, jump_server_id FROM servers WHERE id = ?', currentId)
+        .toArray();
       if (rows.length === 0) return '所选跳板服务器不存在';
       const row = rows[0] as unknown as { user_id: number; jump_server_id: number | null };
       if (row.user_id !== userId) return '不能使用其他用户的服务器作为跳板';
@@ -463,7 +520,9 @@ export class UserDBDO {
     const jumpError = this.validateJumpChain(body.user_id, null, jumpServerId);
     if (jumpError) return Response.json({ error: jumpError }, { status: 400 });
 
-    const requestedRegion = (ALLOWED_LOCATION_HINTS as readonly string[]).includes(body.region || '')
+    const requestedRegion = (ALLOWED_LOCATION_HINTS as readonly string[]).includes(
+      body.region || ''
+    )
       ? body.region || null
       : null;
     // 只有 Cloudflare 直接建立 TCP 连接的跳板链入口需要区域偏好。
@@ -507,9 +566,9 @@ export class UserDBDO {
       encrypted,
       body.auth_method,
       region,
-      inferredHint,           // 系统推断值（可 NULL）
+      inferredHint, // 系统推断值（可 NULL）
       serializeServerTags(body.tags),
-      jumpServerId,
+      jumpServerId
     );
 
     // 获取新创建的记录
@@ -522,7 +581,9 @@ export class UserDBDO {
       .toArray();
 
     // DEBUG_MODE 开启时，在响应中附带调试信息
-    const server = deserializeServerRow(rows[0] as Record<string, unknown>) as unknown as ServerConfig;
+    const server = deserializeServerRow(
+      rows[0] as Record<string, unknown>
+    ) as unknown as ServerConfig;
     if (this.env.DEBUG_MODE === 'true') {
       return Response.json({ ...server, _debug: inferDebug }, { status: 201 });
     }
@@ -544,10 +605,12 @@ export class UserDBDO {
     }>();
 
     // 验证服务器属于该用户
-    const existing = this.db.exec(
-      'SELECT user_id, host, port, auth_method, region, inferred_hint, jump_server_id FROM servers WHERE id = ?',
-      serverId,
-    ).toArray();
+    const existing = this.db
+      .exec(
+        'SELECT user_id, host, port, auth_method, region, inferred_hint, jump_server_id FROM servers WHERE id = ?',
+        serverId
+      )
+      .toArray();
     if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
     const current = existing[0] as unknown as {
       user_id: number;
@@ -568,31 +631,35 @@ export class UserDBDO {
     if (body.credential !== undefined && !hasNewCredential) {
       return Response.json({ error: '认证凭据不能为空' }, { status: 400 });
     }
-    if (body.auth_method !== undefined
-      && body.auth_method !== current.auth_method
-      && !hasNewCredential) {
+    if (
+      body.auth_method !== undefined &&
+      body.auth_method !== current.auth_method &&
+      !hasNewCredential
+    ) {
       return Response.json({ error: '切换认证方式时必须同时提供对应凭据' }, { status: 400 });
     }
-    const nextJumpServerId = body.jump_server_id !== undefined
-      ? body.jump_server_id
-      : current.jump_server_id;
+    const nextJumpServerId =
+      body.jump_server_id === undefined ? current.jump_server_id : body.jump_server_id;
     const jumpError = this.validateJumpChain(body.user_id, serverId, nextJumpServerId);
     if (jumpError) return Response.json({ error: jumpError }, { status: 400 });
 
     // 历史下游节点可能残留区域值；从跳板切回直连且请求未显式指定区域时，
     // 应回到 Auto，而不是复用一个此前从未参与连接调度的旧值。
-    const requestedRegion = body.region !== undefined
-      ? ((ALLOWED_LOCATION_HINTS as readonly string[]).includes(body.region) ? body.region : null)
-      : (current.jump_server_id === null ? current.region : null);
+    const requestedRegion =
+      body.region === undefined
+        ? current.jump_server_id === null
+          ? current.region
+          : null
+        : (ALLOWED_LOCATION_HINTS as readonly string[]).includes(body.region)
+          ? body.region
+          : null;
     const normalizedRegion = nextJumpServerId === null ? requestedRegion : null;
     const isDirect = nextJumpServerId === null;
     const becameDirect = current.jump_server_id !== null && isDirect;
     const hostChanged = body.host !== undefined && body.host !== current.host;
     const portChanged = body.port !== undefined && body.port !== current.port;
-    const switchedToAuto = isDirect
-      && body.region !== undefined
-      && normalizedRegion === null
-      && current.region !== null;
+    const switchedToAuto =
+      isDirect && body.region !== undefined && normalizedRegion === null && current.region !== null;
 
     // 构建更新语句
     const updates: string[] = [];
@@ -606,9 +673,10 @@ export class UserDBDO {
       updates.push('host = ?');
       values.push(body.host);
     }
-    const shouldInfer = isDirect
-      && normalizedRegion === null
-      && (hostChanged || becameDirect || (switchedToAuto && current.inferred_hint === null));
+    const shouldInfer =
+      isDirect &&
+      normalizedRegion === null &&
+      (hostChanged || becameDirect || (switchedToAuto && current.inferred_hint === null));
     if (shouldInfer) {
       let newInferred: string | null = null;
       try {
@@ -687,7 +755,9 @@ export class UserDBDO {
       )
       .toArray();
 
-    return Response.json(deserializeServerRow(row[0] as Record<string, unknown>) as unknown as ServerConfig);
+    return Response.json(
+      deserializeServerRow(row[0] as Record<string, unknown>) as unknown as ServerConfig
+    );
   }
 
   private async handleDeleteServer(serverId: number, request: Request): Promise<Response> {
@@ -699,25 +769,37 @@ export class UserDBDO {
     if ((existing[0] as unknown as { user_id: number }).user_id !== body.user_id)
       return Response.json({ error: 'Forbidden' }, { status: 403 });
 
-    const references = this.db.exec(
-      'SELECT name FROM servers WHERE user_id = ? AND jump_server_id = ? ORDER BY name LIMIT 5',
-      body.user_id,
-      serverId,
-    ).toArray() as unknown as Array<{ name: string }>;
+    const references = this.db
+      .exec(
+        'SELECT name FROM servers WHERE user_id = ? AND jump_server_id = ? ORDER BY name LIMIT 5',
+        body.user_id,
+        serverId
+      )
+      .toArray() as unknown as Array<{ name: string }>;
     if (references.length > 0) {
-      return Response.json({
-        error: `该服务器正被 ${references.map((row) => row.name).join('、')} 用作跳板，请先解除引用`,
-      }, { status: 409 });
+      return Response.json(
+        {
+          error: `该服务器正被 ${references.map((row) => row.name).join('、')} 用作跳板，请先解除引用`,
+        },
+        { status: 409 }
+      );
     }
 
-    const activeShares = Number(this.db.exec(
-      `SELECT COUNT(*) AS count FROM ssh_shares
+    const activeShares = Number(
+      this.db
+        .exec(
+          `SELECT COUNT(*) AS count FROM ssh_shares
        WHERE user_id = ? AND server_id = ? AND status IN ('unused', 'claimed', 'active')`,
-      body.user_id,
-      serverId,
-    ).one().count);
+          body.user_id,
+          serverId
+        )
+        .one().count
+    );
     if (activeShares > 0) {
-      return Response.json({ error: '该服务器仍有待使用或活动的分享，请先撤销分享' }, { status: 409 });
+      return Response.json(
+        { error: '该服务器仍有待使用或活动的分享，请先撤销分享' },
+        { status: 409 }
+      );
     }
 
     this.db.exec('DELETE FROM servers WHERE id = ?', serverId);
@@ -742,11 +824,7 @@ export class UserDBDO {
       return Response.json({ error: 'Invalid os' }, { status: 400 });
     }
 
-    this.db.exec(
-      'UPDATE servers SET os = ? WHERE id = ?',
-      body.os,
-      serverId
-    );
+    this.db.exec('UPDATE servers SET os = ? WHERE id = ?', body.os, serverId);
     return Response.json({ success: true });
   }
 
@@ -756,10 +834,7 @@ export class UserDBDO {
     if (!Number.isInteger(userId) || userId <= 0) {
       return Response.json({ error: 'Invalid user_id' }, { status: 400 });
     }
-    const server = this.db.exec(
-      'SELECT user_id FROM servers WHERE id = ?',
-      serverId,
-    ).toArray();
+    const server = this.db.exec('SELECT user_id FROM servers WHERE id = ?', serverId).toArray();
     if (server.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
     if ((server[0] as unknown as { user_id: number }).user_id !== userId) {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
@@ -771,27 +846,31 @@ export class UserDBDO {
       now,
       userId,
       serverId,
-      now,
+      now
     );
-    const rows = this.db.exec(
-      `SELECT id, server_id, expires_at, max_session_seconds, status,
+    const rows = this.db
+      .exec(
+        `SELECT id, server_id, expires_at, max_session_seconds, status,
               claimed_at, active_at, closed_at, created_at
        FROM ssh_shares WHERE user_id = ? AND server_id = ?
        ORDER BY created_at DESC LIMIT 50`,
-      userId,
-      serverId,
-    ).toArray();
-    return Response.json(rows.map((row: Record<string, unknown>) => ({
-      id: row.id,
-      serverId: row.server_id,
-      expiresAt: row.expires_at,
-      maxSessionSeconds: row.max_session_seconds,
-      status: row.status,
-      claimedAt: row.claimed_at,
-      activeAt: row.active_at,
-      closedAt: row.closed_at,
-      createdAt: row.created_at,
-    })));
+        userId,
+        serverId
+      )
+      .toArray();
+    return Response.json(
+      rows.map((row: Record<string, unknown>) => ({
+        id: row.id,
+        serverId: row.server_id,
+        expiresAt: row.expires_at,
+        maxSessionSeconds: row.max_session_seconds,
+        status: row.status,
+        claimedAt: row.claimed_at,
+        activeAt: row.active_at,
+        closedAt: row.closed_at,
+        createdAt: row.created_at,
+      }))
+    );
   }
 
   private async handleCreateShare(serverId: number, request: Request): Promise<Response> {
@@ -805,35 +884,51 @@ export class UserDBDO {
     return this.createShareRecord(serverId, body);
   }
 
-  private async createShareRecord(serverId: number, body: {
-    user_id: number;
-    share_id: string;
-    share_ref: string;
-    expires_at: number;
-    max_session_seconds: number;
-  }): Promise<Response> {
+  private async createShareRecord(
+    serverId: number,
+    body: {
+      user_id: number;
+      share_id: string;
+      share_ref: string;
+      expires_at: number;
+      max_session_seconds: number;
+    }
+  ): Promise<Response> {
     if (!Number.isInteger(body.user_id) || !body.share_id || !body.share_ref) {
       return Response.json({ error: 'Invalid share request' }, { status: 400 });
     }
     const now = Date.now();
-    if (!Number.isFinite(body.expires_at) || body.expires_at < now + 60_000 || body.expires_at > now + 60 * 60_000) {
+    if (
+      !Number.isFinite(body.expires_at) ||
+      body.expires_at < now + 60_000 ||
+      body.expires_at > now + 60 * 60_000
+    ) {
       return Response.json({ error: '分享链接有效期必须在 1-60 分钟之间' }, { status: 400 });
     }
-    if (!Number.isInteger(body.max_session_seconds)
-      || body.max_session_seconds < 300
-      || body.max_session_seconds > 7200) {
+    if (
+      !Number.isInteger(body.max_session_seconds) ||
+      body.max_session_seconds < 300 ||
+      body.max_session_seconds > 7200
+    ) {
       return Response.json({ error: '分享会话时长必须在 5-120 分钟之间' }, { status: 400 });
     }
     const validation = this.validateShareableServer(serverId, body.user_id);
     if (validation instanceof Response) return validation;
-    const activeCount = Number(this.db.exec(
-      `SELECT COUNT(*) AS count FROM ssh_shares
+    const activeCount = Number(
+      this.db
+        .exec(
+          `SELECT COUNT(*) AS count FROM ssh_shares
        WHERE user_id = ? AND status IN ('unused', 'claimed', 'active') AND expires_at > ?`,
-      body.user_id,
-      now,
-    ).one().count);
+          body.user_id,
+          now
+        )
+        .one().count
+    );
     if (activeCount >= 10) {
-      return Response.json({ error: '待使用或活动分享数量已达上限，请先撤销旧分享' }, { status: 429 });
+      return Response.json(
+        { error: '待使用或活动分享数量已达上限，请先撤销旧分享' },
+        { status: 429 }
+      );
     }
     this.db.exec(
       `INSERT INTO ssh_shares (
@@ -846,20 +941,23 @@ export class UserDBDO {
       body.share_ref,
       body.expires_at,
       body.max_session_seconds,
-      now,
+      now
     );
-    return Response.json({
-      id: body.share_id,
-      shareRef: body.share_ref,
-      serverName: validation.serverName,
-      expiresAt: body.expires_at,
-      maxSessionSeconds: body.max_session_seconds,
-    }, { status: 201 });
+    return Response.json(
+      {
+        id: body.share_id,
+        shareRef: body.share_ref,
+        serverName: validation.serverName,
+        expiresAt: body.expires_at,
+        maxSessionSeconds: body.max_session_seconds,
+      },
+      { status: 201 }
+    );
   }
 
   private validateShareableServer(
     serverId: number,
-    userId: number,
+    userId: number
   ): { serverName: string } | Response {
     const seen = new Set<number>();
     const reversed: StoredServerRow[] = [];
@@ -886,16 +984,21 @@ export class UserDBDO {
       const server = chain[index];
       const identity = index === 0 ? server.host : `jump:${pathSegments.join('>')}|${server.host}`;
       pathSegments.push(`${server.id}@${server.host}:${server.port}`);
-      const known = this.db.exec(
-        'SELECT fingerprint FROM known_hosts WHERE user_id = ? AND host = ? AND port = ?',
-        userId,
-        identity,
-        server.port,
-      ).toArray();
+      const known = this.db
+        .exec(
+          'SELECT fingerprint FROM known_hosts WHERE user_id = ? AND host = ? AND port = ?',
+          userId,
+          identity,
+          server.port
+        )
+        .toArray();
       if (known.length === 0) {
-        return Response.json({
-          error: '创建分享前，请先通过普通连接验证目标服务器及全部跳板节点的主机指纹',
-        }, { status: 409 });
+        return Response.json(
+          {
+            error: '创建分享前，请先通过普通连接验证目标服务器及全部跳板节点的主机指纹',
+          },
+          { status: 409 }
+        );
       }
     }
     return { serverName: chain[chain.length - 1].name };
@@ -905,15 +1008,18 @@ export class UserDBDO {
     if (!Number.isInteger(userId) || userId <= 0) {
       return Response.json({ error: 'Invalid user_id' }, { status: 400 });
     }
-    const rows = this.db.exec(
-      `SELECT id, user_id, server_id, share_ref, expires_at, max_session_seconds,
+    const rows = this.db
+      .exec(
+        `SELECT id, user_id, server_id, share_ref, expires_at, max_session_seconds,
               status, claimed_at, active_at, closed_at, created_at
        FROM ssh_shares WHERE id = ?`,
-      shareId,
-    ).toArray();
+        shareId
+      )
+      .toArray();
     if (rows.length === 0) return Response.json({ error: 'Share not found' }, { status: 404 });
     const row = rows[0] as Record<string, unknown>;
-    if (Number(row.user_id) !== userId) return Response.json({ error: 'Forbidden' }, { status: 403 });
+    if (Number(row.user_id) !== userId)
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
     return Response.json({
       id: row.id,
       serverId: row.server_id,
@@ -955,7 +1061,7 @@ export class UserDBDO {
       body.claimed_at ?? null,
       body.active_at ?? null,
       body.closed_at ?? null,
-      shareId,
+      shareId
     );
     return Response.json({ success: true });
   }
@@ -970,10 +1076,12 @@ export class UserDBDO {
     if (!body.share_id || !body.share_ref || !Number.isFinite(body.session_expires_at)) {
       return Response.json({ error: 'Invalid share session policy' }, { status: 400 });
     }
-    const metadata = this.db.exec(
-      `SELECT user_id, server_id, share_ref, status FROM ssh_shares WHERE id = ?`,
-      body.share_id,
-    ).toArray();
+    const metadata = this.db
+      .exec(
+        `SELECT user_id, server_id, share_ref, status FROM ssh_shares WHERE id = ?`,
+        body.share_id
+      )
+      .toArray();
     if (metadata.length === 0) return Response.json({ error: 'Share not found' }, { status: 404 });
     const row = metadata[0] as unknown as {
       user_id: number;
@@ -981,31 +1089,46 @@ export class UserDBDO {
       share_ref: string;
       status: string;
     };
-    if (row.user_id !== body.user_id || row.server_id !== serverId || row.share_ref !== body.share_ref) {
+    if (
+      row.user_id !== body.user_id ||
+      row.server_id !== serverId ||
+      row.share_ref !== body.share_ref
+    ) {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
     if (row.status !== 'claimed' && row.status !== 'active') {
       return Response.json({ error: 'Share is no longer active' }, { status: 409 });
     }
 
-    const tokenResponse = await this.handleConnectServer(serverId, new Request('http://internal', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: body.user_id }),
-    }));
+    const tokenResponse = await this.handleConnectServer(
+      serverId,
+      new Request('http://internal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: body.user_id }),
+      })
+    );
     if (!tokenResponse.ok) return tokenResponse;
     const { token } = await tokenResponse.json<{ token: string }>();
-    const configResponse = await this.handleConsumeToken(new Request('http://internal', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token }),
-    }));
+    const configResponse = await this.handleConsumeToken(
+      new Request('http://internal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      })
+    );
     if (!configResponse.ok) return configResponse;
     const config = await configResponse.json<SSHConnectionConfig>();
-    if (!config.expectedFingerprint || (config.jumpHosts || []).some((hop) => !hop.expectedFingerprint)) {
-      return Response.json({
-        error: '分享会话要求目标服务器及全部跳板节点已有可信主机指纹',
-      }, { status: 409 });
+    if (
+      !config.expectedFingerprint ||
+      (config.jumpHosts || []).some((hop) => !hop.expectedFingerprint)
+    ) {
+      return Response.json(
+        {
+          error: '分享会话要求目标服务器及全部跳板节点已有可信主机指纹',
+        },
+        { status: 409 }
+      );
     }
     config.sessionPolicy = {
       source: 'share',
@@ -1033,7 +1156,9 @@ export class UserDBDO {
     }
 
     try {
-      return Response.json({ theme: JSON.parse((rows[0] as unknown as { theme_data: string }).theme_data) });
+      return Response.json({
+        theme: JSON.parse((rows[0] as unknown as { theme_data: string }).theme_data),
+      });
     } catch {
       return Response.json({ theme: null });
     }
@@ -1069,7 +1194,8 @@ export class UserDBDO {
       const rows = this.db.exec('SELECT * FROM servers WHERE id = ?', currentId).toArray();
       if (rows.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
       const row = rows[0] as unknown as StoredServerRow;
-      if (row.user_id !== body.user_id) return Response.json({ error: 'Forbidden' }, { status: 403 });
+      if (row.user_id !== body.user_id)
+        return Response.json({ error: 'Forbidden' }, { status: 403 });
       reversed.push(row);
       if (reversed.length > MAX_JUMP_HOSTS + 1) {
         return Response.json({ error: `最多允许 ${MAX_JUMP_HOSTS} 级 SSH 跳转` }, { status: 400 });
@@ -1080,32 +1206,38 @@ export class UserDBDO {
     const chain = reversed.reverse();
     const target = chain[chain.length - 1];
     const pathSegments: string[] = [];
-    const resolved = await Promise.all(chain.map(async (server, index) => {
-      const identity = index === 0
-        ? server.host
-        : `jump:${pathSegments.join('>')}|${server.host}`;
-      pathSegments.push(`${server.id}@${server.host}:${server.port}`);
-      const credential = await this.decryptCredential(server.credential, body.user_id);
-      const khRows = this.db.exec(
-        'SELECT fingerprint FROM known_hosts WHERE user_id = ? AND host = ? AND port = ?',
-        body.user_id,
-        identity,
-        server.port,
-      ).toArray();
-      return {
-        server,
-        identity,
-        credential,
-        expectedFingerprint: khRows.length > 0
-          ? (khRows[0] as unknown as { fingerprint: string }).fingerprint
-          : undefined,
-      };
-    }));
+    const resolved = await Promise.all(
+      chain.map(async (server, index) => {
+        const identity =
+          index === 0 ? server.host : `jump:${pathSegments.join('>')}|${server.host}`;
+        pathSegments.push(`${server.id}@${server.host}:${server.port}`);
+        const credential = await this.decryptCredential(server.credential, body.user_id);
+        const khRows = this.db
+          .exec(
+            'SELECT fingerprint FROM known_hosts WHERE user_id = ? AND host = ? AND port = ?',
+            body.user_id,
+            identity,
+            server.port
+          )
+          .toArray();
+        return {
+          server,
+          identity,
+          credential,
+          expectedFingerprint:
+            khRows.length > 0
+              ? (khRows[0] as unknown as { fingerprint: string }).fingerprint
+              : undefined,
+        };
+      })
+    );
 
     const outermost = chain[0];
     const locationHint = outermost.region || outermost.inferred_hint || undefined;
 
-    const userRows = this.db.exec('SELECT github_id FROM users WHERE id = ?', body.user_id).toArray();
+    const userRows = this.db
+      .exec('SELECT github_id FROM users WHERE id = ?', body.user_id)
+      .toArray();
     if (userRows.length === 0) return Response.json({ error: 'User not found' }, { status: 404 });
     const github_id = (userRows[0] as any).github_id;
 
@@ -1224,20 +1356,32 @@ export class UserDBDO {
     if (cached) return cached;
 
     if (!this.encryptionSecret) {
-      const rows = this.db.exec("SELECT value FROM system_config WHERE key = 'encryption_secret'").toArray();
+      const rows = this.db
+        .exec("SELECT value FROM system_config WHERE key = 'encryption_secret'")
+        .toArray();
       if (rows.length > 0) {
         this.encryptionSecret = rows[0].value as string;
       } else {
         // 兼容旧版：检查 session_secret 并迁移到 encryption_secret
-        const oldRows = this.db.exec("SELECT value FROM system_config WHERE key = 'session_secret'").toArray();
+        const oldRows = this.db
+          .exec("SELECT value FROM system_config WHERE key = 'session_secret'")
+          .toArray();
         if (oldRows.length > 0) {
           this.encryptionSecret = oldRows[0].value as string;
-          this.db.exec("INSERT INTO system_config (key, value) VALUES ('encryption_secret', ?)", this.encryptionSecret);
+          this.db.exec(
+            "INSERT INTO system_config (key, value) VALUES ('encryption_secret', ?)",
+            this.encryptionSecret
+          );
         } else {
           const bytes = new Uint8Array(32);
           crypto.getRandomValues(bytes);
-          this.encryptionSecret = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
-          this.db.exec("INSERT INTO system_config (key, value) VALUES ('encryption_secret', ?)", this.encryptionSecret);
+          this.encryptionSecret = Array.from(bytes)
+            .map((b) => b.toString(16).padStart(2, '0'))
+            .join('');
+          this.db.exec(
+            "INSERT INTO system_config (key, value) VALUES ('encryption_secret', ?)",
+            this.encryptionSecret
+          );
         }
       }
     }
@@ -1268,21 +1412,29 @@ export class UserDBDO {
   private handleGetKnownHosts(userId: number, host: string | null, port: string | null): Response {
     if (host && port) {
       // 查询特定 host:port 的指纹
-      const rows = this.db.exec(
-        'SELECT fingerprint FROM known_hosts WHERE user_id = ? AND host = ? AND port = ?',
-        userId, host, parseInt(port)
-      ).toArray();
+      const rows = this.db
+        .exec(
+          'SELECT fingerprint FROM known_hosts WHERE user_id = ? AND host = ? AND port = ?',
+          userId,
+          host,
+          parseInt(port)
+        )
+        .toArray();
       if (rows.length === 0) {
         return Response.json({ fingerprint: null });
       }
-      return Response.json({ fingerprint: (rows[0] as unknown as { fingerprint: string }).fingerprint });
+      return Response.json({
+        fingerprint: (rows[0] as unknown as { fingerprint: string }).fingerprint,
+      });
     }
 
     // 列出所有已知主机
-    const rows = this.db.exec(
-      'SELECT id, host, port, fingerprint, created_at, updated_at FROM known_hosts WHERE user_id = ? ORDER BY updated_at DESC',
-      userId
-    ).toArray();
+    const rows = this.db
+      .exec(
+        'SELECT id, host, port, fingerprint, created_at, updated_at FROM known_hosts WHERE user_id = ? ORDER BY updated_at DESC',
+        userId
+      )
+      .toArray();
     return Response.json(rows);
   }
 
@@ -1302,7 +1454,10 @@ export class UserDBDO {
       `INSERT INTO known_hosts (user_id, host, port, fingerprint, created_at, updated_at)
        VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
        ON CONFLICT(user_id, host, port) DO UPDATE SET fingerprint = excluded.fingerprint, updated_at = datetime('now')`,
-      user_id, host, port, fingerprint
+      user_id,
+      host,
+      port,
+      fingerprint
     );
 
     return Response.json({ success: true });
@@ -1317,26 +1472,91 @@ export class UserDBDO {
 
     this.db.exec(
       'DELETE FROM known_hosts WHERE user_id = ? AND host = ? AND port = ?',
-      user_id, host, port
+      user_id,
+      host,
+      port
     );
 
+    return Response.json({ success: true });
+  }
+
+  // ==================== 命令片段管理 ====================
+
+  private handleGetSnippets(userId: number): Response {
+    const rows = this.db.exec(
+      'SELECT id, name, command, created_at, updated_at FROM command_snippets WHERE user_id = ? ORDER BY id ASC',
+      userId,
+    ).toArray();
+    return Response.json(rows);
+  }
+
+  private async handleCreateSnippet(request: Request): Promise<Response> {
+    const body = await request.json<{ user_id: number; name?: unknown; command?: unknown }>();
+    const normalized = normalizeSnippetInput(body.name, body.command);
+    if (!normalized.ok) {
+      return Response.json({ error: normalized.error }, { status: 400 });
+    }
+    const countRows = this.db.exec(
+      'SELECT COUNT(*) AS count FROM command_snippets WHERE user_id = ?',
+      body.user_id,
+    ).toArray();
+    const count = Number((countRows[0] as { count?: unknown } | undefined)?.count ?? 0);
+    if (count >= SNIPPET_MAX_COUNT) {
+      return Response.json({ error: 'limitReached' }, { status: 400 });
+    }
+    this.db.exec(
+      `INSERT INTO command_snippets (user_id, name, command, created_at, updated_at) VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
+      body.user_id,
+      normalized.value.name,
+      normalized.value.command,
+    );
+    const rows = this.db.exec(
+      'SELECT id, name, command, created_at, updated_at FROM command_snippets WHERE user_id = ? ORDER BY id DESC LIMIT 1',
+      body.user_id,
+    ).toArray();
+    return Response.json(rows[0] ?? { success: true }, { status: 201 });
+  }
+
+  private async handleUpdateSnippet(snippetId: number, request: Request): Promise<Response> {
+    const body = await request.json<{ user_id: number; name?: unknown; command?: unknown }>();
+    const normalized = normalizeSnippetInput(body.name, body.command);
+    if (!normalized.ok) {
+      return Response.json({ error: normalized.error }, { status: 400 });
+    }
+    const existing = this.db.exec('SELECT id FROM command_snippets WHERE user_id = ? AND id = ?', body.user_id, snippetId).toArray();
+    if (existing.length === 0) {
+      return Response.json({ error: 'notFound' }, { status: 404 });
+    }
+    this.db.exec(`UPDATE command_snippets SET name = ?, command = ?, updated_at = datetime('now') WHERE user_id = ? AND id = ?`, normalized.value.name, normalized.value.command, body.user_id, snippetId);
+    const rows = this.db.exec('SELECT id, name, command, created_at, updated_at FROM command_snippets WHERE user_id = ? AND id = ?', body.user_id, snippetId).toArray();
+    return Response.json(rows[0] ?? { success: true });
+  }
+
+  private async handleDeleteSnippet(snippetId: number, request: Request): Promise<Response> {
+    const { user_id } = await request.json<{ user_id: number }>();
+    this.db.exec('DELETE FROM command_snippets WHERE user_id = ? AND id = ?', user_id, snippetId);
     return Response.json({ success: true });
   }
 
   // ==================== AI 配置管理 ====================
 
   private handleGetAIConfig(userId: number): Response {
-    const rows = this.db.exec(
-      'SELECT base_url, model, api_key_last4, updated_at FROM ai_configs WHERE user_id = ?',
-      userId
-    ).toArray();
+    const rows = this.db
+      .exec(
+        'SELECT base_url, model, api_key_last4, updated_at FROM ai_configs WHERE user_id = ?',
+        userId
+      )
+      .toArray();
 
     if (rows.length === 0) {
       return Response.json({ configured: false });
     }
 
     const row = rows[0] as unknown as {
-      base_url: string; model: string; api_key_last4: string; updated_at: string;
+      base_url: string;
+      model: string;
+      api_key_last4: string;
+      updated_at: string;
     };
     return Response.json({
       configured: true,
@@ -1360,10 +1580,9 @@ export class UserDBDO {
     }
 
     // Check if an existing configuration exists with a valid API key
-    const existing = this.db.exec(
-      'SELECT api_key_enc FROM ai_configs WHERE user_id = ?',
-      body.user_id
-    ).toArray();
+    const existing = this.db
+      .exec('SELECT api_key_enc FROM ai_configs WHERE user_id = ?', body.user_id)
+      .toArray();
     const hasExistingKey = existing.length > 0 && !!(existing[0] as any).api_key_enc;
 
     if (!body.api_key && !hasExistingKey) {
@@ -1378,7 +1597,19 @@ export class UserDBDO {
       last4 = body.api_key.slice(-4);
     }
 
-    if (encrypted !== null) {
+    if (encrypted === null) {
+      this.db.exec(
+        `INSERT INTO ai_configs (user_id, base_url, model, api_key_enc, api_key_last4, updated_at)
+         VALUES (?, ?, ?, '', '', datetime('now'))
+         ON CONFLICT(user_id) DO UPDATE SET
+           base_url = excluded.base_url,
+           model = excluded.model,
+           updated_at = excluded.updated_at`,
+        body.user_id,
+        body.base_url,
+        body.model
+      );
+    } else {
       this.db.exec(
         `INSERT INTO ai_configs (user_id, base_url, model, api_key_enc, api_key_last4, updated_at)
          VALUES (?, ?, ?, ?, ?, datetime('now'))
@@ -1388,17 +1619,11 @@ export class UserDBDO {
            api_key_enc = excluded.api_key_enc,
            api_key_last4 = excluded.api_key_last4,
            updated_at = excluded.updated_at`,
-        body.user_id, body.base_url, body.model, encrypted, last4
-      );
-    } else {
-      this.db.exec(
-        `INSERT INTO ai_configs (user_id, base_url, model, api_key_enc, api_key_last4, updated_at)
-         VALUES (?, ?, ?, '', '', datetime('now'))
-         ON CONFLICT(user_id) DO UPDATE SET
-           base_url = excluded.base_url,
-           model = excluded.model,
-           updated_at = excluded.updated_at`,
-        body.user_id, body.base_url, body.model
+        body.user_id,
+        body.base_url,
+        body.model,
+        encrypted,
+        last4
       );
     }
 
@@ -1406,17 +1631,18 @@ export class UserDBDO {
   }
 
   private async handleGetAIConfigDecrypted(userId: number): Promise<Response> {
-    const rows = this.db.exec(
-      'SELECT base_url, model, api_key_enc FROM ai_configs WHERE user_id = ?',
-      userId
-    ).toArray();
+    const rows = this.db
+      .exec('SELECT base_url, model, api_key_enc FROM ai_configs WHERE user_id = ?', userId)
+      .toArray();
 
     if (rows.length === 0) {
       return Response.json({ error: 'No AI config found' }, { status: 404 });
     }
 
     const row = rows[0] as unknown as {
-      base_url: string; model: string; api_key_enc: string;
+      base_url: string;
+      model: string;
+      api_key_enc: string;
     };
 
     if (!row.api_key_enc) {

@@ -1,17 +1,21 @@
 // Tool call execution engine — dispatches tool calls to their implementations
 
-import { TerminalContext } from './terminal-context';
-import { needsConfirmation, isBlockedCommand } from './safety';
+import { isBlockedCommand, needsConfirmation } from './safety';
+import type { TerminalContext } from './terminal-context';
 import type { ExecResult } from './types';
 
-export type ExecCommandFn = (command: string, timeout: number, signal?: AbortSignal) => Promise<ExecResult>;
+export type ExecCommandFn = (
+  command: string,
+  timeout: number,
+  signal?: AbortSignal
+) => Promise<ExecResult>;
 
 export class ToolExecutor {
   constructor(
     private terminalContext: TerminalContext,
     private execCommand: ExecCommandFn,
     private askConfirmation: (command: string, reason: string) => Promise<boolean>,
-    private resetTimeout?: () => void,
+    private resetTimeout?: () => void
   ) {}
 
   async execute(toolName: string, args: any, signal?: AbortSignal): Promise<string> {
@@ -37,7 +41,11 @@ export class ToolExecutor {
     }
   }
 
-  private async handleExec(command: string, timeout: number, signal?: AbortSignal): Promise<string> {
+  private async handleExec(
+    command: string,
+    timeout: number,
+    signal?: AbortSignal
+  ): Promise<string> {
     // Check if this command is blocked (never execute)
     const blocked = isBlockedCommand(command);
     if (blocked.blocked) {
@@ -96,11 +104,7 @@ export class ToolExecutor {
 
   private async handleListProcesses(signal?: AbortSignal): Promise<string> {
     try {
-      const result = await this.execCommand(
-        'ps aux --sort=-%mem | head -30',
-        10000,
-        signal,
-      );
+      const result = await this.execCommand('ps aux --sort=-%mem | head -30', 10000, signal);
       return JSON.stringify({
         stdout: result.stdout,
         stderr: result.stderr,
@@ -112,7 +116,11 @@ export class ToolExecutor {
     }
   }
 
-  private async handleServiceManage(action: string, service: string, signal?: AbortSignal): Promise<string> {
+  private async handleServiceManage(
+    action: string,
+    service: string,
+    signal?: AbortSignal
+  ): Promise<string> {
     // Shell-safe whitelist: service names are typically [a-zA-Z0-9_-] with optional '@' instance
     if (service && !/^[a-zA-Z0-9_\-@.]+$/.test(service)) {
       return JSON.stringify({ stdout: '', stderr: '非法的服务名称', exit_code: -1 });
@@ -124,24 +132,46 @@ export class ToolExecutor {
     // 非白名单 action 需要用户确认
     if (!VALID_ACTIONS.includes(action)) {
       const cmd = `systemctl ${action} ${service}`;
-      const approved = await this.askConfirmationWithAbort(cmd, `非标准服务操作 "${action}"，即将执行: ${cmd}，请确认`, signal);
+      const approved = await this.askConfirmationWithAbort(
+        cmd,
+        `非标准服务操作 "${action}"，即将执行: ${cmd}，请确认`,
+        signal
+      );
       if (!approved) {
-        return JSON.stringify({ stdout: '', stderr: '用户拒绝执行此操作', exit_code: -1, user_rejected: true });
+        return JSON.stringify({
+          stdout: '',
+          stderr: '用户拒绝执行此操作',
+          exit_code: -1,
+          user_rejected: true,
+        });
       }
     } else if (!safeActions.includes(action)) {
       // 白名单内的危险操作（stop/disable）也需要确认
-      const reason = action === 'stop'
-        ? `即将停止服务 ${service}，请确认`
-        : `即将禁用服务 ${service}，请确认`;
-      const approved = await this.askConfirmationWithAbort(`systemctl ${action} ${service}`, reason, signal);
+      const reason =
+        action === 'stop' ? `即将停止服务 ${service}，请确认` : `即将禁用服务 ${service}，请确认`;
+      const approved = await this.askConfirmationWithAbort(
+        `systemctl ${action} ${service}`,
+        reason,
+        signal
+      );
       if (!approved) {
-        return JSON.stringify({ stdout: '', stderr: '用户拒绝执行此操作', exit_code: -1, user_rejected: true });
+        return JSON.stringify({
+          stdout: '',
+          stderr: '用户拒绝执行此操作',
+          exit_code: -1,
+          user_rejected: true,
+        });
       }
     }
     return this.handleExec(`systemctl ${action} ${service}`, 15000, signal);
   }
 
-  private async handleDockerManage(action: string, target?: string, options?: string, signal?: AbortSignal): Promise<string> {
+  private async handleDockerManage(
+    action: string,
+    target?: string,
+    options?: string,
+    signal?: AbortSignal
+  ): Promise<string> {
     // Shell-safe whitelist: docker args may not contain shell metacharacters
     const safeArgRe = /^[a-zA-Z0-9_\-.\s=:+/@,]*$/;
     if (target && !safeArgRe.test(target)) target = '';
@@ -153,9 +183,18 @@ export class ToolExecutor {
 
     // 非白名单 action 需要用户确认
     if (!VALID_ACTIONS.includes(action)) {
-      const approved = await this.askConfirmationWithAbort(cmd, `非标准 Docker 操作 "${action}"，即将执行: ${cmd}，请确认`, signal);
+      const approved = await this.askConfirmationWithAbort(
+        cmd,
+        `非标准 Docker 操作 "${action}"，即将执行: ${cmd}，请确认`,
+        signal
+      );
       if (!approved) {
-        return JSON.stringify({ stdout: '', stderr: '用户拒绝执行此操作', exit_code: -1, user_rejected: true });
+        return JSON.stringify({
+          stdout: '',
+          stderr: '用户拒绝执行此操作',
+          exit_code: -1,
+          user_rejected: true,
+        });
       }
     } else if (!safeActions.includes(action)) {
       // 白名单内的危险操作（stop/rm/rmi/restart）也需要确认
@@ -165,9 +204,18 @@ export class ToolExecutor {
         rmi: `即将删除镜像 ${target}，此操作不可逆，请确认`,
         restart: `即将重启容器 ${target}，请确认`,
       };
-      const approved = await this.askConfirmationWithAbort(cmd, reasons[action] || `即将执行: ${cmd}`, signal);
+      const approved = await this.askConfirmationWithAbort(
+        cmd,
+        reasons[action] || `即将执行: ${cmd}`,
+        signal
+      );
       if (!approved) {
-        return JSON.stringify({ stdout: '', stderr: '用户拒绝执行此操作', exit_code: -1, user_rejected: true });
+        return JSON.stringify({
+          stdout: '',
+          stderr: '用户拒绝执行此操作',
+          exit_code: -1,
+          user_rejected: true,
+        });
       }
     }
 
@@ -177,19 +225,32 @@ export class ToolExecutor {
   private buildDockerCommand(action: string, target?: string, options?: string): string {
     const opts = options ? ` ${options.trim()}` : '';
     switch (action) {
-      case 'ps': return `docker ps${opts || ' -a'}`;
-      case 'logs': return `docker logs${opts} ${target || ''}`.trim();
-      case 'inspect': return `docker inspect ${target || ''}`.trim();
-      case 'images': return `docker images${opts}`;
-      case 'stop': return `docker stop ${target}`;
-      case 'rm': return `docker rm ${target}`;
-      case 'rmi': return `docker rmi ${target}`;
-      case 'restart': return `docker restart ${target}`;
-      default: return `docker ${action}`;
+      case 'ps':
+        return `docker ps${opts || ' -a'}`;
+      case 'logs':
+        return `docker logs${opts} ${target || ''}`.trim();
+      case 'inspect':
+        return `docker inspect ${target || ''}`.trim();
+      case 'images':
+        return `docker images${opts}`;
+      case 'stop':
+        return `docker stop ${target}`;
+      case 'rm':
+        return `docker rm ${target}`;
+      case 'rmi':
+        return `docker rmi ${target}`;
+      case 'restart':
+        return `docker restart ${target}`;
+      default:
+        return `docker ${action}`;
     }
   }
 
-  private async handleConfirmation(command: string, reason: string, signal?: AbortSignal): Promise<string> {
+  private async handleConfirmation(
+    command: string,
+    reason: string,
+    signal?: AbortSignal
+  ): Promise<string> {
     const approved = await this.askConfirmationWithAbort(command, reason, signal);
     return approved
       ? 'User approved'
@@ -200,7 +261,11 @@ export class ToolExecutor {
    * 将 askConfirmation 与 abort signal 竞争，防止超时后 runLoop 永久挂起。
    * 当 signal 被 abort 时，视为用户拒绝。
    */
-  private askConfirmationWithAbort(command: string, reason: string, signal?: AbortSignal): Promise<boolean> {
+  private askConfirmationWithAbort(
+    command: string,
+    reason: string,
+    signal?: AbortSignal
+  ): Promise<boolean> {
     if (signal?.aborted) return Promise.resolve(false);
     return Promise.race([
       this.askConfirmation(command, reason),

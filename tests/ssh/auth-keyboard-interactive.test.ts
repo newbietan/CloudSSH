@@ -6,7 +6,7 @@ function buildInfoRequest(
   name: string,
   instruction: string,
   language: string,
-  prompts: Array<{ text: string; echo: boolean }>,
+  prompts: Array<{ text: string; echo: boolean }>
 ): Uint8Array {
   return concat(
     new Uint8Array([60]),
@@ -14,17 +14,11 @@ function buildInfoRequest(
     encodeString(instruction),
     encodeString(language),
     encodeUint32(prompts.length),
-    ...prompts.flatMap(({ text, echo }) => [
-      encodeString(text),
-      new Uint8Array([echo ? 1 : 0]),
-    ]),
+    ...prompts.flatMap(({ text, echo }) => [encodeString(text), new Uint8Array([echo ? 1 : 0])])
   );
 }
 
-function readString(
-  payload: Uint8Array,
-  offset: number,
-): { value: string; nextOffset: number } {
+function readString(payload: Uint8Array, offset: number): { value: string; nextOffset: number } {
   const length = readUint32(payload, offset);
   const valueOffset = offset + 4;
   return {
@@ -93,12 +87,9 @@ describe('SSHAuth keyboard-interactive (RFC 4256)', () => {
 
   describe('parseKeyboardInteractiveInfoRequest', () => {
     it('parses a single hidden prompt and Unicode server text', () => {
-      const packet = buildInfoRequest(
-        '双因素认证',
-        '请输入密码或动态验证码。',
-        'zh-CN',
-        [{ text: '密码：', echo: false }],
-      );
+      const packet = buildInfoRequest('双因素认证', '请输入密码或动态验证码。', 'zh-CN', [
+        { text: '密码：', echo: false },
+      ]);
 
       expect(SSHAuth.parseKeyboardInteractiveInfoRequest(packet)).toEqual({
         name: '双因素认证',
@@ -135,25 +126,25 @@ describe('SSHAuth keyboard-interactive (RFC 4256)', () => {
 
     it('rejects the wrong message type and empty payloads', () => {
       expect(() => SSHAuth.parseKeyboardInteractiveInfoRequest(new Uint8Array())).toThrow(
-        'Unexpected keyboard-interactive message type',
+        'Unexpected keyboard-interactive message type'
       );
       expect(() => SSHAuth.parseKeyboardInteractiveInfoRequest(new Uint8Array([61]))).toThrow(
-        'Unexpected keyboard-interactive message type',
+        'Unexpected keyboard-interactive message type'
       );
     });
 
     it('rejects truncated strings, counts and prompt echo flags', () => {
       expect(() => SSHAuth.parseKeyboardInteractiveInfoRequest(new Uint8Array([60, 0, 0]))).toThrow(
-        /truncated name length/,
+        /truncated name length/
       );
 
       const truncatedName = concat(
         new Uint8Array([60]),
         encodeUint32(4),
-        new TextEncoder().encode('ab'),
+        new TextEncoder().encode('ab')
       );
       expect(() => SSHAuth.parseKeyboardInteractiveInfoRequest(truncatedName)).toThrow(
-        /truncated name$/,
+        /truncated name$/
       );
 
       const missingCount = concat(
@@ -161,10 +152,10 @@ describe('SSHAuth keyboard-interactive (RFC 4256)', () => {
         encodeString(''),
         encodeString(''),
         encodeString(''),
-        new Uint8Array([0, 0]),
+        new Uint8Array([0, 0])
       );
       expect(() => SSHAuth.parseKeyboardInteractiveInfoRequest(missingCount)).toThrow(
-        /truncated prompt count/,
+        /truncated prompt count/
       );
 
       const missingEcho = concat(
@@ -173,10 +164,10 @@ describe('SSHAuth keyboard-interactive (RFC 4256)', () => {
         encodeString(''),
         encodeString(''),
         encodeUint32(1),
-        encodeString('Password: '),
+        encodeString('Password: ')
       );
       expect(() => SSHAuth.parseKeyboardInteractiveInfoRequest(missingEcho)).toThrow(
-        /missing echo flag/,
+        /missing echo flag/
       );
     });
 
@@ -186,26 +177,24 @@ describe('SSHAuth keyboard-interactive (RFC 4256)', () => {
         encodeString(new Uint8Array([0xc3, 0x28])),
         encodeString(''),
         encodeString(''),
-        encodeUint32(0),
+        encodeUint32(0)
       );
       expect(() => SSHAuth.parseKeyboardInteractiveInfoRequest(invalidUtf8)).toThrow(
-        /invalid UTF-8 in name/,
+        /invalid UTF-8 in name/
       );
 
       const invalidEcho = buildInfoRequest('', '', '', [{ text: 'Code: ', echo: false }]);
       invalidEcho[invalidEcho.length - 1] = 2;
       expect(() => SSHAuth.parseKeyboardInteractiveInfoRequest(invalidEcho)).toThrow(
-        /invalid echo flag/,
+        /invalid echo flag/
       );
 
       const trailing = concat(buildInfoRequest('', '', '', []), new Uint8Array([0]));
-      expect(() => SSHAuth.parseKeyboardInteractiveInfoRequest(trailing)).toThrow(
-        /trailing data/,
-      );
+      expect(() => SSHAuth.parseKeyboardInteractiveInfoRequest(trailing)).toThrow(/trailing data/);
 
       const emptyPrompt = buildInfoRequest('', '', '', [{ text: '', echo: false }]);
       expect(() => SSHAuth.parseKeyboardInteractiveInfoRequest(emptyPrompt)).toThrow(
-        /prompt 1 is empty/,
+        /prompt 1 is empty/
       );
     });
 
@@ -215,23 +204,23 @@ describe('SSHAuth keyboard-interactive (RFC 4256)', () => {
         encodeString(''),
         encodeString(''),
         encodeString(''),
-        encodeUint32(33),
+        encodeUint32(33)
       );
       expect(() => SSHAuth.parseKeyboardInteractiveInfoRequest(tooManyPrompts)).toThrow(
-        /too many prompts/,
+        /too many prompts/
       );
 
       const oversizedPrompt = buildInfoRequest('', '', '', [
         { text: 'x'.repeat(16 * 1024 + 1), echo: false },
       ]);
       expect(() => SSHAuth.parseKeyboardInteractiveInfoRequest(oversizedPrompt)).toThrow(
-        /prompt 1 exceeds size limit/,
+        /prompt 1 exceeds size limit/
       );
 
       const oversizedPacket = new Uint8Array(256 * 1024 + 1);
       oversizedPacket[0] = 60;
       expect(() => SSHAuth.parseKeyboardInteractiveInfoRequest(oversizedPacket)).toThrow(
-        /packet exceeds size limit/,
+        /packet exceeds size limit/
       );
     });
   });
@@ -256,17 +245,17 @@ describe('SSHAuth keyboard-interactive (RFC 4256)', () => {
 
     it('rejects invalid response counts, values and sizes without exposing values', () => {
       expect(() => SSHAuth.buildKeyboardInteractiveInfoResponse(new Array(33).fill(''))).toThrow(
-        /too many responses/,
+        /too many responses/
       );
-      expect(() => SSHAuth.buildKeyboardInteractiveInfoResponse([123 as unknown as string])).toThrow(
-        /every response must be a string/,
-      );
-      expect(() => SSHAuth.buildKeyboardInteractiveInfoResponse(['s'.repeat(64 * 1024 + 1)])).toThrow(
-        /response exceeds size limit/,
-      );
-      expect(() => SSHAuth.buildKeyboardInteractiveInfoResponse(new Array(5).fill('s'.repeat(64 * 1024)))).toThrow(
-        /packet exceeds size limit/,
-      );
+      expect(() =>
+        SSHAuth.buildKeyboardInteractiveInfoResponse([123 as unknown as string])
+      ).toThrow(/every response must be a string/);
+      expect(() =>
+        SSHAuth.buildKeyboardInteractiveInfoResponse(['s'.repeat(64 * 1024 + 1)])
+      ).toThrow(/response exceeds size limit/);
+      expect(() =>
+        SSHAuth.buildKeyboardInteractiveInfoResponse(new Array(5).fill('s'.repeat(64 * 1024)))
+      ).toThrow(/packet exceeds size limit/);
     });
   });
 
@@ -275,12 +264,12 @@ describe('SSHAuth keyboard-interactive (RFC 4256)', () => {
       const partial = concat(
         new Uint8Array([51]),
         encodeString('publickey,keyboard-interactive'),
-        new Uint8Array([1]),
+        new Uint8Array([1])
       );
       const notPartial = concat(
         new Uint8Array([51]),
         encodeString('password'),
-        new Uint8Array([0]),
+        new Uint8Array([0])
       );
 
       expect(SSHAuth.handleResponse(partial)).toEqual({
@@ -294,21 +283,19 @@ describe('SSHAuth keyboard-interactive (RFC 4256)', () => {
     it('requires the RFC 4252 partial-success boolean', () => {
       const truncated = concat(new Uint8Array([51]), encodeString('password'));
 
-      expect(() => SSHAuth.handleResponse(truncated)).toThrow(
-        /missing partial success flag/,
-      );
+      expect(() => SSHAuth.handleResponse(truncated)).toThrow(/missing partial success flag/);
     });
 
     it('rejects malformed partial-success flags and trailing bytes', () => {
       const invalidFlag = concat(
         new Uint8Array([51]),
         encodeString('password'),
-        new Uint8Array([2]),
+        new Uint8Array([2])
       );
       const trailing = concat(
         new Uint8Array([51]),
         encodeString('password'),
-        new Uint8Array([0, 0]),
+        new Uint8Array([0, 0])
       );
 
       expect(() => SSHAuth.handleResponse(invalidFlag)).toThrow(/invalid partial success flag/);

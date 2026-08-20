@@ -1,6 +1,11 @@
-import { Env, SSHConnectionConfig, TerminalSize, normalizeTerminalSize } from '../types';
-import { SSHSession } from './ssh-session';
+import {
+  type Env,
+  normalizeTerminalSize,
+  type SSHConnectionConfig,
+  type TerminalSize,
+} from '../types';
 import { checkHostResolved } from './dns-check';
+import { SSHSession } from './ssh-session';
 
 /**
  * SSRF 防护：检测目标主机是否为内网、保留或特殊地址。
@@ -62,7 +67,9 @@ export class SSHSessionDO {
         if (!session.belongsToShare(body.shareId)) continue;
         revoked = true;
         session.close(true);
-        try { ws.close(1000, 'Shared session revoked'); } catch {}
+        try {
+          ws.close(1000, 'Shared session revoked');
+        } catch {}
       }
       return Response.json({ success: true, revoked });
     }
@@ -118,7 +125,9 @@ export class SSHSessionDO {
           try {
             server.send(JSON.stringify({ type: 'error', message: `连接失败: ${errMsg}` }));
             server.close(1011, 'SSH connection failed');
-          } catch (e) { console.error('Failed to notify client of connection error:', e); }
+          } catch (e) {
+            console.error('Failed to notify client of connection error:', e);
+          }
         }
       });
     } else {
@@ -126,7 +135,9 @@ export class SSHSessionDO {
         try {
           server.send(JSON.stringify({ type: 'error', message: 'Connection timeout' }));
           server.close(1011, 'Timeout');
-        } catch (e) { console.error('Failed to notify client of timeout:', e); }
+        } catch (e) {
+          console.error('Failed to notify client of timeout:', e);
+        }
       }, 10000);
 
       server.serializeAttachment({ state: 'waiting', timeout: null });
@@ -146,7 +157,11 @@ export class SSHSessionDO {
         // agent_confirm / agent_stop 需要绕过阻塞的 handleAgentStart 处理
         if (typeof message === 'string') {
           let msg: any;
-          try { msg = JSON.parse(message); } catch { /* not JSON */ }
+          try {
+            msg = JSON.parse(message);
+          } catch {
+            /* not JSON */
+          }
           if (msg && (msg.type === 'agent_confirm' || msg.type === 'agent_stop')) {
             session.handleAgentControl(msg.type, msg);
             return;
@@ -211,11 +226,18 @@ export class SSHSessionDO {
       try {
         ws.send(JSON.stringify({ type: 'error', message: `处理消息时出错: ${errMsg}` }));
         ws.close(1011, 'Internal error');
-      } catch { /* WebSocket may already be closed */ }
+      } catch {
+        /* WebSocket may already be closed */
+      }
     }
   }
 
-  async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean): Promise<void> {
+  async webSocketClose(
+    ws: WebSocket,
+    code: number,
+    reason: string,
+    wasClean: boolean
+  ): Promise<void> {
     const session = this.sessions.get(ws);
     if (session) {
       const chain = this.sessionChains.get(ws) || [session];
@@ -267,8 +289,7 @@ export class SSHSessionDO {
         throw new Error(dnsCheck.reason!);
       }
       const BLOCKED_PORTS = [
-        23, 80, 443, 25, 465, 587, 110, 143, 993, 995,
-        3306, 5432, 6379, 9200, 11211, 27017, 5060,
+        23, 80, 443, 25, 465, 587, 110, 143, 993, 995, 3306, 5432, 6379, 9200, 11211, 27017, 5060,
       ];
       for (const node of [...jumpHosts, config]) {
         if (!Number.isInteger(node.port) || node.port < 1 || node.port > 65535) {
@@ -281,7 +302,7 @@ export class SSHSessionDO {
 
       const { connect } = await import('cloudflare:sockets');
       const hostname = outer.host.includes(':') ? `[${outer.host}]` : outer.host;
-      
+
       const startTime = Date.now();
       let transport: any = connect({ hostname, port: outer.port });
       await transport.opened;
@@ -292,9 +313,10 @@ export class SSHSessionDO {
 
       // Capability links never inherit the ordinary-session escape hatch: every
       // hop must prove possession of its already trusted host key.
-      const strictVerify = config.sessionPolicy?.source === 'share'
-        ? true
-        : this.env.STRICT_HOST_KEY_VERIFY !== 'false';
+      const strictVerify =
+        config.sessionPolicy?.source === 'share'
+          ? true
+          : this.env.STRICT_HOST_KEY_VERIFY !== 'false';
       const debugMode = this.env.DEBUG_MODE === 'true';
       const pendingSize = this.pendingTerminalSizes.get(ws);
       if (pendingSize) {
@@ -306,12 +328,20 @@ export class SSHSessionDO {
       for (let index = 0; index < jumpHosts.length; index++) {
         const hop = jumpHosts[index];
         try {
-          ws.send(JSON.stringify({
-            type: 'status',
-            event: 'jump_hop_connecting',
-            message: `正在连接跳板服务器 ${hop.name}`,
-            params: { index: index + 1, total: jumpHosts.length, name: hop.name, host: hop.host, port: hop.port },
-          }));
+          ws.send(
+            JSON.stringify({
+              type: 'status',
+              event: 'jump_hop_connecting',
+              message: `正在连接跳板服务器 ${hop.name}`,
+              params: {
+                index: index + 1,
+                total: jumpHosts.length,
+                name: hop.name,
+                host: hop.host,
+                port: hop.port,
+              },
+            })
+          );
         } catch {}
         const hopConfig: SSHConnectionConfig = {
           host: hop.host,
@@ -340,7 +370,7 @@ export class SSHSessionDO {
             ownsWebSocket: false,
             allowKeyboardInteractive: config.sessionPolicy?.source !== 'share',
             waitUntil: (promise) => this.state.waitUntil(promise),
-          },
+          }
         );
         chainSessions.push(hopSession);
         this.sessionChains.set(ws, chainSessions);
@@ -355,12 +385,14 @@ export class SSHSessionDO {
       const finalConfig = { ...config, jumpHosts: undefined };
       if (jumpHosts.length > 0) {
         try {
-          ws.send(JSON.stringify({
-            type: 'status',
-            event: 'jump_target_connecting',
-            message: `正在通过跳板连接目标服务器 ${config.host}:${config.port}`,
-            params: { host: config.host, port: config.port },
-          }));
+          ws.send(
+            JSON.stringify({
+              type: 'status',
+              event: 'jump_target_connecting',
+              message: `正在通过跳板连接目标服务器 ${config.host}:${config.port}`,
+              params: { host: config.host, port: config.port },
+            })
+          );
         } catch {}
       }
       const session = new SSHSession(
@@ -373,7 +405,7 @@ export class SSHSessionDO {
         this.env,
         config.userId,
         config.githubId,
-        { waitUntil: (promise) => this.state.waitUntil(promise) },
+        { waitUntil: (promise) => this.state.waitUntil(promise) }
       );
       chainSessions.push(session);
       this.sessionChains.set(ws, chainSessions);
@@ -393,18 +425,25 @@ export class SSHSessionDO {
       this.pendingAttachUrls.delete(ws);
 
       await session.startHandshake();
-
     } catch (error) {
       for (const session of [...chainSessions].reverse()) session.close();
       this.sessionChains.delete(ws);
       this.sessions.delete(ws);
       const errMsg = error instanceof Error ? error.message : String(error);
-      const normalClose = typeof error === 'object' && error !== null
-        && (error as { normalClose?: unknown }).normalClose === true;
+      const normalClose =
+        typeof error === 'object' &&
+        error !== null &&
+        (error as { normalClose?: unknown }).normalClose === true;
       try {
-        if (!normalClose) ws.send(JSON.stringify({ type: 'error', message: `连接失败: ${errMsg}` }));
-        ws.close(normalClose ? 1000 : 1011, normalClose ? 'SSH authentication ended' : 'SSH connection failed');
-      } catch (e) { console.error('Failed to notify client of SSH error:', e); }
+        if (!normalClose)
+          ws.send(JSON.stringify({ type: 'error', message: `连接失败: ${errMsg}` }));
+        ws.close(
+          normalClose ? 1000 : 1011,
+          normalClose ? 'SSH authentication ended' : 'SSH connection failed'
+        );
+      } catch (e) {
+        console.error('Failed to notify client of SSH error:', e);
+      }
     }
   }
 
@@ -434,7 +473,8 @@ export class SSHSessionDO {
 
   private buildSFTPAttachUrl(baseUrl: URL, sessionName: string, token: string): string {
     const attachUrl = new URL(baseUrl.toString());
-    attachUrl.protocol = baseUrl.protocol === 'https:' || baseUrl.protocol === 'wss:' ? 'wss:' : 'ws:';
+    attachUrl.protocol =
+      baseUrl.protocol === 'https:' || baseUrl.protocol === 'wss:' ? 'wss:' : 'ws:';
     attachUrl.pathname = '/api/ssh/sftp';
     attachUrl.search = '';
     attachUrl.searchParams.set('session', sessionName);

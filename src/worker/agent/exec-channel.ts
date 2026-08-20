@@ -1,6 +1,6 @@
 // Agent exec channel — manages SSH exec channel lifecycle for command execution
 
-import { SSHChannel } from '../../ssh/channel';
+import type { SSHChannel } from '../../ssh/channel';
 import type { ExecResult } from './types';
 
 export class AgentExecChannel {

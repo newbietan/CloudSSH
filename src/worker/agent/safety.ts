@@ -26,12 +26,12 @@ export function isBlockedCommand(command: string): { blocked: boolean; reason?: 
         return { blocked: true, reason: '禁止执行高危删除操作 (rm -rf /)' };
       }
       // Shell 替换可能展开为根目录 → 一律拦截
-      if (/\$[\(\{]/.test(target) || /`/.test(target)) {
+      if (/\$[({]/.test(target) || /`/.test(target)) {
         return { blocked: true, reason: '禁止在 rm -rf 中使用 shell 替换（可能展开为根目录）' };
       }
     }
   }
-  
+
   // Wiping disk
   if (/(^|[\s;&|()])mkfs(\.[a-z0-9]+)?\s+/.test(normalized)) {
     return { blocked: true, reason: '禁止格式化磁盘' };
@@ -51,7 +51,7 @@ export function isBlockedCommand(command: string): { blocked: boolean; reason?: 
 export function needsConfirmation(command: string): { required: boolean; reason?: string } {
   const trimmed = command.trim();
   const normalized = trimmed.toLowerCase();
-  
+
   // 高危操作黑名单（正则表达式匹配）
   const DANGEROUS_PATTERNS = [
     { pattern: /(^|[\s;&|()])rm(?=\s|[;&|()]|$)/, reason: '删除文件操作' },

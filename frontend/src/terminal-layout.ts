@@ -5,8 +5,5 @@ export function resolveTerminalFontSize(viewportWidth: number, coarsePointer: bo
 }
 
 export function currentTerminalFontSize(): number {
-  return resolveTerminalFontSize(
-    window.innerWidth,
-    window.matchMedia('(pointer: coarse)').matches,
-  );
+  return resolveTerminalFontSize(window.innerWidth, window.matchMedia('(pointer: coarse)').matches);
 }

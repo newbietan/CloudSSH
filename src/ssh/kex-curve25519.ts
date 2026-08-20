@@ -1,5 +1,5 @@
 import { SSH_MSG_KEX_ECDH_INIT } from '../types';
-import { concat, readUint32, encodeString, toSSHMPInt } from './utils';
+import { concat, encodeString, readUint32, toSSHMPInt } from './utils';
 
 type X25519SubtleCrypto = {
   generateKey(
@@ -37,17 +37,11 @@ export type Curve25519KeyPair = CryptoKeyPair;
 
 export class Curve25519KeyExchange {
   static async generateKeyPair(): Promise<Curve25519KeyPair> {
-    return x25519Subtle().generateKey(
-      { name: 'X25519' },
-      true,
-      ['deriveBits']
-    );
+    return x25519Subtle().generateKey({ name: 'X25519' }, true, ['deriveBits']);
   }
 
   static async exportRawPublicKey(keyPair: Curve25519KeyPair): Promise<Uint8Array> {
-    return new Uint8Array(
-      await x25519Subtle().exportKey('raw', keyPair.publicKey)
-    );
+    return new Uint8Array(await x25519Subtle().exportKey('raw', keyPair.publicKey));
   }
 
   static buildInit(clientRawPublicKey: Uint8Array): Uint8Array {
@@ -55,10 +49,7 @@ export class Curve25519KeyExchange {
       throw new Error(`Invalid Curve25519 client public key length: ${clientRawPublicKey.length}`);
     }
 
-    return concat(
-      new Uint8Array([SSH_MSG_KEX_ECDH_INIT]),
-      encodeString(clientRawPublicKey)
-    );
+    return concat(new Uint8Array([SSH_MSG_KEX_ECDH_INIT]), encodeString(clientRawPublicKey));
   }
 
   static parseReply(data: Uint8Array): {
@@ -102,11 +93,7 @@ export class Curve25519KeyExchange {
     );
 
     const sharedSecret = new Uint8Array(
-      await x25519Subtle().deriveBits(
-        { name: 'X25519', public: serverKey },
-        privateKey,
-        256
-      )
+      await x25519Subtle().deriveBits({ name: 'X25519', public: serverKey }, privateKey, 256)
     );
     if (isAllZero(sharedSecret)) {
       throw new Error('Curve25519 key exchange failed: all-zero shared secret');

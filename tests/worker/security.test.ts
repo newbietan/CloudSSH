@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../../src/types';
 
 // =====================================================================
@@ -6,7 +6,7 @@ import type { Env } from '../../src/types';
 // ---------------------------------------------------------------
 // CloudSSH worker 外层接缝的安全回归测试。聚焦"关键安全领域"，
 // 不追求全分支覆盖——有状态组件走人工测试。
-// 
+//
 // 用例覆盖六类高危漏洞/访问控制边界：
 //   1. CSRF        — OAuth 回调 state 校验
 //   2. GitHub 策略 — 登录白名单、强制登录及 token 归属
@@ -15,7 +15,7 @@ import type { Env } from '../../src/types';
 //   5. 签名伪造    — cf_verified cookie HMAC 完整性
 //   6. CSWSH       — 跨站 WebSocket 劫持（Origin 校验）
 //   附：一次性 token 防重放、SFTP attach 鉴权、速率限制
-// 
+//
 // 全部走 default export 的 fetch 入口，不导出内部函数，最接近真实
 // 攻击路径。DO stub 与 global.fetch 用 vi.fn() mock。
 // =====================================================================
@@ -36,7 +36,9 @@ function makeDOStub(responder: (req: Request) => Response | Promise<Response>) {
 }
 
 /** 构造一个 env，USER_DB / SSH_SESSION 的 stub 可自定义 */
-function makeEnv(overrides: Partial<Env> & { userDbStub?: any; sshSessionStub?: any; sshShareStub?: any } = {}): Env {
+function makeEnv(
+  overrides: Partial<Env> & { userDbStub?: any; sshSessionStub?: any; sshShareStub?: any } = {}
+): Env {
   const { userDbStub, sshSessionStub, sshShareStub, ...rest } = overrides;
   const defaultStub = makeDOStub(() => new Response('{"error":"not mocked"}', { status: 500 }));
   return {
@@ -49,12 +51,19 @@ function makeEnv(overrides: Partial<Env> & { userDbStub?: any; sshSessionStub?: 
 
 function makeRequest(
   path: string,
-  opts: { method?: string; headers?: Record<string, string>; body?: any; cookies?: Record<string, string> } = {}
+  opts: {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: any;
+    cookies?: Record<string, string>;
+  } = {}
 ): Request {
   const url = new URL(`https://cloudssh.test${path}`);
   const headers: Record<string, string> = { ...(opts.headers ?? {}) };
   if (opts.cookies) {
-    headers['Cookie'] = Object.entries(opts.cookies).map(([k, v]) => `${k}=${v}`).join('; ');
+    headers['Cookie'] = Object.entries(opts.cookies)
+      .map(([k, v]) => `${k}=${v}`)
+      .join('; ');
   }
   const init: RequestInit = { method: opts.method ?? 'GET', headers };
   if (opts.body !== undefined) {
@@ -136,11 +145,13 @@ describe('安全 — GitHub 用户白名单', () => {
   function mockOAuthUser(githubId: number, login = 'alice') {
     fetchMock
       .mockResolvedValueOnce(Response.json({ access_token: 'oauth-token' }))
-      .mockResolvedValueOnce(Response.json({
-        id: githubId,
-        login,
-        avatar_url: 'https://avatars.example/alice.png',
-      }));
+      .mockResolvedValueOnce(
+        Response.json({
+          id: githubId,
+          login,
+          avatar_url: 'https://avatars.example/alice.png',
+        })
+      );
   }
 
   function makeOAuthUserDbStub(githubId: number) {
@@ -169,9 +180,12 @@ describe('安全 — GitHub 用户白名单', () => {
     });
     mockOAuthUser(42);
 
-    const res = await worker.fetch(makeRequest('/api/auth/callback?code=code&state=state', {
-      cookies: { oauth_state: 'state' },
-    }), env);
+    const res = await worker.fetch(
+      makeRequest('/api/auth/callback?code=code&state=state', {
+        cookies: { oauth_state: 'state' },
+      }),
+      env
+    );
 
     expect(res.status).toBe(302);
     expect(res.headers.get('set-cookie')).toContain('session=42:session-token');
@@ -189,9 +203,12 @@ describe('安全 — GitHub 用户白名单', () => {
     });
     mockOAuthUser(42);
 
-    const res = await worker.fetch(makeRequest('/api/auth/callback?code=code&state=state', {
-      cookies: { oauth_state: 'state' },
-    }), env);
+    const res = await worker.fetch(
+      makeRequest('/api/auth/callback?code=code&state=state', {
+        cookies: { oauth_state: 'state' },
+      }),
+      env
+    );
 
     expect(res.status).toBe(403);
     expect(await res.text()).toMatch(/not allowed/i);
@@ -213,9 +230,12 @@ describe('安全 — GitHub 用户白名单', () => {
     });
     mockOAuthUser(42);
 
-    const res = await worker.fetch(makeRequest('/api/auth/callback?code=code&state=state', {
-      cookies: { oauth_state: 'state' },
-    }), env);
+    const res = await worker.fetch(
+      makeRequest('/api/auth/callback?code=code&state=state', {
+        cookies: { oauth_state: 'state' },
+      }),
+      env
+    );
 
     expect([403, 503]).toContain(res.status);
     expect(userDbStub.fetch).not.toHaveBeenCalled();
@@ -223,26 +243,35 @@ describe('安全 — GitHub 用户白名单', () => {
 
   it('白名单变更后既有 session 立即失效', async () => {
     const worker = await loadWorker();
-    const userDbStub = makeDOStub(() => Response.json({
-      id: 12,
-      github_id: 42,
-      username: 'alice',
-      avatar_url: '',
-    }));
-    const makeSessionRequest = () => makeRequest('/api/auth/me', {
-      cookies: { session: '42:existing-session' },
-    });
+    const userDbStub = makeDOStub(() =>
+      Response.json({
+        id: 12,
+        github_id: 42,
+        username: 'alice',
+        avatar_url: '',
+      })
+    );
+    const makeSessionRequest = () =>
+      makeRequest('/api/auth/me', {
+        cookies: { session: '42:existing-session' },
+      });
 
-    const allowed = await worker.fetch(makeSessionRequest(), makeEnv({
-      GITHUB_ALLOWED_USER_IDS: '42',
-      userDbStub,
-    }));
+    const allowed = await worker.fetch(
+      makeSessionRequest(),
+      makeEnv({
+        GITHUB_ALLOWED_USER_IDS: '42',
+        userDbStub,
+      })
+    );
     expect(allowed.status).toBe(200);
 
-    const denied = await worker.fetch(makeSessionRequest(), makeEnv({
-      GITHUB_ALLOWED_USER_IDS: '7',
-      userDbStub,
-    }));
+    const denied = await worker.fetch(
+      makeSessionRequest(),
+      makeEnv({
+        GITHUB_ALLOWED_USER_IDS: '7',
+        userDbStub,
+      })
+    );
     expect(denied.status).toBe(401);
   });
 });
@@ -255,9 +284,12 @@ describe('安全 — 强制 GitHub 登录模式', () => {
     ['ture', true],
   ])('REQUIRE_GITHUB_AUTH=%s 时 /api/config 返回 %s', async (value, expected) => {
     const worker = await loadWorker();
-    const res = await worker.fetch(makeRequest('/api/config'), makeEnv({
-      REQUIRE_GITHUB_AUTH: value,
-    }));
+    const res = await worker.fetch(
+      makeRequest('/api/config'),
+      makeEnv({
+        REQUIRE_GITHUB_AUTH: value,
+      })
+    );
     expect((await res.json()).githubAuthRequired).toBe(expected);
   });
 
@@ -277,12 +309,14 @@ describe('安全 — 强制 GitHub 登录模式', () => {
 
   it('强制登录时允许白名单内的有效 session 建立 SSH WebSocket', async () => {
     const worker = await loadWorker();
-    const userDbStub = makeDOStub(() => Response.json({
-      id: 12,
-      github_id: 42,
-      username: 'alice',
-      avatar_url: '',
-    }));
+    const userDbStub = makeDOStub(() =>
+      Response.json({
+        id: 12,
+        github_id: 42,
+        username: 'alice',
+        avatar_url: '',
+      })
+    );
     const sshSessionStub = makeDOStub(() => new Response('forwarded'));
     const env = makeEnv({
       REQUIRE_GITHUB_AUTH: 'true',
@@ -328,9 +362,12 @@ describe('安全 — 越权防护（IDOR）', () => {
     const env = makeEnv({
       userDbStub: makeDOStub(async (req) => {
         if (req.url.includes('/internal/session/verify')) {
-          return new Response(JSON.stringify({ id: 1, github_id: 1, username: 'alice', avatar_url: '' }), {
-            headers: { 'Content-Type': 'application/json' },
-          });
+          return new Response(
+            JSON.stringify({ id: 1, github_id: 1, username: 'alice', avatar_url: '' }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
         }
         if (req.url.endsWith('/internal/servers') && req.method === 'POST') {
           capturedBody = await req.json();
@@ -362,15 +399,20 @@ describe('安全 — 越权防护（IDOR）', () => {
     const env = makeEnv({
       userDbStub: makeDOStub(async (req) => {
         if (req.url.includes('/internal/session/verify')) {
-          return new Response(JSON.stringify({ id: 1, github_id: 1, username: 'alice', avatar_url: '' }), {
-            headers: { 'Content-Type': 'application/json' },
-          });
+          return new Response(
+            JSON.stringify({ id: 1, github_id: 1, username: 'alice', avatar_url: '' }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
         }
         // DO 收到 PUT /internal/servers/:id，检查 belong，属于他人 → 403
         if (req.url.match(/\/internal\/servers\/\d+$/) && req.method === 'PUT') {
           const body = await req.json();
           // 模拟：服务器 record.user_id=2 !== body.user_id=1
-          return new Response(JSON.stringify({ error: 'Server does not belong to user' }), { status: 403 });
+          return new Response(JSON.stringify({ error: 'Server does not belong to user' }), {
+            status: 403,
+          });
         }
         return new Response('{}', { status: 500 });
       }),
@@ -391,7 +433,8 @@ describe('安全 — 越权防护（IDOR）', () => {
 
 describe('安全 — 自定义主题接口边界', () => {
   function makeAuthenticatedThemeEnv(
-    onThemeRequest: (request: Request) => Response | Promise<Response> = () => Response.json({ success: true }),
+    onThemeRequest: (request: Request) => Response | Promise<Response> = () =>
+      Response.json({ success: true })
   ): Env {
     return makeEnv({
       userDbStub: makeDOStub((request) => {
@@ -418,9 +461,12 @@ describe('安全 — 自定义主题接口边界', () => {
       forwardedUrl = request.url;
       return Response.json({ theme: null });
     });
-    const res = await worker.fetch(makeRequest('/api/user/theme', {
-      cookies: { session: '987:legit_session' },
-    }), env);
+    const res = await worker.fetch(
+      makeRequest('/api/user/theme', {
+        cookies: { session: '987:legit_session' },
+      }),
+      env
+    );
 
     expect(res.status).toBe(200);
     expect(forwardedUrl).toContain('/internal/theme?user_id=12');
@@ -429,11 +475,14 @@ describe('安全 — 自定义主题接口边界', () => {
   it('不受支持的方法 → 405', async () => {
     const worker = await loadWorker();
     const env = makeAuthenticatedThemeEnv();
-    const res = await worker.fetch(makeRequest('/api/user/theme', {
-      method: 'POST',
-      cookies: { session: '987:legit_session' },
-      body: {},
-    }), env);
+    const res = await worker.fetch(
+      makeRequest('/api/user/theme', {
+        method: 'POST',
+        cookies: { session: '987:legit_session' },
+        body: {},
+      }),
+      env
+    );
 
     expect(res.status).toBe(405);
   });
@@ -442,11 +491,14 @@ describe('安全 — 自定义主题接口边界', () => {
     const worker = await loadWorker();
     const onThemeRequest = vi.fn(() => Response.json({ success: true }));
     const env = makeAuthenticatedThemeEnv(onThemeRequest);
-    const res = await worker.fetch(makeRequest('/api/user/theme', {
-      method: 'PUT',
-      cookies: { session: '987:legit_session' },
-      body: '{"theme_data":',
-    }), env);
+    const res = await worker.fetch(
+      makeRequest('/api/user/theme', {
+        method: 'PUT',
+        cookies: { session: '987:legit_session' },
+        body: '{"theme_data":',
+      }),
+      env
+    );
 
     expect(res.status).toBe(400);
     expect(onThemeRequest).not.toHaveBeenCalled();
@@ -456,18 +508,21 @@ describe('安全 — 自定义主题接口边界', () => {
     const worker = await loadWorker();
     const onThemeRequest = vi.fn(() => Response.json({ success: true }));
     const env = makeAuthenticatedThemeEnv(onThemeRequest);
-    const res = await worker.fetch(makeRequest('/api/user/theme', {
-      method: 'PUT',
-      cookies: { session: '987:legit_session' },
-      body: {
-        theme_data: {
-          ui: {
-            '--unknown': '#ffffff',
-            '--bg': 'url(https://example.com/tracker.png)',
+    const res = await worker.fetch(
+      makeRequest('/api/user/theme', {
+        method: 'PUT',
+        cookies: { session: '987:legit_session' },
+        body: {
+          theme_data: {
+            ui: {
+              '--unknown': '#ffffff',
+              '--bg': 'url(https://example.com/tracker.png)',
+            },
           },
         },
-      },
-    }), env);
+      }),
+      env
+    );
 
     expect(res.status).toBe(400);
     expect(onThemeRequest).not.toHaveBeenCalled();
@@ -477,16 +532,19 @@ describe('安全 — 自定义主题接口边界', () => {
     const worker = await loadWorker();
     const onThemeRequest = vi.fn(() => Response.json({ success: true }));
     const env = makeAuthenticatedThemeEnv(onThemeRequest);
-    const res = await worker.fetch(makeRequest('/api/user/theme', {
-      method: 'PUT',
-      cookies: { session: '987:legit_session' },
-      body: {
-        theme_data: {
-          name: 'x'.repeat(70 * 1024),
-          ui: { '--accent': '#abcdef' },
+    const res = await worker.fetch(
+      makeRequest('/api/user/theme', {
+        method: 'PUT',
+        cookies: { session: '987:legit_session' },
+        body: {
+          theme_data: {
+            name: 'x'.repeat(70 * 1024),
+            ui: { '--accent': '#abcdef' },
+          },
         },
-      },
-    }), env);
+      }),
+      env
+    );
 
     expect(res.status).toBe(413);
     expect(onThemeRequest).not.toHaveBeenCalled();
@@ -499,25 +557,28 @@ describe('安全 — 自定义主题接口边界', () => {
       forwardedBody = await request.json();
       return Response.json({ success: true });
     });
-    const res = await worker.fetch(makeRequest('/api/user/theme', {
-      method: 'PUT',
-      cookies: { session: '987:legit_session' },
-      body: {
-        theme_data: {
-          schemaVersion: 999,
-          name: '  Shared Theme  ',
-          user_id: 999,
-          ui: {
-            '--accent': '#abcdef',
-            '--unknown': '#ffffff',
-          },
-          appearance: {
-            style: 'soft',
-            motion: 'invalid',
+    const res = await worker.fetch(
+      makeRequest('/api/user/theme', {
+        method: 'PUT',
+        cookies: { session: '987:legit_session' },
+        body: {
+          theme_data: {
+            schemaVersion: 999,
+            name: '  Shared Theme  ',
+            user_id: 999,
+            ui: {
+              '--accent': '#abcdef',
+              '--unknown': '#ffffff',
+            },
+            appearance: {
+              style: 'soft',
+              motion: 'invalid',
+            },
           },
         },
-      },
-    }), env);
+      }),
+      env
+    );
 
     expect(res.status).toBe(200);
     expect(forwardedBody?.user_id).toBe(12);
@@ -541,9 +602,12 @@ describe('安全 — SSRF 接缝（AI base_url）', () => {
     const env = makeEnv({
       userDbStub: makeDOStub(async (req) => {
         if (req.url.includes('/internal/session/verify')) {
-          return new Response(JSON.stringify({ id: 1, github_id: 1, username: 'alice', avatar_url: '' }), {
-            headers: { 'Content-Type': 'application/json' },
-          });
+          return new Response(
+            JSON.stringify({ id: 1, github_id: 1, username: 'alice', avatar_url: '' }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
         }
         return new Response('{}', { status: 500 });
       }),
@@ -571,9 +635,12 @@ describe('安全 — SSRF 接缝（AI base_url）', () => {
     const env = makeEnv({
       userDbStub: makeDOStub((req) => {
         if (req.url.includes('/internal/session/verify')) {
-          return new Response(JSON.stringify({ id: 1, github_id: 42, username: 'alice', avatar_url: '' }), {
-            headers: { 'Content-Type': 'application/json' },
-          });
+          return new Response(
+            JSON.stringify({ id: 1, github_id: 42, username: 'alice', avatar_url: '' }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
         }
         return new Response('{}', { status: 500 });
       }),
@@ -590,10 +657,12 @@ describe('安全 — SSRF 接缝（AI base_url）', () => {
       })
     );
     // Models endpoint returns redirect (should be blocked by redirect: 'manual')
-    fetchMock.mockResolvedValueOnce(new Response(null, {
-      status: 302,
-      headers: { Location: 'http://127.0.0.1/models' },
-    }));
+    fetchMock.mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { Location: 'http://127.0.0.1/models' },
+      })
+    );
 
     const req = makeRequest('/api/ai/models', {
       method: 'POST',
@@ -605,7 +674,7 @@ describe('安全 — SSRF 接缝（AI base_url）', () => {
     expect(res.status).toBe(403);
     expect(fetchMock).toHaveBeenCalledWith(
       'https://api.example.com/v1/models',
-      expect.objectContaining({ redirect: 'manual' }),
+      expect.objectContaining({ redirect: 'manual' })
     );
   });
 });
@@ -633,7 +702,9 @@ describe('安全 — cf_verified 签名伪造', () => {
 
     // Turnstile siteverify 失败
     fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ success: false }), { headers: { 'Content-Type': 'application/json' } })
+      new Response(JSON.stringify({ success: false }), {
+        headers: { 'Content-Type': 'application/json' },
+      })
     );
 
     const res = await worker.fetch(req, env);
@@ -650,11 +721,16 @@ describe('安全 — cf_verified 签名伪造', () => {
     const secret = 'supersecret';
     const expires = String(Date.now() + 3600000); // 1h valid
     const key = await crypto.subtle.importKey(
-      'raw', new TextEncoder().encode(secret),
-      { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+      'raw',
+      new TextEncoder().encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
     );
     const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(expires));
-    const sigHex = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+    const sigHex = Array.from(new Uint8Array(sig))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
     // 根据原字符选择必然不同的十六进制字符，确保每次都真正破坏签名。
     const tamperedSig = (sigHex[0] === '0' ? '1' : '0') + sigHex.slice(1);
     expect(tamperedSig).not.toBe(sigHex);
@@ -667,7 +743,9 @@ describe('安全 — cf_verified 签名伪造', () => {
       cookies: { cf_verified: tamperedToken },
     });
     fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ success: false }), { headers: { 'Content-Type': 'application/json' } })
+      new Response(JSON.stringify({ success: false }), {
+        headers: { 'Content-Type': 'application/json' },
+      })
     );
     const res = await worker.fetch(req, env);
 
@@ -675,8 +753,14 @@ describe('安全 — cf_verified 签名伪造', () => {
   });
 
   it.each([
-    ['签名长度错误', (expires: string, signature: string) => `${expires}:${signature.slice(0, -2)}`],
-    ['签名包含非十六进制字符', (expires: string, signature: string) => `${expires}:z${signature.slice(1)}`],
+    [
+      '签名长度错误',
+      (expires: string, signature: string) => `${expires}:${signature.slice(0, -2)}`,
+    ],
+    [
+      '签名包含非十六进制字符',
+      (expires: string, signature: string) => `${expires}:z${signature.slice(1)}`,
+    ],
     ['缺少分隔符', (expires: string, signature: string) => `${expires}${signature}`],
   ])('%s → 安全降级到 Turnstile 验证并返回 403', async (_name, makeToken) => {
     const worker = await loadWorker();
@@ -690,7 +774,9 @@ describe('安全 — cf_verified 签名伪造', () => {
       cookies: { cf_verified: malformedToken },
     });
     fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ success: false }), { headers: { 'Content-Type': 'application/json' } })
+      new Response(JSON.stringify({ success: false }), {
+        headers: { 'Content-Type': 'application/json' },
+      })
     );
 
     const res = await worker.fetch(req, env);
@@ -747,14 +833,16 @@ describe('安全 — 一次性 token 与接缝鉴权', () => {
   it('connect token 使用 githubId 前缀定位 UserDBDO 分片', async () => {
     const worker = await loadWorker();
     const idFromName = vi.fn(() => 'do-userdb');
-    const userDbStub = makeDOStub(() => Response.json({
-      host: 'ssh.example.com',
-      port: 22,
-      username: 'alice',
-      password: 'secret',
-      userId: '12',
-      githubId: '987',
-    }));
+    const userDbStub = makeDOStub(() =>
+      Response.json({
+        host: 'ssh.example.com',
+        port: 22,
+        username: 'alice',
+        password: 'secret',
+        userId: '12',
+        githubId: '987',
+      })
+    );
     let forwardedConfig: any;
     const sshSessionStub = makeDOStub((req) => {
       const header = req.headers.get('x-ssh-config');
@@ -775,22 +863,26 @@ describe('安全 — 一次性 token 与接缝鉴权', () => {
 
     expect(res.status).toBe(200);
     expect(idFromName).toHaveBeenCalledWith('987');
-    expect(forwardedConfig).toEqual(expect.objectContaining({
-      userId: '12',
-      githubId: '987',
-    }));
+    expect(forwardedConfig).toEqual(
+      expect.objectContaining({
+        userId: '12',
+        githubId: '987',
+      })
+    );
   });
 
   it('白名单变更后拒绝尚未消费的一次性连接 token', async () => {
     const worker = await loadWorker();
-    const userDbStub = makeDOStub(() => Response.json({
-      host: 'ssh.example.com',
-      port: 22,
-      username: 'alice',
-      password: 'secret',
-      userId: '12',
-      githubId: '987',
-    }));
+    const userDbStub = makeDOStub(() =>
+      Response.json({
+        host: 'ssh.example.com',
+        port: 22,
+        username: 'alice',
+        password: 'secret',
+        userId: '12',
+        githubId: '987',
+      })
+    );
     const sshSessionStub = makeDOStub(() => new Response('forwarded'));
     const env = makeEnv({
       GITHUB_ALLOWED_USER_IDS: '42',
@@ -809,7 +901,9 @@ describe('安全 — 一次性 token 与接缝鉴权', () => {
 
   it('强制登录时一次性连接 token 仍要求有效 session', async () => {
     const worker = await loadWorker();
-    const userDbStub = makeDOStub(() => Response.json({ error: 'not authenticated' }, { status: 401 }));
+    const userDbStub = makeDOStub(() =>
+      Response.json({ error: 'not authenticated' }, { status: 401 })
+    );
     const env = makeEnv({ REQUIRE_GITHUB_AUTH: 'true', userDbStub });
     const req = makeRequest('/api/ssh?token=987:one-time-token', {
       headers: { Upgrade: 'websocket', Origin: 'https://cloudssh.test' },
@@ -908,7 +1002,7 @@ describe('安全 — 一次性 SSH 分享边界', () => {
 
     const enabled = await worker.fetch(
       makeRequest('/api/config'),
-      makeEnv({ ENABLE_SSH_SHARING: 'true' }),
+      makeEnv({ ENABLE_SSH_SHARING: 'true' })
     );
     expect((await enabled.json()).sshSharingEnabled).toBe(true);
   });
@@ -916,14 +1010,20 @@ describe('安全 — 一次性 SSH 分享边界', () => {
   it('公开领取接口对非法 JSON 和非 URL-safe 凭证返回 400', async () => {
     const worker = await loadWorker();
     const env = makeEnv({ ENABLE_SSH_SHARING: 'true' });
-    const malformed = await worker.fetch(makeRequest('/api/share/claim', {
-      method: 'POST',
-      body: '{',
-    }), env);
-    const invalidToken = await worker.fetch(makeRequest('/api/share/claim', {
-      method: 'POST',
-      body: { token: '非'.repeat(40) },
-    }), env);
+    const malformed = await worker.fetch(
+      makeRequest('/api/share/claim', {
+        method: 'POST',
+        body: '{',
+      }),
+      env
+    );
+    const invalidToken = await worker.fetch(
+      makeRequest('/api/share/claim', {
+        method: 'POST',
+        body: { token: '非'.repeat(40) },
+      }),
+      env
+    );
 
     expect(malformed.status).toBe(400);
     expect(invalidToken.status).toBe(400);
@@ -944,11 +1044,14 @@ describe('安全 — 一次性 SSH 分享边界', () => {
     const env = makeEnv({ ENABLE_SSH_SHARING: 'true', sshShareStub: shareStub });
     env.SSH_SHARE = { idFromName, get: () => shareStub } as any;
 
-    const response = await worker.fetch(makeRequest('/api/share/claim', {
-      method: 'POST',
-      body: { token },
-    }), env);
-    const payload = await response.json() as { wsUrl: string };
+    const response = await worker.fetch(
+      makeRequest('/api/share/claim', {
+        method: 'POST',
+        body: { token },
+      }),
+      env
+    );
+    const payload = (await response.json()) as { wsUrl: string };
 
     expect(response.status).toBe(200);
     expect(payload.wsUrl).toContain('share_ticket=');
@@ -967,11 +1070,14 @@ describe('安全 — 一次性 SSH 分享边界', () => {
       }
       if (request.url.includes('/internal/servers/7/shares') && request.method === 'POST') {
         metadataBody = await request.json<Record<string, unknown>>();
-        return Response.json({
-          serverName: 'production',
-          expiresAt: metadataBody.expires_at,
-          maxSessionSeconds: metadataBody.max_session_seconds,
-        }, { status: 201 });
+        return Response.json(
+          {
+            serverName: 'production',
+            expiresAt: metadataBody.expires_at,
+            maxSessionSeconds: metadataBody.max_session_seconds,
+          },
+          { status: 201 }
+        );
       }
       return Response.json({ error: 'not mocked' }, { status: 500 });
     });
@@ -981,29 +1087,36 @@ describe('安全 — 一次性 SSH 分享边界', () => {
     });
     const env = makeEnv({ ENABLE_SSH_SHARING: 'true', userDbStub, sshShareStub: shareStub });
 
-    const response = await worker.fetch(makeRequest('/api/servers/7/shares', {
-      method: 'POST',
-      cookies: { session: '987:legit-session' },
-      body: { expiresInMinutes: 15, maxSessionMinutes: 60 },
-    }), env);
-    const payload = await response.json() as { url: string; id: string };
+    const response = await worker.fetch(
+      makeRequest('/api/servers/7/shares', {
+        method: 'POST',
+        cookies: { session: '987:legit-session' },
+        body: { expiresInMinutes: 15, maxSessionMinutes: 60 },
+      }),
+      env
+    );
+    const payload = (await response.json()) as { url: string; id: string };
     const token = payload.url.split('/#/share/')[1];
 
     expect(response.status).toBe(201);
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(metadataBody).toEqual(expect.objectContaining({
-      user_id: 12,
-      share_id: payload.id,
-      max_session_seconds: 3600,
-    }));
-    expect(initBody).toEqual(expect.objectContaining({
-      shareId: payload.id,
-      ownerUserId: 12,
-      ownerGithubId: '987',
-      serverId: 7,
-      serverName: 'production',
-      maxSessionSeconds: 3600,
-    }));
+    expect(metadataBody).toEqual(
+      expect.objectContaining({
+        user_id: 12,
+        share_id: payload.id,
+        max_session_seconds: 3600,
+      })
+    );
+    expect(initBody).toEqual(
+      expect.objectContaining({
+        shareId: payload.id,
+        ownerUserId: 12,
+        ownerGithubId: '987',
+        serverId: 7,
+        serverName: 'production',
+        maxSessionSeconds: 3600,
+      })
+    );
     expect(initBody?.tokenHash).toBe(metadataBody?.share_ref);
     expect(initBody?.tokenHash).not.toBe(token);
     expect(JSON.stringify(initBody)).not.toContain('password');
@@ -1015,28 +1128,30 @@ describe('安全 — 一次性 SSH 分享边界', () => {
     const worker = await loadWorker();
     const shareRef = 'r'.repeat(43);
     const ticket = 't'.repeat(43);
-    const shareStub = makeDOStub(() => Response.json({
-      serverName: 'production',
-      config: {
-        host: 'ssh.example.com',
-        port: 22,
-        username: 'alice',
-        password: 'secret',
-        githubId: '987',
-        expectedFingerprint: 'SHA256:known',
-        sessionPolicy: {
-          source: 'share',
-          shareId: 'share-1',
-          shareRef,
-          allowAgent: false,
-          allowSftp: true,
-          allowMetadataMutation: false,
-          allowHostKeyMutation: false,
-          allowReconnect: false,
-          sessionExpiresAt: Date.now() + 60_000,
+    const shareStub = makeDOStub(() =>
+      Response.json({
+        serverName: 'production',
+        config: {
+          host: 'ssh.example.com',
+          port: 22,
+          username: 'alice',
+          password: 'secret',
+          githubId: '987',
+          expectedFingerprint: 'SHA256:known',
+          sessionPolicy: {
+            source: 'share',
+            shareId: 'share-1',
+            shareRef,
+            allowAgent: false,
+            allowSftp: true,
+            allowMetadataMutation: false,
+            allowHostKeyMutation: false,
+            allowReconnect: false,
+            sessionExpiresAt: Date.now() + 60_000,
+          },
         },
-      },
-    }));
+      })
+    );
     let forwardedConfig: any;
     const sessionStub = makeDOStub((request) => {
       forwardedConfig = JSON.parse(decodeURIComponent(request.headers.get('x-ssh-config')!));
@@ -1049,36 +1164,47 @@ describe('安全 — 一次性 SSH 分享边界', () => {
       sshSessionStub: sessionStub,
     });
 
-    const missingOrigin = await worker.fetch(makeRequest(
-      `/api/ssh?share_ref=${shareRef}&share_ticket=${ticket}`,
-      { headers: { Upgrade: 'websocket' } },
-    ), env);
+    const missingOrigin = await worker.fetch(
+      makeRequest(`/api/ssh?share_ref=${shareRef}&share_ticket=${ticket}`, {
+        headers: { Upgrade: 'websocket' },
+      }),
+      env
+    );
     expect(missingOrigin.status).toBe(403);
 
-    const accepted = await worker.fetch(makeRequest(
-      `/api/ssh?share_ref=${shareRef}&share_ticket=${ticket}`,
-      { headers: { Upgrade: 'websocket', Origin: 'https://cloudssh.test' } },
-    ), env);
+    const accepted = await worker.fetch(
+      makeRequest(`/api/ssh?share_ref=${shareRef}&share_ticket=${ticket}`, {
+        headers: { Upgrade: 'websocket', Origin: 'https://cloudssh.test' },
+      }),
+      env
+    );
     expect(accepted.status).toBe(200);
-    expect(forwardedConfig.sessionPolicy).toEqual(expect.objectContaining({
-      source: 'share',
-      allowAgent: false,
-      allowSftp: true,
-    }));
+    expect(forwardedConfig.sessionPolicy).toEqual(
+      expect.objectContaining({
+        source: 'share',
+        allowAgent: false,
+        allowSftp: true,
+      })
+    );
   });
 
   it('分享功能关闭时拒绝领取和分享 WebSocket', async () => {
     const worker = await loadWorker();
-    const claim = await worker.fetch(makeRequest('/api/share/claim', {
-      method: 'POST',
-      body: { token: 'a'.repeat(43) },
-    }), makeEnv());
+    const claim = await worker.fetch(
+      makeRequest('/api/share/claim', {
+        method: 'POST',
+        body: { token: 'a'.repeat(43) },
+      }),
+      makeEnv()
+    );
     expect(claim.status).toBe(404);
 
-    const socket = await worker.fetch(makeRequest(
-      `/api/ssh?share_ref=${'r'.repeat(43)}&share_ticket=${'t'.repeat(43)}`,
-      { headers: { Upgrade: 'websocket', Origin: 'https://cloudssh.test' } },
-    ), makeEnv());
+    const socket = await worker.fetch(
+      makeRequest(`/api/ssh?share_ref=${'r'.repeat(43)}&share_ticket=${'t'.repeat(43)}`, {
+        headers: { Upgrade: 'websocket', Origin: 'https://cloudssh.test' },
+      }),
+      makeEnv()
+    );
     expect(socket.status).toBe(404);
   });
 });
@@ -1109,13 +1235,14 @@ describe('安全 — 速率限制', () => {
   it('不同 IP 使用独立计数桶', async () => {
     const worker = await loadWorker();
     const env = makeEnv();
-    const requestFor = (ip: string) => makeRequest('/api/ssh', {
-      headers: {
-        'CF-Connecting-IP': ip,
-        Upgrade: 'websocket',
-        Origin: 'https://evil.attacker.com',
-      },
-    });
+    const requestFor = (ip: string) =>
+      makeRequest('/api/ssh', {
+        headers: {
+          'CF-Connecting-IP': ip,
+          Upgrade: 'websocket',
+          Origin: 'https://evil.attacker.com',
+        },
+      });
 
     for (let i = 0; i < 10; i++) {
       await worker.fetch(requestFor('203.0.113.30'), env);
@@ -1154,9 +1281,12 @@ describe('安全 — 速率限制', () => {
     const env = makeEnv();
 
     for (let i = 0; i < 11; i++) {
-      const res = await worker.fetch(makeRequest('/api/ssh', {
-        headers: { Upgrade: 'websocket', Origin: 'https://evil.attacker.com' },
-      }), env);
+      const res = await worker.fetch(
+        makeRequest('/api/ssh', {
+          headers: { Upgrade: 'websocket', Origin: 'https://evil.attacker.com' },
+        }),
+        env
+      );
       expect(res.status).toBe(403);
     }
   });
@@ -1186,7 +1316,7 @@ describe('安全 — SSH 身份字段信任边界', () => {
       undefined,
       env,
       '12',
-      '987',
+      '987'
     );
 
     const config = await (session as any).fetchAgentAIConfig('12', '987');

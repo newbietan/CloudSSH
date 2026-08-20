@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  DETECT_OS_COMMAND,
-  isDetectedOS,
-  parseDetectedOS,
-} from '../../src/worker/os-detect';
+import { DETECT_OS_COMMAND, isDetectedOS, parseDetectedOS } from '../../src/worker/os-detect';
 
 describe('parseDetectedOS', () => {
   it('解析 Ubuntu 的 /etc/os-release', () => {

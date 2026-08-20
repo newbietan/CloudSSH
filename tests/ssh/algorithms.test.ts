@@ -1,14 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
+  getCipherSpec,
+  getMacAlgorithmsForCipher,
+  getMacSpec,
+  isCurve25519KEXAlgorithm,
   KEX_ALGORITHM_CURVE25519_SHA256,
   KEX_ALGORITHM_ECDH_NISTP256,
-  SUPPORTED_KEX_ALGORITHMS,
   SUPPORTED_ENCRYPTION_ALGORITHMS,
+  SUPPORTED_KEX_ALGORITHMS,
   SUPPORTED_MAC_ALGORITHMS,
-  isCurve25519KEXAlgorithm,
-  getCipherSpec,
-  getMacSpec,
-  getMacAlgorithmsForCipher,
 } from '../../src/ssh/algorithms';
 
 // =====================================================================

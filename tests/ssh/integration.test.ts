@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 describe('SSH Key Integration', () => {
   describe('Key format validation', () => {
@@ -64,22 +64,17 @@ describe('SSH Key Integration', () => {
         'ecdsa-sha2-nistp521',
       ];
 
-      const unsupportedTypes = [
-        'ssh-dsa',
-        'ssh-unknown',
-      ];
+      const unsupportedTypes = ['ssh-dsa', 'ssh-unknown'];
 
       for (const type of supportedTypes) {
-        const isSupported = type === 'ssh-ed25519' ||
-                           type === 'ssh-rsa' ||
-                           type.startsWith('ecdsa-sha2-nistp');
+        const isSupported =
+          type === 'ssh-ed25519' || type === 'ssh-rsa' || type.startsWith('ecdsa-sha2-nistp');
         expect(isSupported).toBe(true);
       }
 
       for (const type of unsupportedTypes) {
-        const isSupported = type === 'ssh-ed25519' ||
-                           type === 'ssh-rsa' ||
-                           type.startsWith('ecdsa-sha2-nistp');
+        const isSupported =
+          type === 'ssh-ed25519' || type === 'ssh-rsa' || type.startsWith('ecdsa-sha2-nistp');
         expect(isSupported).toBe(false);
       }
     });

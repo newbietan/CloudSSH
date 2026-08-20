@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { SSHAuth } from '../../src/ssh/auth';
-import { encodeString, concat, readUint32 } from '../../src/ssh/utils';
+import { concat, encodeString, readUint32 } from '../../src/ssh/utils';
 
 describe('SSHAuth', () => {
   describe('buildPasswordAuthRequest', () => {
@@ -16,25 +16,19 @@ describe('SSHAuth', () => {
 
       const usernameLen = readUint32(request, offset);
       offset += 4;
-      const decodedUsername = new TextDecoder().decode(
-        request.slice(offset, offset + usernameLen)
-      );
+      const decodedUsername = new TextDecoder().decode(request.slice(offset, offset + usernameLen));
       offset += usernameLen;
       expect(decodedUsername).toBe(username);
 
       const serviceLen = readUint32(request, offset);
       offset += 4;
-      const service = new TextDecoder().decode(
-        request.slice(offset, offset + serviceLen)
-      );
+      const service = new TextDecoder().decode(request.slice(offset, offset + serviceLen));
       offset += serviceLen;
       expect(service).toBe('ssh-connection');
 
       const methodLen = readUint32(request, offset);
       offset += 4;
-      const method = new TextDecoder().decode(
-        request.slice(offset, offset + methodLen)
-      );
+      const method = new TextDecoder().decode(request.slice(offset, offset + methodLen));
       offset += methodLen;
       expect(method).toBe('password');
 
@@ -43,9 +37,7 @@ describe('SSHAuth', () => {
 
       const passwordLen = readUint32(request, offset);
       offset += 4;
-      const decodedPassword = new TextDecoder().decode(
-        request.slice(offset, offset + passwordLen)
-      );
+      const decodedPassword = new TextDecoder().decode(request.slice(offset, offset + passwordLen));
       expect(decodedPassword).toBe(password);
     });
 
@@ -72,9 +64,7 @@ describe('SSHAuth', () => {
       let offset = 1;
       const usernameLen = readUint32(request, offset);
       offset += 4;
-      const decodedUsername = new TextDecoder().decode(
-        request.slice(offset, offset + usernameLen)
-      );
+      const decodedUsername = new TextDecoder().decode(request.slice(offset, offset + usernameLen));
       expect(decodedUsername).toBe(username);
     });
   });
@@ -107,9 +97,7 @@ describe('SSHAuth', () => {
     it('should throw on unexpected message type', () => {
       const payload = new Uint8Array([99]);
 
-      expect(() => SSHAuth.handleResponse(payload)).toThrow(
-        'Unexpected auth message type: 99'
-      );
+      expect(() => SSHAuth.handleResponse(payload)).toThrow('Unexpected auth message type: 99');
     });
   });
 });

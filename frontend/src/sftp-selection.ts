@@ -13,7 +13,7 @@ export function updateSelection(
   clickedIndex: number,
   anchorIndex: number | null,
   itemCount: number,
-  options: SelectionOptions,
+  options: SelectionOptions
 ): SelectionResult {
   const clicked = Math.min(Math.max(0, clickedIndex), Math.max(0, itemCount - 1));
   const selected = options.additive ? new Set(current) : new Set<number>();

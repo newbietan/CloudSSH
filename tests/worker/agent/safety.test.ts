@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { isBlockedCommand, needsConfirmation } from '../../../src/worker/agent/safety';
 
 describe('safety — isBlockedCommand (黑名单极度危险操作)', () => {
@@ -58,7 +58,7 @@ describe('safety — needsConfirmation (高风险操作需要确认)', () => {
       'dd if=a of=b',
       'iptables -F',
       'ufw disable',
-      'sudo rm file'
+      'sudo rm file',
     ];
     for (const cmd of dangerousCommands) {
       const r = needsConfirmation(cmd);
@@ -99,7 +99,7 @@ describe('safety — needsConfirmation (高风险操作需要确认)', () => {
       'curl http://example.com',
       'echo "hello" > test.txt',
       'docker run nginx',
-      'sudo tail -f /var/log/syslog'
+      'sudo tail -f /var/log/syslog',
     ];
     for (const cmd of safeCommands) {
       const r = needsConfirmation(cmd);

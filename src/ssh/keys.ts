@@ -1,4 +1,4 @@
-import { SessionKeys } from '../types';
+import type { SessionKeys } from '../types';
 import { concat, encodeString } from './utils';
 
 export class KeyDerivation {
@@ -11,12 +11,36 @@ export class KeyDerivation {
     integrityKeyLengthC2S: number = 32,
     integrityKeyLengthS2C: number = 32
   ): Promise<SessionKeys> {
-    const ivC2S    = await this.expandKey(sharedSecret, exchangeHash, 'A', sessionID, ivLengthC2S);
-    const ivS2C    = await this.expandKey(sharedSecret, exchangeHash, 'B', sessionID, ivLengthS2C);
-    const keyC2S   = await this.expandKey(sharedSecret, exchangeHash, 'C', sessionID, 32);
-    const keyS2C   = await this.expandKey(sharedSecret, exchangeHash, 'D', sessionID, 32);
-    const intKeyC2S = await this.expandKey(sharedSecret, exchangeHash, 'E', sessionID, integrityKeyLengthC2S);
-    const intKeyS2C = await this.expandKey(sharedSecret, exchangeHash, 'F', sessionID, integrityKeyLengthS2C);
+    const ivC2S = await KeyDerivation.expandKey(
+      sharedSecret,
+      exchangeHash,
+      'A',
+      sessionID,
+      ivLengthC2S
+    );
+    const ivS2C = await KeyDerivation.expandKey(
+      sharedSecret,
+      exchangeHash,
+      'B',
+      sessionID,
+      ivLengthS2C
+    );
+    const keyC2S = await KeyDerivation.expandKey(sharedSecret, exchangeHash, 'C', sessionID, 32);
+    const keyS2C = await KeyDerivation.expandKey(sharedSecret, exchangeHash, 'D', sessionID, 32);
+    const intKeyC2S = await KeyDerivation.expandKey(
+      sharedSecret,
+      exchangeHash,
+      'E',
+      sessionID,
+      integrityKeyLengthC2S
+    );
+    const intKeyS2C = await KeyDerivation.expandKey(
+      sharedSecret,
+      exchangeHash,
+      'F',
+      sessionID,
+      integrityKeyLengthS2C
+    );
 
     return {
       ivClientToServer: ivC2S,
@@ -45,9 +69,7 @@ export class KeyDerivation {
 
     // K1 = HASH(K || H || X || sessionId)
     let currentHash = new Uint8Array(
-      await crypto.subtle.digest('SHA-256',
-        concat(K, H, XBytes, sessionId)
-      )
+      await crypto.subtle.digest('SHA-256', concat(K, H, XBytes, sessionId))
     );
     result.set(currentHash.slice(0, Math.min(hashLen, needed)), 0);
     offset += hashLen;
@@ -55,11 +77,7 @@ export class KeyDerivation {
     // For Kn (n > 1): Kn = HASH(K || H || K1 || ... || Kn-1)
     for (let i = 1; i < rounds; i++) {
       const prevKeys = result.slice(0, offset);
-      currentHash = new Uint8Array(
-        await crypto.subtle.digest('SHA-256',
-          concat(K, H, prevKeys)
-        )
-      );
+      currentHash = new Uint8Array(await crypto.subtle.digest('SHA-256', concat(K, H, prevKeys)));
       const remaining = needed - offset;
       result.set(currentHash.slice(0, Math.min(hashLen, remaining)), offset);
       offset += hashLen;

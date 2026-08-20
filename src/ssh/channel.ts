@@ -1,10 +1,10 @@
 import {
-  SSH_MSG_CHANNEL_OPEN,
-  SSH_MSG_CHANNEL_WINDOW_ADJUST,
-  SSH_MSG_CHANNEL_DATA,
-  SSH_MSG_CHANNEL_REQUEST,
-  SSH_MSG_CHANNEL_EOF,
   SSH_MSG_CHANNEL_CLOSE,
+  SSH_MSG_CHANNEL_DATA,
+  SSH_MSG_CHANNEL_EOF,
+  SSH_MSG_CHANNEL_OPEN,
+  SSH_MSG_CHANNEL_REQUEST,
+  SSH_MSG_CHANNEL_WINDOW_ADJUST,
 } from '../types';
 import { encodeString, readUint32, writeUint32 } from './utils';
 
@@ -74,13 +74,13 @@ export class SSHChannel {
     host: string,
     port: number,
     originHost: string = '127.0.0.1',
-    originPort: number = 0,
+    originPort: number = 0
   ): Uint8Array {
     this.localChannelID = channelID;
     const hostField = encodeString(host);
     const originHostField = encodeString(originHost);
     const payload = new Uint8Array(
-      1 + DIRECT_TCPIP_FIELD.length + 12 + hostField.length + 4 + originHostField.length + 4,
+      1 + DIRECT_TCPIP_FIELD.length + 12 + hostField.length + 4 + originHostField.length + 4
     );
     let offset = 0;
     payload[offset++] = SSH_MSG_CHANNEL_OPEN;
@@ -114,7 +114,13 @@ export class SSHChannel {
 
   buildPTYRequest(cols: number, rows: number): Uint8Array {
     const payload = new Uint8Array(
-      1 + 4 + PTY_REQ_FIELD.length + 1 + XTERM_256COLOR_FIELD.length + 16 + EMPTY_TERMINAL_MODES_FIELD.length
+      1 +
+        4 +
+        PTY_REQ_FIELD.length +
+        1 +
+        XTERM_256COLOR_FIELD.length +
+        16 +
+        EMPTY_TERMINAL_MODES_FIELD.length
     );
     let offset = 0;
     payload[offset++] = SSH_MSG_CHANNEL_REQUEST;

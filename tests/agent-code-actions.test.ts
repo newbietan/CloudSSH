@@ -1,9 +1,6 @@
-import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import {
-  getTerminalFillCommand,
-  normalizeCodeLanguage,
-} from '../frontend/src/agent/code-actions';
+import { describe, expect, it } from 'vitest';
+import { getTerminalFillCommand, normalizeCodeLanguage } from '../frontend/src/agent/code-actions';
 
 describe('Agent 代码块操作', () => {
   it('识别明确标注的单行 Shell 命令', () => {
@@ -24,18 +21,18 @@ describe('Agent 代码块操作', () => {
   it('终端填入只作用于当前活动连接且不会附加回车', () => {
     const terminalSource = readFileSync(
       new URL('../frontend/src/terminal.ts', import.meta.url),
-      'utf8',
+      'utf8'
     );
     const tabManagerSource = readFileSync(
       new URL('../frontend/src/tab-manager.ts', import.meta.url),
-      'utf8',
+      'utf8'
     );
     const fillInputSource = terminalSource.slice(
       terminalSource.indexOf('fillInput(text: string)'),
-      terminalSource.indexOf('setLatencyUpdatedHandler'),
+      terminalSource.indexOf('setLatencyUpdatedHandler')
     );
 
-    expect(fillInputSource).toContain("if (!text || /[\\r\\n]/.test(text)) return false");
+    expect(fillInputSource).toContain('if (!text || /[\\r\\n]/.test(text)) return false');
     expect(fillInputSource).toContain('this.trzszFilter.processTerminalInput(text)');
     expect(fillInputSource).not.toMatch(/(?:\\r|\\n|Enter).*processTerminalInput/);
     expect(tabManagerSource).toContain("activeTab?.id !== tab.id || tab.state !== 'connected'");
@@ -44,7 +41,7 @@ describe('Agent 代码块操作', () => {
   it('所有代码块提供复制，但仅安全命令增加填入按钮和目标标识', () => {
     const agentSource = readFileSync(
       new URL('../frontend/src/agent/agent-panel.ts', import.meta.url),
-      'utf8',
+      'utf8'
     );
 
     expect(agentSource).toContain("this.createCodeActionButton('copy', 'content_copy'");

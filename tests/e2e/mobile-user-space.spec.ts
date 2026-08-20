@@ -5,12 +5,12 @@ import { blockOptionalThirdPartyAssets } from './helpers';
 const servers = Array.from({ length: 10 }, (_, index) => ({
   id: index + 1,
   user_id: 1,
-  name: index === 0
-    ? '这是一台名称很长但不应撑破移动端卡片的生产服务器'
-    : `移动端服务器 ${index + 1}`,
-  host: index === 0
-    ? 'a-very-long-host-name-that-must-not-overflow.example.com'
-    : `server-${index + 1}.example.com`,
+  name:
+    index === 0 ? '这是一台名称很长但不应撑破移动端卡片的生产服务器' : `移动端服务器 ${index + 1}`,
+  host:
+    index === 0
+      ? 'a-very-long-host-name-that-must-not-overflow.example.com'
+      : `server-${index + 1}.example.com`,
   port: 22,
   username: index === 0 ? 'long-mobile-deployment-username' : 'deploy',
   auth_method: 'publickey',
@@ -26,7 +26,7 @@ test.use({ viewport: { width: 320, height: 568 }, hasTouch: true });
 test.beforeEach(async ({ page }) => {
   await blockOptionalThirdPartyAssets(page);
   await page.route('**/api/user/theme', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '{"theme":null}' }),
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"theme":null}' })
   );
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
@@ -38,13 +38,13 @@ test.beforeEach(async ({ page }) => {
         username: 'mobile-layout-tester-with-a-long-name',
         avatar_url: '',
       }),
-    }),
+    })
   );
   await page.route('**/api/servers', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(servers) }),
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(servers) })
   );
   await page.route('**/api/ai/config', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '{"configured":false}' }),
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"configured":false}' })
   );
 });
 
@@ -115,9 +115,13 @@ test.describe('响应式断点边界', () => {
 test('移动端服务器卡片不会被长文本撑宽且表单弹窗在视口内滚动', async ({ page }) => {
   await page.goto('/?lang=zh-CN');
   await expect(page.locator('.server-card')).toHaveCount(3);
-  await expect.poll(() => page.locator('#card-1 .server-card-title').evaluate((title) =>
-    getComputedStyle(title).overflow,
-  )).toBe('hidden');
+  await expect
+    .poll(() =>
+      page
+        .locator('#card-1 .server-card-title')
+        .evaluate((title) => getComputedStyle(title).overflow)
+    )
+    .toBe('hidden');
 
   const cardLayout = await page.locator('#card-1').evaluate((card) => {
     const title = card.querySelector<HTMLElement>('.server-card-title')!;
@@ -135,18 +139,20 @@ test('移动端服务器卡片不会被长文本撑宽且表单弹窗在视口�
   await page.locator('#add-server-btn').click();
   await expect(page.locator('#server-modal')).toBeVisible();
 
-  const modalLayout = await page.locator('#server-modal .responsive-modal-panel').evaluate((panel) => {
-    const rect = panel.getBoundingClientRect();
-    const input = document.getElementById('server-name')!;
-    return {
-      top: Math.round(rect.top),
-      bottom: Math.round(rect.bottom),
-      clientHeight: panel.clientHeight,
-      scrollHeight: panel.scrollHeight,
-      overflowY: getComputedStyle(panel).overflowY,
-      inputFontSize: getComputedStyle(input).fontSize,
-    };
-  });
+  const modalLayout = await page
+    .locator('#server-modal .responsive-modal-panel')
+    .evaluate((panel) => {
+      const rect = panel.getBoundingClientRect();
+      const input = document.getElementById('server-name')!;
+      return {
+        top: Math.round(rect.top),
+        bottom: Math.round(rect.bottom),
+        clientHeight: panel.clientHeight,
+        scrollHeight: panel.scrollHeight,
+        overflowY: getComputedStyle(panel).overflowY,
+        inputFontSize: getComputedStyle(input).fontSize,
+      };
+    });
 
   expect(modalLayout.top).toBeGreaterThanOrEqual(0);
   expect(modalLayout.bottom).toBeLessThanOrEqual(568);
@@ -155,10 +161,14 @@ test('移动端服务器卡片不会被长文本撑宽且表单弹窗在视口�
   expect(modalLayout.inputFontSize).toBe('16px');
 
   await page.setViewportSize({ width: 568, height: 320 });
-  await expect.poll(() => page.locator('#server-modal .responsive-modal-panel').evaluate((panel) => {
-    const rect = panel.getBoundingClientRect();
-    return rect.top >= 0 && rect.bottom <= window.innerHeight;
-  })).toBe(true);
+  await expect
+    .poll(() =>
+      page.locator('#server-modal .responsive-modal-panel').evaluate((panel) => {
+        const rect = panel.getBoundingClientRect();
+        return rect.top >= 0 && rect.bottom <= window.innerHeight;
+      })
+    )
+    .toBe(true);
 
   await page.locator('#server-submit-btn').scrollIntoViewIfNeeded();
   await expect(page.locator('#server-submit-btn')).toBeVisible();

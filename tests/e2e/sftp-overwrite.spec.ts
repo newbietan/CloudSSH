@@ -16,32 +16,38 @@ test('SFTP only overwrites an existing file after explicit confirmation', async 
     (panel as any).sendJSON = (frame: Record<string, unknown>) => {
       frames.push(frame);
       if (frame.type === 'sftp_upload_start' && frame.overwrite === false) {
-        queueMicrotask(() => panel.handleMessage({
-          type: 'sftp_upload_conflict',
-          path: frame.path,
-          existingSize: 2048,
-        }));
+        queueMicrotask(() =>
+          panel.handleMessage({
+            type: 'sftp_upload_conflict',
+            path: frame.path,
+            existingSize: 2048,
+          })
+        );
       } else if (frame.type === 'sftp_upload_start' && frame.overwrite === true) {
         queueMicrotask(() => panel.handleMessage({ type: 'sftp_upload_ready', path: frame.path }));
       } else if (frame.type === 'sftp_upload_end') {
-        queueMicrotask(() => panel.handleMessage({
-          type: 'sftp_upload_complete',
-          path: '/home/deploy/config.yml',
-        }));
+        queueMicrotask(() =>
+          panel.handleMessage({
+            type: 'sftp_upload_complete',
+            path: '/home/deploy/config.yml',
+          })
+        );
       }
     };
     (panel as any).sendBinary = (data: Uint8Array) => {
       binaryChunks.push(data.length);
-      queueMicrotask(() => panel.handleMessage({
-        type: 'sftp_upload_progress',
-        loaded: data.length,
-        total: data.length,
-      }));
+      queueMicrotask(() =>
+        panel.handleMessage({
+          type: 'sftp_upload_progress',
+          loaded: data.length,
+          total: data.length,
+        })
+      );
     };
 
     const uploadPromise = (panel as any).uploadSingleFile(
       new File(['new'], 'config.yml', { type: 'text/yaml' }),
-      '/home/deploy',
+      '/home/deploy'
     );
     (window as any).__sftpOverwriteTest = { panel, frames, binaryChunks, uploadPromise };
   });
@@ -58,17 +64,19 @@ test('SFTP only overwrites an existing file after explicit confirmation', async 
     const testState = (window as any).__sftpOverwriteTest;
     return {
       uploadStarts: testState.frames.filter(
-        (frame: Record<string, unknown>) => frame.type === 'sftp_upload_start',
+        (frame: Record<string, unknown>) => frame.type === 'sftp_upload_start'
       ),
       binaryChunks: [...testState.binaryChunks],
     };
   });
-  expect(beforeConfirmation.uploadStarts).toEqual([{
-    type: 'sftp_upload_start',
-    path: '/home/deploy/config.yml',
-    size: 3,
-    overwrite: false,
-  }]);
+  expect(beforeConfirmation.uploadStarts).toEqual([
+    {
+      type: 'sftp_upload_start',
+      path: '/home/deploy/config.yml',
+      size: 3,
+      overwrite: false,
+    },
+  ]);
   expect(beforeConfirmation.binaryChunks).toEqual([]);
 
   await dialog.locator('.app-dialog__button--confirm').click();
@@ -78,7 +86,7 @@ test('SFTP only overwrites an existing file after explicit confirmation', async 
     const testState = (window as any).__sftpOverwriteTest;
     return {
       uploadStarts: testState.frames.filter(
-        (frame: Record<string, unknown>) => frame.type === 'sftp_upload_start',
+        (frame: Record<string, unknown>) => frame.type === 'sftp_upload_start'
       ),
       binaryChunks: [...testState.binaryChunks],
     };
@@ -104,7 +112,7 @@ test('SFTP only overwrites an existing file after explicit confirmation', async 
     const testState = (window as any).__sftpOverwriteTest;
     testState.cancelPromise = (testState.panel as any).uploadSingleFile(
       new File(['skip'], 'cancelled.yml', { type: 'text/yaml' }),
-      '/home/deploy',
+      '/home/deploy'
     );
   });
 
@@ -118,7 +126,7 @@ test('SFTP only overwrites an existing file after explicit confirmation', async 
     const output = {
       uploadStarts: testState.frames.filter(
         (frame: Record<string, unknown>) =>
-          frame.type === 'sftp_upload_start' && frame.path === '/home/deploy/cancelled.yml',
+          frame.type === 'sftp_upload_start' && frame.path === '/home/deploy/cancelled.yml'
       ),
       binaryChunks: [...testState.binaryChunks],
       status: document.querySelector('#sftp-status-text')?.textContent,
@@ -127,12 +135,14 @@ test('SFTP only overwrites an existing file after explicit confirmation', async 
     return output;
   });
 
-  expect(cancelledResult.uploadStarts).toEqual([{
-    type: 'sftp_upload_start',
-    path: '/home/deploy/cancelled.yml',
-    size: 4,
-    overwrite: false,
-  }]);
+  expect(cancelledResult.uploadStarts).toEqual([
+    {
+      type: 'sftp_upload_start',
+      path: '/home/deploy/cancelled.yml',
+      size: 4,
+      overwrite: false,
+    },
+  ]);
   expect(cancelledResult.binaryChunks).toEqual([3]);
   expect(cancelledResult.status).toBe('已取消覆盖，跳过该文件');
 });

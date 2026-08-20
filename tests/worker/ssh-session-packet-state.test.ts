@@ -12,17 +12,13 @@ function createSession() {
     close: vi.fn(),
   };
   const socket = { close: vi.fn() };
-  const session = new SSHSession(
-    ws as unknown as WebSocket,
-    socket as never,
-    {
-      host: 'ssh.example.com',
-      port: 22,
-      username: 'alice',
-      password: 'secret',
-      authMethod: 'password',
-    },
-  );
+  const session = new SSHSession(ws as unknown as WebSocket, socket as never, {
+    host: 'ssh.example.com',
+    port: 22,
+    username: 'alice',
+    password: 'secret',
+    authMethod: 'password',
+  });
   return { session, ws, socket };
 }
 
@@ -47,7 +43,8 @@ describe('SSHSession packet encryption state', () => {
       const internal = session as any;
       const decrypt = vi.fn(async (data: Uint8Array) => data);
       const verify = vi.fn(async () => true);
-      const nextPacket = vi.fn()
+      const nextPacket = vi
+        .fn()
         .mockResolvedValueOnce({
           length: 12,
           paddingLength: 10,
@@ -80,7 +77,7 @@ describe('SSHSession packet encryption state', () => {
       expect(macLength).toBe(expectedMacLength);
       expect(typeof decryptPacket).toBe('function');
       expect(typeof verifyMac === 'function').toBe(expectedMacLength > 0);
-    },
+    }
   );
 
   it('parses NEWKEYS and the first CTR/HMAC packet from one TCP chunk', async () => {
@@ -105,27 +102,19 @@ describe('SSHSession packet encryption state', () => {
     internal.writeSocket = vi.fn(async () => {});
     const handlePacket = vi.spyOn(internal, 'handlePacket');
 
-    const serverCipher = new SSHAESCTRCipher(
-      keys.encKeyServerToClient,
-      keys.ivServerToClient,
-    );
+    const serverCipher = new SSHAESCTRCipher(keys.encKeyServerToClient, keys.ivServerToClient);
     const serverMac = new SSHHMAC('hmac-sha2-256', keys.integrityKeyS2C);
     await serverCipher.init();
     await serverMac.init();
 
-    const newKeysPacket = await SSHPacketBuilder.build(
-      new Uint8Array([21]),
-      8,
-      null,
-      0,
-    );
+    const newKeysPacket = await SSHPacketBuilder.build(new Uint8Array([21]), 8, null, 0);
     const extInfoPacket = await SSHPacketBuilder.build(
       new Uint8Array([7, 0, 0, 0, 0]),
       16,
       (data, seq, aad) => serverCipher.encrypt(data, seq, aad),
       1,
       false,
-      (packet, seq) => serverMac.sign(packet, seq),
+      (packet, seq) => serverMac.sign(packet, seq)
     );
 
     internal.packetParser.feed(concat(newKeysPacket, extInfoPacket));

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { SSHSession } from '../../src/worker/ssh-session';
 import type { SSHConnectionConfig } from '../../src/types';
+import { SSHSession } from '../../src/worker/ssh-session';
 
 function makeSharedSession() {
   const sent: unknown[] = [];
@@ -59,7 +59,7 @@ describe('分享 SSH 会话能力策略', () => {
       undefined,
       undefined,
       undefined,
-      { openShellOnAuth: false, ownsWebSocket: false, allowKeyboardInteractive: false },
+      { openShellOnAuth: false, ownsWebSocket: false, allowKeyboardInteractive: false }
     );
 
     expect((session as any).canUseAuthMethod('password')).toBe(true);

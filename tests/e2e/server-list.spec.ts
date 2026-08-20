@@ -20,17 +20,17 @@ const servers = Array.from({ length: 30 }, (_, index) => ({
 test.beforeEach(async ({ page }) => {
   await blockOptionalThirdPartyAssets(page);
   await page.route('**/api/user/theme', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '{"theme":null}' }),
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"theme":null}' })
   );
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ id: 1, github_id: 1, username: 'tester', avatar_url: '' }),
-    }),
+    })
   );
   await page.route('**/api/servers', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(servers) }),
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(servers) })
   );
 });
 
@@ -59,14 +59,17 @@ test('有无标签的同排服务器卡片将操作按钮对齐到底部', async
   const visibleCards = page.locator('.server-card').filter({ visible: true });
   await expect(visibleCards).toHaveCount(9);
 
-  const positions = await page.locator('.server-card:nth-child(-n+3) .server-card-actions')
-    .evaluateAll((elements) => elements.map((element) => {
-      const rect = element.getBoundingClientRect();
-      return {
-        top: Math.round(rect.top),
-        bottom: Math.round(rect.bottom),
-      };
-    }));
+  const positions = await page
+    .locator('.server-card:nth-child(-n+3) .server-card-actions')
+    .evaluateAll((elements) =>
+      elements.map((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          top: Math.round(rect.top),
+          bottom: Math.round(rect.bottom),
+        };
+      })
+    );
 
   expect(new Set(positions.map(({ top }) => top)).size).toBe(1);
   expect(new Set(positions.map(({ bottom }) => bottom)).size).toBe(1);
@@ -91,7 +94,9 @@ test('IP 掩码按钮支持键盘复制完整地址', async ({ page }) => {
   await badge.focus();
   await page.keyboard.press('Enter');
 
-  await expect.poll(() => page.evaluate(() => (window as any).__copiedServerIP)).toBe('203.0.113.42');
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__copiedServerIP))
+    .toBe('203.0.113.42');
   await expect(page.locator('.app-toast')).toContainText('已复制服务器 IP');
 });
 
@@ -114,7 +119,11 @@ test('展示多级跳转路径并在编辑时排除自身跳板', async ({ page 
     jump_server_id: server.id === 2 ? 1 : server.id === 3 ? 2 : null,
   }));
   await page.route('**/api/servers', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(jumpServers) }),
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(jumpServers),
+    })
   );
   await page.goto('/?lang=zh-CN');
 

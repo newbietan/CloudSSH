@@ -98,9 +98,9 @@ describe('keyboard-interactive 浏览器交互边界', () => {
   });
 
   it('按 echo 选择密码或明文输入，并仅为单个隐藏提示显示已有密码动作', () => {
-    expect(dialogSource).toContain("input.type = prompt.echo ? 'text' : 'password'");
+    expect(dialogSource).toMatch(/input\.type\s*=\s*prompt\.echo\s*\?\s*['"]text['"]\s*:\s*['"]password['"]/);
     expect(dialogSource).toMatch(
-      /challenge\.canUseStoredPassword\s+&& challenge\.prompts\.length === 1\s+&& !challenge\.prompts\[0\]\.echo/,
+      /challenge\.canUseStoredPassword[\s\S]*?&&[\s\S]*?challenge\.prompts\.length === 1[\s\S]*?&&[\s\S]*?!challenge\.prompts\[0\]\.echo/,
     );
     expect(dialogSource).toContain("useStoredPassword: true");
     expect(dialogSource).toContain("responses,\n    }");

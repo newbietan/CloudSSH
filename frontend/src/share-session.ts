@@ -19,7 +19,7 @@ export function takeShareTokenFromLocation(): string | null {
 
 export function renderShareLanding(
   token: string,
-  onConnected: (claim: ClaimedShare) => void,
+  onConnected: (claim: ClaimedShare) => void
 ): void {
   let claiming = false;
 
@@ -74,7 +74,9 @@ export function renderShareLanding(
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token }),
         });
-        const payload = await response.json().catch(() => ({})) as ClaimedShare & { error?: string };
+        const payload = (await response.json().catch(() => ({}))) as ClaimedShare & {
+          error?: string;
+        };
         if (!response.ok) throw new Error(payload.error || t('share.claimFailed'));
         onConnected(payload);
       } catch (error) {

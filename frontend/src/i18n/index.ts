@@ -26,16 +26,20 @@ export function resolveLocale(options: {
   storedLocale?: string | null;
   browserLocales?: readonly string[];
 }): Locale {
-  return normalizeLocale(options.urlLocale)
-    ?? normalizeLocale(options.storedLocale)
-    ?? options.browserLocales?.map(normalizeLocale).find((locale): locale is Locale => locale !== null)
-    ?? 'zh-CN';
+  return (
+    normalizeLocale(options.urlLocale) ??
+    normalizeLocale(options.storedLocale) ??
+    options.browserLocales
+      ?.map(normalizeLocale)
+      .find((locale): locale is Locale => locale !== null) ??
+    'zh-CN'
+  );
 }
 
 export function t(key: TranslationKey, params: TranslationParams = {}): string {
   const template = dictionaries[currentLocale][key] ?? zhCN[key] ?? key;
   return template.replace(/\{(\w+)\}/g, (match, name: string) =>
-    Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match,
+    Object.hasOwn(params, name) ? String(params[name]) : match
   );
 }
 
@@ -105,7 +109,11 @@ export function setLocale(locale: Locale, options: { persist?: boolean } = {}): 
     syncLanguageSwitchers();
   }
   if (options.persist !== false && typeof localStorage !== 'undefined') {
-    try { localStorage.setItem(STORAGE_KEY, locale); } catch { /* storage may be disabled */ }
+    try {
+      localStorage.setItem(STORAGE_KEY, locale);
+    } catch {
+      /* storage may be disabled */
+    }
   }
   listeners.forEach((listener) => listener(locale));
 }
@@ -117,7 +125,11 @@ export function onLocaleChange(listener: (locale: Locale) => void): () => void {
 
 export function initI18n(): Locale {
   let storedLocale: string | null = null;
-  try { storedLocale = localStorage.getItem(STORAGE_KEY); } catch { /* storage may be disabled */ }
+  try {
+    storedLocale = localStorage.getItem(STORAGE_KEY);
+  } catch {
+    /* storage may be disabled */
+  }
   const locale = resolveLocale({
     urlLocale: new URLSearchParams(window.location.search).get('lang'),
     storedLocale,

@@ -238,13 +238,15 @@ class DialogManager {
     this.ensureDialog();
 
     const request = this.queue.shift()!;
-    request.previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    request.previousFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     this.active = request;
 
     const options = request.options;
     const variant = options.variant ?? 'info';
     this.dialog!.dataset.variant = variant;
-    this.titleEl!.textContent = options.title ?? t(request.kind === 'prompt' ? 'dialog.promptTitle' : 'dialog.confirmTitle');
+    this.titleEl!.textContent =
+      options.title ?? t(request.kind === 'prompt' ? 'dialog.promptTitle' : 'dialog.confirmTitle');
     this.messageEl!.textContent = options.message;
     this.iconEl!.textContent = ICONS[variant];
     this.confirmButton!.textContent = options.confirmText ?? t('common.confirm');

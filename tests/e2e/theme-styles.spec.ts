@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { expect, test } from '@playwright/test';
 import { blockOptionalThirdPartyAssets } from './helpers';
 
 const server = {
@@ -25,17 +25,17 @@ test.beforeEach(async ({ page }) => {
       status: 200,
       contentType: 'application/json',
       body: route.request().method() === 'GET' ? '{"theme":null}' : '{"success":true}',
-    }),
+    })
   );
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ id: 1, github_id: 1, username: 'tester', avatar_url: '' }),
-    }),
+    })
   );
   await page.route('**/api/servers', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([server]) }),
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([server]) })
   );
 });
 
@@ -69,8 +69,14 @@ test('内置主题切换 UI 风格但保持服务器列表结构稳定', async (
   await expect(grid).toHaveClass(/md:grid-cols-2/);
   await expect(grid).toHaveClass(/lg:grid-cols-3/);
   await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark');
-  await expect(selector.locator('option[value="cyberpunk"]')).toHaveCSS('background-color', 'rgb(19, 19, 19)');
-  await expect(selector.locator('option[value="cyberpunk"]')).toHaveCSS('color', 'rgb(74, 246, 38)');
+  await expect(selector.locator('option[value="cyberpunk"]')).toHaveCSS(
+    'background-color',
+    'rgb(19, 19, 19)'
+  );
+  await expect(selector.locator('option[value="cyberpunk"]')).toHaveCSS(
+    'color',
+    'rgb(74, 246, 38)'
+  );
 });
 
 test('云端主题恢复不阻塞用户空间首屏，并避免覆盖加载期间的用户选择', async ({ page }) => {
@@ -102,14 +108,18 @@ test('云端主题恢复不阻塞用户空间首屏，并避免覆盖加载期�
   await expect(page.locator('.server-card')).toHaveCount(1);
   await page.locator('#user-theme-selector').selectOption('standard-light');
 
-  const themeResponse = page.waitForResponse(response =>
-    response.url().includes('/api/user/theme') && response.request().method() === 'GET'
+  const themeResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/user/theme') && response.request().method() === 'GET'
   );
   releaseThemeRequest();
   await themeResponse;
-  await page.evaluate(() => new Promise<void>((resolveFrame) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
-  }));
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolveFrame) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
+      })
+  );
   await expect(page.locator('#user-theme-selector')).toHaveValue('standard-light');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'standard-light');
 });
@@ -176,7 +186,8 @@ test('应用导入 Theme V2 JSON 后覆盖本地主题并同步账号', async ({
   await expect(page.locator('html')).toHaveAttribute('data-ui-style', 'soft');
   await expect(page.locator('html')).toHaveAttribute('data-ui-density', 'spacious');
   await expect.poll(() => themeRequestMethods).toContain('PUT');
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('cloudssh_imported_theme')))
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem('cloudssh_imported_theme')))
     .toContain('Ocean Soft');
   expect(themeRequestMethods).toEqual(expect.arrayContaining(['GET', 'PUT']));
   expect(themeRequestMethods).not.toContain('DELETE');
@@ -203,7 +214,7 @@ test('新浏览器登录后自动恢复并启用账号中的自定义主题', as
           },
         },
       }),
-    }),
+    })
   );
 
   await page.goto('/');
@@ -211,15 +222,17 @@ test('新浏览器登录后自动恢复并启用账号中的自定义主题', as
   await expect(page.locator('#user-theme-selector')).toHaveValue('__custom__');
   await expect(page.locator('html')).toHaveAttribute('data-ui-style', 'soft');
   await expect(page.locator('html')).toHaveAttribute('data-component-card', 'elevated');
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('cloudssh_theme_selection')))
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem('cloudssh_theme_selection')))
     .toBe('__custom__');
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('cloudssh_imported_theme')))
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem('cloudssh_imported_theme')))
     .toContain('Synced Glacier');
 });
 
 test('Pages 编辑器拒绝超大文件和危险颜色，并在修正后恢复导出', async ({ page }) => {
   const requestedUrls: string[] = [];
-  page.on('request', request => requestedUrls.push(request.url()));
+  page.on('request', (request) => requestedUrls.push(request.url()));
   const editorUrl = pathToFileURL(resolve('docs/theme-editor/index.html')).href;
 
   await page.goto(editorUrl);

@@ -2,25 +2,23 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const packageJson = JSON.parse(
-  readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+  readFileSync(new URL('../../package.json', import.meta.url), 'utf8')
 ) as {
   packageManager?: string;
   devDependencies: Record<string, string>;
 };
-const buildScript = readFileSync(
-  new URL('../../scripts/build-html.js', import.meta.url),
-  'utf8',
-);
+const buildScript = readFileSync(new URL('../../scripts/build-html.js', import.meta.url), 'utf8');
 const deployWorkflow = readFileSync(
   new URL('../../.github/workflows/deploy.yml', import.meta.url),
-  'utf8',
+  'utf8'
 );
 
 describe('reproducible build and deployment gate', () => {
   it('pins the package manager and matching Vitest packages', () => {
     expect(packageJson.packageManager).toMatch(/^pnpm@\d+\.\d+\.\d+$/);
-    expect(packageJson.devDependencies.vitest)
-      .toBe(packageJson.devDependencies['@vitest/coverage-v8']);
+    expect(packageJson.devDependencies.vitest).toBe(
+      packageJson.devDependencies['@vitest/coverage-v8']
+    );
   });
 
   it('keeps dependency installation outside the frontend build', () => {

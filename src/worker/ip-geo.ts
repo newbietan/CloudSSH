@@ -16,34 +16,103 @@ import { ALLOWED_LOCATION_HINTS } from '../types';
 // US/CA 按经度细分东西海岸（见 refineForUsCanada，以 -100° 经线为界）
 const COUNTRY_TO_HINT: Record<string, string> = {
   // North America (US/CA 走 refineForUsCanada 细分)
-  'US': 'wnam', 'CA': 'wnam', 'MX': 'wnam',
+  US: 'wnam',
+  CA: 'wnam',
+  MX: 'wnam',
   // South America
-  'BR': 'sam', 'AR': 'sam', 'CL': 'sam', 'CO': 'sam', 'PE': 'sam',
-  'VE': 'sam', 'EC': 'sam', 'BO': 'sam', 'PY': 'sam', 'UY': 'sam',
+  BR: 'sam',
+  AR: 'sam',
+  CL: 'sam',
+  CO: 'sam',
+  PE: 'sam',
+  VE: 'sam',
+  EC: 'sam',
+  BO: 'sam',
+  PY: 'sam',
+  UY: 'sam',
   // Europe West
-  'GB': 'weur', 'FR': 'weur', 'DE': 'weur', 'NL': 'weur', 'ES': 'weur',
-  'IT': 'weur', 'PT': 'weur', 'BE': 'weur', 'IE': 'weur', 'CH': 'weur', 'AT': 'weur',
-  'LU': 'weur', 'MC': 'weur',
+  GB: 'weur',
+  FR: 'weur',
+  DE: 'weur',
+  NL: 'weur',
+  ES: 'weur',
+  IT: 'weur',
+  PT: 'weur',
+  BE: 'weur',
+  IE: 'weur',
+  CH: 'weur',
+  AT: 'weur',
+  LU: 'weur',
+  MC: 'weur',
   // Europe East
-  'PL': 'eeur', 'RU': 'eeur', 'CZ': 'eeur', 'UA': 'eeur', 'RO': 'eeur',
-  'TR': 'eeur', 'GR': 'eeur', 'HU': 'eeur', 'SE': 'eeur', 'FI': 'eeur',
-  'NO': 'eeur', 'DK': 'eeur', 'SK': 'eeur', 'BG': 'eeur', 'HR': 'eeur',
-  'RS': 'eeur', 'LT': 'eeur', 'LV': 'eeur', 'EE': 'eeur', 'SI': 'eeur',
+  PL: 'eeur',
+  RU: 'eeur',
+  CZ: 'eeur',
+  UA: 'eeur',
+  RO: 'eeur',
+  TR: 'eeur',
+  GR: 'eeur',
+  HU: 'eeur',
+  SE: 'eeur',
+  FI: 'eeur',
+  NO: 'eeur',
+  DK: 'eeur',
+  SK: 'eeur',
+  BG: 'eeur',
+  HR: 'eeur',
+  RS: 'eeur',
+  LT: 'eeur',
+  LV: 'eeur',
+  EE: 'eeur',
+  SI: 'eeur',
   // Asia-Pacific (通用亚太，Cloudflare 建议优先使用 apac 而非 apac-ne/apac-se)
-  'IN': 'apac', 'SG': 'apac', 'TH': 'apac', 'VN': 'apac', 'ID': 'apac',
-  'PH': 'apac', 'MY': 'apac', 'KH': 'apac', 'LA': 'apac', 'MM': 'apac',
-  'BD': 'apac', 'LK': 'apac', 'NP': 'apac',
+  IN: 'apac',
+  SG: 'apac',
+  TH: 'apac',
+  VN: 'apac',
+  ID: 'apac',
+  PH: 'apac',
+  MY: 'apac',
+  KH: 'apac',
+  LA: 'apac',
+  MM: 'apac',
+  BD: 'apac',
+  LK: 'apac',
+  NP: 'apac',
   // 亚太东北（使用 apac 确保 DO 节点可用性）
-  'CN': 'apac', 'JP': 'apac', 'KR': 'apac', 'TW': 'apac', 'HK': 'apac',
+  CN: 'apac',
+  JP: 'apac',
+  KR: 'apac',
+  TW: 'apac',
+  HK: 'apac',
   // Asia-Pacific Southeast (暂并入 apac；可细化时单独取出)
   // Oceania
-  'AU': 'oc', 'NZ': 'oc',
+  AU: 'oc',
+  NZ: 'oc',
   // Africa
-  'ZA': 'afr', 'NG': 'afr', 'EG': 'afr', 'KE': 'afr', 'MA': 'afr',
-  'GH': 'afr', 'ET': 'afr', 'TZ': 'afr', 'UG': 'afr', 'TN': 'afr', 'DZ': 'afr',
+  ZA: 'afr',
+  NG: 'afr',
+  EG: 'afr',
+  KE: 'afr',
+  MA: 'afr',
+  GH: 'afr',
+  ET: 'afr',
+  TZ: 'afr',
+  UG: 'afr',
+  TN: 'afr',
+  DZ: 'afr',
   // Middle East
-  'SA': 'me', 'AE': 'me', 'IL': 'me', 'IR': 'me', 'QA': 'me', 'KW': 'me',
-  'BH': 'me', 'OM': 'me', 'JO': 'me', 'IQ': 'me', 'LB': 'me',
+  SA: 'me',
+  AE: 'me',
+  IL: 'me',
+  IR: 'me',
+  QA: 'me',
+  KW: 'me',
+  BH: 'me',
+  OM: 'me',
+  JO: 'me',
+  IQ: 'me',
+  LB: 'me',
 };
 
 // US/CA 按经度切东西海岸：-100° 经线以西为 wnam，以东为 enam
@@ -88,7 +157,9 @@ export async function inferLocationHint(host: string): Promise<InferResult> {
       cf: { cacheTtl: 86400, cacheEverything: true }, // CF 边缘缓存 24h
       signal: AbortSignal.timeout(IPINFO_TIMEOUT_MS),
     });
-    debug.push(`[IP-GEO] ipinfo.io 响应状态: ${res.status}, CF-Cache-Status: ${res.headers.get('cf-cache-status') || 'N/A'}`);
+    debug.push(
+      `[IP-GEO] ipinfo.io 响应状态: ${res.status}, CF-Cache-Status: ${res.headers.get('cf-cache-status') || 'N/A'}`
+    );
 
     if (!res.ok) {
       debug.push(`[IP-GEO] ipinfo.io 请求失败: HTTP ${res.status}`);
@@ -118,7 +189,9 @@ export async function inferLocationHint(host: string): Promise<InferResult> {
       }
     }
 
-    debug.push(`[IP-GEO] ipinfo.io 返回: country=${data.country}, loc=${data.loc}, bogon=${data.bogon}`);
+    debug.push(
+      `[IP-GEO] ipinfo.io 返回: country=${data.country}, loc=${data.loc}, bogon=${data.bogon}`
+    );
 
     if (!data.country) {
       debug.push(`[IP-GEO] 无国家信息，尝试经纬度 fallback`);
@@ -143,9 +216,10 @@ export async function inferLocationHint(host: string): Promise<InferResult> {
     }
 
     // US/CA 用经度切东西海岸；其他国家直接取映射值
-    const hint = (longitude !== undefined)
-      ? refineForUsCanada(data.country, longitude)
-      : COUNTRY_TO_HINT[data.country];
+    const hint =
+      longitude !== undefined
+        ? refineForUsCanada(data.country, longitude)
+        : COUNTRY_TO_HINT[data.country];
 
     debug.push(`[IP-GEO] 国家 ${data.country} 映射为: ${hint}`);
 
@@ -173,11 +247,11 @@ export async function inferLocationHint(host: string): Promise<InferResult> {
  * 纬度仅用于判定大洋洲（lat < -10）。
  */
 function fallbackByLatLon(lat: number, lon: number): string | undefined {
-  if (lat < -10 && lon > 110) return 'oc';         // 大洋洲
-  if (lon < -100) return 'wnam';                    // 美西/北美西
-  if (lon < -30) return 'enam';                      // 美东/南美
-  if (lon < 60) return 'weur';                       // 欧洲西部（粗略）
-  if (lon < 90) return 'me';                         // 中东/中亚
-  if (lon < 140) return 'apac';                      // 东亚
-  return 'apac';                                     // 亚太其他
+  if (lat < -10 && lon > 110) return 'oc'; // 大洋洲
+  if (lon < -100) return 'wnam'; // 美西/北美西
+  if (lon < -30) return 'enam'; // 美东/南美
+  if (lon < 60) return 'weur'; // 欧洲西部（粗略）
+  if (lon < 90) return 'me'; // 中东/中亚
+  if (lon < 140) return 'apac'; // 东亚
+  return 'apac'; // 亚太其他
 }

@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { SSHPacketParser, SSHPacketBuilder, nextSequenceNumber } from '../../src/ssh/packet';
-import type { SSHPacket } from '../../src/types';
+import { describe, expect, it } from 'vitest';
+import { nextSequenceNumber, SSHPacketBuilder, SSHPacketParser } from '../../src/ssh/packet';
 import { readUint32 } from '../../src/ssh/utils';
+import type { SSHPacket } from '../../src/types';
 
 // =====================================================================
 // packet.test.ts
@@ -148,7 +148,10 @@ describe('packet — SSHPacketBuilder.build（明文，无加密）', () => {
       const padEnd = p1.length;
       let differ = false;
       for (let i = padStart; i < padEnd; i++) {
-        if (p1[i] !== p2[i]) { differ = true; break; }
+        if (p1[i] !== p2[i]) {
+          differ = true;
+          break;
+        }
       }
       // 极端情况 padding 只有 4 字节，全不同的概率极低
       if (padEnd - padStart > 4) {
@@ -170,7 +173,9 @@ describe('packet — SSHPacketBuilder.buildWithPayloadWriter', () => {
     const withWriter = await SSHPacketBuilder.buildWithPayloadWriter(
       payload.length,
       (packet, offset) => packet.set(payload, offset),
-      16, null, 0
+      16,
+      null,
+      0
     );
 
     // length 字段和 paddingLength 应相同
@@ -187,7 +192,9 @@ describe('packet — SSHPacketBuilder.buildWithPayloadWriter', () => {
     const packet = await SSHPacketBuilder.buildWithPayloadWriter(
       0,
       () => {}, // no-op writer
-      16, null, 0
+      16,
+      null,
+      0
     );
     expect(readUint32(packet, 0)).toBe(1 + (packet.length - 5)); // 1 + padding
     expect(packet[4]).toBeGreaterThanOrEqual(4);
@@ -287,12 +294,7 @@ describe('packet — build → parse 往返（无加密）', () => {
   describe('连续多个包往返', () => {
     it('一次 feed 多个包，连续 nextPacket 能逐个还原', async () => {
       const blockSize = 16;
-      const payloads = [
-        randomPayload(10),
-        randomPayload(50),
-        randomPayload(0),
-        randomPayload(200),
-      ];
+      const payloads = [randomPayload(10), randomPayload(50), randomPayload(0), randomPayload(200)];
       const parser = new SSHPacketParser();
       // 先 build 所有包，再全部 feed
       for (const p of payloads) {
@@ -466,8 +468,9 @@ describe('packet — MAX_PACKET_SIZE 溢出检测', () => {
 
     const parser = new SSHPacketParser();
     parser.feed(fakeFirstBlock);
-    await expect(parser.nextPacket(blockSize, identityDecrypt, false, 0))
-      .rejects.toThrow(/exceeds maximum/);
+    await expect(parser.nextPacket(blockSize, identityDecrypt, false, 0)).rejects.toThrow(
+      /exceeds maximum/
+    );
   });
 
   it('GCM 模式：packet length 超过 256KB 应抛错', async () => {
@@ -481,8 +484,9 @@ describe('packet — MAX_PACKET_SIZE 溢出检测', () => {
 
     const parser = new SSHPacketParser();
     parser.feed(fakeLength);
-    await expect(parser.nextPacket(blockSize, identityDecrypt, true, 0))
-      .rejects.toThrow(/exceeds maximum/);
+    await expect(parser.nextPacket(blockSize, identityDecrypt, true, 0)).rejects.toThrow(
+      /exceeds maximum/
+    );
   });
 });
 
@@ -496,16 +500,25 @@ describe('packet — MAX_PACKET_SIZE 溢出检测', () => {
 // =====================================================================
 describe('packet — GCM 模式完整往返', () => {
   // fake encrypt：原样返回 data + 16 字节 fake tag
-  async function fakeGcmEncrypt(data: Uint8Array, _seq: number, _aad?: Uint8Array): Promise<Uint8Array> {
+  async function fakeGcmEncrypt(
+    data: Uint8Array,
+    _seq: number,
+    _aad?: Uint8Array
+  ): Promise<Uint8Array> {
     const result = new Uint8Array(data.length + 16);
     result.set(data, 0);
     // fake tag = 16 个 0xAA
-    for (let i = data.length; i < data.length + 16; i++) result[i] = 0xAA;
+    for (let i = data.length; i < data.length + 16; i++) result[i] = 0xaa;
     return result;
   }
 
   // fake decrypt：data 末尾有 16 字节 fake tag，去掉后返回前缀
-  async function fakeGcmDecrypt(data: Uint8Array, _seq: number, _aad?: Uint8Array, _commit?: boolean): Promise<Uint8Array> {
+  async function fakeGcmDecrypt(
+    data: Uint8Array,
+    _seq: number,
+    _aad?: Uint8Array,
+    _commit?: boolean
+  ): Promise<Uint8Array> {
     return data.subarray(0, data.length - 16);
   }
 
@@ -519,7 +532,7 @@ describe('packet — GCM 模式完整往返', () => {
     // → 手工追加 16 字节 fake tag
     const wire = new Uint8Array(built.length + 16);
     wire.set(built, 0);
-    for (let i = built.length; i < built.length + 16; i++) wire[i] = 0xAA;
+    for (let i = built.length; i < built.length + 16; i++) wire[i] = 0xaa;
 
     const parser = new SSHPacketParser();
     parser.feed(wire);
@@ -586,7 +599,7 @@ describe('packet — GCM 模式完整往返', () => {
     expect(pkt!.mac).toBeDefined();
     expect(pkt!.mac!.length).toBe(16);
     // tag 内容应全是 0xAA
-    for (const b of pkt!.mac!) expect(b).toBe(0xAA);
+    for (const b of pkt!.mac!) expect(b).toBe(0xaa);
   });
 });
 
@@ -600,8 +613,14 @@ describe('packet — CTR 模式 MAC 校验', () => {
     const macLen = 32;
     const fakeMac = randomPayload(macLen);
     // build 带加密链路 + mac：用 mock encrypt + mock mac
-    async function mockEnc(data: Uint8Array): Promise<Uint8Array> { return data; }
-    async function mockMac(data: Uint8Array): Promise<Uint8Array> { const r = new Uint8Array(macLen); r.set(fakeMac.subarray(0, Math.min(fakeMac.length, macLen))); return r; }
+    async function mockEnc(data: Uint8Array): Promise<Uint8Array> {
+      return data;
+    }
+    async function mockMac(data: Uint8Array): Promise<Uint8Array> {
+      const r = new Uint8Array(macLen);
+      r.set(fakeMac.subarray(0, Math.min(fakeMac.length, macLen)));
+      return r;
+    }
 
     const wire = await SSHPacketBuilder.build(payload, blockSize, mockEnc, 0, false, mockMac);
     // wire = encrypted packet + mac（长度由 payload 对齐决定，不硬编码）
@@ -609,7 +628,10 @@ describe('packet — CTR 模式 MAC 校验', () => {
     const parser = new SSHPacketParser();
     parser.feed(wire);
     const pkt = await parser.nextPacket(
-      blockSize, identityDecrypt, false, macLen,
+      blockSize,
+      identityDecrypt,
+      false,
+      macLen,
       (_pkt, _mac, _seq) => true // verifyMac = true
     );
     expect(pkt).not.toBeNull();
@@ -621,17 +643,26 @@ describe('packet — CTR 模式 MAC 校验', () => {
     const blockSize = 16;
     const macLen = 32;
 
-    async function mockEnc(data: Uint8Array): Promise<Uint8Array> { return data; }
-    async function mockMac(_data: Uint8Array): Promise<Uint8Array> { return new Uint8Array(macLen); }
+    async function mockEnc(data: Uint8Array): Promise<Uint8Array> {
+      return data;
+    }
+    async function mockMac(_data: Uint8Array): Promise<Uint8Array> {
+      return new Uint8Array(macLen);
+    }
 
     const wire = await SSHPacketBuilder.build(payload, blockSize, mockEnc, 0, false, mockMac);
 
     const parser = new SSHPacketParser();
     parser.feed(wire);
-    await expect(parser.nextPacket(
-      blockSize, identityDecrypt, false, macLen,
-      () => false // verifyMac 失败
-    )).rejects.toThrow(/Invalid packet MAC/);
+    await expect(
+      parser.nextPacket(
+        blockSize,
+        identityDecrypt,
+        false,
+        macLen,
+        () => false // verifyMac 失败
+      )
+    ).rejects.toThrow(/Invalid packet MAC/);
   });
 
   it('macLength > 0 但未提供 verifyMac 时不校验，直接返回包', async () => {
@@ -639,8 +670,12 @@ describe('packet — CTR 模式 MAC 校验', () => {
     const blockSize = 16;
     const macLen = 20;
 
-    async function mockEnc(d: Uint8Array): Promise<Uint8Array> { return d; }
-    async function mockMac(_d: Uint8Array): Promise<Uint8Array> { return new Uint8Array(macLen); }
+    async function mockEnc(d: Uint8Array): Promise<Uint8Array> {
+      return d;
+    }
+    async function mockMac(_d: Uint8Array): Promise<Uint8Array> {
+      return new Uint8Array(macLen);
+    }
 
     const wire = await SSHPacketBuilder.build(payload, blockSize, mockEnc, 0, false, mockMac);
     const parser = new SSHPacketParser();
@@ -667,7 +702,14 @@ describe('packet — CTR 模式 MAC 校验', () => {
     // 只喂 < blockSize 字节
     const parser = new SSHPacketParser();
     parser.feed(randomPayload(blockSize - 1));
-    const pkt = await parser.nextPacket(blockSize, () => { throw new Error('should not call decrypt'); }, false, 0);
+    const pkt = await parser.nextPacket(
+      blockSize,
+      () => {
+        throw new Error('should not call decrypt');
+      },
+      false,
+      0
+    );
     expect(pkt).toBeNull();
   });
 
@@ -827,7 +869,7 @@ describe('packet — SSHPacketBuilder 加密路径', () => {
       return new Uint8Array(data); // identity 加密，便于验证
     }
     async function mockMac(_data: Uint8Array): Promise<Uint8Array> {
-      return new Uint8Array(macLen).fill(0xBB);
+      return new Uint8Array(macLen).fill(0xbb);
     }
 
     const wire = await SSHPacketBuilder.build(payload, blockSize, mockEnc, 0, false, mockMac);
@@ -835,7 +877,7 @@ describe('packet — SSHPacketBuilder 加密路径', () => {
     expect(wire.length).toBe(built.length + macLen);
     // 末尾 macLen 字节应全为 0xBB
     for (let i = wire.length - macLen; i < wire.length; i++) {
-      expect(wire[i]).toBe(0xBB);
+      expect(wire[i]).toBe(0xbb);
     }
 
     // parse 端验证
@@ -845,7 +887,7 @@ describe('packet — SSHPacketBuilder 加密路径', () => {
     expect(pkt).not.toBeNull();
     expect(arraysEqual(pkt!.payload, payload)).toBe(true);
     expect(pkt!.mac!.length).toBe(macLen);
-    for (const b of pkt!.mac!) expect(b).toBe(0xBB);
+    for (const b of pkt!.mac!) expect(b).toBe(0xbb);
   });
 
   it('GCM 模式 buildWithPayloadWriter 加密路径', async () => {
@@ -855,21 +897,24 @@ describe('packet — SSHPacketBuilder 加密路径', () => {
     async function gcmEnc(data: Uint8Array, _seq: number, _aad?: Uint8Array): Promise<Uint8Array> {
       const r = new Uint8Array(data.length + 16);
       r.set(data, 0);
-      for (let i = data.length; i < data.length + 16; i++) r[i] = 0xCC;
+      for (let i = data.length; i < data.length + 16; i++) r[i] = 0xcc;
       return r;
     }
 
     const wire = await SSHPacketBuilder.buildWithPayloadWriter(
       payload.length,
       (pkt, offset) => pkt.set(payload, offset),
-      blockSize, gcmEnc, 0, true
+      blockSize,
+      gcmEnc,
+      0,
+      true
     );
     // wire: [4-byte length][encrypted + 16-byte tag]
     expect(wire instanceof Uint8Array).toBe(true);
     expect(wire.length - 4 - 16).toBeGreaterThan(0); // 加密部分有数据
     // 末 16 字节 tag 全 0xCC
     for (let i = wire.length - 16; i < wire.length; i++) {
-      expect(wire[i]).toBe(0xCC);
+      expect(wire[i]).toBe(0xcc);
     }
 
     // parse 端

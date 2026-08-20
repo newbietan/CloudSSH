@@ -14,11 +14,7 @@ export const SUPPORTED_ENCRYPTION_ALGORITHMS = [
   'aes256-ctr',
 ];
 
-export const SUPPORTED_MAC_ALGORITHMS = [
-  'hmac-sha2-256',
-  'hmac-sha2-512',
-  'hmac-sha1',
-];
+export const SUPPORTED_MAC_ALGORITHMS = ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1'];
 
 export interface CipherSpec {
   mode: 'gcm' | 'ctr';

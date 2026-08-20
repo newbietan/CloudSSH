@@ -18,7 +18,7 @@ function getClipboardWriter(): ClipboardWriter | null {
 export async function copyTextToClipboard(
   text: string,
   clipboard: ClipboardWriter | null = getClipboardWriter(),
-  legacyCopy: LegacyClipboardWriter = copyTextWithExecCommand,
+  legacyCopy: LegacyClipboardWriter = copyTextWithExecCommand
 ): Promise<boolean> {
   if (!text) return false;
 
@@ -44,7 +44,7 @@ export async function copyTextToClipboard(
  */
 export function copyTextWithExecCommand(
   text: string,
-  targetDocument: Document | null = typeof document === 'undefined' ? null : document,
+  targetDocument: Document | null = typeof document === 'undefined' ? null : document
 ): boolean {
   if (!text || !targetDocument?.body || typeof targetDocument.execCommand !== 'function') {
     return false;

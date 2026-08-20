@@ -89,7 +89,7 @@ describe('国际化核心', () => {
       'sftp.itemCounts',
       'sftp.items',
     ]) {
-      expect(source).toContain(`t('${key}'`);
+      expect(source).toMatch(new RegExp(`t\\s*\\(\\s*['\"]${key}['\"]`));
     }
     expect(source).not.toMatch(
       /'(?:Reconnecting SFTP|Waiting for SFTP|Invalid SFTP response|Upload failed:|Download failed:|Uploading:|Downloading:|Upload cancelled|Download cancelled|Renamed)'/,

@@ -37,7 +37,7 @@ export function serializeServerTags(value: unknown): string {
 }
 
 export function deserializeServerRow<T extends Record<string, unknown>>(
-  row: T,
+  row: T
 ): Omit<T, 'tags'> & { tags: string[] } {
   return {
     ...row,

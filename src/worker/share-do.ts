@@ -111,7 +111,9 @@ export class SSHShareDO {
         return this.claim(await request.json<{ token?: string }>());
       }
       if (url.pathname === '/internal/connect/consume' && request.method === 'POST') {
-        return this.consumeConnection(await request.json<{ ticket?: string; sessionName?: string }>());
+        return this.consumeConnection(
+          await request.json<{ ticket?: string; sessionName?: string }>()
+        );
       }
       if (url.pathname === '/internal/audit/event' && request.method === 'POST') {
         return this.appendAuditEvent(await request.json<Record<string, unknown>>());
@@ -144,8 +146,11 @@ export class SSHShareDO {
       await this.syncOwnerMetadata(share, 'expired', { closedAt: now });
       return;
     }
-    if ((share.status === 'claimed' || share.status === 'active')
-      && share.session_expires_at && now >= share.session_expires_at) {
+    if (
+      (share.status === 'claimed' || share.status === 'active') &&
+      share.session_expires_at &&
+      now >= share.session_expires_at
+    ) {
       await this.revoke('closed');
       return;
     }
@@ -163,7 +168,11 @@ export class SSHShareDO {
     if (!Number.isFinite(body.expiresAt) || body.expiresAt <= Date.now()) {
       return jsonError('Invalid share expiry', 400);
     }
-    if (!Number.isInteger(body.maxSessionSeconds) || body.maxSessionSeconds < 300 || body.maxSessionSeconds > 7200) {
+    if (
+      !Number.isInteger(body.maxSessionSeconds) ||
+      body.maxSessionSeconds < 300 ||
+      body.maxSessionSeconds > 7200
+    ) {
       return jsonError('Invalid maximum session duration', 400);
     }
     this.db.exec(
@@ -178,7 +187,7 @@ export class SSHShareDO {
       body.serverId,
       body.serverName,
       body.expiresAt,
-      body.maxSessionSeconds,
+      body.maxSessionSeconds
     );
     await this.state.storage.setAlarm(body.expiresAt);
     return Response.json({ success: true });
@@ -187,9 +196,11 @@ export class SSHShareDO {
   private async claim(body: { token?: string }): Promise<Response> {
     const share = this.getShare();
     if (!share || typeof body.token !== 'string') return jsonError('Invalid share link', 404);
-    if (await sha256Base64Url(body.token) !== share.token_hash) return jsonError('Invalid share link', 404);
+    if ((await sha256Base64Url(body.token)) !== share.token_hash)
+      return jsonError('Invalid share link', 404);
     const now = Date.now();
-    if (share.status !== 'unused') return jsonError('This share link has already been used or revoked', 409);
+    if (share.status !== 'unused')
+      return jsonError('This share link has already been used or revoked', 409);
     if (now >= share.expires_at) {
       this.updateStatus(share, 'expired', now);
       await this.syncOwnerMetadata(share, 'expired', { closedAt: now });
@@ -205,7 +216,7 @@ export class SSHShareDO {
       now,
       sessionExpiresAt,
       ticketHash,
-      now + CONNECT_TICKET_TTL_MS,
+      now + CONNECT_TICKET_TTL_MS
     );
     const updated = this.getShare();
     if (!updated || updated.status !== 'claimed' || updated.ticket_hash !== ticketHash) {
@@ -221,7 +232,10 @@ export class SSHShareDO {
     });
   }
 
-  private async consumeConnection(body: { ticket?: string; sessionName?: string }): Promise<Response> {
+  private async consumeConnection(body: {
+    ticket?: string;
+    sessionName?: string;
+  }): Promise<Response> {
     const share = this.getShare();
     if (!share || typeof body.ticket !== 'string' || typeof body.sessionName !== 'string') {
       return jsonError('Invalid connection ticket', 400);
@@ -234,7 +248,7 @@ export class SSHShareDO {
       await this.revoke('expired');
       return jsonError('Connection ticket expired', 410);
     }
-    if (await sha256Base64Url(body.ticket) !== share.ticket_hash) {
+    if ((await sha256Base64Url(body.ticket)) !== share.ticket_hash) {
       return jsonError('Invalid connection ticket', 403);
     }
 
@@ -242,7 +256,7 @@ export class SSHShareDO {
       `UPDATE share_state SET status = 'active', active_at = ?, session_name = ?,
        ticket_hash = NULL, ticket_expires_at = NULL WHERE singleton = 1 AND status = 'claimed'`,
       now,
-      body.sessionName,
+      body.sessionName
     );
     const active = this.getShare();
     if (!active || active.status !== 'active' || active.session_name !== body.sessionName) {
@@ -250,9 +264,8 @@ export class SSHShareDO {
     }
 
     const ownerStub = this.env.USER_DB.get(this.env.USER_DB.idFromName(active.owner_github_id));
-    const configResponse = await ownerStub.fetch(new Request(
-      `http://internal/internal/servers/${active.server_id}/share-config`,
-      {
+    const configResponse = await ownerStub.fetch(
+      new Request(`http://internal/internal/servers/${active.server_id}/share-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -261,8 +274,8 @@ export class SSHShareDO {
           share_ref: active.token_hash,
           session_expires_at: active.session_expires_at,
         }),
-      },
-    ));
+      })
+    );
     if (!configResponse.ok) {
       const error = await configResponse.text();
       await this.appendAudit('session.connection_failed', { status: configResponse.status }, now);
@@ -270,7 +283,9 @@ export class SSHShareDO {
       await this.syncOwnerMetadata(active, 'closed', { closedAt: now });
       return new Response(error, {
         status: configResponse.status,
-        headers: { 'Content-Type': configResponse.headers.get('Content-Type') || 'application/json' },
+        headers: {
+          'Content-Type': configResponse.headers.get('Content-Type') || 'application/json',
+        },
       });
     }
 
@@ -288,9 +303,10 @@ export class SSHShareDO {
       return jsonError('Share session is not active', 409);
     }
     const eventType = typeof body.eventType === 'string' ? body.eventType.slice(0, 64) : '';
-    const occurredAt = typeof body.occurredAt === 'number' && Number.isFinite(body.occurredAt)
-      ? Math.floor(body.occurredAt)
-      : Date.now();
+    const occurredAt =
+      typeof body.occurredAt === 'number' && Number.isFinite(body.occurredAt)
+        ? Math.floor(body.occurredAt)
+        : Date.now();
     if (!eventType) return jsonError('Invalid audit event', 400);
     const details = body.details && typeof body.details === 'object' ? body.details : {};
     const serialized = JSON.stringify(details);
@@ -328,12 +344,18 @@ export class SSHShareDO {
     await this.appendAudit(`share.${status}`, {}, now);
     this.updateStatus(share, status, now);
     if (share.session_name) {
-      const sessionStub = this.env.SSH_SESSION.get(this.env.SSH_SESSION.idFromName(share.session_name));
-      await sessionStub.fetch(new Request('http://internal/internal/revoke-share', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shareId: share.share_id }),
-      })).catch(() => null);
+      const sessionStub = this.env.SSH_SESSION.get(
+        this.env.SSH_SESSION.idFromName(share.session_name)
+      );
+      await sessionStub
+        .fetch(
+          new Request('http://internal/internal/revoke-share', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ shareId: share.share_id }),
+          })
+        )
+        .catch(() => null);
     }
     await this.syncOwnerMetadata(share, status, { closedAt: now });
     return Response.json({ success: true });
@@ -342,12 +364,14 @@ export class SSHShareDO {
   private ownerView(ownerUserId: number, after: number, limit: number): Response {
     const share = this.getShare();
     if (!share || share.owner_user_id !== ownerUserId) return jsonError('Forbidden', 403);
-    const events = this.db.exec(
-      `SELECT id, occurred_at, event_type, details FROM audit_events
+    const events = this.db
+      .exec(
+        `SELECT id, occurred_at, event_type, details FROM audit_events
        WHERE id > ? ORDER BY id ASC LIMIT ?`,
-      after,
-      limit + 1,
-    ).toArray() as Array<{ id: number; occurred_at: number; event_type: string; details: string }>;
+        after,
+        limit + 1
+      )
+      .toArray() as Array<{ id: number; occurred_at: number; event_type: string; details: string }>;
     const hasMore = events.length > limit;
     const visible = events.slice(0, limit).map((event) => ({
       id: event.id,
@@ -375,7 +399,7 @@ export class SSHShareDO {
 
   private getShare(): ShareStateRow | null {
     const rows = this.db.exec('SELECT * FROM share_state WHERE singleton = 1').toArray();
-    return rows.length ? rows[0] as ShareStateRow : null;
+    return rows.length ? (rows[0] as ShareStateRow) : null;
   }
 
   private updateStatus(share: ShareStateRow, status: ShareStatus, closedAt: number): void {
@@ -383,7 +407,7 @@ export class SSHShareDO {
       `UPDATE share_state SET status = ?, closed_at = ?, ticket_hash = NULL,
        ticket_expires_at = NULL WHERE singleton = 1`,
       status,
-      closedAt,
+      closedAt
     );
     share.status = status;
     share.closed_at = closedAt;
@@ -393,7 +417,7 @@ export class SSHShareDO {
     eventType: string,
     details: unknown,
     occurredAt = Date.now(),
-    knownByteSize?: number,
+    knownByteSize?: number
   ): Promise<void> {
     const serialized = JSON.stringify(details ?? {});
     const byteSize = knownByteSize ?? new TextEncoder().encode(serialized).length;
@@ -402,33 +426,41 @@ export class SSHShareDO {
       occurredAt,
       eventType,
       serialized,
-      byteSize,
+      byteSize
     );
-    this.db.exec('UPDATE share_state SET audit_bytes = audit_bytes + ? WHERE singleton = 1', byteSize);
+    this.db.exec(
+      'UPDATE share_state SET audit_bytes = audit_bytes + ? WHERE singleton = 1',
+      byteSize
+    );
   }
 
   private async syncOwnerMetadata(
     share: ShareStateRow,
     status: ShareStatus,
-    times: { claimedAt?: number; activeAt?: number; closedAt?: number },
+    times: { claimedAt?: number; activeAt?: number; closedAt?: number }
   ): Promise<void> {
     const stub = this.env.USER_DB.get(this.env.USER_DB.idFromName(share.owner_github_id));
-    await stub.fetch(new Request(`http://internal/internal/shares/${share.share_id}/status`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        user_id: share.owner_user_id,
-        status,
-        claimed_at: times.claimedAt,
-        active_at: times.activeAt,
-        closed_at: times.closedAt,
-      }),
-    })).catch(() => null);
+    await stub
+      .fetch(
+        new Request(`http://internal/internal/shares/${share.share_id}/status`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: share.owner_user_id,
+            status,
+            claimed_at: times.claimedAt,
+            active_at: times.activeAt,
+            closed_at: times.closedAt,
+          }),
+        })
+      )
+      .catch(() => null);
   }
 
   private async scheduleNextAlarm(share: ShareStateRow): Promise<void> {
-    const candidates = [share.expires_at, share.session_expires_at]
-      .filter((value): value is number => typeof value === 'number' && value > Date.now());
+    const candidates = [share.expires_at, share.session_expires_at].filter(
+      (value): value is number => typeof value === 'number' && value > Date.now()
+    );
     if (candidates.length > 0) await this.state.storage.setAlarm(Math.min(...candidates));
   }
 }

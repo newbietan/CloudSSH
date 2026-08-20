@@ -57,9 +57,7 @@ export function maskIPAddress(host: string): string | null {
   const ipv4 = parseIPv4(host);
   if (ipv4) return `${ipv4[0]}.${ipv4[1]}.*.*`;
 
-  const unwrapped = host.startsWith('[') && host.endsWith(']')
-    ? host.slice(1, -1)
-    : host;
+  const unwrapped = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
   const zoneIndex = unwrapped.indexOf('%');
   const address = zoneIndex === -1 ? unwrapped : unwrapped.slice(0, zoneIndex);
   const ipv6 = parseIPv6(address);

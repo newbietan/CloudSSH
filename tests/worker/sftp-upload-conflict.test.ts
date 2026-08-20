@@ -1,30 +1,23 @@
-import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { describe, expect, it, vi } from 'vitest';
 import { SSHChannel } from '../../src/ssh/channel';
 import {
-  SSH_FXP_ATTRS,
-  SSH_FXP_HANDLE,
-  SSH_FXP_STATUS,
   SSH_FX_NO_SUCH_FILE,
   SSH_FX_PERMISSION_DENIED,
   SSH_FXF_CREAT,
   SSH_FXF_EXCL,
   SSH_FXF_TRUNC,
   SSH_FXF_WRITE,
+  SSH_FXP_ATTRS,
+  SSH_FXP_HANDLE,
+  SSH_FXP_STATUS,
   SSH_S_IFREG,
 } from '../../src/ssh/sftp-types';
 import { SFTPHandler } from '../../src/worker/sftp-handler';
 
 function createHandler(sftpOverrides: Record<string, unknown>) {
   const sendJSON = vi.fn();
-  const handler = new SFTPHandler(
-    1,
-    new SSHChannel(),
-    vi.fn(),
-    sendJSON,
-    vi.fn(),
-    vi.fn(),
-  );
+  const handler = new SFTPHandler(1, new SSHChannel(), vi.fn(), sendJSON, vi.fn(), vi.fn());
   const sftp = {
     stat: vi.fn(),
     parseAttrsResponse: vi.fn(),
@@ -46,10 +39,10 @@ describe('SFTP 同名上传保护', () => {
   it('SSH 会话仅接受布尔 true 作为显式覆盖授权', () => {
     const source = readFileSync(
       new URL('../../src/worker/ssh-session.ts', import.meta.url),
-      'utf8',
+      'utf8'
     );
     expect(source).toContain(
-      'this.sftpHandler.uploadStart(msg.path, msg.size || 0, msg.overwrite === true)',
+      'this.sftpHandler.uploadStart(msg.path, msg.size || 0, msg.overwrite === true)'
     );
   });
 
@@ -86,7 +79,7 @@ describe('SFTP 同名上传保护', () => {
 
     expect(sftp.openFile).toHaveBeenCalledWith(
       '/home/deploy/new.txt',
-      SSH_FXF_WRITE | SSH_FXF_CREAT | SSH_FXF_EXCL,
+      SSH_FXF_WRITE | SSH_FXF_CREAT | SSH_FXF_EXCL
     );
     expect(sendJSON).toHaveBeenCalledWith({
       type: 'sftp_upload_ready',
@@ -104,7 +97,7 @@ describe('SFTP 同名上传保护', () => {
     expect(sftp.stat).not.toHaveBeenCalled();
     expect(sftp.openFile).toHaveBeenCalledWith(
       '/home/deploy/config.yml',
-      SSH_FXF_WRITE | SSH_FXF_CREAT | SSH_FXF_TRUNC,
+      SSH_FXF_WRITE | SSH_FXF_CREAT | SSH_FXF_TRUNC
     );
     expect(sendJSON).toHaveBeenCalledWith({
       type: 'sftp_upload_ready',

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 import { blockOptionalThirdPartyAssets } from './helpers';
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
@@ -50,7 +50,11 @@ test.beforeEach(async ({ page }) => {
       send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
         let message: any = data;
         if (typeof data === 'string') {
-          try { message = JSON.parse(data); } catch { /* terminal input */ }
+          try {
+            message = JSON.parse(data);
+          } catch {
+            /* terminal input */
+          }
         }
         this.state.sent.push(message);
 
@@ -70,11 +74,17 @@ test.beforeEach(async ({ page }) => {
       close(code = 1000, reason = ''): void {
         if (this.readyState === TestWebSocket.CLOSED) return;
         this.readyState = TestWebSocket.CLOSED;
-        setTimeout(() => this.onclose?.(new CloseEvent('close', {
-          code,
-          reason,
-          wasClean: code === 1000,
-        })), 0);
+        setTimeout(
+          () =>
+            this.onclose?.(
+              new CloseEvent('close', {
+                code,
+                reason,
+                wasClean: code === 1000,
+              })
+            ),
+          0
+        );
       }
 
       private emitJSON(message: unknown): void {
@@ -97,42 +107,52 @@ test.beforeEach(async ({ page }) => {
   });
 
   await blockOptionalThirdPartyAssets(page);
-  await page.route('**/api/config', (route) => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({
-      turnstileEnabled: false,
-      sitekey: '',
-      githubAuthEnabled: true,
-      githubAuthRequired: false,
-    }),
-  }));
-  await page.route('**/api/auth/me', (route) => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({ id: 1, github_id: 42, username: 'tester', avatar_url: '' }),
-  }));
-  await page.route('**/api/user/theme', (route) => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: '{"theme":null}',
-  }));
-  await page.route('**/api/servers', (route) => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify([{
-      id: 7,
-      user_id: 1,
-      name: 'Mobile VPS',
-      host: 'vps.example.com',
-      port: 22,
-      username: 'root',
-      auth_method: 'password',
-      tags: [],
-      created_at: '2026-08-12T00:00:00Z',
-      updated_at: '2026-08-12T00:00:00Z',
-    }]),
-  }));
+  await page.route('**/api/config', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        turnstileEnabled: false,
+        sitekey: '',
+        githubAuthEnabled: true,
+        githubAuthRequired: false,
+      }),
+    })
+  );
+  await page.route('**/api/auth/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 1, github_id: 42, username: 'tester', avatar_url: '' }),
+    })
+  );
+  await page.route('**/api/user/theme', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: '{"theme":null}',
+    })
+  );
+  await page.route('**/api/servers', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: 7,
+          user_id: 1,
+          name: 'Mobile VPS',
+          host: 'vps.example.com',
+          port: 22,
+          username: 'root',
+          auth_method: 'password',
+          tags: [],
+          created_at: '2026-08-12T00:00:00Z',
+          updated_at: '2026-08-12T00:00:00Z',
+        },
+      ]),
+    })
+  );
 });
 
 async function simulateBackgroundReturn(page: Page): Promise<{ output: string; sent: unknown[] }> {
@@ -155,7 +175,11 @@ async function simulateBackgroundReturn(page: Page): Promise<{ output: string; s
     terminal.ws = {
       readyState: WebSocket.OPEN,
       send: (data: string) => {
-        try { sent.push(JSON.parse(data)); } catch { sent.push(data); }
+        try {
+          sent.push(JSON.parse(data));
+        } catch {
+          sent.push(data);
+        }
       },
       close: () => undefined,
     };
@@ -164,7 +188,7 @@ async function simulateBackgroundReturn(page: Page): Promise<{ output: string; s
     document.dispatchEvent(new Event('visibilitychange'));
     (window as any).__testVisibilityState = 'visible';
     document.dispatchEvent(new Event('visibilitychange'));
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
     terminal.dispose();
     root.remove();
@@ -203,7 +227,9 @@ test('手机回到前台后淘汰僵尸连接并为保存服务器刷新令牌',
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ wsUrl: `ws://127.0.0.1:4173/api/ssh?token=42:test-${connectRequests}` }),
+      body: JSON.stringify({
+        wsUrl: `ws://127.0.0.1:4173/api/ssh?token=42:test-${connectRequests}`,
+      }),
     });
   });
 
@@ -251,13 +277,19 @@ test('主机指纹变更必须明确确认后更新精确路由并刷新保存�
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ wsUrl: `ws://127.0.0.1:4173/api/ssh?token=42:host-key-${connectRequests}` }),
+      body: JSON.stringify({
+        wsUrl: `ws://127.0.0.1:4173/api/ssh?token=42:host-key-${connectRequests}`,
+      }),
     });
   });
   await page.route('**/api/known-hosts', async (route) => {
     if (route.request().method() === 'POST') {
       knownHostUpdates.push(route.request().postDataJSON());
-      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"success":true}' });
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: '{"success":true}',
+      });
       return;
     }
     await route.fulfill({ status: 404 });
@@ -267,22 +299,25 @@ test('主机指纹变更必须明确确认后更新精确路由并刷新保存�
   await page.locator('#connect-7').click();
   await expect(page.locator('#term-status')).toContainText('已连接');
 
-  await page.evaluate(({ oldFingerprint, newFingerprint, routeIdentity }) => {
-    void (window as any).eval("import('/src/main.ts')").then((module: any) => {
-      const terminal = module.getTabManager().getActiveTab().terminal as any;
-      const socket = terminal.ws;
-      void terminal.handleChangedHostKey(socket, {
-        type: 'host_key_changed',
-        fingerprint: newFingerprint,
-        expectedFingerprint: oldFingerprint,
-        keyType: 'ssh-ed25519',
-        host: routeIdentity,
-        displayHost: 'vps.example.com',
-        port: 22,
+  await page.evaluate(
+    ({ oldFingerprint, newFingerprint, routeIdentity }) => {
+      void (window as any).eval("import('/src/main.ts')").then((module: any) => {
+        const terminal = module.getTabManager().getActiveTab().terminal as any;
+        const socket = terminal.ws;
+        void terminal.handleChangedHostKey(socket, {
+          type: 'host_key_changed',
+          fingerprint: newFingerprint,
+          expectedFingerprint: oldFingerprint,
+          keyType: 'ssh-ed25519',
+          host: routeIdentity,
+          displayHost: 'vps.example.com',
+          port: 22,
+        });
+        socket.close(1000, 'Host key changed');
       });
-      socket.close(1000, 'Host key changed');
-    });
-  }, { oldFingerprint, newFingerprint, routeIdentity });
+    },
+    { oldFingerprint, newFingerprint, routeIdentity }
+  );
 
   const dialog = page.locator('.app-dialog');
   await expect(dialog).toBeVisible();
@@ -292,28 +327,35 @@ test('主机指纹变更必须明确确认后更新精确路由并刷新保存�
   expect(knownHostUpdates).toEqual([]);
   expect(connectRequests).toBe(1);
 
-  await page.evaluate(({ oldFingerprint, newFingerprint, routeIdentity }) => {
-    void (window as any).eval("import('/src/main.ts')").then((module: any) => {
-      const terminal = module.getTabManager().getActiveTab().terminal as any;
-      void terminal.handleChangedHostKey(terminal.ws, {
-        type: 'host_key_changed',
-        fingerprint: newFingerprint,
-        expectedFingerprint: oldFingerprint,
-        keyType: 'ssh-ed25519',
-        host: routeIdentity,
-        displayHost: 'vps.example.com',
-        port: 22,
+  await page.evaluate(
+    ({ oldFingerprint, newFingerprint, routeIdentity }) => {
+      void (window as any).eval("import('/src/main.ts')").then((module: any) => {
+        const terminal = module.getTabManager().getActiveTab().terminal as any;
+        void terminal.handleChangedHostKey(terminal.ws, {
+          type: 'host_key_changed',
+          fingerprint: newFingerprint,
+          expectedFingerprint: oldFingerprint,
+          keyType: 'ssh-ed25519',
+          host: routeIdentity,
+          displayHost: 'vps.example.com',
+          port: 22,
+        });
       });
-    });
-  }, { oldFingerprint, newFingerprint, routeIdentity });
+    },
+    { oldFingerprint, newFingerprint, routeIdentity }
+  );
 
   await expect(dialog).toBeVisible();
   await dialog.locator('.app-dialog__button--confirm').click();
-  await expect.poll(() => knownHostUpdates).toEqual([{
-    host: routeIdentity,
-    port: 22,
-    fingerprint: newFingerprint,
-  }]);
+  await expect
+    .poll(() => knownHostUpdates)
+    .toEqual([
+      {
+        host: routeIdentity,
+        port: 22,
+        fingerprint: newFingerprint,
+      },
+    ]);
   await expect.poll(() => connectRequests).toBe(2);
   await expect(page.locator('#term-status')).toContainText('已连接');
 });

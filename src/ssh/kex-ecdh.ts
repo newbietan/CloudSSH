@@ -1,5 +1,5 @@
 import { SSH_MSG_KEX_ECDH_INIT } from '../types';
-import { concat, readUint32, encodeString, toSSHMPInt } from './utils';
+import { concat, encodeString, readUint32, toSSHMPInt } from './utils';
 
 type ECDHSubtleCrypto = {
   generateKey(
@@ -35,24 +35,15 @@ function isAllZero(bytes: Uint8Array): boolean {
 
 export class ECDHKeyExchange {
   static async generateKeyPair(): Promise<CryptoKeyPair> {
-    return ecdhSubtle().generateKey(
-      { name: 'ECDH', namedCurve: 'P-256' },
-      true,
-      ['deriveBits']
-    );
+    return ecdhSubtle().generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
   }
 
   static async exportRawPublicKey(keyPair: CryptoKeyPair): Promise<Uint8Array> {
-    return new Uint8Array(
-      await ecdhSubtle().exportKey('raw', keyPair.publicKey)
-    );
+    return new Uint8Array(await ecdhSubtle().exportKey('raw', keyPair.publicKey));
   }
 
   static buildInit(clientRawPublicKey: Uint8Array): Uint8Array {
-    return concat(
-      new Uint8Array([SSH_MSG_KEX_ECDH_INIT]),
-      encodeString(clientRawPublicKey)
-    );
+    return concat(new Uint8Array([SSH_MSG_KEX_ECDH_INIT]), encodeString(clientRawPublicKey));
   }
 
   static parseReply(data: Uint8Array): {

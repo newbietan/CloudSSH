@@ -86,16 +86,26 @@ export interface SFTPPendingRequest {
 
 export function getStatusMessage(code: number): string {
   switch (code) {
-    case SSH_FX_OK: return '成功';
-    case SSH_FX_EOF: return '已到文件末尾';
-    case SSH_FX_NO_SUCH_FILE: return '文件不存在';
-    case SSH_FX_PERMISSION_DENIED: return '权限被拒绝';
-    case SSH_FX_FAILURE: return '操作失败';
-    case SSH_FX_BAD_MESSAGE: return '消息格式错误';
-    case SSH_FX_NO_CONNECTION: return '无连接';
-    case SSH_FX_CONNECTION_LOST: return '连接丢失';
-    case SSH_FX_OP_UNSUPPORTED: return '操作不支持';
-    default: return `未知错误 (${code})`;
+    case SSH_FX_OK:
+      return '成功';
+    case SSH_FX_EOF:
+      return '已到文件末尾';
+    case SSH_FX_NO_SUCH_FILE:
+      return '文件不存在';
+    case SSH_FX_PERMISSION_DENIED:
+      return '权限被拒绝';
+    case SSH_FX_FAILURE:
+      return '操作失败';
+    case SSH_FX_BAD_MESSAGE:
+      return '消息格式错误';
+    case SSH_FX_NO_CONNECTION:
+      return '无连接';
+    case SSH_FX_CONNECTION_LOST:
+      return '连接丢失';
+    case SSH_FX_OP_UNSUPPORTED:
+      return '操作不支持';
+    default:
+      return `未知错误 (${code})`;
   }
 }
 
@@ -110,17 +120,17 @@ export function formatPermissions(permissions: number): string {
   const mode = permissions & 0o777;
   let result = '';
   // owner
-  result += (mode & 0o400) ? 'r' : '-';
-  result += (mode & 0o200) ? 'w' : '-';
-  result += (mode & 0o100) ? 'x' : '-';
+  result += mode & 0o400 ? 'r' : '-';
+  result += mode & 0o200 ? 'w' : '-';
+  result += mode & 0o100 ? 'x' : '-';
   // group
-  result += (mode & 0o040) ? 'r' : '-';
-  result += (mode & 0o020) ? 'w' : '-';
-  result += (mode & 0o010) ? 'x' : '-';
+  result += mode & 0o040 ? 'r' : '-';
+  result += mode & 0o020 ? 'w' : '-';
+  result += mode & 0o010 ? 'x' : '-';
   // other
-  result += (mode & 0o004) ? 'r' : '-';
-  result += (mode & 0o002) ? 'w' : '-';
-  result += (mode & 0o001) ? 'x' : '-';
+  result += mode & 0o004 ? 'r' : '-';
+  result += mode & 0o002 ? 'w' : '-';
+  result += mode & 0o001 ? 'x' : '-';
   return result;
 }
 

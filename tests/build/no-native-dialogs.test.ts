@@ -7,11 +7,13 @@ const frontendSourceDir = path.join(rootDir, 'frontend', 'src');
 
 async function listTypeScriptFiles(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
-  const files = await Promise.all(entries.map(async (entry) => {
-    const entryPath = path.join(directory, entry.name);
-    if (entry.isDirectory()) return listTypeScriptFiles(entryPath);
-    return entry.isFile() && entry.name.endsWith('.ts') ? [entryPath] : [];
-  }));
+  const files = await Promise.all(
+    entries.map(async (entry) => {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) return listTypeScriptFiles(entryPath);
+      return entry.isFile() && entry.name.endsWith('.ts') ? [entryPath] : [];
+    })
+  );
   return files.flat();
 }
 

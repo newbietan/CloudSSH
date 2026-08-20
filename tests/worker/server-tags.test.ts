@@ -8,10 +8,13 @@ import {
 
 describe('server tags', () => {
   it('normalizes, deduplicates and limits user input', () => {
-    expect(normalizeServerTags([' Production ', 'production', 'data   base', '', 42]))
-      .toEqual(['Production', 'data base']);
-    expect(normalizeServerTags(Array.from({ length: 12 }, (_, index) => `tag-${index}`)))
-      .toHaveLength(10);
+    expect(normalizeServerTags([' Production ', 'production', 'data   base', '', 42])).toEqual([
+      'Production',
+      'data base',
+    ]);
+    expect(
+      normalizeServerTags(Array.from({ length: 12 }, (_, index) => `tag-${index}`))
+    ).toHaveLength(10);
   });
 
   it('round-trips SQLite JSON and safely handles legacy values', () => {
@@ -21,7 +24,9 @@ describe('server tags', () => {
   });
 
   it('deserializes a database row without exposing the JSON representation', () => {
-    expect(deserializeServerRow({ id: 1, tags: '["prod","apac"]' }))
-      .toEqual({ id: 1, tags: ['prod', 'apac'] });
+    expect(deserializeServerRow({ id: 1, tags: '["prod","apac"]' })).toEqual({
+      id: 1,
+      tags: ['prod', 'apac'],
+    });
   });
 });

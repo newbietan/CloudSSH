@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  SSHAESGCMCipher,
-  SSHAESCTRCipher,
-  SSHHMAC,
   REKEY_THRESHOLD,
+  SSHAESCTRCipher,
+  SSHAESGCMCipher,
+  SSHHMAC,
   shouldRekey,
 } from '../../src/ssh/crypto';
 
@@ -212,7 +212,10 @@ describe('crypto — SSHAESGCMCipher', () => {
       // 这在 GCM 下是 catastrophic failure。这里断言两次密文不同。
       let eq = true;
       for (let i = 0; i < c1.length; i++) {
-        if (c1[i] !== c2[i]) { eq = false; break; }
+        if (c1[i] !== c2[i]) {
+          eq = false;
+          break;
+        }
       }
       expect(eq).toBe(false);
     });
@@ -254,7 +257,10 @@ describe('crypto — SSHAESGCMCipher', () => {
       const c2 = enc.encrypt ? await enc.encrypt(plaintext) : plaintext;
       let eq = true;
       for (let i = 0; i < c1.length; i++) {
-        if (c1[i] !== c2[i]) { eq = false; break; }
+        if (c1[i] !== c2[i]) {
+          eq = false;
+          break;
+        }
       }
       expect(eq).toBe(false);
     });
@@ -398,7 +404,10 @@ describe('crypto — SSHAESCTRCipher', () => {
       // counter 自增后两次密文必须不同
       let eq = true;
       for (let i = 0; i < c1.length; i++) {
-        if (c1[i] !== c2[i]) { eq = false; break; }
+        if (c1[i] !== c2[i]) {
+          eq = false;
+          break;
+        }
       }
       expect(eq).toBe(false);
     });
@@ -524,7 +533,9 @@ describe('crypto — SSHHMAC', () => {
     });
     it('init 之前调用 verify 抛错', async () => {
       const m = new SSHHMAC('hmac-sha2-256', randomBytes(32));
-      await expect(m.verify(randomBytes(10), 1, randomBytes(32))).rejects.toThrow(/not initialized/);
+      await expect(m.verify(randomBytes(10), 1, randomBytes(32))).rejects.toThrow(
+        /not initialized/
+      );
     });
   });
 

@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { isBlockedIP, checkHostResolved, clearDnsCache } from '../../src/worker/dns-check';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { validateBaseUrlWithDNS } from '../../src/worker/agent/ssrf';
+import { checkHostResolved, clearDnsCache, isBlockedIP } from '../../src/worker/dns-check';
 
 // =====================================================================
 // dns-check.test.ts
@@ -178,7 +178,9 @@ describe('checkHostResolved — domain DNS rebinding defence', () => {
   it('allows domain resolving to public IPs', async () => {
     fetchMock
       .mockResolvedValueOnce(dohResponse([{ type: 1, data: '93.184.216.34' }]))
-      .mockResolvedValueOnce(dohResponse([{ type: 28, data: '2606:2800:220:1:248:1893:25c8:1946' }]));
+      .mockResolvedValueOnce(
+        dohResponse([{ type: 28, data: '2606:2800:220:1:248:1893:25c8:1946' }])
+      );
 
     const r = await checkHostResolved('api.example.com');
 

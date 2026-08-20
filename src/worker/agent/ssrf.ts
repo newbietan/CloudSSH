@@ -14,7 +14,12 @@ export function validateBaseUrl(baseUrl: string): { valid: boolean; reason?: str
     // 需剥离方括号再做比较，否则 IPv6 本地地址会绕过校验。
     const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
 
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '0.0.0.0') {
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '::1' ||
+      hostname === '0.0.0.0'
+    ) {
       return { valid: false, reason: '禁止访问 localhost' };
     }
 
@@ -43,7 +48,7 @@ export function validateBaseUrl(baseUrl: string): { valid: boolean; reason?: str
  * base_url.
  */
 export async function validateBaseUrlWithDNS(
-  baseUrl: string,
+  baseUrl: string
 ): Promise<{ valid: boolean; reason?: string }> {
   // First line: fast string-based check
   const stringCheck = validateBaseUrl(baseUrl);

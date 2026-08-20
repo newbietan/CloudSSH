@@ -1,4 +1,4 @@
-import { t, type TranslationKey } from './i18n';
+import { type TranslationKey, t } from './i18n';
 
 /**
  * DO locationHint 区域选项共享数据。
@@ -34,7 +34,7 @@ export const REGION_OPTIONS: RegionOption[] = [
  */
 export function regionLabel(value: string | null | undefined): string {
   if (!value) return t('region.autoShort');
-  const option = REGION_OPTIONS.find(o => o.value === value);
+  const option = REGION_OPTIONS.find((o) => o.value === value);
   return option ? t(option.labelKey) : value;
 }
 
@@ -43,9 +43,10 @@ export function regionLabel(value: string | null | undefined): string {
  */
 export function populateRegionSelect(
   el: HTMLSelectElement,
-  selected: string | null | undefined,
+  selected: string | null | undefined
 ): void {
-  el.innerHTML = REGION_OPTIONS.map(o =>
-    `<option value="${o.value}" ${o.value === (selected || '') ? 'selected' : ''}>${t(o.labelKey)}</option>`,
+  el.innerHTML = REGION_OPTIONS.map(
+    (o) =>
+      `<option value="${o.value}" ${o.value === (selected || '') ? 'selected' : ''}>${t(o.labelKey)}</option>`
   ).join('');
 }

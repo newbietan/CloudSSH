@@ -20,7 +20,8 @@ export class AIConfigPanel {
   private render(): void {
     this.modalEl = document.createElement('div');
     this.modalEl.id = 'ai-config-modal';
-    this.modalEl.className = 'responsive-modal hidden fixed inset-0 z-[100] flex items-center justify-center';
+    this.modalEl.className =
+      'responsive-modal hidden fixed inset-0 z-[100] flex items-center justify-center';
     this.modalEl.innerHTML = `
       <div class="modal-overlay absolute inset-0" id="ai-modal-backdrop"></div>
       <div class="responsive-modal-panel cyber-box p-6 shadow-2xl relative z-10 w-full max-w-md mx-4">
@@ -74,7 +75,9 @@ export class AIConfigPanel {
 
     this.modalEl.querySelector('#ai-modal-close-btn')?.addEventListener('click', () => this.hide());
     this.modalEl.querySelector('#ai-modal-backdrop')?.addEventListener('click', () => this.hide());
-    this.modalEl.querySelector('#ai-fetch-models-btn')?.addEventListener('click', () => this.fetchModels());
+    this.modalEl
+      .querySelector('#ai-fetch-models-btn')
+      ?.addEventListener('click', () => this.fetchModels());
     this.modalEl.querySelector('#ai-save-btn')?.addEventListener('click', () => this.saveConfig());
   }
 
@@ -82,7 +85,7 @@ export class AIConfigPanel {
     try {
       const res = await fetch('/api/ai/config');
       if (res.ok) {
-        const data = await res.json() as any;
+        const data = (await res.json()) as any;
         if (data.configured) {
           const baseUrlEl = this.modalEl?.querySelector('#ai-base-url') as HTMLInputElement;
           const modelEl = this.modalEl?.querySelector('#ai-model') as HTMLInputElement;
@@ -122,7 +125,7 @@ export class AIConfigPanel {
         body: JSON.stringify({ base_url: baseUrl, api_key: apiKey }),
       });
 
-      const data = await res.json() as any;
+      const data = (await res.json()) as any;
 
       if (data.error) {
         this.showFetchStatus(data.error, true);
@@ -146,7 +149,12 @@ export class AIConfigPanel {
       }
       this.showFetchStatus(t('aiConfig.modelsLoaded', { count: models.length }), false);
     } catch (e) {
-      this.showFetchStatus(t('aiConfig.loadFailed', { message: e instanceof Error ? e.message : t('aiConfig.networkError') }), true);
+      this.showFetchStatus(
+        t('aiConfig.loadFailed', {
+          message: e instanceof Error ? e.message : t('aiConfig.networkError'),
+        }),
+        true
+      );
     } finally {
       if (fetchBtn) fetchBtn.disabled = false;
     }
@@ -172,7 +180,10 @@ export class AIConfigPanel {
     successEl?.classList.add('hidden');
 
     if (!baseUrl || !model) {
-      if (errorEl) { errorEl.textContent = t('aiConfig.required'); errorEl.classList.remove('hidden'); }
+      if (errorEl) {
+        errorEl.textContent = t('aiConfig.required');
+        errorEl.classList.remove('hidden');
+      }
       return;
     }
 
@@ -187,14 +198,23 @@ export class AIConfigPanel {
       });
 
       if (res.ok) {
-        if (successEl) { successEl.textContent = t('aiConfig.saved'); successEl.classList.remove('hidden'); }
+        if (successEl) {
+          successEl.textContent = t('aiConfig.saved');
+          successEl.classList.remove('hidden');
+        }
         setTimeout(() => this.hide(), 1500);
       } else {
-        const data = await res.json() as any;
-        if (errorEl) { errorEl.textContent = data.error || t('feedback.danger'); errorEl.classList.remove('hidden'); }
+        const data = (await res.json()) as any;
+        if (errorEl) {
+          errorEl.textContent = data.error || t('feedback.danger');
+          errorEl.classList.remove('hidden');
+        }
       }
     } catch {
-      if (errorEl) { errorEl.textContent = t('aiConfig.networkError'); errorEl.classList.remove('hidden'); }
+      if (errorEl) {
+        errorEl.textContent = t('aiConfig.networkError');
+        errorEl.classList.remove('hidden');
+      }
     }
   }
 }

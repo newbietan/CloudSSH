@@ -1,24 +1,24 @@
-import { SSHChannel } from '../ssh/channel';
+import type { SSHChannel } from '../ssh/channel';
 import { SFTPClient } from '../ssh/sftp';
 import {
-  SSH_FXP_STATUS,
-  SSH_FXP_HANDLE,
-  SSH_FXP_DATA,
-  SSH_FXP_NAME,
-  SSH_FXP_ATTRS,
-  SSH_FX_OK,
+  formatFileSize,
+  formatPermissions,
+  getFileTypeFromPermissions,
+  type SFTPFileAttributes,
+  type SFTPFileEntry,
   SSH_FX_EOF,
   SSH_FX_NO_SUCH_FILE,
-  SSH_FXF_READ,
-  SSH_FXF_WRITE,
+  SSH_FX_OK,
   SSH_FXF_CREAT,
-  SSH_FXF_TRUNC,
   SSH_FXF_EXCL,
-  getFileTypeFromPermissions,
-  formatPermissions,
-  formatFileSize,
-  type SFTPFileEntry,
-  type SFTPFileAttributes,
+  SSH_FXF_READ,
+  SSH_FXF_TRUNC,
+  SSH_FXF_WRITE,
+  SSH_FXP_ATTRS,
+  SSH_FXP_DATA,
+  SSH_FXP_HANDLE,
+  SSH_FXP_NAME,
+  SSH_FXP_STATUS,
 } from '../ssh/sftp-types';
 
 const DOWNLOAD_CHUNK_SIZE = 128 * 1024;
@@ -31,7 +31,16 @@ type SendEncryptedFn = (payload: Uint8Array) => Promise<void>;
 type SendJSONFn = (msg: any) => void;
 type SendBinaryFn = (data: Uint8Array) => void;
 type SendDebugFn = (message: string) => void;
-type SFTPOperation = 'init' | 'list' | 'stat' | 'download' | 'upload' | 'delete' | 'rename' | 'mkdir' | 'rmdir';
+type SFTPOperation =
+  | 'init'
+  | 'list'
+  | 'stat'
+  | 'download'
+  | 'upload'
+  | 'delete'
+  | 'rename'
+  | 'mkdir'
+  | 'rmdir';
 
 export class SFTPHandler {
   private channelID: number;
@@ -74,12 +83,18 @@ export class SFTPHandler {
         const current = this.sftpSendQueue[this.sftpSendQueueHead];
         const chunk = this.channel.takeChannelDataChunk(current.data, current.offset);
         if (!chunk) {
-          if (this.debugEnabled) this.sendDebug(`[SFTP] send queue paused: offset=${current.offset}, dataLen=${current.data.length}`);
+          if (this.debugEnabled)
+            this.sendDebug(
+              `[SFTP] send queue paused: offset=${current.offset}, dataLen=${current.data.length}`
+            );
           break;
         }
 
         const packet = this.buildChannelDataPacket(chunk);
-        if (this.debugEnabled) this.sendDebug(`[SFTP] Built CHANNEL_DATA: len=${packet.length}, remoteChID=${this.channel.getRemoteChannelID()}`);
+        if (this.debugEnabled)
+          this.sendDebug(
+            `[SFTP] Built CHANNEL_DATA: len=${packet.length}, remoteChID=${this.channel.getRemoteChannelID()}`
+          );
         await this.sendEncrypted(packet);
 
         current.offset += chunk.bytesConsumed;
@@ -99,7 +114,11 @@ export class SFTPHandler {
     }
   }
 
-  private buildChannelDataPacket(chunk: { source: Uint8Array; sourceOffset: number; bytesConsumed: number }): Uint8Array {
+  private buildChannelDataPacket(chunk: {
+    source: Uint8Array;
+    sourceOffset: number;
+    bytesConsumed: number;
+  }): Uint8Array {
     const { source, sourceOffset, bytesConsumed } = chunk;
     const payload = new Uint8Array(9 + bytesConsumed);
     payload[0] = 94; // SSH_MSG_CHANNEL_DATA
@@ -123,7 +142,7 @@ export class SFTPHandler {
     sendJSON: SendJSONFn,
     sendBinary: SendBinaryFn,
     sendDebug: SendDebugFn,
-    debugEnabled: boolean = false,
+    debugEnabled: boolean = false
   ) {
     this.channelID = channelID;
     this.channel = channel;
@@ -216,7 +235,9 @@ export class SFTPHandler {
         }
       }
     } catch (e) {
-      this.sendDebug('SFTP incomplete upload cleanup failed: ' + (e instanceof Error ? e.message : String(e)));
+      this.sendDebug(
+        'SFTP incomplete upload cleanup failed: ' + (e instanceof Error ? e.message : String(e))
+      );
     }
   }
 
@@ -287,14 +308,18 @@ export class SFTPHandler {
       let resolvedPath = path;
       if (realPathType === SSH_FXP_NAME) {
         const entries = this.sftp.parseNameResponse(realPathResp);
-        if (this.debugEnabled) this.sendDebug(`[SFTP] realpath entries: ${JSON.stringify(entries.map(e => e.filename))}`);
+        if (this.debugEnabled)
+          this.sendDebug(
+            `[SFTP] realpath entries: ${JSON.stringify(entries.map((e) => e.filename))}`
+          );
         if (entries.length > 0) {
           resolvedPath = entries[0].filename;
           if (this.debugEnabled) this.sendDebug(`[SFTP] resolved path: "${resolvedPath}"`);
         }
       } else if (realPathType === SSH_FXP_STATUS) {
         const status = this.sftp.parseStatusResponse(realPathResp);
-        if (this.debugEnabled) this.sendDebug(`[SFTP] realpath failed: code=${status.code}, msg=${status.message}`);
+        if (this.debugEnabled)
+          this.sendDebug(`[SFTP] realpath failed: code=${status.code}, msg=${status.message}`);
       }
 
       // Open directory
@@ -325,8 +350,8 @@ export class SFTPHandler {
 
       // Format and send results
       const formatted = entries
-        .filter(e => e.filename !== '.' && e.filename !== '..')
-        .map(e => this.formatEntry(e));
+        .filter((e) => e.filename !== '.' && e.filename !== '..')
+        .map((e) => this.formatEntry(e));
 
       this.sendJSON({
         type: 'sftp_list_result',
@@ -385,7 +410,10 @@ export class SFTPHandler {
       }
 
       if (fileSize > MAX_SFTP_FILE_SIZE) {
-        this.sendError('download', `文件过大 (${formatFileSize(fileSize)})，最大支持 ${formatFileSize(MAX_SFTP_FILE_SIZE)}`);
+        this.sendError(
+          'download',
+          `文件过大 (${formatFileSize(fileSize)})，最大支持 ${formatFileSize(MAX_SFTP_FILE_SIZE)}`
+        );
         return;
       }
 
@@ -415,9 +443,10 @@ export class SFTPHandler {
 
       let offset = 0;
       try {
-        offset = fileSize > 0
-          ? await this.downloadKnownSize(handle, fileSize)
-          : await this.downloadUntilEOF(handle);
+        offset =
+          fileSize > 0
+            ? await this.downloadKnownSize(handle, fileSize)
+            : await this.downloadUntilEOF(handle);
       } finally {
         await this.sftp.closeHandle(handle).catch(() => {});
       }
@@ -445,7 +474,11 @@ export class SFTPHandler {
     const inFlight = new Map<number, { length: number; promise: Promise<Uint8Array> }>();
 
     const scheduleReads = (): void => {
-      while (!this.downloadCancelled && inFlight.size < DOWNLOAD_CONCURRENCY && nextReadOffset < fileSize) {
+      while (
+        !this.downloadCancelled &&
+        inFlight.size < DOWNLOAD_CONCURRENCY &&
+        nextReadOffset < fileSize
+      ) {
         const length = Math.min(DOWNLOAD_CHUNK_SIZE, fileSize - nextReadOffset);
         const offset = nextReadOffset;
         inFlight.set(offset, {
@@ -564,7 +597,10 @@ export class SFTPHandler {
     }
 
     if (totalSize > MAX_SFTP_FILE_SIZE) {
-      this.sendError('upload', `文件过大 (${formatFileSize(totalSize)})，最大支持 ${formatFileSize(MAX_SFTP_FILE_SIZE)}`);
+      this.sendError(
+        'upload',
+        `文件过大 (${formatFileSize(totalSize)})，最大支持 ${formatFileSize(MAX_SFTP_FILE_SIZE)}`
+      );
       return;
     }
 
@@ -662,7 +698,8 @@ export class SFTPHandler {
 
       if (
         this.uploadTotalSize > 0 &&
-        (this.uploadChunksSinceProgress >= UPLOAD_PROGRESS_CHUNKS || this.uploadBytesWritten >= this.uploadTotalSize)
+        (this.uploadChunksSinceProgress >= UPLOAD_PROGRESS_CHUNKS ||
+          this.uploadBytesWritten >= this.uploadTotalSize)
       ) {
         this.sendJSON({
           type: 'sftp_upload_progress',
@@ -712,7 +749,9 @@ export class SFTPHandler {
       await this.closeUploadHandle();
       await this.removeIncompleteUpload();
     } catch (e) {
-      this.sendDebug('SFTP uploadCancel cleanup error: ' + (e instanceof Error ? e.message : String(e)));
+      this.sendDebug(
+        'SFTP uploadCancel cleanup error: ' + (e instanceof Error ? e.message : String(e))
+      );
     }
 
     this.resetUploadState();
@@ -822,16 +861,20 @@ export class SFTPHandler {
 
   // Format a directory entry for the frontend
   private formatEntry(entry: SFTPFileEntry): any {
-    const type = entry.attrs.permissions !== undefined
-      ? getFileTypeFromPermissions(entry.attrs.permissions)
-      : 'file';
+    const type =
+      entry.attrs.permissions === undefined
+        ? 'file'
+        : getFileTypeFromPermissions(entry.attrs.permissions);
 
     return {
       name: entry.filename,
       type,
       size: entry.attrs.size || 0,
       sizeFormatted: formatFileSize(entry.attrs.size || 0),
-      permissions: entry.attrs.permissions !== undefined ? formatPermissions(entry.attrs.permissions) : '---------',
+      permissions:
+        entry.attrs.permissions === undefined
+          ? '---------'
+          : formatPermissions(entry.attrs.permissions),
       permissionsRaw: entry.attrs.permissions || 0,
       modifiedTime: entry.attrs.mtime || 0,
       isDir: type === 'dir',
@@ -840,15 +883,15 @@ export class SFTPHandler {
   }
 
   private formatAttrs(attrs: SFTPFileAttributes): any {
-    const type = attrs.permissions !== undefined
-      ? getFileTypeFromPermissions(attrs.permissions)
-      : 'file';
+    const type =
+      attrs.permissions === undefined ? 'file' : getFileTypeFromPermissions(attrs.permissions);
 
     return {
       type,
       size: attrs.size || 0,
       sizeFormatted: formatFileSize(attrs.size || 0),
-      permissions: attrs.permissions !== undefined ? formatPermissions(attrs.permissions) : '---------',
+      permissions:
+        attrs.permissions === undefined ? '---------' : formatPermissions(attrs.permissions),
       modifiedTime: attrs.mtime || 0,
     };
   }

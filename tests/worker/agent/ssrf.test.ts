@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { validateBaseUrl } from '../../../src/worker/agent/ssrf';
 
 // =====================================================================

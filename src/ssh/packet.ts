@@ -1,4 +1,4 @@
-import { SSHPacket } from '../types';
+import type { SSHPacket } from '../types';
 import { readUint32, writeUint32 } from './utils';
 
 const EMPTY_BUFFER = new Uint8Array(0);
@@ -105,27 +105,33 @@ export class SSHPacketParser {
 
     // Discard fully consumed chunks (Array.slice creates a new reference array,
     // not a Uint8Array copy — this is intentional to free old chunk objects)
-    if (
-      this.chunkIndex > COMPACT_CHUNKS_THRESHOLD &&
-      this.chunkIndex * 2 >= this.chunks.length
-    ) {
+    if (this.chunkIndex > COMPACT_CHUNKS_THRESHOLD && this.chunkIndex * 2 >= this.chunks.length) {
       this.chunks = this.chunks.slice(this.chunkIndex);
       this.chunkIndex = 0;
     }
   }
 
-  async nextPacket(blockSize: number, decrypt: (
-    data: Uint8Array, seq: number, aad?: Uint8Array, commit?: boolean
-  ) => Uint8Array | Promise<Uint8Array | null> | null, hasAuthTag: boolean = false,
-  macLength: number = 0,
-  verifyMac?: (packet: Uint8Array, mac: Uint8Array, seq: number) => boolean | Promise<boolean>): Promise<SSHPacket | null> {
+  async nextPacket(
+    blockSize: number,
+    decrypt: (
+      data: Uint8Array,
+      seq: number,
+      aad?: Uint8Array,
+      commit?: boolean
+    ) => Uint8Array | Promise<Uint8Array | null> | null,
+    hasAuthTag: boolean = false,
+    macLength: number = 0,
+    verifyMac?: (packet: Uint8Array, mac: Uint8Array, seq: number) => boolean | Promise<boolean>
+  ): Promise<SSHPacket | null> {
     if (hasAuthTag) {
       const lengthBytes = this.peekBytes(4);
       if (!lengthBytes) return null;
 
       const packetLength = readUint32(lengthBytes, 0);
       if (packetLength > MAX_PACKET_SIZE) {
-        throw new Error(`Packet length ${packetLength} exceeds maximum allowed size ${MAX_PACKET_SIZE}`);
+        throw new Error(
+          `Packet length ${packetLength} exceeds maximum allowed size ${MAX_PACKET_SIZE}`
+        );
       }
       const expectedSize = 4 + packetLength + 16;
 
@@ -141,7 +147,9 @@ export class SSHPacketParser {
 
       const paddingLength = decrypted[0];
       if (paddingLength < 4 || paddingLength >= packetLength) {
-        throw new Error(`Invalid padding length ${paddingLength} for packet length ${packetLength}`);
+        throw new Error(
+          `Invalid padding length ${paddingLength} for packet length ${packetLength}`
+        );
       }
       const payload = decrypted.subarray(1, 1 + packetLength - 1 - paddingLength);
 
@@ -158,14 +166,14 @@ export class SSHPacketParser {
     const encryptedHeader = this.peekBytes(blockSize);
     if (!encryptedHeader) return null;
 
-    const header = await decrypt(
-      encryptedHeader, this.seqNum, undefined, false
-    );
+    const header = await decrypt(encryptedHeader, this.seqNum, undefined, false);
     if (!header) return null;
 
     const packetLength = readUint32(header, 0);
     if (packetLength > MAX_PACKET_SIZE) {
-      throw new Error(`Packet length ${packetLength} exceeds maximum allowed size ${MAX_PACKET_SIZE}`);
+      throw new Error(
+        `Packet length ${packetLength} exceeds maximum allowed size ${MAX_PACKET_SIZE}`
+      );
     }
 
     const totalBlocks = Math.ceil((4 + packetLength) / blockSize);
@@ -216,7 +224,9 @@ export class SSHPacketBuilder {
   static async build(
     payload: Uint8Array,
     blockSize: number,
-    encrypt: ((data: Uint8Array, seq: number, aad?: Uint8Array) => Uint8Array | Promise<Uint8Array>) | null,
+    encrypt:
+      | ((data: Uint8Array, seq: number, aad?: Uint8Array) => Uint8Array | Promise<Uint8Array>)
+      | null,
     seqNum: number,
     hasAuthTag: boolean = false,
     mac?: (packet: Uint8Array, seq: number) => Uint8Array | Promise<Uint8Array>
@@ -236,7 +246,9 @@ export class SSHPacketBuilder {
     payloadLength: number,
     writePayload: (packet: Uint8Array, offset: number) => void,
     blockSize: number,
-    encrypt: ((data: Uint8Array, seq: number, aad?: Uint8Array) => Uint8Array | Promise<Uint8Array>) | null,
+    encrypt:
+      | ((data: Uint8Array, seq: number, aad?: Uint8Array) => Uint8Array | Promise<Uint8Array>)
+      | null,
     seqNum: number,
     hasAuthTag: boolean = false,
     mac?: (packet: Uint8Array, seq: number) => Uint8Array | Promise<Uint8Array>
@@ -247,12 +259,10 @@ export class SSHPacketBuilder {
     // The 4-byte packet_length is AAD, NOT part of the encrypted data.
     // For non-GCM, padding aligns the full packet (4 + data) to blockSize.
     const alignBase = hasAuthTag
-      ? (1 + payloadLength) % blockSize      // encrypted portion only
-      : (4 + packetLength) % blockSize;        // full packet including length
+      ? (1 + payloadLength) % blockSize // encrypted portion only
+      : (4 + packetLength) % blockSize; // full packet including length
     const paddingNeeded = blockSize - (alignBase || blockSize);
-    const paddingLength = paddingNeeded < 4
-      ? paddingNeeded + blockSize
-      : paddingNeeded;
+    const paddingLength = paddingNeeded < 4 ? paddingNeeded + blockSize : paddingNeeded;
 
     const totalLength = 4 + 1 + payloadLength + paddingLength;
     const packet = new Uint8Array(totalLength);

@@ -11,12 +11,16 @@ test('anonymous connection form has no serious accessibility violations', async 
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze();
 
-  expect(results.violations.filter((violation) =>
-    violation.impact === 'critical' || violation.impact === 'serious',
-  )).toEqual([]);
+  expect(
+    results.violations.filter(
+      (violation) => violation.impact === 'critical' || violation.impact === 'serious'
+    )
+  ).toEqual([]);
 });
 
-test('private key textarea keeps Enter as a newline instead of submitting the form', async ({ page }) => {
+test('private key textarea keeps Enter as a newline instead of submitting the form', async ({
+  page,
+}) => {
   await mockAnonymousSession(page);
   await page.goto('/');
 
@@ -36,17 +40,17 @@ test('private key textarea keeps Enter as a newline instead of submitting the fo
 test('server modal exposes keyboard-operable dialog semantics', async ({ page }) => {
   await mockAnonymousSession(page);
   await page.route('**/api/user/theme', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '{"theme":null}' }),
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"theme":null}' })
   );
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ id: 1, github_id: 1, username: 'tester', avatar_url: '' }),
-    }),
+    })
   );
   await page.route('**/api/servers', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
   );
 
   await page.goto('/');

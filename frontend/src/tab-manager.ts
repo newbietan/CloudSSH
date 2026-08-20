@@ -1,11 +1,11 @@
-import { SSHTerminal, SSHConnectionConfig, TerminalSelectionAnchor } from './terminal';
-import { SFTPPanel } from './sftp-panel';
 import { AgentPanel } from './agent/agent-panel';
+import { copyTextToClipboard } from './clipboard';
+import { maskIPAddress } from './host-display';
 import { t } from './i18n';
 import { getNetworkQuality } from './network-quality';
-import { copyTextToClipboard } from './clipboard';
+import { SFTPPanel } from './sftp-panel';
+import { SSHConnectionConfig, SSHTerminal, type TerminalSelectionAnchor } from './terminal';
 import { notify } from './ui-feedback';
-import { maskIPAddress } from './host-display';
 
 export type TabState = 'connecting' | 'connected' | 'disconnected';
 
@@ -131,7 +131,9 @@ export class TabManager {
         if (this._isLoggedIn && !tab.agentPanel) {
           tab.agentPanel = new AgentPanel(tab.containerEl, true);
           tab.agentPanel.render();
-          tab.agentPanel.setWebSocketSend((data: string) => tab.terminal.sendWebSocketMessage(data));
+          tab.agentPanel.setWebSocketSend((data: string) =>
+            tab.terminal.sendWebSocketMessage(data)
+          );
           tab.agentPanel.setTerminalFillHandler(
             () => ({
               label: this.getTerminalTargetLabel(tab),
@@ -141,7 +143,7 @@ export class TabManager {
               const activeTab = this.getActiveTab();
               if (activeTab?.id !== tab.id || tab.state !== 'connected') return false;
               return tab.terminal.fillInput(command);
-            },
+            }
           );
           tab.terminal.setAgentFrameHandler((msg: any) => {
             tab.agentPanel?.handleAgentFrame(msg);
@@ -281,7 +283,7 @@ export class TabManager {
       tab.terminal.dispose();
       tab.containerEl.remove();
     }
-    
+
     this.tabs.clear();
     this.activeTabId = null;
     this.renderTabBar();
@@ -351,7 +353,7 @@ export class TabManager {
 
     const attached = tab.agentPanel.attachTerminalSelection(
       selection,
-      this.getTerminalTargetLabel(tab),
+      this.getTerminalTargetLabel(tab)
     );
     if (attached) {
       tab.terminal.clearSelection();
@@ -372,9 +374,12 @@ export class TabManager {
       tabEl.dataset.tabId = tab.id;
 
       // 状态指示点
-      const dotClass = tab.state === 'connected' ? 'tab-dot-connected'
-                      : tab.state === 'connecting' ? 'tab-dot-connecting'
-                      : 'tab-dot-disconnected';
+      const dotClass =
+        tab.state === 'connected'
+          ? 'tab-dot-connected'
+          : tab.state === 'connecting'
+            ? 'tab-dot-connecting'
+            : 'tab-dot-disconnected';
 
       tabEl.innerHTML = `
         <span class="tab-dot ${dotClass}"></span>
@@ -445,7 +450,10 @@ export class TabManager {
           termHost.textContent = t('terminal.host', { value: tab.hostInfo.host });
         }
       }
-      if (termUser) termUser.textContent = tab.hostInfo.username ? t('terminal.user', { value: tab.hostInfo.username }) : '';
+      if (termUser)
+        termUser.textContent = tab.hostInfo.username
+          ? t('terminal.user', { value: tab.hostInfo.username })
+          : '';
       if (termPort) termPort.textContent = t('terminal.port', { value: tab.hostInfo.port });
     } else {
       if (termHost) termHost.textContent = t('terminal.server', { value: tab.label });
@@ -454,13 +462,18 @@ export class TabManager {
     }
 
     if (tab.state === 'connected') {
-      if (termStatus) termStatus.innerHTML = `<div class="w-2 h-2 bg-primary-container"></div> ${t('terminal.connected')}`;
-      if (statusText) statusText.innerHTML = `<span class="w-2 h-2 bg-[var(--accent)] inline-block animate-pulse"></span> ${t('auth.statusOnline')}`;
+      if (termStatus)
+        termStatus.innerHTML = `<div class="w-2 h-2 bg-primary-container"></div> ${t('terminal.connected')}`;
+      if (statusText)
+        statusText.innerHTML = `<span class="w-2 h-2 bg-[var(--accent)] inline-block animate-pulse"></span> ${t('auth.statusOnline')}`;
     } else if (tab.state === 'connecting') {
-      if (termStatus) termStatus.innerHTML = `<div class="w-2 h-2 bg-primary-container animate-pulse"></div> ${t('terminal.connecting')}`;
+      if (termStatus)
+        termStatus.innerHTML = `<div class="w-2 h-2 bg-primary-container animate-pulse"></div> ${t('terminal.connecting')}`;
     } else {
-      if (termStatus) termStatus.innerHTML = `<div class="w-2 h-2 bg-[var(--error)]"></div> ${t('terminal.disconnected')}`;
-      if (statusText) statusText.innerHTML = `<span class="w-2 h-2 bg-surface-dot inline-block"></span> ${t('auth.statusOffline')}`;
+      if (termStatus)
+        termStatus.innerHTML = `<div class="w-2 h-2 bg-[var(--error)]"></div> ${t('terminal.disconnected')}`;
+      if (statusText)
+        statusText.innerHTML = `<span class="w-2 h-2 bg-surface-dot inline-block"></span> ${t('auth.statusOffline')}`;
     }
 
     // 更新状态栏显示延迟信息
@@ -471,13 +484,13 @@ export class TabManager {
         if (tab.cfLatency !== undefined) {
           const quality = getNetworkQuality(tab.cfLatency, 'cf');
           latencyItems.push(
-            `<span class="network-latency-item"><span class="network-quality-dot network-quality-${quality}" aria-hidden="true"></span>CF-${this.escapeHtml(tab.cfColo || 'UNK')}: ${tab.cfLatency}ms</span>`,
+            `<span class="network-latency-item"><span class="network-quality-dot network-quality-${quality}" aria-hidden="true"></span>CF-${this.escapeHtml(tab.cfColo || 'UNK')}: ${tab.cfLatency}ms</span>`
           );
         }
         if (tab.wsLatency !== undefined) {
           const quality = getNetworkQuality(tab.wsLatency, 'ws');
           latencyItems.push(
-            `<span class="network-latency-item"><span class="network-quality-dot network-quality-${quality}" aria-hidden="true"></span>RTT: ${tab.wsLatency}ms</span>`,
+            `<span class="network-latency-item"><span class="network-quality-dot network-quality-${quality}" aria-hidden="true"></span>RTT: ${tab.wsLatency}ms</span>`
           );
         }
         if (latencyItems.length > 0) {
@@ -495,13 +508,13 @@ export class TabManager {
     const button = document.getElementById('ask-ai-selection-btn');
     if (!button) return;
     const visible = !!(
-      this._isLoggedIn
-      && tab
-      && tab.id === this.activeTabId
-      && tab.state === 'connected'
-      && tab.agentPanel
-      && tab.selectedText.trim()
-      && tab.selectionAnchor
+      this._isLoggedIn &&
+      tab &&
+      tab.id === this.activeTabId &&
+      tab.state === 'connected' &&
+      tab.agentPanel &&
+      tab.selectedText.trim() &&
+      tab.selectionAnchor
     );
     button.classList.toggle('hidden', !visible);
     if (!visible || !tab?.selectionAnchor) return;
@@ -533,6 +546,10 @@ export class TabManager {
   }
 
   private escapeAttr(text: string): string {
-    return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
   }
 }

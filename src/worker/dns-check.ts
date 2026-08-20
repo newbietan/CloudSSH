@@ -29,10 +29,10 @@ function evictCacheIfNeeded(): void {
   // If still over limit, remove oldest entries (Map preserves insertion order)
   while (DNS_CACHE.size >= DNS_CACHE_MAX_SIZE) {
     const firstKey = DNS_CACHE.keys().next().value;
-    if (firstKey !== undefined) {
-      DNS_CACHE.delete(firstKey);
-    } else {
+    if (firstKey === undefined) {
       break;
+    } else {
+      DNS_CACHE.delete(firstKey);
     }
   }
 }
@@ -61,7 +61,10 @@ function isIPLiteral(hostname: string): boolean {
  * bypasses (VULN-03 / VULN-04) for the DNS-resolved-IP path.
  */
 export function isBlockedIP(ip: string): boolean {
-  const h = ip.toLowerCase().trim().replace(/^\[|\]$/g, '');
+  const h = ip
+    .toLowerCase()
+    .trim()
+    .replace(/^\[|\]$/g, '');
 
   // ---- IPv4 ----
   if (isIPv4Literal(h)) {
@@ -141,8 +144,12 @@ async function resolveHostname(hostname: string): Promise<string[]> {
     ]);
 
     if (aRes.ok) {
-      const data = await aRes.json<{ Status: number; Answer?: Array<{ type: number; data: string }> }>();
-      if (data.Status === 0) { // NOERROR
+      const data = await aRes.json<{
+        Status: number;
+        Answer?: Array<{ type: number; data: string }>;
+      }>();
+      if (data.Status === 0) {
+        // NOERROR
         for (const a of data.Answer ?? []) {
           if (a.type === 1) ips.push(a.data); // A record
         }
@@ -150,8 +157,12 @@ async function resolveHostname(hostname: string): Promise<string[]> {
     }
 
     if (aaaaRes.ok) {
-      const data = await aaaaRes.json<{ Status: number; Answer?: Array<{ type: number; data: string }> }>();
-      if (data.Status === 0) { // NOERROR
+      const data = await aaaaRes.json<{
+        Status: number;
+        Answer?: Array<{ type: number; data: string }>;
+      }>();
+      if (data.Status === 0) {
+        // NOERROR
         for (const a of data.Answer ?? []) {
           if (a.type === 28) ips.push(a.data); // AAAA record
         }
@@ -182,9 +193,12 @@ async function resolveHostname(hostname: string): Promise<string[]> {
  * (isBlockedHost / validateBaseUrl) as a second defence layer.
  */
 export async function checkHostResolved(
-  hostname: string,
+  hostname: string
 ): Promise<{ blocked: boolean; reason?: string }> {
-  const cleanHost = hostname.toLowerCase().trim().replace(/^\[|\]$/g, '');
+  const cleanHost = hostname
+    .toLowerCase()
+    .trim()
+    .replace(/^\[|\]$/g, '');
 
   if (isIPLiteral(cleanHost)) {
     // IP literal — re-check with unified isBlockedIP (catches IPv6 edge cases

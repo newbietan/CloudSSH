@@ -105,12 +105,19 @@ export interface SSHJumpHostConfig {
  * 参考: https://developers.cloudflare.com/durable-objects/reference/data-location/
  */
 export const ALLOWED_LOCATION_HINTS = [
-  'wnam', 'enam', 'sam',
-  'weur', 'eeur',
-  'apac', 'apac-ne', 'apac-se',
-  'oc', 'afr', 'me',
+  'wnam',
+  'enam',
+  'sam',
+  'weur',
+  'eeur',
+  'apac',
+  'apac-ne',
+  'apac-se',
+  'oc',
+  'afr',
+  'me',
 ] as const;
-export type LocationHint = typeof ALLOWED_LOCATION_HINTS[number];
+export type LocationHint = (typeof ALLOWED_LOCATION_HINTS)[number];
 
 export interface TerminalSize {
   cols: number;

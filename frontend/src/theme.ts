@@ -1,11 +1,11 @@
 import type { ITheme } from '@xterm/xterm';
 import {
-  THEME_MAX_BYTES,
-  THEME_SCHEMA_VERSION,
-  normalizeThemeData,
   type BuiltInThemeName,
   type ColorScheme,
   type NormalizedThemeData,
+  normalizeThemeData,
+  THEME_MAX_BYTES,
+  THEME_SCHEMA_VERSION,
   type ThemeAppearance,
   type ThemeComponentStyles,
   type ThemeDensity,
@@ -17,10 +17,10 @@ import {
 } from '../../src/theme-schema';
 
 export {
-  THEME_MAX_BYTES,
-  THEME_SCHEMA_VERSION,
   type BuiltInThemeName,
   type ColorScheme,
+  THEME_MAX_BYTES,
+  THEME_SCHEMA_VERSION,
   type ThemeAppearance,
   type ThemeComponentStyles,
   type ThemeDensity,
@@ -41,7 +41,10 @@ export interface ResolvedThemeAppearance {
   components: ThemeComponentStyles;
 }
 
-export type ImportedThemeData = Omit<NormalizedThemeData, 'schemaVersion' | 'colorScheme' | 'terminal'> & {
+export type ImportedThemeData = Omit<
+  NormalizedThemeData,
+  'schemaVersion' | 'colorScheme' | 'terminal'
+> & {
   schemaVersion?: number;
   colorScheme?: ColorScheme;
   terminal?: ITheme;
@@ -350,7 +353,7 @@ const terminalThemeListeners = new Set<(theme: ITheme) => void>();
 const colorSchemeListeners = new Set<(colorScheme: ColorScheme) => void>();
 
 export function isBuiltInTheme(value: string | null): value is BuiltInThemeName {
-  return !!value && Object.prototype.hasOwnProperty.call(THEMES, value);
+  return !!value && Object.hasOwn(THEMES, value);
 }
 
 export function applyBuiltInTheme(themeName: BuiltInThemeName): void {
@@ -359,7 +362,7 @@ export function applyBuiltInTheme(themeName: BuiltInThemeName): void {
     THEMES[themeName],
     COLOR_SCHEMES[themeName],
     themeName,
-    resolveThemeAppearance(BUILT_IN_APPEARANCE[themeName]),
+    resolveThemeAppearance(BUILT_IN_APPEARANCE[themeName])
   );
 }
 
@@ -367,8 +370,8 @@ export function applyImportedTheme(data: ImportedThemeData): void {
   const normalized = normalizeImportedTheme(data);
   if (!normalized) return;
   const colorScheme = normalized.colorScheme ?? 'dark';
-  const fallbackName = normalized.baseTheme
-    || (colorScheme === 'light' ? 'standard-light' : 'cyberpunk');
+  const fallbackName =
+    normalized.baseTheme || (colorScheme === 'light' ? 'standard-light' : 'cyberpunk');
   const ui = { ...UI_THEMES[fallbackName], ...normalized.ui };
   const terminal = { ...THEMES[fallbackName], ...normalized.terminal };
   const fallbackAppearance = resolveThemeAppearance(BUILT_IN_APPEARANCE[fallbackName]);
@@ -409,7 +412,7 @@ function applyTheme(
   terminal: ITheme,
   colorScheme: ColorScheme,
   themeName: BuiltInThemeName | 'custom',
-  appearance: ResolvedThemeAppearance,
+  appearance: ResolvedThemeAppearance
 ): void {
   activeTerminalTheme = terminal;
   activeColorScheme = colorScheme;
@@ -434,22 +437,22 @@ function applyTheme(
     root.classList.toggle('dark', colorScheme === 'dark');
   }
 
-  terminalThemeListeners.forEach(listener => listener(terminal));
-  colorSchemeListeners.forEach(listener => listener(colorScheme));
+  terminalThemeListeners.forEach((listener) => listener(terminal));
+  colorSchemeListeners.forEach((listener) => listener(colorScheme));
 }
 
 export function resolveThemeAppearance(
   appearance?: ThemeAppearance,
-  fallback: ResolvedThemeAppearance = UI_STYLE_PRESETS.cyberpunk,
+  fallback: ResolvedThemeAppearance = UI_STYLE_PRESETS.cyberpunk
 ): ResolvedThemeAppearance {
-  const requestedStyle = isUIStylePresetName(appearance?.style)
-    ? appearance.style
-    : fallback.style;
+  const requestedStyle = isUIStylePresetName(appearance?.style) ? appearance.style : fallback.style;
   const preset = UI_STYLE_PRESETS[requestedStyle];
 
   return {
     style: requestedStyle,
-    shape: isOneOf(appearance?.shape, ['square', 'rounded', 'soft']) ? appearance.shape : preset.shape,
+    shape: isOneOf(appearance?.shape, ['square', 'rounded', 'soft'])
+      ? appearance.shape
+      : preset.shape,
     density: isOneOf(appearance?.density, ['compact', 'comfortable', 'spacious'])
       ? appearance.density
       : preset.density,
@@ -478,7 +481,7 @@ export function resolveThemeAppearance(
 }
 
 function isUIStylePresetName(value: unknown): value is UIStylePresetName {
-  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(UI_STYLE_PRESETS, value);
+  return typeof value === 'string' && Object.hasOwn(UI_STYLE_PRESETS, value);
 }
 
 function isOneOf<T extends string>(value: unknown, values: readonly T[]): value is T {

@@ -1,12 +1,12 @@
 import {
-  SSH_MSG_USERAUTH_REQUEST,
-  SSH_MSG_USERAUTH_SUCCESS,
+  type AuthResult,
   SSH_MSG_USERAUTH_FAILURE,
   SSH_MSG_USERAUTH_INFO_REQUEST,
   SSH_MSG_USERAUTH_INFO_RESPONSE,
-  AuthResult,
+  SSH_MSG_USERAUTH_REQUEST,
+  SSH_MSG_USERAUTH_SUCCESS,
 } from '../types';
-import { encodeString, encodeUint32, concat, readUint32 } from './utils';
+import { concat, encodeString, encodeUint32, readUint32 } from './utils';
 
 // SSH key type constants
 const SSH_ED25519 = 'ssh-ed25519';
@@ -53,7 +53,7 @@ function decodeSSHStringStrict(
   payload: Uint8Array,
   offset: number,
   field: string,
-  maxBytes: number,
+  maxBytes: number
 ): DecodedSSHString {
   if (offset > payload.length - 4) {
     throw new Error(`Malformed keyboard-interactive info request: truncated ${field} length`);
@@ -72,7 +72,7 @@ function decodeSSHStringStrict(
   let value: string;
   try {
     value = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(
-      payload.subarray(valueOffset, valueOffset + length),
+      payload.subarray(valueOffset, valueOffset + length)
     );
   } catch {
     throw new Error(`Malformed keyboard-interactive info request: invalid UTF-8 in ${field}`);
@@ -103,14 +103,11 @@ export class SSHAuth {
       new Uint8Array([SSH_MSG_USERAUTH_REQUEST]),
       encodeString(username),
       encodeString('ssh-connection'),
-      encodeString('none'),
+      encodeString('none')
     );
   }
 
-  static buildPasswordAuthRequest(
-    username: string,
-    password: string
-  ): Uint8Array {
+  static buildPasswordAuthRequest(username: string, password: string): Uint8Array {
     const parts: Uint8Array[] = [
       new Uint8Array([SSH_MSG_USERAUTH_REQUEST]),
       encodeString(username),
@@ -131,7 +128,7 @@ export class SSHAuth {
       encodeString('ssh-connection'),
       encodeString('keyboard-interactive'),
       encodeString(''), // language tag (deprecated by RFC 4256)
-      encodeString(''), // no preferred submethods
+      encodeString('') // no preferred submethods
     );
   }
 
@@ -142,9 +139,7 @@ export class SSHAuth {
    * and the payload must be consumed exactly. This prevents truncated packets,
    * oversized browser prompts, and hidden trailing data from being accepted.
    */
-  static parseKeyboardInteractiveInfoRequest(
-    payload: Uint8Array,
-  ): KeyboardInteractiveInfoRequest {
+  static parseKeyboardInteractiveInfoRequest(payload: Uint8Array): KeyboardInteractiveInfoRequest {
     if (payload.length === 0 || payload[0] !== SSH_MSG_USERAUTH_INFO_REQUEST) {
       throw new Error('Unexpected keyboard-interactive message type');
     }
@@ -157,7 +152,7 @@ export class SSHAuth {
       payload,
       offset,
       'name',
-      MAX_KEYBOARD_INTERACTIVE_NAME_BYTES,
+      MAX_KEYBOARD_INTERACTIVE_NAME_BYTES
     );
     offset = name.nextOffset;
 
@@ -165,7 +160,7 @@ export class SSHAuth {
       payload,
       offset,
       'instruction',
-      MAX_KEYBOARD_INTERACTIVE_INSTRUCTION_BYTES,
+      MAX_KEYBOARD_INTERACTIVE_INSTRUCTION_BYTES
     );
     offset = instruction.nextOffset;
 
@@ -173,7 +168,7 @@ export class SSHAuth {
       payload,
       offset,
       'language',
-      MAX_KEYBOARD_INTERACTIVE_LANGUAGE_BYTES,
+      MAX_KEYBOARD_INTERACTIVE_LANGUAGE_BYTES
     );
     offset = language.nextOffset;
 
@@ -192,19 +187,25 @@ export class SSHAuth {
         payload,
         offset,
         `prompt ${index + 1}`,
-        MAX_KEYBOARD_INTERACTIVE_PROMPT_BYTES,
+        MAX_KEYBOARD_INTERACTIVE_PROMPT_BYTES
       );
       offset = prompt.nextOffset;
       if (prompt.value.length === 0) {
-        throw new Error(`Malformed keyboard-interactive info request: prompt ${index + 1} is empty`);
+        throw new Error(
+          `Malformed keyboard-interactive info request: prompt ${index + 1} is empty`
+        );
       }
 
       if (offset >= payload.length) {
-        throw new Error(`Malformed keyboard-interactive info request: missing echo flag for prompt ${index + 1}`);
+        throw new Error(
+          `Malformed keyboard-interactive info request: missing echo flag for prompt ${index + 1}`
+        );
       }
       const echoByte = payload[offset++];
       if (echoByte !== 0 && echoByte !== 1) {
-        throw new Error(`Malformed keyboard-interactive info request: invalid echo flag for prompt ${index + 1}`);
+        throw new Error(
+          `Malformed keyboard-interactive info request: invalid echo flag for prompt ${index + 1}`
+        );
       }
 
       prompts.push({ text: prompt.value, echo: echoByte === 1 });
@@ -248,7 +249,7 @@ export class SSHAuth {
     return concat(
       new Uint8Array([SSH_MSG_USERAUTH_INFO_RESPONSE]),
       encodeUint32(responses.length),
-      ...encodedResponses,
+      ...encodedResponses
     );
   }
 
@@ -275,16 +276,17 @@ export class SSHAuth {
     privateKeyPEM: string,
     sessionID: Uint8Array,
     serverSigAlgs?: string[],
-    allowLegacyRsaSha1: boolean = false,
+    allowLegacyRsaSha1: boolean = false
   ): Promise<Uint8Array> {
-    const { signingKey, publicKeyBlob, keyType, rsaPkcs8 } = await this.parsePrivateKey(privateKeyPEM);
+    const { signingKey, publicKeyBlob, keyType, rsaPkcs8 } =
+      await SSHAuth.parsePrivateKey(privateKeyPEM);
 
     // 确定 request / signature 外层算法名（公钥 blob 内部类型不变）
     let requestAlgo = keyType;
     let signatureAlgo = keyType;
 
     if (keyType === SSH_RSA) {
-      const chosen = this.selectRsaSigAlgorithm(serverSigAlgs, allowLegacyRsaSha1);
+      const chosen = SSHAuth.selectRsaSigAlgorithm(serverSigAlgs, allowLegacyRsaSha1);
       requestAlgo = chosen;
       signatureAlgo = chosen;
     }
@@ -297,7 +299,7 @@ export class SSHAuth {
       encodeString('publickey'),
       new Uint8Array([0x01]), // TRUE = has signature
       encodeString(requestAlgo),
-      encodeString(publicKeyBlob),
+      encodeString(publicKeyBlob)
     );
 
     // Data to sign: session_id_string || request_body
@@ -309,14 +311,14 @@ export class SSHAuth {
 
     if (keyType === SSH_ED25519) {
       rawSignature = new Uint8Array(await crypto.subtle.sign(ED25519_ALGO, signingKey, dataToSign));
-      signatureBlob = concat(
-        encodeString(SSH_ED25519),
-        encodeString(rawSignature),
-      );
+      signatureBlob = concat(encodeString(SSH_ED25519), encodeString(rawSignature));
     } else if (keyType === SSH_RSA) {
-      const hash = signatureAlgo === 'rsa-sha2-512' ? 'SHA-512'
-                 : signatureAlgo === 'ssh-rsa'        ? 'SHA-1'
-                 : 'SHA-256';
+      const hash =
+        signatureAlgo === 'rsa-sha2-512'
+          ? 'SHA-512'
+          : signatureAlgo === 'ssh-rsa'
+            ? 'SHA-1'
+            : 'SHA-256';
       // 某些 WebCrypto 实现会在 importKey 时把 RSASSA-PKCS1-v1_5 的 hash 绑定到
       // CryptoKey，导致后续 sign 时即使传不同 hash 也被忽略（用 SHA-256 import
       // 的 key 试签 SHA-512 会得到 SHA-256 签名）。这里在 hash 与 import 时 hash
@@ -324,32 +326,26 @@ export class SSHAuth {
       let sigKey = signingKey;
       if (hash !== 'SHA-256' && rsaPkcs8) {
         sigKey = await crypto.subtle.importKey(
-          'pkcs8', rsaPkcs8,
+          'pkcs8',
+          rsaPkcs8,
           { name: 'RSASSA-PKCS1-v1_5', hash },
-          false, ['sign'],
+          false,
+          ['sign']
         );
       }
       rawSignature = new Uint8Array(
         await crypto.subtle.sign({ name: 'RSASSA-PKCS1-v1_5', hash }, sigKey, dataToSign)
       );
-      signatureBlob = concat(
-        encodeString(signatureAlgo),
-        encodeString(rawSignature),
-      );
+      signatureBlob = concat(encodeString(signatureAlgo), encodeString(rawSignature));
     } else if (keyType.startsWith('ecdsa-sha2-')) {
       // RFC 5656 §6.2.1: 曲线 → 哈希映射 exhaustive
-      const hash = this.ecdsaHashForCurve(keyType);
-      const sigBytes = new Uint8Array(await crypto.subtle.sign(
-        { name: 'ECDSA', hash },
-        signingKey,
-        dataToSign
-      ));
-      // 运行时检测 WebCrypto 返回格式（DER 或 raw r||s），不预设
-      const sshSignature = this.ecdsaWebCryptoToSSH(sigBytes, this.ecdsaCoordBytes(keyType));
-      signatureBlob = concat(
-        encodeString(keyType),
-        encodeString(sshSignature),
+      const hash = SSHAuth.ecdsaHashForCurve(keyType);
+      const sigBytes = new Uint8Array(
+        await crypto.subtle.sign({ name: 'ECDSA', hash }, signingKey, dataToSign)
       );
+      // 运行时检测 WebCrypto 返回格式（DER 或 raw r||s），不预设
+      const sshSignature = SSHAuth.ecdsaWebCryptoToSSH(sigBytes, SSHAuth.ecdsaCoordBytes(keyType));
+      signatureBlob = concat(encodeString(keyType), encodeString(sshSignature));
     } else {
       throw new Error(`不支持的密钥类型: ${keyType}`);
     }
@@ -365,7 +361,7 @@ export class SSHAuth {
    */
   private static selectRsaSigAlgorithm(
     serverSigAlgs: string[] | undefined,
-    allowLegacyRsaSha1: boolean,
+    allowLegacyRsaSha1: boolean
   ): string {
     // 本地策略：优先 512 → 256；SHA-1 可选
     const localOrder = allowLegacyRsaSha1
@@ -391,9 +387,12 @@ export class SSHAuth {
    */
   private static ecdsaHashForCurve(keyType: string): 'SHA-256' | 'SHA-384' | 'SHA-512' {
     switch (keyType) {
-      case ECDSA_SHA2_NISTP256: return 'SHA-256';  // 坐标 32 字节
-      case ECDSA_SHA2_NISTP384: return 'SHA-384';  // 坐标 48 字节
-      case ECDSA_SHA2_NISTP521: return 'SHA-512';  // 坐标 66 字节
+      case ECDSA_SHA2_NISTP256:
+        return 'SHA-256'; // 坐标 32 字节
+      case ECDSA_SHA2_NISTP384:
+        return 'SHA-384'; // 坐标 48 字节
+      case ECDSA_SHA2_NISTP521:
+        return 'SHA-512'; // 坐标 66 字节
     }
     // exhaustive: 走到这里说明 keyType 不是三种受支持曲线之一
     throw new Error(`unsupported ECDSA key type: ${keyType}`);
@@ -404,9 +403,12 @@ export class SSHAuth {
    */
   private static ecdsaCoordBytes(keyType: string): number {
     switch (keyType) {
-      case ECDSA_SHA2_NISTP256: return 32;
-      case ECDSA_SHA2_NISTP384: return 48;
-      case ECDSA_SHA2_NISTP521: return 66;
+      case ECDSA_SHA2_NISTP256:
+        return 32;
+      case ECDSA_SHA2_NISTP384:
+        return 48;
+      case ECDSA_SHA2_NISTP521:
+        return 66;
     }
     throw new Error(`unsupported ECDSA key type: ${keyType}`);
   }
@@ -424,11 +426,11 @@ export class SSHAuth {
       const r = sigBytes.subarray(0, coordBytes);
       const s = sigBytes.subarray(coordBytes);
       // 转成 mpint（去掉前导 0，最高位为 1 时补 0）
-      return concat(this.sshMPInt(r), this.sshMPInt(s));
+      return concat(SSHAuth.sshMPInt(r), SSHAuth.sshMPInt(s));
     }
 
     // 部分 WebCrypto 实现返回 DER SEQUENCE。
-    return this.convertECDSADERToSSH(sigBytes);
+    return SSHAuth.convertECDSADERToSSH(sigBytes);
   }
 
   /**
@@ -436,8 +438,8 @@ export class SSHAuth {
    */
   private static async parsePrivateKey(pem: string): Promise<ParsedKey> {
     const lines = pem.trim().split('\n');
-    const b64 = lines.filter(l => !l.startsWith('-----')).join('');
-    const raw = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    const b64 = lines.filter((l) => !l.startsWith('-----')).join('');
+    const raw = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 
     // Parse OpenSSH format: "openssh-key-v1\0" magic
     const magic = 'openssh-key-v1\0';
@@ -454,37 +456,44 @@ export class SSHAuth {
 
     // ciphername
     if (offset + 4 > raw.length) throw new Error('私钥格式损坏：cipherLen 越界');
-    const cipherLen = readUint32(raw, offset); offset += 4;
+    const cipherLen = readUint32(raw, offset);
+    offset += 4;
     if (offset + cipherLen > raw.length) throw new Error('私钥格式损坏：cipher 越界');
-    const cipher = new TextDecoder().decode(raw.slice(offset, offset + cipherLen)); offset += cipherLen;
+    const cipher = new TextDecoder().decode(raw.slice(offset, offset + cipherLen));
+    offset += cipherLen;
     if (cipher !== 'none') throw new Error('不支持加密的私钥，请使用 ssh-keygen -p 移除密码');
 
     // kdfname
     if (offset + 4 > raw.length) throw new Error('私钥格式损坏：kdfLen 越界');
-    const kdfLen = readUint32(raw, offset); offset += 4;
+    const kdfLen = readUint32(raw, offset);
+    offset += 4;
     if (offset + kdfLen > raw.length) throw new Error('私钥格式损坏：kdf 越界');
     offset += kdfLen;
 
     // kdfoptions
     if (offset + 4 > raw.length) throw new Error('私钥格式损坏：kdfOptLen 越界');
-    const kdfOptLen = readUint32(raw, offset); offset += 4;
+    const kdfOptLen = readUint32(raw, offset);
+    offset += 4;
     if (offset + kdfOptLen > raw.length) throw new Error('私钥格式损坏：kdfoptions 越界');
     offset += kdfOptLen;
 
     // number of keys
     if (offset + 4 > raw.length) throw new Error('私钥格式损坏：numKeys 越界');
-    const numKeys = readUint32(raw, offset); offset += 4;
+    const numKeys = readUint32(raw, offset);
+    offset += 4;
     if (numKeys !== 1) throw new Error('仅支持单密钥文件');
 
     // public key section
     if (offset + 4 > raw.length) throw new Error('私钥格式损坏：pubSecLen 越界');
-    const pubSecLen = readUint32(raw, offset); offset += 4;
+    const pubSecLen = readUint32(raw, offset);
+    offset += 4;
     if (offset + pubSecLen > raw.length) throw new Error('私钥格式损坏：pubSection 越界');
     offset += pubSecLen;
 
     // private key section
     if (offset + 4 > raw.length) throw new Error('私钥格式损坏：privSecLen 越界');
-    const privSecLen = readUint32(raw, offset); offset += 4;
+    const privSecLen = readUint32(raw, offset);
+    offset += 4;
     if (offset + privSecLen > raw.length) throw new Error('私钥格式损坏：privSection 越界');
     const privSection = raw.slice(offset, offset + privSecLen);
 
@@ -496,17 +505,19 @@ export class SSHAuth {
 
     // key type
     if (po + 4 > privSection.length) throw new Error('私钥格式损坏：keyTypeLen 越界');
-    const ktLen = readUint32(privSection, po); po += 4;
+    const ktLen = readUint32(privSection, po);
+    po += 4;
     if (po + ktLen > privSection.length) throw new Error('私钥格式损坏：keyType 越界');
-    const keyType = new TextDecoder().decode(privSection.slice(po, po + ktLen)); po += ktLen;
+    const keyType = new TextDecoder().decode(privSection.slice(po, po + ktLen));
+    po += ktLen;
 
     // Parse based on key type
     if (keyType === SSH_ED25519) {
-      return this.parseEd25519Key(privSection, po);
+      return SSHAuth.parseEd25519Key(privSection, po);
     } else if (keyType === SSH_RSA) {
-      return this.parseRSAKey(privSection, po);
+      return SSHAuth.parseRSAKey(privSection, po);
     } else if (keyType.startsWith('ecdsa-sha2-')) {
-      return this.parseECDSAKey(privSection, po, keyType);
+      return SSHAuth.parseECDSAKey(privSection, po, keyType);
     } else {
       throw new Error(`不支持的密钥类型: ${keyType}`);
     }
@@ -515,33 +526,40 @@ export class SSHAuth {
   /**
    * Parse Ed25519 private key from OpenSSH format.
    */
-  private static async parseEd25519Key(privSection: Uint8Array, offset: number): Promise<ParsedKey> {
+  private static async parseEd25519Key(
+    privSection: Uint8Array,
+    offset: number
+  ): Promise<ParsedKey> {
     let po = offset;
 
     // public key (32 bytes)
     if (po + 4 > privSection.length) throw new Error('私钥格式损坏：pubKeyLen 越界');
-    const pubKeyLen = readUint32(privSection, po); po += 4;
+    const pubKeyLen = readUint32(privSection, po);
+    po += 4;
     if (po + pubKeyLen > privSection.length) throw new Error('私钥格式损坏：pubKey 越界');
-    const pubKeyRaw = privSection.slice(po, po + pubKeyLen); po += pubKeyLen;
+    const pubKeyRaw = privSection.slice(po, po + pubKeyLen);
+    po += pubKeyLen;
 
     // private key (64 bytes = 32 bytes seed + 32 bytes pubkey)
     if (po + 4 > privSection.length) throw new Error('私钥格式损坏：privKeyLen 越界');
-    const privKeyLen = readUint32(privSection, po); po += 4;
+    const privKeyLen = readUint32(privSection, po);
+    po += 4;
     if (po + privKeyLen > privSection.length) throw new Error('私钥格式损坏：privKey 越界');
     const privKeyRaw = privSection.slice(po, po + privKeyLen);
     if (privKeyRaw.length < 32) throw new Error('私钥格式损坏：种子长度不足 32 字节');
 
     const seed = privKeyRaw.slice(0, 32);
 
-    const pkcs8 = this.buildEd25519PKCS8(seed);
+    const pkcs8 = SSHAuth.buildEd25519PKCS8(seed);
     const signingKey = await crypto.subtle.importKey(
-      'pkcs8', pkcs8, { name: ED25519_ALGO }, false, ['sign']
+      'pkcs8',
+      pkcs8,
+      { name: ED25519_ALGO },
+      false,
+      ['sign']
     );
 
-    const publicKeyBlob = concat(
-      encodeString(SSH_ED25519),
-      encodeString(pubKeyRaw),
-    );
+    const publicKeyBlob = concat(encodeString(SSH_ED25519), encodeString(pubKeyRaw));
 
     return { signingKey, publicKeyBlob, keyType: SSH_ED25519 };
   }
@@ -554,9 +572,11 @@ export class SSHAuth {
 
     const readMPINT = (): Uint8Array => {
       if (po + 4 > privSection.length) throw new Error('私钥格式损坏：MPINT 越界');
-      const len = readUint32(privSection, po); po += 4;
+      const len = readUint32(privSection, po);
+      po += 4;
       if (po + len > privSection.length) throw new Error('私钥格式损坏：MPINT 数据越界');
-      const data = privSection.slice(po, po + len); po += len;
+      const data = privSection.slice(po, po + len);
+      po += len;
       if (data.length > 1 && data[0] === 0) {
         return data.slice(1);
       }
@@ -570,21 +590,15 @@ export class SSHAuth {
     const p = readMPINT();
     const q = readMPINT();
 
-    const pkcs8 = this.buildRSAPKCS8(n, e, d, p, q, iqmp);
+    const pkcs8 = SSHAuth.buildRSAPKCS8(n, e, d, p, q, iqmp);
 
     // 注意：RSASSA-PKCS1-v1_5 在 importKey 时把 hash 绑定到 CryptoKey 上，
     // 后续 sign 时即使传不同 hash 也会被某些 WebCrypto 实现忽略。
     // 因此这里用一个固定 hash(任意)先导入，供 build 在使用 SHA-256 路径时复用；
     // 用 SHA-512 时会基于 rsaPkcs8 字段重新 import。
-    const signingKey = await crypto.subtle.importKey(
-      'pkcs8', pkcs8, RSA_ALGO, false, ['sign']
-    );
+    const signingKey = await crypto.subtle.importKey('pkcs8', pkcs8, RSA_ALGO, false, ['sign']);
 
-    const publicKeyBlob = concat(
-      encodeString(SSH_RSA),
-      this.sshMPInt(e),
-      this.sshMPInt(n),
-    );
+    const publicKeyBlob = concat(encodeString(SSH_RSA), SSHAuth.sshMPInt(e), SSHAuth.sshMPInt(n));
 
     return { signingKey, rsaPkcs8: pkcs8, publicKeyBlob, keyType: SSH_RSA };
   }
@@ -592,7 +606,11 @@ export class SSHAuth {
   /**
    * Parse ECDSA private key from OpenSSH format.
    */
-  private static async parseECDSAKey(privSection: Uint8Array, offset: number, keyType: string): Promise<ParsedKey> {
+  private static async parseECDSAKey(
+    privSection: Uint8Array,
+    offset: number,
+    keyType: string
+  ): Promise<ParsedKey> {
     let po = offset;
 
     let namedCurve: string;
@@ -613,9 +631,11 @@ export class SSHAuth {
 
     // curve name
     if (po + 4 > privSection.length) throw new Error('私钥格式损坏：curveLen 越界');
-    const curveLen = readUint32(privSection, po); po += 4;
+    const curveLen = readUint32(privSection, po);
+    po += 4;
     if (po + curveLen > privSection.length) throw new Error('私钥格式损坏：curve 越界');
-    const curve = new TextDecoder().decode(privSection.slice(po, po + curveLen)); po += curveLen;
+    const curve = new TextDecoder().decode(privSection.slice(po, po + curveLen));
+    po += curveLen;
 
     const expectedCurve = namedCurve.replace('P-', 'nistp');
     if (curve !== expectedCurve) {
@@ -624,26 +644,27 @@ export class SSHAuth {
 
     // public key
     if (po + 4 > privSection.length) throw new Error('私钥格式损坏：pubKeyLen 越界');
-    const pubKeyLen = readUint32(privSection, po); po += 4;
+    const pubKeyLen = readUint32(privSection, po);
+    po += 4;
     if (po + pubKeyLen > privSection.length) throw new Error('私钥格式损坏：pubKey 越界');
-    const pubKeyRaw = privSection.slice(po, po + pubKeyLen); po += pubKeyLen;
+    const pubKeyRaw = privSection.slice(po, po + pubKeyLen);
+    po += pubKeyLen;
 
     // private key
     if (po + 4 > privSection.length) throw new Error('私钥格式损坏：privKeyLen 越界');
-    const privKeyLen = readUint32(privSection, po); po += 4;
+    const privKeyLen = readUint32(privSection, po);
+    po += 4;
     if (po + privKeyLen > privSection.length) throw new Error('私钥格式损坏：privKey 越界');
     const privKeyRaw = privSection.slice(po, po + privKeyLen);
 
-    const pkcs8 = this.buildECDSAPKCS8(namedCurve, privKeyRaw);
+    const pkcs8 = SSHAuth.buildECDSAPKCS8(namedCurve, privKeyRaw);
 
-    const signingKey = await crypto.subtle.importKey(
-      'pkcs8', pkcs8, algo, false, ['sign']
-    );
+    const signingKey = await crypto.subtle.importKey('pkcs8', pkcs8, algo, false, ['sign']);
 
     const publicKeyBlob = concat(
       encodeString(keyType),
       encodeString(curve),
-      encodeString(pubKeyRaw),
+      encodeString(pubKeyRaw)
     );
 
     return { signingKey, publicKeyBlob, keyType };
@@ -666,43 +687,63 @@ export class SSHAuth {
    * Build PKCS#8 DER format for RSA private key.
    */
   private static buildRSAPKCS8(
-    n: Uint8Array, e: Uint8Array, d: Uint8Array,
-    p: Uint8Array, q: Uint8Array, iqmp: Uint8Array
+    n: Uint8Array,
+    e: Uint8Array,
+    d: Uint8Array,
+    p: Uint8Array,
+    q: Uint8Array,
+    iqmp: Uint8Array
   ): Uint8Array {
-    const pkcs1 = this.buildRSAPKCS1(n, e, d, p, q, iqmp);
+    const pkcs1 = SSHAuth.buildRSAPKCS1(n, e, d, p, q, iqmp);
 
-    const rsaOid = new Uint8Array([0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01]);
+    const rsaOid = new Uint8Array([
+      0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01,
+    ]);
     const nullParam = new Uint8Array([0x05, 0x00]);
-    const algoSeq = this.buildDERSequence(concat(rsaOid, nullParam));
+    const algoSeq = SSHAuth.buildDERSequence(concat(rsaOid, nullParam));
 
     const version = new Uint8Array([0x02, 0x01, 0x00]);
-    const privKeyOctet = this.buildDEROctetString(pkcs1);
+    const privKeyOctet = SSHAuth.buildDEROctetString(pkcs1);
 
-    return this.buildDERSequence(concat(version, algoSeq, privKeyOctet));
+    return SSHAuth.buildDERSequence(concat(version, algoSeq, privKeyOctet));
   }
 
   /**
    * Build PKCS#1 RSAPrivateKey DER format.
    */
   private static buildRSAPKCS1(
-    n: Uint8Array, e: Uint8Array, d: Uint8Array,
-    p: Uint8Array, q: Uint8Array, iqmp: Uint8Array
+    n: Uint8Array,
+    e: Uint8Array,
+    d: Uint8Array,
+    p: Uint8Array,
+    q: Uint8Array,
+    iqmp: Uint8Array
   ): Uint8Array {
-    const version = this.buildDERInteger(new Uint8Array([0]));
-    const modulus = this.buildDERInteger(n);
-    const publicExp = this.buildDERInteger(e);
-    const privateExp = this.buildDERInteger(d);
-    const prime1 = this.buildDERInteger(p);
-    const prime2 = this.buildDERInteger(q);
+    const version = SSHAuth.buildDERInteger(new Uint8Array([0]));
+    const modulus = SSHAuth.buildDERInteger(n);
+    const publicExp = SSHAuth.buildDERInteger(e);
+    const privateExp = SSHAuth.buildDERInteger(d);
+    const prime1 = SSHAuth.buildDERInteger(p);
+    const prime2 = SSHAuth.buildDERInteger(q);
 
-    const pMinus1 = this.bigIntSubtract(p, new Uint8Array([1]));
-    const qMinus1 = this.bigIntSubtract(q, new Uint8Array([1]));
-    const exponent1 = this.buildDERInteger(this.bigIntMod(d, pMinus1));
-    const exponent2 = this.buildDERInteger(this.bigIntMod(d, qMinus1));
-    const coefficient = this.buildDERInteger(iqmp);
+    const pMinus1 = SSHAuth.bigIntSubtract(p, new Uint8Array([1]));
+    const qMinus1 = SSHAuth.bigIntSubtract(q, new Uint8Array([1]));
+    const exponent1 = SSHAuth.buildDERInteger(SSHAuth.bigIntMod(d, pMinus1));
+    const exponent2 = SSHAuth.buildDERInteger(SSHAuth.bigIntMod(d, qMinus1));
+    const coefficient = SSHAuth.buildDERInteger(iqmp);
 
-    return this.buildDERSequence(
-      concat(version, modulus, publicExp, privateExp, prime1, prime2, exponent1, exponent2, coefficient)
+    return SSHAuth.buildDERSequence(
+      concat(
+        version,
+        modulus,
+        publicExp,
+        privateExp,
+        prime1,
+        prime2,
+        exponent1,
+        exponent2,
+        coefficient
+      )
     );
   }
 
@@ -721,18 +762,18 @@ export class SSHAuth {
       throw new Error(`不支持的曲线: ${namedCurve}`);
     }
 
-    const ecVersion = this.buildDERInteger(new Uint8Array([1]));
-    const ecPrivKeyOctet = this.buildDEROctetString(privateKey);
+    const ecVersion = SSHAuth.buildDERInteger(new Uint8Array([1]));
+    const ecPrivKeyOctet = SSHAuth.buildDEROctetString(privateKey);
     const parameters = new Uint8Array([0xa0, curveOid.length, ...curveOid]);
-    const ecPrivateKey = this.buildDERSequence(concat(ecVersion, ecPrivKeyOctet, parameters));
+    const ecPrivateKey = SSHAuth.buildDERSequence(concat(ecVersion, ecPrivKeyOctet, parameters));
 
     const ecOid = new Uint8Array([0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01]);
-    const algoSeq = this.buildDERSequence(concat(ecOid, curveOid));
+    const algoSeq = SSHAuth.buildDERSequence(concat(ecOid, curveOid));
 
-    const pkcs8Version = this.buildDERInteger(new Uint8Array([0]));
-    const privateKeyOctet = this.buildDEROctetString(ecPrivateKey);
+    const pkcs8Version = SSHAuth.buildDERInteger(new Uint8Array([0]));
+    const privateKeyOctet = SSHAuth.buildDEROctetString(ecPrivateKey);
 
-    return this.buildDERSequence(concat(pkcs8Version, algoSeq, privateKeyOctet));
+    return SSHAuth.buildDERSequence(concat(pkcs8Version, algoSeq, privateKeyOctet));
   }
 
   /**
@@ -747,33 +788,21 @@ export class SSHAuth {
       data = data.slice(1);
     }
 
-    return concat(
-      new Uint8Array([0x02]),
-      this.encodeDERLength(data.length),
-      data
-    );
+    return concat(new Uint8Array([0x02]), SSHAuth.encodeDERLength(data.length), data);
   }
 
   /**
    * Build DER OCTET STRING.
    */
   private static buildDEROctetString(data: Uint8Array): Uint8Array {
-    return concat(
-      new Uint8Array([0x04]),
-      this.encodeDERLength(data.length),
-      data
-    );
+    return concat(new Uint8Array([0x04]), SSHAuth.encodeDERLength(data.length), data);
   }
 
   /**
    * Build DER SEQUENCE.
    */
   private static buildDERSequence(data: Uint8Array): Uint8Array {
-    return concat(
-      new Uint8Array([0x30]),
-      this.encodeDERLength(data.length),
-      data
-    );
+    return concat(new Uint8Array([0x30]), SSHAuth.encodeDERLength(data.length), data);
   }
 
   /**
@@ -845,10 +874,7 @@ export class SSHAuth {
     while (r.length > 1 && r[0] === 0) r = r.slice(1);
     while (s.length > 1 && s[0] === 0) s = s.slice(1);
 
-    return concat(
-      encodeString(r),
-      encodeString(s)
-    );
+    return concat(encodeString(r), encodeString(s));
   }
 
   /**
@@ -862,9 +888,7 @@ export class SSHAuth {
     const significant = value.subarray(start);
 
     const needsLeadingZero = significant.length > 0 && (significant[0] & 0x80) !== 0;
-    const data = needsLeadingZero
-      ? concat(new Uint8Array([0]), significant)
-      : significant;
+    const data = needsLeadingZero ? concat(new Uint8Array([0]), significant) : significant;
 
     return encodeString(data);
   }
@@ -944,7 +968,7 @@ export class SSHAuth {
         let methods: string;
         try {
           methods = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(
-            payload.subarray(5, 5 + len),
+            payload.subarray(5, 5 + len)
           );
         } catch {
           throw new Error('Malformed USERAUTH_FAILURE: invalid method list encoding');

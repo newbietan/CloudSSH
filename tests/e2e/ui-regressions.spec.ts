@@ -4,7 +4,11 @@ import { blockOptionalThirdPartyAssets } from './helpers';
 test('强制 GitHub 登录模式隐藏匿名连接表单', async ({ page }) => {
   await blockOptionalThirdPartyAssets(page);
   await page.route('**/api/auth/me', (route) =>
-    route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"unauthorized"}' }),
+    route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: '{"error":"unauthorized"}',
+    })
   );
   await page.route('**/api/config', (route) =>
     route.fulfill({
@@ -16,7 +20,7 @@ test('强制 GitHub 登录模式隐藏匿名连接表单', async ({ page }) => {
         githubAuthEnabled: true,
         githubAuthRequired: true,
       }),
-    }),
+    })
   );
 
   await page.goto('/');
@@ -29,17 +33,17 @@ test('强制 GitHub 登录模式隐藏匿名连接表单', async ({ page }) => {
 test('AI 配置首次点击立即显示，配置数据异步加载', async ({ page }) => {
   await blockOptionalThirdPartyAssets(page);
   await page.route('**/api/user/theme', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '{"theme":null}' }),
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"theme":null}' })
   );
   await page.route('**/api/auth/me', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ id: 1, github_id: 1, username: 'tester', avatar_url: '' }),
-    }),
+    })
   );
   await page.route('**/api/servers', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
   );
 
   let releaseConfig!: () => void;
@@ -98,7 +102,11 @@ test('Turnstile 跟随 Standard Light 和后续主题切换', async ({ page }) =
   });
   await blockOptionalThirdPartyAssets(page);
   await page.route('**/api/auth/me', (route) =>
-    route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"unauthorized"}' }),
+    route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: '{"error":"unauthorized"}',
+    })
   );
   await page.route('**/api/config', (route) =>
     route.fulfill({
@@ -110,14 +118,14 @@ test('Turnstile 跟随 Standard Light 和后续主题切换', async ({ page }) =
         githubAuthEnabled: false,
         githubAuthRequired: false,
       }),
-    }),
+    })
   );
 
   await page.goto('/');
 
-  await expect.poll(() =>
-    page.evaluate(() => (window as any).__turnstileTest.renders),
-  ).toEqual([{ id: 'widget-1', theme: 'light' }]);
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__turnstileTest.renders))
+    .toEqual([{ id: 'widget-1', theme: 'light' }]);
 
   await page.evaluate(() => {
     const selector = document.getElementById('theme-selector') as HTMLSelectElement;
@@ -125,13 +133,13 @@ test('Turnstile 跟随 Standard Light 和后续主题切换', async ({ page }) =
     selector.dispatchEvent(new Event('change', { bubbles: true }));
   });
 
-  await expect.poll(() =>
-    page.evaluate(() => (window as any).__turnstileTest),
-  ).toEqual({
-    renders: [
-      { id: 'widget-1', theme: 'light' },
-      { id: 'widget-2', theme: 'dark' },
-    ],
-    removals: ['widget-1'],
-  });
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__turnstileTest))
+    .toEqual({
+      renders: [
+        { id: 'widget-1', theme: 'light' },
+        { id: 'widget-2', theme: 'dark' },
+      ],
+      removals: ['widget-1'],
+    });
 });

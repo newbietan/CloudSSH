@@ -1,11 +1,17 @@
-import { describe, it, expect } from 'vitest';
-import { KEXInitBuilder, parseKEXInit, negotiate, parseServerSigAlgs, filterExtInfo } from '../../src/ssh/kex';
-import { SSH_MSG_KEXINIT, SSH_MSG_EXT_INFO } from '../../src/types';
+import { describe, expect, it } from 'vitest';
 import {
-  SUPPORTED_KEX_ALGORITHMS,
   SUPPORTED_ENCRYPTION_ALGORITHMS,
+  SUPPORTED_KEX_ALGORITHMS,
   SUPPORTED_MAC_ALGORITHMS,
 } from '../../src/ssh/algorithms';
+import {
+  filterExtInfo,
+  KEXInitBuilder,
+  negotiate,
+  parseKEXInit,
+  parseServerSigAlgs,
+} from '../../src/ssh/kex';
+import { SSH_MSG_EXT_INFO, SSH_MSG_KEXINIT } from '../../src/types';
 
 // =====================================================================
 // kex.test.ts
@@ -44,7 +50,10 @@ describe('kex — KEXInitBuilder.build()', () => {
     // 极小概率相等（16 字节随机），实际不会触发
     let same = true;
     for (let i = 0; i < 16; i++) {
-      if (c1[i] !== c2[i]) { same = false; break; }
+      if (c1[i] !== c2[i]) {
+        same = false;
+        break;
+      }
     }
     expect(same).toBe(false);
   });
@@ -112,12 +121,19 @@ describe('kex — parseKEXInit 手工构造报文', () => {
     const parts: Uint8Array[] = [];
     parts.push(new Uint8Array([SSH_MSG_KEXINIT]));
     // 固定 cookie 16 字节为 0xAA（便于断言对照）
-    parts.push(new Uint8Array(16).fill(0xAA));
+    parts.push(new Uint8Array(16).fill(0xaa));
     const lists = [
-      opts.kex, opts.hostKey, opts.encC2S, opts.encS2C,
-      opts.macC2S, opts.macS2C, opts.compC2S, opts.compS2C,
+      opts.kex,
+      opts.hostKey,
+      opts.encC2S,
+      opts.encS2C,
+      opts.macC2S,
+      opts.macS2C,
+      opts.compC2S,
+      opts.compS2C,
       // 第一语言、第二语言（项目里写死为空字符串，用 [] 模拟空列表）
-      [], [],
+      [],
+      [],
     ];
     for (const list of lists) {
       const s = list.join(',');
@@ -127,14 +143,17 @@ describe('kex — parseKEXInit 手工构造报文', () => {
       parts.push(len);
       parts.push(enc);
     }
-    parts.push(new Uint8Array([0]));   // first_kex_packet_follows
-    parts.push(new Uint8Array(4));       // reserved
+    parts.push(new Uint8Array([0])); // first_kex_packet_follows
+    parts.push(new Uint8Array(4)); // reserved
     // concat
     let total = 0;
     for (const p of parts) total += p.length;
     const out = new Uint8Array(total);
     let off = 0;
-    for (const p of parts) { out.set(p, off); off += p.length; }
+    for (const p of parts) {
+      out.set(p, off);
+      off += p.length;
+    }
     return out;
   }
 
@@ -151,7 +170,9 @@ describe('kex — parseKEXInit 手工构造报文', () => {
     });
     const msg = parseKEXInit(pkt);
     expect(msg.kexAlgorithms).toEqual([
-      'curve25519-sha256', 'ecdh-sha2-nistp256', 'diffie-hellman-group14-sha256',
+      'curve25519-sha256',
+      'ecdh-sha2-nistp256',
+      'diffie-hellman-group14-sha256',
     ]);
     expect(msg.encryptionC2S).toEqual(['aes256-gcm@openssh.com', 'aes128-ctr']);
     expect(msg.encryptionS2C).toEqual(['aes256-gcm@openssh.com']);
@@ -241,10 +262,12 @@ describe('kex — negotiate', () => {
   it('真实场景：客户端 [curve25519, ecdh] vs 服务端 [diffie-hellman, curve25519]', () => {
     // 服务端虽把 diffie-hellman 排在首位，但客户端优先 curve25519，
     // 两者都有 curve25519，按 RFC 8732 应优先客户端序
-    expect(negotiate(
-      ['curve25519-sha256', 'ecdh-sha2-nistp256'],
-      ['diffie-hellman-group14-sha256', 'curve25519-sha256'],
-    )).toBe('curve25519-sha256');
+    expect(
+      negotiate(
+        ['curve25519-sha256', 'ecdh-sha2-nistp256'],
+        ['diffie-hellman-group14-sha256', 'curve25519-sha256']
+      )
+    ).toBe('curve25519-sha256');
   });
 });
 
@@ -253,9 +276,9 @@ describe('kex — parseKEXInit 边界与错误', () => {
     // 构造一个所有列表都是空字符串的最小 KEXINIT
     const parts: Uint8Array[] = [];
     parts.push(new Uint8Array([SSH_MSG_KEXINIT]));
-    parts.push(new Uint8Array(16));   // cookie 全 0
+    parts.push(new Uint8Array(16)); // cookie 全 0
     for (let i = 0; i < 10; i++) {
-      parts.push(new Uint8Array(4));  // 4 字节 0 = 空列表
+      parts.push(new Uint8Array(4)); // 4 字节 0 = 空列表
     }
     parts.push(new Uint8Array([0]));
     parts.push(new Uint8Array(4));
@@ -263,10 +286,13 @@ describe('kex — parseKEXInit 边界与错误', () => {
     for (const p of parts) total += p.length;
     const out = new Uint8Array(total);
     let off = 0;
-    for (const p of parts) { out.set(p, off); off += p.length; }
+    for (const p of parts) {
+      out.set(p, off);
+      off += p.length;
+    }
     expect(() => parseKEXInit(out)).not.toThrow();
     const msg = parseKEXInit(out);
-    expect(msg.kexAlgorithms).toEqual(['']);  // 空列表 → ['']
+    expect(msg.kexAlgorithms).toEqual(['']); // 空列表 → ['']
   });
 
   it('对过短报文（cookie 未读完）会越界读取 —— 固化当前行为', () => {
@@ -291,7 +317,7 @@ describe('kex — parseKEXInit 边界与错误', () => {
 function buildExtInfoPayload(exts: { name: string; value: string }[]): Uint8Array {
   const enc = new TextEncoder();
   const parts: Uint8Array[] = [];
-  parts.push(new Uint8Array([SSH_MSG_EXT_INFO]));   // 7
+  parts.push(new Uint8Array([SSH_MSG_EXT_INFO])); // 7
   const nr = new Uint8Array(4);
   new DataView(nr.buffer).setUint32(0, exts.length, false);
   parts.push(nr);
@@ -309,7 +335,10 @@ function buildExtInfoPayload(exts: { name: string; value: string }[]): Uint8Arra
   for (const p of parts) total += p.length;
   const out = new Uint8Array(total);
   let off = 0;
-  for (const p of parts) { out.set(p, off); off += p.length; }
+  for (const p of parts) {
+    out.set(p, off);
+    off += p.length;
+  }
   return out;
 }
 
@@ -319,7 +348,10 @@ describe('kex — parseServerSigAlgs (RFC 8301)', () => {
       { name: 'server-sig-algs', value: 'rsa-sha2-512,rsa-sha2-256,ssh-rsa,ecdsa-sha2-nistp256' },
     ]);
     expect(parseServerSigAlgs(payload)).toEqual([
-      'rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa', 'ecdsa-sha2-nistp256',
+      'rsa-sha2-512',
+      'rsa-sha2-256',
+      'ssh-rsa',
+      'ecdsa-sha2-nistp256',
     ]);
   });
 
@@ -333,9 +365,7 @@ describe('kex — parseServerSigAlgs (RFC 8301)', () => {
   });
 
   it('未包含 server-sig-algs 时返回空数组', () => {
-    const payload = buildExtInfoPayload([
-      { name: 'other-ext', value: 'val' },
-    ]);
+    const payload = buildExtInfoPayload([{ name: 'other-ext', value: 'val' }]);
     expect(parseServerSigAlgs(payload)).toEqual([]);
   });
 
@@ -354,7 +384,7 @@ describe('kex — parseServerSigAlgs (RFC 8301)', () => {
   it('nr-extensions 超过 1024 上限时抛错', () => {
     const payload = new Uint8Array(5);
     payload[0] = SSH_MSG_EXT_INFO;
-    new DataView(payload.buffer).setUint32(1, 5000, false);  // nr=5000
+    new DataView(payload.buffer).setUint32(1, 5000, false); // nr=5000
     expect(() => parseServerSigAlgs(payload)).toThrow(/nr-extensions 过大/);
   });
 
@@ -366,19 +396,21 @@ describe('kex — parseServerSigAlgs (RFC 8301)', () => {
 
 describe('kex — filterExtInfo (RFC 8301)', () => {
   it('过滤 ext-info-c 与 ext-info-s', () => {
-    expect(filterExtInfo(['ext-info-c', 'curve25519-sha256', 'ecdh-sha2-nistp256']))
-      .toEqual(['curve25519-sha256', 'ecdh-sha2-nistp256']);
-    expect(filterExtInfo(['ext-info-s', 'curve25519-sha256']))
-      .toEqual(['curve25519-sha256']);
+    expect(filterExtInfo(['ext-info-c', 'curve25519-sha256', 'ecdh-sha2-nistp256'])).toEqual([
+      'curve25519-sha256',
+      'ecdh-sha2-nistp256',
+    ]);
+    expect(filterExtInfo(['ext-info-s', 'curve25519-sha256'])).toEqual(['curve25519-sha256']);
   });
 
   it('不过滤同名前缀但不同后缀的算法（事实不存在但恶意构造）', () => {
-    expect(filterExtInfo(['ext-info-x', 'curve25519-sha256']))
-      .toEqual(['curve25519-sha256']);
+    expect(filterExtInfo(['ext-info-x', 'curve25519-sha256'])).toEqual(['curve25519-sha256']);
   });
 
   it('保留普通算法', () => {
-    expect(filterExtInfo(['curve25519-sha256', 'ecdh-sha2-nistp256']))
-      .toEqual(['curve25519-sha256', 'ecdh-sha2-nistp256']);
+    expect(filterExtInfo(['curve25519-sha256', 'ecdh-sha2-nistp256'])).toEqual([
+      'curve25519-sha256',
+      'ecdh-sha2-nistp256',
+    ]);
   });
 });

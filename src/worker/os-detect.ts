@@ -15,13 +15,36 @@ export const DETECT_OS_COMMAND =
 
 /** 可持久化的规范 OS key；unknown 只表示本次未识别，不应写入数据库。 */
 export const DETECTED_OS_KEYS = [
-  'ubuntu', 'debian', 'centos', 'rhel', 'fedora', 'arch', 'alpine',
-  'rocky', 'almalinux', 'opensuse', 'suse', 'kali', 'mint', 'manjaro',
-  'popos', 'oracle', 'gentoo', 'nixos', 'void', 'raspbian', 'macos',
-  'freebsd', 'openbsd', 'netbsd', 'linux', 'solaris', 'windows',
+  'ubuntu',
+  'debian',
+  'centos',
+  'rhel',
+  'fedora',
+  'arch',
+  'alpine',
+  'rocky',
+  'almalinux',
+  'opensuse',
+  'suse',
+  'kali',
+  'mint',
+  'manjaro',
+  'popos',
+  'oracle',
+  'gentoo',
+  'nixos',
+  'void',
+  'raspbian',
+  'macos',
+  'freebsd',
+  'openbsd',
+  'netbsd',
+  'linux',
+  'solaris',
+  'windows',
 ] as const;
 
-export type DetectedOS = typeof DETECTED_OS_KEYS[number];
+export type DetectedOS = (typeof DETECTED_OS_KEYS)[number];
 
 const DETECTED_OS_KEY_SET = new Set<string>(DETECTED_OS_KEYS);
 
@@ -115,7 +138,12 @@ export function parseDetectedOS(output: string): string {
   if (uname.includes('netbsd')) return 'netbsd';
   if (uname.includes('linux')) return 'linux';
   if (uname.includes('sunos')) return 'solaris';
-  if (uname.includes('windows_nt') || uname.includes('mingw') || uname.includes('cygwin') || uname.includes('msys')) {
+  if (
+    uname.includes('windows_nt') ||
+    uname.includes('mingw') ||
+    uname.includes('cygwin') ||
+    uname.includes('msys')
+  ) {
     return 'windows';
   }
 

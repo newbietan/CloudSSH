@@ -44,9 +44,9 @@ describe('frontend production build', () => {
   });
 
   it('preserves the xterm requestMode local declaration', () => {
-
-    const implementations = [...bundle.matchAll(/requestMode\([^)]*\)\{/g)]
-      .map((match) => bundle.slice(match.index, match.index + 500));
+    const implementations = [...bundle.matchAll(/requestMode\([^)]*\)\{/g)].map((match) =>
+      bundle.slice(match.index, match.index + 500)
+    );
     const requestMode = implementations.find((code) => code.includes('NOT_RECOGNIZED'));
 
     expect(requestMode).toBeDefined();

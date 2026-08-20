@@ -17,11 +17,12 @@ export function concat(...arrays: Uint8Array[]): Uint8Array {
 
 export function readUint32(data: Uint8Array, offset: number): number {
   return (
-    (data[offset] << 24) |
-    (data[offset + 1] << 16) |
-    (data[offset + 2] << 8) |
-    data[offset + 3]
-  ) >>> 0;
+    ((data[offset] << 24) |
+      (data[offset + 1] << 16) |
+      (data[offset + 2] << 8) |
+      data[offset + 3]) >>>
+    0
+  );
 }
 
 export function writeUint32(data: Uint8Array, offset: number, value: number): void {
@@ -38,9 +39,7 @@ export function encodeUint32(value: number): Uint8Array {
 }
 
 export function encodeString(input: string | Uint8Array): Uint8Array {
-  const encoded = typeof input === 'string'
-    ? textEncoder.encode(input)
-    : input;
+  const encoded = typeof input === 'string' ? textEncoder.encode(input) : input;
   const result = new Uint8Array(4 + encoded.length);
   writeUint32(result, 0, encoded.length);
   result.set(encoded, 4);

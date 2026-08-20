@@ -12,7 +12,7 @@ export interface TerminalSelectionContext {
  */
 export function createTerminalSelectionContext(
   content: string,
-  sourceLabel: string,
+  sourceLabel: string
 ): TerminalSelectionContext | null {
   if (!content.trim()) return null;
 
@@ -29,7 +29,7 @@ export function createTerminalSelectionContext(
  */
 export function buildTerminalSelectionMessage(
   question: string,
-  context: TerminalSelectionContext,
+  context: TerminalSelectionContext
 ): string {
   return t('agent.selectionContextPrompt', {
     source: context.sourceLabel || t('agent.selectionUnknownSource'),

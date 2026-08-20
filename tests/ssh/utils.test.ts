@@ -1,13 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   concat,
-  readUint32,
-  writeUint32,
-  encodeUint32,
-  encodeString,
-  toSSHMPInt,
-  extractRawECDHPoint,
   encodePrefixedString,
+  encodeString,
+  encodeUint32,
+  extractRawECDHPoint,
+  readUint32,
+  toSSHMPInt,
+  writeUint32,
 } from '../../src/ssh/utils';
 
 describe('SSH Utils', () => {
@@ -43,17 +43,17 @@ describe('SSH Utils', () => {
     });
 
     it('should read uint32 at offset', () => {
-      const data = new Uint8Array([0xFF, 0x00, 0x00, 0x01, 0x00]);
+      const data = new Uint8Array([0xff, 0x00, 0x00, 0x01, 0x00]);
       const result = readUint32(data, 1);
 
       expect(result).toBe(256);
     });
 
     it('should read max uint32', () => {
-      const data = new Uint8Array([0xFF, 0xFF, 0xFF, 0xFF]);
+      const data = new Uint8Array([0xff, 0xff, 0xff, 0xff]);
       const result = readUint32(data, 0);
 
-      expect(result).toBe(0xFFFFFFFF);
+      expect(result).toBe(0xffffffff);
     });
   });
 
@@ -171,8 +171,8 @@ describe('SSH Utils', () => {
 
     it('writeUint32(0xFFFFFFFF) writes all-FF', () => {
       const buf = new Uint8Array(4);
-      writeUint32(buf, 0, 0xFFFFFFFF);
-      expect(buf).toEqual(new Uint8Array([0xFF, 0xFF, 0xFF, 0xFF]));
+      writeUint32(buf, 0, 0xffffffff);
+      expect(buf).toEqual(new Uint8Array([0xff, 0xff, 0xff, 0xff]));
     });
 
     it('writeUint32(0x80000000) writes correct bytes', () => {
@@ -182,8 +182,7 @@ describe('SSH Utils', () => {
     });
 
     it('writeUint32 then readUint32 roundtrip for various values', () => {
-      const values = [0, 1, 127, 128, 255, 256, 65535, 65536,
-                      0x7FFFFFFF, 0x80000000, 0xFFFFFFFF];
+      const values = [0, 1, 127, 128, 255, 256, 65535, 65536, 0x7fffffff, 0x80000000, 0xffffffff];
       for (const v of values) {
         const buf = new Uint8Array(4);
         writeUint32(buf, 0, v);
@@ -196,7 +195,7 @@ describe('SSH Utils', () => {
     });
 
     it('encodeUint32(0xFFFFFFFF) returns all-FF', () => {
-      expect(encodeUint32(0xFFFFFFFF)).toEqual(new Uint8Array([0xFF, 0xFF, 0xFF, 0xFF]));
+      expect(encodeUint32(0xffffffff)).toEqual(new Uint8Array([0xff, 0xff, 0xff, 0xff]));
     });
   });
 });
@@ -219,18 +218,18 @@ describe('SSH Utils — toSSHMPInt', () => {
     });
 
     it('0x7F → [0,0,0,1, 0x7F] (最高位 0，不补零)', () => {
-      const result = toSSHMPInt(new Uint8Array([0x7F]));
-      expect(result).toEqual(new Uint8Array([0, 0, 0, 1, 0x7F]));
+      const result = toSSHMPInt(new Uint8Array([0x7f]));
+      expect(result).toEqual(new Uint8Array([0, 0, 0, 1, 0x7f]));
     });
 
     it('0x007F → 去前导零后 [0,0,0,1, 0x7F]', () => {
-      const result = toSSHMPInt(new Uint8Array([0x00, 0x7F]));
-      expect(result).toEqual(new Uint8Array([0, 0, 0, 1, 0x7F]));
+      const result = toSSHMPInt(new Uint8Array([0x00, 0x7f]));
+      expect(result).toEqual(new Uint8Array([0, 0, 0, 1, 0x7f]));
     });
 
     it('0x7FFF → [0,0,0,2, 0x7F,0xFF]', () => {
-      const result = toSSHMPInt(new Uint8Array([0x7F, 0xFF]));
-      expect(result).toEqual(new Uint8Array([0, 0, 0, 2, 0x7F, 0xFF]));
+      const result = toSSHMPInt(new Uint8Array([0x7f, 0xff]));
+      expect(result).toEqual(new Uint8Array([0, 0, 0, 2, 0x7f, 0xff]));
     });
 
     it('0x0100 → [0,0,0,2, 0x01,0x00]', () => {
@@ -246,13 +245,13 @@ describe('SSH Utils — toSSHMPInt', () => {
     });
 
     it('0xFF → [0,0,0,2, 0x00,0xFF]', () => {
-      const result = toSSHMPInt(new Uint8Array([0xFF]));
-      expect(result).toEqual(new Uint8Array([0, 0, 0, 2, 0x00, 0xFF]));
+      const result = toSSHMPInt(new Uint8Array([0xff]));
+      expect(result).toEqual(new Uint8Array([0, 0, 0, 2, 0x00, 0xff]));
     });
 
     it('0x00FF → 去前导零后 0xFF，最高位 1 → 补零 → [0,0,0,2, 0x00,0xFF]', () => {
-      const result = toSSHMPInt(new Uint8Array([0x00, 0xFF]));
-      expect(result).toEqual(new Uint8Array([0, 0, 0, 2, 0x00, 0xFF]));
+      const result = toSSHMPInt(new Uint8Array([0x00, 0xff]));
+      expect(result).toEqual(new Uint8Array([0, 0, 0, 2, 0x00, 0xff]));
     });
 
     it('0x8000 → [0,0,0,3, 0x00,0x80,0x00]', () => {
@@ -261,8 +260,8 @@ describe('SSH Utils — toSSHMPInt', () => {
     });
 
     it('0xFFFF → [0,0,0,3, 0x00,0xFF,0xFF]', () => {
-      const result = toSSHMPInt(new Uint8Array([0xFF, 0xFF]));
-      expect(result).toEqual(new Uint8Array([0, 0, 0, 3, 0x00, 0xFF, 0xFF]));
+      const result = toSSHMPInt(new Uint8Array([0xff, 0xff]));
+      expect(result).toEqual(new Uint8Array([0, 0, 0, 3, 0x00, 0xff, 0xff]));
     });
   });
 
@@ -284,13 +283,13 @@ describe('SSH Utils — toSSHMPInt', () => {
     });
 
     it('0x0100FF → 不去中间零（只去前导）→ [0,0,0,3, 0x01,0x00,0xFF]', () => {
-      const result = toSSHMPInt(new Uint8Array([0x01, 0x00, 0xFF]));
-      expect(result).toEqual(new Uint8Array([0, 0, 0, 3, 0x01, 0x00, 0xFF]));
+      const result = toSSHMPInt(new Uint8Array([0x01, 0x00, 0xff]));
+      expect(result).toEqual(new Uint8Array([0, 0, 0, 3, 0x01, 0x00, 0xff]));
     });
 
     it('0x00FF80 → 去前导 0x00 → 0xFF80，最高位 1 → 补零 → [0,0,0,3, 0x00,0xFF,0x80]', () => {
-      const result = toSSHMPInt(new Uint8Array([0x00, 0xFF, 0x80]));
-      expect(result).toEqual(new Uint8Array([0, 0, 0, 3, 0x00, 0xFF, 0x80]));
+      const result = toSSHMPInt(new Uint8Array([0x00, 0xff, 0x80]));
+      expect(result).toEqual(new Uint8Array([0, 0, 0, 3, 0x00, 0xff, 0x80]));
     });
   });
 
@@ -306,8 +305,8 @@ describe('SSH Utils — toSSHMPInt', () => {
     });
 
     it('single byte 0xFF → [0,0,0,2, 0x00,0xFF]', () => {
-      const result = toSSHMPInt(new Uint8Array([0xFF]));
-      expect(result).toEqual(new Uint8Array([0, 0, 0, 2, 0x00, 0xFF]));
+      const result = toSSHMPInt(new Uint8Array([0xff]));
+      expect(result).toEqual(new Uint8Array([0, 0, 0, 2, 0x00, 0xff]));
     });
   });
 
@@ -317,10 +316,10 @@ describe('SSH Utils — toSSHMPInt', () => {
         new Uint8Array([0x01]),
         new Uint8Array([0x80]),
         new Uint8Array([0x00, 0x01]),
-        new Uint8Array([0x00, 0xFF]),
-        new Uint8Array([0x7F, 0xFF]),
-        new Uint8Array([0xFF, 0xFF]),
-        new Uint8Array([0x00, 0x00, 0x7F]),
+        new Uint8Array([0x00, 0xff]),
+        new Uint8Array([0x7f, 0xff]),
+        new Uint8Array([0xff, 0xff]),
+        new Uint8Array([0x00, 0x00, 0x7f]),
         new Uint8Array([0x01, 0x02, 0x03, 0x04]),
       ];
       for (const input of cases) {
@@ -351,19 +350,19 @@ describe('SSH Utils — toSSHMPInt', () => {
 
     it('32-byte 最高位 1：补 1 字节前导零，总长度 4+33=37', () => {
       const secret = new Uint8Array(32);
-      secret[0] = 0xFF; // 最高位 1
+      secret[0] = 0xff; // 最高位 1
       const result = toSSHMPInt(secret);
       expect(result.length).toBe(4 + 33);
       expect(result[4]).toBe(0x00); // 补的前导零
-      expect(result[5]).toBe(0xFF);
+      expect(result[5]).toBe(0xff);
     });
 
     it('32-byte 最高位 0：不补零，总长度 4+32=36', () => {
       const secret = new Uint8Array(32);
-      secret[0] = 0x7F; // 最高位 0
+      secret[0] = 0x7f; // 最高位 0
       const result = toSSHMPInt(secret);
       expect(result.length).toBe(4 + 32);
-      expect(result[4]).toBe(0x7F); // 无前导零
+      expect(result[4]).toBe(0x7f); // 无前导零
     });
   });
 });
@@ -440,12 +439,12 @@ describe('SSH Utils — extractRawECDHPoint', () => {
   });
 
   it('提取的 subarray 是 blob 的视图（无复制）', () => {
-    const point = new Uint8Array([0x04, 0xAA, 0xBB]);
+    const point = new Uint8Array([0x04, 0xaa, 0xbb]);
     const blob = buildEcdhBlob('kt', 'cv', point);
     const extracted = extractRawECDHPoint(blob);
     // subarray 返回的是视图，修改原 blob 会反映到 extracted
-    blob[blob.length - 1] = 0xFF;
-    expect(extracted[extracted.length - 1]).toBe(0xFF);
+    blob[blob.length - 1] = 0xff;
+    expect(extracted[extracted.length - 1]).toBe(0xff);
   });
 });
 

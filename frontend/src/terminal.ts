@@ -1,29 +1,19 @@
-import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { WebglAddon } from '@xterm/addon-webgl';
-import { SearchAddon } from '@xterm/addon-search';
+import { Terminal } from '@xterm/xterm';
 import { TrzszFilter } from 'trzsz';
 import '@xterm/xterm/css/xterm.css';
+import { AuthChallengeDialog, type AuthChallengeSubmission } from './auth-challenge-dialog';
 import { copyTextToClipboard } from './clipboard';
-import { t } from './i18n';
-import { confirmAction, notify } from './ui-feedback';
+import { type TranslationKey, t } from './i18n';
 import {
+  type ChangedHostKeyMessage,
   normalizeChangedHostKeyMessage,
   normalizeVerifiedHostKeyMessage,
   saveKnownFingerprint,
-  type ChangedHostKeyMessage,
 } from './known-hosts';
-import {
-  AuthChallengeDialog,
-  type AuthChallengeSubmission,
-} from './auth-challenge-dialog';
-import { centerTerminalText } from './terminal-text';
-import { localizedSSHMessage } from './terminal-status';
-import {
-  getActiveTerminalTheme,
-  onTerminalThemeChange,
-} from './theme';
 import {
   applyMobileModifier,
   diffTextareaInput,
@@ -33,6 +23,10 @@ import {
   mobileTerminalKeySequence,
 } from './mobile-input';
 import { currentTerminalFontSize } from './terminal-layout';
+import { localizedSSHMessage } from './terminal-status';
+import { centerTerminalText } from './terminal-text';
+import { getActiveTerminalTheme, onTerminalThemeChange } from './theme';
+import { confirmAction, notify } from './ui-feedback';
 
 const TRZSZ_MAX_DATA_CHUNK_SIZE = 2 * 1024 * 1024;
 const NON_RETRIABLE_AUTH_EVENTS = new Set([
@@ -103,8 +97,10 @@ const MOBILE_VIEWPORT_QUERY = '(max-width: 767px), (max-width: 1180px) and (poin
 const MOBILE_CONNECTION_RECOVERY_QUERY = '(pointer: coarse)';
 
 function supportsMobileConnectionRecovery(): boolean {
-  return navigator.maxTouchPoints > 0
-    && (window.matchMedia?.(MOBILE_CONNECTION_RECOVERY_QUERY).matches ?? false);
+  return (
+    navigator.maxTouchPoints > 0 &&
+    (window.matchMedia?.(MOBILE_CONNECTION_RECOVERY_QUERY).matches ?? false)
+  );
 }
 
 export class SSHTerminal {
@@ -144,7 +140,11 @@ export class SSHTerminal {
   private heartbeatResponseTimeout: ReturnType<typeof setTimeout> | null = null;
   private pageHiddenAt: number | null = null;
   private wsLatency: number | null = null;
-  private onLatencyUpdated?: (cfLatency: number | null, cfColo: string | null, wsLatency: number | null) => void;
+  private onLatencyUpdated?: (
+    cfLatency: number | null,
+    cfColo: string | null,
+    wsLatency: number | null
+  ) => void;
   private onSelectionChanged?: (selection: string, anchor: TerminalSelectionAnchor | null) => void;
   private selectionAnchor: TerminalSelectionAnchor | null = null;
   private selectionPointerActive = false;
@@ -182,7 +182,9 @@ export class SSHTerminal {
       this.mobileSelectionStart = cell;
       try {
         this.container.setPointerCapture?.(event.pointerId);
-      } catch { /* synthetic events and older browsers may not support capture */ }
+      } catch {
+        /* synthetic events and older browsers may not support capture */
+      }
       this.updateMobileSelection(cell);
       return;
     }
@@ -259,8 +261,9 @@ export class SSHTerminal {
     this.resizeListener = () => {
       // visualViewport 的连续变化由 MobileTerminalController 稳定后统一处理，
       // 桌面端和不支持 visualViewport 的浏览器仍保留直接适配。
-      const mobileViewportManaged = Boolean(window.visualViewport)
-        && (window.matchMedia?.(MOBILE_VIEWPORT_QUERY).matches ?? false);
+      const mobileViewportManaged =
+        Boolean(window.visualViewport) &&
+        (window.matchMedia?.(MOBILE_VIEWPORT_QUERY).matches ?? false);
       if (!mobileViewportManaged) this.fit();
     };
 
@@ -286,7 +289,7 @@ export class SSHTerminal {
     this.terminalDisposables.push(
       this.terminal.onSelectionChange(() => {
         this.notifySelectionChanged();
-      }),
+      })
     );
     this.container.addEventListener('pointerdown', this.selectionPointerDownListener, true);
     this.container.addEventListener('pointermove', this.selectionPointerMoveListener, true);
@@ -326,7 +329,8 @@ export class SSHTerminal {
       e.preventDefault();
       e.stopPropagation();
       if (this.trzszFilter && e.dataTransfer?.items) {
-        this.trzszFilter.uploadFiles(e.dataTransfer.items)
+        this.trzszFilter
+          .uploadFiles(e.dataTransfer.items)
           .then(() => console.log('[trzsz] Drag-drop upload success'))
           .catch((err: any) => console.error('[trzsz] Drag-drop upload error:', err));
       }
@@ -357,7 +361,8 @@ export class SSHTerminal {
 
   /** 通过与物理键盘相同的 trzsz 输入管线发送移动端快捷键。 */
   sendInput(data: string): boolean {
-    if (!data || !this.sessionReady || this.ws?.readyState !== WebSocket.OPEN || !this.trzszFilter) return false;
+    if (!data || !this.sessionReady || this.ws?.readyState !== WebSocket.OPEN || !this.trzszFilter)
+      return false;
     this.processTerminalInput(data);
     this.terminal.focus();
     return true;
@@ -368,7 +373,7 @@ export class SSHTerminal {
     const data = mobileTerminalKeySequence(
       key,
       this.terminal.modes.applicationCursorKeysMode,
-      this.mobileModifier,
+      this.mobileModifier
     );
     this.setMobileModifier(null);
     return this.sendInput(data);
@@ -376,7 +381,9 @@ export class SSHTerminal {
 
   setMobileModifier(modifier: MobileModifier | null): void {
     this.mobileModifier = modifier;
-    this.container.dispatchEvent(new CustomEvent('cloudssh:mobile-modifier-change', { bubbles: true }));
+    this.container.dispatchEvent(
+      new CustomEvent('cloudssh:mobile-modifier-change', { bubbles: true })
+    );
   }
 
   getMobileModifier(): MobileModifier | null {
@@ -403,11 +410,11 @@ export class SSHTerminal {
     if (this.mobileSelectionMode === enabled) return;
     this.mobileSelectionMode = enabled;
     this.container.classList.toggle('mobile-selection-mode', enabled);
-    if (!enabled) {
+    if (enabled) {
+      this.finishMobileScroll();
+    } else {
       this.finishMobileSelectionPointer();
       this.selectionPointerActive = false;
-    } else {
-      this.finishMobileScroll();
     }
   }
 
@@ -439,21 +446,44 @@ export class SSHTerminal {
   /** 将文本填入当前远端终端输入行，不附加回车。 */
   fillInput(text: string): boolean {
     if (!text || /[\r\n]/.test(text)) return false;
-    if (!this.sessionReady || this.ws?.readyState !== WebSocket.OPEN || !this.trzszFilter) return false;
+    if (!this.sessionReady || this.ws?.readyState !== WebSocket.OPEN || !this.trzszFilter)
+      return false;
 
     this.trzszFilter.processTerminalInput(text);
     this.terminal.focus();
     return true;
   }
 
-  setLatencyUpdatedHandler(handler: (cfLatency: number | null, cfColo: string | null, wsLatency: number | null) => void): void {
+  /**
+   * 将命令片段插入远端终端。单行复用 fillInput，多行走 xterm paste 管线；run 为 true 时追加回车。
+   */
+  insertSnippet(command: string, run: boolean): boolean {
+    const trimmed = command.trim();
+    if (!trimmed) return false;
+    if (/[\r\n]/.test(trimmed)) {
+      if (!this.sessionReady || this.ws?.readyState !== WebSocket.OPEN) return false;
+      this.setMobileModifier(null);
+      this.terminal.paste(trimmed);
+    } else if (!this.fillInput(trimmed)) {
+      return false;
+    }
+    if (run) return this.sendInput('\r');
+    this.terminal.focus();
+    return true;
+  }
+
+  setLatencyUpdatedHandler(
+    handler: (cfLatency: number | null, cfColo: string | null, wsLatency: number | null) => void
+  ): void {
     this.onLatencyUpdated = handler;
     if (this.cfLatency !== null || this.cfColo !== null || this.wsLatency !== null) {
       handler(this.cfLatency, this.cfColo, this.wsLatency);
     }
   }
 
-  setSelectionChangeHandler(handler: (selection: string, anchor: TerminalSelectionAnchor | null) => void): void {
+  setSelectionChangeHandler(
+    handler: (selection: string, anchor: TerminalSelectionAnchor | null) => void
+  ): void {
     this.onSelectionChanged = handler;
     this.notifySelectionChanged();
   }
@@ -487,8 +517,8 @@ export class SSHTerminal {
 
     const x = Math.min(Math.max(clientX - rect.left, 0), Math.max(0, rect.width - 0.01));
     const y = Math.min(Math.max(clientY - rect.top, 0), Math.max(0, rect.height - 0.01));
-    const column = Math.min(columns - 1, Math.floor(x / rect.width * columns));
-    const viewportRow = Math.min(rows - 1, Math.floor(y / rect.height * rows));
+    const column = Math.min(columns - 1, Math.floor((x / rect.width) * columns));
+    const viewportRow = Math.min(rows - 1, Math.floor((y / rect.height) * rows));
     return {
       column,
       row: this.terminal.buffer.active.viewportY + viewportRow,
@@ -505,7 +535,7 @@ export class SSHTerminal {
     this.terminal.select(
       firstOffset % columns,
       Math.floor(firstOffset / columns),
-      lastOffset - firstOffset + 1,
+      lastOffset - firstOffset + 1
     );
   }
 
@@ -523,8 +553,11 @@ export class SSHTerminal {
     const target = event.target;
     if (!(target instanceof Element) || !target.closest('.xterm-screen')) return;
     // 备用屏幕和远端鼠标协议由远端应用控制，不能把滑动误当作本地历史滚动。
-    if (this.terminal.buffer.active.type !== 'normal'
-      || this.terminal.modes.mouseTrackingMode !== 'none') return;
+    if (
+      this.terminal.buffer.active.type !== 'normal' ||
+      this.terminal.modes.mouseTrackingMode !== 'none'
+    )
+      return;
 
     this.mobileScrollGesture = {
       pointerId: event.pointerId,
@@ -551,7 +584,9 @@ export class SSHTerminal {
       gesture.active = true;
       try {
         this.container.setPointerCapture?.(event.pointerId);
-      } catch { /* synthetic events and older browsers may not support capture */ }
+      } catch {
+        /* synthetic events and older browsers may not support capture */
+      }
     }
 
     event.preventDefault();
@@ -605,11 +640,11 @@ export class SSHTerminal {
     this.terminal.open(this.container);
     this.mounted = true;
     this.installIOSIMEFallback();
-    
+
     // Load WebGL addon after terminal is opened
     try {
       this.webglAddon = new WebglAddon();
-      this.webglAddon.onContextLoss(e => {
+      this.webglAddon.onContextLoss((e) => {
         console.warn('WebGL context lost', e);
         this.webglAddon.dispose();
       });
@@ -627,18 +662,21 @@ export class SSHTerminal {
     const box = document.createElement('div');
     box.className = 'cloudssh-search-box';
     box.style.display = 'none';
-    box.innerHTML = `
-      <input type="text" class="cloudssh-search-input" placeholder="${t('terminal.searchPlaceholder')}" />
-      <button class="cloudssh-search-btn cloudssh-search-prev" title="${t('terminal.searchPrevious')}">
-        <span class="material-symbols-outlined" style="font-size:16px;">arrow_upward</span>
-      </button>
-      <button class="cloudssh-search-btn cloudssh-search-next" title="${t('terminal.searchNext')}">
-        <span class="material-symbols-outlined" style="font-size:16px;">arrow_downward</span>
-      </button>
-      <button class="cloudssh-search-btn cloudssh-search-close" title="${t('terminal.searchClose')}">
-        <span class="material-symbols-outlined" style="font-size:16px;">close</span>
-      </button>
-    `;
+
+    const searchInputEl = document.createElement('input');
+    searchInputEl.type = 'text';
+    searchInputEl.className = 'cloudssh-search-input';
+    searchInputEl.placeholder = t('terminal.searchPlaceholder');
+    box.appendChild(searchInputEl);
+    box.appendChild(
+      this.createSearchButton('cloudssh-search-prev', 'terminal.searchPrevious', 'arrow_upward')
+    );
+    box.appendChild(
+      this.createSearchButton('cloudssh-search-next', 'terminal.searchNext', 'arrow_downward')
+    );
+    box.appendChild(
+      this.createSearchButton('cloudssh-search-close', 'terminal.searchClose', 'close')
+    );
 
     this.container.style.position = 'relative';
     this.container.appendChild(box);
@@ -680,6 +718,35 @@ export class SSHTerminal {
     });
   }
 
+  private createSearchButton(
+    extraClass: string,
+    titleKey: TranslationKey,
+    icon: string,
+  ): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.className = `cloudssh-search-btn ${extraClass}`;
+    button.title = t(titleKey);
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'material-symbols-outlined';
+    iconSpan.style.fontSize = '16px';
+    iconSpan.textContent = icon;
+    button.appendChild(iconSpan);
+    return button;
+  }
+
+  private static renderStatusDot(
+    target: HTMLElement,
+    dotClass: string,
+    text: string,
+    dotTag: 'div' | 'span' = 'div',
+  ): void {
+    target.textContent = '';
+    const dot = document.createElement(dotTag);
+    dot.className = dotClass;
+    target.appendChild(dot);
+    target.append(` ${text}`);
+  }
+
   toggleSearch(): void {
     if (this.searchVisible) {
       this.hideSearch();
@@ -711,12 +778,7 @@ export class SSHTerminal {
     if (!hostKey) return;
     const requireCloud = Boolean(this.lastHostInfo?.serverId);
     try {
-      await saveKnownFingerprint(
-        hostKey.host,
-        hostKey.port,
-        hostKey.fingerprint,
-        requireCloud,
-      );
+      await saveKnownFingerprint(hostKey.host, hostKey.port, hostKey.fingerprint, requireCloud);
     } catch {
       notify(t('terminal.hostKeySaveFailed'), {
         title: t('terminal.hostKeySaveTitle'),
@@ -750,12 +812,7 @@ export class SSHTerminal {
 
       const requireCloud = Boolean(this.lastHostInfo?.serverId);
       try {
-        await saveKnownFingerprint(
-          hostKey.host,
-          hostKey.port,
-          hostKey.fingerprint,
-          requireCloud,
-        );
+        await saveKnownFingerprint(hostKey.host, hostKey.port, hostKey.fingerprint, requireCloud);
       } catch {
         notify(t('terminal.hostKeyTrustFailed'), {
           title: t('terminal.hostKeyChangeTitle'),
@@ -793,8 +850,8 @@ export class SSHTerminal {
       this.terminal.writeln(`\x1b[32m[+] ${t('terminal.reconnecting')}\x1b[0m`);
       const socket = await reconnectFactory();
       if (
-        this.reconnectWebSocketFactory !== reconnectFactory
-        || this.ws !== this.pendingHostKeyChangeSocket
+        this.reconnectWebSocketFactory !== reconnectFactory ||
+        this.ws !== this.pendingHostKeyChangeSocket
       ) {
         socket.close(1000);
         return;
@@ -824,9 +881,19 @@ export class SSHTerminal {
     }
 
     const termStatus = document.getElementById('term-status');
-    if (termStatus) termStatus.innerHTML = `<div class="w-2 h-2 bg-primary-container animate-pulse"></div> ${t('terminal.connecting')}`;
+    if (termStatus)
+      SSHTerminal.renderStatusDot(
+        termStatus,
+        'w-2 h-2 bg-primary-container animate-pulse',
+        t('terminal.connecting')
+      );
 
-    const wsUrl = new URL(window.location.href);
+    let wsUrl: URL;
+    try {
+      wsUrl = new URL(window.location.href);
+    } catch {
+      throw new Error('Invalid window location');
+    }
     wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
     wsUrl.pathname = '/api/ssh';
     // 匿名路径：用户在前端选定 region 后作为 URL query 传给 Worker；
@@ -843,17 +910,19 @@ export class SSHTerminal {
       socket.onopen = () => {
         if (socket !== this.ws) return;
         this.terminal.writeln(`\x1b[32m[+] ${t('terminal.wsSendingCredentials')}\x1b[0m`);
-        socket.send(JSON.stringify({
-          host: config.host,
-          port: config.port,
-          username: config.username,
-          password: config.password,
-          authMethod: config.authMethod,
-          privateKey: config.privateKey,
-          expectedFingerprint: config.expectedFingerprint,
-          ...this.getTerminalSize(),
-        }));
-        
+        socket.send(
+          JSON.stringify({
+            host: config.host,
+            port: config.port,
+            username: config.username,
+            password: config.password,
+            authMethod: config.authMethod,
+            privateKey: config.privateKey,
+            expectedFingerprint: config.expectedFingerprint,
+            ...this.getTerminalSize(),
+          })
+        );
+
         this.startHeartbeat();
         resolve();
       };
@@ -869,7 +938,7 @@ export class SSHTerminal {
   connectWithWebSocket(
     ws: WebSocket,
     hostInfo?: SSHHostInfo,
-    options: WebSocketConnectOptions = {},
+    options: WebSocketConnectOptions = {}
   ): void {
     this.resetActiveConnection();
     this.lastConfig = null;
@@ -884,7 +953,12 @@ export class SSHTerminal {
     }
 
     const termStatus = document.getElementById('term-status');
-    if (termStatus) termStatus.innerHTML = `<div class="w-2 h-2 bg-primary-container animate-pulse"></div> ${t('terminal.connecting')}`;
+    if (termStatus)
+      SSHTerminal.renderStatusDot(
+        termStatus,
+        'w-2 h-2 bg-primary-container animate-pulse',
+        t('terminal.connecting')
+      );
 
     const handleOpen = () => {
       if (ws !== this.ws) return;
@@ -914,7 +988,7 @@ export class SSHTerminal {
         } else if (data instanceof ArrayBuffer) {
           this.terminal.write(new Uint8Array(data));
         } else if (data instanceof Blob) {
-          data.arrayBuffer().then(buf => this.terminal.write(new Uint8Array(buf)));
+          data.arrayBuffer().then((buf) => this.terminal.write(new Uint8Array(buf)));
         }
       },
       sendToServer: (data: string | Uint8Array) => {
@@ -957,7 +1031,9 @@ export class SSHTerminal {
 
           switch (msg.type) {
             case 'status':
-              this.terminal.writeln(`\x1b[32m[*] ${localizedSSHMessage(msg.message, msg.event, msg.params)}\x1b[0m`);
+              this.terminal.writeln(
+                `\x1b[32m[*] ${localizedSSHMessage(msg.message, msg.event, msg.params)}\x1b[0m`
+              );
               if (msg.event === 'auth_success' || msg.message === '认证成功') {
                 this.authChallengeDialog?.dismiss();
               }
@@ -973,7 +1049,9 @@ export class SSHTerminal {
                 this.clearReconnectTimeout();
                 this.authChallengeDialog?.dismiss();
               }
-              this.terminal.writeln(`\x1b[31m[!] ${localizedSSHMessage(msg.message, msg.event, msg.params)}\x1b[0m`);
+              this.terminal.writeln(
+                `\x1b[31m[!] ${localizedSSHMessage(msg.message, msg.event, msg.params)}\x1b[0m`
+              );
               break;
             case 'debug':
               this.terminal.writeln(`\x1b[90m[DEBUG] ${msg.message}\x1b[0m`);
@@ -1022,10 +1100,21 @@ export class SSHTerminal {
         `\x1b[33m[*] ${t('terminal.connectionClosed', { code: event.code })}\x1b[0m`
       );
       const termStatus = document.getElementById('term-status');
-      if (termStatus) termStatus.innerHTML = `<div class="w-2 h-2 bg-[var(--error)]"></div> ${t('terminal.disconnected')}`;
+      if (termStatus)
+        SSHTerminal.renderStatusDot(
+          termStatus,
+          'w-2 h-2 bg-[var(--error)]',
+          t('terminal.disconnected')
+        );
       const statusText = document.getElementById('status-text');
-      if (statusText) statusText.innerHTML = `<span class="w-2 h-2 bg-surface-dot inline-block"></span> ${t('auth.statusOffline')}`;
-      
+      if (statusText)
+        SSHTerminal.renderStatusDot(
+          statusText,
+          'w-2 h-2 bg-surface-dot inline-block',
+          t('auth.statusOffline'),
+          'span'
+        );
+
       const willReconnect = event.code !== 1000 && this.hasReconnectStrategy();
       this.onSessionClosed?.(event, willReconnect);
       if (willReconnect) {
@@ -1068,15 +1157,18 @@ export class SSHTerminal {
   private handleAuthChallenge(socket: WebSocket, payload: unknown): void {
     if (socket !== this.ws) return;
 
-    const challengeTarget = typeof payload === 'object' && payload !== null
-      ? payload as { host?: unknown; port?: unknown }
-      : {};
-    const challengeHost = typeof challengeTarget.host === 'string'
-      ? challengeTarget.host
-      : this.lastConfig?.host ?? '';
-    const challengePort = typeof challengeTarget.port === 'number' && Number.isInteger(challengeTarget.port)
-      ? challengeTarget.port
-      : this.lastConfig?.port ?? 22;
+    const challengeTarget =
+      typeof payload === 'object' && payload !== null
+        ? (payload as { host?: unknown; port?: unknown })
+        : {};
+    const challengeHost =
+      typeof challengeTarget.host === 'string'
+        ? challengeTarget.host
+        : (this.lastConfig?.host ?? '');
+    const challengePort =
+      typeof challengeTarget.port === 'number' && Number.isInteger(challengeTarget.port)
+        ? challengeTarget.port
+        : (this.lastConfig?.port ?? 22);
 
     this.authChallengeDialog ??= new AuthChallengeDialog();
     const shown = this.authChallengeDialog.show(payload, {
@@ -1115,10 +1207,12 @@ export class SSHTerminal {
     this.terminal.writeln(`\x1b[31m[!] ${t('authChallenge.invalid')}\x1b[0m`);
     if (socket.readyState !== WebSocket.OPEN) return;
 
-    const id = typeof payload === 'object' && payload !== null
-      && typeof (payload as { id?: unknown }).id === 'string'
-      ? (payload as { id: string }).id
-      : null;
+    const id =
+      typeof payload === 'object' &&
+      payload !== null &&
+      typeof (payload as { id?: unknown }).id === 'string'
+        ? (payload as { id: string }).id
+        : null;
     if (id) {
       socket.send(JSON.stringify({ type: 'auth_cancel', id }));
     } else {
@@ -1131,10 +1225,14 @@ export class SSHTerminal {
     if (this.terminal.options.fontSize !== fontSize) {
       this.terminal.options.fontSize = fontSize;
     }
-    if (!this.mounted || this.container.clientWidth === 0 || this.container.clientHeight === 0) return false;
+    if (!this.mounted || this.container.clientWidth === 0 || this.container.clientHeight === 0)
+      return false;
     const dimensions = this.fitAddon.proposeDimensions();
-    if (!dimensions
-      || (dimensions.cols === this.terminal.cols && dimensions.rows === this.terminal.rows)) return false;
+    if (
+      !dimensions ||
+      (dimensions.cols === this.terminal.cols && dimensions.rows === this.terminal.rows)
+    )
+      return false;
 
     const buffer = this.terminal.buffer.active;
     const bufferType = buffer.type;
@@ -1231,17 +1329,18 @@ export class SSHTerminal {
     this.sendHeartbeatProbe();
     this.heartbeatInterval = setInterval(
       () => this.sendHeartbeatProbe(),
-      RTT_HEARTBEAT_INTERVAL_MS,
+      RTT_HEARTBEAT_INTERVAL_MS
     );
   }
 
   private sendHeartbeatProbe(): void {
     const socket = this.ws;
     if (
-      document.visibilityState === 'hidden'
-      || socket?.readyState !== WebSocket.OPEN
-      || this.pendingHeartbeatId !== null
-    ) return;
+      document.visibilityState === 'hidden' ||
+      socket?.readyState !== WebSocket.OPEN ||
+      this.pendingHeartbeatId !== null
+    )
+      return;
 
     const id = crypto.randomUUID();
     this.pendingHeartbeatId = id;
@@ -1286,9 +1385,9 @@ export class SSHTerminal {
     }
 
     if (
-      socket.readyState === WebSocket.CLOSED
-      && this.hasReconnectStrategy()
-      && this.reconnectTimeout === null
+      socket.readyState === WebSocket.CLOSED &&
+      this.hasReconnectStrategy() &&
+      this.reconnectTimeout === null
     ) {
       this.scheduleReconnect();
     }
@@ -1317,10 +1416,12 @@ export class SSHTerminal {
 
   private sendResize(size = this.getTerminalSize()): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'resize',
-        ...size,
-      }));
+      this.ws.send(
+        JSON.stringify({
+          type: 'resize',
+          ...size,
+        })
+      );
     }
   }
 
@@ -1354,8 +1455,8 @@ export class SSHTerminal {
     const bannerText = centerTerminalText(t('terminal.bannerConnecting'), 34);
     this.terminal.write(
       '\x1b[1;33m╔══════════════════════════════════╗\x1b[0m\r\n' +
-      `\x1b[1;33m║${bannerText}║\x1b[0m\r\n` +
-      '\x1b[1;33m╚══════════════════════════════════╝\x1b[0m\r\n\r\n'
+        `\x1b[1;33m║${bannerText}║\x1b[0m\r\n` +
+        '\x1b[1;33m╚══════════════════════════════════╝\x1b[0m\r\n\r\n'
     );
   }
 
@@ -1373,7 +1474,7 @@ export class SSHTerminal {
   }
 
   private disposeConnectionDisposables(): void {
-    this.disposables.forEach(d => d.dispose());
+    this.disposables.forEach((d) => d.dispose());
     this.disposables = [];
   }
 
@@ -1400,25 +1501,33 @@ export class SSHTerminal {
     this.cfColo = null;
     this.wsLatency = null;
 
-    if (socket && socket.readyState !== WebSocket.CLOSED && socket.readyState !== WebSocket.CLOSING) {
+    if (
+      socket &&
+      socket.readyState !== WebSocket.CLOSED &&
+      socket.readyState !== WebSocket.CLOSING
+    ) {
       socket.close(1000);
     }
   }
 
   private hasReconnectStrategy(): boolean {
-    return this.canReconnect
-      && this.reconnectAttempts < this.maxReconnectAttempts
-      && Boolean(this.lastConfig || this.reconnectWebSocketFactory);
+    return (
+      this.canReconnect &&
+      this.reconnectAttempts < this.maxReconnectAttempts &&
+      Boolean(this.lastConfig || this.reconnectWebSocketFactory)
+    );
   }
 
   private scheduleReconnect(): void {
     this.clearReconnectTimeout();
-    
+
     this.reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
-    
-    this.terminal.writeln(`\x1b[33m[*] ${t('terminal.reconnectWait', { seconds: delay / 1000, attempt: this.reconnectAttempts, max: this.maxReconnectAttempts })}\x1b[0m`);
-    
+    const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 30000);
+
+    this.terminal.writeln(
+      `\x1b[33m[*] ${t('terminal.reconnectWait', { seconds: delay / 1000, attempt: this.reconnectAttempts, max: this.maxReconnectAttempts })}\x1b[0m`
+    );
+
     this.reconnectTimeout = setTimeout(async () => {
       this.reconnectTimeout = null;
       if (this.lastConfig) {
@@ -1436,9 +1545,9 @@ export class SSHTerminal {
           // 用户可能在令牌请求期间主动关闭标签或发起另一条连接。
           // 这时丢弃迟到的 socket，避免页面被已经取消的重连重新拉起。
           if (
-            this.reconnectWebSocketFactory !== reconnectFactory
-            || !this.canReconnect
-            || this.reconnectAttempts >= this.maxReconnectAttempts
+            this.reconnectWebSocketFactory !== reconnectFactory ||
+            !this.canReconnect ||
+            this.reconnectAttempts >= this.maxReconnectAttempts
           ) {
             socket.close(1000);
             return;
@@ -1482,13 +1591,17 @@ export class SSHTerminal {
     this.container.removeEventListener('contextmenu', this.contextMenuPasteListener);
     this.imeTextarea?.removeEventListener('keydown', this.imeKeydownListener, true);
     this.imeTextarea?.removeEventListener('keyup', this.imeKeyupListener, true);
-    this.imeTextarea?.removeEventListener('compositionstart', this.imeCompositionStartListener, true);
+    this.imeTextarea?.removeEventListener(
+      'compositionstart',
+      this.imeCompositionStartListener,
+      true
+    );
     this.clearIMEPendingInput();
     if (this.viewportRestoreFrame !== null) cancelAnimationFrame(this.viewportRestoreFrame);
     this.viewportRestoreFrame = null;
     this.imeTextarea = null;
     this.themeCleanup();
-    this.terminalDisposables.forEach(d => d.dispose());
+    this.terminalDisposables.forEach((d) => d.dispose());
     this.terminalDisposables = [];
     this.terminal.dispose();
   }
@@ -1507,7 +1620,7 @@ export class SSHTerminal {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    
+
     let actualFilename = filename;
     if (!actualFilename) {
       const host = this.lastConfig?.host || 'terminal';
@@ -1515,7 +1628,7 @@ export class SSHTerminal {
       const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
       actualFilename = `${host}_${port}_${dateStr}.txt`;
     }
-    
+
     a.download = actualFilename;
     a.style.display = 'none';
     document.body.appendChild(a);

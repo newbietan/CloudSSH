@@ -1,19 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SSHSession } from '../../src/worker/ssh-session';
 import { concat, encodeString, encodeUint32, readUint32 } from '../../src/ssh/utils';
+import { SSHSession } from '../../src/worker/ssh-session';
 
 function buildFailure(methods: string, partialSuccess = false): Uint8Array {
   return concat(
     new Uint8Array([51]),
     encodeString(methods),
-    new Uint8Array([partialSuccess ? 1 : 0]),
+    new Uint8Array([partialSuccess ? 1 : 0])
   );
 }
 
 function buildInfoRequest(
   prompts: Array<{ text: string; echo: boolean }>,
   name = 'Interactive authentication',
-  instruction = 'Complete the requested fields',
+  instruction = 'Complete the requested fields'
 ): Uint8Array {
   return concat(
     new Uint8Array([60]),
@@ -24,7 +24,7 @@ function buildInfoRequest(
     ...prompts.flatMap((prompt) => [
       encodeString(prompt.text),
       new Uint8Array([prompt.echo ? 1 : 0]),
-    ]),
+    ])
   );
 }
 
@@ -66,17 +66,13 @@ function createSession(password = 'saved-secret') {
     close: vi.fn(),
   };
   const socket = { close: vi.fn() };
-  const session = new SSHSession(
-    ws as unknown as WebSocket,
-    socket as never,
-    {
-      host: 'ssh.example.com',
-      port: 22,
-      username: 'alice',
-      password,
-      authMethod: 'password',
-    },
-  );
+  const session = new SSHSession(ws as unknown as WebSocket, socket as never, {
+    host: 'ssh.example.com',
+    port: 22,
+    username: 'alice',
+    password,
+    authMethod: 'password',
+  });
   const sendEncrypted = vi.fn(async (_payload: Uint8Array) => {});
   (session as any).sendEncrypted = sendEncrypted;
   (session as any).state = 'auth';
@@ -114,10 +110,7 @@ describe('SSHSession keyboard-interactive authentication', () => {
     expect(readAuthMethod(sendEncrypted.mock.calls[0][0])).toBe('none');
     expect(new TextDecoder().decode(sendEncrypted.mock.calls[0][0])).not.toContain('top-secret');
 
-    await (session as any).handleAuthPacket(
-      51,
-      buildFailure('publickey,keyboard-interactive'),
-    );
+    await (session as any).handleAuthPacket(51, buildFailure('publickey,keyboard-interactive'));
     expect(sendEncrypted).toHaveBeenCalledTimes(2);
     expect(readAuthMethod(sendEncrypted.mock.calls[1][0])).toBe('keyboard-interactive');
   });
@@ -141,7 +134,7 @@ describe('SSHSession keyboard-interactive authentication', () => {
 
     await (session as any).handleAuthPacket(
       51,
-      buildFailure('publickey,keyboard-interactive,password'),
+      buildFailure('publickey,keyboard-interactive,password')
     );
 
     expect(sendEncrypted).not.toHaveBeenCalled();
@@ -157,10 +150,7 @@ describe('SSHSession keyboard-interactive authentication', () => {
     (session as any).activeAuthMethod = 'password';
     (session as any).attemptedAuthMethods.add('password');
 
-    await (session as any).handleAuthPacket(
-      51,
-      buildFailure('publickey,keyboard-interactive'),
-    );
+    await (session as any).handleAuthPacket(51, buildFailure('publickey,keyboard-interactive'));
 
     expect(sendEncrypted).toHaveBeenCalledOnce();
     expect(readAuthMethod(sendEncrypted.mock.calls[0][0])).toBe('keyboard-interactive');
@@ -187,10 +177,7 @@ describe('SSHSession keyboard-interactive authentication', () => {
     (passwordCase.session as any).activeAuthMethod = 'password';
     (passwordCase.session as any).attemptedAuthMethods.add('password');
 
-    await (passwordCase.session as any).handleAuthPacket(
-      51,
-      buildFailure('publickey'),
-    );
+    await (passwordCase.session as any).handleAuthPacket(51, buildFailure('publickey'));
 
     expect(passwordCase.sendEncrypted).not.toHaveBeenCalled();
     expect(passwordCase.ws.close).toHaveBeenCalledWith(1000);
@@ -202,10 +189,7 @@ describe('SSHSession keyboard-interactive authentication', () => {
     (publicKeyCase.session as any).activeAuthMethod = 'publickey';
     (publicKeyCase.session as any).attemptedAuthMethods.add('publickey');
 
-    await (publicKeyCase.session as any).handleAuthPacket(
-      51,
-      buildFailure('password'),
-    );
+    await (publicKeyCase.session as any).handleAuthPacket(51, buildFailure('password'));
 
     expect(publicKeyCase.sendEncrypted).not.toHaveBeenCalled();
     expect(publicKeyCase.ws.close).toHaveBeenCalledWith(1000);
@@ -232,20 +216,14 @@ describe('SSHSession keyboard-interactive authentication', () => {
     const repeat = createSession();
     (repeat.session as any).activeAuthMethod = 'keyboard-interactive';
     (repeat.session as any).attemptedAuthMethods.add('keyboard-interactive');
-    await (repeat.session as any).handleAuthPacket(
-      51,
-      buildFailure('keyboard-interactive', true),
-    );
+    await (repeat.session as any).handleAuthPacket(51, buildFailure('keyboard-interactive', true));
     expect(readAuthMethod(repeat.sendEncrypted.mock.calls[0][0])).toBe('keyboard-interactive');
 
     const capped = createSession();
     (capped.session as any).activeAuthMethod = 'keyboard-interactive';
     (capped.session as any).attemptedAuthMethods.add('keyboard-interactive');
     (capped.session as any).partialAuthenticationStages = 8;
-    await (capped.session as any).handleAuthPacket(
-      51,
-      buildFailure('keyboard-interactive', true),
-    );
+    await (capped.session as any).handleAuthPacket(51, buildFailure('keyboard-interactive', true));
     expect(capped.sendEncrypted).not.toHaveBeenCalled();
     expect(sentJson(capped.ws)).toMatchObject({
       type: 'error',
@@ -261,7 +239,7 @@ describe('SSHSession keyboard-interactive authentication', () => {
 
     await (session as any).handleAuthPacket(
       60,
-      buildInfoRequest([{ text: 'Password: ', echo: false }]),
+      buildInfoRequest([{ text: 'Password: ', echo: false }])
     );
 
     const challenge = sentJson(ws);
@@ -273,11 +251,13 @@ describe('SSHSession keyboard-interactive authentication', () => {
     });
     expect(JSON.stringify(challenge)).not.toContain('top-secret');
 
-    await session.handleWebSocketMessage(JSON.stringify({
-      type: 'auth_response',
-      id: challenge.id,
-      useStoredPassword: true,
-    }));
+    await session.handleWebSocketMessage(
+      JSON.stringify({
+        type: 'auth_response',
+        id: challenge.id,
+        useStoredPassword: true,
+      })
+    );
 
     expect(sendEncrypted).toHaveBeenCalledOnce();
     expect(readInfoResponses(sendEncrypted.mock.calls[0][0])).toEqual(['top-secret']);
@@ -289,29 +269,33 @@ describe('SSHSession keyboard-interactive authentication', () => {
     (session as any).activeAuthMethod = 'keyboard-interactive';
     (session as any).attemptedAuthMethods.add('keyboard-interactive');
 
-    await (session as any).handleAuthPacket(60, buildInfoRequest([
-      { text: 'Account: ', echo: true },
-      { text: 'OTP: ', echo: false },
-    ]));
-    const first = sentJson(ws);
-    await session.handleWebSocketMessage(JSON.stringify({
-      type: 'auth_response',
-      id: first.id,
-      responses: ['alice', '123456'],
-    }));
-
     await (session as any).handleAuthPacket(
       60,
-      buildInfoRequest([], 'Notice', 'Password changed'),
+      buildInfoRequest([
+        { text: 'Account: ', echo: true },
+        { text: 'OTP: ', echo: false },
+      ])
     );
+    const first = sentJson(ws);
+    await session.handleWebSocketMessage(
+      JSON.stringify({
+        type: 'auth_response',
+        id: first.id,
+        responses: ['alice', '123456'],
+      })
+    );
+
+    await (session as any).handleAuthPacket(60, buildInfoRequest([], 'Notice', 'Password changed'));
     const second = sentJson(ws);
     expect(second.id).not.toBe(first.id);
     expect(second.prompts).toEqual([]);
-    await session.handleWebSocketMessage(JSON.stringify({
-      type: 'auth_response',
-      id: second.id,
-      responses: [],
-    }));
+    await session.handleWebSocketMessage(
+      JSON.stringify({
+        type: 'auth_response',
+        id: second.id,
+        responses: [],
+      })
+    );
 
     expect(sendEncrypted).toHaveBeenCalledTimes(2);
     expect(readInfoResponses(sendEncrypted.mock.calls[0][0])).toEqual(['alice', '123456']);
@@ -322,17 +306,16 @@ describe('SSHSession keyboard-interactive authentication', () => {
   it('keeps the active challenge when a stale response arrives', async () => {
     const { session, sendEncrypted, ws } = createSession();
     (session as any).activeAuthMethod = 'keyboard-interactive';
-    await (session as any).handleAuthPacket(
-      60,
-      buildInfoRequest([{ text: 'OTP: ', echo: false }]),
-    );
+    await (session as any).handleAuthPacket(60, buildInfoRequest([{ text: 'OTP: ', echo: false }]));
     const challenge = sentJson(ws);
 
-    await session.handleWebSocketMessage(JSON.stringify({
-      type: 'auth_response',
-      id: `${challenge.id}-stale`,
-      responses: ['123456'],
-    }));
+    await session.handleWebSocketMessage(
+      JSON.stringify({
+        type: 'auth_response',
+        id: `${challenge.id}-stale`,
+        responses: ['123456'],
+      })
+    );
 
     expect(sendEncrypted).not.toHaveBeenCalled();
     expect((session as any).pendingAuthChallenge.id).toBe(challenge.id);
@@ -343,16 +326,21 @@ describe('SSHSession keyboard-interactive authentication', () => {
   it('fails closed for invalid response shapes and unauthorized saved-password use', async () => {
     const first = createSession();
     (first.session as any).activeAuthMethod = 'keyboard-interactive';
-    await (first.session as any).handleAuthPacket(60, buildInfoRequest([
-      { text: 'Password: ', echo: false },
-      { text: 'OTP: ', echo: false },
-    ]));
+    await (first.session as any).handleAuthPacket(
+      60,
+      buildInfoRequest([
+        { text: 'Password: ', echo: false },
+        { text: 'OTP: ', echo: false },
+      ])
+    );
     const firstChallenge = sentJson(first.ws);
-    await first.session.handleWebSocketMessage(JSON.stringify({
-      type: 'auth_response',
-      id: firstChallenge.id,
-      responses: ['only-one'],
-    }));
+    await first.session.handleWebSocketMessage(
+      JSON.stringify({
+        type: 'auth_response',
+        id: firstChallenge.id,
+        responses: ['only-one'],
+      })
+    );
     expect(first.sendEncrypted).not.toHaveBeenCalled();
     expect(first.ws.close).toHaveBeenCalledWith(1011);
 
@@ -360,14 +348,16 @@ describe('SSHSession keyboard-interactive authentication', () => {
     (second.session as any).activeAuthMethod = 'keyboard-interactive';
     await (second.session as any).handleAuthPacket(
       60,
-      buildInfoRequest([{ text: 'Username: ', echo: true }]),
+      buildInfoRequest([{ text: 'Username: ', echo: true }])
     );
     const secondChallenge = sentJson(second.ws);
-    await second.session.handleWebSocketMessage(JSON.stringify({
-      type: 'auth_response',
-      id: secondChallenge.id,
-      useStoredPassword: true,
-    }));
+    await second.session.handleWebSocketMessage(
+      JSON.stringify({
+        type: 'auth_response',
+        id: secondChallenge.id,
+        useStoredPassword: true,
+      })
+    );
     expect(second.sendEncrypted).not.toHaveBeenCalled();
     expect(second.ws.close).toHaveBeenCalledWith(1011);
 
@@ -376,15 +366,17 @@ describe('SSHSession keyboard-interactive authentication', () => {
     (publicKeyCase.session as any).activeAuthMethod = 'keyboard-interactive';
     await (publicKeyCase.session as any).handleAuthPacket(
       60,
-      buildInfoRequest([{ text: 'Second factor: ', echo: false }]),
+      buildInfoRequest([{ text: 'Second factor: ', echo: false }])
     );
     const publicKeyChallenge = sentJson(publicKeyCase.ws);
     expect(publicKeyChallenge.canUseStoredPassword).toBe(false);
-    await publicKeyCase.session.handleWebSocketMessage(JSON.stringify({
-      type: 'auth_response',
-      id: publicKeyChallenge.id,
-      useStoredPassword: true,
-    }));
+    await publicKeyCase.session.handleWebSocketMessage(
+      JSON.stringify({
+        type: 'auth_response',
+        id: publicKeyChallenge.id,
+        useStoredPassword: true,
+      })
+    );
     expect(publicKeyCase.sendEncrypted).not.toHaveBeenCalled();
     expect(publicKeyCase.ws.close).toHaveBeenCalledWith(1011);
   });
@@ -394,7 +386,7 @@ describe('SSHSession keyboard-interactive authentication', () => {
     (unavailableCase.session as any).activeAuthMethod = 'keyboard-interactive';
     await (unavailableCase.session as any).handleAuthPacket(
       60,
-      buildInfoRequest([{ text: 'OTP: ', echo: false }]),
+      buildInfoRequest([{ text: 'OTP: ', echo: false }])
     );
     await vi.advanceTimersByTimeAsync(10 * 1000);
     expect(sentJson(unavailableCase.ws)).toMatchObject({
@@ -407,13 +399,15 @@ describe('SSHSession keyboard-interactive authentication', () => {
     (timeoutCase.session as any).activeAuthMethod = 'keyboard-interactive';
     await (timeoutCase.session as any).handleAuthPacket(
       60,
-      buildInfoRequest([{ text: 'OTP: ', echo: false }]),
+      buildInfoRequest([{ text: 'OTP: ', echo: false }])
     );
     const timeoutChallenge = sentJson(timeoutCase.ws);
-    await timeoutCase.session.handleWebSocketMessage(JSON.stringify({
-      type: 'auth_challenge_ack',
-      id: timeoutChallenge.id,
-    }));
+    await timeoutCase.session.handleWebSocketMessage(
+      JSON.stringify({
+        type: 'auth_challenge_ack',
+        id: timeoutChallenge.id,
+      })
+    );
     expect((timeoutCase.session as any).pendingAuthChallenge.phase).toBe('awaiting_response');
     await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
     expect(sentJson(timeoutCase.ws)).toMatchObject({
@@ -428,13 +422,15 @@ describe('SSHSession keyboard-interactive authentication', () => {
     (cancelCase.session as any).activeAuthMethod = 'keyboard-interactive';
     await (cancelCase.session as any).handleAuthPacket(
       60,
-      buildInfoRequest([{ text: 'OTP: ', echo: false }]),
+      buildInfoRequest([{ text: 'OTP: ', echo: false }])
     );
     const challenge = sentJson(cancelCase.ws);
-    await cancelCase.session.handleWebSocketMessage(JSON.stringify({
-      type: 'auth_cancel',
-      id: challenge.id,
-    }));
+    await cancelCase.session.handleWebSocketMessage(
+      JSON.stringify({
+        type: 'auth_cancel',
+        id: challenge.id,
+      })
+    );
     expect(sentJson(cancelCase.ws)).toMatchObject({
       type: 'status',
       event: 'auth_interactive_cancelled',
@@ -447,7 +443,7 @@ describe('SSHSession keyboard-interactive authentication', () => {
     (wrongContext.session as any).activeAuthMethod = 'password';
     await (wrongContext.session as any).handleAuthPacket(
       60,
-      buildInfoRequest([{ text: 'Password: ', echo: false }]),
+      buildInfoRequest([{ text: 'Password: ', echo: false }])
     );
     expect(wrongContext.ws.close).toHaveBeenCalledWith(1011);
     expect(sentJson(wrongContext.ws)).toMatchObject({

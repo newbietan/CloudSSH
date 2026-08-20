@@ -24,7 +24,7 @@ export function normalizeCodeLanguage(language: string | null | undefined): stri
  */
 export function getTerminalFillCommand(
   language: string | null | undefined,
-  code: string,
+  code: string
 ): string | null {
   if (!SHELL_LANGUAGES.has(normalizeCodeLanguage(language))) return null;
 

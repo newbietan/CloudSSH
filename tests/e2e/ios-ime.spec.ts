@@ -45,7 +45,7 @@ test('iOS 输入法按真实 keyup 键码补发空格和标点且不重复发送
       before: string,
       after: string,
       key: string,
-      keyupCode: number,
+      keyupCode: number
     ): Promise<void> => {
       textarea.value = before;
       dispatchKey('keydown', key, 229);

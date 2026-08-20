@@ -78,9 +78,9 @@ test('移动端终端使用紧凑布局并提供完整快捷键入口', async ({
   await page.locator('#mobile-landscape-btn').click();
   await expect.poll(() => page.evaluate(() => (window as any).__fullscreenTarget)).toBe('HTML');
 
-  const terminalHeight = await page.locator('#terminal-section').evaluate((element) =>
-    Math.round(element.getBoundingClientRect().height),
-  );
+  const terminalHeight = await page
+    .locator('#terminal-section')
+    .evaluate((element) => Math.round(element.getBoundingClientRect().height));
   expect(terminalHeight).toBeGreaterThan(0);
   expect(terminalHeight).toBeLessThanOrEqual(844);
 
@@ -125,7 +125,9 @@ test('软键盘动画使用可视视口并只在尺寸稳定后适配终端', as
     const mobileModule = await (window as any).eval("import('/src/mobile-terminal.ts')");
     let fitCount = 0;
     const terminal = {
-      fit: () => { fitCount += 1; },
+      fit: () => {
+        fitCount += 1;
+      },
       getMobileModifier: () => null,
       isMobileSelectionMode: () => false,
       setMobileSelectionMode: () => undefined,
@@ -202,15 +204,17 @@ test('移动端可单指滑动终端历史且调整尺寸后保留阅读位置',
     const rect = screen.getBoundingClientRect();
     const pointerId = 74;
     const dispatchTouch = (target: EventTarget, type: string, x: number, y: number) => {
-      target.dispatchEvent(new PointerEvent(type, {
-        bubbles: true,
-        cancelable: true,
-        button: 0,
-        pointerType: 'touch',
-        pointerId,
-        clientX: x,
-        clientY: y,
-      }));
+      target.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          pointerType: 'touch',
+          pointerId,
+          clientX: x,
+          clientY: y,
+        })
+      );
     };
 
     dispatchTouch(screen, 'pointerdown', rect.left + 100, rect.top + 80);
@@ -270,8 +274,9 @@ test('终端字号随手机、触屏平板和桌面宽度调整且不受文本�
     const xterm = root.querySelector<HTMLElement>('.xterm')!;
     return {
       fontSize: (terminal as any).terminal.options.fontSize,
-      textSizeAdjust: getComputedStyle(xterm).getPropertyValue('text-size-adjust')
-        || getComputedStyle(xterm).getPropertyValue('-webkit-text-size-adjust'),
+      textSizeAdjust:
+        getComputedStyle(xterm).getPropertyValue('text-size-adjust') ||
+        getComputedStyle(xterm).getPropertyValue('-webkit-text-size-adjust'),
     };
   });
 
@@ -280,14 +285,18 @@ test('终端字号随手机、触屏平板和桌面宽度调整且不受文本�
 
   await page.setViewportSize({ width: 844, height: 390 });
   await page.evaluate(() => (window as any).__responsiveFontTerminal.fit());
-  await expect.poll(() => page.evaluate(() =>
-    (window as any).__responsiveFontTerminal.terminal.options.fontSize,
-  )).toBe(13);
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as any).__responsiveFontTerminal.terminal.options.fontSize)
+    )
+    .toBe(13);
 
   await page.setViewportSize({ width: 1200, height: 800 });
-  await expect.poll(() => page.evaluate(() =>
-    (window as any).__responsiveFontTerminal.terminal.options.fontSize,
-  )).toBe(14);
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as any).__responsiveFontTerminal.terminal.options.fontSize)
+    )
+    .toBe(14);
 
   await page.evaluate(() => {
     (window as any).__responsiveFontTerminal.dispose();

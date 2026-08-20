@@ -1,34 +1,34 @@
-import { readUint32, writeUint32, encodeString } from './utils';
 import {
-  SSH_FXP_INIT,
-  SSH_FXP_VERSION,
-  SSH_FXP_OPEN,
-  SSH_FXP_CLOSE,
-  SSH_FXP_READ,
-  SSH_FXP_WRITE,
-  SSH_FXP_OPENDIR,
-  SSH_FXP_READDIR,
-  SSH_FXP_REMOVE,
-  SSH_FXP_MKDIR,
-  SSH_FXP_RMDIR,
-  SSH_FXP_REALPATH,
-  SSH_FXP_STAT,
-  SSH_FXP_RENAME,
-  SSH_FXP_STATUS,
-  SSH_FXP_HANDLE,
-  SSH_FXP_DATA,
-  SSH_FXP_NAME,
-  SSH_FXP_ATTRS,
-  SSH_FX_EOF,
-  SSH_FILEXFER_ATTR_SIZE,
-  SSH_FILEXFER_ATTR_UIDGID,
-  SSH_FILEXFER_ATTR_PERMISSIONS,
-  SSH_FILEXFER_ATTR_ACMODTIME,
+  getStatusMessage,
   type SFTPFileAttributes,
   type SFTPFileEntry,
   type SFTPPendingRequest,
-  getStatusMessage,
+  SSH_FILEXFER_ATTR_ACMODTIME,
+  SSH_FILEXFER_ATTR_PERMISSIONS,
+  SSH_FILEXFER_ATTR_SIZE,
+  SSH_FILEXFER_ATTR_UIDGID,
+  SSH_FX_EOF,
+  SSH_FXP_ATTRS,
+  SSH_FXP_CLOSE,
+  SSH_FXP_DATA,
+  SSH_FXP_HANDLE,
+  SSH_FXP_INIT,
+  SSH_FXP_MKDIR,
+  SSH_FXP_NAME,
+  SSH_FXP_OPEN,
+  SSH_FXP_OPENDIR,
+  SSH_FXP_READ,
+  SSH_FXP_READDIR,
+  SSH_FXP_REALPATH,
+  SSH_FXP_REMOVE,
+  SSH_FXP_RENAME,
+  SSH_FXP_RMDIR,
+  SSH_FXP_STAT,
+  SSH_FXP_STATUS,
+  SSH_FXP_VERSION,
+  SSH_FXP_WRITE,
 } from './sftp-types';
+import { encodeString, readUint32, writeUint32 } from './utils';
 
 const SFTP_VERSION = 3;
 const REQUEST_TIMEOUT_MS = 60000; // 60 seconds for SFTP operations
@@ -100,7 +100,10 @@ export class SFTPClient {
       const packetLen = readUint32(this.recvBuffer, this.recvOffset);
       const totalLen = 4 + packetLen;
 
-      this.debug(() => `[SFTP] Found packet: len=${packetLen}, total=${totalLen}, buf=${this.recvBuffer.length - this.recvOffset}`);
+      this.debug(
+        () =>
+          `[SFTP] Found packet: len=${packetLen}, total=${totalLen}, buf=${this.recvBuffer.length - this.recvOffset}`
+      );
 
       if (this.recvBuffer.length - this.recvOffset < totalLen) {
         this.debug('[SFTP] Incomplete, waiting');
@@ -205,7 +208,10 @@ export class SFTPClient {
   }
 
   // Parse SFTP_ATTRS from buffer
-  parseAttributes(data: Uint8Array, offset: number): { attrs: SFTPFileAttributes; consumed: number } {
+  parseAttributes(
+    data: Uint8Array,
+    offset: number
+  ): { attrs: SFTPFileAttributes; consumed: number } {
     const attrs: SFTPFileAttributes = {};
     let pos = offset;
 
@@ -442,7 +448,10 @@ export class SFTPClient {
   }
 
   // Parse all entries from a full directory listing (may need multiple READDIR calls)
-  async listAllEntries(handle: Uint8Array, limit?: number): Promise<{ entries: SFTPFileEntry[], isTruncated: boolean }> {
+  async listAllEntries(
+    handle: Uint8Array,
+    limit?: number
+  ): Promise<{ entries: SFTPFileEntry[]; isTruncated: boolean }> {
     const allEntries: SFTPFileEntry[] = [];
     let isTruncated = false;
 

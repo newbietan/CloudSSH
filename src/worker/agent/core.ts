@@ -1,5 +1,9 @@
 // Agent Core — control loop that runs inside Durable Object
 
+import { type AgentLocale, getResponseLanguageInstruction, getSystemPrompt } from './prompt';
+import type { TerminalContext } from './terminal-context';
+import { ToolExecutor } from './tool-executor';
+import { AGENT_TOOLS } from './tools';
 import type {
   AgentConfig,
   AgentState,
@@ -7,10 +11,6 @@ import type {
   ChatCompletionResponse,
   ChatMessage,
 } from './types';
-import { AGENT_TOOLS } from './tools';
-import { getResponseLanguageInstruction, getSystemPrompt, type AgentLocale } from './prompt';
-import { ToolExecutor } from './tool-executor';
-import { TerminalContext } from './terminal-context';
 
 const DEFAULT_CONFIG: AgentConfig = {
   maxIterations: 50, // 增加到50次，适应复杂部署任务
@@ -39,7 +39,7 @@ export class AgentCore {
   private config: AgentConfig;
   private toolExecutor: ToolExecutor;
   private loopTimeout: ReturnType<typeof setTimeout> | null = null;
-  
+
   private progress: ProgressTracker = {
     uniqueCommands: new Set(),
     recentToolCalls: [],
@@ -56,13 +56,17 @@ export class AgentCore {
     private terminalContext: TerminalContext,
     private sendToFrontend: (msg: any) => void,
     private fetchAIConfig: (userId: string) => Promise<AIConfig | null>,
-    private execCommand: (command: string, timeout: number, signal?: AbortSignal) => Promise<{
+    private execCommand: (
+      command: string,
+      timeout: number,
+      signal?: AbortSignal
+    ) => Promise<{
       stdout: string;
       stderr: string;
       exitCode: number;
     }>,
     private askConfirmation: (command: string, reason: string) => Promise<boolean>,
-    config?: Partial<AgentConfig>,
+    config?: Partial<AgentConfig>
   ) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.toolExecutor = new ToolExecutor(
@@ -76,7 +80,7 @@ export class AgentCore {
           this.resetTimeout();
         }
       },
-      () => this.resetTimeout(),
+      () => this.resetTimeout()
     );
   }
 
@@ -85,9 +89,10 @@ export class AgentCore {
   }
 
   private recordToolCall(toolName: string, args: any): void {
-    const signature = toolName === 'execute_command'
-      ? `exec:${args.command?.trim()}`
-      : `${toolName}:${JSON.stringify(args)}`;
+    const signature =
+      toolName === 'execute_command'
+        ? `exec:${args.command?.trim()}`
+        : `${toolName}:${JSON.stringify(args)}`;
 
     this.progress.recentToolCalls.push(signature);
     if (this.progress.recentToolCalls.length > PROGRESS_CONFIG.loopDetectionWindow) {
@@ -101,7 +106,8 @@ export class AgentCore {
 
   private evaluateProgress(): { shouldExtend: boolean; reason: string } {
     const { recentToolCalls, uniqueCommands, extensionUsed } = this.progress;
-    const { maxExtensions, maxTotalIterations, loopDetectionWindow, repetitionThreshold } = PROGRESS_CONFIG;
+    const { maxExtensions, maxTotalIterations, loopDetectionWindow, repetitionThreshold } =
+      PROGRESS_CONFIG;
 
     if (this.state.iteration >= maxTotalIterations) {
       return { shouldExtend: false, reason: '已达绝对上限' };
@@ -123,7 +129,8 @@ export class AgentCore {
     }
 
     const uniqueCommandRatio = uniqueCommands.size / Math.max(this.state.iteration, 1);
-    if (uniqueCommandRatio < 0.2 && this.state.iteration > 15) { // 降低到20%，适应部署任务（可能重复执行类似命令）
+    if (uniqueCommandRatio < 0.2 && this.state.iteration > 15) {
+      // 降低到20%，适应部署任务（可能重复执行类似命令）
       return {
         shouldExtend: false,
         reason: `命令多样性过低：${uniqueCommands.size} 条不同命令 / ${this.state.iteration} 次迭代`,
@@ -140,7 +147,11 @@ export class AgentCore {
     return this.state.status;
   }
 
-  async handleAgentStart(userId: string, userMessage: string, locale: AgentLocale = 'zh-CN'): Promise<void> {
+  async handleAgentStart(
+    userId: string,
+    userMessage: string,
+    locale: AgentLocale = 'zh-CN'
+  ): Promise<void> {
     this.preferredLocale = locale;
     // Cancel stale timeout from previous loop so it can't abort the new controller
     if (this.loopTimeout) {
@@ -174,7 +185,9 @@ export class AgentCore {
     if (isNewSession) {
       // 2. 首次启动：采集环境 + 终端上下文（注入 system prompt），用户消息保持干净
       this.terminalContextSnapshot = this.terminalContext.snapshot(200);
-      const envSnapshot = await this.toolExecutor.execute('detect_environment', {}, this.abortController.signal).catch(() => '');
+      const envSnapshot = await this.toolExecutor
+        .execute('detect_environment', {}, this.abortController.signal)
+        .catch(() => '');
       this.environmentContext = '';
       if (envSnapshot) {
         try {
@@ -182,7 +195,9 @@ export class AgentCore {
           if (parsed.environment) {
             this.environmentContext = parsed.environment;
           }
-        } catch { /* ignore parse error */ }
+        } catch {
+          /* ignore parse error */
+        }
       }
 
       this.state.messages = [
@@ -331,18 +346,20 @@ export class AgentCore {
             });
 
             // Execute tool call
-            let result = await this.toolExecutor.execute(
-              toolCall.function.name,
-              toolArgs,
-              signal,
-            );
+            let result = await this.toolExecutor.execute(toolCall.function.name, toolArgs, signal);
             this.recordToolCall(toolCall.function.name, toolArgs);
             this.resetTimeout(); // 看门狗：工具执行成功，重置超时时间
 
             if (result) {
               result = result
-                .replace(/-----BEGIN[A-Z ]+PRIVATE KEY-----[\s\S]+?-----END[A-Z ]+PRIVATE KEY-----/g, '[REDACTED PRIVATE KEY]')
-                .replace(/\bey[a-zA-Z0-9-_=]+\.[a-zA-Z0-9-_=]+\.?[a-zA-Z0-9-_=]*\b/g, '[REDACTED JWT]')
+                .replace(
+                  /-----BEGIN[A-Z ]+PRIVATE KEY-----[\s\S]+?-----END[A-Z ]+PRIVATE KEY-----/g,
+                  '[REDACTED PRIVATE KEY]'
+                )
+                .replace(
+                  /\bey[a-zA-Z0-9-_=]+\.[a-zA-Z0-9-_=]+\.?[a-zA-Z0-9-_=]*\b/g,
+                  '[REDACTED JWT]'
+                )
                 .replace(/\b(ghp|gho|ghu|ghs|ghr)_[a-zA-Z0-9]{36}\b/g, '[REDACTED GITHUB TOKEN]')
                 .replace(/\b(AKIA[0-9A-Z]{16})\b/g, '[REDACTED AWS KEY ID]');
             }
@@ -464,7 +481,7 @@ export class AgentCore {
         redirect: 'manual', // Cloudflare Workers only supports 'follow' or 'manual'
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.api_key}`,
+          Authorization: `Bearer ${config.api_key}`,
         },
         body: JSON.stringify({
           model: config.model,
@@ -478,7 +495,9 @@ export class AgentCore {
       });
 
       if (res.status >= 300 && res.status < 400) {
-        throw new Error(`SSRF Protection: AI provider attempted an unauthorized redirect (HTTP ${res.status})`);
+        throw new Error(
+          `SSRF Protection: AI provider attempted an unauthorized redirect (HTTP ${res.status})`
+        );
       }
 
       if (res.ok) {
@@ -490,7 +509,7 @@ export class AgentCore {
         throw new Error(`LLM API error ${res.status}: ${err.slice(0, 500)}`);
       }
 
-      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
     }
 
     throw new Error('LLM API: max retries exceeded');
@@ -498,7 +517,7 @@ export class AgentCore {
 
   private async handleStreamingResponse(
     res: Response,
-    signal: AbortSignal,
+    signal: AbortSignal
   ): Promise<ChatCompletionResponse> {
     const reader = res.body?.getReader();
     if (!reader) throw new Error('No response body');
@@ -555,7 +574,9 @@ export class AgentCore {
                 if (tc.function?.arguments) existing.arguments += tc.function.arguments;
               }
             }
-          } catch { /* skip malformed SSE lines */ }
+          } catch {
+            /* skip malformed SSE lines */
+          }
         }
       }
     } finally {
@@ -573,8 +594,8 @@ export class AgentCore {
 
     // Build response object for caller
     const assembledToolCalls = Array.from(toolCalls.values())
-      .filter(tc => tc.name)
-      .map(tc => ({
+      .filter((tc) => tc.name)
+      .map((tc) => ({
         id: tc.id,
         type: 'function' as const,
         function: { name: tc.name, arguments: tc.arguments },
@@ -582,14 +603,16 @@ export class AgentCore {
 
     return {
       id: '',
-      choices: [{
-        message: {
-          role: 'assistant' as const,
-          content: contentText || null,
-          tool_calls: assembledToolCalls.length > 0 ? assembledToolCalls : undefined,
+      choices: [
+        {
+          message: {
+            role: 'assistant' as const,
+            content: contentText || null,
+            tool_calls: assembledToolCalls.length > 0 ? assembledToolCalls : undefined,
+          },
+          finish_reason: assembledToolCalls.length > 0 ? 'tool_calls' : 'stop',
         },
-        finish_reason: assembledToolCalls.length > 0 ? 'tool_calls' : 'stop',
-      }],
+      ],
     };
   }
 
@@ -615,7 +638,7 @@ export class AgentCore {
       const msg = msgs[i];
 
       if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
-        const expectedIds = new Set(msg.tool_calls.map(tc => tc.id));
+        const expectedIds = new Set(msg.tool_calls.map((tc) => tc.id));
         const matchedTools: ChatMessage[] = [];
         let j = i + 1;
 
@@ -683,7 +706,7 @@ export class AgentCore {
     const toSummarizeRounds = rounds.slice(0, -recentRoundsCount);
     const recentRounds = rounds.slice(-recentRoundsCount);
 
-    const toSummarize = toSummarizeRounds.flatMap(r => {
+    const toSummarize = toSummarizeRounds.flatMap((r) => {
       const msgs: ChatMessage[] = [r.user];
       for (const seg of r.segments) {
         msgs.push(seg.assistant);
@@ -696,7 +719,7 @@ export class AgentCore {
       this.state.summary = summary;
     }
 
-    const recentMsgs = recentRounds.flatMap(r => {
+    const recentMsgs = recentRounds.flatMap((r) => {
       const msgs: ChatMessage[] = [r.user];
       for (const seg of r.segments) {
         msgs.push(seg.assistant);
@@ -717,7 +740,9 @@ export class AgentCore {
    * 刷新环境上下文（更新 system prompt 中的环境信息）
    */
   private async refreshEnvironmentContext(): Promise<void> {
-    const envSnapshot = await this.toolExecutor.execute('detect_environment', {}, this.abortController.signal).catch(() => '');
+    const envSnapshot = await this.toolExecutor
+      .execute('detect_environment', {}, this.abortController.signal)
+      .catch(() => '');
     if (!envSnapshot) return;
 
     try {
@@ -725,7 +750,9 @@ export class AgentCore {
       if (parsed.environment) {
         this.environmentContext = parsed.environment;
       }
-    } catch { /* ignore parse error */ }
+    } catch {
+      /* ignore parse error */
+    }
   }
 
   private buildSystemPromptWithSummary(): string {
@@ -750,7 +777,10 @@ export class AgentCore {
    * 调用 LLM 生成对话摘要
    * 只处理 user 和 assistant 消息，丢弃历史 tool 消息
    */
-  private async generateSummaryWithLLM(toSummarize: ChatMessage[], existingSummary?: string): Promise<string | null> {
+  private async generateSummaryWithLLM(
+    toSummarize: ChatMessage[],
+    existingSummary?: string
+  ): Promise<string | null> {
     // 消息变化量不足 4 条时跳过摘要生成
     if (toSummarize.length - this.lastSummaryMessageCount < 4 && existingSummary) {
       return existingSummary;
@@ -762,13 +792,13 @@ export class AgentCore {
 
     // 将消息转换为可读格式（只处理 user 和 assistant）
     const conversationText = toSummarize
-      .filter(m => m.role === 'user' || m.role === 'assistant')
-      .map(m => {
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m) => {
         if (m.role === 'user') {
           return `用户: ${m.content}`;
         } else if (m.role === 'assistant') {
           if (m.tool_calls) {
-            const cmds = m.tool_calls.map(tc => tc.function.name).join(', ');
+            const cmds = m.tool_calls.map((tc) => tc.function.name).join(', ');
             return `AI: [调用工具: ${cmds}]`;
           }
           return `AI: ${m.content}`;
@@ -809,7 +839,7 @@ ${conversationText}${previousSection}`;
         redirect: 'manual', // Cloudflare Workers only supports 'follow' or 'manual'
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.api_key}`,
+          Authorization: `Bearer ${config.api_key}`,
         },
         body: JSON.stringify({
           model: config.model,

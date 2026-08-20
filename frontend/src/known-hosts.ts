@@ -56,7 +56,7 @@ export function normalizeChangedHostKeyMessage(message: unknown): ChangedHostKey
   const base = normalizeHostKeyBase(message);
   if (!base) return null;
   const expectedFingerprint = normalizeFingerprint(
-    (message as Record<string, unknown>).expectedFingerprint,
+    (message as Record<string, unknown>).expectedFingerprint
   );
   return expectedFingerprint ? { ...base, expectedFingerprint } : null;
 }
@@ -64,7 +64,7 @@ export function normalizeChangedHostKeyMessage(message: unknown): ChangedHostKey
 function saveLocalFingerprint(host: string, port: number, fingerprint: string): boolean {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    const map = raw ? JSON.parse(raw) as Record<string, string> : {};
+    const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
     map[`${host}:${port}`] = fingerprint;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
     return true;
@@ -81,7 +81,7 @@ export async function saveKnownFingerprint(
   host: string,
   port: number,
   fingerprint: string,
-  requireCloud = false,
+  requireCloud = false
 ): Promise<void> {
   const localSaved = requireCloud ? false : saveLocalFingerprint(host, port, fingerprint);
   let cloudSaved = false;
@@ -93,7 +93,8 @@ export async function saveKnownFingerprint(
       body: JSON.stringify({ host, port, fingerprint }),
     });
     cloudSaved = response.ok;
-    if (!response.ok && requireCloud) throw new Error(`Known-host update failed (${response.status})`);
+    if (!response.ok && requireCloud)
+      throw new Error(`Known-host update failed (${response.status})`);
   } catch (error) {
     if (requireCloud) throw error;
   }
@@ -112,11 +113,13 @@ export async function loadKnownFingerprint(host: string, port: number): Promise<
   try {
     const response = await fetch(`/api/known-hosts?host=${encodeURIComponent(host)}&port=${port}`);
     if (response.ok) {
-      const data = await response.json() as { fingerprint: string | null };
+      const data = (await response.json()) as { fingerprint: string | null };
       const fingerprint = normalizeFingerprint(data.fingerprint);
       if (fingerprint) return fingerprint;
     }
-  } catch { /* 未登录或网络错误 */ }
+  } catch {
+    /* 未登录或网络错误 */
+  }
 
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -124,7 +127,9 @@ export async function loadKnownFingerprint(host: string, port: number): Promise<
       const map = JSON.parse(raw) as Record<string, string>;
       return normalizeFingerprint(map[`${host}:${port}`]);
     }
-  } catch { /* 本地存储不可用或数据损坏 */ }
+  } catch {
+    /* 本地存储不可用或数据损坏 */
+  }
 
   return null;
 }

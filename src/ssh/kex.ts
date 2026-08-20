@@ -1,8 +1,8 @@
-import { SSH_MSG_KEXINIT, KEXInitMessage } from '../types';
+import { type KEXInitMessage, SSH_MSG_KEXINIT } from '../types';
 import {
   SUPPORTED_ENCRYPTION_ALGORITHMS,
   SUPPORTED_KEX_ALGORITHMS,
-  SUPPORTED_MAC_ALGORITHMS
+  SUPPORTED_MAC_ALGORITHMS,
 } from './algorithms';
 import { concat } from './utils';
 
@@ -56,13 +56,17 @@ export function parseKEXInit(data: Uint8Array): KEXInitMessage {
   const lists: string[] = [];
   for (let i = 0; i < 10; i++) {
     if (offset + 4 > data.length) {
-      throw new Error(`Malformed KEXINIT: truncated length field at list ${i}, offset=${offset}, dataLen=${data.length}`);
+      throw new Error(
+        `Malformed KEXINIT: truncated length field at list ${i}, offset=${offset}, dataLen=${data.length}`
+      );
     }
-    const len = (data[offset] << 24) | (data[offset+1] << 16) |
-                (data[offset+2] << 8) | data[offset+3];
+    const len =
+      (data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3];
     offset += 4;
     if (len < 0 || offset + len > data.length) {
-      throw new Error(`Malformed KEXINIT: list ${i} length ${len} exceeds packet boundary (offset=${offset}, dataLen=${data.length})`);
+      throw new Error(
+        `Malformed KEXINIT: list ${i} length ${len} exceeds packet boundary (offset=${offset}, dataLen=${data.length})`
+      );
     }
     const name = new TextDecoder().decode(data.slice(offset, offset + len));
     lists.push(name);
@@ -81,11 +85,17 @@ export function parseKEXInit(data: Uint8Array): KEXInitMessage {
   };
 }
 
-export function negotiate(clientList: string[], serverList: string[], category: string = 'algorithm'): string {
+export function negotiate(
+  clientList: string[],
+  serverList: string[],
+  category: string = 'algorithm'
+): string {
   for (const algo of clientList) {
     if (serverList.includes(algo)) return algo;
   }
-  throw new Error(`No common ${category}: client=[${clientList.join(',')}] server=[${serverList.join(',')}]`);
+  throw new Error(
+    `No common ${category}: client=[${clientList.join(',')}] server=[${serverList.join(',')}]`
+  );
 }
 
 /**
@@ -103,8 +113,11 @@ export function parseServerSigAlgs(payload: Uint8Array): string[] {
   let offset = 1; // 跳过 msg type
 
   if (offset + 4 > payload.length) throw new Error('ext-info: nr-extensions 越界');
-  const nrExtensions = (payload[offset] << 24) | (payload[offset+1] << 16) |
-                       (payload[offset+2] << 8) | payload[offset+3];
+  const nrExtensions =
+    (payload[offset] << 24) |
+    (payload[offset + 1] << 16) |
+    (payload[offset + 2] << 8) |
+    payload[offset + 3];
   offset += 4;
 
   // 防御性上限，避免恶意服务器声明超大计数触发长循环
@@ -112,16 +125,22 @@ export function parseServerSigAlgs(payload: Uint8Array): string[] {
 
   for (let i = 0; i < nrExtensions; i++) {
     if (offset + 4 > payload.length) throw new Error('ext-info: name-len 越界');
-    const nameLen = (payload[offset] << 24) | (payload[offset+1] << 16) |
-                    (payload[offset+2] << 8) | payload[offset+3];
+    const nameLen =
+      (payload[offset] << 24) |
+      (payload[offset + 1] << 16) |
+      (payload[offset + 2] << 8) |
+      payload[offset + 3];
     offset += 4;
     if (offset + nameLen > payload.length) throw new Error('ext-info: name 越界');
     const name = new TextDecoder().decode(payload.subarray(offset, offset + nameLen));
     offset += nameLen;
 
     if (offset + 4 > payload.length) throw new Error('ext-info: value-len 越界');
-    const valueLen = (payload[offset] << 24) | (payload[offset+1] << 16) |
-                     (payload[offset+2] << 8) | payload[offset+3];
+    const valueLen =
+      (payload[offset] << 24) |
+      (payload[offset + 1] << 16) |
+      (payload[offset + 2] << 8) |
+      payload[offset + 3];
     offset += 4;
     if (offset + valueLen > payload.length) throw new Error('ext-info: value 越界');
     const valueBytes = payload.subarray(offset, offset + valueLen);
@@ -130,7 +149,10 @@ export function parseServerSigAlgs(payload: Uint8Array): string[] {
     if (name === 'server-sig-algs') {
       // value 是 UTF-8 逗号分隔的算法列表
       const value = new TextDecoder().decode(valueBytes);
-      return value.split(',').map(s => s.trim()).filter(s => s.length > 0);
+      return value
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
     }
   }
   return [];
@@ -141,5 +163,5 @@ export function parseServerSigAlgs(payload: Uint8Array): string[] {
  * 用于 negotiate 真正的 KEX algorithm 之前清理双方列表。
  */
 export function filterExtInfo(list: string[]): string[] {
-  return list.filter(a => !a.startsWith('ext-info-'));
+  return list.filter((a) => !a.startsWith('ext-info-'));
 }
