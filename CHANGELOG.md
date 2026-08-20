@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.1] - 2026-08-20
+
+### Added
+
+- 新增“返回终端”能力：标签栏右侧“+”进入服务器列表或匿名连接页后，可通过工具栏/表单顶部按钮一键返回已建立的 SSH 会话，终端界面隐藏时亦可直接按 `Esc` 快速返回；按钮按标签数量联动显隐，窄屏（≤767px）下仅保留图标，避免 320px 视口工具栏溢出。
+
+### Changed
+
+- 重构标签栏与状态栏渲染：以 `replaceChildren()` 与 `createElement` 取代 10 处 `innerHTML`，消除插值字符串的 XSS 隐患与相关 lint 误报。
+- 为 `TabManager` 新增 `setTabsChangedHandler` 回调，取代对实例方法的手工包装，标签数量变化统一驱动返回按钮显隐。
+- 同步更新状态栏渲染回归测试断言（`tests/frontend-ux.test.ts`）。
+
 ## [1.10.0] - 2026-08-20
 
 ### Added
