@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.3] - 2026-08-21
+
+### Fixed
+
+- 修复弱网环境下 AI Agent 执行 `docker logs` 等大输出命令时会话挂死/崩溃的问题（exec 通道 stdout 无界累积打爆 DO isolate 内存，表现为 Agent 无输出即停止、模糊重连提示 Failed to fetch、站点整站不可达）：
+  - Agent exec 输出捕获有界化：4MB 硬上限，超限不再续 SSH window 并由会话层关闭通道击杀远端命令；保留头 128KB / 尾 256KB 环形视图并附截断说明，跨块 UTF-8 流式解码不乱码。
+  - `docker_manage(logs)` 强制 `--tail 200`，拒绝 `-f/--follow` 无限流式输出。
+  - 工具结果进 LLM 前按 64K 字符中间截断（token budget），`trimMessages` 阈值 60→40。
+  - Socket 写增加 15s deadline，超时关闭底层连接以解挂 `sendMutex`。
+  - 新增独立于写路径的被动 idle 看门狗：60s 无入站数据即断开会话。
+  - 终端输入队列 4MB 上限，浏览器卡死时主动收敛会话。
+- 消除 exec 输出整块拷贝的内存开销（改为 subarray 视图零拷贝），并清理 EXTENDED_DATA 未使用变量告警。
+
+### Added
+
+- 新增 `idle_timeout` / `input_backlog_closed` 两个 SSH 错误事件的 i18n 词条（zh-CN/en-US 对齐）。
+- 新增 12 个回归测试：exec 输出截断/硬上限/UTF-8 跨块解码、`docker logs` `--tail` 强制与 `-f` 拒绝、工具结果截断（`tests/worker/agent-exec-channel.test.ts`、`tests/worker/agent-tool-executor.test.ts`）。
+
+### Docs
+
+- `AGENTS.md` 新增第 30 条维护约定：Agent exec 输出有界性（弱网 OOM 防线）。
+
 ## [1.10.2] - 2026-08-20
 
 ### Changed
