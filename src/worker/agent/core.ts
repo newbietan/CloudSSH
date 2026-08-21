@@ -670,8 +670,8 @@ export class AgentCore {
   }
 
   private async trimMessages(): Promise<void> {
-    const recentRoundsCount = 8; // 增加到8轮，保留更多上下文
-    if (this.state.messages.length <= 60) return; // 增加到60条消息，适应复杂部署任务
+    const recentRoundsCount = 8; // 保留 8 轮上下文
+    if (this.state.messages.length <= 40) return; // 40 条以内不裁剪（工具结果已在序列化前单独截断）
 
     const conversationMsgs = this.state.messages.slice(1);
 

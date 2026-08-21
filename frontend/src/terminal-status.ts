@@ -25,6 +25,8 @@ const SSH_EVENT_KEYS: Record<string, TranslationKey> = {
   session_ended: 'terminal.status.sessionEnded',
   remote_closed: 'terminal.status.remoteClosed',
   keepalive_timeout: 'terminal.status.keepaliveTimeout',
+  idle_timeout: 'terminal.status.idleTimeout',
+  input_backlog_closed: 'terminal.status.inputBacklogClosed',
   packet_error: 'terminal.status.packetError',
   algorithm_error: 'terminal.status.algorithmError',
   service_error: 'terminal.status.serviceError',

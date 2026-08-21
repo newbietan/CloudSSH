@@ -233,6 +233,8 @@ export const zhCN = {
   'terminal.status.sessionEnded': '会话已结束',
   'terminal.status.remoteClosed': '远程主机已关闭连接',
   'terminal.status.keepaliveTimeout': '连接保活超时',
+  'terminal.status.idleTimeout': 'SSH 连接无响应，已自动断开（空闲超时）',
+  'terminal.status.inputBacklogClosed': '终端输入积压过多，连接已关闭',
   'terminal.status.packetError': '数据包处理异常：{message}',
   'terminal.status.algorithmError': '算法协商失败：{message}',
   'terminal.status.serviceError': 'SSH 服务请求失败：{message}',

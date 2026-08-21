@@ -71,6 +71,16 @@ const MAX_PARTIAL_AUTHENTICATION_STAGES = 8;
 // when the terminal output consists entirely of four-byte Unicode characters.
 const SHARE_AUDIT_FLUSH_CHARS = 8 * 1024;
 const SHARE_AUDIT_FLUSH_MS = 1000;
+// Socket 写超时（write deadline）：弱网 TCP 半开时 write() 可能永不 settle，
+// 超时即关闭底层 socket 会拒绝所有 pending 写，读循环随之走正常 close() 流程。
+const SOCKET_WRITE_TIMEOUT_MS = 15_000;
+// 被动存活看门狗：只依据最后入站数据时间戳（不依赖可能挂死的写路径），
+// 链路死亡时可靠地终结僵尸会话。keepalive 每 25s 触发一次服务器应答，
+// 60s 宽限 > 2 个 keepalive 周期，正常会话不会误杀。
+const IDLE_WATCHDOG_CHECK_MS = 10_000;
+const IDLE_WATCHDOG_GRACE_MS = 60_000;
+// 浏览器→服务器终端输入队列上限：浏览器卡死时防止 channelDataQueue 无界堆积。
+const MAX_INPUT_QUEUE_BYTES = 4 * 1024 * 1024;
 
 type ActiveAuthMethod = 'none' | 'password' | 'publickey' | 'keyboard-interactive';
 
@@ -122,6 +132,7 @@ export class SSHSession {
   private channelDataQueue: Uint8Array[] = [];
   private channelDataQueueHead: number = 0;
   private channelDataQueueOffset: number = 0;
+  private channelDataQueueBytes: number = 0;
   private channelDataFlushInProgress: boolean = false;
 
   private kexInitLocal: Uint8Array | null = null;
@@ -168,6 +179,8 @@ export class SSHSession {
   private readonly maxKeepaliveFails: number = 3;
   private keepalivePending: boolean = false;
   private keepaliveTimeout: ReturnType<typeof setTimeout> | null = null;
+  private lastPacketAt: number = Date.now();
+  private idleWatchdogInterval: ReturnType<typeof setInterval> | null = null;
   private shellReadyTimeout: ReturnType<typeof setTimeout> | null = null;
   private terminalSize: TerminalSize = { cols: 120, rows: 40 };
   private debugMode: boolean = false;
@@ -358,6 +371,9 @@ export class SSHSession {
           value = result.value;
         }
 
+        // 被动存活看门狗：任何入站数据都刷新最后活动时间戳（与写路径解耦）
+        this.lastPacketAt = Date.now();
+
         if (this.state === 'version') {
           const merged = new Uint8Array(this.versionRawBuffer.length + value.length);
           merged.set(this.versionRawBuffer);
@@ -389,7 +405,7 @@ export class SSHSession {
             if (lineStr.endsWith('\r')) lineStr = lineStr.slice(0, -1);
 
             if (lineStr.startsWith('SSH-')) {
-              this.transport.handleVersionExchange(lineStr + '\r\n');
+              this.transport.handleVersionExchange(`${lineStr}\r\n`);
               remaining = this.versionRawBuffer.subarray(scanOffset);
               versionFound = true;
               break;
@@ -418,7 +434,7 @@ export class SSHSession {
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
       try {
-        this.ws.send(JSON.stringify({ type: 'error', message: 'SSH 连接异常: ' + errMsg }));
+        this.ws.send(JSON.stringify({ type: 'error', message: `SSH 连接异常: ${errMsg}` }));
       } catch (e) {
         this.sendDebug(() => `Send error to client failed: ${e instanceof Error ? e.message : e}`);
       }
@@ -459,11 +475,35 @@ export class SSHSession {
     await this.writeSocket(packet);
   }
 
+  /**
+   * write deadline：弱网 TCP 半开时底层 write 可能永不 settle，导致 sendMutex
+   * 链条整体卡死（keepalive、窗口调整、Agent 通道关闭全部失效）。
+   * 超时即关闭底层 socket —— pending 写会立刻被拒绝，读循环收到关闭事件后
+   * 走正常 close() 流程，会话不会僵死。
+   */
   private async writeSocket(data: Uint8Array): Promise<void> {
     if (!this.socketWriter) {
       this.socketWriter = this.socket.writable.getWriter();
     }
-    await this.socketWriter!.write(data);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        this.socketWriter!.write(data),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            this.sendDebug('Socket write timeout — closing TCP socket');
+            try {
+              this.socket.close();
+            } catch {
+              /* socket already closed */
+            }
+            reject(new Error('Socket write timeout'));
+          }, SOCKET_WRITE_TIMEOUT_MS);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   private async buildEncryptedPacket(payload: Uint8Array): Promise<Uint8Array> {
@@ -560,7 +600,7 @@ export class SSHSession {
       } catch (e) {
         const errMsg = e instanceof Error ? e.message : String(e);
         this.sendDebug(`processPackets ERROR: ${errMsg}`);
-        this.sendError('数据包处理异常: ' + errMsg, 'packet_error', { message: errMsg });
+        this.sendError(`数据包处理异常: ${errMsg}`, 'packet_error', { message: errMsg });
         this.close();
         return;
       }
@@ -652,6 +692,7 @@ export class SSHSession {
   private startKeepalive(): void {
     this.keepaliveFailCount = 0;
     this.keepalivePending = false;
+    this.startIdleWatchdog();
     this.keepaliveInterval = setInterval(async () => {
       if (this.keepalivePending) {
         this.keepaliveFailCount++;
@@ -698,6 +739,22 @@ export class SSHSession {
         }
       }
     }, 25000);
+  }
+
+  /**
+   * 被动存活看门狗：只依赖 startReading 维护的 lastPacketAt，完全不经过写路径 ——
+   * 主动 keepalive 会因 sendMutex 卡死而先于会话失效，此计时器独立工作，
+   * 在宽限期后可靠地终结僵尸会话，避免其耗尽 DO 资源。
+   */
+  private startIdleWatchdog(): void {
+    if (this.idleWatchdogInterval) return;
+    this.lastPacketAt = Date.now();
+    this.idleWatchdogInterval = setInterval(() => {
+      if (Date.now() - this.lastPacketAt > IDLE_WATCHDOG_GRACE_MS) {
+        this.sendError('SSH 连接无响应，已自动断开（空闲超时）', 'idle_timeout');
+        this.close();
+      }
+    }, IDLE_WATCHDOG_CHECK_MS);
   }
 
   private async handleKEXPacket(msgType: number, payload: Uint8Array): Promise<void> {
@@ -750,7 +807,7 @@ export class SSHSession {
           await this.sendKEXECDHInit();
         } catch (e) {
           const errMsg = e instanceof Error ? e.message : String(e);
-          this.sendError('算法协商失败: ' + errMsg, 'algorithm_error', { message: errMsg });
+          this.sendError(`算法协商失败: ${errMsg}`, 'algorithm_error', { message: errMsg });
           this.close();
         }
         break;
@@ -779,7 +836,7 @@ export class SSHSession {
         } catch (e) {
           const errMsg = e instanceof Error ? e.message : String(e);
           this.sendDebug(`SERVICE_REQUEST failed: ${errMsg}`);
-          this.sendError('SERVICE_REQUEST 失败: ' + errMsg, 'service_error', { message: errMsg });
+          this.sendError(`SERVICE_REQUEST 失败: ${errMsg}`, 'service_error', { message: errMsg });
           this.close();
         }
         break;
@@ -864,7 +921,7 @@ export class SSHSession {
 
     // Compute host key fingerprint (SHA-256)
     const fpHash = new Uint8Array(await crypto.subtle.digest('SHA-256', hostKey));
-    this.hostKeyFingerprint = 'SHA256:' + btoa(String.fromCharCode(...fpHash)).replace(/=+$/, '');
+    this.hostKeyFingerprint = `SHA256:${btoa(String.fromCharCode(...fpHash)).replace(/=+$/, '')}`;
     this.sendDebug(`Host key fingerprint: ${this.hostKeyFingerprint} (${this.hostKeyType})`);
 
     // Verify possession of the presented host key before comparing or persisting its fingerprint.
@@ -900,7 +957,7 @@ export class SSHSession {
       const errMsg = e instanceof Error ? e.message : String(e);
       this.sendDebug(`Signature verification error: ${errMsg}`);
       if (this.strictHostKeyVerify) {
-        this.sendError('主机密钥签名验证异常: ' + errMsg, 'host_key_signature_error', {
+        this.sendError(`主机密钥签名验证异常: ${errMsg}`, 'host_key_signature_error', {
           message: errMsg,
         });
         this.close();
@@ -973,18 +1030,19 @@ export class SSHSession {
           keyType: this.hostKeyType,
         }
       );
-      this.sendError(
-        signatureVerified && mayReplaceHostKey
-          ? '连接已阻断。请在确认对话框中核对并决定是否信任新指纹。'
-          : signatureVerified
-            ? '连接已阻断。分享会话不允许替换所有者已信任的主机指纹。'
-            : '连接已阻断，且主机密钥签名未通过验证，无法信任新指纹。',
-        signatureVerified && mayReplaceHostKey
-          ? 'host_key_trust_instruction'
-          : signatureVerified
-            ? 'host_key_share_change_blocked'
-            : 'host_key_unverified_instruction'
-      );
+      let trustInstruction: string;
+      let trustEvent: string;
+      if (signatureVerified && mayReplaceHostKey) {
+        trustInstruction = '连接已阻断。请在确认对话框中核对并决定是否信任新指纹。';
+        trustEvent = 'host_key_trust_instruction';
+      } else if (signatureVerified) {
+        trustInstruction = '连接已阻断。分享会话不允许替换所有者已信任的主机指纹。';
+        trustEvent = 'host_key_share_change_blocked';
+      } else {
+        trustInstruction = '连接已阻断，且主机密钥签名未通过验证，无法信任新指纹。';
+        trustEvent = 'host_key_unverified_instruction';
+      }
+      this.sendError(trustInstruction, trustEvent);
       this.close(true);
       return false;
     }
@@ -1783,7 +1841,7 @@ export class SSHSession {
         } else if (this.sftpHandler && channelID === this.sftpHandler.getChannelID()) {
           // SFTP channel open failed - notify frontend, don't close terminal
           this.sendDebug(`SFTP channel open failed: reason=${reasonCode}, desc=${description}`);
-          this.sendSFTPError('init', '服务器不支持 SFTP: ' + description);
+          this.sendSFTPError('init', `服务器不支持 SFTP: ${description}`);
           this.sftpHandler = null;
         } else if (this.isExecChannel(channelID)) {
           // Exec channel open failed - reject just this command, keep SSH session alive
@@ -1835,7 +1893,7 @@ export class SSHSession {
             const errMsg = error instanceof Error ? error.message : String(error);
             this.sendDebug(`SFTP onSubsystemReady ERROR: ${errMsg}`);
             if (this.sftpHandler === handler) {
-              this.sendSFTPError('init', 'SFTP 初始化失败: ' + errMsg);
+              this.sendSFTPError('init', `SFTP 初始化失败: ${errMsg}`);
             }
           });
         } else {
@@ -1895,7 +1953,9 @@ export class SSHSession {
           // Feed terminal context for Agent
           try {
             this.terminalContext.appendOutput(this.textDecoder.decode(outputData));
-          } catch {}
+          } catch {
+            /* 解码/追加失败不影响主会话，静默忽略 */
+          }
         } else if (this.sftpHandler && channelID === this.sftpHandler.getChannelID()) {
           // SFTP channel data - forward to SFTP handler
           const sftpData = channel.handleChannelData(payload);
@@ -1910,8 +1970,12 @@ export class SSHSession {
           const execCh = this.activeExecChannels.get(channelID);
           if (execCh) {
             const execData = channel.handleChannelData(payload);
-            execCh.onData(execData);
-            this.queueLocalWindowAdjust(execData.length, channel);
+            if (execCh.onData(execData)) {
+              this.queueLocalWindowAdjust(execData.length, channel);
+            } else {
+              // 捕获达到硬上限：停止续 window 并关闭通道，sshd 会终止远端命令
+              await this.terminateExecChannelOnCaptureLimit(channelID, channel, execCh);
+            }
           }
         }
         break;
@@ -1925,12 +1989,7 @@ export class SSHSession {
         if (channel === this.shellChannel) {
           // stderr data from shell - forward to terminal
           let offset = 1 + 4; // skip msgType + recipient_channel
-          const dataTypeCode =
-            (payload[offset] << 24) |
-            (payload[offset + 1] << 16) |
-            (payload[offset + 2] << 8) |
-            payload[offset + 3];
-          offset += 4;
+          offset += 4; // skip dataTypeCode (4 bytes, unused)
           const dataLen =
             (payload[offset] << 24) |
             (payload[offset + 1] << 16) |
@@ -1960,8 +2019,11 @@ export class SSHSession {
               payload[offset + 3];
             offset += 4;
             const stderrData = payload.subarray(offset, offset + dataLen);
-            execCh.onExtendedData(stderrData);
-            this.queueLocalWindowAdjust(stderrData.length, channel);
+            if (execCh.onExtendedData(stderrData)) {
+              this.queueLocalWindowAdjust(stderrData.length, channel);
+            } else {
+              await this.terminateExecChannelOnCaptureLimit(channelID, channel, execCh);
+            }
           }
         }
         break;
@@ -2325,7 +2387,7 @@ export class SSHSession {
     this.sftpTaskQueue = run.catch((error) => {
       const errMsg = error instanceof Error ? error.message : String(error);
       this.sendDebug(`SFTP task ERROR: ${errMsg}`);
-      this.sendSFTPError(operation, 'SFTP 操作失败: ' + errMsg);
+      this.sendSFTPError(operation, `SFTP 操作失败: ${errMsg}`);
     });
   }
 
@@ -2487,6 +2549,15 @@ export class SSHSession {
   private enqueueChannelData(data: Uint8Array): void {
     if (data.length === 0) return;
 
+    // 浏览器→服务器输入积压上限：浏览器失去响应时 channelDataQueue 会无界堆积，
+    // 超限直接关闭会话（常规重连即可恢复，无需等待远端超时）。
+    if (this.channelDataQueueBytes + data.length > MAX_INPUT_QUEUE_BYTES) {
+      this.sendError('终端输入积压过多（客户端可能已无响应），连接已关闭', 'input_backlog_closed');
+      this.close();
+      return;
+    }
+
+    this.channelDataQueueBytes += data.length;
     this.channelDataQueue.push(data);
     void this.flushChannelDataQueue();
   }
@@ -2507,6 +2578,7 @@ export class SSHSession {
         if (this.channelDataQueueOffset >= current.length) {
           this.channelDataQueueHead++;
           this.channelDataQueueOffset = 0;
+          this.channelDataQueueBytes -= current.length;
         }
       }
 
@@ -2517,7 +2589,7 @@ export class SSHSession {
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
       this.sendDebug(`flushChannelDataQueue ERROR: ${errMsg}`);
-      this.sendError('发送数据失败: ' + errMsg, 'send_data_failed', { message: errMsg });
+      this.sendError(`发送数据失败: ${errMsg}`, 'send_data_failed', { message: errMsg });
       this.close();
     } finally {
       this.channelDataFlushInProgress = false;
@@ -2621,7 +2693,7 @@ export class SSHSession {
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
       this.sendDebug(`sendLocalWindowAdjust ERROR: ${errMsg}`);
-      this.sendError('发送窗口调整失败: ' + errMsg, 'resize_failed', { message: errMsg });
+      this.sendError(`发送窗口调整失败: ${errMsg}`, 'resize_failed', { message: errMsg });
       this.close();
     }
   }
@@ -2633,7 +2705,7 @@ export class SSHSession {
   ): void {
     try {
       this.ws.send(JSON.stringify({ type: 'status', message, event, params }));
-    } catch (e) {
+    } catch {
       // WebSocket 已关闭，状态消息无法送达
     }
   }
@@ -2645,7 +2717,7 @@ export class SSHSession {
   ): void {
     try {
       this.ws.send(JSON.stringify({ type: 'error', message, event, params }));
-    } catch (e) {
+    } catch {
       // WebSocket 已关闭，错误消息无法送达
     }
   }
@@ -2659,7 +2731,7 @@ export class SSHSession {
           message: typeof message === 'function' ? message() : message,
         })
       );
-    } catch (e) {
+    } catch {
       // WebSocket 已关闭，调试消息无法送达
     }
   }
@@ -2749,7 +2821,9 @@ export class SSHSession {
               body: JSON.stringify({ normal }),
             })
           );
-        } catch {}
+        } catch {
+          /* 审计关闭通知失败不影响清理流程 */
+        }
       })
     );
   }
@@ -2797,7 +2871,9 @@ export class SSHSession {
             expiresAt: this.config.sessionPolicy.sessionExpiresAt,
           })
         );
-      } catch {}
+      } catch {
+        /* WebSocket 已关闭，忽略能力通告 */
+      }
     }
     this.sendStatus('Shell 已就绪', 'shell_ready');
     if (this.config.sessionPolicy?.allowMetadataMutation !== false) {
@@ -2856,7 +2932,7 @@ export class SSHSession {
         if (this.ws.readyState === WebSocket.OPEN) {
           this.ws.send(JSON.stringify({ type: 'os_detected', serverId: this.config.serverId, os }));
         }
-      } catch (e) {
+      } catch {
         /* ws closed */
       }
     } catch (e) {
@@ -2963,6 +3039,29 @@ export class SSHSession {
       return (await res.json()) as { base_url: string; model: string; api_key: string };
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * exec 输出超过捕获硬上限：删除本地通道引用（不再接收数据、不再续窗口），
+   * 主动发送 CHANNEL_CLOSE —— sshd 会终止对应的远端命令（如无界输出的
+   * docker logs），并提前决议 closedPromise，让 Agent 拿到带截断标记的结果。
+   */
+  private async terminateExecChannelOnCaptureLimit(
+    channelID: number,
+    channel: SSHChannel,
+    execCh: AgentExecChannel
+  ): Promise<void> {
+    this.sendDebug(`Exec channel ${channelID} capture limit exceeded — closing channel`);
+    this.activeExecChannels.delete(channelID);
+    this.channels.delete(channelID);
+    execCh.onClose();
+    try {
+      if (!channel.isClosed()) {
+        await this.sendEncrypted(channel.buildClose());
+      }
+    } catch {
+      // 弱网下发送失败也无妨：本地状态已清理，远端因窗口耗尽自行停止推送
     }
   }
 
@@ -3101,7 +3200,9 @@ export class SSHSession {
       if (this.ws.readyState === WebSocket.OPEN) {
         this.ws.send(JSON.stringify(msg));
       }
-    } catch {}
+    } catch {
+      /* WebSocket 已关闭，无法送达 */
+    }
   }
 
   close(normal: boolean = false): void {
@@ -3125,6 +3226,10 @@ export class SSHSession {
     if (this.keepaliveTimeout) {
       clearTimeout(this.keepaliveTimeout);
       this.keepaliveTimeout = null;
+    }
+    if (this.idleWatchdogInterval) {
+      clearInterval(this.idleWatchdogInterval);
+      this.idleWatchdogInterval = null;
     }
     if (this.shellReadyTimeout) {
       clearTimeout(this.shellReadyTimeout);
@@ -3169,6 +3274,7 @@ export class SSHSession {
     this.channelDataQueue = [];
     this.channelDataQueueHead = 0;
     this.channelDataQueueOffset = 0;
+    this.channelDataQueueBytes = 0;
     try {
       this.socketWriter?.releaseLock();
     } catch (e) {

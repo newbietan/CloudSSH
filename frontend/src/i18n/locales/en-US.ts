@@ -265,6 +265,9 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'terminal.status.sessionEnded': 'Session ended',
   'terminal.status.remoteClosed': 'Remote host closed the connection',
   'terminal.status.keepaliveTimeout': 'Connection keepalive timed out',
+  'terminal.status.idleTimeout':
+    'SSH connection unresponsive, disconnected automatically (idle timeout)',
+  'terminal.status.inputBacklogClosed': 'Terminal input backlog exceeded, connection closed',
   'terminal.status.packetError': 'Packet processing error: {message}',
   'terminal.status.algorithmError': 'Algorithm negotiation failed: {message}',
   'terminal.status.serviceError': 'SSH service request failed: {message}',

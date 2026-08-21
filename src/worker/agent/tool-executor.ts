@@ -4,6 +4,20 @@ import { isBlockedCommand, needsConfirmation } from './safety';
 import type { TerminalContext } from './terminal-context';
 import type { ExecResult } from './types';
 
+// 工具结果进入 LLM 上下文的硬边界：head/tail 式截断（保留头尾、省略中间），
+// 防止 docker logs 等大输出把后续每轮 LLM 请求体撑到数 MB（弱网下直接拖垮 Agent）。
+const MAX_TOOL_RESULT_CHARS = 64_000;
+const KEEP_HEAD_CHARS = 16_000;
+
+function truncateForLLM(text: string): { text: string; omittedChars: number } {
+  if (text.length <= MAX_TOOL_RESULT_CHARS) return { text, omittedChars: 0 };
+  const head = text.slice(0, KEEP_HEAD_CHARS);
+  const tail = text.slice(-(MAX_TOOL_RESULT_CHARS - KEEP_HEAD_CHARS));
+  const omittedChars = text.length - head.length - tail.length;
+  const note = `\n[... 输出过长已截断：省略中间 ${omittedChars} 字符 ...]\n`;
+  return { text: `${head}${note}${tail}`, omittedChars };
+}
+
 export type ExecCommandFn = (
   command: string,
   timeout: number,
@@ -83,10 +97,15 @@ export class ToolExecutor {
 
     try {
       const result = await this.execCommand(command, clampedTimeout, signal);
+      const stdout = truncateForLLM(result.stdout);
+      const stderr = truncateForLLM(result.stderr);
       return JSON.stringify({
-        stdout: result.stdout,
-        stderr: result.stderr,
+        stdout: stdout.text,
+        stderr: stderr.text,
         exit_code: result.exitCode,
+        ...(stdout.omittedChars > 0 || stderr.omittedChars > 0
+          ? { truncated: true, omitted_chars: stdout.omittedChars + stderr.omittedChars }
+          : {}),
       });
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
@@ -174,12 +193,28 @@ export class ToolExecutor {
   ): Promise<string> {
     // Shell-safe whitelist: docker args may not contain shell metacharacters
     const safeArgRe = /^[a-zA-Z0-9_\-.\s=:+/@,]*$/;
-    if (target && !safeArgRe.test(target)) target = '';
-    if (options && !safeArgRe.test(options)) options = '';
+    const safeTarget = target && !safeArgRe.test(target) ? '' : target;
+    const safeOptions = options && !safeArgRe.test(options) ? '' : options;
 
     const VALID_ACTIONS = ['ps', 'logs', 'inspect', 'images', 'stop', 'rm', 'rmi', 'restart'];
     const safeActions = ['ps', 'logs', 'inspect', 'images'];
-    const cmd = this.buildDockerCommand(action, target, options);
+
+    // docker logs 的输出必须是有界的：拒绝无限流式 -f（弱网 + 大日志流会打爆 DO 内存），
+    // 未显式指定 --tail 时由 buildDockerCommand 强制追加。
+    if (action === 'logs') {
+      const trimmedOpts = safeOptions?.trim() ?? '';
+      if (/(^|\s)(-f|--follow)(\s|$)/.test(trimmedOpts)) {
+        return JSON.stringify({
+          stdout: '',
+          stderr:
+            'docker logs 不允许 -f/--follow（无限流式输出会耗尽会话资源），请使用 --tail N 查看最近日志',
+          exit_code: -1,
+          blocked: true,
+        });
+      }
+    }
+
+    const cmd = this.buildDockerCommand(action, safeTarget, safeOptions);
 
     // 非白名单 action 需要用户确认
     if (!VALID_ACTIONS.includes(action)) {
@@ -199,10 +234,10 @@ export class ToolExecutor {
     } else if (!safeActions.includes(action)) {
       // 白名单内的危险操作（stop/rm/rmi/restart）也需要确认
       const reasons: Record<string, string> = {
-        stop: `即将停止容器 ${target}，请确认`,
-        rm: `即将删除容器 ${target}，此操作不可逆，请确认`,
-        rmi: `即将删除镜像 ${target}，此操作不可逆，请确认`,
-        restart: `即将重启容器 ${target}，请确认`,
+        stop: `即将停止容器 ${safeTarget}，请确认`,
+        rm: `即将删除容器 ${safeTarget}，此操作不可逆，请确认`,
+        rmi: `即将删除镜像 ${safeTarget}，此操作不可逆，请确认`,
+        restart: `即将重启容器 ${safeTarget}，请确认`,
       };
       const approved = await this.askConfirmationWithAbort(
         cmd,
@@ -227,8 +262,12 @@ export class ToolExecutor {
     switch (action) {
       case 'ps':
         return `docker ps${opts || ' -a'}`;
-      case 'logs':
-        return `docker logs${opts} ${target || ''}`.trim();
+      case 'logs': {
+        // 日志查看必须是有界的：未显式指定 --tail 时强制最近 200 行
+        const hasTail = /(^|\s)--tail(\s|=|$)/.test(opts.trim());
+        const safeOpts = hasTail ? opts : `${opts} --tail 200`;
+        return `docker logs${safeOpts} ${target || ''}`.trim();
+      }
       case 'inspect':
         return `docker inspect ${target || ''}`.trim();
       case 'images':
