@@ -373,13 +373,11 @@ export class AgentPanel {
     this.ensureThinkingProcess();
     const cmd = args?.command || '';
     const label =
-      tool === 'respond_to_user'
-        ? t('agent.generating')
-        : tool === 'ask_user_confirmation'
-          ? t('agent.requestConfirmation')
-          : tool === 'execute_command' && cmd
-            ? `$ ${cmd}`
-            : `${tool}(${JSON.stringify(args || {})})`;
+      tool === 'ask_user_confirmation'
+        ? t('agent.requestConfirmation')
+        : tool === 'execute_command' && cmd
+          ? `$ ${cmd}`
+          : `${tool}(${JSON.stringify(args || {})})`;
     this.addThinkingStep(tool, label);
     this.updateLivePreview(label);
   }

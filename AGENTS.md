@@ -40,7 +40,7 @@ src/
 │   ├── ip-geo.ts     # 保存直连服务器时 IPinfo 区域推断，映射为 DO locationHint
 │   ├── agent/        # AI Agent system
 │   │   ├── core.ts       # Agent control loop (LLM calls, tool execution)
-│   │   ├── tools.ts      # 8 tool definitions (execute_command, detect_environment, list_processes, service_manage, docker_manage, etc.)
+│   │   ├── tools.ts      # 7 tool definitions (execute_command, detect_environment, list_processes, service_manage, docker_manage, etc.)
 │   │   ├── tool-executor.ts  # Tool dispatch, execution, and blocked command rejection
 │   │   ├── prompt.ts     # System prompt for the agent
 │   │   ├── safety.ts     # Two-layer security: blocked patterns + confirmation patterns

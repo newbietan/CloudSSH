@@ -138,22 +138,4 @@ export const AGENT_TOOLS: ToolDefinition[] = [
       },
     },
   },
-  {
-    type: 'function',
-    function: {
-      name: 'respond_to_user',
-      description:
-        '当任务完成或需要向用户报告结果时调用此工具。只有在你已经收集了足够信息并准备好最终回复时才调用。',
-      parameters: {
-        type: 'object',
-        properties: {
-          message: {
-            type: 'string',
-            description: '发送给用户的最终回复内容（Markdown 格式）',
-          },
-        },
-        required: ['message'],
-      },
-    },
-  },
 ];

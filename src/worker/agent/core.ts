@@ -371,17 +371,6 @@ export class AgentCore {
               tool_call_id: toolCall.id,
               content: result,
             });
-
-            // If respond_to_user -> end loop
-            if (result.startsWith('RESPOND:')) {
-              this.sendToFrontend({
-                type: 'agent_frame',
-                subType: 'response',
-                content: result.slice(8),
-              });
-              this.state.status = 'idle';
-              return;
-            }
           }
 
           if (signal.aborted) break;
