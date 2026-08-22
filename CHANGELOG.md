@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.4] - 2026-08-22
+
+### Fixed
+
+- 修复 AI Agent 在模型直接以自然语言总结（无 `tool_calls`）时后端控制循环漏发响应帧、导致任务执行一半静默终止且无任何输出的问题。
+- 修复流式解析中将空数组 `delta.tool_calls: []` 误判为工具调用导致文本流式被拦截的问题。
+- 修复推理模型（如 DeepSeek-R1 / Qwen）仅输出 `reasoning_content` 时的回复兼容性，并在模型极端返回空内容时提供多语言安全兜底（“任务已执行完成。” / "Task completed."）。
+
+### Changed
+
+- 优化 System Prompt 工作流程约束，允许模型在任务完成时直接以 Markdown 形式输出总结报告，对齐主流大模型调用范式。
+
+### Added
+
+- 新增 AgentCore 响应交付与异常终止场景的自动化测试套件（`tests/worker/agent-core-response.test.ts`）。
+
 ## [1.10.3] - 2026-08-21
 
 ### Fixed
