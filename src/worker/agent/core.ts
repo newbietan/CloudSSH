@@ -389,10 +389,28 @@ export class AgentCore {
           continue;
         }
 
-        // No tool_calls -> 保存 assistant 响应到历史，然后结束
+        // No tool_calls -> 模型直接以文本形式回复，保存 assistant 响应到历史，并确保前端收到最终回复
+        const finalContent = choice.message.content?.trim();
+        if (finalContent) {
+          if (!choice.message.streamed) {
+            this.sendToFrontend({
+              type: 'agent_frame',
+              subType: 'response',
+              content: finalContent,
+            });
+          }
+        } else {
+          // 极端异常兜底：模型返回空内容时给出明确提示，防止前端悬空或静默无输出
+          this.sendToFrontend({
+            type: 'agent_frame',
+            subType: 'response',
+            content: this.preferredLocale === 'en-US' ? 'Task completed.' : '任务已执行完成。',
+          });
+        }
+
         this.state.messages.push({
           role: 'assistant',
-          content: choice.message.content,
+          content: choice.message.content || (this.preferredLocale === 'en-US' ? 'Task completed.' : '任务已执行完成。'),
         });
         this.state.status = 'idle';
         return;
@@ -525,6 +543,7 @@ export class AgentCore {
     const decoder = new TextDecoder();
     let buffer = '';
     let contentText = '';
+    let reasoningText = '';
     const toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map();
     let hasToolCalls = false;
 
@@ -549,9 +568,14 @@ export class AgentCore {
             const delta = parsed.choices?.[0]?.delta;
             if (!delta) continue;
 
+            const reasoning = delta.reasoning_content || delta.reasoning;
+            if (reasoning) {
+              reasoningText += reasoning;
+            }
+
             if (delta.content) {
               contentText += delta.content;
-              // Only stream text to frontend if no tool calls so far
+              // 仅当目前未出现有效工具调用时，向前端流式传输文本
               if (!hasToolCalls) {
                 this.sendToFrontend({
                   type: 'agent_frame',
@@ -561,8 +585,8 @@ export class AgentCore {
               }
             }
 
-            if (delta.tool_calls) {
-              hasToolCalls = true;
+            // 严格检查 tool_calls：必须是非空数组且包含有效函数调用
+            if (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0) {
               for (const tc of delta.tool_calls) {
                 const idx = tc.index ?? 0;
                 if (!toolCalls.has(idx)) {
@@ -572,6 +596,9 @@ export class AgentCore {
                 if (tc.id) existing.id = tc.id;
                 if (tc.function?.name) existing.name = tc.function.name;
                 if (tc.function?.arguments) existing.arguments += tc.function.arguments;
+                if (tc.function?.name || tc.id) {
+                  hasToolCalls = true;
+                }
               }
             }
           } catch {
@@ -583,16 +610,7 @@ export class AgentCore {
       reader.releaseLock();
     }
 
-    // If no tool calls, finalize streaming
-    if (!hasToolCalls) {
-      this.sendToFrontend({
-        type: 'agent_frame',
-        subType: 'stream_end',
-        content: contentText,
-      });
-    }
-
-    // Build response object for caller
+    // 构建有效工具调用列表
     const assembledToolCalls = Array.from(toolCalls.values())
       .filter((tc) => tc.name)
       .map((tc) => ({
@@ -601,6 +619,24 @@ export class AgentCore {
         function: { name: tc.name, arguments: tc.arguments },
       }));
 
+    const actualHasToolCalls = assembledToolCalls.length > 0;
+    let streamed = false;
+
+    // 若无工具调用，且 content 为空但有 reasoning_content（如部分推理模型），回退到 reasoning
+    if (!actualHasToolCalls) {
+      if (!contentText.trim() && reasoningText.trim()) {
+        contentText = reasoningText;
+      }
+      if (contentText.trim()) {
+        this.sendToFrontend({
+          type: 'agent_frame',
+          subType: 'stream_end',
+          content: contentText,
+        });
+        streamed = true;
+      }
+    }
+
     return {
       id: '',
       choices: [
@@ -608,9 +644,10 @@ export class AgentCore {
           message: {
             role: 'assistant' as const,
             content: contentText || null,
-            tool_calls: assembledToolCalls.length > 0 ? assembledToolCalls : undefined,
+            tool_calls: actualHasToolCalls ? assembledToolCalls : undefined,
+            streamed,
           },
-          finish_reason: assembledToolCalls.length > 0 ? 'tool_calls' : 'stop',
+          finish_reason: actualHasToolCalls ? 'tool_calls' : 'stop',
         },
       ],
     };
