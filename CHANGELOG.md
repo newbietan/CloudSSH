@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.5] - 2026-08-22
+
+### Removed
+
+- 彻底移除 `respond_to_user` 虚拟工具，消除长文本 Markdown 序列化为 JSON 字符串引起的转义崩溃、截断语法错误以及无响应白等。
+
+### Changed
+
+- AI Agent 控制循环回归标准 ReAct 范式，大模型在完成信息收集后直接以原生 Markdown 形式进行实时逐字流式打字输出。
+- 优化 System Prompt 引导规范，精简前端执行状态渲染，移除“正在生成回复”冗余虚拟步骤。
+
+### Docs
+
+- 同步更新 `AGENTS.md` 中的 Agent 工具定义数量（8 ➔ 7）。
+
 ## [1.10.4] - 2026-08-22
 
 ### Fixed
