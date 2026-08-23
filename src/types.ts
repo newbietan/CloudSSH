@@ -232,3 +232,18 @@ export const SSH_MSG_CHANNEL_CLOSE = 97;
 export const SSH_MSG_CHANNEL_REQUEST = 98;
 export const SSH_MSG_CHANNEL_SUCCESS = 99;
 export const SSH_MSG_CHANNEL_FAILURE = 100;
+
+export const SESSION_GRACE_PERIOD_MS = 60_000;
+export const SESSION_RING_BUFFER_MAX_BYTES = 128 * 1024;
+
+export interface SessionCreatedMessage {
+  type: 'session_created';
+  sessionId: string;
+  resumeToken: string;
+  expiresIn: number;
+}
+
+export interface SessionResumedMessage {
+  type: 'session_resumed';
+  sessionId: string;
+}

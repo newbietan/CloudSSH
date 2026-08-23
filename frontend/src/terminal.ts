@@ -160,6 +160,8 @@ export class SSHTerminal {
   private viewportRestoreFrame: number | null = null;
   private readonly mobileConnectionRecoveryEnabled: boolean;
   private pendingHostKeyChangeSocket: WebSocket | null = null;
+  private activeSessionId: string | null = null;
+  private activeResumeToken: string | null = null;
   private readonly contextMenuPasteListener = async (event: MouseEvent): Promise<void> => {
     if (window.matchMedia?.('(pointer: coarse)').matches) return;
     event.preventDefault();
@@ -1024,6 +1026,28 @@ export class SSHTerminal {
             return;
           }
 
+          if (msg.type === 'session_created') {
+            this.activeSessionId = typeof msg.sessionId === 'string' ? msg.sessionId : null;
+            this.activeResumeToken = typeof msg.resumeToken === 'string' ? msg.resumeToken : null;
+            return;
+          }
+
+          if (msg.type === 'session_resumed') {
+            this.sessionReady = true;
+            this.reconnectAttempts = 0;
+            this.terminal.writeln(`\x1b[32m[*] ${t('terminal.sessionResumed')}\x1b[0m`);
+            const termStatus = document.getElementById('term-status');
+            if (termStatus)
+              SSHTerminal.renderStatusDot(
+                termStatus,
+                'w-2 h-2 bg-[var(--color-primary)]',
+                t('terminal.connected')
+              );
+            this.onSessionReady?.();
+            this.startHeartbeat();
+            return;
+          }
+
           if (msg.type === 'agent_frame') {
             this.onAgentFrameHandler?.(msg);
             return;
@@ -1514,14 +1538,48 @@ export class SSHTerminal {
     return (
       this.canReconnect &&
       this.reconnectAttempts < this.maxReconnectAttempts &&
-      Boolean(this.lastConfig || this.reconnectWebSocketFactory)
+      Boolean(
+        this.lastConfig ||
+          this.reconnectWebSocketFactory ||
+          (this.activeSessionId && this.activeResumeToken)
+      )
     );
+  }
+
+  private tryResumeSession(): boolean {
+    if (!this.activeSessionId || !this.activeResumeToken) return false;
+    try {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const resumeUrl = `${protocol}//${window.location.host}/api/ssh?session=${encodeURIComponent(
+        this.activeSessionId
+      )}&resume_token=${encodeURIComponent(this.activeResumeToken)}&cols=${this.terminal.cols}&rows=${
+        this.terminal.rows
+      }`;
+      const socket = new WebSocket(resumeUrl);
+      socket.binaryType = 'arraybuffer';
+      this.resetActiveConnection();
+      this.ws = socket;
+      this.setupWebSocketHandlers();
+      return true;
+    } catch {
+      this.activeSessionId = null;
+      this.activeResumeToken = null;
+      return false;
+    }
   }
 
   private scheduleReconnect(): void {
     this.clearReconnectTimeout();
 
     this.reconnectAttempts++;
+
+    // 首次重连时，如果持有断线保持凭据，优先进行 1-RTT 毫秒级无缝恢复
+    if (this.reconnectAttempts === 1 && this.activeSessionId && this.activeResumeToken) {
+      this.terminal.writeln(`\x1b[32m[+] ${t('terminal.reconnecting')}\x1b[0m`);
+      const resumed = this.tryResumeSession();
+      if (resumed) return;
+    }
+
     const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 30000);
 
     this.terminal.writeln(
@@ -1571,6 +1629,8 @@ export class SSHTerminal {
     this.lastConfig = null;
     this.lastHostInfo = null;
     this.reconnectWebSocketFactory = null;
+    this.activeSessionId = null;
+    this.activeResumeToken = null;
     this.resetTerminalDisplay();
   }
 

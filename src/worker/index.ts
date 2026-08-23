@@ -280,6 +280,13 @@ export default {
           });
         }
 
+        // Check for resume-token (session re-attach)
+        const resumeToken = url.searchParams.get('resume_token');
+        const resumeSession = url.searchParams.get('session');
+        if (resumeToken && resumeSession) {
+          return handleResumeSSHConnection(request, env, resumeSession, resumeToken);
+        }
+
         // Check for one-time-token (from server management connect)
         const connectToken = url.searchParams.get('token');
         if (connectToken) {
@@ -856,6 +863,39 @@ async function handleSSHConnection(request: Request, env: Env): Promise<Response
 
   return stub.fetch(new Request(doUrl.toString(), { headers }));
 }
+
+/**
+ * 处理会话秒级断线重连 (Session Re-attach)
+ * 流程：通过 sessionName 路由至原 DO 实例，并附带 resumeToken 鉴权
+ */
+async function handleResumeSSHConnection(
+  request: Request,
+  env: Env,
+  sessionName: string,
+  resumeToken: string
+): Promise<Response> {
+  const url = parseRequestUrl(request.url);
+  if (!url) return Response.json({ error: 'Invalid request URL' }, { status: 400 });
+
+  if (!hasSameWebSocketOrigin(request, url)) {
+    return new Response('Forbidden', { status: 403 });
+  }
+
+  const doId = env.SSH_SESSION.idFromName(sessionName);
+  const stub = env.SSH_SESSION.get(doId);
+
+  const doUrl = parseRequestUrl(request.url);
+  if (!doUrl) return Response.json({ error: 'Invalid request URL' }, { status: 400 });
+  doUrl.searchParams.set('session', sessionName);
+  doUrl.searchParams.set('resume_token', resumeToken);
+
+  const headers = new Headers(request.headers);
+  headers.set('x-cloudflare-colo', (request as any).cf?.colo || 'UNKNOWN');
+  headers.delete('x-ssh-config');
+
+  return stub.fetch(new Request(doUrl.toString(), { headers }));
+}
+
 
 async function handleShareClaim(request: Request, url: URL, env: Env): Promise<Response> {
   if (!isSSHSharingEnabled(env)) {

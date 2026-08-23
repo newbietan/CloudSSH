@@ -192,6 +192,7 @@ export const zhCN = {
   'terminal.reconnectWait': '{seconds} 秒后重连（第 {attempt}/{max} 次）…',
   'terminal.reconnecting': '正在重新连接…',
   'terminal.reconnectFailed': '重新连接失败',
+  'terminal.sessionResumed': '已成功恢复会话',
   'terminal.hostKeyChangeTitle': 'SSH 主机指纹已变更',
   'terminal.hostKeySaveTitle': '无法记录 SSH 主机指纹',
   'terminal.hostKeyChangeMessage':

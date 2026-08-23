@@ -1,6 +1,7 @@
 import {
   type Env,
   normalizeTerminalSize,
+  SESSION_GRACE_PERIOD_MS,
   type SSHConnectionConfig,
   type TerminalSize,
 } from '../types';
@@ -40,6 +41,16 @@ function isBlockedHost(host: string): boolean {
   return false;
 }
 
+interface DetachedSessionRecord {
+  sessionId: string;
+  resumeToken: string;
+  session: SSHSession;
+  chainSessions: SSHSession[];
+  detachedAt: number;
+  graceTimeout: ReturnType<typeof setTimeout>;
+  sftpAttachUrl?: string;
+}
+
 export class SSHSessionDO {
   private state: DurableObjectState;
   private env: Env;
@@ -51,6 +62,10 @@ export class SSHSessionDO {
   private pendingTerminalSizes: Map<WebSocket, TerminalSize> = new Map();
   private pendingAttachUrls: Map<WebSocket, string> = new Map();
   private websocketColos: Map<WebSocket, string> = new Map();
+  private pendingSessionNames: Map<WebSocket, string> = new Map();
+  private detachedSessions: Map<string, DetachedSessionRecord> = new Map();
+  private sessionToSessionId: Map<SSHSession, string> = new Map();
+  private sessionToResumeToken: Map<SSHSession, string> = new Map();
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -83,6 +98,13 @@ export class SSHSessionDO {
       return this.handleSFTPAttach(request, url);
     }
 
+    // 处理会话断线秒级重连 (Re-attach)
+    const resumeToken = url.searchParams.get('resume_token');
+    const resumeSessionId = url.searchParams.get('session');
+    if (resumeToken && resumeSessionId) {
+      return this.handleResumeRequest(request, url, resumeSessionId, resumeToken);
+    }
+
     let prefilledConfig: SSHConnectionConfig | null = null;
     const sessionName = url.searchParams.get('session') || `session:${Date.now()}:${Math.random()}`;
 
@@ -109,6 +131,7 @@ export class SSHSessionDO {
 
     const colo = request.headers.get('x-cloudflare-colo') || 'UNKNOWN';
     this.websocketColos.set(server, colo);
+    this.pendingSessionNames.set(server, sessionName);
 
     this.state.acceptWebSocket(server);
     const attachToken = crypto.randomUUID();
@@ -119,7 +142,7 @@ export class SSHSessionDO {
       server.serializeAttachment({ state: 'prefilled' });
       queueMicrotask(async () => {
         try {
-          await this.initSSHSession(server, prefilledConfig!, attachToken);
+          await this.initSSHSession(server, prefilledConfig!, attachToken, sessionName);
         } catch (e) {
           const errMsg = e instanceof Error ? e.message : String(e);
           try {
@@ -220,7 +243,8 @@ export class SSHSessionDO {
         return;
       }
 
-      await this.initSSHSession(ws, config);
+      const pendingSessionName = this.pendingSessionNames.get(ws);
+      await this.initSSHSession(ws, config, undefined, pendingSessionName);
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
       try {
@@ -241,10 +265,45 @@ export class SSHSessionDO {
     const session = this.sessions.get(ws);
     if (session) {
       const chain = this.sessionChains.get(ws) || [session];
-      for (const item of [...chain].reverse()) item.close();
+      const sessionId = this.sessionToSessionId.get(session);
+      const resumeToken = this.sessionToResumeToken.get(session);
+
       this.sessions.delete(ws);
       this.sessionChains.delete(ws);
-      this.deleteAttachTokensForSession(session);
+
+      // 仅当异常断线（code !== 1000 且 wasClean !== true）、会话处于就绪状态、且具备凭据时开启 60s 保持
+      if (code !== 1000 && !wasClean && session.isReady() && sessionId && resumeToken) {
+        session.setDetached(true);
+
+        const graceTimeout = setTimeout(() => {
+          this.cleanupDetachedSession(sessionId);
+        }, SESSION_GRACE_PERIOD_MS);
+
+        this.detachedSessions.set(sessionId, {
+          sessionId,
+          resumeToken,
+          session,
+          chainSessions: chain,
+          detachedAt: Date.now(),
+          graceTimeout,
+        });
+
+        // 保持后台受保护
+        if (this.state.waitUntil) {
+          this.state.waitUntil(
+            new Promise<void>((resolve) => {
+              setTimeout(resolve, SESSION_GRACE_PERIOD_MS + 1000);
+            })
+          );
+        }
+      } else {
+        // 主动退出（1000）或未就绪断开：立即完全销毁
+        for (const item of [...chain].reverse()) item.close(code === 1000);
+        this.deleteAttachTokensForSession(session);
+        if (sessionId) {
+          this.cleanupDetachedSession(sessionId);
+        }
+      }
     }
     const sftpSession = this.sftpSessions.get(ws);
     if (sftpSession) {
@@ -259,6 +318,7 @@ export class SSHSessionDO {
     this.pendingTerminalSizes.delete(ws);
     this.pendingAttachUrls.delete(ws);
     this.websocketColos.delete(ws);
+    this.pendingSessionNames.delete(ws);
   }
 
   async webSocketError(ws: WebSocket, error: unknown): Promise<void> {
@@ -266,10 +326,78 @@ export class SSHSessionDO {
     await this.webSocketClose(ws, 1011, 'Error', false);
   }
 
+  private handleResumeRequest(
+    request: Request,
+    url: URL,
+    sessionId: string,
+    resumeToken: string
+  ): Response {
+    const detached = this.detachedSessions.get(sessionId);
+    if (!detached) {
+      return new Response(JSON.stringify({ error: 'Session expired or not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (detached.resumeToken !== resumeToken) {
+      return new Response(JSON.stringify({ error: 'Invalid resume token' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // 取消销毁定时器
+    clearTimeout(detached.graceTimeout);
+    this.detachedSessions.delete(sessionId);
+
+    const pair = new WebSocketPair();
+    const [client, server] = [pair[0], pair[1]];
+
+    const colo = request.headers.get('x-cloudflare-colo') || 'UNKNOWN';
+    this.websocketColos.set(server, colo);
+
+    this.state.acceptWebSocket(server);
+
+    const cols = url.searchParams.get('cols') ? Number(url.searchParams.get('cols')) : undefined;
+    const rows = url.searchParams.get('rows') ? Number(url.searchParams.get('rows')) : undefined;
+    const newSize = normalizeTerminalSize(cols, rows) || undefined;
+
+    const session = detached.session;
+    this.sessions.set(server, session);
+    this.sessionChains.set(server, detached.chainSessions);
+
+    queueMicrotask(async () => {
+      try {
+        await session.reattachWebSocket(server, newSize);
+      } catch (e) {
+        console.error('Failed to reattach session:', e);
+      }
+    });
+
+    return new Response(null, {
+      status: 101,
+      webSocket: client,
+    } as any);
+  }
+
+  private cleanupDetachedSession(sessionId: string): void {
+    const detached = this.detachedSessions.get(sessionId);
+    if (detached) {
+      clearTimeout(detached.graceTimeout);
+      this.detachedSessions.delete(sessionId);
+      for (const item of [...detached.chainSessions].reverse()) {
+        item.close(false);
+      }
+      this.deleteAttachTokensForSession(detached.session);
+    }
+  }
+
   private async initSSHSession(
     ws: WebSocket,
     config: SSHConnectionConfig,
-    attachToken?: string
+    attachToken?: string,
+    sessionName?: string
   ): Promise<void> {
     const chainSessions: SSHSession[] = [];
     try {
@@ -333,32 +461,14 @@ export class SSHSessionDO {
               type: 'status',
               event: 'jump_hop_connecting',
               message: `正在连接跳板服务器 ${hop.name}`,
-              params: {
-                index: index + 1,
-                total: jumpHosts.length,
-                name: hop.name,
-                host: hop.host,
-                port: hop.port,
-              },
+              params: { host: hop.host, port: hop.port, name: hop.name },
             })
           );
         } catch {}
-        const hopConfig: SSHConnectionConfig = {
-          host: hop.host,
-          port: hop.port,
-          username: hop.username,
-          password: hop.password,
-          authMethod: hop.authMethod,
-          privateKey: hop.privateKey,
-          expectedFingerprint: hop.expectedFingerprint,
-          knownHostIdentity: hop.knownHostIdentity,
-          userId: config.userId,
-          githubId: config.githubId,
-        };
         const hopSession = new SSHSession(
           ws,
           transport,
-          hopConfig,
+          { ...hop, sessionPolicy: undefined },
           strictVerify,
           debugMode,
           undefined,
@@ -368,15 +478,13 @@ export class SSHSessionDO {
           {
             openShellOnAuth: false,
             ownsWebSocket: false,
-            allowKeyboardInteractive: config.sessionPolicy?.source !== 'share',
+            allowKeyboardInteractive: false,
             waitUntil: (promise) => this.state.waitUntil(promise),
           }
         );
         chainSessions.push(hopSession);
         this.sessionChains.set(ws, chainSessions);
-        this.sessions.set(ws, hopSession);
         await hopSession.startHandshake();
-        await hopSession.waitUntilAuthenticated();
 
         const destination = jumpHosts[index + 1] || config;
         transport = await hopSession.openDirectTcpip(destination.host, destination.port);
@@ -411,9 +519,24 @@ export class SSHSessionDO {
       this.sessionChains.set(ws, chainSessions);
       this.sessions.set(ws, session);
 
-      // 向前端发送双段延迟的物理基准延迟
+      // 生成 256 位加密随机 Token 并下发会话凭据
+      const tokenSessionId = sessionName || `session:${Date.now()}:${Math.random()}`;
+      const resumeToken =
+        crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
+      this.sessionToSessionId.set(session, tokenSessionId);
+      this.sessionToResumeToken.set(session, resumeToken);
+
+      // 向前端发送双段延迟的物理基准延迟与 session_created 凭据
       try {
         ws.send(JSON.stringify({ type: 'rtt', latency, colo }));
+        ws.send(
+          JSON.stringify({
+            type: 'session_created',
+            sessionId: tokenSessionId,
+            resumeToken,
+            expiresIn: 60,
+          })
+        );
       } catch {}
       if (attachToken) {
         this.sftpAttachTokens.set(attachToken, session);
