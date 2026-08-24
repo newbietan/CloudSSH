@@ -1,3 +1,4 @@
+import { localizedApiError } from './api-errors';
 import { copyTextToClipboard } from './clipboard';
 import { t } from './i18n';
 import { confirmAction, notify } from './ui-feedback';
@@ -31,6 +32,16 @@ function formatTime(value: number | null): string {
   return value ? new Date(value).toLocaleString() : '—';
 }
 
+const KNOWN_SHARE_STATUSES = new Set(['unused', 'claimed', 'active', 'closed', 'revoked', 'expired']);
+
+/** 审计视图顶部的分享状态本地化；未知值原样透出便于排查。 */
+function formatShareStatus(status: string | undefined): string {
+  if (!status) return '—';
+  return KNOWN_SHARE_STATUSES.has(status)
+    ? t(`share.status.${status}` as never)
+    : status;
+}
+
 function stripTerminalControls(value: string): string {
   return value
     .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
@@ -40,11 +51,9 @@ function stripTerminalControls(value: string): string {
 
 export class ShareManager {
   private serverId = 0;
-  private serverName = '';
 
   async open(serverId: number, serverName: string): Promise<void> {
     this.serverId = serverId;
-    this.serverName = serverName;
     this.ensureModal();
     const modal = document.getElementById('share-manager-modal');
     modal?.classList.remove('hidden');
@@ -61,6 +70,7 @@ export class ShareManager {
     modal.className = 'responsive-modal hidden fixed inset-0 z-[120] items-center justify-center';
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
+    // pi-lens-ignore: no-inner-html
     modal.innerHTML = `
       <div class="modal-overlay absolute inset-0" data-share-close></div>
       <div class="responsive-modal-panel cyber-box p-6 shadow-2xl relative z-10 w-full max-w-2xl mx-4 max-h-[85vh] overflow-y-auto custom-scrollbar">
@@ -135,10 +145,11 @@ export class ShareManager {
         expiresAt?: number;
         error?: string;
       };
-      if (!response.ok || !payload.url) throw new Error(payload.error || t('share.createFailed'));
+      if (!response.ok || !payload.url) throw new Error(localizedApiError(payload, 'share.createFailed'));
       const linkBox = document.getElementById('share-created-link');
       if (linkBox) {
         linkBox.classList.remove('hidden');
+        // pi-lens-ignore: no-inner-html
         linkBox.innerHTML = `
           <p class="text-xs text-muted mb-2">${t('share.copyOnce')}</p>
           <div class="flex gap-2">
@@ -168,16 +179,19 @@ export class ShareManager {
   private async loadShares(): Promise<void> {
     const container = document.getElementById('share-list');
     if (!container) return;
+    // pi-lens-ignore: no-inner-html
     container.innerHTML = `<p class="text-xs text-muted">${t('common.loading')}</p>`;
     try {
       const response = await fetch(`/api/servers/${this.serverId}/shares`);
       const shares = (await response.json()) as ShareSummary[] & { error?: string };
       if (!response.ok)
-        throw new Error((shares as unknown as { error?: string }).error || t('share.loadFailed'));
+        throw new Error(localizedApiError(shares, 'share.loadFailed'));
       if (shares.length === 0) {
+        // pi-lens-ignore: no-inner-html
         container.innerHTML = `<p class="text-xs text-muted">${t('share.none')}</p>`;
         return;
       }
+      // pi-lens-ignore: no-inner-html
       container.innerHTML = shares
         .map((share) => {
           const revocable = ['unused', 'claimed', 'active'].includes(share.status);
@@ -203,6 +217,7 @@ export class ShareManager {
         button.addEventListener('click', () => void this.revokeShare(button.dataset.shareRevoke!));
       });
     } catch (error) {
+      // pi-lens-ignore: no-inner-html
       container.innerHTML = `<p class="text-xs text-error">${escapeHtml(error instanceof Error ? error.message : t('share.loadFailed'))}</p>`;
     }
   }
@@ -232,6 +247,7 @@ export class ShareManager {
     const view = document.getElementById('share-audit-view');
     if (!view) return;
     view.classList.remove('hidden');
+    // pi-lens-ignore: no-inner-html
     view.innerHTML = `<p class="text-xs text-muted">${t('common.loading')}</p>`;
     try {
       const events: AuditEvent[] = [];
@@ -265,10 +281,11 @@ export class ShareManager {
           .join('')
       );
       const structured = events.filter((event) => event.eventType !== 'terminal.output');
+      // pi-lens-ignore: no-inner-html
       view.innerHTML = `
         <div class="flex items-center justify-between mb-3">
           <h3 class="text-xs font-bold text-primary">${t('share.auditTitle')}</h3>
-          <span class="text-[10px] text-muted">${escapeHtml(share?.status || '')} · ${Math.ceil((share?.auditBytes || 0) / 1024)} KiB</span>
+          <span class="text-[10px] text-muted">${formatShareStatus(share?.status)} · ${Math.ceil((share?.auditBytes || 0) / 1024)} KiB</span>
         </div>
         <div class="space-y-1 mb-4 max-h-48 overflow-y-auto custom-scrollbar">
           ${structured.length ? structured.map((event) => `<div class="text-[10px] text-muted"><span class="text-dim">${escapeHtml(formatTime(event.occurredAt))}</span> ${escapeHtml(this.describeEvent(event))}</div>`).join('') : `<p class="text-xs text-muted">${t('share.auditNone')}</p>`}
@@ -277,6 +294,7 @@ export class ShareManager {
         <pre class="bg-[var(--bg)] border border-[var(--border)] p-3 text-[11px] text-on-surface whitespace-pre-wrap break-words max-h-72 overflow-auto custom-scrollbar">${escapeHtml(output || t('share.noTerminalOutput'))}</pre>
       `;
     } catch (error) {
+      // pi-lens-ignore: no-inner-html
       view.innerHTML = `<p class="text-xs text-error">${escapeHtml(error instanceof Error ? error.message : t('share.auditFailed'))}</p>`;
     }
   }

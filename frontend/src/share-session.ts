@@ -1,3 +1,4 @@
+import { localizedApiError } from './api-errors';
 import { exportDevicePublicKeySpki } from './device-identity';
 import { mountLanguageSwitchers, onLocaleChange, t } from './i18n';
 
@@ -130,7 +131,7 @@ export function renderShareLanding(
         const payload = (await response.json().catch(() => ({}))) as ClaimedShare & {
           error?: string;
         };
-        if (!response.ok) throw new Error(payload.error || t('share.claimFailed'));
+        if (!response.ok) throw new Error(localizedApiError(payload, 'share.claimFailed'));
         onConnected(payload);
       } catch (error) {
         claiming = false;

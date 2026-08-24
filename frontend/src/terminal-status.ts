@@ -48,6 +48,8 @@ const SSH_EVENT_KEYS: Record<string, TranslationKey> = {
   pty_shell_rejected: 'terminal.status.ptyShellRejected',
   send_data_failed: 'terminal.status.sendDataFailed',
   resize_failed: 'terminal.status.resizeFailed',
+  share_session_expired: 'terminal.status.shareSessionExpired',
+  share_audit_unavailable: 'terminal.status.shareAuditUnavailable',
 };
 
 export function localizedSSHMessage(

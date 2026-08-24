@@ -467,7 +467,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
     'Terminal output, session times, and SFTP operations are recorded for the owner.',
   'share.noticeNoAgent': 'AI Agent is unavailable in shared sessions.',
   'share.noticeNoReconnect':
-    'Disconnecting, refreshing, or closing the tab cannot be automatically recovered.',
+    'Brief disconnections recover automatically in this browser; refreshing or closing the page ends the session.',
   'share.claimAndConnect': 'Accept recording and connect',
   'share.claiming': 'Claiming access…',
   'share.claimFailed': 'The share link is invalid, used, or expired',
@@ -519,6 +519,17 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'share.event.session.started': 'SSH Shell ready; recording started',
   'share.event.session.closed': 'SSH session disconnected',
   'share.event.session.connection_failed': 'SSH connection failed',
+  'share.event.session.detached': 'Connection lost, session is being held',
+  'share.event.session.resumed': 'Session resumed',
+  'share.event.share.resume_denied': 'Resume request denied',
+  'share.errorAlreadyUsed':
+    'This share link has already been claimed or revoked and cannot be used again',
+  'share.errorLinkExpired': 'This share link has expired. Ask the owner to generate a new one',
+  'share.errorSharingDisabled': 'SSH sharing is currently disabled',
+  'share.errorServiceUnavailable':
+    'Share service is temporarily unavailable. Please try again later',
+  'terminal.status.shareSessionExpired': 'Share session has expired, connection ended',
+  'terminal.status.shareAuditUnavailable': 'Share audit is unavailable, connection terminated',
   'snippets.title': 'Command snippets',
   'snippets.anonymousHint': 'Signed out: snippets are stored on this device only.',
   'snippets.nameLabel': 'Name',
