@@ -199,6 +199,8 @@ export const zhCN = {
   'terminal.shareResumeEnvironmentHint':
     '多次恢复失败：自动恢复要求与认领时相同的浏览器环境；无痕模式、清除站点数据或更换浏览器后无法恢复',
   'terminal.shareResumeFinalAttempt': '已接近断线保持窗口上限，正在进行最后一次恢复尝试…',
+  'terminal.shareResumeUnsupported':
+    '当前浏览器环境无法通过设备身份校验，不支持断线自动恢复，本次分享会话已结束',
   'terminal.shareResumeEnded': '连接已断开且无法恢复，本次分享会话已结束。',
   'terminal.hostKeyChangeTitle': 'SSH 主机指纹已变更',
   'terminal.hostKeySaveTitle': '无法记录 SSH 主机指纹',

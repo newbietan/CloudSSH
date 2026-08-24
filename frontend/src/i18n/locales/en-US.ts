@@ -244,6 +244,8 @@ export const enUS: Record<keyof typeof zhCN, string> = {
     'Repeated resume failures: auto-resume requires the same browser environment used to claim; private mode, cleared site data, or a different browser cannot recover',
   'terminal.shareResumeFinalAttempt':
     'Approaching the resume window limit; making the final attempt…',
+  'terminal.shareResumeUnsupported':
+    'This browser cannot pass device identity verification; auto-resume is unavailable and this shared session has ended',
   'terminal.shareResumeEnded':
     'Connection lost and could not be resumed. This shared session has ended.',
   'terminal.hostKeyChangeTitle': 'SSH host fingerprint changed',

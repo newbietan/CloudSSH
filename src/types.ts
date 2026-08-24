@@ -241,8 +241,10 @@ export interface SessionCreatedMessage {
   sessionId: string;
   resumeToken: string;
   expiresIn: number;
-  /** 该会话是否绑定了设备公钥（绑定则恢复需挑战签名，未绑定仅凭 token 恢复）。 */
+  /** 该会话是否绑定了设备公钥（分享会话必须绑定才支持断线恢复）。 */
   deviceBound?: boolean;
+  /** 是否允许断线自动恢复（分享会话未绑定设备时为 false，凭据为空串）。 */
+  resumeEnabled?: boolean;
 }
 
 export interface SessionResumedMessage {

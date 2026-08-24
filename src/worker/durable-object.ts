@@ -410,13 +410,18 @@ export class SSHSessionDO {
         void this.auditResumeDenied(detached, 'expired');
         return resumeReject(403, 'Share session expired');
       }
-      if (detached.devicePubKey) {
-        const verification = await this.verifyResumeDeviceSignature(detached, url);
-        if (!verification.ok) {
-          this.resumeDebug(`reject device:${verification.reason} sid=${sessionId.slice(0, 16)}`);
-          void this.auditResumeDenied(detached, verification.reason);
-          return resumeReject(403, 'Device verification failed');
-        }
+      // 严格口径：分享会话必须绑定设备公钥才允许断线恢复；
+      // 未绑定（认领环境无法安全存储密钥，如无痕模式）一律拒绝。
+      if (!detached.devicePubKey) {
+        this.resumeDebug(`reject not_bound sid=${sessionId.slice(0, 16)}`);
+        void this.auditResumeDenied(detached, 'not_bound');
+        return resumeReject(403, 'Device binding required');
+      }
+      const verification = await this.verifyResumeDeviceSignature(detached, url);
+      if (!verification.ok) {
+        this.resumeDebug(`reject device:${verification.reason} sid=${sessionId.slice(0, 16)}`);
+        void this.auditResumeDenied(detached, verification.reason);
+        return resumeReject(403, 'Device verification failed');
       }
     }
 
@@ -720,6 +725,12 @@ export class SSHSessionDO {
         this.sessionToDeviceKey.set(session, shareDeviceKey);
       }
 
+      // 严格口径：分享会话仅在成功绑定设备公钥后才支持断线恢复；
+      // 未绑定（无痕等存储不可靠环境）不发放恢复凭据，前端即时终结
+      const deviceBound = this.sessionToDeviceKey.has(session);
+      const shareResumable =
+        config.sessionPolicy?.source === 'share' ? deviceBound : true;
+
       // 记录双段延迟基线：断线重连时上游 SSH 连接未重建，原基线仍然有效
       this.sessionBaselines.set(session, { latencyMs: latency, colo });
       // 向前端发送双段延迟的物理基准延迟与 session_created 凭据
@@ -729,9 +740,10 @@ export class SSHSessionDO {
           JSON.stringify({
             type: 'session_created',
             sessionId: tokenSessionId,
-            resumeToken,
+            resumeToken: shareResumable ? resumeToken : '',
             expiresIn: 60,
-            deviceBound: this.sessionToDeviceKey.has(session),
+            deviceBound,
+            resumeEnabled: shareResumable,
           })
         );
       } catch {

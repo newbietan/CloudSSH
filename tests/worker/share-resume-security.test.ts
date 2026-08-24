@@ -89,6 +89,28 @@ async function signChallenge(
   return toBase64Url(new Uint8Array(sig));
 }
 
+let nonceSeq = 0;
+function nextNonce(): string {
+  nonceSeq += 1;
+  return `nonce${String(nonceSeq).padStart(12, '0')}`;
+}
+
+/** 构造带有效设备签名的恢复请求。 */
+async function signedResumeRequest(
+  device: DeviceKeyPair,
+  resumeToken: string = TOKEN
+): Promise<Request> {
+  const nonce = nextNonce();
+  const ts = Date.now();
+  const sig = await signChallenge(device.privateKey, SESSION_ID, nonce, ts);
+  return resumeRequest({
+    resume_token: resumeToken,
+    did_nonce: nonce,
+    did_ts: String(ts),
+    did_sig: sig,
+  });
+}
+
 function createShareSession(expiresAt: number): { session: SSHSession; socket: { close: any } } {
   const ws = { readyState: 1, send: vi.fn(), close: vi.fn() };
   const socket = { close: vi.fn() };
@@ -324,14 +346,15 @@ describe('SSHSessionDO Share Resume Device-Binding Security', () => {
     expect(res.status).toBe(404);
   });
 
-  it('invalidates the old resume token after rotation across disconnect cycles', async () => {
+  it('requires device signatures across disconnect cycles and rotates tokens', async () => {
     const { doInstance, internal } = createDo();
+    const device = await makeDeviceKeyPair();
     const { session } = createShareSession(Date.now() + 600_000);
-    await detachSession(doInstance, session);
+    await detachSession(doInstance, session, { devicePubKey: device.publicKeyB64 });
 
-    // 第一周期：无设备绑定的分享会话直接凭 token 恢复成功并轮换
-    const res1 = await doInstance.fetch(resumeRequest());
-    expect(res1.status).toBe(101);
+    // 第一周期：携带有效签名的恢复成功并轮换 token
+    const first = await doInstance.fetch(await signedResumeRequest(device));
+    expect(first.status).toBe(101);
     const rotated = internal.sessionToResumeToken.get(session) as string;
     expect(rotated).not.toBe(TOKEN);
 
@@ -343,14 +366,22 @@ describe('SSHSessionDO Share Resume Device-Binding Security', () => {
     expect(internal.detachedSessions.has(SESSION_ID)).toBe(true);
 
     // 旧 token 已失效
-    const oldTokenRes = await doInstance.fetch(resumeRequest());
-    expect(oldTokenRes.status).toBe(403);
+    expect((await doInstance.fetch(resumeRequest())).status).toBe(403);
 
-    // 新 token 可用
-    const newTokenRes = await doInstance.fetch(
-      resumeRequest({ resume_token: rotated })
-    );
-    expect(newTokenRes.status).toBe(101);
+    // 新 token + 全新签名可再次恢复
+    const res = await doInstance.fetch(await signedResumeRequest(device, rotated));
+    expect(res.status).toBe(101);
+  });
+
+  it('rejects resume entirely for share sessions without device binding', async () => {
+    const { doInstance, internal } = createDo();
+    const { session } = createShareSession(Date.now() + 600_000);
+    await detachSession(doInstance, session);
+
+    // 严格口径：未绑定设备身份的分享会话不支持断线恢复
+    const res = await doInstance.fetch(resumeRequest());
+    expect(res.status).toBe(403);
+    expect(internal.detachedSessions.has(SESSION_ID)).toBe(true);
   });
 
   it('does not require device signatures for regular non-share sessions', async () => {

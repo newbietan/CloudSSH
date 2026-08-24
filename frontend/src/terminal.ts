@@ -177,6 +177,8 @@ export class SSHTerminal {
   private shareResumeChallengeMissing = false;
   /** 服务端在 session_created 中声明的设备绑定状态：绑定会话的恢复需挑战签名。 */
   private sessionRequiresDeviceSig = false;
+  /** 分享会话是否具备断线恢复资格（未绑定设备身份的环境为 false）。 */
+  private shareResumeSupported = true;
   private readonly contextMenuPasteListener = async (event: MouseEvent): Promise<void> => {
     if (window.matchMedia?.('(pointer: coarse)').matches) return;
     event.preventDefault();
@@ -1048,8 +1050,9 @@ export class SSHTerminal {
           if (msg.type === 'session_created') {
             this.activeSessionId = typeof msg.sessionId === 'string' ? msg.sessionId : null;
             this.activeResumeToken = typeof msg.resumeToken === 'string' ? msg.resumeToken : null;
-            // 绑定状态由服务端判定：仅绑定会话的恢复失败才与设备环境相关
+            // 绑定状态由服务端判定；未绑定环境（resumeEnabled=false）不支持断线自动恢复
             this.sessionRequiresDeviceSig = msg.deviceBound === true;
+            this.shareResumeSupported = msg.resumeEnabled !== false;
             return;
           }
 
@@ -1175,6 +1178,9 @@ export class SSHTerminal {
       this.onSessionClosed?.(event, willReconnect);
       if (willReconnect) {
         this.scheduleReconnect();
+      } else if (this.resumeOnlyMode && event.code !== 1000 && !this.shareResumeSupported) {
+        // 无恢复资格（认领环境无法绑定设备身份）：明确告知而非静默掉线
+        this.terminal.writeln(`\x1b[31m[!] ${t('terminal.shareResumeUnsupported')}\x1b[0m`);
       }
     };
 
@@ -1571,6 +1577,7 @@ export class SSHTerminal {
     // 指数退避需能铺满服务端完整的断线保持期，给用户留出切换网络的时间。
     if (this.resumeOnlyMode) {
       return (
+        this.shareResumeSupported &&
         Boolean(this.activeSessionId && this.activeResumeToken) &&
         (this.shareResumeDeadline === null || Date.now() < this.shareResumeDeadline)
       );
@@ -1663,7 +1670,11 @@ export class SSHTerminal {
       return;
     }
     // 首次重试时提示设备验证材料缺失（服务端将拒绝无签名的恢复请求）
-    if (this.reconnectAttempts === 1 && this.sessionRequiresDeviceSig && this.shareResumeChallengeMissing) {
+    if (
+      this.reconnectAttempts === 1 &&
+      this.sessionRequiresDeviceSig &&
+      this.shareResumeChallengeMissing
+    ) {
       this.terminal.writeln(`\x1b[33m[!] ${t('terminal.shareResumeNoDeviceIdentity')}\x1b[0m`);
     }
     // 第二次重试仍失败且验证材料正常：大概率是浏览器环境与认领时不一致
