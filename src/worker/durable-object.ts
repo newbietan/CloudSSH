@@ -728,8 +728,7 @@ export class SSHSessionDO {
       // 严格口径：分享会话仅在成功绑定设备公钥后才支持断线恢复；
       // 未绑定（无痕等存储不可靠环境）不发放恢复凭据，前端即时终结
       const deviceBound = this.sessionToDeviceKey.has(session);
-      const shareResumable =
-        config.sessionPolicy?.source === 'share' ? deviceBound : true;
+      const shareResumable = config.sessionPolicy?.source === 'share' ? deviceBound : true;
 
       // 记录双段延迟基线：断线重连时上游 SSH 连接未重建，原基线仍然有效
       this.sessionBaselines.set(session, { latencyMs: latency, colo });

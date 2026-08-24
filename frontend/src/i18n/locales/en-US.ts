@@ -246,6 +246,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
     'Approaching the resume window limit; making the final attempt…',
   'terminal.shareResumeUnsupported':
     'This browser cannot pass device identity verification; auto-resume is unavailable and this shared session has ended',
+  'terminal.status.shareExpiringWarning': 'Note: this shared session ends in less than 1 minute',
   'terminal.shareResumeEnded':
     'Connection lost and could not be resumed. This shared session has ended.',
   'terminal.hostKeyChangeTitle': 'SSH host fingerprint changed',

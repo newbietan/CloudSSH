@@ -177,6 +177,8 @@ export class SSHTerminal {
   private shareResumeChallengeMissing = false;
   /** 服务端在 session_created 中声明的设备绑定状态：绑定会话的恢复需挑战签名。 */
   private sessionRequiresDeviceSig = false;
+  /** 服务端已因到期等原因终结分享会话：停止无效重试并给出终态提示。 */
+  private shareSessionEndedByServer = false;
   /** 分享会话是否具备断线恢复资格（未绑定设备身份的环境为 false）。 */
   private shareResumeSupported = true;
   private readonly contextMenuPasteListener = async (event: MouseEvent): Promise<void> => {
@@ -1053,7 +1055,6 @@ export class SSHTerminal {
             // 绑定状态由服务端判定；未绑定环境（resumeEnabled=false）不支持断线自动恢复
             this.sessionRequiresDeviceSig = msg.deviceBound === true;
             this.shareResumeSupported = msg.resumeEnabled !== false;
-            return;
           }
 
           if (msg.type === 'session_resumed') {
@@ -1107,6 +1108,10 @@ export class SSHTerminal {
                 this.canReconnect = false;
                 this.clearReconnectTimeout();
                 this.authChallengeDialog?.dismiss();
+              }
+              if (msg.event === 'share_session_expired') {
+                // 服务端已按最长会话时长终结：后续恢复请求必然失败，直接进入终态
+                this.shareSessionEndedByServer = true;
               }
               this.terminal.writeln(
                 `\x1b[31m[!] ${localizedSSHMessage(msg.message, msg.event, msg.params)}\x1b[0m`
@@ -1181,6 +1186,9 @@ export class SSHTerminal {
       } else if (this.resumeOnlyMode && event.code !== 1000 && !this.shareResumeSupported) {
         // 无恢复资格（认领环境无法绑定设备身份）：明确告知而非静默掉线
         this.terminal.writeln(`\x1b[31m[!] ${t('terminal.shareResumeUnsupported')}\x1b[0m`);
+      } else if (this.resumeOnlyMode && this.shareSessionEndedByServer) {
+        // 服务端已终结（到期/撤销）：给出终态而非静默掉线
+        this.terminal.writeln(`\x1b[31m[!] ${t('terminal.shareResumeEnded')}\x1b[0m`);
       }
     };
 
@@ -1654,6 +1662,11 @@ export class SSHTerminal {
 
   /** 分享会话的短间隔秒级恢复循环；超出尝试上限后输出终态并停止。 */
   private scheduleShareResume(): void {
+    // 服务端已终结会话（如达到最长会话时长）：不再空转重试
+    if (this.shareSessionEndedByServer) {
+      this.finishShareResume();
+      return;
+    }
     if (!this.hasReconnectStrategy()) {
       this.finishShareResume();
       return;

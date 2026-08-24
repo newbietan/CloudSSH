@@ -49,6 +49,7 @@ const SSH_EVENT_KEYS: Record<string, TranslationKey> = {
   send_data_failed: 'terminal.status.sendDataFailed',
   resize_failed: 'terminal.status.resizeFailed',
   share_session_expired: 'terminal.status.shareSessionExpired',
+  share_expiring_warning: 'terminal.status.shareExpiringWarning',
   share_audit_unavailable: 'terminal.status.shareAuditUnavailable',
 };
 

@@ -19,6 +19,9 @@
     "test:e2e": "playwright test",
     "verify": "pnpm run typecheck && pnpm test && pnpm run build:frontend && pnpm run test:e2e"
   },
+  "knip": {
+    "ignoreDependencies": ["cloudflare", "cloudflare:sockets"]
+  },
   "keywords": [
     "ssh",
     "cloudflare",

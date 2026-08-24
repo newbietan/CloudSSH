@@ -213,6 +213,7 @@ export class SSHSession {
   private shareAuditStarted = false;
   private shareAuditClosed = false;
   private shareSessionExpiryTimer: ReturnType<typeof setTimeout> | null = null;
+  private shareExpiryWarningTimer: ReturnType<typeof setTimeout> | null = null;
   private sftpAuditContext = new Map<string, Record<string, unknown>>();
   private readonly openShellOnAuth: boolean;
   private readonly ownsWebSocket: boolean;
@@ -2873,6 +2874,19 @@ export class SSHSession {
         this.close(true);
         return;
       }
+      // 到期前 60s 预警：挂机用户往往无感知，提前明示会话即将结束
+      const expiryWarningLeadMs = 60_000;
+      const emitExpiryWarning = () => {
+        this.sendStatus('分享会话即将结束（剩余不足 1 分钟）', 'share_expiring_warning');
+      };
+      if (remaining > expiryWarningLeadMs) {
+        this.shareExpiryWarningTimer = setTimeout(
+          emitExpiryWarning,
+          remaining - expiryWarningLeadMs
+        );
+      } else {
+        emitExpiryWarning();
+      }
       this.shareSessionExpiryTimer = setTimeout(() => {
         this.sendError('分享会话已达到最长使用时间', 'share_session_expired');
         this.close(true);
@@ -3378,6 +3392,10 @@ export class SSHSession {
     if (this.shareSessionExpiryTimer) {
       clearTimeout(this.shareSessionExpiryTimer);
       this.shareSessionExpiryTimer = null;
+    }
+    if (this.shareExpiryWarningTimer) {
+      clearTimeout(this.shareExpiryWarningTimer);
+      this.shareExpiryWarningTimer = null;
     }
     if (this.shareAuditFlushTimer) {
       clearTimeout(this.shareAuditFlushTimer);
