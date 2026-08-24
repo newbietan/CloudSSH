@@ -1,3 +1,6 @@
+// 渲染模板中的 innerHTML 站点均带 `pi-lens-ignore: no-inner-html` 内联抑制：
+// 动态值均经 escapeHtml 转义或来自可信 i18n 词条，无用户输入直插；
+// GitHub Actions 质量门禁不含该规则（AGENTS.md #27）。
 import { localizedApiError } from './api-errors';
 import { copyTextToClipboard } from './clipboard';
 import { t } from './i18n';
@@ -32,14 +35,19 @@ function formatTime(value: number | null): string {
   return value ? new Date(value).toLocaleString() : '—';
 }
 
-const KNOWN_SHARE_STATUSES = new Set(['unused', 'claimed', 'active', 'closed', 'revoked', 'expired']);
+const KNOWN_SHARE_STATUSES = new Set([
+  'unused',
+  'claimed',
+  'active',
+  'closed',
+  'revoked',
+  'expired',
+]);
 
 /** 审计视图顶部的分享状态本地化；未知值原样透出便于排查。 */
 function formatShareStatus(status: string | undefined): string {
   if (!status) return '—';
-  return KNOWN_SHARE_STATUSES.has(status)
-    ? t(`share.status.${status}` as never)
-    : status;
+  return KNOWN_SHARE_STATUSES.has(status) ? t(`share.status.${status}` as never) : status;
 }
 
 function stripTerminalControls(value: string): string {
@@ -108,9 +116,9 @@ export class ShareManager {
       </div>
     `;
     document.body.appendChild(modal);
-    modal.querySelectorAll('[data-share-close]').forEach((element) => {
+    for (const element of modal.querySelectorAll('[data-share-close]')) {
       element.addEventListener('click', () => this.close());
-    });
+    }
     modal.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') this.close();
     });
@@ -145,7 +153,8 @@ export class ShareManager {
         expiresAt?: number;
         error?: string;
       };
-      if (!response.ok || !payload.url) throw new Error(localizedApiError(payload, 'share.createFailed'));
+      if (!response.ok || !payload.url)
+        throw new Error(localizedApiError(payload, 'share.createFailed'));
       const linkBox = document.getElementById('share-created-link');
       if (linkBox) {
         linkBox.classList.remove('hidden');
@@ -184,8 +193,7 @@ export class ShareManager {
     try {
       const response = await fetch(`/api/servers/${this.serverId}/shares`);
       const shares = (await response.json()) as ShareSummary[] & { error?: string };
-      if (!response.ok)
-        throw new Error(localizedApiError(shares, 'share.loadFailed'));
+      if (!response.ok) throw new Error(localizedApiError(shares, 'share.loadFailed'));
       if (shares.length === 0) {
         // pi-lens-ignore: no-inner-html
         container.innerHTML = `<p class="text-xs text-muted">${t('share.none')}</p>`;
@@ -210,12 +218,16 @@ export class ShareManager {
         </div>`;
         })
         .join('');
-      container.querySelectorAll<HTMLElement>('[data-share-audit]').forEach((button) => {
-        button.addEventListener('click', () => void this.loadAudit(button.dataset.shareAudit!));
-      });
-      container.querySelectorAll<HTMLElement>('[data-share-revoke]').forEach((button) => {
-        button.addEventListener('click', () => void this.revokeShare(button.dataset.shareRevoke!));
-      });
+      for (const button of container.querySelectorAll<HTMLElement>('[data-share-audit]')) {
+        const shareId = button.dataset.shareAudit;
+        if (!shareId) continue;
+        button.addEventListener('click', () => void this.loadAudit(shareId));
+      }
+      for (const button of container.querySelectorAll<HTMLElement>('[data-share-revoke]')) {
+        const shareId = button.dataset.shareRevoke;
+        if (!shareId) continue;
+        button.addEventListener('click', () => void this.revokeShare(shareId));
+      }
     } catch (error) {
       // pi-lens-ignore: no-inner-html
       container.innerHTML = `<p class="text-xs text-error">${escapeHtml(error instanceof Error ? error.message : t('share.loadFailed'))}</p>`;
@@ -304,12 +316,10 @@ export class ShareManager {
     if (event.eventType === 'sftp.request' || event.eventType === 'sftp.result') {
       const operation = String(details.operation || 'sftp');
       const path = String(details.path || details.oldPath || '');
-      const result =
-        event.eventType === 'sftp.result'
-          ? details.success === true
-            ? t('share.auditSuccess')
-            : t('share.auditFailure')
-          : t('share.auditRequested');
+      let result = t('share.auditRequested');
+      if (event.eventType === 'sftp.result') {
+        result = details.success === true ? t('share.auditSuccess') : t('share.auditFailure');
+      }
       return `SFTP ${operation}${path ? ` ${path}` : ''} · ${result}`;
     }
     return t(`share.event.${event.eventType}` as never);
