@@ -37,5 +37,7 @@ export function localizedApiError(payload: unknown, fallbackKey: TranslationKey)
       ? (payload as ApiErrorPayload).error
       : undefined;
   if (!message) return t(fallbackKey);
-  return SERVER_MESSAGE_KEYS[message] ?? message;
+  const mapped = SERVER_MESSAGE_KEYS[message];
+  // 命中映射表时必须经 t() 翻译，直接返回键名会泄漏到界面（回归见 E2E share-session）
+  return mapped ? t(mapped) : message;
 }

@@ -20,7 +20,8 @@ test('分享凭证立即离开地址栏，并且只在接收者明确确认后�
 
   await page.locator('#share-claim-btn').click();
 
-  await expect(page.locator('#share-claim-error')).toContainText('already been used');
+  // 断言本地化后的错误文案（en/zh 双语兼容），不耦合具体措辞
+  await expect(page.locator('#share-claim-error')).toContainText(/claimed or revoked|已被领取或已撤销/);
   expect(claimCount).toBe(1);
   expect(page.url()).not.toContain(token);
 });
