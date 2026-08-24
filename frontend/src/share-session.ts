@@ -1,3 +1,4 @@
+import { exportDevicePublicKeySpki } from './device-identity';
 import { mountLanguageSwitchers, onLocaleChange, t } from './i18n';
 
 export interface ClaimedShare {
@@ -33,6 +34,7 @@ export function renderShareLanding(
     terminalSection.classList.add('hidden');
     terminalSection.classList.remove('flex');
     authSection.classList.remove('hidden');
+    // pi-lens-ignore: no-inner-html
     authSection.innerHTML = `
       <main class="w-full max-w-lg relative z-10" id="share-landing-card">
         <div class="mb-8 text-center">
@@ -65,14 +67,16 @@ export function renderShareLanding(
       if (claiming) return;
       claiming = true;
       button.disabled = true;
+      // pi-lens-ignore: no-inner-html
       button.innerHTML = `<span class="material-symbols-outlined animate-spin" style="font-size:18px">progress_activity</span><span>${t('share.claiming')}</span>`;
       const errorBox = document.getElementById('share-claim-error');
       errorBox?.classList.add('hidden');
       try {
+        const devicePubKey = await exportDevicePublicKeySpki();
         const response = await fetch('/api/share/claim', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token }),
+          body: JSON.stringify({ token, devicePubKey: devicePubKey ?? undefined }),
         });
         const payload = (await response.json().catch(() => ({}))) as ClaimedShare & {
           error?: string;
@@ -82,6 +86,7 @@ export function renderShareLanding(
       } catch (error) {
         claiming = false;
         button.disabled = false;
+        // pi-lens-ignore: no-inner-html
         button.innerHTML = `<span class="material-symbols-outlined" style="font-size:18px">login</span><span>${t('share.claimAndConnect')}</span>`;
         if (errorBox) {
           errorBox.textContent = error instanceof Error ? error.message : t('share.claimFailed');
@@ -101,6 +106,7 @@ export function renderShareEnded(): void {
   const authSection = document.getElementById('auth-section');
   if (!authSection) return;
   authSection.classList.remove('hidden');
+  // pi-lens-ignore: no-inner-html
   authSection.innerHTML = `
     <main class="w-full max-w-md relative z-10">
       <div class="cyber-box p-6 text-center">

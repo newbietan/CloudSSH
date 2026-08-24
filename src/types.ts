@@ -246,4 +246,8 @@ export interface SessionCreatedMessage {
 export interface SessionResumedMessage {
   type: 'session_resumed';
   sessionId: string;
+  /** 每次成功恢复后轮换的新 resume token；旧 token 立即失效。 */
+  resumeToken?: string;
+  /** 断线期间保留的 SFTP attach URL，供前端在恢复后重建 SFTP 数据通道。 */
+  sftpAttachUrl?: string;
 }

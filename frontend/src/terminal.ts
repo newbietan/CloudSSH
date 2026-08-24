@@ -7,6 +7,7 @@ import { TrzszFilter } from 'trzsz';
 import '@xterm/xterm/css/xterm.css';
 import { AuthChallengeDialog, type AuthChallengeSubmission } from './auth-challenge-dialog';
 import { copyTextToClipboard } from './clipboard';
+import { createResumeChallengeParams } from './device-identity';
 import { type TranslationKey, t } from './i18n';
 import {
   type ChangedHostKeyMessage,
@@ -76,6 +77,8 @@ interface ConnectOptions {
 
 interface WebSocketConnectOptions extends ConnectOptions {
   reconnectFactory?: ReconnectWebSocketFactory;
+  /** resume-only：仅允许秒级恢复，不回退完整重连（分享会话 ticket 已一次性消费）。 */
+  resumeOnly?: boolean;
 }
 
 interface TerminalCell {
@@ -162,6 +165,8 @@ export class SSHTerminal {
   private pendingHostKeyChangeSocket: WebSocket | null = null;
   private activeSessionId: string | null = null;
   private activeResumeToken: string | null = null;
+  /** 分享会话专用：断线后只走秒级恢复路径，失败则宣告分享结束。 */
+  private resumeOnlyMode: boolean = false;
   private readonly contextMenuPasteListener = async (event: MouseEvent): Promise<void> => {
     if (window.matchMedia?.('(pointer: coarse)').matches) return;
     event.preventDefault();
@@ -723,7 +728,7 @@ export class SSHTerminal {
   private createSearchButton(
     extraClass: string,
     titleKey: TranslationKey,
-    icon: string,
+    icon: string
   ): HTMLButtonElement {
     const button = document.createElement('button');
     button.className = `cloudssh-search-btn ${extraClass}`;
@@ -740,7 +745,7 @@ export class SSHTerminal {
     target: HTMLElement,
     dotClass: string,
     text: string,
-    dotTag: 'div' | 'span' = 'div',
+    dotTag: 'div' | 'span' = 'div'
   ): void {
     target.textContent = '';
     const dot = document.createElement(dotTag);
@@ -946,6 +951,7 @@ export class SSHTerminal {
     this.lastConfig = null;
     this.lastHostInfo = hostInfo ?? null;
     this.reconnectWebSocketFactory = options.reconnectFactory ?? null;
+    this.resumeOnlyMode = options.resumeOnly === true;
     this.canReconnect = Boolean(this.reconnectWebSocketFactory);
     this.sessionReady = false;
     this.ws = ws;
@@ -1033,6 +1039,14 @@ export class SSHTerminal {
           }
 
           if (msg.type === 'session_resumed') {
+            // 服务端每次成功恢复都会轮换 resume token，旧 token 即刻失效
+            if (typeof msg.resumeToken === 'string' && msg.resumeToken) {
+              this.activeResumeToken = msg.resumeToken;
+            }
+            // 断线期间保留的 SFTP attach URL，用于恢复后重建 SFTP 数据通道
+            if (typeof msg.sftpAttachUrl === 'string' && msg.sftpAttachUrl) {
+              this.sftpAttachUrl = msg.sftpAttachUrl;
+            }
             this.sessionReady = true;
             this.reconnectAttempts = 0;
             this.terminal.writeln(`\x1b[32m[*] ${t('terminal.sessionResumed')}\x1b[0m`);
@@ -1498,7 +1512,7 @@ export class SSHTerminal {
   }
 
   private disposeConnectionDisposables(): void {
-    this.disposables.forEach((d) => d.dispose());
+    for (const d of this.disposables) d.dispose();
     this.disposables = [];
   }
 
@@ -1536,7 +1550,7 @@ export class SSHTerminal {
 
   private hasReconnectStrategy(): boolean {
     return (
-      this.canReconnect &&
+      (this.canReconnect || this.resumeOnlyMode) &&
       this.reconnectAttempts < this.maxReconnectAttempts &&
       Boolean(
         this.lastConfig ||
@@ -1546,16 +1560,27 @@ export class SSHTerminal {
     );
   }
 
-  private tryResumeSession(): boolean {
+  private async tryResumeSession(): Promise<boolean> {
     if (!this.activeSessionId || !this.activeResumeToken) return false;
     try {
+      const params = new URLSearchParams({
+        session: this.activeSessionId,
+        resume_token: this.activeResumeToken,
+        cols: String(this.terminal.cols),
+        rows: String(this.terminal.rows),
+      });
+      // 设备绑定挑战签名：浏览器不支持或密钥不可用时省略；
+      // 服务端仅对认领时绑定了公钥的分享会话强制校验。
+      const challenge = await createResumeChallengeParams(this.activeSessionId);
+      if (challenge) {
+        params.set('did_nonce', challenge.nonce);
+        params.set('did_ts', String(challenge.timestamp));
+        params.set('did_sig', challenge.signature);
+      }
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const resumeUrl = `${protocol}//${window.location.host}/api/ssh?session=${encodeURIComponent(
-        this.activeSessionId
-      )}&resume_token=${encodeURIComponent(this.activeResumeToken)}&cols=${this.terminal.cols}&rows=${
-        this.terminal.rows
-      }`;
-      const socket = new WebSocket(resumeUrl);
+      const socket = new WebSocket(
+        `${protocol}//${window.location.host}/api/ssh?${params.toString()}`
+      );
       socket.binaryType = 'arraybuffer';
       this.resetActiveConnection();
       this.ws = socket;
@@ -1573,12 +1598,55 @@ export class SSHTerminal {
 
     this.reconnectAttempts++;
 
-    // 首次重连时，如果持有断线保持凭据，优先进行 1-RTT 毫秒级无缝恢复
+    // 分享会话（resume-only）：ticket 已一次性消费，完整重连不可能也不被允许，
+    // 仅允许秒级恢复，有限重试后宣告分享结束。
+    if (this.resumeOnlyMode) {
+      this.scheduleShareResume();
+      return;
+    }
+
+    // 首次重连时，如果持有断线保持凭据，优先进行 1-RTT 毫秒级无缝恢复；
+    // 恢复失败（含服务端拒绝）回退到常规指数退避完整重连。
     if (this.reconnectAttempts === 1 && this.activeSessionId && this.activeResumeToken) {
       this.terminal.writeln(`\x1b[32m[+] ${t('terminal.reconnecting')}\x1b[0m`);
-      const resumed = this.tryResumeSession();
-      if (resumed) return;
+      void this.tryResumeSession().then((resumed) => {
+        if (!resumed) this.scheduleFallbackReconnect();
+      });
+      return;
     }
+
+    this.scheduleFallbackReconnect();
+  }
+
+  /** 分享会话的短间隔秒级恢复循环；超出尝试上限后输出终态并停止。 */
+  private scheduleShareResume(): void {
+    if (!this.hasReconnectStrategy()) {
+      this.finishShareResume();
+      return;
+    }
+    const delay = Math.min(1000 * this.reconnectAttempts, 3000);
+    this.terminal.writeln(`\x1b[33m[*] ${t('terminal.resumingSession')}\x1b[0m`);
+
+    this.reconnectTimeout = setTimeout(() => {
+      this.reconnectTimeout = null;
+      void this.tryResumeSession().then((resumed) => {
+        // 构造失败立即终态；构造成功后的失败由 onclose 驱动下一轮恢复
+        if (!resumed) this.finishShareResume();
+      });
+    }, delay);
+  }
+
+  /** 分享会话恢复彻底失败：清理凭据并输出终态提示。 */
+  private finishShareResume(): void {
+    this.resumeOnlyMode = false;
+    this.activeSessionId = null;
+    this.activeResumeToken = null;
+    this.terminal.writeln(`\x1b[31m[!] ${t('terminal.shareResumeEnded')}\x1b[0m`);
+  }
+
+  /** 常规指数退避重连：完整重建连接（lastConfig 或 factory）。 */
+  private scheduleFallbackReconnect(): void {
+    this.clearReconnectTimeout();
 
     const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 30000);
 
@@ -1592,7 +1660,7 @@ export class SSHTerminal {
         this.terminal.writeln(`\x1b[32m[+] ${t('terminal.reconnecting')}\x1b[0m`);
         try {
           await this.connect(this.lastConfig, { resetDisplay: false });
-        } catch (e) {
+        } catch {
           this.terminal.writeln(`\x1b[31m[!] ${t('terminal.reconnectFailed')}\x1b[0m`);
         }
       } else if (this.reconnectWebSocketFactory) {
@@ -1629,6 +1697,7 @@ export class SSHTerminal {
     this.lastConfig = null;
     this.lastHostInfo = null;
     this.reconnectWebSocketFactory = null;
+    this.resumeOnlyMode = false;
     this.activeSessionId = null;
     this.activeResumeToken = null;
     this.resetTerminalDisplay();
@@ -1661,7 +1730,7 @@ export class SSHTerminal {
     this.viewportRestoreFrame = null;
     this.imeTextarea = null;
     this.themeCleanup();
-    this.terminalDisposables.forEach((d) => d.dispose());
+    for (const d of this.terminalDisposables) d.dispose();
     this.terminalDisposables = [];
     this.terminal.dispose();
   }

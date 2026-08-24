@@ -5,6 +5,10 @@ import {
   type SSHConnectionConfig,
   type TerminalSize,
 } from '../types';
+import {
+  buildResumeChallengeMessage,
+  RESUME_CHALLENGE_MAX_CLOCK_SKEW_MS,
+} from '../share-resume-schema';
 import { checkHostResolved } from './dns-check';
 import { SSHSession } from './ssh-session';
 
@@ -49,6 +53,26 @@ interface DetachedSessionRecord {
   detachedAt: number;
   graceTimeout: ReturnType<typeof setTimeout>;
   sftpAttachUrl?: string;
+  /** 认领时绑定的设备公钥（SPKI base64url）；存在时恢复必须通过挑战验签。 */
+  devicePubKey?: string;
+  /** 本 detached 周期内已消费的挑战 nonce，防重放；记录销毁时一并丢弃。 */
+  usedNonces: Set<string>;
+}
+
+function base64UrlDecode(value: string): Uint8Array {
+  const b64 = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function resumeReject(status: number, error: string): Response {
+  return new Response(JSON.stringify({ error }), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 export class SSHSessionDO {
@@ -66,6 +90,9 @@ export class SSHSessionDO {
   private detachedSessions: Map<string, DetachedSessionRecord> = new Map();
   private sessionToSessionId: Map<SSHSession, string> = new Map();
   private sessionToResumeToken: Map<SSHSession, string> = new Map();
+  /** 分享连接握手时由 Worker 服务端链路下发的认领设备公钥（客户端不可注入）。 */
+  private pendingDevicePubKeys: Map<WebSocket, string> = new Map();
+  private sessionToDeviceKey: Map<SSHSession, string> = new Map();
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -73,7 +100,12 @@ export class SSHSessionDO {
   }
 
   async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url);
+    let url: URL;
+    try {
+      url = new URL(request.url);
+    } catch {
+      return new Response('Invalid request', { status: 400 });
+    }
     if (url.pathname === '/internal/revoke-share' && request.method === 'POST') {
       const body = await request.json<{ shareId?: string }>();
       if (!body.shareId) return new Response('Invalid share', { status: 400 });
@@ -84,7 +116,16 @@ export class SSHSessionDO {
         session.close(true);
         try {
           ws.close(1000, 'Shared session revoked');
-        } catch {}
+        } catch {
+          /* 客户端连接可能已关闭 */
+        }
+      }
+      // 撤销必须同时覆盖断线保持期：detached 会话不在 this.sessions 中，
+      // 若不在此处销毁，撤销后仍可在宽限期内凭旧凭据恢复。
+      for (const [sessionId, record] of this.detachedSessions) {
+        if (!record.session.belongsToShare(body.shareId)) continue;
+        revoked = true;
+        this.destroyDetachedRecord(sessionId, record);
       }
       return Response.json({ success: true, revoked });
     }
@@ -132,6 +173,11 @@ export class SSHSessionDO {
     const colo = request.headers.get('x-cloudflare-colo') || 'UNKNOWN';
     this.websocketColos.set(server, colo);
     this.pendingSessionNames.set(server, sessionName);
+
+    const shareDeviceKey = request.headers.get('x-share-device-key');
+    if (shareDeviceKey) {
+      this.pendingDevicePubKeys.set(server, shareDeviceKey);
+    }
 
     this.state.acceptWebSocket(server);
     const attachToken = crypto.randomUUID();
@@ -259,7 +305,7 @@ export class SSHSessionDO {
   async webSocketClose(
     ws: WebSocket,
     code: number,
-    reason: string,
+    _reason: string,
     wasClean: boolean
   ): Promise<void> {
     const session = this.sessions.get(ws);
@@ -286,6 +332,9 @@ export class SSHSessionDO {
           chainSessions: chain,
           detachedAt: Date.now(),
           graceTimeout,
+          sftpAttachUrl: session.getSFTPAttachUrl(),
+          devicePubKey: this.sessionToDeviceKey.get(session),
+          usedNonces: new Set<string>(),
         });
 
         // 保持后台受保护
@@ -300,6 +349,7 @@ export class SSHSessionDO {
         // 主动退出（1000）或未就绪断开：立即完全销毁
         for (const item of [...chain].reverse()) item.close(code === 1000);
         this.deleteAttachTokensForSession(session);
+        this.forgetSessionCredentials(session);
         if (sessionId) {
           this.cleanupDetachedSession(sessionId);
         }
@@ -319,6 +369,7 @@ export class SSHSessionDO {
     this.pendingAttachUrls.delete(ws);
     this.websocketColos.delete(ws);
     this.pendingSessionNames.delete(ws);
+    this.pendingDevicePubKeys.delete(ws);
   }
 
   async webSocketError(ws: WebSocket, error: unknown): Promise<void> {
@@ -326,26 +377,43 @@ export class SSHSessionDO {
     await this.webSocketClose(ws, 1011, 'Error', false);
   }
 
-  private handleResumeRequest(
+  private async handleResumeRequest(
     request: Request,
     url: URL,
     sessionId: string,
     resumeToken: string
-  ): Response {
+  ): Promise<Response> {
     const detached = this.detachedSessions.get(sessionId);
     if (!detached) {
-      return new Response(JSON.stringify({ error: 'Session expired or not found' }), {
-        status: 404,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return resumeReject(404, 'Session expired or not found');
     }
 
     if (detached.resumeToken !== resumeToken) {
-      return new Response(JSON.stringify({ error: 'Invalid resume token' }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      void this.auditResumeDenied(detached, 'invalid_token');
+      return resumeReject(403, 'Invalid resume token');
     }
+
+    // 分享会话附加策略校验：绝对过期复核 + 设备绑定挑战验签。
+    const policy = detached.session.getSessionPolicy();
+    if (policy?.source === 'share') {
+      if (Date.now() >= policy.sessionExpiresAt) {
+        // 宽限期内到达分享会话绝对结束时间：立即终结，不再允许恢复。
+        this.destroyDetachedRecord(sessionId, detached);
+        void this.auditResumeDenied(detached, 'expired');
+        return resumeReject(403, 'Share session expired');
+      }
+      if (detached.devicePubKey) {
+        const verification = await this.verifyResumeDeviceSignature(detached, url);
+        if (!verification.ok) {
+          void this.auditResumeDenied(detached, verification.reason);
+          return resumeReject(403, 'Device verification failed');
+        }
+      }
+    }
+
+    // 全部验证通过：轮换 resume token，旧 token 即刻失效，缩小泄露重放窗口。
+    const nextToken = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
+    this.sessionToResumeToken.set(detached.session, nextToken);
 
     // 取消销毁定时器
     clearTimeout(detached.graceTimeout);
@@ -369,7 +437,10 @@ export class SSHSessionDO {
 
     queueMicrotask(async () => {
       try {
-        await session.reattachWebSocket(server, newSize);
+        await session.reattachWebSocket(server, newSize, {
+          resumeToken: nextToken,
+          sftpAttachUrl: detached.sftpAttachUrl,
+        });
       } catch (e) {
         console.error('Failed to reattach session:', e);
       }
@@ -381,15 +452,105 @@ export class SSHSessionDO {
     } as any);
   }
 
+  /**
+   * 分享会话设备绑定验签：客户端用 claim 时绑定的非可导出私钥对
+   * {sessionId, nonce, timestamp} 规范串签名；nonce 单次消费防重放。
+   */
+  private async verifyResumeDeviceSignature(
+    detached: DetachedSessionRecord,
+    url: URL
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const nonce = url.searchParams.get('did_nonce');
+    const sig = url.searchParams.get('did_sig');
+    const ts = Number(url.searchParams.get('did_ts'));
+
+    if (!nonce || !/^[A-Za-z0-9]{16,128}$/.test(nonce)) {
+      return { ok: false, reason: 'missing_nonce' };
+    }
+    if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > RESUME_CHALLENGE_MAX_CLOCK_SKEW_MS) {
+      return { ok: false, reason: 'timestamp_skew' };
+    }
+    if (!sig || !/^[A-Za-z0-9_-]{64,1024}$/.test(sig)) {
+      return { ok: false, reason: 'missing_signature' };
+    }
+    if (detached.usedNonces.has(nonce)) {
+      return { ok: false, reason: 'nonce_replayed' };
+    }
+    // 验签前先消费 nonce：handleResumeRequest 含异步段，并发请求可能
+    // 在验签间隙交错；预先占位保证同一 challenge 只能通过一次。
+    detached.usedNonces.add(nonce);
+
+    try {
+      const publicKey = await crypto.subtle.importKey(
+        'spki',
+        base64UrlDecode(detached.devicePubKey!),
+        { name: 'ECDSA', namedCurve: 'P-256' },
+        false,
+        ['verify']
+      );
+      const message = buildResumeChallengeMessage(detached.sessionId, nonce, ts);
+      const valid = await crypto.subtle.verify(
+        { name: 'ECDSA', hash: 'SHA-256' },
+        publicKey,
+        base64UrlDecode(sig),
+        new TextEncoder().encode(message)
+      );
+      if (!valid) {
+        return { ok: false, reason: 'signature_invalid' };
+      }
+    } catch {
+      return { ok: false, reason: 'verification_error' };
+    }
+
+    return { ok: true };
+  }
+
+  /** 恢复被拒的审计事件（尽力而为；ShareDO 非活跃态会拒绝写入，静默忽略）。 */
+  private auditResumeDenied(record: DetachedSessionRecord, reason: string): void {
+    const policy = record.session.getSessionPolicy();
+    if (policy?.source !== 'share' || !this.env.SSH_SHARE) return;
+    try {
+      const stub = this.env.SSH_SHARE.get(this.env.SSH_SHARE.idFromName(policy.shareRef));
+      const promise = stub
+        .fetch(
+          new Request('http://internal/internal/audit/event', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              eventType: 'share.resume_denied',
+              details: { reason, sessionId: record.sessionId },
+            }),
+          })
+        )
+        .then(() => undefined)
+        .catch(() => undefined);
+      this.state.waitUntil?.(promise);
+    } catch {
+      /* 审计失败不影响拒绝响应 */
+    }
+  }
+
+  /** 彻底销毁一个 detached 记录：取消定时器、关闭链路并清空全部凭据映射。 */
+  private destroyDetachedRecord(sessionId: string, record: DetachedSessionRecord): void {
+    clearTimeout(record.graceTimeout);
+    this.detachedSessions.delete(sessionId);
+    for (const item of [...record.chainSessions].reverse()) {
+      item.close(false);
+    }
+    this.deleteAttachTokensForSession(record.session);
+    this.forgetSessionCredentials(record.session);
+  }
+
+  private forgetSessionCredentials(session: SSHSession): void {
+    this.sessionToSessionId.delete(session);
+    this.sessionToResumeToken.delete(session);
+    this.sessionToDeviceKey.delete(session);
+  }
+
   private cleanupDetachedSession(sessionId: string): void {
     const detached = this.detachedSessions.get(sessionId);
     if (detached) {
-      clearTimeout(detached.graceTimeout);
-      this.detachedSessions.delete(sessionId);
-      for (const item of [...detached.chainSessions].reverse()) {
-        item.close(false);
-      }
-      this.deleteAttachTokensForSession(detached.session);
+      this.destroyDetachedRecord(sessionId, detached);
     }
   }
 
@@ -461,10 +622,18 @@ export class SSHSessionDO {
               type: 'status',
               event: 'jump_hop_connecting',
               message: `正在连接跳板服务器 ${hop.name}`,
-              params: { host: hop.host, port: hop.port, name: hop.name },
+              params: {
+                index: index + 1,
+                total: jumpHosts.length,
+                name: hop.name,
+                host: hop.host,
+                port: hop.port,
+              },
             })
           );
-        } catch {}
+        } catch {
+          /* 通知失败不阻断跳板握手 */
+        }
         const hopSession = new SSHSession(
           ws,
           transport,
@@ -501,7 +670,9 @@ export class SSHSessionDO {
               params: { host: config.host, port: config.port },
             })
           );
-        } catch {}
+        } catch {
+          /* 通知失败不阻断目标连接 */
+        }
       }
       const session = new SSHSession(
         ws,
@@ -525,6 +696,10 @@ export class SSHSessionDO {
         crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
       this.sessionToSessionId.set(session, tokenSessionId);
       this.sessionToResumeToken.set(session, resumeToken);
+      const shareDeviceKey = this.pendingDevicePubKeys.get(ws);
+      if (shareDeviceKey) {
+        this.sessionToDeviceKey.set(session, shareDeviceKey);
+      }
 
       // 向前端发送双段延迟的物理基准延迟与 session_created 凭据
       try {
@@ -537,7 +712,9 @@ export class SSHSessionDO {
             expiresIn: 60,
           })
         );
-      } catch {}
+      } catch {
+        /* 凭据发送失败时由后续错误路径兜底 */
+      }
       if (attachToken) {
         this.sftpAttachTokens.set(attachToken, session);
       } else if (sftpAttachUrl) {
@@ -546,6 +723,7 @@ export class SSHSessionDO {
       }
       this.pendingTerminalSizes.delete(ws);
       this.pendingAttachUrls.delete(ws);
+      this.pendingDevicePubKeys.delete(ws);
 
       await session.startHandshake();
     } catch (error) {
@@ -575,7 +753,7 @@ export class SSHSessionDO {
     if (size) this.pendingTerminalSizes.set(ws, size);
   }
 
-  private handleSFTPAttach(request: Request, url: URL): Response {
+  private handleSFTPAttach(_request: Request, url: URL): Response {
     const token = url.searchParams.get('token');
     const session = token ? this.sftpAttachTokens.get(token) : null;
     if (!session) {
@@ -595,7 +773,12 @@ export class SSHSessionDO {
   }
 
   private buildSFTPAttachUrl(baseUrl: URL, sessionName: string, token: string): string {
-    const attachUrl = new URL(baseUrl.toString());
+    let attachUrl: URL;
+    try {
+      attachUrl = new URL(baseUrl.toString());
+    } catch {
+      return baseUrl.toString();
+    }
     attachUrl.protocol =
       baseUrl.protocol === 'https:' || baseUrl.protocol === 'wss:' ? 'wss:' : 'ws:';
     attachUrl.pathname = '/api/ssh/sftp';

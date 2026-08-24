@@ -237,6 +237,9 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'terminal.reconnecting': 'Reconnecting…',
   'terminal.reconnectFailed': 'Reconnect failed',
   'terminal.sessionResumed': 'Session resumed successfully',
+  'terminal.resumingSession': 'Attempting to resume session…',
+  'terminal.shareResumeEnded':
+    'Connection lost and could not be resumed. This shared session has ended.',
   'terminal.hostKeyChangeTitle': 'SSH host fingerprint changed',
   'terminal.hostKeyChangeMessage':
     'Target host: {host}:{port}\n\nKnown fingerprint: {known}\nNew fingerprint: {actual} ({keyType})\n\nThis may be caused by a server reinstall or host-key rotation, but it can also indicate interception. Verify the new fingerprint through a trusted channel first.',

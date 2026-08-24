@@ -655,7 +655,9 @@ async function handleSnippetsRoute(request: Request, url: URL, env: Env): Promis
   }
   const stub = getUserDBStub(env, user.github_id);
   if (url.pathname === '/api/snippets' && request.method === 'GET') {
-    return stub.fetch(new Request(`http://internal/internal/snippets?user_id=${user.id}`, { method: 'GET' }));
+    return stub.fetch(
+      new Request(`http://internal/internal/snippets?user_id=${user.id}`, { method: 'GET' })
+    );
   }
   if (url.pathname === '/api/snippets' && request.method === 'POST') {
     let body: Record<string, unknown>;
@@ -665,7 +667,13 @@ async function handleSnippetsRoute(request: Request, url: URL, env: Env): Promis
       return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
     }
     body.user_id = user.id;
-    return stub.fetch(new Request('http://internal/internal/snippets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
+    return stub.fetch(
+      new Request('http://internal/internal/snippets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    );
   }
   const snippetMatch = url.pathname.match(/^\/api\/snippets\/(\d+)$/);
   if (snippetMatch) {
@@ -678,10 +686,22 @@ async function handleSnippetsRoute(request: Request, url: URL, env: Env): Promis
         return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
       }
       body.user_id = user.id;
-      return stub.fetch(new Request(`http://internal/internal/snippets/${snippetId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
+      return stub.fetch(
+        new Request(`http://internal/internal/snippets/${snippetId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+      );
     }
     if (request.method === 'DELETE') {
-      return stub.fetch(new Request(`http://internal/internal/snippets/${snippetId}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: user.id }) }));
+      return stub.fetch(
+        new Request(`http://internal/internal/snippets/${snippetId}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: user.id }),
+        })
+      );
     }
   }
   return Response.json({ error: 'Not Found' }, { status: 404 });
@@ -881,6 +901,12 @@ async function handleResumeSSHConnection(
     return new Response('Forbidden', { status: 403 });
   }
 
+  // 与 direct / one-time-token 升级路径保持一致的强制 GitHub 登录门禁：
+  // REQUIRE_GITHUB_AUTH=true 时 resume 凭据不能替代有效会话。
+  if (isGitHubAuthRequired(env) && !(await getAuthenticatedUser(request, env))) {
+    return Response.json({ error: 'GitHub authentication required' }, { status: 401 });
+  }
+
   const doId = env.SSH_SESSION.idFromName(sessionName);
   const stub = env.SSH_SESSION.get(doId);
 
@@ -896,7 +922,6 @@ async function handleResumeSSHConnection(
   return stub.fetch(new Request(doUrl.toString(), { headers }));
 }
 
-
 async function handleShareClaim(request: Request, url: URL, env: Env): Promise<Response> {
   if (!isSSHSharingEnabled(env)) {
     return Response.json({ error: 'SSH sharing is disabled' }, { status: 404 });
@@ -908,14 +933,21 @@ async function handleShareClaim(request: Request, url: URL, env: Env): Promise<R
       headers: { 'Retry-After': String(retryAfter) },
     });
   }
-  let body: { token?: string };
+  let body: { token?: string; devicePubKey?: string };
   try {
-    body = await request.json<{ token?: string }>();
+    body = await request.json<{ token?: string; devicePubKey?: string }>();
   } catch {
     return Response.json({ error: 'Invalid request body' }, { status: 400 });
   }
   if (typeof body.token !== 'string' || !/^[A-Za-z0-9_-]{40,128}$/.test(body.token)) {
     return Response.json({ error: 'Invalid share link' }, { status: 400 });
+  }
+  // 可选的设备绑定公钥（SPKI base64url）；格式非法时直接拒绝，避免静默降级。
+  if (
+    body.devicePubKey !== undefined &&
+    (typeof body.devicePubKey !== 'string' || !/^[A-Za-z0-9_-]{80,600}$/.test(body.devicePubKey))
+  ) {
+    return Response.json({ error: 'Invalid device public key' }, { status: 400 });
   }
   const shareRef = await hashShareToken(body.token);
   const shareStub = env.SSH_SHARE.get(env.SSH_SHARE.idFromName(shareRef));
@@ -923,7 +955,7 @@ async function handleShareClaim(request: Request, url: URL, env: Env): Promise<R
     new Request('http://internal/internal/claim', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: body.token }),
+      body: JSON.stringify({ token: body.token, devicePubKey: body.devicePubKey }),
     })
   );
   if (!claimResponse.ok) return claimResponse;
@@ -1004,9 +1036,10 @@ async function handleShareSSHConnection(
     })
   );
   if (!configResponse.ok) return configResponse;
-  const { config } = await configResponse.json<{
+  const { config, devicePubKey } = await configResponse.json<{
     config: SSHConnectionConfig;
     serverName: string;
+    devicePubKey?: string | null;
   }>();
   if (!config.sessionPolicy || config.sessionPolicy.shareRef !== shareRef) {
     return Response.json({ error: 'Invalid share session policy' }, { status: 500 });
@@ -1028,6 +1061,11 @@ async function handleShareSSHConnection(
   const headers = new Headers(request.headers);
   headers.set('x-cloudflare-colo', (request as any).cf?.colo || 'UNKNOWN');
   headers.set('x-ssh-config', encodeURIComponent(JSON.stringify(config)));
+  // 认领时绑定的设备公钥由服务端链路下发（claim → ShareDO → consume），
+  // 客户端无法注入或替换，断线恢复时以此验签。
+  if (typeof devicePubKey === 'string' && devicePubKey) {
+    headers.set('x-share-device-key', devicePubKey);
+  }
   return sessionStub.fetch(new Request(doUrl.toString(), { headers }));
 }
 

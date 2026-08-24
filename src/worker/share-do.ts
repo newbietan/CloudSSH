@@ -24,6 +24,7 @@ interface ShareStateRow {
   ticket_hash: string | null;
   ticket_expires_at: number | null;
   audit_bytes: number;
+  device_pub_key: string | null;
 }
 
 interface ShareInitBody {
@@ -39,6 +40,16 @@ interface ShareInitBody {
 
 function jsonError(error: string, status: number): Response {
   return Response.json({ error }, { status });
+}
+
+/** 审计详情始终由 appendAudit 以 JSON.stringify 写入；防御性解析避免脏数据抛错。 */
+function safeParseDetails(raw: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }
 
 async function sha256Base64Url(value: string): Promise<string> {
@@ -99,16 +110,23 @@ export class SSHShareDO {
       );
       CREATE INDEX IF NOT EXISTS idx_share_audit_time ON audit_events(occurred_at, id);
     `);
+    // 迁移：认领设备公钥（SPKI base64url，用于断线重连的设备绑定验签）。
+    // 已有环境的表结构通过 ALTER TABLE 补列，列已存在时忽略。
+    try {
+      this.db.exec('ALTER TABLE share_state ADD COLUMN device_pub_key TEXT');
+    } catch {
+      /* column already exists */
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url);
     try {
+      const url = new URL(request.url);
       if (url.pathname === '/internal/init' && request.method === 'POST') {
         return this.initialize(await request.json<ShareInitBody>());
       }
       if (url.pathname === '/internal/claim' && request.method === 'POST') {
-        return this.claim(await request.json<{ token?: string }>());
+        return this.claim(await request.json<{ token?: string; devicePubKey?: string }>());
       }
       if (url.pathname === '/internal/connect/consume' && request.method === 'POST') {
         return this.consumeConnection(
@@ -193,11 +211,16 @@ export class SSHShareDO {
     return Response.json({ success: true });
   }
 
-  private async claim(body: { token?: string }): Promise<Response> {
+  private async claim(body: { token?: string; devicePubKey?: string }): Promise<Response> {
     const share = this.getShare();
     if (!share || typeof body.token !== 'string') return jsonError('Invalid share link', 404);
     if ((await sha256Base64Url(body.token)) !== share.token_hash)
       return jsonError('Invalid share link', 404);
+    // 设备绑定公钥（可选）：格式为 SPKI DER 的 base64url 编码，仅接受合理的长度范围。
+    const devicePubKey =
+      typeof body.devicePubKey === 'string' && /^[A-Za-z0-9_-]{80,600}$/.test(body.devicePubKey)
+        ? body.devicePubKey
+        : null;
     const now = Date.now();
     if (share.status !== 'unused')
       return jsonError('This share link has already been used or revoked', 409);
@@ -212,11 +235,12 @@ export class SSHShareDO {
     const sessionExpiresAt = now + share.max_session_seconds * 1000;
     this.db.exec(
       `UPDATE share_state SET status = 'claimed', claimed_at = ?, session_expires_at = ?,
-       ticket_hash = ?, ticket_expires_at = ? WHERE singleton = 1 AND status = 'unused'`,
+       ticket_hash = ?, ticket_expires_at = ?, device_pub_key = ? WHERE singleton = 1 AND status = 'unused'`,
       now,
       sessionExpiresAt,
       ticketHash,
-      now + CONNECT_TICKET_TTL_MS
+      now + CONNECT_TICKET_TTL_MS,
+      devicePubKey
     );
     const updated = this.getShare();
     if (!updated || updated.status !== 'claimed' || updated.ticket_hash !== ticketHash) {
@@ -293,7 +317,11 @@ export class SSHShareDO {
     await this.appendAudit('session.connecting', {}, now);
     await this.syncOwnerMetadata(active, 'active', { activeAt: now });
     await this.scheduleNextAlarm(active);
-    return Response.json({ config, serverName: active.server_name });
+    return Response.json({
+      config,
+      serverName: active.server_name,
+      devicePubKey: active.device_pub_key ?? null,
+    });
   }
 
   private async appendAuditEvent(body: Record<string, unknown>): Promise<Response> {
@@ -377,7 +405,7 @@ export class SSHShareDO {
       id: event.id,
       occurredAt: event.occurred_at,
       eventType: event.event_type,
-      details: JSON.parse(event.details),
+      details: safeParseDetails(event.details),
     }));
     return Response.json({
       share: {

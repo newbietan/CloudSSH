@@ -369,7 +369,9 @@ function showSharedTerminal(claim: ClaimedShare): void {
   terminal.mount();
   const socket = new WebSocket(claim.wsUrl);
   socket.binaryType = 'arraybuffer';
-  terminal.connectWithWebSocket(socket);
+  // 分享会话：仅允许秒级恢复（ticket 已一次性消费，完整重连不可能），
+  // 恢复彻底失败时在终端内宣告分享结束。
+  terminal.connectWithWebSocket(socket, undefined, { resumeOnly: true });
 }
 
 async function requestSavedServerWebSocket(serverId: number): Promise<WebSocket> {

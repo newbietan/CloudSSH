@@ -25,6 +25,7 @@ import {
   normalizeTerminalSize,
   SESSION_RING_BUFFER_MAX_BYTES,
   type SessionKeys,
+  type SSHSessionPolicy,
   SSH_MSG_CHANNEL_CLOSE,
   SSH_MSG_CHANNEL_DATA,
   SSH_MSG_CHANNEL_EOF,
@@ -1955,7 +1956,9 @@ export class SSHSession {
             try {
               this.ws.send(outputData);
             } catch (e) {
-              this.sendDebug(() => `Send shell output failed: ${e instanceof Error ? e.message : e}`);
+              this.sendDebug(
+                () => `Send shell output failed: ${e instanceof Error ? e.message : e}`
+              );
             }
             this.recordShareTerminalOutput(outputData);
             this.queueLocalWindowAdjust(outputData.length, channel);
@@ -3250,24 +3253,50 @@ export class SSHSession {
     return this.state === 'ready' && !this.closed;
   }
 
+  /** 分享会话策略（非分享会话返回 null）；供 DO 层在恢复时做过期与绑定校验。 */
+  public getSessionPolicy(): SSHSessionPolicy | null {
+    return this.config.sessionPolicy ?? null;
+  }
+
+  /** 本会话的 SFTP attach URL；断线保持期由 DO 记录并在恢复时回传前端。 */
+  public getSFTPAttachUrl(): string | undefined {
+    return this.sftpAttachUrl;
+  }
+
   public async reattachWebSocket(
     newWs: WebSocket,
-    newSize?: TerminalSize | null
+    newSize?: TerminalSize | null,
+    credentials?: { resumeToken?: string; sftpAttachUrl?: string }
   ): Promise<void> {
     this.ws = newWs;
     this.detached = false;
 
-    // 1. 下发会话恢复就绪信号
+    // 恢复 SFTP attach URL（若断线期间丢失），保证恢复后可重建 SFTP 数据通道
+    if (credentials?.sftpAttachUrl && !this.sftpAttachUrl) {
+      this.sftpAttachUrl = credentials.sftpAttachUrl;
+    }
+
+    // 1. 下发会话恢复就绪信号（含轮换后的 resume token 与 SFTP attach URL）
     try {
-      this.ws.send(JSON.stringify({ type: 'session_resumed' }));
-    } catch {}
+      this.ws.send(
+        JSON.stringify({
+          type: 'session_resumed',
+          ...(credentials?.resumeToken ? { resumeToken: credentials.resumeToken } : {}),
+          ...(this.sftpAttachUrl ? { sftpAttachUrl: this.sftpAttachUrl } : {}),
+        })
+      );
+    } catch {
+      /* 新 WebSocket 尚未就绪，忽略 */
+    }
 
     // 2. 补发断线期间暂存的输出数据
     if (this.detachedOutputBuffer.length > 0) {
       for (const chunk of this.detachedOutputBuffer) {
         try {
           this.ws.send(chunk);
-        } catch {}
+        } catch {
+          /* 发送失败不中断补发流程 */
+        }
       }
       this.detachedOutputBuffer = [];
       this.detachedBufferBytes = 0;
