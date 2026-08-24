@@ -346,7 +346,7 @@ describe('SSHSessionDO Share Resume Device-Binding Security', () => {
     expect(res.status).toBe(404);
   });
 
-  it('requires device signatures across disconnect cycles and rotates tokens', async () => {
+  it('tolerates the previous-generation token when a rotation frame is lost across cycles', async () => {
     const { doInstance, internal } = createDo();
     const device = await makeDeviceKeyPair();
     const { session } = createShareSession(Date.now() + 600_000);
@@ -365,12 +365,20 @@ describe('SSHSessionDO Share Resume Device-Binding Security', () => {
     await doInstance.webSocketClose(serverWs, 1006, 'Abnormal', false);
     expect(internal.detachedSessions.has(SESSION_ID)).toBe(true);
 
-    // 旧 token 已失效
-    expect((await doInstance.fetch(resumeRequest())).status).toBe(403);
+    // 完全未知的 token 依旧拒绝（此时记录仍存在 → 403 而非 404）
+    expect(
+      (await doInstance.fetch(resumeRequest({ resume_token: 'f'.repeat(32) }))).status
+    ).toBe(403);
 
-    // 新 token + 全新签名可再次恢复
-    const res = await doInstance.fetch(await signedResumeRequest(device, rotated));
-    expect(res.status).toBe(101);
+    // 客户端携上一代 token（T1）重试：被容忍并再次轮换（current=T2 → T3；
+    // prev 保持为客户端实际持有的 T1，供下一轮再次丢帧时使用）
+    const tolerated = await doInstance.fetch(await signedResumeRequest(device, TOKEN));
+    expect(tolerated.status).toBe(101);
+    expect(internal.sessionToResumeToken.get(session)).not.toBe(rotated);
+
+    // 成功恢复即消费记录：此后任何请求均为 404（单次语义）
+    const consumed = await doInstance.fetch(resumeRequest());
+    expect(consumed.status).toBe(404);
   });
 
   it('rejects resume entirely for share sessions without device binding', async () => {

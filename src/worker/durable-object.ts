@@ -57,6 +57,8 @@ interface DetachedSessionRecord {
   devicePubKey?: string;
   /** 本 detached 周期内已消费的挑战 nonce，防重放；记录销毁时一并丢弃。 */
   usedNonces: Set<string>;
+  /** 上一代 resume token：容忍轮换帧在弱网下丢失后的客户端重试。 */
+  previousResumeToken?: string;
 }
 
 function base64UrlDecode(value: string): Uint8Array {
@@ -95,6 +97,8 @@ export class SSHSessionDO {
   private sessionToDeviceKey: Map<SSHSession, string> = new Map();
   /** 双段延迟基线（CF→源站）：恢复时上游连接未重建，原基线仍有效可重发。 */
   private sessionBaselines: Map<SSHSession, { latencyMs: number; colo: string }> = new Map();
+  /** 上一代 resume token：容忍轮换帧在弱网下丢失后的客户端重试。 */
+  private sessionToPrevResumeToken: Map<SSHSession, string> = new Map();
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -340,6 +344,7 @@ export class SSHSessionDO {
           sftpAttachUrl: session.getSFTPAttachUrl(),
           devicePubKey: this.sessionToDeviceKey.get(session),
           usedNonces: new Set<string>(),
+          previousResumeToken: this.sessionToPrevResumeToken.get(session),
         });
 
         // 保持后台受保护
@@ -394,7 +399,14 @@ export class SSHSessionDO {
       return resumeReject(404, 'Session expired or not found');
     }
 
-    if (detached.resumeToken !== resumeToken) {
+    // 容忍一代旧 token：弱网下轮换帧可能随新连接一起丢失，客户端会携带
+    // 上一代 token 重试；直接锁死会造成永久 403。新旧两代均需过后续校验。
+    const currentResumeToken = detached.resumeToken;
+    const previousResumeToken = detached.previousResumeToken;
+    const tokenIsCurrent = currentResumeToken === resumeToken;
+    const tokenIsPrevious =
+      !tokenIsCurrent && previousResumeToken !== undefined && previousResumeToken === resumeToken;
+    if (!tokenIsCurrent && !tokenIsPrevious) {
       this.resumeDebug(`reject invalid_token sid=${sessionId.slice(0, 16)}`);
       void this.auditResumeDenied(detached, 'invalid_token');
       return resumeReject(403, 'Invalid resume token');
@@ -425,8 +437,13 @@ export class SSHSessionDO {
       }
     }
 
-    // 全部验证通过：轮换 resume token，旧 token 即刻失效，缩小泄露重放窗口。
+    // 全部验证通过：轮换 resume token；被替换的一代降级为“上一代”继续容忍一次，
+    // 覆盖轮换帧丢失后客户端携旧值重试的场景。
     const nextToken = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
+    this.sessionToPrevResumeToken.set(
+      detached.session,
+      tokenIsPrevious ? previousResumeToken : currentResumeToken
+    );
     this.sessionToResumeToken.set(detached.session, nextToken);
 
     // 取消销毁定时器
@@ -560,6 +577,7 @@ export class SSHSessionDO {
   private forgetSessionCredentials(session: SSHSession): void {
     this.sessionToSessionId.delete(session);
     this.sessionToResumeToken.delete(session);
+    this.sessionToPrevResumeToken.delete(session);
     this.sessionToDeviceKey.delete(session);
     this.sessionBaselines.delete(session);
   }
