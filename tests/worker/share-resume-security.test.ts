@@ -267,10 +267,12 @@ describe('SSHSessionDO Share Resume Device-Binding Security', () => {
     expect(res403b.status).toBe(403);
 
     // 第三次：正确密钥 + 全新 nonce -> 通过
+    // 注意：签名与参数必须复用同一个 ts——两次独立取值跨毫秒时验签必然失败（CI 高负载下的偶发源）
     const freshNonce = 'nonce0000000000000004';
-    const freshSig = await signChallenge(device.privateKey, SESSION_ID, freshNonce, Date.now());
+    const freshTs = Date.now();
+    const freshSig = await signChallenge(device.privateKey, SESSION_ID, freshNonce, freshTs);
     const res101 = await doInstance.fetch(
-      resumeRequest({ did_nonce: freshNonce, did_ts: String(Date.now()), did_sig: freshSig })
+      resumeRequest({ did_nonce: freshNonce, did_ts: String(freshTs), did_sig: freshSig })
     );
     expect(res101.status).toBe(101);
   });
@@ -282,9 +284,10 @@ describe('SSHSessionDO Share Resume Device-Binding Security', () => {
     await detachSession(doInstance, session, { devicePubKey: device.publicKeyB64 });
 
     const nonce = 'nonce0000000000000005';
-    const sig = await signChallenge(device.privateKey, SESSION_ID, nonce, Date.now());
+    const expiredTs = Date.now();
+    const sig = await signChallenge(device.privateKey, SESSION_ID, nonce, expiredTs);
     const res = await doInstance.fetch(
-      resumeRequest({ did_nonce: nonce, did_ts: String(Date.now()), did_sig: sig })
+      resumeRequest({ did_nonce: nonce, did_ts: String(expiredTs), did_sig: sig })
     );
     expect(res.status).toBe(403);
     // 到达绝对过期时间：保持的会话立即终结
@@ -313,9 +316,10 @@ describe('SSHSessionDO Share Resume Device-Binding Security', () => {
 
     // 撤销后凭旧凭据恢复 -> 404（记录已被销毁）
     const nonce = 'nonce0000000000000006';
-    const sig = await signChallenge(device.privateKey, SESSION_ID, nonce, Date.now());
+    const revokedTs = Date.now();
+    const sig = await signChallenge(device.privateKey, SESSION_ID, nonce, revokedTs);
     const res = await doInstance.fetch(
-      resumeRequest({ did_nonce: nonce, did_ts: String(Date.now()), did_sig: sig })
+      resumeRequest({ did_nonce: nonce, did_ts: String(revokedTs), did_sig: sig })
     );
     expect(res.status).toBe(404);
   });
