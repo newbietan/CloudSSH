@@ -238,6 +238,8 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'terminal.reconnectFailed': 'Reconnect failed',
   'terminal.sessionResumed': 'Session resumed successfully',
   'terminal.resumingSession': 'Attempting to resume session (retry #{attempt} in {seconds}s)…',
+  'terminal.shareResumeNoDeviceIdentity':
+    'Device identity unavailable (private mode or site data cleared); auto-resume may fail',
   'terminal.shareResumeEnded':
     'Connection lost and could not be resumed. This shared session has ended.',
   'terminal.hostKeyChangeTitle': 'SSH host fingerprint changed',

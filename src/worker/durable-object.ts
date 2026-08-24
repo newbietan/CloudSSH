@@ -93,6 +93,8 @@ export class SSHSessionDO {
   /** 分享连接握手时由 Worker 服务端链路下发的认领设备公钥（客户端不可注入）。 */
   private pendingDevicePubKeys: Map<WebSocket, string> = new Map();
   private sessionToDeviceKey: Map<SSHSession, string> = new Map();
+  /** 双段延迟基线（CF→源站）：恢复时上游连接未重建，原基线仍有效可重发。 */
+  private sessionBaselines: Map<SSHSession, { latencyMs: number; colo: string }> = new Map();
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -318,6 +320,9 @@ export class SSHSessionDO {
       this.sessionChains.delete(ws);
 
       // 仅当异常断线（code !== 1000 且 wasClean !== true）、会话处于就绪状态、且具备凭据时开启 60s 保持
+      this.resumeDebug(
+        `close sid=${sessionId?.slice(0, 16) ?? 'none'} code=${code} clean=${wasClean} ready=${session.isReady()} hasCreds=${Boolean(sessionId && resumeToken)}`
+      );
       if (code !== 1000 && !wasClean && session.isReady() && sessionId && resumeToken) {
         session.setDetached(true);
 
@@ -385,10 +390,12 @@ export class SSHSessionDO {
   ): Promise<Response> {
     const detached = this.detachedSessions.get(sessionId);
     if (!detached) {
+      this.resumeDebug(`reject not_found sid=${sessionId.slice(0, 16)}`);
       return resumeReject(404, 'Session expired or not found');
     }
 
     if (detached.resumeToken !== resumeToken) {
+      this.resumeDebug(`reject invalid_token sid=${sessionId.slice(0, 16)}`);
       void this.auditResumeDenied(detached, 'invalid_token');
       return resumeReject(403, 'Invalid resume token');
     }
@@ -399,12 +406,14 @@ export class SSHSessionDO {
       if (Date.now() >= policy.sessionExpiresAt) {
         // 宽限期内到达分享会话绝对结束时间：立即终结，不再允许恢复。
         this.destroyDetachedRecord(sessionId, detached);
+        this.resumeDebug(`reject expired sid=${sessionId.slice(0, 16)}`);
         void this.auditResumeDenied(detached, 'expired');
         return resumeReject(403, 'Share session expired');
       }
       if (detached.devicePubKey) {
         const verification = await this.verifyResumeDeviceSignature(detached, url);
         if (!verification.ok) {
+          this.resumeDebug(`reject device:${verification.reason} sid=${sessionId.slice(0, 16)}`);
           void this.auditResumeDenied(detached, verification.reason);
           return resumeReject(403, 'Device verification failed');
         }
@@ -434,12 +443,14 @@ export class SSHSessionDO {
     const session = detached.session;
     this.sessions.set(server, session);
     this.sessionChains.set(server, detached.chainSessions);
+    this.resumeDebug(`resume ok sid=${sessionId.slice(0, 16)} tokenRotated`);
 
     queueMicrotask(async () => {
       try {
         await session.reattachWebSocket(server, newSize, {
           resumeToken: nextToken,
           sftpAttachUrl: detached.sftpAttachUrl,
+          baseline: this.sessionBaselines.get(session) ?? undefined,
         });
       } catch (e) {
         console.error('Failed to reattach session:', e);
@@ -545,6 +556,14 @@ export class SSHSessionDO {
     this.sessionToSessionId.delete(session);
     this.sessionToResumeToken.delete(session);
     this.sessionToDeviceKey.delete(session);
+    this.sessionBaselines.delete(session);
+  }
+
+  /** DEBUG_MODE=true 时输出恢复链路诊断面包屑，用于定位分享会话恢复失败的具体拒绝分支。 */
+  private resumeDebug(message: string): void {
+    if (this.env.DEBUG_MODE === 'true') {
+      console.info(`[resume-debug] ${message}`);
+    }
   }
 
   private cleanupDetachedSession(sessionId: string): void {
@@ -701,6 +720,8 @@ export class SSHSessionDO {
         this.sessionToDeviceKey.set(session, shareDeviceKey);
       }
 
+      // 记录双段延迟基线：断线重连时上游 SSH 连接未重建，原基线仍然有效
+      this.sessionBaselines.set(session, { latencyMs: latency, colo });
       // 向前端发送双段延迟的物理基准延迟与 session_created 凭据
       try {
         ws.send(JSON.stringify({ type: 'rtt', latency, colo }));

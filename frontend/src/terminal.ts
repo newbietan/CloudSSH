@@ -7,7 +7,10 @@ import { TrzszFilter } from 'trzsz';
 import '@xterm/xterm/css/xterm.css';
 import { AuthChallengeDialog, type AuthChallengeSubmission } from './auth-challenge-dialog';
 import { copyTextToClipboard } from './clipboard';
-import { createResumeChallengeParams } from './device-identity';
+import {
+  createResumeChallengeParams,
+  hasDeviceBindingSupport,
+} from './device-identity';
 import { SHARE_RESUME_RETRY_WINDOW_MS } from '../../src/share-resume-schema';
 import { type TranslationKey, t } from './i18n';
 import {
@@ -170,6 +173,8 @@ export class SSHTerminal {
   private resumeOnlyMode: boolean = false;
   /** 当前断线周期的分享恢复截止时刻（对齐服务端宽限窗口）；null 表示尚未开始计时。 */
   private shareResumeDeadline: number | null = null;
+  /** 恢复时无法生成设备验证材料（隐私模式/站点数据清理）；用于一次性提示。 */
+  private shareResumeChallengeMissing = false;
   private readonly contextMenuPasteListener = async (event: MouseEvent): Promise<void> => {
     if (window.matchMedia?.('(pointer: coarse)').matches) return;
     event.preventDefault();
@@ -956,6 +961,7 @@ export class SSHTerminal {
     this.reconnectWebSocketFactory = options.reconnectFactory ?? null;
     this.resumeOnlyMode = options.resumeOnly === true;
     this.shareResumeDeadline = null;
+    this.shareResumeChallengeMissing = false;
     this.canReconnect = Boolean(this.reconnectWebSocketFactory);
     this.sessionReady = false;
     this.ws = ws;
@@ -1055,6 +1061,7 @@ export class SSHTerminal {
             this.reconnectAttempts = 0;
             // 恢复成功：重置恢复窗口倒计时，下次断线获得完整预算
             this.shareResumeDeadline = null;
+            this.shareResumeChallengeMissing = false;
             this.terminal.writeln(`\x1b[32m[*] ${t('terminal.sessionResumed')}\x1b[0m`);
             const termStatus = document.getElementById('term-status');
             if (termStatus)
@@ -1586,6 +1593,7 @@ export class SSHTerminal {
       // 设备绑定挑战签名：浏览器不支持或密钥不可用时省略；
       // 服务端仅对认领时绑定了公钥的分享会话强制校验。
       const challenge = await createResumeChallengeParams(this.activeSessionId);
+      this.shareResumeChallengeMissing = !challenge && hasDeviceBindingSupport();
       if (challenge) {
         params.set('did_nonce', challenge.nonce);
         params.set('did_ts', String(challenge.timestamp));
@@ -1647,6 +1655,10 @@ export class SSHTerminal {
       this.finishShareResume();
       return;
     }
+    // 首次重试时提示设备验证材料缺失（服务端将拒绝无签名的恢复请求）
+    if (this.reconnectAttempts === 1 && this.shareResumeChallengeMissing) {
+      this.terminal.writeln(`\x1b[33m[!] ${t('terminal.shareResumeNoDeviceIdentity')}\x1b[0m`);
+    }
     // 与常规重连一致的指数退避（首次 1s 起），但不超过窗口剩余时间
     const backoffDelay = Math.min(1000 * 2 ** Math.max(0, this.reconnectAttempts - 1), 30000);
     const delay = Math.min(backoffDelay, Math.max(500, remainingMs));
@@ -1668,6 +1680,7 @@ export class SSHTerminal {
   private finishShareResume(): void {
     this.resumeOnlyMode = false;
     this.shareResumeDeadline = null;
+    this.shareResumeChallengeMissing = false;
     this.activeSessionId = null;
     this.activeResumeToken = null;
     this.terminal.writeln(`\x1b[31m[!] ${t('terminal.shareResumeEnded')}\x1b[0m`);
@@ -1728,6 +1741,7 @@ export class SSHTerminal {
     this.reconnectWebSocketFactory = null;
     this.resumeOnlyMode = false;
     this.shareResumeDeadline = null;
+    this.shareResumeChallengeMissing = false;
     this.activeSessionId = null;
     this.activeResumeToken = null;
     this.resetTerminalDisplay();

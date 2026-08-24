@@ -3266,7 +3266,11 @@ export class SSHSession {
   public async reattachWebSocket(
     newWs: WebSocket,
     newSize?: TerminalSize | null,
-    credentials?: { resumeToken?: string; sftpAttachUrl?: string }
+    credentials?: {
+      resumeToken?: string;
+      sftpAttachUrl?: string;
+      baseline?: { latencyMs: number; colo: string };
+    }
   ): Promise<void> {
     this.ws = newWs;
     this.detached = false;
@@ -3287,6 +3291,22 @@ export class SSHSession {
       );
     } catch {
       /* 新 WebSocket 尚未就绪，忽略 */
+    }
+
+    // 重发双段延迟基线：上游 SSH 连接未重建，原 CF→源站基线仍有效；
+    // 客户端↔CF 段由心跳即时探测补齐
+    if (credentials?.baseline) {
+      try {
+        this.ws.send(
+          JSON.stringify({
+            type: 'rtt',
+            latency: credentials.baseline.latencyMs,
+            colo: credentials.baseline.colo,
+          })
+        );
+      } catch {
+        /* 发送失败忽略 */
+      }
     }
 
     // 2. 补发断线期间暂存的输出数据
