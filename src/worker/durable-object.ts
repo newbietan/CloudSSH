@@ -731,6 +731,7 @@ export class SSHSessionDO {
             sessionId: tokenSessionId,
             resumeToken,
             expiresIn: 60,
+            deviceBound: this.sessionToDeviceKey.has(session),
           })
         );
       } catch {

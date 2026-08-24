@@ -125,7 +125,7 @@ export function renderShareLanding(
       try {
         const devicePubKey = await exportDevicePublicKeySpki();
         // 存储回读校验失败（常见于无痕模式）：不绑定公钥，会话退化为仅凭据恢复；
-        // 明确告知用户自动恢复能力受限
+        // 提示用户：该环境将跳过设备一致性校验（断线后恢复仍可进行）
         if (!devicePubKey) {
           notify(t('share.deviceIdentityUnavailableToast'), { variant: 'warning' });
         }

@@ -241,6 +241,8 @@ export interface SessionCreatedMessage {
   sessionId: string;
   resumeToken: string;
   expiresIn: number;
+  /** 该会话是否绑定了设备公钥（绑定则恢复需挑战签名，未绑定仅凭 token 恢复）。 */
+  deviceBound?: boolean;
 }
 
 export interface SessionResumedMessage {

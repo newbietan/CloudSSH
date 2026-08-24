@@ -175,6 +175,8 @@ export class SSHTerminal {
   private shareResumeDeadline: number | null = null;
   /** 恢复时无法生成设备验证材料（隐私模式/站点数据清理）；用于一次性提示。 */
   private shareResumeChallengeMissing = false;
+  /** 服务端在 session_created 中声明的设备绑定状态：绑定会话的恢复需挑战签名。 */
+  private sessionRequiresDeviceSig = false;
   private readonly contextMenuPasteListener = async (event: MouseEvent): Promise<void> => {
     if (window.matchMedia?.('(pointer: coarse)').matches) return;
     event.preventDefault();
@@ -962,6 +964,7 @@ export class SSHTerminal {
     this.resumeOnlyMode = options.resumeOnly === true;
     this.shareResumeDeadline = null;
     this.shareResumeChallengeMissing = false;
+    this.sessionRequiresDeviceSig = false;
     this.canReconnect = Boolean(this.reconnectWebSocketFactory);
     this.sessionReady = false;
     this.ws = ws;
@@ -1045,6 +1048,8 @@ export class SSHTerminal {
           if (msg.type === 'session_created') {
             this.activeSessionId = typeof msg.sessionId === 'string' ? msg.sessionId : null;
             this.activeResumeToken = typeof msg.resumeToken === 'string' ? msg.resumeToken : null;
+            // 绑定状态由服务端判定：仅绑定会话的恢复失败才与设备环境相关
+            this.sessionRequiresDeviceSig = msg.deviceBound === true;
             return;
           }
 
@@ -1658,12 +1663,16 @@ export class SSHTerminal {
       return;
     }
     // 首次重试时提示设备验证材料缺失（服务端将拒绝无签名的恢复请求）
-    if (this.reconnectAttempts === 1 && this.shareResumeChallengeMissing) {
+    if (this.reconnectAttempts === 1 && this.sessionRequiresDeviceSig && this.shareResumeChallengeMissing) {
       this.terminal.writeln(`\x1b[33m[!] ${t('terminal.shareResumeNoDeviceIdentity')}\x1b[0m`);
     }
     // 第二次重试仍失败且验证材料正常：大概率是浏览器环境与认领时不一致
     // （无痕模式重开、清除站点数据、更换浏览器/设备），给出友善原因提示
-    if (this.reconnectAttempts === 2 && !this.shareResumeChallengeMissing) {
+    if (
+      this.reconnectAttempts === 2 &&
+      this.sessionRequiresDeviceSig &&
+      !this.shareResumeChallengeMissing
+    ) {
       this.terminal.writeln(`\x1b[33m[!] ${t('terminal.shareResumeEnvironmentHint')}\x1b[0m`);
     }
     // 与常规重连一致的指数退避（首次 1s 起）；被窗口剩余时间截断时即为
@@ -1674,9 +1683,7 @@ export class SSHTerminal {
     const delay = Math.min(backoffDelay, remainingMs);
     const delaySeconds = Math.max(1, Math.round(delay / 1000));
     if (isFinalAttempt) {
-      this.terminal.writeln(
-        `\x1b[33m[*] ${t('terminal.shareResumeFinalAttempt')}\x1b[0m`
-      );
+      this.terminal.writeln(`\x1b[33m[*] ${t('terminal.shareResumeFinalAttempt')}\x1b[0m`);
     }
     this.terminal.writeln(
       `\x1b[33m[*] ${t('terminal.resumingSession', { seconds: delaySeconds, attempt: this.reconnectAttempts })}\x1b[0m`
@@ -1696,6 +1703,7 @@ export class SSHTerminal {
     this.resumeOnlyMode = false;
     this.shareResumeDeadline = null;
     this.shareResumeChallengeMissing = false;
+    this.sessionRequiresDeviceSig = false;
     this.activeSessionId = null;
     this.activeResumeToken = null;
     this.terminal.writeln(`\x1b[31m[!] ${t('terminal.shareResumeEnded')}\x1b[0m`);
@@ -1757,6 +1765,7 @@ export class SSHTerminal {
     this.resumeOnlyMode = false;
     this.shareResumeDeadline = null;
     this.shareResumeChallengeMissing = false;
+    this.sessionRequiresDeviceSig = false;
     this.activeSessionId = null;
     this.activeResumeToken = null;
     this.resetTerminalDisplay();

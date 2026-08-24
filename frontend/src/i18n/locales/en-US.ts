@@ -242,7 +242,8 @@ export const enUS: Record<keyof typeof zhCN, string> = {
     'Device identity unavailable (private mode or site data cleared); auto-resume may fail',
   'terminal.shareResumeEnvironmentHint':
     'Repeated resume failures: auto-resume requires the same browser environment used to claim; private mode, cleared site data, or a different browser cannot recover',
-  'terminal.shareResumeFinalAttempt': 'Approaching the resume window limit; making the final attempt…',
+  'terminal.shareResumeFinalAttempt':
+    'Approaching the resume window limit; making the final attempt…',
   'terminal.shareResumeEnded':
     'Connection lost and could not be resumed. This shared session has ended.',
   'terminal.hostKeyChangeTitle': 'SSH host fingerprint changed',
@@ -534,7 +535,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'share.errorServiceUnavailable':
     'Share service is temporarily unavailable. Please try again later',
   'share.deviceIdentityUnavailableToast':
-    'This browser cannot securely bind a device (common in private mode); auto-resume will be unavailable after disconnection',
+    'This browser cannot securely bind a device (common in private mode): auto-resume after disconnection still works, but device-consistency checks are skipped',
   'terminal.status.shareSessionExpired': 'Share session has expired, connection ended',
   'terminal.status.shareAuditUnavailable': 'Share audit is unavailable, connection terminated',
   'snippets.title': 'Command snippets',

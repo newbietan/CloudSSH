@@ -490,7 +490,7 @@ export const zhCN = {
   'share.errorSharingDisabled': 'SSH 分享功能当前未开启',
   'share.errorServiceUnavailable': '分享服务暂时不可用，请稍后重试',
   'share.deviceIdentityUnavailableToast':
-    '当前浏览器环境无法安全绑定设备（常见于无痕模式），断线后自动恢复功能将不可用',
+    '当前浏览器环境无法安全绑定设备（常见于无痕模式）：断线后仍可自动恢复，但不会校验设备一致性',
   'terminal.status.shareSessionExpired': '分享会话已到期，连接已结束',
   'terminal.status.shareAuditUnavailable': '分享审计不可用，连接已终止',
   'snippets.title': '命令片段库',
