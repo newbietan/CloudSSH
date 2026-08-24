@@ -97,16 +97,32 @@ function randomNonce(): string {
   return hex;
 }
 
-/** 导出设备公钥（SPKI DER base64url）；不支持或失败时返回 null（分享仍可认领，仅无恢复绑定）。 */
+/**
+ * 导出设备公钥（SPKI DER base64url）；不支持或失败时返回 null（分享仍可认领，仅无恢复绑定）。
+ *
+ * 含持久化回读校验：隐私模式等环境下 IndexedDB put 可能静默丢弃——若不做校验，
+ * 认领时会用“当次生成”的密钥绑定公钥，而恢复时读不到存储就重新生成新密钥去签名，
+ * 与绑定公钥必然失配导致永久 403。回读不一致则视为存储不可靠，返回 null 不绑定，
+ * 会话退化为仅凭据恢复（连接性不受影响）。
+ */
 export async function exportDevicePublicKeySpki(): Promise<string | null> {
   if (!hasDeviceBindingSupport()) return null;
   try {
-    const { publicKey } = await loadOrCreateKeyPair();
-    const spki = await crypto.subtle.exportKey('spki', publicKey);
-    return bufferToBase64Url(spki);
+    const first = await exportStoredPublicKeySpki();
+    if (!first) return null;
+    // 第二次全新开库回读：两次导出一致才认为密钥可稳定取回
+    const second = await exportStoredPublicKeySpki();
+    if (!second || second !== first) return null;
+    return first;
   } catch {
     return null;
   }
+}
+
+async function exportStoredPublicKeySpki(): Promise<string | null> {
+  const { publicKey } = await loadOrCreateKeyPair();
+  const spki = await crypto.subtle.exportKey('spki', publicKey);
+  return bufferToBase64Url(spki);
 }
 
 /**

@@ -196,6 +196,8 @@ export const zhCN = {
   'terminal.resumingSession': '正在尝试恢复会话（{seconds} 秒后第 {attempt} 次重试）…',
   'terminal.shareResumeNoDeviceIdentity':
     '无法生成设备验证材料（隐私模式或站点数据被清理），自动恢复可能失败',
+  'terminal.shareResumeEnvironmentHint':
+    '多次恢复失败：自动恢复要求与认领时相同的浏览器环境；无痕模式、清除站点数据或更换浏览器后无法恢复',
   'terminal.shareResumeEnded': '连接已断开且无法恢复，本次分享会话已结束。',
   'terminal.hostKeyChangeTitle': 'SSH 主机指纹已变更',
   'terminal.hostKeySaveTitle': '无法记录 SSH 主机指纹',
@@ -486,6 +488,8 @@ export const zhCN = {
   'share.errorLinkExpired': '分享链接已过期，请联系分享者重新生成',
   'share.errorSharingDisabled': 'SSH 分享功能当前未开启',
   'share.errorServiceUnavailable': '分享服务暂时不可用，请稍后重试',
+  'share.deviceIdentityUnavailableToast':
+    '当前浏览器环境无法安全绑定设备（常见于无痕模式），断线后自动恢复功能将不可用',
   'terminal.status.shareSessionExpired': '分享会话已到期，连接已结束',
   'terminal.status.shareAuditUnavailable': '分享审计不可用，连接已终止',
   'snippets.title': '命令片段库',

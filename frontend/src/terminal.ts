@@ -7,10 +7,7 @@ import { TrzszFilter } from 'trzsz';
 import '@xterm/xterm/css/xterm.css';
 import { AuthChallengeDialog, type AuthChallengeSubmission } from './auth-challenge-dialog';
 import { copyTextToClipboard } from './clipboard';
-import {
-  createResumeChallengeParams,
-  hasDeviceBindingSupport,
-} from './device-identity';
+import { createResumeChallengeParams, hasDeviceBindingSupport } from './device-identity';
 import { SHARE_RESUME_RETRY_WINDOW_MS } from '../../src/share-resume-schema';
 import { type TranslationKey, t } from './i18n';
 import {
@@ -1658,6 +1655,11 @@ export class SSHTerminal {
     // 首次重试时提示设备验证材料缺失（服务端将拒绝无签名的恢复请求）
     if (this.reconnectAttempts === 1 && this.shareResumeChallengeMissing) {
       this.terminal.writeln(`\x1b[33m[!] ${t('terminal.shareResumeNoDeviceIdentity')}\x1b[0m`);
+    }
+    // 第二次重试仍失败且验证材料正常：大概率是浏览器环境与认领时不一致
+    // （无痕模式重开、清除站点数据、更换浏览器/设备），给出友善原因提示
+    if (this.reconnectAttempts === 2 && !this.shareResumeChallengeMissing) {
+      this.terminal.writeln(`\x1b[33m[!] ${t('terminal.shareResumeEnvironmentHint')}\x1b[0m`);
     }
     // 与常规重连一致的指数退避（首次 1s 起），但不超过窗口剩余时间
     const backoffDelay = Math.min(1000 * 2 ** Math.max(0, this.reconnectAttempts - 1), 30000);
