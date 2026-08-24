@@ -18,6 +18,82 @@ export function takeShareTokenFromLocation(): string | null {
   return token;
 }
 
+/** 创建带可选 class 与文本的元素（textContent 赋值，杜绝 HTML 注入面）。 */
+function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  className?: string,
+  text?: string
+): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+/** 分享认领按钮的双态渲染（空闲 / 认领中）。 */
+function renderClaimButton(button: HTMLButtonElement, claiming: boolean): void {
+  const icon = document.createElement('span');
+  icon.className = `material-symbols-outlined${claiming ? ' animate-spin' : ''}`;
+  icon.style.fontSize = '18px';
+  icon.textContent = claiming ? 'progress_activity' : 'login';
+  const label = document.createElement('span');
+  label.textContent = claiming ? t('share.claiming') : t('share.claimAndConnect');
+  button.replaceChildren(icon, label);
+}
+
+function buildShareLandingCard(): HTMLElement {
+  const card = el('main', 'w-full max-w-lg relative z-10');
+  card.id = 'share-landing-card';
+
+  const brand = el('div', 'mb-8 text-center');
+  brand.append(el('div', 'text-3xl font-bold text-primary tracking-tighter mb-2', 'CloudSSH'));
+  card.append(brand);
+
+  const box = el('div', 'cyber-box p-6 shadow-2xl relative');
+  box.append(
+    el(
+      'div',
+      'theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent opacity-50'
+    )
+  );
+
+  const headerRow = el('div', 'flex items-center justify-between mb-5 pb-4 border-b border-dim');
+  headerRow.append(el('span', 'text-sm font-bold text-primary', t('share.accessTitle')));
+  headerRow.append(el('div', undefined));
+  headerRow.lastElementChild?.setAttribute('data-language-switcher', '');
+  box.append(headerRow);
+
+  box.append(el('p', 'text-sm text-on-surface mb-4', t('share.accessDescription')));
+
+  const noticeList = el('ul', 'space-y-2 text-xs text-muted mb-6 list-disc pl-5');
+  for (const key of [
+    'share.noticeOneTime',
+    'share.noticeAudited',
+    'share.noticeNoAgent',
+    'share.noticeNoReconnect',
+  ] as const) {
+    noticeList.append(el('li', undefined, t(key)));
+  }
+  box.append(noticeList);
+
+  const errorBox = el('div', 'hidden mb-4 text-xs text-error');
+  errorBox.id = 'share-claim-error';
+  errorBox.setAttribute('role', 'alert');
+  box.append(errorBox);
+
+  const button = el(
+    'button',
+    'cyber-button text-primary w-full py-2.5 text-xs font-bold tracking-[0.1em] flex items-center justify-center gap-2'
+  );
+  button.type = 'button';
+  button.id = 'share-claim-btn';
+  renderClaimButton(button, false);
+  box.append(button);
+
+  card.append(box);
+  return card;
+}
+
 export function renderShareLanding(
   token: string,
   onConnected: (claim: ClaimedShare) => void
@@ -34,41 +110,14 @@ export function renderShareLanding(
     terminalSection.classList.add('hidden');
     terminalSection.classList.remove('flex');
     authSection.classList.remove('hidden');
-    // pi-lens-ignore: no-inner-html
-    authSection.innerHTML = `
-      <main class="w-full max-w-lg relative z-10" id="share-landing-card">
-        <div class="mb-8 text-center">
-          <div class="text-3xl font-bold text-primary tracking-tighter mb-2">CloudSSH</div>
-        </div>
-        <div class="cyber-box p-6 shadow-2xl relative">
-          <div class="theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent opacity-50"></div>
-          <div class="flex items-center justify-between mb-5 pb-4 border-b border-dim">
-            <span class="text-sm font-bold text-primary">${t('share.accessTitle')}</span>
-            <div data-language-switcher></div>
-          </div>
-          <p class="text-sm text-on-surface mb-4">${t('share.accessDescription')}</p>
-          <ul class="space-y-2 text-xs text-muted mb-6 list-disc pl-5">
-            <li>${t('share.noticeOneTime')}</li>
-            <li>${t('share.noticeAudited')}</li>
-            <li>${t('share.noticeNoAgent')}</li>
-            <li>${t('share.noticeNoReconnect')}</li>
-          </ul>
-          <div id="share-claim-error" class="hidden mb-4 text-xs text-error" role="alert"></div>
-          <button id="share-claim-btn" type="button" class="cyber-button text-primary w-full py-2.5 text-xs font-bold tracking-[0.1em] flex items-center justify-center gap-2">
-            <span class="material-symbols-outlined" style="font-size:18px">login</span>
-            <span>${t('share.claimAndConnect')}</span>
-          </button>
-        </div>
-      </main>
-    `;
+    authSection.replaceChildren(buildShareLandingCard());
     mountLanguageSwitchers(authSection);
     const button = document.getElementById('share-claim-btn') as HTMLButtonElement | null;
     button?.addEventListener('click', async () => {
       if (claiming) return;
       claiming = true;
       button.disabled = true;
-      // pi-lens-ignore: no-inner-html
-      button.innerHTML = `<span class="material-symbols-outlined animate-spin" style="font-size:18px">progress_activity</span><span>${t('share.claiming')}</span>`;
+      renderClaimButton(button, true);
       const errorBox = document.getElementById('share-claim-error');
       errorBox?.classList.add('hidden');
       try {
@@ -86,8 +135,7 @@ export function renderShareLanding(
       } catch (error) {
         claiming = false;
         button.disabled = false;
-        // pi-lens-ignore: no-inner-html
-        button.innerHTML = `<span class="material-symbols-outlined" style="font-size:18px">login</span><span>${t('share.claimAndConnect')}</span>`;
+        renderClaimButton(button, false);
         if (errorBox) {
           errorBox.textContent = error instanceof Error ? error.message : t('share.claimFailed');
           errorBox.classList.remove('hidden');
@@ -106,14 +154,18 @@ export function renderShareEnded(): void {
   const authSection = document.getElementById('auth-section');
   if (!authSection) return;
   authSection.classList.remove('hidden');
-  // pi-lens-ignore: no-inner-html
-  authSection.innerHTML = `
-    <main class="w-full max-w-md relative z-10">
-      <div class="cyber-box p-6 text-center">
-        <span class="material-symbols-outlined text-muted mb-3" style="font-size:42px">link_off</span>
-        <h1 class="text-base font-bold text-primary mb-3">${t('share.endedTitle')}</h1>
-        <p class="text-xs text-muted">${t('share.endedDescription')}</p>
-      </div>
-    </main>
-  `;
+
+  const main = el('main', 'w-full max-w-md relative z-10');
+  const box = el('div', 'cyber-box p-6 text-center');
+
+  const icon = document.createElement('span');
+  icon.className = 'material-symbols-outlined text-muted mb-3';
+  icon.style.fontSize = '42px';
+  icon.textContent = 'link_off';
+
+  box.append(icon);
+  box.append(el('h1', 'text-base font-bold text-primary mb-3', t('share.endedTitle')));
+  box.append(el('p', 'text-xs text-muted', t('share.endedDescription')));
+  main.append(box);
+  authSection.replaceChildren(main);
 }
