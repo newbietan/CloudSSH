@@ -72,6 +72,9 @@ export interface TerminalSelectionAnchor {
   clientY: number;
 }
 
+/** 末次恢复尝试所需的最小窗口余量：预留一次握手往返，避免注定失败的冲刺。 */
+const RESUME_FINAL_ATTEMPT_MARGIN_MS = 3000;
+
 interface ConnectOptions {
   resetDisplay?: boolean;
 }
@@ -1648,7 +1651,9 @@ export class SSHTerminal {
       this.shareResumeDeadline = Date.now() + SHARE_RESUME_RETRY_WINDOW_MS;
     }
     const remainingMs = this.shareResumeDeadline - Date.now();
-    if (remainingMs <= 0) {
+    if (remainingMs <= RESUME_FINAL_ATTEMPT_MARGIN_MS) {
+      // 剩余不足以完成一次有意义的握手往返：直接进入终态，避免注定
+      // 撞上服务端过期的末次冲刺（此前会在窗口边缘发出必败请求）
       this.finishShareResume();
       return;
     }
@@ -1661,10 +1666,18 @@ export class SSHTerminal {
     if (this.reconnectAttempts === 2 && !this.shareResumeChallengeMissing) {
       this.terminal.writeln(`\x1b[33m[!] ${t('terminal.shareResumeEnvironmentHint')}\x1b[0m`);
     }
-    // 与常规重连一致的指数退避（首次 1s 起），但不超过窗口剩余时间
+    // 与常规重连一致的指数退避（首次 1s 起）；被窗口剩余时间截断时即为
+    // 末次尝试：实际等待缩短、明确告知用户，保证最后一次请求在服务端
+    // 保持期耗尽前发出
     const backoffDelay = Math.min(1000 * 2 ** Math.max(0, this.reconnectAttempts - 1), 30000);
-    const delay = Math.min(backoffDelay, Math.max(500, remainingMs));
+    const isFinalAttempt = backoffDelay > remainingMs;
+    const delay = Math.min(backoffDelay, remainingMs);
     const delaySeconds = Math.max(1, Math.round(delay / 1000));
+    if (isFinalAttempt) {
+      this.terminal.writeln(
+        `\x1b[33m[*] ${t('terminal.shareResumeFinalAttempt')}\x1b[0m`
+      );
+    }
     this.terminal.writeln(
       `\x1b[33m[*] ${t('terminal.resumingSession', { seconds: delaySeconds, attempt: this.reconnectAttempts })}\x1b[0m`
     );
