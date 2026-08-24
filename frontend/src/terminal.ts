@@ -8,6 +8,7 @@ import '@xterm/xterm/css/xterm.css';
 import { AuthChallengeDialog, type AuthChallengeSubmission } from './auth-challenge-dialog';
 import { copyTextToClipboard } from './clipboard';
 import { createResumeChallengeParams } from './device-identity';
+import { SHARE_RESUME_RETRY_WINDOW_MS } from '../../src/share-resume-schema';
 import { type TranslationKey, t } from './i18n';
 import {
   type ChangedHostKeyMessage,
@@ -167,6 +168,8 @@ export class SSHTerminal {
   private activeResumeToken: string | null = null;
   /** 分享会话专用：断线后只走秒级恢复路径，失败则宣告分享结束。 */
   private resumeOnlyMode: boolean = false;
+  /** 当前断线周期的分享恢复截止时刻（对齐服务端宽限窗口）；null 表示尚未开始计时。 */
+  private shareResumeDeadline: number | null = null;
   private readonly contextMenuPasteListener = async (event: MouseEvent): Promise<void> => {
     if (window.matchMedia?.('(pointer: coarse)').matches) return;
     event.preventDefault();
@@ -952,6 +955,7 @@ export class SSHTerminal {
     this.lastHostInfo = hostInfo ?? null;
     this.reconnectWebSocketFactory = options.reconnectFactory ?? null;
     this.resumeOnlyMode = options.resumeOnly === true;
+    this.shareResumeDeadline = null;
     this.canReconnect = Boolean(this.reconnectWebSocketFactory);
     this.sessionReady = false;
     this.ws = ws;
@@ -1049,6 +1053,8 @@ export class SSHTerminal {
             }
             this.sessionReady = true;
             this.reconnectAttempts = 0;
+            // 恢复成功：重置恢复窗口倒计时，下次断线获得完整预算
+            this.shareResumeDeadline = null;
             this.terminal.writeln(`\x1b[32m[*] ${t('terminal.sessionResumed')}\x1b[0m`);
             const termStatus = document.getElementById('term-status');
             if (termStatus)
@@ -1549,8 +1555,16 @@ export class SSHTerminal {
   }
 
   private hasReconnectStrategy(): boolean {
+    // 分享恢复模式：以凭据持有 + 宽限窗口预算为准，不受常规次数上限约束——
+    // 指数退避需能铺满服务端完整的断线保持期，给用户留出切换网络的时间。
+    if (this.resumeOnlyMode) {
+      return (
+        Boolean(this.activeSessionId && this.activeResumeToken) &&
+        (this.shareResumeDeadline === null || Date.now() < this.shareResumeDeadline)
+      );
+    }
     return (
-      (this.canReconnect || this.resumeOnlyMode) &&
+      this.canReconnect &&
       this.reconnectAttempts < this.maxReconnectAttempts &&
       Boolean(
         this.lastConfig ||
@@ -1624,8 +1638,22 @@ export class SSHTerminal {
       this.finishShareResume();
       return;
     }
-    const delay = Math.min(1000 * this.reconnectAttempts, 3000);
-    this.terminal.writeln(`\x1b[33m[*] ${t('terminal.resumingSession')}\x1b[0m`);
+    // 首次进入本断线周期时启动宽限窗口倒计时（对齐服务端 SESSION_GRACE_PERIOD_MS）
+    if (this.shareResumeDeadline === null) {
+      this.shareResumeDeadline = Date.now() + SHARE_RESUME_RETRY_WINDOW_MS;
+    }
+    const remainingMs = this.shareResumeDeadline - Date.now();
+    if (remainingMs <= 0) {
+      this.finishShareResume();
+      return;
+    }
+    // 与常规重连一致的指数退避（首次 1s 起），但不超过窗口剩余时间
+    const backoffDelay = Math.min(1000 * 2 ** Math.max(0, this.reconnectAttempts - 1), 30000);
+    const delay = Math.min(backoffDelay, Math.max(500, remainingMs));
+    const delaySeconds = Math.max(1, Math.round(delay / 1000));
+    this.terminal.writeln(
+      `\x1b[33m[*] ${t('terminal.resumingSession', { seconds: delaySeconds, attempt: this.reconnectAttempts })}\x1b[0m`
+    );
 
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectTimeout = null;
@@ -1639,6 +1667,7 @@ export class SSHTerminal {
   /** 分享会话恢复彻底失败：清理凭据并输出终态提示。 */
   private finishShareResume(): void {
     this.resumeOnlyMode = false;
+    this.shareResumeDeadline = null;
     this.activeSessionId = null;
     this.activeResumeToken = null;
     this.terminal.writeln(`\x1b[31m[!] ${t('terminal.shareResumeEnded')}\x1b[0m`);
@@ -1698,6 +1727,7 @@ export class SSHTerminal {
     this.lastHostInfo = null;
     this.reconnectWebSocketFactory = null;
     this.resumeOnlyMode = false;
+    this.shareResumeDeadline = null;
     this.activeSessionId = null;
     this.activeResumeToken = null;
     this.resetTerminalDisplay();

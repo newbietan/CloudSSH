@@ -193,7 +193,7 @@ export const zhCN = {
   'terminal.reconnecting': '正在重新连接…',
   'terminal.reconnectFailed': '重新连接失败',
   'terminal.sessionResumed': '已成功恢复会话',
-  'terminal.resumingSession': '正在尝试恢复会话…',
+  'terminal.resumingSession': '正在尝试恢复会话（{seconds} 秒后第 {attempt} 次重试）…',
   'terminal.shareResumeEnded': '连接已断开且无法恢复，本次分享会话已结束。',
   'terminal.hostKeyChangeTitle': 'SSH 主机指纹已变更',
   'terminal.hostKeySaveTitle': '无法记录 SSH 主机指纹',
