@@ -175,6 +175,16 @@ export class UserDBDO {
       this.db.exec('ALTER TABLE servers ADD COLUMN jump_server_id INTEGER DEFAULT NULL');
     }
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_servers_jump ON servers(jump_server_id)');
+
+    // === Migration: 给既有 ssh_shares 表追加审计清理留痕列（幂等） ===
+    // SSHShareDO 清理审计后同步写入；管理端据此隐藏查看入口并集中展示清理记录
+    const shareCols = this.db.exec('PRAGMA table_info(ssh_shares)').toArray();
+    if (!shareCols.some((c: any) => c.name === 'audit_purged_at')) {
+      this.db.exec('ALTER TABLE ssh_shares ADD COLUMN audit_purged_at INTEGER DEFAULT NULL');
+    }
+    if (!shareCols.some((c: any) => c.name === 'audit_purge_type')) {
+      this.db.exec("ALTER TABLE ssh_shares ADD COLUMN audit_purge_type TEXT DEFAULT NULL");
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -249,6 +259,11 @@ export class UserDBDO {
       const shareStatusMatch = path.match(/^\/internal\/shares\/([^/]+)\/status$/);
       if (shareStatusMatch && request.method === 'PUT') {
         return this.handleUpdateShareStatus(shareStatusMatch[1], request);
+      }
+      // /internal/shares/:id/audit-purged —— 仅由 SSHShareDO 清理审计后调用
+      const sharePurgedMatch = path.match(/^\/internal\/shares\/([^/]+)\/audit-purged$/);
+      if (sharePurgedMatch && request.method === 'POST') {
+        return this.handleShareAuditPurged(sharePurgedMatch[1], request);
       }
 
       // /internal/servers/:id/os —— 仅由 SSHSession（可信会话）通过 DO stub 调用
@@ -851,7 +866,8 @@ export class UserDBDO {
     const rows = this.db
       .exec(
         `SELECT id, server_id, expires_at, max_session_seconds, status,
-              claimed_at, active_at, closed_at, created_at
+              claimed_at, active_at, closed_at, created_at,
+              audit_purged_at, audit_purge_type
        FROM ssh_shares WHERE user_id = ? AND server_id = ?
        ORDER BY created_at DESC LIMIT 50`,
         userId,
@@ -869,6 +885,8 @@ export class UserDBDO {
         activeAt: row.active_at,
         closedAt: row.closed_at,
         createdAt: row.created_at,
+        auditPurgedAt: row.audit_purged_at ?? null,
+        auditPurgeType: row.audit_purge_type ?? null,
       }))
     );
   }
@@ -1061,6 +1079,34 @@ export class UserDBDO {
       body.claimed_at ?? null,
       body.active_at ?? null,
       body.closed_at ?? null,
+      shareId
+    );
+    return Response.json({ success: true });
+  }
+
+  /** SSHShareDO 清理审计后同步留痕：记录清理时间与方式，供管理端集中展示。 */
+  private async handleShareAuditPurged(shareId: string, request: Request): Promise<Response> {
+    const body = await request.json<{
+      user_id: number;
+      purged_at: number;
+      purge_type: string;
+    }>();
+    if (
+      !Number.isInteger(body.user_id) ||
+      !Number.isFinite(body.purged_at) ||
+      (body.purge_type !== 'manual' && body.purge_type !== 'auto')
+    ) {
+      return Response.json({ error: 'Invalid audit purge update' }, { status: 400 });
+    }
+    const rows = this.db.exec('SELECT user_id FROM ssh_shares WHERE id = ?', shareId).toArray();
+    if (rows.length === 0) return Response.json({ error: 'Share not found' }, { status: 404 });
+    if ((rows[0] as unknown as { user_id: number }).user_id !== body.user_id) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    this.db.exec(
+      'UPDATE ssh_shares SET audit_purged_at = ?, audit_purge_type = ? WHERE id = ?',
+      body.purged_at,
+      body.purge_type,
       shareId
     );
     return Response.json({ success: true });

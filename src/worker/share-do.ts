@@ -190,7 +190,7 @@ export class SSHShareDO {
       share.audit_purge_due !== null &&
       now >= share.audit_purge_due
     ) {
-      await this.purgeAuditContent('share.audit_auto_purged');
+      await this.purgeAuditContent(share, 'share.audit_auto_purged');
       this.db.exec('UPDATE share_state SET audit_purge_due = NULL');
       return;
     }
@@ -448,7 +448,7 @@ export class SSHShareDO {
     if (!TERMINAL_SHARE_STATUSES.has(share.status)) {
       return jsonError('Share session is not finished', 409);
     }
-    await this.purgeAuditContent('share.audit_purged');
+    await this.purgeAuditContent(share, 'share.audit_purged');
     this.db.exec('UPDATE share_state SET audit_purge_due = NULL');
     // 手动清空即代表不再需要自动清理：取消已排期的唤醒，避免 90 天后一次无效唤起
     try {
@@ -460,10 +460,43 @@ export class SSHShareDO {
   }
 
   /** 清空审计明细并写入墓碑；重置 audit_bytes。手动清空与到期自动清理共用。 */
-  private async purgeAuditContent(eventType: string): Promise<void> {
+  private async purgeAuditContent(share: ShareStateRow, eventType: string): Promise<void> {
+    const occurredAt = Date.now();
     this.db.exec('DELETE FROM audit_events');
     this.db.exec('UPDATE share_state SET audit_bytes = 0');
-    await this.appendAudit(eventType, {}, Date.now());
+    await this.appendAudit(eventType, {}, occurredAt);
+    await this.notifyOwnerAuditPurged(
+      share,
+      eventType === 'share.audit_auto_purged' ? 'auto' : 'manual',
+      occurredAt
+    );
+  }
+
+  /** 尽力同步清理留痕到所有者 UserDBDO（管理端集中展示）；失败不影响已完成的清理。 */
+  private async notifyOwnerAuditPurged(
+    share: ShareStateRow,
+    purgeType: 'manual' | 'auto',
+    occurredAt: number
+  ): Promise<void> {
+    try {
+      const stub = this.env.USER_DB.get(this.env.USER_DB.idFromName(share.owner_github_id));
+      const response = await stub.fetch(
+        new Request(`http://internal/internal/shares/${share.share_id}/audit-purged`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: share.owner_user_id,
+            purged_at: occurredAt,
+            purge_type: purgeType,
+          }),
+        })
+      );
+      if (!response.ok) {
+        console.error('SSHShareDO: failed to sync audit purge trace:', response.status);
+      }
+    } catch (error) {
+      console.error('SSHShareDO: failed to sync audit purge trace:', error);
+    }
   }
 
   private ownerView(ownerUserId: number, after: number, limit: number): Response {

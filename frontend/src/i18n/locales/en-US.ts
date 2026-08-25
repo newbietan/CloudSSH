@@ -253,7 +253,9 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'share.auditPurgeMessage':
     'This permanently deletes all audit details (including terminal output and operations), keeping only a single tombstone marker. This cannot be undone.',
   'share.auditPurged': 'Audit log purged',
-  'share.auditRemovalSummary': 'Audit details purged · last purge at {time}',
+  'share.auditCleanupLog': 'Audit purge log',
+  'share.auditPurgeManual': 'Manually purged',
+  'share.auditPurgeAuto': 'Auto-purged after retention',
   'share.auditRemovalHint':
     'Purged details cannot be recovered; these entries only record the purge operations.',
   'share.auditPurgeFailed': 'Failed to purge audit log',
