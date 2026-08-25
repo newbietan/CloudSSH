@@ -247,6 +247,13 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'terminal.shareResumeUnsupported':
     'This browser cannot pass device identity verification; auto-resume is unavailable and this shared session has ended',
   'terminal.status.shareExpiringWarning': 'Note: this shared session ends in less than 1 minute',
+  'share.auditExport': 'Export',
+  'share.auditPurge': 'Purge log',
+  'share.auditPurgeTitle': 'Purge audit log',
+  'share.auditPurgeMessage':
+    'This permanently deletes all audit details (including terminal output and operations), keeping only a single tombstone marker. This cannot be undone.',
+  'share.auditPurged': 'Audit log purged',
+  'share.auditPurgeFailed': 'Failed to purge audit log',
   'terminal.shareResumeEnded':
     'Connection lost and could not be resumed. This shared session has ended.',
   'terminal.hostKeyChangeTitle': 'SSH host fingerprint changed',

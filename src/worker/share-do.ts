@@ -2,6 +2,14 @@ import type { Env, SSHConnectionConfig } from '../types';
 
 const MAX_AUDIT_BYTES = 5 * 1024 * 1024;
 const MAX_AUDIT_EVENTS = 5000;
+/** 终态审计自动清理：满 90 天清除全部明细并写入一条自动清理墓碑。 */
+const AUDIT_AUTO_PURGE_AFTER_MS = 90 * 24 * 60 * 60 * 1000;
+
+const TERMINAL_SHARE_STATUSES: ReadonlySet<ShareStatus> = new Set([
+  'closed',
+  'revoked',
+  'expired',
+]);
 const CONNECT_TICKET_TTL_MS = 60_000;
 
 type ShareStatus = 'unused' | 'claimed' | 'active' | 'closed' | 'revoked' | 'expired';
@@ -25,6 +33,7 @@ interface ShareStateRow {
   ticket_expires_at: number | null;
   audit_bytes: number;
   device_pub_key: string | null;
+  audit_purge_due: number | null;
 }
 
 interface ShareInitBody {
@@ -117,6 +126,12 @@ export class SSHShareDO {
     } catch {
       /* column already exists */
     }
+    // 迁移：审计保留期到期时间（终态后自动清理调度用）。
+    try {
+      this.db.exec('ALTER TABLE share_state ADD COLUMN audit_purge_due INTEGER');
+    } catch {
+      /* column already exists */
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -148,6 +163,9 @@ export class SSHShareDO {
         const limit = Math.min(500, Math.max(1, Number(url.searchParams.get('limit')) || 500));
         return this.ownerView(ownerUserId, after, limit);
       }
+      if (url.pathname === '/internal/audit/purge' && request.method === 'POST') {
+        return this.purgeAudit(await request.json<{ ownerUserId?: number }>());
+      }
       return new Response('Not Found', { status: 404 });
     } catch (error) {
       console.error('SSHShareDO error:', error instanceof Error ? error.message : String(error));
@@ -159,6 +177,16 @@ export class SSHShareDO {
     const share = this.getShare();
     if (!share) return;
     const now = Date.now();
+    // 审计保留期：终态满 90 天自动清除明细并写入自动清理墓碑
+    if (
+      TERMINAL_SHARE_STATUSES.has(share.status) &&
+      share.audit_purge_due !== null &&
+      now >= share.audit_purge_due
+    ) {
+      await this.purgeAuditContent('share.audit_auto_purged');
+      this.db.exec('UPDATE share_state SET audit_purge_due = NULL');
+      return;
+    }
     if (share.status === 'unused' && now >= share.expires_at) {
       this.updateStatus(share, 'expired', now);
       await this.syncOwnerMetadata(share, 'expired', { closedAt: now });
@@ -389,6 +417,28 @@ export class SSHShareDO {
     return Response.json({ success: true });
   }
 
+  /** 分享者清空终态会话的全部审计明细，写入墓碑事件保留追责线索。 */
+  private async purgeAudit(body: { ownerUserId?: number }): Promise<Response> {
+    const share = this.getShare();
+    if (!share) return jsonError('Share not found', 404);
+    if (!Number.isInteger(body.ownerUserId) || body.ownerUserId !== share.owner_user_id) {
+      return jsonError('Forbidden', 403);
+    }
+    if (!TERMINAL_SHARE_STATUSES.has(share.status)) {
+      return jsonError('Share session is not finished', 409);
+    }
+    await this.purgeAuditContent('share.audit_purged');
+    this.db.exec('UPDATE share_state SET audit_purge_due = NULL');
+    return Response.json({ success: true });
+  }
+
+  /** 清空审计明细并写入墓碑；重置 audit_bytes。手动清空与到期自动清理共用。 */
+  private async purgeAuditContent(eventType: string): Promise<void> {
+    this.db.exec('DELETE FROM audit_events');
+    this.db.exec('UPDATE share_state SET audit_bytes = 0');
+    await this.appendAudit(eventType, {}, Date.now());
+  }
+
   private ownerView(ownerUserId: number, after: number, limit: number): Response {
     const share = this.getShare();
     if (!share || share.owner_user_id !== ownerUserId) return jsonError('Forbidden', 403);
@@ -439,6 +489,17 @@ export class SSHShareDO {
     );
     share.status = status;
     share.closed_at = closedAt;
+    // 终态进入审计保留期：到期自动清理调度；无审计明细则跳过
+    if (TERMINAL_SHARE_STATUSES.has(status)) {
+      const count = Number(
+        this.db.exec('SELECT COUNT(*) AS count FROM audit_events').one().count
+      );
+      if (count > 0) {
+        const due = Date.now() + AUDIT_AUTO_PURGE_AFTER_MS;
+        this.db.exec('UPDATE share_state SET audit_purge_due = ?', due);
+        void this.state.storage.setAlarm(due).catch(() => {});
+      }
+    }
   }
 
   private async appendAudit(

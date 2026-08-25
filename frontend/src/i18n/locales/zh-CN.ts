@@ -202,6 +202,13 @@ export const zhCN = {
   'terminal.shareResumeUnsupported':
     '当前浏览器环境无法通过设备身份校验，不支持断线自动恢复，本次分享会话已结束',
   'terminal.status.shareExpiringWarning': '注意：分享会话将在 1 分钟内结束',
+  'share.auditExport': '导出',
+  'share.auditPurge': '清空审计',
+  'share.auditPurgeTitle': '清空审计记录',
+  'share.auditPurgeMessage':
+    '将永久删除全部审计明细（含终端输出与操作记录），仅保留一条清除标记。此操作不可恢复。',
+  'share.auditPurged': '审计记录已清空',
+  'share.auditPurgeFailed': '清空审计失败',
   'terminal.shareResumeEnded': '连接已断开且无法恢复，本次分享会话已结束。',
   'terminal.hostKeyChangeTitle': 'SSH 主机指纹已变更',
   'terminal.hostKeySaveTitle': '无法记录 SSH 主机指纹',

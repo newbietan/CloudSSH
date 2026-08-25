@@ -293,11 +293,19 @@ export class ShareManager {
           .join('')
       );
       const structured = events.filter((event) => event.eventType !== 'terminal.output');
+      const canPurge =
+        share?.status === 'closed' ||
+        share?.status === 'revoked' ||
+        share?.status === 'expired';
       // pi-lens-ignore: no-inner-html
       view.innerHTML = `
         <div class="flex items-center justify-between mb-3">
           <h3 class="text-xs font-bold text-primary">${t('share.auditTitle')}</h3>
-          <span class="text-[10px] text-muted">${formatShareStatus(share?.status)} · ${Math.ceil((share?.auditBytes || 0) / 1024)} KiB</span>
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] text-muted">${formatShareStatus(share?.status)} · ${Math.ceil((share?.auditBytes || 0) / 1024)} KiB</span>
+            <button type="button" data-audit-export class="cyber-button px-2 py-1 text-[10px]">${t('share.auditExport')}</button>
+            ${canPurge ? `<button type="button" data-audit-purge class="cyber-button px-2 py-1 text-[10px] text-error">${t('share.auditPurge')}</button>` : ''}
+          </div>
         </div>
         <div class="space-y-1 mb-4 max-h-48 overflow-y-auto custom-scrollbar">
           ${structured.length ? structured.map((event) => `<div class="text-[10px] text-muted"><span class="text-dim">${escapeHtml(formatTime(event.occurredAt))}</span> ${escapeHtml(this.describeEvent(event))}</div>`).join('') : `<p class="text-xs text-muted">${t('share.auditNone')}</p>`}
@@ -305,9 +313,100 @@ export class ShareManager {
         <h4 class="text-[11px] font-bold text-primary mb-2">${t('share.terminalRecord')}</h4>
         <pre class="bg-[var(--bg)] border border-[var(--border)] p-3 text-[11px] text-on-surface whitespace-pre-wrap break-words max-h-72 overflow-auto custom-scrollbar">${escapeHtml(output || t('share.noTerminalOutput'))}</pre>
       `;
+      for (const button of view.querySelectorAll<HTMLElement>('[data-audit-export]')) {
+        button.addEventListener('click', () => void this.exportAudit(shareId));
+      }
+      for (const button of view.querySelectorAll<HTMLElement>('[data-audit-purge]')) {
+        button.addEventListener('click', () => void this.purgeAudit(shareId));
+      }
     } catch (error) {
       // pi-lens-ignore: no-inner-html
       view.innerHTML = `<p class="text-xs text-error">${escapeHtml(error instanceof Error ? error.message : t('share.auditFailed'))}</p>`;
+    }
+  }
+
+  /** 拉取指定分享的全部审计事件与元信息（分页聚合）。 */
+  private async fetchAllAudit(
+    shareId: string
+  ): Promise<{ share: { status: string; auditBytes: number } | null; events: AuditEvent[] }> {
+    const events: AuditEvent[] = [];
+    let share: { status: string; auditBytes: number } | null = null;
+    let after = 0;
+    let hasMore = true;
+    while (hasMore && events.length < 5000) {
+      const response = await fetch(
+        `/api/shares/${encodeURIComponent(shareId)}/audit?after=${after}&limit=500`
+      );
+      const payload = (await response.json().catch(() => ({}))) as {
+        share?: { status: string; auditBytes: number };
+        events?: AuditEvent[];
+        hasMore?: boolean;
+        nextAfter?: number;
+        error?: string;
+      };
+      if (!response.ok || !payload.share || !payload.events)
+        throw new Error(localizedApiError(payload, 'share.auditFailed'));
+      share = { status: payload.share.status, auditBytes: payload.share.auditBytes };
+      events.push(...payload.events);
+      hasMore = payload.hasMore === true;
+      const next = payload.nextAfter ?? after;
+      if (next <= after) break;
+      after = next;
+    }
+    return { share, events };
+  }
+
+  /** 导出全部审计事件为 JSON 归档（含生命周期与终端输出原文）。 */
+  private async exportAudit(shareId: string): Promise<void> {
+    try {
+      const { share, events } = await this.fetchAllAudit(shareId);
+      const payload = {
+        app: 'CloudSSH',
+        kind: 'share-audit-export',
+        exportedAt: new Date().toISOString(),
+        shareId,
+        status: share?.status ?? null,
+        auditBytes: share?.auditBytes ?? 0,
+        events,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `cloudssh-share-audit-${shareId}-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      notify(t('share.auditFailed'), { variant: 'danger' });
+    }
+  }
+
+  /** 清空终态会话的全部审计明细（服务端写入墓碑，不可恢复）。 */
+  private async purgeAudit(shareId: string): Promise<void> {
+    const confirmed = await confirmAction({
+      title: t('share.auditPurgeTitle'),
+      message: t('share.auditPurgeMessage'),
+      confirmText: t('share.auditPurge'),
+      cancelText: t('common.cancel'),
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    try {
+      const response = await fetch(`/api/shares/${encodeURIComponent(shareId)}/audit`, {
+        method: 'DELETE',
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(localizedApiError(payload, 'share.auditPurgeFailed'));
+      notify(t('share.auditPurged'), { variant: 'success' });
+      await this.loadAudit(shareId);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('share.auditPurgeFailed'), {
+        variant: 'danger',
+      });
     }
   }
 

@@ -1001,6 +1001,15 @@ async function handleShareOwnerRoute(request: Request, url: URL, env: Env): Prom
       )
     );
   }
+  if (url.pathname.endsWith('/audit') && request.method === 'DELETE') {
+    return shareStub.fetch(
+      new Request('http://internal/internal/audit/purge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ownerUserId: user.id }),
+      })
+    );
+  }
   if (!url.pathname.endsWith('/audit') && request.method === 'DELETE') {
     return shareStub.fetch(new Request('http://internal/internal/revoke', { method: 'POST' }));
   }
