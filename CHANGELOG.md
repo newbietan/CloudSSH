@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-08-25
+
+### Added
+
+- Durable Object 会话保持：异常断线进入 60 秒保持期，断线期间终端输出有界缓冲（128KB）+ 背压暂停，恢复后一次性补发并续借 Window 额度；主动退出立即销毁。
+- 分享会话秒级恢复与设备绑定：认领时绑定非可导出 ECDSA P-256 设备公钥，断线重连需对规范挑战串完成签名验签（nonce 验签前单次消费防重放）。
+- 恢复凭据轮换：每次成功恢复轮换 resume token，旧 token 降级为“上一代”容忍一次，覆盖弱网下轮换帧丢失导致的永久锁死。
+- 到期前 1 分钟双语预警事件，挂机用户可提前感知分享会话即将结束；服务端终结信号识别后立即进入终态，不再空转重试。
+- 恢复链路 DEBUG 诊断面包屑（`[resume-debug]`：保持/销毁决策与各拒绝分支原因）。
+- 新增分享会话恢复安全测试矩阵（设备验签、nonce 重放、撤销/过期、token 代际、未绑定拒绝等 9 用例）。
+
+### Changed
+
+- 分享会话恢复统一要求设备绑定（严格口径）：未绑定设备身份的会话不发放恢复凭据，服务端一律拒绝（`not_bound` 审计），杜绝无设备约束的凭据恢复；断线即提示原因并即时终结。
+- 分享恢复重试改为指数退避铺满整个断线保持窗口（58s），末次尝试明确提示；移除此前的线性短间隔重试。
+- 恢复后重发双段延迟基线（rtt 帧），修复秒级恢复后状态栏 CF 段缺失；客户端↔CF 段由心跳首拍即时补齐。
+- 认领时设备绑定失败的落地页提示移除（方案 B）：无痕模式等瞬态存储在认领时不可检测，绑定失败改为断线时终端提示。
+- 落地页与管理端渲染模板改用 DOM API 构建，消除 innerHTML 拼接站点。
+
+### Fixed
+
+- 撤销/过期覆盖断线保持期（detached）会话：修复撤销后宽限期内仍可凭旧凭据恢复的盲区。
+- 无缝恢复后 SFTP attach URL 断链：恢复响应回传 attach URL，SFTP 数据通道可重建。
+- resume 升级路径补齐 `REQUIRE_GITHUB_AUTH` 门禁，与 direct / one-time-token 路径对齐。
+- 跳板连接状态消息 `index/total` 参数回归。
+- 分享错误映射层泄漏词条键名导致 E2E 失败；分享恢复测试时间戳二次取值导致的验签偶发失败。
+- 补全分享链路中英文本地化缺口：审计事件标签（`session.detached/resumed` 等）、服务端英文错误映射、英文界面向中文反向显示。
+
+### Docs
+
+- AGENTS.md 第 25 条同步设备绑定、上一代 token 容忍、严格恢复口径与断线保持语义。
+
 ## [1.10.5] - 2026-08-22
 
 ### Removed
