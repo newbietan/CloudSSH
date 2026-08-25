@@ -537,8 +537,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'share.errorSharingDisabled': 'SSH sharing is currently disabled',
   'share.errorServiceUnavailable':
     'Share service is temporarily unavailable. Please try again later',
-  'share.deviceIdentityUnavailableToast':
-    'This browser cannot securely bind a device (common in private mode): auto-resume is unavailable after disconnection and the session ends on disconnect',
   'terminal.status.shareSessionExpired': 'Share session has expired, connection ended',
   'terminal.status.shareAuditUnavailable': 'Share audit is unavailable, connection terminated',
   'snippets.title': 'Command snippets',

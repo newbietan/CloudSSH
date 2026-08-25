@@ -1,7 +1,6 @@
 import { localizedApiError } from './api-errors';
 import { exportDevicePublicKeySpki } from './device-identity';
 import { mountLanguageSwitchers, onLocaleChange, t } from './i18n';
-import { notify } from './ui-feedback';
 
 export interface ClaimedShare {
   wsUrl: string;
@@ -124,11 +123,9 @@ export function renderShareLanding(
       errorBox?.classList.add('hidden');
       try {
         const devicePubKey = await exportDevicePublicKeySpki();
-        // 存储回读校验失败（常见于无痕模式）：不绑定公钥，该分享会话不具备
-        // 断线恢复资格（严格口径）；提示用户断线即结束
-        if (!devicePubKey) {
-          notify(t('share.deviceIdentityUnavailableToast'), { variant: 'warning' });
-        }
+        // 存储回读校验失败（如无痕模式）：不绑定公钥，该分享会话不具备断线
+        // 恢复资格（严格口径）。不在认领页提示——瞬态存储在页面会话内可用，
+        // 无可靠检测手段；断线时由终端提示原因并即时终结。
         const response = await fetch('/api/share/claim', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
