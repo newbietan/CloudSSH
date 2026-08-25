@@ -153,7 +153,8 @@ export class SSHSessionDO {
     }
 
     let prefilledConfig: SSHConnectionConfig | null = null;
-    const sessionName = url.searchParams.get('session') || `session:${Date.now()}:${Math.random()}`;
+    const sessionName =
+      url.searchParams.get('session') || `session:${Date.now()}:${crypto.randomUUID()}`;
 
     if (request.method === 'POST') {
       try {
@@ -733,7 +734,7 @@ export class SSHSessionDO {
       this.sessions.set(ws, session);
 
       // 生成 256 位加密随机 Token 并下发会话凭据
-      const tokenSessionId = sessionName || `session:${Date.now()}:${Math.random()}`;
+      const tokenSessionId = sessionName || `session:${Date.now()}:${crypto.randomUUID()}`;
       const resumeToken =
         crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
       this.sessionToSessionId.set(session, tokenSessionId);

@@ -18,8 +18,13 @@ function parseCookies(request: Request): Record<string, string> {
 
 function getBaseUrl(env: Env, request: Request): string {
   if (env.BASE_URL) return env.BASE_URL.replace(/\/$/, '');
-  const url = new URL(request.url);
-  return `${url.protocol}//${url.host}`;
+  // request.url 由 Workers 运行时保证为合法绝对 URL；防御性兜底避免抛错。
+  try {
+    const url = new URL(request.url);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return '';
+  }
 }
 
 // ==================== 获取 UserDBDO stub ====================
@@ -41,7 +46,7 @@ interface GitHubAccessPolicy {
  * - 已配置但为空：拒绝所有 GitHub 用户。
  * - 含非法值：配置无效并 fail closed，避免误开放实例。
  */
-export function getGitHubAccessPolicy(env: Env): GitHubAccessPolicy {
+function getGitHubAccessPolicy(env: Env): GitHubAccessPolicy {
   const raw = env.GITHUB_ALLOWED_USER_IDS;
   if (raw === undefined) {
     return { restricted: false, valid: true, allowedIds: new Set() };
@@ -154,7 +159,13 @@ export async function handleGitHubCallback(request: Request, env: Env): Promise<
     return Response.json({ error: 'GitHub OAuth not configured' }, { status: 501 });
   }
 
-  const url = new URL(request.url);
+  // request.url 由 Workers 运行时保证为合法绝对 URL；防御性兜底避免抛出。
+  let url: URL;
+  try {
+    url = new URL(request.url);
+  } catch {
+    return new Response('Invalid callback URL', { status: 400 });
+  }
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state');
   const baseUrl = getBaseUrl(env, request);

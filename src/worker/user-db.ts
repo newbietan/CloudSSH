@@ -667,14 +667,15 @@ export class UserDBDO {
 
     // 历史下游节点可能残留区域值；从跳板切回直连且请求未显式指定区域时，
     // 应回到 Auto，而不是复用一个此前从未参与连接调度的旧值。
-    const requestedRegion =
-      body.region === undefined
-        ? current.jump_server_id === null
-          ? current.region
-          : null
-        : (ALLOWED_LOCATION_HINTS as readonly string[]).includes(body.region)
-          ? body.region
-          : null;
+    // 未提供且直连：沿用旧区域；跳板连接：清空；提供但非法：视为未提供（Auto）
+    let requestedRegion: string | null = null;
+    if (body.region !== undefined) {
+      if ((ALLOWED_LOCATION_HINTS as readonly string[]).includes(body.region)) {
+        requestedRegion = body.region;
+      }
+    } else if (current.jump_server_id === null) {
+      requestedRegion = current.region;
+    }
     const normalizedRegion = nextJumpServerId === null ? requestedRegion : null;
     const isDirect = nextJumpServerId === null;
     const becameDirect = current.jump_server_id !== null && isDirect;

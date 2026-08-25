@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "types": ["node", "vitest/globals", "@cloudflare/workers-types"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+  },
+  "include": ["./**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

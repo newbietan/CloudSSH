@@ -1,0 +1,14 @@
+# gitleaks 配置：豁免已核实的误报
+#
+# 1. README** 的 sealed_token 是 star-history.com 公开图表服务的 URL 参数
+#    （公开仓库统计图，非凭据；token 由该第三方服务签发并公开在文档中）。
+# 2. tests/ssh/fixtures/ 下的私钥是公开协议测试夹具——AGENTS.md 明确声明
+#    "私钥只用于公开协议测试，绝不可用于真实服务器"，与仓库一同公开。
+# 3. tests/worker/session-reattach.test.ts 中的 resumeToken 是测试假数据。
+[allowlist]
+description = "CloudSSH 已核实误报豁免"
+paths = [
+  '''(?i)README(_en)?\.md''',
+  '''tests/ssh/fixtures/''',
+  '''tests/worker/session-reattach\.test\.ts''',
+]

@@ -875,7 +875,7 @@ async function handleSSHConnection(request: Request, env: Env): Promise<Response
     return Response.json({ error: 'GitHub authentication required' }, { status: 401 });
   }
 
-  const sessionName = `session:${Date.now()}:${Math.random()}`;
+  const sessionName = `session:${Date.now()}:${crypto.randomUUID()}`;
   const doId = env.SSH_SESSION.idFromName(sessionName);
   // 匿名路径不做自动推断（Worker 在 upgrade 时拿不到 host）；
   // 仅尊重用户通过前端下拉手动传入的 ?region= 覆盖值
@@ -1146,7 +1146,7 @@ async function handleTokenSSHConnection(
     );
   }
 
-  const sessionName = `session:${Date.now()}:${Math.random()}`;
+  const sessionName = `session:${Date.now()}:${crypto.randomUUID()}`;
   const doId = env.SSH_SESSION.idFromName(sessionName);
   // Token 路径：locationHint 由 user-db.handleConnectServer 按最外层直连节点计算并写入 config
   // （优先级：入口服务器手动 region → 入口 DB 持久化 inferred_hint → undefined）

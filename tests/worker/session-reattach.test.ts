@@ -30,7 +30,8 @@ if (typeof (globalThis as any).WebSocketPair === 'undefined') {
 const OriginalResponse = globalThis.Response;
 class MockResponse extends OriginalResponse {
   private _mockStatus: number;
-  public webSocket?: any;
+  // 基类 Response 要求 webSocket 为必填只读属性；此 Mock 在 101 升级时赋值。
+  public webSocket: any;
 
   constructor(body?: any, init?: any) {
     if (init && init.status === 101) {
@@ -91,7 +92,7 @@ describe('SSHSession Re-attach & Backpressure Flow Control', () => {
     const internal = session as any;
 
     internal.state = 'ready';
-    const channel = new SSHChannel(0, 1000, 1024 * 1024, 32768);
+    const channel = new SSHChannel();
     internal.shellChannel = channel;
     internal.channels.set(0, channel);
 

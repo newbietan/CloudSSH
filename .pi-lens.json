@@ -1,6 +1,11 @@
 {
   "format": { "enabled": false },
   "autofix": { "enabled": false },
+  "ignore": [
+    "tests/ssh/fixtures/**",
+    "README.md",
+    "README_en.md"
+  ],
   "rules": {
     "code-style": {
       "disable": [
