@@ -5,11 +5,7 @@ const MAX_AUDIT_EVENTS = 5000;
 /** 终态审计自动清理：满 90 天清除全部明细并写入一条自动清理墓碑。 */
 const AUDIT_AUTO_PURGE_AFTER_MS = 90 * 24 * 60 * 60 * 1000;
 
-const TERMINAL_SHARE_STATUSES: ReadonlySet<ShareStatus> = new Set([
-  'closed',
-  'revoked',
-  'expired',
-]);
+const TERMINAL_SHARE_STATUSES: ReadonlySet<ShareStatus> = new Set(['closed', 'revoked', 'expired']);
 const CONNECT_TICKET_TTL_MS = 60_000;
 
 type ShareStatus = 'unused' | 'claimed' | 'active' | 'closed' | 'revoked' | 'expired';
@@ -429,6 +425,12 @@ export class SSHShareDO {
     }
     await this.purgeAuditContent('share.audit_purged');
     this.db.exec('UPDATE share_state SET audit_purge_due = NULL');
+    // 手动清空即代表不再需要自动清理：取消已排期的唤醒，避免 90 天后一次无效唤起
+    try {
+      await this.state.storage.deleteAlarm();
+    } catch {
+      /* 当前无闹钟时忽略 */
+    }
     return Response.json({ success: true });
   }
 
@@ -491,9 +493,7 @@ export class SSHShareDO {
     share.closed_at = closedAt;
     // 终态进入审计保留期：到期自动清理调度；无审计明细则跳过
     if (TERMINAL_SHARE_STATUSES.has(status)) {
-      const count = Number(
-        this.db.exec('SELECT COUNT(*) AS count FROM audit_events').one().count
-      );
+      const count = Number(this.db.exec('SELECT COUNT(*) AS count FROM audit_events').one().count);
       if (count > 0) {
         const due = Date.now() + AUDIT_AUTO_PURGE_AFTER_MS;
         this.db.exec('UPDATE share_state SET audit_purge_due = ?', due);
