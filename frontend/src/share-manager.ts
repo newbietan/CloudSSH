@@ -272,30 +272,7 @@ export class ShareManager {
     // pi-lens-ignore: no-inner-html
     view.innerHTML = `<p class="text-xs text-muted">${t('common.loading')}</p>`;
     try {
-      const events: AuditEvent[] = [];
-      let after = 0;
-      let hasMore = true;
-      let share: { status: string; auditBytes: number } | null = null;
-      while (hasMore && events.length < 5000) {
-        const response = await fetch(
-          `/api/shares/${encodeURIComponent(shareId)}/audit?after=${after}&limit=500`
-        );
-        const payload = (await response.json().catch(() => ({}))) as {
-          share?: { status: string; auditBytes: number };
-          events?: AuditEvent[];
-          hasMore?: boolean;
-          nextAfter?: number;
-          error?: string;
-        };
-        if (!response.ok || !payload.share || !payload.events)
-          throw new Error(payload.error || t('share.auditFailed'));
-        share = payload.share;
-        events.push(...payload.events);
-        hasMore = payload.hasMore === true;
-        const next = payload.nextAfter ?? after;
-        if (next <= after) break;
-        after = next;
-      }
+      const { share, events, removals } = await this.fetchAllAudit(shareId);
       const output = stripTerminalControls(
         events
           .filter((event) => event.eventType === 'terminal.output')
@@ -305,6 +282,12 @@ export class ShareManager {
       const structured = events.filter((event) => event.eventType !== 'terminal.output');
       const canPurge =
         share?.status === 'closed' || share?.status === 'revoked' || share?.status === 'expired';
+      const removalPanel = removals.length > 0 ? this.renderRemovalPanel(removals) : '';
+      // 清理后列表为空时不再显示“尚无事件”提示，由清理记录面板说明原因
+      const emptyHint =
+        structured.length > 0 || removals.length > 0
+          ? ''
+          : `<p class="text-xs text-muted">${t('share.auditNone')}</p>`;
       // pi-lens-ignore: no-inner-html
       view.innerHTML = `
         <div class="flex items-center justify-between mb-3">
@@ -315,8 +298,9 @@ export class ShareManager {
             ${canPurge ? `<button type="button" data-audit-purge class="cyber-button px-2 py-1 text-[10px] text-error">${t('share.auditPurge')}</button>` : ''}
           </div>
         </div>
+        ${removalPanel}
         <div class="space-y-1 mb-4 max-h-48 overflow-y-auto custom-scrollbar">
-          ${structured.length ? structured.map((event) => `<div class="text-[10px] text-muted"><span class="text-dim">${escapeHtml(formatTime(event.occurredAt))}</span> ${escapeHtml(this.describeEvent(event))}</div>`).join('') : `<p class="text-xs text-muted">${t('share.auditNone')}</p>`}
+          ${structured.map((event) => `<div class="text-[10px] text-muted"><span class="text-dim">${escapeHtml(formatTime(event.occurredAt))}</span> ${escapeHtml(this.describeEvent(event))}</div>`).join('') || emptyHint}
         </div>
         <h4 class="text-[11px] font-bold text-primary mb-2">${t('share.terminalRecord')}</h4>
         <pre class="bg-[var(--bg)] border border-[var(--border)] p-3 text-[11px] text-on-surface whitespace-pre-wrap break-words max-h-72 overflow-auto custom-scrollbar">${escapeHtml(output || t('share.noTerminalOutput'))}</pre>
@@ -333,11 +317,14 @@ export class ShareManager {
     }
   }
 
-  /** 拉取指定分享的全部审计事件与元信息（分页聚合）。 */
-  private async fetchAllAudit(
-    shareId: string
-  ): Promise<{ share: { status: string; auditBytes: number } | null; events: AuditEvent[] }> {
+  /** 拉取指定分享的全部审计事件、清理记录与元信息（分页聚合）。 */
+  private async fetchAllAudit(shareId: string): Promise<{
+    share: { status: string; auditBytes: number } | null;
+    events: AuditEvent[];
+    removals: Array<{ occurredAt: number; eventType: string }>;
+  }> {
     const events: AuditEvent[] = [];
+    let removals: Array<{ occurredAt: number; eventType: string }> = [];
     let share: { status: string; auditBytes: number } | null = null;
     let after = 0;
     let hasMore = true;
@@ -348,6 +335,7 @@ export class ShareManager {
       const payload = (await response.json().catch(() => ({}))) as {
         share?: { status: string; auditBytes: number };
         events?: AuditEvent[];
+        removals?: Array<{ occurredAt: number; eventType: string }>;
         hasMore?: boolean;
         nextAfter?: number;
         error?: string;
@@ -356,18 +344,20 @@ export class ShareManager {
         throw new Error(localizedApiError(payload, 'share.auditFailed'));
       share = { status: payload.share.status, auditBytes: payload.share.auditBytes };
       events.push(...payload.events);
+      // 清理记录每页都全量返回，直接覆盖避免重复累积
+      if (payload.removals) removals = payload.removals;
       hasMore = payload.hasMore === true;
       const next = payload.nextAfter ?? after;
       if (next <= after) break;
       after = next;
     }
-    return { share, events };
+    return { share, events, removals };
   }
 
   /** 导出全部审计事件为 JSON 归档（含生命周期与终端输出原文）。 */
   private async exportAudit(shareId: string): Promise<void> {
     try {
-      const { share, events } = await this.fetchAllAudit(shareId);
+      const { share, events, removals } = await this.fetchAllAudit(shareId);
       const payload = {
         app: 'CloudSSH',
         kind: 'share-audit-export',
@@ -376,6 +366,7 @@ export class ShareManager {
         status: share?.status ?? null,
         auditBytes: share?.auditBytes ?? 0,
         events,
+        auditRemovals: removals,
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], {
         type: 'application/json',
@@ -416,6 +407,27 @@ export class ShareManager {
         variant: 'danger',
       });
     }
+  }
+
+  /** 渲染审计清理记录折叠面板：默认收起，展开查看全部清理操作。 */
+  private renderRemovalPanel(removals: Array<{ occurredAt: number; eventType: string }>): string {
+    const latest = removals[0];
+    const lines = removals
+      .map(
+        (removal) =>
+          `<div class="text-[10px] text-muted"><span class="text-dim">${escapeHtml(formatTime(removal.occurredAt))}</span> ${escapeHtml(t(`share.event.${removal.eventType}` as never))}</div>`
+      )
+      .join('');
+    // pi-lens-ignore: no-inner-html
+    return `
+      <details class="mb-3 border border-[var(--border)] rounded px-2 py-1">
+        <summary class="text-[10px] text-muted cursor-pointer select-none">
+          ${t('share.auditRemovalSummary', { time: formatTime(latest.occurredAt) })}
+        </summary>
+        <div class="space-y-1 mt-1">${lines}</div>
+        <p class="text-[10px] text-dim mt-1">${t('share.auditRemovalHint')}</p>
+      </details>
+    `;
   }
 
   private describeEvent(event: AuditEvent): string {

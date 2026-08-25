@@ -208,6 +208,8 @@ export const zhCN = {
   'share.auditPurgeMessage':
     '将永久删除全部审计明细（含终端输出与操作记录），仅保留一条清除标记。此操作不可恢复。',
   'share.auditPurged': '审计记录已清空',
+  'share.auditRemovalSummary': '审计明细已清空 · 最近清理于 {time}',
+  'share.auditRemovalHint': '已清除的明细不可恢复，此处仅保留清理操作的记录。',
   'share.auditPurgeFailed': '清空审计失败',
   'terminal.shareResumeEnded': '连接已断开且无法恢复，本次分享会话已结束。',
   'terminal.hostKeyChangeTitle': 'SSH 主机指纹已变更',
@@ -497,6 +499,8 @@ export const zhCN = {
   'share.event.session.detached': '连接中断，会话保持中',
   'share.event.session.resumed': '会话已恢复',
   'share.event.share.resume_denied': '恢复请求被拒绝',
+  'share.event.share.audit_purged': '分享者手动清空了全部审计明细',
+  'share.event.share.audit_auto_purged': '审计明细超过保留期，已被自动清理',
   'share.errorAlreadyUsed': '该分享链接已被领取或已撤销，无法重复使用',
   'share.errorLinkExpired': '分享链接已过期，请联系分享者重新生成',
   'share.errorSharingDisabled': 'SSH 分享功能当前未开启',

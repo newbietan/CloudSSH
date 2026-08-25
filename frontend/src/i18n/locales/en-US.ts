@@ -253,6 +253,9 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'share.auditPurgeMessage':
     'This permanently deletes all audit details (including terminal output and operations), keeping only a single tombstone marker. This cannot be undone.',
   'share.auditPurged': 'Audit log purged',
+  'share.auditRemovalSummary': 'Audit details purged · last purge at {time}',
+  'share.auditRemovalHint':
+    'Purged details cannot be recovered; these entries only record the purge operations.',
   'share.auditPurgeFailed': 'Failed to purge audit log',
   'terminal.shareResumeEnded':
     'Connection lost and could not be resumed. This shared session has ended.',
@@ -540,6 +543,8 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'share.event.session.detached': 'Connection lost, session is being held',
   'share.event.session.resumed': 'Session resumed',
   'share.event.share.resume_denied': 'Resume request denied',
+  'share.event.share.audit_purged': 'Owner manually purged all audit details',
+  'share.event.share.audit_auto_purged': 'Audit details auto-purged after retention period',
   'share.errorAlreadyUsed':
     'This share link has already been claimed or revoked and cannot be used again',
   'share.errorLinkExpired': 'This share link has expired. Ask the owner to generate a new one',

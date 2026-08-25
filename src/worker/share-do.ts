@@ -469,14 +469,25 @@ export class SSHShareDO {
   private ownerView(ownerUserId: number, after: number, limit: number): Response {
     const share = this.getShare();
     if (!share || share.owner_user_id !== ownerUserId) return jsonError('Forbidden', 403);
+    // 清理墓碑事件（purgeAuditContent 写入的两种 event_type）不进入常规列表，
+    // 单独作为 removals 返回供前端折叠面板展示；SQL 字面量为编译期常量。
     const events = this.db
       .exec(
         `SELECT id, occurred_at, event_type, details FROM audit_events
-       WHERE id > ? ORDER BY id ASC LIMIT ?`,
+       WHERE id > ?
+         AND event_type NOT IN ('share.audit_purged', 'share.audit_auto_purged')
+       ORDER BY id ASC LIMIT ?`,
         after,
         limit + 1
       )
       .toArray() as Array<{ id: number; occurred_at: number; event_type: string; details: string }>;
+    const removalRows = this.db
+      .exec(
+        `SELECT occurred_at, event_type FROM audit_events
+       WHERE event_type IN ('share.audit_purged', 'share.audit_auto_purged')
+       ORDER BY occurred_at DESC`
+      )
+      .toArray() as Array<{ occurred_at: number; event_type: string }>;
     const hasMore = events.length > limit;
     const visible = events.slice(0, limit).map((event) => ({
       id: event.id,
@@ -497,6 +508,10 @@ export class SSHShareDO {
         auditBytes: share.audit_bytes,
       },
       events: visible,
+      removals: removalRows.map((row) => ({
+        occurredAt: row.occurred_at,
+        eventType: row.event_type,
+      })),
       hasMore,
       nextAfter: visible.at(-1)?.id ?? after,
     });
