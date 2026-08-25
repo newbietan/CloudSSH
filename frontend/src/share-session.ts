@@ -124,8 +124,8 @@ export function renderShareLanding(
       errorBox?.classList.add('hidden');
       try {
         const devicePubKey = await exportDevicePublicKeySpki();
-        // 存储回读校验失败（常见于无痕模式）：不绑定公钥，会话退化为仅凭据恢复；
-        // 提示用户：该环境将跳过设备一致性校验（断线后恢复仍可进行）
+        // 存储回读校验失败（常见于无痕模式）：不绑定公钥，该分享会话不具备
+        // 断线恢复资格（严格口径）；提示用户断线即结束
         if (!devicePubKey) {
           notify(t('share.deviceIdentityUnavailableToast'), { variant: 'warning' });
         }
