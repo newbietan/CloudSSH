@@ -102,6 +102,13 @@ export class ShareManager {
               <option value="60" selected>60 ${t('share.minutes')}</option><option value="120">120 ${t('share.minutes')}</option>
             </select>
           </label>
+          <label class="text-xs text-muted">${t('share.auditRetention')}
+            <select id="share-audit-retention" class="terminal-input w-full mt-1">
+              <option value="7">7 ${t('share.days')}</option><option value="30">30 ${t('share.days')}</option>
+              <option value="90" selected>90 ${t('share.days')}</option><option value="180">180 ${t('share.days')}</option>
+              <option value="365">365 ${t('share.days')}</option>
+            </select>
+          </label>
         </div>
         <p class="text-[11px] text-muted mb-4">${t('share.createWarning')}</p>
         <button id="share-create-btn" type="button" class="cyber-button text-primary px-4 py-2 text-xs font-bold flex items-center gap-2">
@@ -141,12 +148,15 @@ export class ShareManager {
     const maxSessionMinutes = Number(
       (document.getElementById('share-session-duration') as HTMLSelectElement).value
     );
+    const auditRetentionDays = Number(
+      (document.getElementById('share-audit-retention') as HTMLSelectElement).value
+    );
     if (button) button.disabled = true;
     try {
       const response = await fetch(`/api/servers/${this.serverId}/shares`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ expiresInMinutes, maxSessionMinutes }),
+        body: JSON.stringify({ expiresInMinutes, maxSessionMinutes, auditRetentionDays }),
       });
       const payload = (await response.json().catch(() => ({}))) as {
         url?: string;
@@ -294,9 +304,7 @@ export class ShareManager {
       );
       const structured = events.filter((event) => event.eventType !== 'terminal.output');
       const canPurge =
-        share?.status === 'closed' ||
-        share?.status === 'revoked' ||
-        share?.status === 'expired';
+        share?.status === 'closed' || share?.status === 'revoked' || share?.status === 'expired';
       // pi-lens-ignore: no-inner-html
       view.innerHTML = `
         <div class="flex items-center justify-between mb-3">

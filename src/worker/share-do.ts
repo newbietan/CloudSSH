@@ -2,8 +2,10 @@ import type { Env, SSHConnectionConfig } from '../types';
 
 const MAX_AUDIT_BYTES = 5 * 1024 * 1024;
 const MAX_AUDIT_EVENTS = 5000;
-/** 终态审计自动清理：满 90 天清除全部明细并写入一条自动清理墓碑。 */
-const AUDIT_AUTO_PURGE_AFTER_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** 审计保留期默认值（天）：创建分享时可按链接自定义（1–365）。 */
+const DEFAULT_AUDIT_RETENTION_DAYS = 90;
+const MS_PER_DAY = 86_400_000;
 
 const TERMINAL_SHARE_STATUSES: ReadonlySet<ShareStatus> = new Set(['closed', 'revoked', 'expired']);
 const CONNECT_TICKET_TTL_MS = 60_000;
@@ -30,6 +32,7 @@ interface ShareStateRow {
   audit_bytes: number;
   device_pub_key: string | null;
   audit_purge_due: number | null;
+  audit_retention_days: number | null;
 }
 
 interface ShareInitBody {
@@ -41,6 +44,8 @@ interface ShareInitBody {
   serverName: string;
   expiresAt: number;
   maxSessionSeconds: number;
+  /** 审计明细保留天数（1–365）；缺省时服务端取默认 90 天。 */
+  auditRetentionDays?: number;
 }
 
 function jsonError(error: string, status: number): Response {
@@ -125,6 +130,12 @@ export class SSHShareDO {
     // 迁移：审计保留期到期时间（终态后自动清理调度用）。
     try {
       this.db.exec('ALTER TABLE share_state ADD COLUMN audit_purge_due INTEGER');
+    } catch {
+      /* column already exists */
+    }
+    // 迁移：审计保留天数（创建时可自定义；NULL 表示使用默认 90 天）。
+    try {
+      this.db.exec('ALTER TABLE share_state ADD COLUMN audit_retention_days INTEGER');
     } catch {
       /* column already exists */
     }
@@ -217,11 +228,24 @@ export class SSHShareDO {
     ) {
       return jsonError('Invalid maximum session duration', 400);
     }
+    // 审计保留天数：可选；未提供时存 NULL（运行时取默认 90 天）。
+    let auditRetentionDays: number | null = null;
+    if (body.auditRetentionDays !== undefined) {
+      if (
+        !Number.isInteger(body.auditRetentionDays) ||
+        body.auditRetentionDays < 1 ||
+        body.auditRetentionDays > 365
+      ) {
+        return jsonError('Invalid audit retention', 400);
+      }
+      auditRetentionDays = body.auditRetentionDays;
+    }
     this.db.exec(
       `INSERT INTO share_state (
         singleton, share_id, token_hash, owner_user_id, owner_github_id,
-        server_id, server_name, expires_at, max_session_seconds, status
-      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, 'unused')`,
+        server_id, server_name, expires_at, max_session_seconds,
+        audit_retention_days, status
+      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unused')`,
       body.shareId,
       body.tokenHash,
       body.ownerUserId,
@@ -229,7 +253,8 @@ export class SSHShareDO {
       body.serverId,
       body.serverName,
       body.expiresAt,
-      body.maxSessionSeconds
+      body.maxSessionSeconds,
+      auditRetentionDays
     );
     await this.state.storage.setAlarm(body.expiresAt);
     return Response.json({ success: true });
@@ -495,7 +520,8 @@ export class SSHShareDO {
     if (TERMINAL_SHARE_STATUSES.has(status)) {
       const count = Number(this.db.exec('SELECT COUNT(*) AS count FROM audit_events').one().count);
       if (count > 0) {
-        const due = Date.now() + AUDIT_AUTO_PURGE_AFTER_MS;
+        const retentionDays = share.audit_retention_days ?? DEFAULT_AUDIT_RETENTION_DAYS;
+        const due = Date.now() + retentionDays * MS_PER_DAY;
         this.db.exec('UPDATE share_state SET audit_purge_due = ?', due);
         void this.state.storage.setAlarm(due).catch(() => {});
       }

@@ -413,14 +413,24 @@ async function handleServersRoute(request: Request, url: URL, env: Env): Promise
       );
     }
     if (request.method === 'POST') {
-      const body = await request.json<{ expiresInMinutes?: number; maxSessionMinutes?: number }>();
+      const body = await request.json<{
+        expiresInMinutes?: number;
+        maxSessionMinutes?: number;
+        auditRetentionDays?: number;
+      }>();
       const expiresInMinutes = Number(body.expiresInMinutes);
       const maxSessionMinutes = Number(body.maxSessionMinutes);
+      // 审计保留天数：缺省 90；白名单与前端选项一致
+      const auditRetentionDays =
+        body.auditRetentionDays === undefined ? 90 : Number(body.auditRetentionDays);
       if (![5, 15, 30, 60].includes(expiresInMinutes)) {
         return Response.json({ error: 'Invalid share expiry' }, { status: 400 });
       }
       if (![15, 30, 60, 120].includes(maxSessionMinutes)) {
         return Response.json({ error: 'Invalid maximum session duration' }, { status: 400 });
+      }
+      if (![7, 30, 90, 180, 365].includes(auditRetentionDays)) {
+        return Response.json({ error: 'Invalid audit retention' }, { status: 400 });
       }
 
       const token = createShareToken();
@@ -461,6 +471,7 @@ async function handleServersRoute(request: Request, url: URL, env: Env): Promise
             serverName: metadata.serverName,
             expiresAt,
             maxSessionSeconds: maxSessionMinutes * 60,
+            auditRetentionDays,
           }),
         })
       );

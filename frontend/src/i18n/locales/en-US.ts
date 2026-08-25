@@ -494,6 +494,8 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'share.linkExpiry': 'Claim window',
   'share.sessionDuration': 'Maximum session duration',
   'share.minutes': 'minutes',
+  'share.auditRetention': 'Audit retention',
+  'share.days': 'days',
   'share.createWarning':
     'A share link is a temporary access credential. The recipient receives a full terminal and SFTP; send it only through a trusted channel. Every host fingerprint in the route must already be verified.',
   'share.create': 'Create share',

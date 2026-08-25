@@ -453,6 +453,8 @@ export const zhCN = {
   'share.linkExpiry': '链接领取有效期',
   'share.sessionDuration': '会话最长时间',
   'share.minutes': '分钟',
+  'share.auditRetention': '审计保留期',
+  'share.days': '天',
   'share.createWarning':
     '分享链接等同于临时访问凭证。接收者可使用完整终端和 SFTP，请仅通过可信渠道发送。创建前必须已通过普通连接验证全部主机指纹。',
   'share.create': '创建分享',
