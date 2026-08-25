@@ -213,6 +213,8 @@ export class ShareManager {
         return;
       }
       const purged = shares.filter((s) => s.auditPurgedAt);
+      // 已清理审计的分享等同删除效果：不再渲染卡片，仅在下方清理留痕区留一条记录
+      const visible = shares.filter((s) => !s.auditPurgedAt);
       // 集中式清理留痕区：所有已清理的分享都汇总在这里（默认收起）
       const cleanupSection =
         purged.length > 0
@@ -229,10 +231,10 @@ export class ShareManager {
       // pi-lens-ignore: no-inner-html
       container.innerHTML =
         cleanupSection +
-        shares
-        .map((share) => {
-          const revocable = ['unused', 'claimed', 'active'].includes(share.status);
-          return `<div class="border border-[var(--border)] p-3" data-share-id="${escapeHtml(share.id)}">
+        visible
+          .map((share) => {
+            const revocable = ['unused', 'claimed', 'active'].includes(share.status);
+            return `<div class="border border-[var(--border)] p-3" data-share-id="${escapeHtml(share.id)}">
           <div class="flex items-center justify-between gap-3">
             <div class="min-w-0">
               <div class="text-xs text-on-surface">${t(`share.status.${share.status}` as never)}</div>
@@ -240,13 +242,13 @@ export class ShareManager {
               <div class="text-[10px] text-muted">${t('share.expiresAt', { time: formatTime(share.expiresAt) })}</div>
             </div>
             <div class="flex gap-2 shrink-0">
-              ${share.auditPurgedAt ? '' : `<button type="button" data-share-audit="${escapeHtml(share.id)}" class="cyber-button px-2 py-1 text-[10px]">${t('share.audit')}</button>`}
+              <button type="button" data-share-audit="${escapeHtml(share.id)}" class="cyber-button px-2 py-1 text-[10px]">${t('share.audit')}</button>
               ${revocable ? `<button type="button" data-share-revoke="${escapeHtml(share.id)}" class="cyber-button px-2 py-1 text-[10px] text-error">${t('share.revoke')}</button>` : ''}
             </div>
           </div>
         </div>`;
-        })
-        .join('');
+          })
+          .join('');
       for (const button of container.querySelectorAll<HTMLElement>('[data-share-audit]')) {
         const shareId = button.dataset.shareAudit;
         if (!shareId) continue;

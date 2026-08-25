@@ -183,7 +183,7 @@ export class UserDBDO {
       this.db.exec('ALTER TABLE ssh_shares ADD COLUMN audit_purged_at INTEGER DEFAULT NULL');
     }
     if (!shareCols.some((c: any) => c.name === 'audit_purge_type')) {
-      this.db.exec("ALTER TABLE ssh_shares ADD COLUMN audit_purge_type TEXT DEFAULT NULL");
+      this.db.exec('ALTER TABLE ssh_shares ADD COLUMN audit_purge_type TEXT DEFAULT NULL');
     }
   }
 
@@ -759,6 +759,8 @@ export class UserDBDO {
       if (currentJumpError) return Response.json({ error: currentJumpError }, { status: 400 });
       updates.push("updated_at = datetime('now')");
       values.push(serverId);
+      // pi-lens-ignore: sql-injection —— SET 片段仅来自本函数硬编码白名单（列名 + '?' 或
+      // 固定 SQL 字面量），动态值全部经 values 参数绑定，无注入面
       this.db.exec(`UPDATE servers SET ${updates.join(', ')} WHERE id = ?`, ...values);
     }
 
@@ -771,6 +773,7 @@ export class UserDBDO {
       .toArray();
 
     return Response.json(
+      // SAFETY: 行形状由上方 SELECT 的 servers 全列定义并经 deserializeServerRow 归一化
       deserializeServerRow(row[0] as Record<string, unknown>) as unknown as ServerConfig
     );
   }
@@ -781,9 +784,12 @@ export class UserDBDO {
     // 验证服务器属于该用户
     const existing = this.db.exec('SELECT user_id FROM servers WHERE id = ?', serverId).toArray();
     if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
-    if ((existing[0] as unknown as { user_id: number }).user_id !== body.user_id)
+    // SAFETY: 行形状由上方 SELECT(user_id) 定义，行数已判空
+    const ownerUserId = (existing[0] as unknown as { user_id: number }).user_id;
+    if (ownerUserId !== body.user_id)
       return Response.json({ error: 'Forbidden' }, { status: 403 });
 
+    // SAFETY: 行形状由上方 SELECT(name) 定义，db 为无类型 DO SQLite 句柄
     const references = this.db
       .exec(
         'SELECT name FROM servers WHERE user_id = ? AND jump_server_id = ? ORDER BY name LIMIT 5',
@@ -831,7 +837,9 @@ export class UserDBDO {
     // 验证服务器属于该用户
     const existing = this.db.exec('SELECT user_id FROM servers WHERE id = ?', serverId).toArray();
     if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
-    if ((existing[0] as unknown as { user_id: number }).user_id !== body.user_id) {
+    // SAFETY: 行形状由上方 SELECT(user_id) 定义，行数已判空
+    const ownerUserId = (existing[0] as unknown as { user_id: number }).user_id;
+    if (ownerUserId !== body.user_id) {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -851,7 +859,9 @@ export class UserDBDO {
     }
     const server = this.db.exec('SELECT user_id FROM servers WHERE id = ?', serverId).toArray();
     if (server.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
-    if ((server[0] as unknown as { user_id: number }).user_id !== userId) {
+    // SAFETY: 行形状由上方 SELECT(user_id) 定义，行数已判空
+    const ownerUserId = (server[0] as unknown as { user_id: number }).user_id;
+    if (ownerUserId !== userId) {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
     const now = Date.now();
@@ -987,6 +997,7 @@ export class UserDBDO {
       seen.add(currentId);
       const rows = this.db.exec('SELECT * FROM servers WHERE id = ?', currentId).toArray();
       if (rows.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
+      // SAFETY: SELECT * 取自 servers 表，行字段与 StoredServerRow 接口一一对应
       const row = rows[0] as unknown as StoredServerRow;
       if (row.user_id !== userId) return Response.json({ error: 'Forbidden' }, { status: 403 });
       reversed.push(row);
@@ -1066,7 +1077,9 @@ export class UserDBDO {
     }
     const rows = this.db.exec('SELECT user_id FROM ssh_shares WHERE id = ?', shareId).toArray();
     if (rows.length === 0) return Response.json({ error: 'Share not found' }, { status: 404 });
-    if ((rows[0] as unknown as { user_id: number }).user_id !== body.user_id) {
+    // SAFETY: 行形状由上方 SELECT(user_id) 定义，行数已判空
+    const ownerUserId = (rows[0] as unknown as { user_id: number }).user_id;
+    if (ownerUserId !== body.user_id) {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
     this.db.exec(
@@ -1100,7 +1113,9 @@ export class UserDBDO {
     }
     const rows = this.db.exec('SELECT user_id FROM ssh_shares WHERE id = ?', shareId).toArray();
     if (rows.length === 0) return Response.json({ error: 'Share not found' }, { status: 404 });
-    if ((rows[0] as unknown as { user_id: number }).user_id !== body.user_id) {
+    // SAFETY: 行形状由上方 SELECT 列出（仅 user_id 列），db 为无类型的 DO SQLite 句柄
+    const ownerUserId = (rows[0] as unknown as { user_id: number }).user_id;
+    if (ownerUserId !== body.user_id) {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
     this.db.exec(
@@ -1129,6 +1144,7 @@ export class UserDBDO {
       )
       .toArray();
     if (metadata.length === 0) return Response.json({ error: 'Share not found' }, { status: 404 });
+    // SAFETY: 行形状由上方 SELECT 的四列定义（user_id/server_id/share_ref/status），db 为无类型 DO SQLite 句柄
     const row = metadata[0] as unknown as {
       user_id: number;
       server_id: number;
@@ -1203,6 +1219,7 @@ export class UserDBDO {
 
     try {
       return Response.json({
+        // SAFETY: 行形状由上方 SELECT('theme_data') 定义，非法 JSON 由 catch 兜底为 null
         theme: JSON.parse((rows[0] as unknown as { theme_data: string }).theme_data),
       });
     } catch {
@@ -1239,6 +1256,7 @@ export class UserDBDO {
       seen.add(currentId);
       const rows = this.db.exec('SELECT * FROM servers WHERE id = ?', currentId).toArray();
       if (rows.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
+      // SAFETY: SELECT * 取自 servers 表，行字段与 StoredServerRow 接口一一对应
       const row = rows[0] as unknown as StoredServerRow;
       if (row.user_id !== body.user_id)
         return Response.json({ error: 'Forbidden' }, { status: 403 });
@@ -1266,6 +1284,7 @@ export class UserDBDO {
             server.port
           )
           .toArray();
+        // SAFETY: khRows 来自仅取 fingerprint 列的已知主机查询，行数已判空
         return {
           server,
           identity,
@@ -1470,6 +1489,7 @@ export class UserDBDO {
         return Response.json({ fingerprint: null });
       }
       return Response.json({
+        // SAFETY: 行形状由上方 SELECT('fingerprint') 定义，行数已判空
         fingerprint: (rows[0] as unknown as { fingerprint: string }).fingerprint,
       });
     }
@@ -1529,10 +1549,12 @@ export class UserDBDO {
   // ==================== 命令片段管理 ====================
 
   private handleGetSnippets(userId: number): Response {
-    const rows = this.db.exec(
-      'SELECT id, name, command, created_at, updated_at FROM command_snippets WHERE user_id = ? ORDER BY id ASC',
-      userId,
-    ).toArray();
+    const rows = this.db
+      .exec(
+        'SELECT id, name, command, created_at, updated_at FROM command_snippets WHERE user_id = ? ORDER BY id ASC',
+        userId
+      )
+      .toArray();
     return Response.json(rows);
   }
 
@@ -1542,10 +1564,9 @@ export class UserDBDO {
     if (!normalized.ok) {
       return Response.json({ error: normalized.error }, { status: 400 });
     }
-    const countRows = this.db.exec(
-      'SELECT COUNT(*) AS count FROM command_snippets WHERE user_id = ?',
-      body.user_id,
-    ).toArray();
+    const countRows = this.db
+      .exec('SELECT COUNT(*) AS count FROM command_snippets WHERE user_id = ?', body.user_id)
+      .toArray();
     const count = Number((countRows[0] as { count?: unknown } | undefined)?.count ?? 0);
     if (count >= SNIPPET_MAX_COUNT) {
       return Response.json({ error: 'limitReached' }, { status: 400 });
@@ -1554,12 +1575,14 @@ export class UserDBDO {
       `INSERT INTO command_snippets (user_id, name, command, created_at, updated_at) VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
       body.user_id,
       normalized.value.name,
-      normalized.value.command,
+      normalized.value.command
     );
-    const rows = this.db.exec(
-      'SELECT id, name, command, created_at, updated_at FROM command_snippets WHERE user_id = ? ORDER BY id DESC LIMIT 1',
-      body.user_id,
-    ).toArray();
+    const rows = this.db
+      .exec(
+        'SELECT id, name, command, created_at, updated_at FROM command_snippets WHERE user_id = ? ORDER BY id DESC LIMIT 1',
+        body.user_id
+      )
+      .toArray();
     return Response.json(rows[0] ?? { success: true }, { status: 201 });
   }
 
@@ -1569,12 +1592,26 @@ export class UserDBDO {
     if (!normalized.ok) {
       return Response.json({ error: normalized.error }, { status: 400 });
     }
-    const existing = this.db.exec('SELECT id FROM command_snippets WHERE user_id = ? AND id = ?', body.user_id, snippetId).toArray();
+    const existing = this.db
+      .exec('SELECT id FROM command_snippets WHERE user_id = ? AND id = ?', body.user_id, snippetId)
+      .toArray();
     if (existing.length === 0) {
       return Response.json({ error: 'notFound' }, { status: 404 });
     }
-    this.db.exec(`UPDATE command_snippets SET name = ?, command = ?, updated_at = datetime('now') WHERE user_id = ? AND id = ?`, normalized.value.name, normalized.value.command, body.user_id, snippetId);
-    const rows = this.db.exec('SELECT id, name, command, created_at, updated_at FROM command_snippets WHERE user_id = ? AND id = ?', body.user_id, snippetId).toArray();
+    this.db.exec(
+      `UPDATE command_snippets SET name = ?, command = ?, updated_at = datetime('now') WHERE user_id = ? AND id = ?`,
+      normalized.value.name,
+      normalized.value.command,
+      body.user_id,
+      snippetId
+    );
+    const rows = this.db
+      .exec(
+        'SELECT id, name, command, created_at, updated_at FROM command_snippets WHERE user_id = ? AND id = ?',
+        body.user_id,
+        snippetId
+      )
+      .toArray();
     return Response.json(rows[0] ?? { success: true });
   }
 
@@ -1598,6 +1635,7 @@ export class UserDBDO {
       return Response.json({ configured: false });
     }
 
+    // SAFETY: 行形状由上方 SELECT 的 AI 配置四列定义，行数已判空
     const row = rows[0] as unknown as {
       base_url: string;
       model: string;
@@ -1685,6 +1723,7 @@ export class UserDBDO {
       return Response.json({ error: 'No AI config found' }, { status: 404 });
     }
 
+    // SAFETY: 行形状由上方 SELECT 的 AI 配置三列定义，行数已判空
     const row = rows[0] as unknown as {
       base_url: string;
       model: string;
