@@ -97,13 +97,14 @@ export class AIConfigPanel {
           }
         }
       }
-    } catch {}
+    } catch {
+      /* AI 配置加载为可选功能，解析失败保持默认即可 */
+    }
   }
 
   private async fetchModels(): Promise<void> {
     const baseUrlEl = this.modalEl?.querySelector('#ai-base-url') as HTMLInputElement;
     const apiKeyEl = this.modalEl?.querySelector('#ai-api-key') as HTMLInputElement;
-    const statusEl = this.modalEl?.querySelector('#ai-fetch-status') as HTMLElement;
     const modelListEl = this.modalEl?.querySelector('#ai-model-list') as HTMLDataListElement;
     const fetchBtn = this.modalEl?.querySelector('#ai-fetch-models-btn') as HTMLButtonElement;
 

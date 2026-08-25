@@ -3,7 +3,10 @@ import { SSHSession } from '../../src/worker/ssh-session';
 
 function createSession(stdout: string) {
   const send = vi.fn();
-  const fetch = vi.fn(async () => Response.json({ success: true }));
+  const fetch = vi.fn(
+    async (input: string | URL | Request, init?: RequestInit): Promise<Response> =>
+      Response.json({ success: true })
+  );
   const env = {
     USER_DB: {
       idFromName: vi.fn(() => 'user-db-id'),

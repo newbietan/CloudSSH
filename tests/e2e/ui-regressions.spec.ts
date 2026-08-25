@@ -128,9 +128,12 @@ test('Turnstile 跟随 Standard Light 和后续主题切换', async ({ page }) =
     .toEqual([{ id: 'widget-1', theme: 'light' }]);
 
   await page.evaluate(() => {
-    const selector = document.getElementById('theme-selector') as HTMLSelectElement;
-    selector.value = 'standard-dark';
-    selector.dispatchEvent(new Event('change', { bubbles: true }));
+    const themeSelector = document.getElementById('theme-selector');
+    if (!(themeSelector instanceof HTMLSelectElement)) {
+      throw new Error('theme-selector not found');
+    }
+    themeSelector.value = 'standard-dark';
+    themeSelector.dispatchEvent(new Event('change', { bubbles: true }));
   });
 
   await expect

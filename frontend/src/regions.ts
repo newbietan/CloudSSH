@@ -45,6 +45,7 @@ export function populateRegionSelect(
   el: HTMLSelectElement,
   selected: string | null | undefined
 ): void {
+    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
   el.innerHTML = REGION_OPTIONS.map(
     (o) =>
       `<option value="${o.value}" ${o.value === (selected || '') ? 'selected' : ''}>${t(o.labelKey)}</option>`

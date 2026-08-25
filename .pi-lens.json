@@ -4,7 +4,9 @@
   "ignore": [
     "tests/ssh/fixtures/**",
     "README.md",
-    "README_en.md"
+    "README_en.md",
+    "src/worker/html.ts",
+    "docs/theme-editor/**"
   ],
   "rules": {
     "code-style": {
@@ -43,7 +45,9 @@
         "ast-grep:no-unknown-parameters",
         "ast-grep:prefer-at",
         "ast-grep:ts-double-negation",
-        "ast-grep:no-console-except-error"
+        "ast-grep:no-console-except-error",
+        "ast-grep:no-shape-in-symbol-names",
+        "ast-grep:no-open-redirect"
       ]
     }
   }

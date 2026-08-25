@@ -767,8 +767,8 @@ export class UserDBDO {
       if (currentJumpError) return Response.json({ error: currentJumpError }, { status: 400 });
       updates.push("updated_at = datetime('now')");
       values.push(serverId);
-      // pi-lens-ignore: sql-injection —— SET 片段仅来自本函数硬编码白名单（列名 + '?' 或
-      // 固定 SQL 字面量），动态值全部经 values 参数绑定，无注入面
+      // pi-lens-ignore: sql-injection
+      // SET 片段仅来自本函数硬编码白名单（列名 + '?' 或固定字面量），动态值全部经 values 参数绑定
       this.db.exec(`UPDATE servers SET ${updates.join(', ')} WHERE id = ?`, ...values);
     }
 

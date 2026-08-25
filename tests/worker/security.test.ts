@@ -290,7 +290,9 @@ describe('安全 — 强制 GitHub 登录模式', () => {
         REQUIRE_GITHUB_AUTH: value,
       })
     );
-    expect((await res.json()).githubAuthRequired).toBe(expected);
+    expect(
+      ((await res.json()) as { githubAuthRequired?: boolean }).githubAuthRequired
+    ).toBe(expected);
   });
 
   it('强制登录时拒绝匿名 SSH WebSocket', async () => {
@@ -408,7 +410,6 @@ describe('安全 — 越权防护（IDOR）', () => {
         }
         // DO 收到 PUT /internal/servers/:id，检查 belong，属于他人 → 403
         if (req.url.match(/\/internal\/servers\/\d+$/) && req.method === 'PUT') {
-          const body = await req.json();
           // 模拟：服务器 record.user_id=2 !== body.user_id=1
           return new Response(JSON.stringify({ error: 'Server does not belong to user' }), {
             status: 403,
@@ -623,7 +624,7 @@ describe('安全 — SSRF 接缝（AI base_url）', () => {
 
     expect(res.status).toBe(400);
     const data = await res.json();
-    expect(data.error).toBeTruthy(); // validateBaseUrl 返回的中文 reason
+    expect((data as { error?: string }).error).toBeTruthy(); // validateBaseUrl 返回的中文 reason
     // 不应到达 DO 持久化
     expect(env.USER_DB.get({} as any).fetch).not.toHaveBeenCalledWith(
       expect.objectContaining({ url: expect.stringContaining('/internal/ai-config') })
@@ -971,7 +972,7 @@ describe('安全 — 一次性 token 与接缝鉴权', () => {
 
     expect(res.status).toBe(403);
     const data = await res.json();
-    expect(data.error).toMatch(/token|无效|expired/i);
+    expect((data as { error?: string }).error).toMatch(/token|无效|expired/i);
   });
 
   it('SFTP attach 缺 session 参数 → 403 Missing SFTP attach token', async () => {
@@ -990,7 +991,7 @@ describe('安全 — 一次性 token 与接缝鉴权', () => {
 
     expect(res.status).toBe(403);
     const data = await res.json();
-    expect(data.error).toMatch(/token|missing/i);
+    expect((data as { error?: string }).error).toMatch(/token|missing/i);
   });
 });
 
@@ -998,13 +999,17 @@ describe('安全 — 一次性 SSH 分享边界', () => {
   it('分享功能默认关闭，仅显式配置 true 时公开', async () => {
     const worker = await loadWorker();
     const disabled = await worker.fetch(makeRequest('/api/config'), makeEnv());
-    expect((await disabled.json()).sshSharingEnabled).toBe(false);
+    expect(((await disabled.json()) as { sshSharingEnabled?: boolean }).sshSharingEnabled).toBe(
+      false
+    );
 
     const enabled = await worker.fetch(
       makeRequest('/api/config'),
       makeEnv({ ENABLE_SSH_SHARING: 'true' })
     );
-    expect((await enabled.json()).sshSharingEnabled).toBe(true);
+    expect(((await enabled.json()) as { sshSharingEnabled?: boolean }).sshSharingEnabled).toBe(
+      true
+    );
   });
 
   it('公开领取接口对非法 JSON 和非 URL-safe 凭证返回 400', async () => {

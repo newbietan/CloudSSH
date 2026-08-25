@@ -75,7 +75,9 @@ export class DirectTcpipStream {
     this.pendingReads = [];
     try {
       this.controller?.close();
-    } catch {}
+    } catch {
+      /* 流可能已终断，关闭重复调用可忽略 */
+    }
     this.controller = null;
     void this.closeChannel().catch(() => {});
   }

@@ -77,6 +77,6 @@ export function extractRawECDHPoint(blob: Uint8Array): Uint8Array {
   return blob.subarray(offset, offset + pointLen);
 }
 
-export function encodePrefixedString(str: string): Uint8Array {
+export function encodePrefixedString(str: string | Uint8Array): Uint8Array {
   return encodeString(str);
 }

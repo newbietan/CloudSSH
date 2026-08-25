@@ -62,6 +62,8 @@ export class SSHAESGCMCipher {
     if (!this.key) throw new Error('Cipher not initialized');
     const algorithm = this.getAlgorithm(aad);
 
+    // SAFETY: getAlgorithm 返回的算法对象仅含 AesGcmParams 支持的分段；
+    // WebCrypto 类型签名过窄，运行时与 TS 均接受该形状
     const encrypted = new Uint8Array(
       await crypto.subtle.encrypt(
         algorithm as unknown as SubtleCryptoEncryptAlgorithm,
@@ -84,6 +86,8 @@ export class SSHAESGCMCipher {
     const algorithm = this.getAlgorithm(aad);
 
     try {
+      // SAFETY: getAlgorithm 返回的算法对象仅含 AesGcmParams 支持的分段；
+      // WebCrypto 类型签名过窄，运行时与 TS 均接受该形状
       const decrypted = new Uint8Array(
         await crypto.subtle.decrypt(
           algorithm as unknown as SubtleCryptoEncryptAlgorithm,

@@ -17,7 +17,9 @@ function makeExecutor(execResult: {
   stderr: string;
   exitCode: number;
 }) {
-  const execCommand = vi.fn(async () => execResult);
+  const execCommand = vi.fn(
+    async (command: string): Promise<typeof execResult> => execResult
+  );
   const askConfirmation = vi.fn(async () => true);
   const executor = new ToolExecutor(
     new TerminalContext(),

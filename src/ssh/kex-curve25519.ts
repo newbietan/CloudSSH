@@ -23,6 +23,8 @@ type X25519SubtleCrypto = {
 };
 
 function x25519Subtle(): X25519SubtleCrypto {
+  // SAFETY: Workers 运行时基于 WebCrypto 扩展曲线算法；类型缺官方声明，
+  // 接口按运行时实际形状定义，此转换仅为补全 TS 签名
   return crypto.subtle as unknown as X25519SubtleCrypto;
 }
 

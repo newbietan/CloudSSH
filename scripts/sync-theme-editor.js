@@ -73,6 +73,7 @@ function readObjectLiteral(source, marker) {
   const objectEnd = findMatchingBrace(source, objectStart);
   const literal = source.slice(objectStart, objectEnd + 1);
   // 仓库源码属于受信任输入；这里只执行抽取出的纯数据对象，供静态 Pages 使用。
+  // pi-lens-ignore: no-global-eval-js
   return Function(`"use strict"; return (${literal});`)();
 }
 
