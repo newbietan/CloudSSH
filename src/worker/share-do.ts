@@ -3,7 +3,7 @@ import type { Env, SSHConnectionConfig } from '../types';
 const MAX_AUDIT_BYTES = 5 * 1024 * 1024;
 const MAX_AUDIT_EVENTS = 5000;
 
-/** 审计保留期默认值（天）：创建分享时可按链接自定义（1–365）。 */
+/** 审计保留期默认值（天）：创建分享时可按链接自定义（7–365）。 */
 const DEFAULT_AUDIT_RETENTION_DAYS = 90;
 const MS_PER_DAY = 86_400_000;
 
@@ -44,7 +44,7 @@ interface ShareInitBody {
   serverName: string;
   expiresAt: number;
   maxSessionSeconds: number;
-  /** 审计明细保留天数（1–365）；缺省时服务端取默认 90 天。 */
+  /** 审计明细保留天数（7–365）；缺省时服务端取默认 90 天。 */
   auditRetentionDays?: number;
 }
 
@@ -195,7 +195,7 @@ export class SSHShareDO {
       return;
     }
     if (share.status === 'unused' && now >= share.expires_at) {
-      this.updateStatus(share, 'expired', now);
+      await this.updateStatus(share, 'expired', now);
       await this.syncOwnerMetadata(share, 'expired', { closedAt: now });
       return;
     }
@@ -233,7 +233,7 @@ export class SSHShareDO {
     if (body.auditRetentionDays !== undefined) {
       if (
         !Number.isInteger(body.auditRetentionDays) ||
-        body.auditRetentionDays < 1 ||
+        body.auditRetentionDays < 7 ||
         body.auditRetentionDays > 365
       ) {
         return jsonError('Invalid audit retention', 400);
@@ -274,7 +274,7 @@ export class SSHShareDO {
     if (share.status !== 'unused')
       return jsonError('This share link has already been used or revoked', 409);
     if (now >= share.expires_at) {
-      this.updateStatus(share, 'expired', now);
+      await this.updateStatus(share, 'expired', now);
       await this.syncOwnerMetadata(share, 'expired', { closedAt: now });
       return jsonError('This share link has expired', 410);
     }
@@ -352,7 +352,7 @@ export class SSHShareDO {
     if (!configResponse.ok) {
       const error = await configResponse.text();
       await this.appendAudit('session.connection_failed', { status: configResponse.status }, now);
-      this.updateStatus(active, 'closed', now);
+      await this.updateStatus(active, 'closed', now);
       await this.syncOwnerMetadata(active, 'closed', { closedAt: now });
       return new Response(error, {
         status: configResponse.status,
@@ -406,7 +406,7 @@ export class SSHShareDO {
     }
     const now = Date.now();
     await this.appendAudit('session.closed', { normal: body.normal === true }, now);
-    this.updateStatus(share, 'closed', now);
+    await this.updateStatus(share, 'closed', now);
     await this.syncOwnerMetadata(share, 'closed', { closedAt: now });
     return Response.json({ success: true });
   }
@@ -419,7 +419,7 @@ export class SSHShareDO {
     }
     const now = Date.now();
     await this.appendAudit(`share.${status}`, {}, now);
-    this.updateStatus(share, status, now);
+    await this.updateStatus(share, status, now);
     if (share.session_name) {
       const sessionStub = this.env.SSH_SESSION.get(
         this.env.SSH_SESSION.idFromName(share.session_name)
@@ -507,7 +507,11 @@ export class SSHShareDO {
     return rows.length ? (rows[0] as ShareStateRow) : null;
   }
 
-  private updateStatus(share: ShareStateRow, status: ShareStatus, closedAt: number): void {
+  private async updateStatus(
+    share: ShareStateRow,
+    status: ShareStatus,
+    closedAt: number
+  ): Promise<void> {
     this.db.exec(
       `UPDATE share_state SET status = ?, closed_at = ?, ticket_hash = NULL,
        ticket_expires_at = NULL WHERE singleton = 1`,
@@ -523,7 +527,15 @@ export class SSHShareDO {
         const retentionDays = share.audit_retention_days ?? DEFAULT_AUDIT_RETENTION_DAYS;
         const due = Date.now() + retentionDays * MS_PER_DAY;
         this.db.exec('UPDATE share_state SET audit_purge_due = ?', due);
-        void this.state.storage.setAlarm(due).catch(() => {});
+        try {
+          await this.state.storage.setAlarm(due);
+          share.audit_purge_due = due;
+        } catch (error) {
+          // 排期失败必须回滚：否则库里留下“有排期但无闹钟”的幽灵状态，自动清理将永不触发
+          console.error('SSHShareDO: failed to schedule audit purge alarm:', error);
+          this.db.exec('UPDATE share_state SET audit_purge_due = NULL');
+          share.audit_purge_due = null;
+        }
       }
     }
   }
