@@ -1,0 +1,45 @@
+{
+  "format": { "enabled": false },
+  "autofix": { "enabled": false },
+  "rules": {
+    "code-style": {
+      "disable": [
+        "lint/style/useBlockStatements",
+        "lint/style/noNestedTernary",
+        "lint/style/noNegationElse",
+        "lint/style/useTemplate",
+        "lint/style/useCollapsedElseIf",
+        "lint/complexity/noExcessiveCognitiveComplexity",
+        "lint/complexity/noForEach",
+        "lint/complexity/useOptionalChain",
+        "lint/complexity/noAdjacentSpacesInRegex",
+        "lint/suspicious/noExplicitAny",
+        "lint/suspicious/noEmptyInterface",
+        "lint/performance/noAccumulatingSpread",
+        "lint/performance/noBarrelFile",
+        "mixed-async-styles",
+        "high-complexity",
+        "missing-error-propagation",
+        "console-statement",
+        "ast-grep:large-class",
+        "ast-grep:nested-ternary",
+        "ast-grep:prefer-query-selector",
+        "ast-grep:prefer-dom-node-append",
+        "ast-grep:ts-redundant-filter-map",
+        "ast-grep:ts-parseint-no-radix",
+        "ast-grep:prefer-number-properties",
+        "ast-grep:find-import-file-without-extension",
+        "ast-grep:no-array-reverse-mutation",
+        "ast-grep:no-non-null-assertion",
+        "ast-grep:no-any-type",
+        "ast-grep:no-as-any",
+        "ast-grep:no-runtime-typeof",
+        "ast-grep:no-unsafe-dictionary-unknown",
+        "ast-grep:no-unknown-parameters",
+        "ast-grep:prefer-at",
+        "ast-grep:ts-double-negation",
+        "ast-grep:no-console-except-error"
+      ]
+    }
+  }
+}

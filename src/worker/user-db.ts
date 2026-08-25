@@ -7,7 +7,7 @@ import {
   type SSHJumpHostConfig,
   type UserInfo,
 } from '../types';
-import { type InferResult, inferLocationHint } from './ip-geo';
+import { inferLocationHint } from './ip-geo';
 import { isDetectedOS } from './os-detect';
 import { deserializeServerRow, serializeServerTags } from './server-tags';
 
@@ -39,7 +39,6 @@ interface StoredServerRow {
  * - One-time-token 生成与消费（安全传递凭据）
  */
 export class UserDBDO {
-  private state: DurableObjectState;
   private env: Env;
   private db: any; // SqlStorage (DO SQLite)
   // one-time-token 内存存储：token → { config, expiresAt }
@@ -49,7 +48,6 @@ export class UserDBDO {
   private derivedKeyCache: Map<number, CryptoKey> = new Map();
 
   constructor(state: DurableObjectState, env: Env) {
-    this.state = state;
     this.env = env;
     this.db = (state.storage as any).sql;
     this.initSchema();
@@ -374,6 +372,7 @@ export class UserDBDO {
         avatar_url,
         github_id
       );
+      // SAFETY: 行形状由上方 SELECT(github_id/username/avatar_url) 定义，existing 长度已判空
       const user = existing[0] as unknown as UserInfo;
       user.username = username;
       user.avatar_url = avatar_url;
@@ -388,6 +387,7 @@ export class UserDBDO {
       avatar_url
     );
 
+    // SAFETY: 行形状由上方 SELECT(id/github_id/username/avatar_url) 定义，新建行必然存在
     const newUser = this.db
       .exec('SELECT id, github_id, username, avatar_url FROM users WHERE github_id = ?', github_id)
       .toArray()[0] as unknown as UserInfo;
@@ -450,7 +450,10 @@ export class UserDBDO {
       return Response.json({ error: 'Invalid or expired session' }, { status: 401 });
     }
 
-    return Response.json(rows[0] as unknown as UserInfo);
+    return Response.json(
+      // SAFETY: 行形状由上方 SELECT 的 users 列定义，行数已判空
+      rows[0] as unknown as UserInfo
+    );
   }
 
   private async handleSessionDelete(request: Request): Promise<Response> {
@@ -471,6 +474,7 @@ export class UserDBDO {
       .toArray();
 
     return Response.json(
+      // SAFETY: 行形状由上方 SELECT 全列定义并经 deserializeServerRow 归一化
       rows.map((row: Record<string, unknown>) =>
         deserializeServerRow(row)
       ) as unknown as ServerConfig[]
@@ -500,6 +504,7 @@ export class UserDBDO {
         .exec('SELECT user_id, jump_server_id FROM servers WHERE id = ?', currentId)
         .toArray();
       if (rows.length === 0) return '所选跳板服务器不存在';
+      // SAFETY: 行形状由上方 SELECT(user_id/jump_server_id) 定义，行数已判空
       const row = rows[0] as unknown as { user_id: number; jump_server_id: number | null };
       if (row.user_id !== userId) return '不能使用其他用户的服务器作为跳板';
       currentId = row.jump_server_id ?? null;
@@ -596,6 +601,7 @@ export class UserDBDO {
       .toArray();
 
     // DEBUG_MODE 开启时，在响应中附带调试信息
+    // SAFETY: 行形状由上方 SELECT 的 servers 全列定义并经 deserializeServerRow 归一化
     const server = deserializeServerRow(
       rows[0] as Record<string, unknown>
     ) as unknown as ServerConfig;
@@ -627,6 +633,7 @@ export class UserDBDO {
       )
       .toArray();
     if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
+    // SAFETY: 行形状由上方 SELECT 列定义（user_id/host/port/auth_method 等），行数已判空
     const current = existing[0] as unknown as {
       user_id: number;
       host: string;
@@ -786,8 +793,7 @@ export class UserDBDO {
     if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
     // SAFETY: 行形状由上方 SELECT(user_id) 定义，行数已判空
     const ownerUserId = (existing[0] as unknown as { user_id: number }).user_id;
-    if (ownerUserId !== body.user_id)
-      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    if (ownerUserId !== body.user_id) return Response.json({ error: 'Forbidden' }, { status: 403 });
 
     // SAFETY: 行形状由上方 SELECT(name) 定义，db 为无类型 DO SQLite 句柄
     const references = this.db
