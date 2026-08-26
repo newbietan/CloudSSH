@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-08-26
+
+### Added
+
+- 分享审计记录保留与清理能力：分享者在终态后可整体清空全部审计明细（写入墓碑事件保留追责线索，`audit_bytes` 同步重置）或导出完整 JSON 归档（含生命周期与终端输出原文）。
+- 审计保留期可自定义（7–365 天，默认 90 天）：创建分享时指定；终态进入保留期，到期由 alarm 自动清除明细并写入自动清理墓碑。
+- 审计清理留痕集中展示：清理时间与方式（手动/自动）同步至用户库（`audit_purged_at`/`audit_purge_type`）并以折叠面板展示；已清理的分享等同删除效果，不再提供查看审计入口。
+- 新增审计清理回归测试（8 用例）：墓碑隔离、归属/终态校验、同步失败容错、排期回滚、留痕接缝与迁移幂等。
+
+### Changed
+
+- 审计保留期服务端校验统一为 7–365 天（ShareDO 与 Worker 创建入口白名单一致）。
+- 手动清空审计后同步取消已排期的自动清理闹钟，避免到期后的无效唤起。
+- 清理墓碑事件（`share.audit_purged`/`share.audit_auto_purged`）从常规审计事件流分离：`ownerView` 单独以 `removals` 返回，前端不再把清洗记录当作普通事件渲染。
+- UserDBDO SQL 查询改为类型化封装（`query<T>`/`one<T>`），消除 22 处 `as unknown as` 断言及对应说明注释；COUNT 查询统一走 `one<T>`。
+- 分享会话名随机数改由 `crypto.randomUUID()` 生成；OAuth 回调与 base URL 解析增加防御性兜底。
+- 测试类型检查纳入门禁：`tests/` 拆分 `tsconfig.worker` / `tsconfig.frontend` 两个项目（workers-types 与 DOM lib 的 `Element` 接口冲突，无法在单一配置共存），并修复暴露的 3 处测试代码类型缺陷。
+- 供应链与权限收紧：pnpm 启用 `blockExoticSubdeps`/`minimumReleaseAge`（7 天）/`no-downgrade`；CI 部署权限收敛为 `contents: read`；新增 `.gitleaks.toml` 误报豁免配置。
+
+### Fixed
+
+- 审计保留期闹钟设置失败静默：失败时回滚排期状态并同步内存，杜绝“有排期但无闹钟”的幽灵状态（自动清理永不触发）。
+- `updateStatus` 调用点统一 `await`，消除异步化改造后的未处理 rejection 风险。
+- 部署窗口期 UserDBDO 不支持审计留痕路由时清理仍可完成（尽力同步，失败仅记录日志）。
+- pi-lens 行内抑制失效：误报豁免注释与目标行之间被说明注释隔断，已补为紧邻放置。
+
+### Docs
+
+- AGENTS.md 第 25 条同步清理触发条件、墓碑/removals 域与留痕同步失败边界；新增第 31 条 pi-lens 项目策略口径（XSS 类规则刻意不做项目级禁用，仅行内逐处豁免）。
+- AGENTS.md 开发命令补充供应链策略约束说明；`tests/README.md` 说明测试类型检查拆分原因。
+
 ## [1.11.0] - 2026-08-25
 
 ### Added
