@@ -2,10 +2,8 @@ import { normalizeSnippetInput, SNIPPET_MAX_COUNT } from '../snippet-schema';
 import {
   ALLOWED_LOCATION_HINTS,
   type Env,
-  type ServerConfig,
   type SSHConnectionConfig,
   type SSHJumpHostConfig,
-  type UserInfo,
 } from '../types';
 import { inferLocationHint } from './ip-geo';
 import { isDetectedOS } from './os-detect';
@@ -29,6 +27,42 @@ interface StoredServerRow {
   jump_server_id: number | null;
 }
 
+// ====== 行形状帮助类型：与 UserDBDO 内各 SELECT 列一一对应（配合 query<T> 消除逐处 as unknown as） ======
+type UserRow = { id: number; github_id: number; username: string; avatar_url: string };
+type ServerRow = {
+  id: number;
+  user_id: number;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  auth_method: string;
+  region: string | null;
+  inferred_hint: string | null;
+  tags: string;
+  os: string | null;
+  jump_server_id: number | null;
+  created_at: string;
+  updated_at: string;
+};
+type UserIdRow = { user_id: number };
+type JumpRow = { user_id: number; jump_server_id: number | null };
+type ServerEditRow = {
+  user_id: number;
+  host: string;
+  port: number;
+  auth_method: string;
+  region: string | null;
+  inferred_hint: string | null;
+  jump_server_id: number | null;
+};
+type ServerNameRow = { name: string };
+type ShareMetaRow = { user_id: number; server_id: number; share_ref: string; status: string };
+type ThemeRow = { theme_data: string };
+type FingerprintRow = { fingerprint: string };
+type AIConfigRow = { base_url: string; model: string; api_key_last4: string; updated_at: string };
+type AIConfigSecretRow = { base_url: string; model: string; api_key_enc: string };
+
 /**
  * UserDBDO — 按 GitHub 用户 ID 命名并隔离的用户数据库 Durable Object
  *
@@ -51,6 +85,19 @@ export class UserDBDO {
     this.env = env;
     this.db = (state.storage as any).sql;
     this.initSchema();
+  }
+
+  /**
+   * SqlStorage 无类型句柄的薄封装：行形状由调用方按 SELECT 列声明（T），
+   * 消除逐处 as unknown as。仅编译期 cast，运行时行为与 toArray() 完全一致。
+   */
+  private query<T>(sql: string, ...params: unknown[]): T[] {
+    return this.db.exec(sql, ...params).toArray() as T[];
+  }
+
+  private one<T>(sql: string, ...params: unknown[]): T | null {
+    const rows = this.query<T>(sql, ...params);
+    return rows.length > 0 ? rows[0] : null;
   }
 
   private initSchema(): void {
@@ -359,10 +406,11 @@ export class UserDBDO {
       avatar_url: string;
     }>();
 
-    // Upsert 用户
-    const existing = this.db
-      .exec('SELECT id, github_id, username, avatar_url FROM users WHERE github_id = ?', github_id)
-      .toArray();
+    // Upsert 用户（行形状：users 的 id/github_id/username/avatar_url 列）
+    const existing = this.query<UserRow>(
+      'SELECT id, github_id, username, avatar_url FROM users WHERE github_id = ?',
+      github_id
+    );
 
     if (existing.length > 0) {
       // 更新用户信息
@@ -372,8 +420,7 @@ export class UserDBDO {
         avatar_url,
         github_id
       );
-      // SAFETY: 行形状由上方 SELECT(github_id/username/avatar_url) 定义，existing 长度已判空
-      const user = existing[0] as unknown as UserInfo;
+      const user = existing[0];
       user.username = username;
       user.avatar_url = avatar_url;
       return Response.json(user);
@@ -387,10 +434,10 @@ export class UserDBDO {
       avatar_url
     );
 
-    // SAFETY: 行形状由上方 SELECT(id/github_id/username/avatar_url) 定义，新建行必然存在
-    const newUser = this.db
-      .exec('SELECT id, github_id, username, avatar_url FROM users WHERE github_id = ?', github_id)
-      .toArray()[0] as unknown as UserInfo;
+    const newUser = this.query<UserRow>(
+      'SELECT id, github_id, username, avatar_url FROM users WHERE github_id = ?',
+      github_id
+    )[0];
 
     return Response.json(newUser);
   }
@@ -437,23 +484,18 @@ export class UserDBDO {
   private async handleSessionVerify(request: Request): Promise<Response> {
     const { token } = await request.json<{ token: string }>();
 
-    const rows = this.db
-      .exec(
-        `SELECT u.id, u.github_id, u.username, u.avatar_url
-         FROM sessions s JOIN users u ON s.user_id = u.id
-         WHERE s.token = ? AND s.expires_at > datetime('now')`,
-        token
-      )
-      .toArray();
+    const rows = this.query<UserRow>(
+      `SELECT u.id, u.github_id, u.username, u.avatar_url
+       FROM sessions s JOIN users u ON s.user_id = u.id
+       WHERE s.token = ? AND s.expires_at > datetime('now')`,
+      token
+    );
 
     if (rows.length === 0) {
       return Response.json({ error: 'Invalid or expired session' }, { status: 401 });
     }
 
-    return Response.json(
-      // SAFETY: 行形状由上方 SELECT 的 users 列定义，行数已判空
-      rows[0] as unknown as UserInfo
-    );
+    return Response.json(rows[0]);
   }
 
   private async handleSessionDelete(request: Request): Promise<Response> {
@@ -465,20 +507,13 @@ export class UserDBDO {
   // ==================== 服务器 CRUD ====================
 
   private handleGetServers(userId: number): Response {
-    const rows = this.db
-      .exec(
-        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, jump_server_id, created_at, updated_at
-         FROM servers WHERE user_id = ? ORDER BY updated_at DESC`,
-        userId
-      )
-      .toArray();
-
-    return Response.json(
-      // SAFETY: 行形状由上方 SELECT 全列定义并经 deserializeServerRow 归一化
-      rows.map((row: Record<string, unknown>) =>
-        deserializeServerRow(row)
-      ) as unknown as ServerConfig[]
+    const rows = this.query<ServerRow>(
+      `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, jump_server_id, created_at, updated_at
+       FROM servers WHERE user_id = ? ORDER BY updated_at DESC`,
+      userId
     );
+
+    return Response.json(rows.map((row) => deserializeServerRow(row)));
   }
 
   private validateJumpChain(
@@ -500,12 +535,12 @@ export class UserDBDO {
       depth++;
       if (depth > MAX_JUMP_HOSTS) return `最多允许 ${MAX_JUMP_HOSTS} 级 SSH 跳转`;
 
-      const rows = this.db
-        .exec('SELECT user_id, jump_server_id FROM servers WHERE id = ?', currentId)
-        .toArray();
+      const rows: JumpRow[] = this.query<JumpRow>(
+        'SELECT user_id, jump_server_id FROM servers WHERE id = ?',
+        currentId
+      );
       if (rows.length === 0) return '所选跳板服务器不存在';
-      // SAFETY: 行形状由上方 SELECT(user_id/jump_server_id) 定义，行数已判空
-      const row = rows[0] as unknown as { user_id: number; jump_server_id: number | null };
+      const row = rows[0];
       if (row.user_id !== userId) return '不能使用其他用户的服务器作为跳板';
       currentId = row.jump_server_id ?? null;
     }
@@ -592,19 +627,15 @@ export class UserDBDO {
     );
 
     // 获取新创建的记录
-    const rows = this.db
-      .exec(
-        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, jump_server_id, created_at, updated_at
-         FROM servers WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
-        body.user_id
-      )
-      .toArray();
+    const rows = this.query<ServerRow>(
+      `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, jump_server_id, created_at, updated_at
+       FROM servers WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
+      body.user_id
+    );
 
     // DEBUG_MODE 开启时，在响应中附带调试信息
-    // SAFETY: 行形状由上方 SELECT 的 servers 全列定义并经 deserializeServerRow 归一化
-    const server = deserializeServerRow(
-      rows[0] as Record<string, unknown>
-    ) as unknown as ServerConfig;
+    // 行形状由上方 SELECT 的 servers 全列定义；deserializeServerRow 归一化 tags 后直接序列化
+    const server = deserializeServerRow(rows[0]);
     if (this.env.DEBUG_MODE === 'true') {
       return Response.json({ ...server, _debug: inferDebug }, { status: 201 });
     }
@@ -625,24 +656,13 @@ export class UserDBDO {
       jump_server_id?: number | null;
     }>();
 
-    // 验证服务器属于该用户
-    const existing = this.db
-      .exec(
-        'SELECT user_id, host, port, auth_method, region, inferred_hint, jump_server_id FROM servers WHERE id = ?',
-        serverId
-      )
-      .toArray();
+    // 验证服务器属于该用户（行形状：user_id/host/port/auth_method/region/inferred_hint/jump_server_id）
+    const existing = this.query<ServerEditRow>(
+      'SELECT user_id, host, port, auth_method, region, inferred_hint, jump_server_id FROM servers WHERE id = ?',
+      serverId
+    );
     if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
-    // SAFETY: 行形状由上方 SELECT 列定义（user_id/host/port/auth_method 等），行数已判空
-    const current = existing[0] as unknown as {
-      user_id: number;
-      host: string;
-      port: number;
-      auth_method: string;
-      region: string | null;
-      inferred_hint: string | null;
-      jump_server_id: number | null;
-    };
+    const current = existing[0];
     if (current.user_id !== body.user_id)
       return Response.json({ error: 'Forbidden' }, { status: 403 });
 
@@ -767,43 +787,34 @@ export class UserDBDO {
       if (currentJumpError) return Response.json({ error: currentJumpError }, { status: 400 });
       updates.push("updated_at = datetime('now')");
       values.push(serverId);
-      // pi-lens-ignore: sql-injection
       // SET 片段仅来自本函数硬编码白名单（列名 + '?' 或固定字面量），动态值全部经 values 参数绑定
+      // pi-lens-ignore: sql-injection
       this.db.exec(`UPDATE servers SET ${updates.join(', ')} WHERE id = ?`, ...values);
     }
 
-    const row = this.db
-      .exec(
-        `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, jump_server_id, created_at, updated_at
-         FROM servers WHERE id = ?`,
-        serverId
-      )
-      .toArray();
-
-    return Response.json(
-      // SAFETY: 行形状由上方 SELECT 的 servers 全列定义并经 deserializeServerRow 归一化
-      deserializeServerRow(row[0] as Record<string, unknown>) as unknown as ServerConfig
+    const row = this.query<ServerRow>(
+      `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, jump_server_id, created_at, updated_at
+       FROM servers WHERE id = ?`,
+      serverId
     );
+
+    return Response.json(deserializeServerRow(row[0]));
   }
 
   private async handleDeleteServer(serverId: number, request: Request): Promise<Response> {
     const body = await request.json<{ user_id: number }>();
 
     // 验证服务器属于该用户
-    const existing = this.db.exec('SELECT user_id FROM servers WHERE id = ?', serverId).toArray();
+    const existing = this.query<UserIdRow>('SELECT user_id FROM servers WHERE id = ?', serverId);
     if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
-    // SAFETY: 行形状由上方 SELECT(user_id) 定义，行数已判空
-    const ownerUserId = (existing[0] as unknown as { user_id: number }).user_id;
+    const ownerUserId = existing[0].user_id;
     if (ownerUserId !== body.user_id) return Response.json({ error: 'Forbidden' }, { status: 403 });
 
-    // SAFETY: 行形状由上方 SELECT(name) 定义，db 为无类型 DO SQLite 句柄
-    const references = this.db
-      .exec(
-        'SELECT name FROM servers WHERE user_id = ? AND jump_server_id = ? ORDER BY name LIMIT 5',
-        body.user_id,
-        serverId
-      )
-      .toArray() as unknown as Array<{ name: string }>;
+    const references = this.query<ServerNameRow>(
+      'SELECT name FROM servers WHERE user_id = ? AND jump_server_id = ? ORDER BY name LIMIT 5',
+      body.user_id,
+      serverId
+    );
     if (references.length > 0) {
       return Response.json(
         {
@@ -814,14 +825,12 @@ export class UserDBDO {
     }
 
     const activeShares = Number(
-      this.db
-        .exec(
-          `SELECT COUNT(*) AS count FROM ssh_shares
+      (this.one<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM ssh_shares
        WHERE user_id = ? AND server_id = ? AND status IN ('unused', 'claimed', 'active')`,
-          body.user_id,
-          serverId
-        )
-        .one().count
+        body.user_id,
+        serverId
+      ) ?? { count: 0 }).count
     );
     if (activeShares > 0) {
       return Response.json(
@@ -842,10 +851,9 @@ export class UserDBDO {
     const body = await request.json<{ user_id: number; os: string }>();
 
     // 验证服务器属于该用户
-    const existing = this.db.exec('SELECT user_id FROM servers WHERE id = ?', serverId).toArray();
+    const existing = this.query<UserIdRow>('SELECT user_id FROM servers WHERE id = ?', serverId);
     if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
-    // SAFETY: 行形状由上方 SELECT(user_id) 定义，行数已判空
-    const ownerUserId = (existing[0] as unknown as { user_id: number }).user_id;
+    const ownerUserId = existing[0].user_id;
     if (ownerUserId !== body.user_id) {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
@@ -864,10 +872,9 @@ export class UserDBDO {
     if (!Number.isInteger(userId) || userId <= 0) {
       return Response.json({ error: 'Invalid user_id' }, { status: 400 });
     }
-    const server = this.db.exec('SELECT user_id FROM servers WHERE id = ?', serverId).toArray();
+    const server = this.query<UserIdRow>('SELECT user_id FROM servers WHERE id = ?', serverId);
     if (server.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
-    // SAFETY: 行形状由上方 SELECT(user_id) 定义，行数已判空
-    const ownerUserId = (server[0] as unknown as { user_id: number }).user_id;
+    const ownerUserId = server[0].user_id;
     if (ownerUserId !== userId) {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
@@ -950,14 +957,12 @@ export class UserDBDO {
     const validation = this.validateShareableServer(serverId, body.user_id);
     if (validation instanceof Response) return validation;
     const activeCount = Number(
-      this.db
-        .exec(
-          `SELECT COUNT(*) AS count FROM ssh_shares
+      (this.one<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM ssh_shares
        WHERE user_id = ? AND status IN ('unused', 'claimed', 'active') AND expires_at > ?`,
-          body.user_id,
-          now
-        )
-        .one().count
+        body.user_id,
+        now
+      ) ?? { count: 0 }).count
     );
     if (activeCount >= 10) {
       return Response.json(
@@ -1002,10 +1007,9 @@ export class UserDBDO {
         return Response.json({ error: '跳板服务器关系存在循环' }, { status: 400 });
       }
       seen.add(currentId);
-      const rows = this.db.exec('SELECT * FROM servers WHERE id = ?', currentId).toArray();
+      const rows: StoredServerRow[] = this.query<StoredServerRow>('SELECT * FROM servers WHERE id = ?', currentId);
       if (rows.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
-      // SAFETY: SELECT * 取自 servers 表，行字段与 StoredServerRow 接口一一对应
-      const row = rows[0] as unknown as StoredServerRow;
+      const row = rows[0];
       if (row.user_id !== userId) return Response.json({ error: 'Forbidden' }, { status: 403 });
       reversed.push(row);
       if (reversed.length > MAX_JUMP_HOSTS + 1) {
@@ -1082,10 +1086,9 @@ export class UserDBDO {
     if (!Number.isInteger(body.user_id) || !allowed.has(body.status)) {
       return Response.json({ error: 'Invalid share status update' }, { status: 400 });
     }
-    const rows = this.db.exec('SELECT user_id FROM ssh_shares WHERE id = ?', shareId).toArray();
+    const rows = this.query<UserIdRow>('SELECT user_id FROM ssh_shares WHERE id = ?', shareId);
     if (rows.length === 0) return Response.json({ error: 'Share not found' }, { status: 404 });
-    // SAFETY: 行形状由上方 SELECT(user_id) 定义，行数已判空
-    const ownerUserId = (rows[0] as unknown as { user_id: number }).user_id;
+    const ownerUserId = rows[0].user_id;
     if (ownerUserId !== body.user_id) {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
@@ -1118,10 +1121,9 @@ export class UserDBDO {
     ) {
       return Response.json({ error: 'Invalid audit purge update' }, { status: 400 });
     }
-    const rows = this.db.exec('SELECT user_id FROM ssh_shares WHERE id = ?', shareId).toArray();
+    const rows = this.query<UserIdRow>('SELECT user_id FROM ssh_shares WHERE id = ?', shareId);
     if (rows.length === 0) return Response.json({ error: 'Share not found' }, { status: 404 });
-    // SAFETY: 行形状由上方 SELECT 列出（仅 user_id 列），db 为无类型的 DO SQLite 句柄
-    const ownerUserId = (rows[0] as unknown as { user_id: number }).user_id;
+    const ownerUserId = rows[0].user_id;
     if (ownerUserId !== body.user_id) {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
@@ -1144,20 +1146,12 @@ export class UserDBDO {
     if (!body.share_id || !body.share_ref || !Number.isFinite(body.session_expires_at)) {
       return Response.json({ error: 'Invalid share session policy' }, { status: 400 });
     }
-    const metadata = this.db
-      .exec(
-        `SELECT user_id, server_id, share_ref, status FROM ssh_shares WHERE id = ?`,
-        body.share_id
-      )
-      .toArray();
+    const metadata = this.query<ShareMetaRow>(
+      `SELECT user_id, server_id, share_ref, status FROM ssh_shares WHERE id = ?`,
+      body.share_id
+    );
     if (metadata.length === 0) return Response.json({ error: 'Share not found' }, { status: 404 });
-    // SAFETY: 行形状由上方 SELECT 的四列定义（user_id/server_id/share_ref/status），db 为无类型 DO SQLite 句柄
-    const row = metadata[0] as unknown as {
-      user_id: number;
-      server_id: number;
-      share_ref: string;
-      status: string;
-    };
+    const row = metadata[0];
     if (
       row.user_id !== body.user_id ||
       row.server_id !== serverId ||
@@ -1216,9 +1210,7 @@ export class UserDBDO {
   // ==================== 用户自定义主题 ====================
 
   private handleGetTheme(userId: number): Response {
-    const rows = this.db
-      .exec('SELECT theme_data FROM user_themes WHERE user_id = ?', userId)
-      .toArray();
+    const rows = this.query<ThemeRow>('SELECT theme_data FROM user_themes WHERE user_id = ?', userId);
 
     if (rows.length === 0) {
       return Response.json({ theme: null });
@@ -1226,8 +1218,8 @@ export class UserDBDO {
 
     try {
       return Response.json({
-        // SAFETY: 行形状由上方 SELECT('theme_data') 定义，非法 JSON 由 catch 兜底为 null
-        theme: JSON.parse((rows[0] as unknown as { theme_data: string }).theme_data),
+        // 行形状由上方 SELECT('theme_data') 定义，非法 JSON 由 catch 兜底为 null
+        theme: JSON.parse(rows[0].theme_data),
       });
     } catch {
       return Response.json({ theme: null });
@@ -1261,10 +1253,9 @@ export class UserDBDO {
         return Response.json({ error: '跳板服务器关系存在循环' }, { status: 400 });
       }
       seen.add(currentId);
-      const rows = this.db.exec('SELECT * FROM servers WHERE id = ?', currentId).toArray();
+      const rows: StoredServerRow[] = this.query<StoredServerRow>('SELECT * FROM servers WHERE id = ?', currentId);
       if (rows.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
-      // SAFETY: SELECT * 取自 servers 表，行字段与 StoredServerRow 接口一一对应
-      const row = rows[0] as unknown as StoredServerRow;
+      const row = rows[0];
       if (row.user_id !== body.user_id)
         return Response.json({ error: 'Forbidden' }, { status: 403 });
       reversed.push(row);
@@ -1283,23 +1274,18 @@ export class UserDBDO {
           index === 0 ? server.host : `jump:${pathSegments.join('>')}|${server.host}`;
         pathSegments.push(`${server.id}@${server.host}:${server.port}`);
         const credential = await this.decryptCredential(server.credential, body.user_id);
-        const khRows = this.db
-          .exec(
-            'SELECT fingerprint FROM known_hosts WHERE user_id = ? AND host = ? AND port = ?',
-            body.user_id,
-            identity,
-            server.port
-          )
-          .toArray();
-        // SAFETY: khRows 来自仅取 fingerprint 列的已知主机查询，行数已判空
+        const khRows = this.query<FingerprintRow>(
+          'SELECT fingerprint FROM known_hosts WHERE user_id = ? AND host = ? AND port = ?',
+          body.user_id,
+          identity,
+          server.port
+        );
         return {
           server,
           identity,
           credential,
           expectedFingerprint:
-            khRows.length > 0
-              ? (khRows[0] as unknown as { fingerprint: string }).fingerprint
-              : undefined,
+            khRows.length > 0 ? khRows[0].fingerprint : undefined,
         };
       })
     );
@@ -1484,21 +1470,18 @@ export class UserDBDO {
   private handleGetKnownHosts(userId: number, host: string | null, port: string | null): Response {
     if (host && port) {
       // 查询特定 host:port 的指纹
-      const rows = this.db
-        .exec(
-          'SELECT fingerprint FROM known_hosts WHERE user_id = ? AND host = ? AND port = ?',
-          userId,
-          host,
-          parseInt(port)
-        )
-        .toArray();
-      if (rows.length === 0) {
-        return Response.json({ fingerprint: null });
-      }
-      return Response.json({
-        // SAFETY: 行形状由上方 SELECT('fingerprint') 定义，行数已判空
-        fingerprint: (rows[0] as unknown as { fingerprint: string }).fingerprint,
-      });
+      const rows = this.query<FingerprintRow>(
+        'SELECT fingerprint FROM known_hosts WHERE user_id = ? AND host = ? AND port = ?',
+        userId,
+        host,
+        parseInt(port)
+      );
+        if (rows.length === 0) {
+          return Response.json({ fingerprint: null });
+        }
+        return Response.json({
+          fingerprint: rows[0].fingerprint,
+        });
     }
 
     // 列出所有已知主机
@@ -1631,24 +1614,16 @@ export class UserDBDO {
   // ==================== AI 配置管理 ====================
 
   private handleGetAIConfig(userId: number): Response {
-    const rows = this.db
-      .exec(
-        'SELECT base_url, model, api_key_last4, updated_at FROM ai_configs WHERE user_id = ?',
-        userId
-      )
-      .toArray();
+    const rows = this.query<AIConfigRow>(
+      'SELECT base_url, model, api_key_last4, updated_at FROM ai_configs WHERE user_id = ?',
+      userId
+    );
 
     if (rows.length === 0) {
       return Response.json({ configured: false });
     }
 
-    // SAFETY: 行形状由上方 SELECT 的 AI 配置四列定义，行数已判空
-    const row = rows[0] as unknown as {
-      base_url: string;
-      model: string;
-      api_key_last4: string;
-      updated_at: string;
-    };
+    const row = rows[0];
     return Response.json({
       configured: true,
       base_url: row.base_url,
@@ -1722,20 +1697,15 @@ export class UserDBDO {
   }
 
   private async handleGetAIConfigDecrypted(userId: number): Promise<Response> {
-    const rows = this.db
-      .exec('SELECT base_url, model, api_key_enc FROM ai_configs WHERE user_id = ?', userId)
-      .toArray();
+    const rows = this.query<AIConfigSecretRow>(
+      'SELECT base_url, model, api_key_enc FROM ai_configs WHERE user_id = ?',
+      userId
+    );
 
     if (rows.length === 0) {
       return Response.json({ error: 'No AI config found' }, { status: 404 });
     }
-
-    // SAFETY: 行形状由上方 SELECT 的 AI 配置三列定义，行数已判空
-    const row = rows[0] as unknown as {
-      base_url: string;
-      model: string;
-      api_key_enc: string;
-    };
+    const row = rows[0];
 
     if (!row.api_key_enc) {
       return Response.json({ error: 'No API key configured' }, { status: 404 });

@@ -501,8 +501,6 @@ export const zhCN = {
   'share.event.session.detached': '连接中断，会话保持中',
   'share.event.session.resumed': '会话已恢复',
   'share.event.share.resume_denied': '恢复请求被拒绝',
-  'share.event.share.audit_purged': '分享者手动清空了全部审计明细',
-  'share.event.share.audit_auto_purged': '审计明细超过保留期，已被自动清理',
   'share.errorAlreadyUsed': '该分享链接已被领取或已撤销，无法重复使用',
   'share.errorLinkExpired': '分享链接已过期，请联系分享者重新生成',
   'share.errorSharingDisabled': 'SSH 分享功能当前未开启',

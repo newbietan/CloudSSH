@@ -1,4 +1,6 @@
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { SSHChannel } from '../../src/ssh/channel';
 import {
@@ -37,10 +39,8 @@ function createHandler(sftpOverrides: Record<string, unknown>) {
 
 describe('SFTP 同名上传保护', () => {
   it('SSH 会话仅接受布尔 true 作为显式覆盖授权', () => {
-    const source = readFileSync(
-      new URL('../../src/worker/ssh-session.ts', import.meta.url),
-      'utf8'
-    );
+    const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+    const source = readFileSync(join(rootDir, 'src/worker/ssh-session.ts'), 'utf8');
     expect(source).toContain(
       'this.sftpHandler.uploadStart(msg.path, msg.size || 0, msg.overwrite === true)'
     );

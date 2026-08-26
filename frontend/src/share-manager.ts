@@ -55,7 +55,10 @@ function formatShareStatus(status: string | undefined): string {
 
 function stripTerminalControls(value: string): string {
   return value
+    // 本函数的目的即去除 ANSI 控制序列（OSC \x1b]... / CSI \x1b[...），正则中的控制字符为设计意图。
+    // pi-lens-ignore: lint/suspicious/noControlCharactersInRegex
     .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
+    // pi-lens-ignore: lint/suspicious/noControlCharactersInRegex
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
     .replace(/\r/g, '');
 }
@@ -441,5 +444,10 @@ export class ShareManager {
       return `SFTP ${operation}${path ? ` ${path}` : ''} · ${result}`;
     }
     return t(`share.event.${event.eventType}` as never);
+    // 注意：share.event.share.audit_purged / audit_auto_purged 两条墓碑词条已移除——
+    // 新版后端 ownerView 已把两类墓碑事件从事件列表过滤（removals 单独返回），
+    // 正常路径不会命中；且前后端同源内联原子部署（build-html → 同一 Worker），
+    // 不存在“新前端调用旧后端”的窗口。如未来启用渐近发布等新旧 Worker 共存
+    // 方案，再按需补回词条。
   }
 }

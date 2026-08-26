@@ -71,7 +71,9 @@ async function makeDeviceKeyPair(): Promise<DeviceKeyPair> {
     'sign',
     'verify',
   ])) as CryptoKeyPair;
-  const spki = new Uint8Array(await crypto.subtle.exportKey('spki', kp.publicKey));
+  const spki = new Uint8Array(
+    (await crypto.subtle.exportKey('spki', kp.publicKey)) as ArrayBuffer
+  );
   return { privateKey: kp.privateKey as CryptoKey, publicKeyB64: toBase64Url(spki) };
 }
 

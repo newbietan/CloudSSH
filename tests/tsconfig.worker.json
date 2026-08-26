@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "types": ["@cloudflare/workers-types", "node", "vitest/globals"],
+    "lib": ["ES2022"]
+  },
+  "include": ["./worker/**/*.ts", "./ssh/**/*.ts", "./build/**/*.ts"],
+  "exclude": ["node_modules", "dist", "../frontend"]
+}

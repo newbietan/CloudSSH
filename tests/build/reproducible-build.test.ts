@@ -1,17 +1,20 @@
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const packageJson = JSON.parse(
-  readFileSync(new URL('../../package.json', import.meta.url), 'utf8')
-) as {
+// 以测试文件本身为锚点解析仓库相对路径（workers-types 的全局 URL 与 node:url.URL
+// 存在类型差异，这里统一走 fileURLToPath + path.join，避免跨类型使用）。
+const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const readRootFile = (relative: string): string =>
+  readFileSync(join(rootDir, relative), 'utf8');
+
+const packageJson = JSON.parse(readRootFile('package.json')) as {
   packageManager?: string;
   devDependencies: Record<string, string>;
 };
-const buildScript = readFileSync(new URL('../../scripts/build-html.js', import.meta.url), 'utf8');
-const deployWorkflow = readFileSync(
-  new URL('../../.github/workflows/deploy.yml', import.meta.url),
-  'utf8'
-);
+const buildScript = readRootFile('scripts/build-html.js');
+const deployWorkflow = readRootFile('.github/workflows/deploy.yml');
 
 describe('reproducible build and deployment gate', () => {
   it('pins the package manager and matching Vitest packages', () => {

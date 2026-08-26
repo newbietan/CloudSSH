@@ -8,7 +8,7 @@
 [allowlist]
 description = "CloudSSH 已核实误报豁免"
 paths = [
-  '''(?i)README(_en)?\.md''',
+  '''^(?i)README(_en)?\.md$''',
   '''tests/ssh/fixtures/''',
   '''tests/worker/session-reattach\.test\.ts''',
 ]

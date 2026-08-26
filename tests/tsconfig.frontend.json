@@ -2,9 +2,9 @@
   "extends": "../tsconfig.json",
   "compilerOptions": {
     "rootDir": "..",
-    "types": ["node", "vitest/globals", "@cloudflare/workers-types"],
+    "types": ["node", "vitest/globals"],
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
-  "include": ["./**/*.ts"],
+  "include": ["./*.test.ts", "./e2e/**/*.ts", "./global-shim.d.ts"],
   "exclude": ["node_modules", "dist", "../frontend"]
 }

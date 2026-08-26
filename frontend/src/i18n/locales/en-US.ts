@@ -545,8 +545,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'share.event.session.detached': 'Connection lost, session is being held',
   'share.event.session.resumed': 'Session resumed',
   'share.event.share.resume_denied': 'Resume request denied',
-  'share.event.share.audit_purged': 'Owner manually purged all audit details',
-  'share.event.share.audit_auto_purged': 'Audit details auto-purged after retention period',
   'share.errorAlreadyUsed':
     'This share link has already been claimed or revoked and cannot be used again',
   'share.errorLinkExpired': 'This share link has expired. Ask the owner to generate a new one',

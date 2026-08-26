@@ -7,6 +7,7 @@
   - package.json (依赖、脚本命令)
   - src/types.ts (Env 接口、类型定义)
   - biome.json (代码格式与 lint 约定)
+  - .pi-lens.json (pi-lens 项目策略：规则禁用与豁免口径，见 #31)
 -->
 
 ## Project Overview
@@ -161,6 +162,8 @@ pnpm run verify
 # Install frontend dependencies (separate from root)
 cd frontend && pnpm install
 ```
+
+> **供应链策略约束**：`pnpm-workspace.yaml` 已启用 `blockExoticSubdeps` / `minimumReleaseAge: 10080`（7 天）/ `trustPolicy: no-downgrade`。frozen-lockfile 部署不受影响；但未来**升级依赖到刚发布（<7 天）的新版本会安装失败**（`minimumReleaseAge` 拦截），需届时再决定放宽或等待版本成熟，勿把该报错当作环境问题排查。
 
 ## Critical Build Process
 
@@ -317,7 +320,7 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
 25. **One-time SSH sharing** - Sharing is disabled unless `ENABLE_SSH_SHARING=true`. A link contains only a 256-bit capability, persists only its hash, can be claimed once, and exchanges for a one-minute connection ticket. Creation requires route-scoped verified host fingerprints for the target and every jump hop. Share policy is issued only by SSHShareDO/UserDBDO and must disable Agent, OS detection, host-key mutation, metadata mutation, keyboard-interactive auth, and reconnect while permitting only Terminal and optional SFTP. Record lifecycle, structured SFTP requests/results, and terminal output (not raw keystrokes); stop the session if audit storage fails or reaches 5 MiB/5000 events. Revocation and expiry must close the live SSHSessionDO — including detached sessions held in the 60s re-attach grace window (`detachedSessions`), which are NOT reachable through `this.sessions`. Preserve completed audit metadata if its saved-server record is later deleted.
 
-    **Grace-period re-attach（分享会话秒级恢复）**：全新完整重连仍被禁止，但认领设备在断线宽限期内的无缝 reattach 允许，且必须满足：① claim 时绑定设备公钥（`frontend/src/device-identity.ts` 生成的非可导出 ECDSA P-256 密钥，SPKI base64url 经 ShareDO 持久化，Worker 服务端链路下发、客户端不可注入；导出前含持久化回读校验——无痕模式等存储不可靠的环境不绑定公钥，此类分享会话不具备断线恢复资格：断线后即时终结并在终端说明原因）；② 恢复请求携带对 `src/share-resume-schema.ts` 规范串的挑战签名，nonce 验签前单次消费防重放；③ 每次成功恢复轮换 resume token（旧 token 降级为“上一代”、仍可容忍一次携旧值重试以覆盖轮换帧丢失，设备签名与 nonce 校验不豁免）；④ 到达 `sessionExpiresAt` 或被撤销时立即终结保持中的会话并拒绝恢复；⑤ 拒绝事件写入 `share.resume_denied` 审计。已知理论边界：原设备持有人实时中继签名不可由客户端方案阻止，靠全程审计追责兜底。前端分享连接必须走 resume-only 路径（`connectWithWebSocket(..., { resumeOnly: true })`）；重试按指数退避铺满整个断线保持窗口（`SHARE_RESUME_RETRY_WINDOW_MS`，给用户留出切换网络的时间），窗口耗尽或凭据彻底失效时宣告分享结束而非回退完整重连。审计明细默认长期留存：分享者可在终态后整体清空（写入墓碑事件保留追责线索）或由系统在保留期后自动清理——保留期默认 90 天、可在创建分享时自定义（7–365 天）；手动清空会同步取消该排期。清理墓碑事件（`share.audit_purged`/`share.audit_auto_purged`）不进入常规审计列表；SSHShareDO 清理时将留痕（时间与手动/自动方式）同步至所有者 UserDBDO 的 `ssh_shares.audit_purged_at`/`audit_purge_type` 列，管理端在集中的「审计清理记录」折叠区展示全部清理操作，已清理的分享等同删除效果——不再提供查看审计入口。接收者无任何删除能力。
+    **Grace-period re-attach（分享会话秒级恢复）**：全新完整重连仍被禁止，但认领设备在断线宽限期内的无缝 reattach 允许，且必须满足：① claim 时绑定设备公钥（`frontend/src/device-identity.ts` 生成的非可导出 ECDSA P-256 密钥，SPKI base64url 经 ShareDO 持久化，Worker 服务端链路下发、客户端不可注入；导出前含持久化回读校验——无痕模式等存储不可靠的环境不绑定公钥，此类分享会话不具备断线恢复资格：断线后即时终结并在终端说明原因）；② 恢复请求携带对 `src/share-resume-schema.ts` 规范串的挑战签名，nonce 验签前单次消费防重放；③ 每次成功恢复轮换 resume token（旧 token 降级为“上一代”、仍可容忍一次携旧值重试以覆盖轮换帧丢失，设备签名与 nonce 校验不豁免）；④ 到达 `sessionExpiresAt` 或被撤销时立即终结保持中的会话并拒绝恢复；⑤ 拒绝事件写入 `share.resume_denied` 审计。已知理论边界：原设备持有人实时中继签名不可由客户端方案阻止，靠全程审计追责兜底。前端分享连接必须走 resume-only 路径（`connectWithWebSocket(..., { resumeOnly: true })`）；重试按指数退避铺满整个断线保持窗口（`SHARE_RESUME_RETRY_WINDOW_MS`，给用户留出切换网络的时间），窗口耗尽或凭据彻底失效时宣告分享结束而非回退完整重连。审计明细默认长期留存：分享者可在终态后整体清空（写入墓碑事件保留追责线索）或由系统在保留期后自动清理——保留期默认 90 天、可在创建分享时自定义（7–365 天）；手动清空会同步取消该排期。清理墓碑事件（`share.audit_purged`/`share.audit_auto_purged`）不进入常规审计列表；SSHShareDO 清理时将留痕（时间与手动/自动方式）同步至所有者 UserDBDO 的 `ssh_shares.audit_purged_at`/`audit_purge_type` 列，管理端在集中的「审计清理记录」折叠区展示全部清理操作，已清理的分享等同删除效果——不再提供查看审计入口。接收者无任何删除能力。**已知边界**：留痕同步（`notifyOwnerAuditPurged`）为尽力而为——部署窗口期旧版 UserDBDO 不认 `/internal/shares/:id/audit-purged` 路由时，清理成功但 `audit_purged_at` 留 NULL，前端会将该分享按“审计仍在”展示（点击为空审计）；审计明细已删不可回滚，仅记录日志，前端展示以 `audit_purged_at` 为准。
 
 26. **DNS rebinding SSRF defense** - Address-string checks (`isBlockedHost` / `validateBaseUrl`) alone can be bypassed by domains resolving to private/reserved IPs. `src/worker/dns-check.ts` resolves hostnames via DNS-over-HTTPS (1.1.1.1) and checks every resolved IP against a unified block list covering IPv6 edge cases; it gates both SSH outbound targets (`durable-object.ts`) and AI `base_url` (`agent/ssrf.ts`). When adding address families or reserved ranges, keep the DoH block list and the string-level checks synchronized.
 
@@ -328,6 +331,8 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 29. **CI paths-ignore 作用域** - `deploy.yml` 的 `paths-ignore` 使用标准 glob：`*` 不匹配 `/`，因此 `*.md` 只覆盖仓库根目录的 Markdown，`tests/` 等子目录下的文档变更（如 `tests/README.md`）会照常触发部署流水线。忽略目录内文件必须用 `**/*.md` / `**/*.png` 等跨目录模式；修改 `deploy.yml` 本身会触发一次校验运行（属于预期行为，且能验证新过滤规则）。
 
 30. **Agent exec 输出有界性（弱网 OOM 防线）** - `AgentExecChannel` 对 exec 通道 stdout/stderr 执行有界捕获：合计 4MB 硬上限（`MAX_EXEC_CAPTURE_BYTES`，超限不再续 SSH window 并由会话层关闭通道击杀远端命令，如无界输出的 `docker logs`），保留头 128KB + 尾 256KB 环形视图并附加截断说明，`onData/onExtendedData` 的布尔返回值控制 window 续期，改动时勿恢复无界累积。守卫不只此一层：`docker_manage(logs)` 强制 `--tail 200` 且拒绝 `-f/--follow`；工具结果序列化进 LLM 前经 64K 字符中间截断；socket 写带 15s deadline（超时关底层 socket 解挂）；独立于写路径的被动 idle 看门狗（60s 无入站数据即关闭）与终端输入队列 4MB 上限共同保证弱网下会话必然收敛，勿移除任一防线。
+
+31. **pi-lens 项目策略口径** - `.pi-lens.json` 仅供本机 pi-lens（AI 代码审查插件）读取，不参与构建、部署与 CI 门禁（同 #27 的 Biome 定位），`pi-lens-ignore` 行内注释仅为工具豁免、无运行时行为。其中 `rules.disable` 是已**逐条评估后的误报静音**（以风格类规则为主；`ignore` 仅豁免测试夹具/README/生成文件等路径），而非无差别静音：**XSS 类规则（`no-inner-html`/`ts-xss-dom-sink`）刻意不做项目级禁用**——行内 `pi-lens-ignore` 只豁免逐处核实过的站点（agent-panel 的 Markdown 渲染经 DOMPurify 消毒，其余动态值均 escapeHtml 或来自可信 i18n 词条），未来新增的 innerHTML 站点仍会被规则捕获。新增 innerHTML 时请优先保证转义/消毒并核实后加行内豁免，切勿把这两条加入 `disable` 列表；安全类规则（如 `ast-grep:no-open-redirect`）同理保持克制——扩大禁用清单前先确认告警为误报，优先修复或局部豁免。pi-lens 版本/规则集随设备升级可能产生新告警，处理标准以“是否真实影响运行与门禁”为准。
 
 ## Deployment Notes
 

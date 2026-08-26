@@ -55,6 +55,12 @@ pnpm run test:e2e
 pnpm run verify
 ```
 
+> **测试类型检查**：`pnpm run typecheck` 的 worker 阶段会依次执行
+> `tsc --noEmit`（src）、`tsc -p tests/tsconfig.worker.json`（tests/worker|ssh|build，
+> workers-types 环境）与 `tsc -p tests/tsconfig.frontend.json`（tests 根目录 *.test.ts + e2e，
+> DOM 环境）。两个测试配置分开的原因：`@cloudflare/workers-types` 声明的基础 DOM 接口
+> （如 Element.append）与 DOM lib 合并冲突，不能在同一项目里同时加载。
+
 ## 当前覆盖范围
 
 ### SSH 协议

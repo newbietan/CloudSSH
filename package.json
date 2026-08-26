@@ -11,7 +11,7 @@
     "sync:theme-editor": "node scripts/sync-theme-editor.js",
     "build:frontend": "node scripts/build-html.js",
     "typecheck": "pnpm run typecheck:worker && pnpm run typecheck:frontend",
-    "typecheck:worker": "tsc --noEmit",
+    "typecheck:worker": "tsc --noEmit && tsc -p tests/tsconfig.worker.json --noEmit && tsc -p tests/tsconfig.frontend.json --noEmit",
     "typecheck:frontend": "pnpm --dir frontend exec tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
