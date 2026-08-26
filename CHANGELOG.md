@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.1] - 2026-08-26
+
+### Added
+
+- 新增 `share.auditCleanupStatus` 中英词条（`{status}（审计 {time}）` / `{status} (audit {time})`）。
+
+### Changed
+
+- 审计清理记录折叠区每行扩展展示审计生成时间：「清理时间 + 状态（审计时间）· 方式」；审计时间取首次审计事件时间（`claimed_at`，认领时写入 `share.claimed`），`created_at` 兜底。
+
 ## [1.12.0] - 2026-08-26
 
 ### Added
