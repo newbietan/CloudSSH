@@ -226,7 +226,7 @@ export class ShareManager {
                 ${t('share.auditCleanupLog')}（${purged.length}）
               </summary>
               <div class="space-y-1 mt-2">
-                ${purged.map((share) => `<div class="text-[10px] text-muted"><span class="text-dim">${escapeHtml(formatTime(share.auditPurgedAt ?? null))}</span> ${escapeHtml(t(`share.status.${share.status}` as never))} · ${share.auditPurgeType === 'auto' ? t('share.auditPurgeAuto') : t('share.auditPurgeManual')}</div>`).join('')}
+                ${purged.map((share) => `<div class="text-[10px] text-muted"><span class="text-dim">${escapeHtml(formatTime(share.auditPurgedAt ?? null))}</span> ${escapeHtml(t('share.auditCleanupStatus', { status: t(`share.status.${share.status}` as never), time: formatTime(share.claimedAt ?? share.createdAt ?? null) }))} · ${share.auditPurgeType === 'auto' ? t('share.auditPurgeAuto') : t('share.auditPurgeManual')}</div>`).join('')}
               </div>
               <p class="text-[10px] text-dim mt-1">${t('share.auditRemovalHint')}</p>
             </details>`

@@ -209,6 +209,7 @@ export const zhCN = {
     '将永久删除全部审计明细（含终端输出与操作记录），仅保留一条清除标记。此操作不可恢复。',
   'share.auditPurged': '审计记录已清空',
   'share.auditCleanupLog': '审计清理记录',
+  'share.auditCleanupStatus': '{status}（审计 {time}）',
   'share.auditPurgeManual': '手动清空',
   'share.auditPurgeAuto': '到期自动清理',
   'share.auditRemovalHint': '已清除的明细不可恢复，此处仅保留清理操作的记录。',
