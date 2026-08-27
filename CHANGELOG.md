@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - 2026-08-27
+
+### Added
+
+- **Theme V3 背景层**：新增 `background` 顶层模块（schemaVersion 3），支持 solid / linear / radial / mesh 四类背景，最多 5 个停靠点（均过白名单颜色校验）、线性角度（0–360）、读性遮罩（scrim，渐变背景强制暗色 ≥0.25 / 浅色 ≥0.35 的下限）与缓慢漂移（drift）动画；背景由 `body::before` 固定全屏层承载，纯 CSS 变量驱动、零 DOM 改动。
+- **Theme V3 效果注册表**：新增 `effects` 模块（scanline / flicker / glow / noise），强度钳制在 0–1；扫描线与闪烁门控从「cyberpunk 风格硬编码」泛化为 `data-fx-*` 属性驱动（Cyberpunk 内置主题迁移为参数化配置，默认视觉不变）；噪点使用内联 feTurbulence SVG 纹理，无外部请求。
+- **Theme V3 版式与表面**：新增 `typography` 模块（字号缩放 0.85–1.25、圆角缩放 0.5–2，均叠加在密度/形状档位之上）与独立的 `appearance.blur` 表面模糊档位（none / subtle / strong）；动效门控（`data-ui-motion`）与 `prefers-reduced-motion` 双重视角约束背景漂移与闪烁。
+- **两套旗舰内置主题**：内置主题从 5 款扩至 7 款，新增 **CRT Amber**（琥珀磷光深色主题：径向暗角背景 + 扫描线/闪烁/辉光/噪点全开 + 方形 mono 造型）与 **Glass**（蓝紫浅色玻璃态主题：mesh 粉彩漂移背景 + 强表面模糊 + 1.4× 圆角 + 分段控件）；两者明暗对比、质感与动效差异显著。
+- **Apple 浅色主题**：内置主题 Glacier 替换为 Apple（macOS 风格浅色），占用 soft 风格预设占位并保持四种 UI 风格全覆盖；终端 ANSI 16 色采用 Apple 系统色无障碍变体，UI 变量取材 Apple 设计语言（#f5f5f7 背景、#0066da 链接蓝、#5856d6 systemIndigo Agent 色），文本/强调/错误色全部通过 4.5:1 对比度并纳入测试断言。
+- **在线主题编辑器支持 V3**：新增背景层（类型/角度/遮罩/动画/停靠点）、效果（四项强度滑杆）与版式缩放（字号/圆角）三组面板及 blur 档位；导出升级为 schemaVersion 3 并携带新模块，导入按与后端同源的钳制/白名单规则消毒；同步脚本提取 `BUILT_IN_BACKGROUND` / `BUILT_IN_EFFECTS` / `BUILT_IN_TYPOGRAPHY` 注入预设。
+
+### Changed
+
+- `THEME_SCHEMA_VERSION` 升至 3；V2 主题数据自动升级（新模块缺省即旧行为），存量 `baseTheme: 'glacier'` 主题导入时优雅降级（字段丢弃、按明暗模式回退基底），Old 版选择在 localStorage 中一次性迁移到 Standard Dark。
+- 表面模糊由 shadow 预设派生值改为独立 blur 档位完全接管（后置规则同优先级胜出），geometry 变量（圆角/字号）改为 calc 乘法组合缩放。
+
+### Fixed
+
+- 补充既有 lint 清洁（forEach 回调返回值、未使用导入）。
+
 ## [1.12.2] - 2026-08-27
 
 ### Changed
