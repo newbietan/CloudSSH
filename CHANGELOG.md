@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.2] - 2026-08-27
+
+### Changed
+
+- 分享审计详情由列表底部区块改为面板内独立视图：点击「查看审计」立即切换至占满面板的详情视图并展示加载占位，消除长列表下审计在底部展开需手动滚动才能看到而导致的“点击无响应”错觉（详情视图自带返回按钮，返回后恢复列表滚动位置；重新打开弹窗重置为列表视图）。
+- 审计内容独占面板高度：结构化事件列表与终端记录展示高度分别提升至 `max-h-64` / `max-h-[50vh]`；查看审计按钮点击后进入禁用加载态，防止重复点击。
+
+### Added
+
+- 新增 `common.back` 中英词条（返回 / Back）。
+
 ## [1.12.1] - 2026-08-26
 
 ### Added
