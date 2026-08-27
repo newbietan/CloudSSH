@@ -6,6 +6,7 @@ export const zhCN = {
   'common.confirm': '确定',
   'common.cancel': '取消',
   'common.close': '关闭',
+  'common.back': '返回',
   'common.save': '保存',
   'common.delete': '删除',
   'common.edit': '编辑',

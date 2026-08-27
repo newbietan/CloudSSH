@@ -65,6 +65,10 @@ function stripTerminalControls(value: string): string {
 
 export class ShareManager {
   private serverId = 0;
+  /** 面板当前处于分享列表视图还是审计详情视图 */
+  private viewMode: 'list' | 'audit' = 'list';
+  /** 进入审计详情前列表视图的滚动位置，返回时恢复 */
+  private listScrollTop = 0;
 
   async open(serverId: number, serverName: string): Promise<void> {
     this.serverId = serverId;
@@ -74,6 +78,9 @@ export class ShareManager {
     modal?.classList.add('flex');
     const name = document.getElementById('share-manager-server');
     if (name) name.textContent = serverName;
+    // 每次打开弹窗都回到列表视图顶部，避免残留上次的审计详情与滚动位置
+    this.listScrollTop = 0;
+    this.showListView();
     await this.loadShares();
   }
 
@@ -95,37 +102,53 @@ export class ShareManager {
           </div>
           <button type="button" data-share-close class="text-muted hover:text-primary" aria-label="${t('common.close')}"><span class="material-symbols-outlined">close</span></button>
         </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-          <label class="text-xs text-muted">${t('share.linkExpiry')}
-            <select id="share-expiry" class="terminal-input w-full mt-1">
-              <option value="5">5 ${t('share.minutes')}</option><option value="15" selected>15 ${t('share.minutes')}</option>
-              <option value="30">30 ${t('share.minutes')}</option><option value="60">60 ${t('share.minutes')}</option>
-            </select>
-          </label>
-          <label class="text-xs text-muted">${t('share.sessionDuration')}
-            <select id="share-session-duration" class="terminal-input w-full mt-1">
-              <option value="15">15 ${t('share.minutes')}</option><option value="30">30 ${t('share.minutes')}</option>
-              <option value="60" selected>60 ${t('share.minutes')}</option><option value="120">120 ${t('share.minutes')}</option>
-            </select>
-          </label>
-          <label class="text-xs text-muted">${t('share.auditRetention')}
-            <select id="share-audit-retention" class="terminal-input w-full mt-1">
-              <option value="7">7 ${t('share.days')}</option><option value="30">30 ${t('share.days')}</option>
-              <option value="90" selected>90 ${t('share.days')}</option><option value="180">180 ${t('share.days')}</option>
-              <option value="365">365 ${t('share.days')}</option>
-            </select>
-          </label>
+        <div id="share-list-view">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+            <label class="text-xs text-muted">${t('share.linkExpiry')}
+              <select id="share-expiry" class="terminal-input w-full mt-1">
+                <option value="5">5 ${t('share.minutes')}</option><option value="15" selected>15 ${t('share.minutes')}</option>
+                <option value="30">30 ${t('share.minutes')}</option><option value="60">60 ${t('share.minutes')}</option>
+              </select>
+            </label>
+            <label class="text-xs text-muted">${t('share.sessionDuration')}
+              <select id="share-session-duration" class="terminal-input w-full mt-1">
+                <option value="15">15 ${t('share.minutes')}</option><option value="30">30 ${t('share.minutes')}</option>
+                <option value="60" selected>60 ${t('share.minutes')}</option><option value="120">120 ${t('share.minutes')}</option>
+              </select>
+            </label>
+            <label class="text-xs text-muted">${t('share.auditRetention')}
+              <select id="share-audit-retention" class="terminal-input w-full mt-1">
+                <option value="7">7 ${t('share.days')}</option><option value="30">30 ${t('share.days')}</option>
+                <option value="90" selected>90 ${t('share.days')}</option><option value="180">180 ${t('share.days')}</option>
+                <option value="365">365 ${t('share.days')}</option>
+              </select>
+            </label>
+          </div>
+          <p class="text-[11px] text-muted mb-4">${t('share.createWarning')}</p>
+          <button id="share-create-btn" type="button" class="cyber-button text-primary px-4 py-2 text-xs font-bold flex items-center gap-2">
+            <span class="material-symbols-outlined" style="font-size:16px">add_link</span>${t('share.create')}
+          </button>
+          <div id="share-created-link" class="hidden mt-4 p-3 border border-[var(--border-strong)]"></div>
+          <div class="mt-6 pt-4 border-t border-dim">
+            <h3 class="text-xs font-bold text-primary mb-3">${t('share.history')}</h3>
+            <div id="share-list" class="space-y-3"></div>
+          </div>
         </div>
-        <p class="text-[11px] text-muted mb-4">${t('share.createWarning')}</p>
-        <button id="share-create-btn" type="button" class="cyber-button text-primary px-4 py-2 text-xs font-bold flex items-center gap-2">
-          <span class="material-symbols-outlined" style="font-size:16px">add_link</span>${t('share.create')}
-        </button>
-        <div id="share-created-link" class="hidden mt-4 p-3 border border-[var(--border-strong)]"></div>
-        <div class="mt-6 pt-4 border-t border-dim">
-          <h3 class="text-xs font-bold text-primary mb-3">${t('share.history')}</h3>
-          <div id="share-list" class="space-y-3"></div>
+        <div id="share-audit-view" class="hidden">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-dim">
+            <div class="flex items-center gap-2 min-w-0">
+              <button type="button" id="share-audit-back" class="cyber-button px-2 py-1 text-[10px] flex items-center gap-1 shrink-0">
+                <span class="material-symbols-outlined" style="font-size:14px">arrow_back</span>${t('common.back')}
+              </button>
+              <h3 class="text-xs font-bold text-primary truncate">${t('share.auditTitle')}</h3>
+            </div>
+            <div class="flex items-center gap-2">
+              <span id="share-audit-meta" class="text-[10px] text-muted"></span>
+              <span id="share-audit-actions" class="flex items-center gap-2"></span>
+            </div>
+          </div>
+          <div id="share-audit-content"></div>
         </div>
-        <div id="share-audit-view" class="hidden mt-6 pt-4 border-t border-dim"></div>
       </div>
     `;
     document.body.appendChild(modal);
@@ -138,12 +161,46 @@ export class ShareManager {
     document
       .getElementById('share-create-btn')
       ?.addEventListener('click', () => void this.createShare());
+    document
+      .getElementById('share-audit-back')
+      ?.addEventListener('click', () => this.showListView());
   }
 
   private close(): void {
     const modal = document.getElementById('share-manager-modal');
     modal?.classList.add('hidden');
     modal?.classList.remove('flex');
+  }
+
+  private getPanel(): HTMLElement | null {
+    return document.querySelector<HTMLElement>('#share-manager-modal .responsive-modal-panel');
+  }
+
+  /** 进入审计详情视图：记住列表滚动位置并把面板卷回顶部。 */
+  private showAuditView(): void {
+    const listView = document.getElementById('share-list-view');
+    const auditView = document.getElementById('share-audit-view');
+    if (!listView || !auditView) return;
+    if (this.viewMode !== 'audit') {
+      this.listScrollTop = this.getPanel()?.scrollTop ?? 0;
+    }
+    this.viewMode = 'audit';
+    listView.classList.add('hidden');
+    auditView.classList.remove('hidden');
+    const panel = this.getPanel();
+    if (panel) panel.scrollTop = 0;
+  }
+
+  /** 返回分享列表视图：恢复进入详情前的滚动位置。 */
+  private showListView(): void {
+    const listView = document.getElementById('share-list-view');
+    const auditView = document.getElementById('share-audit-view');
+    if (!listView || !auditView) return;
+    this.viewMode = 'list';
+    auditView.classList.add('hidden');
+    listView.classList.remove('hidden');
+    const panel = this.getPanel();
+    if (panel) panel.scrollTop = this.listScrollTop;
   }
 
   private async createShare(): Promise<void> {
@@ -252,10 +309,10 @@ export class ShareManager {
         </div>`;
           })
           .join('');
-      for (const button of container.querySelectorAll<HTMLElement>('[data-share-audit]')) {
+      for (const button of container.querySelectorAll<HTMLButtonElement>('[data-share-audit]')) {
         const shareId = button.dataset.shareAudit;
         if (!shareId) continue;
-        button.addEventListener('click', () => void this.loadAudit(shareId));
+        button.addEventListener('click', () => void this.loadAudit(shareId, button));
       }
       for (const button of container.querySelectorAll<HTMLElement>('[data-share-revoke]')) {
         const shareId = button.dataset.shareRevoke;
@@ -289,12 +346,24 @@ export class ShareManager {
     await this.loadShares();
   }
 
-  private async loadAudit(shareId: string): Promise<void> {
-    const view = document.getElementById('share-audit-view');
-    if (!view) return;
-    view.classList.remove('hidden');
+  private async loadAudit(shareId: string, trigger?: HTMLButtonElement): Promise<void> {
+    const content = document.getElementById('share-audit-content');
+    const meta = document.getElementById('share-audit-meta');
+    const actions = document.getElementById('share-audit-actions');
+    if (!content || !meta || !actions) return;
+    // 点击后立即禁用按钮并切换视图展示加载占位，消除长列表下“点击无响应”的错觉
+    const triggerLabel = trigger?.textContent ?? null;
+    if (trigger) {
+      trigger.disabled = true;
+      trigger.textContent = t('common.loading');
+    }
+    // 先重置上次内容再切换视图，避免旧审计数据闪现
+    meta.textContent = '';
     // pi-lens-ignore: no-inner-html
-    view.innerHTML = `<p class="text-xs text-muted">${t('common.loading')}</p>`;
+    actions.innerHTML = '';
+    // pi-lens-ignore: no-inner-html
+    content.innerHTML = `<p class="text-xs text-muted">${t('common.loading')}</p>`;
+    this.showAuditView();
     try {
       const { share, events } = await this.fetchAllAudit(shareId);
       const output = stripTerminalControls(
@@ -306,31 +375,34 @@ export class ShareManager {
       const structured = events.filter((event) => event.eventType !== 'terminal.output');
       const canPurge =
         share?.status === 'closed' || share?.status === 'revoked' || share?.status === 'expired';
+      meta.textContent = `${formatShareStatus(share?.status)} · ${Math.ceil((share?.auditBytes || 0) / 1024)} KiB`;
       // pi-lens-ignore: no-inner-html
-      view.innerHTML = `
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-xs font-bold text-primary">${t('share.auditTitle')}</h3>
-          <div class="flex items-center gap-2">
-            <span class="text-[10px] text-muted">${formatShareStatus(share?.status)} · ${Math.ceil((share?.auditBytes || 0) / 1024)} KiB</span>
-            <button type="button" data-audit-export class="cyber-button px-2 py-1 text-[10px]">${t('share.auditExport')}</button>
-            ${canPurge ? `<button type="button" data-audit-purge class="cyber-button px-2 py-1 text-[10px] text-error">${t('share.auditPurge')}</button>` : ''}
-          </div>
-        </div>
-        <div class="space-y-1 mb-4 max-h-48 overflow-y-auto custom-scrollbar">
+      actions.innerHTML = `
+        <button type="button" data-audit-export class="cyber-button px-2 py-1 text-[10px]">${t('share.auditExport')}</button>
+        ${canPurge ? `<button type="button" data-audit-purge class="cyber-button px-2 py-1 text-[10px] text-error">${t('share.auditPurge')}</button>` : ''}
+      `;
+      // pi-lens-ignore: no-inner-html
+      content.innerHTML = `
+        <div class="space-y-1 mb-4 max-h-64 overflow-y-auto custom-scrollbar">
           ${structured.map((event) => `<div class="text-[10px] text-muted"><span class="text-dim">${escapeHtml(formatTime(event.occurredAt))}</span> ${escapeHtml(this.describeEvent(event))}</div>`).join('') || `<p class="text-xs text-muted">${t('share.auditNone')}</p>`}
         </div>
         <h4 class="text-[11px] font-bold text-primary mb-2">${t('share.terminalRecord')}</h4>
-        <pre class="bg-[var(--bg)] border border-[var(--border)] p-3 text-[11px] text-on-surface whitespace-pre-wrap break-words max-h-72 overflow-auto custom-scrollbar">${escapeHtml(output || t('share.noTerminalOutput'))}</pre>
+        <pre class="bg-[var(--bg)] border border-[var(--border)] p-3 text-[11px] text-on-surface whitespace-pre-wrap break-words max-h-[50vh] overflow-auto custom-scrollbar">${escapeHtml(output || t('share.noTerminalOutput'))}</pre>
       `;
-      for (const button of view.querySelectorAll<HTMLElement>('[data-audit-export]')) {
+      for (const button of actions.querySelectorAll<HTMLElement>('[data-audit-export]')) {
         button.addEventListener('click', () => void this.exportAudit(shareId));
       }
-      for (const button of view.querySelectorAll<HTMLElement>('[data-audit-purge]')) {
+      for (const button of actions.querySelectorAll<HTMLElement>('[data-audit-purge]')) {
         button.addEventListener('click', () => void this.purgeAudit(shareId));
       }
     } catch (error) {
       // pi-lens-ignore: no-inner-html
-      view.innerHTML = `<p class="text-xs text-error">${escapeHtml(error instanceof Error ? error.message : t('share.auditFailed'))}</p>`;
+      content.innerHTML = `<p class="text-xs text-error">${escapeHtml(error instanceof Error ? error.message : t('share.auditFailed'))}</p>`;
+    } finally {
+      if (trigger) {
+        trigger.disabled = false;
+        trigger.textContent = triggerLabel;
+      }
     }
   }
 
@@ -418,12 +490,13 @@ export class ShareManager {
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) throw new Error(localizedApiError(payload, 'share.auditPurgeFailed'));
       notify(t('share.auditPurged'), { variant: 'success' });
-      // 清理等同删除效果：立即收起审计视图并刷新列表，隐藏该分享的查看入口
-      const view = document.getElementById('share-audit-view');
-      if (view) {
-        view.classList.add('hidden');
-        view.innerHTML = '';
+      // 清理等同删除效果：返回列表视图并刷新，隐藏该分享的查看入口
+      const content = document.getElementById('share-audit-content');
+      if (content) {
+        // pi-lens-ignore: no-inner-html
+        content.innerHTML = '';
       }
+      this.showListView();
       await this.loadShares();
     } catch (error) {
       notify(error instanceof Error ? error.message : t('share.auditPurgeFailed'), {

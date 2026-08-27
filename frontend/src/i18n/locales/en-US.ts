@@ -35,6 +35,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'common.confirm': 'Confirm',
   'common.cancel': 'Cancel',
   'common.close': 'Close',
+  'common.back': 'Back',
   'common.save': 'Save',
   'common.delete': 'Delete',
   'common.edit': 'Edit',
