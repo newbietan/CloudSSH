@@ -13,12 +13,17 @@ const uiThemes = readObjectLiteral(themeSource, 'export const UI_THEMES:');
 const stylePresets = readObjectLiteral(themeSource, 'export const UI_STYLE_PRESETS:');
 const builtInAppearances = readObjectLiteral(themeSource, 'export const BUILT_IN_APPEARANCE:');
 const colorSchemes = readObjectLiteral(themeSource, 'const COLOR_SCHEMES:');
+const builtInBackgrounds = readObjectLiteral(themeSource, 'export const BUILT_IN_BACKGROUND:');
+const builtInEffects = readObjectLiteral(themeSource, 'export const BUILT_IN_EFFECTS:');
+const builtInTypography = readObjectLiteral(themeSource, 'export const BUILT_IN_TYPOGRAPHY:');
 const labels = {
   'standard-dark': 'Standard Dark',
   'standard-light': 'Standard Light',
   cyberpunk: 'Cyberpunk',
   apple: 'Apple',
   gruvbox: 'Gruvbox',
+  crt: 'CRT Amber',
+  glass: 'Glass',
 };
 
 const presets = Object.fromEntries(
@@ -39,6 +44,11 @@ const presets = Object.fromEntries(
             ...(appearance.components || {}),
           },
         },
+        ...(builtInBackgrounds[themeName] ? { background: builtInBackgrounds[themeName] } : {}),
+        ...(Object.keys(builtInEffects[themeName] || {}).length
+          ? { effects: builtInEffects[themeName] }
+          : {}),
+        ...(builtInTypography[themeName] ? { typography: builtInTypography[themeName] } : {}),
         terminal: terminalThemes[themeName],
         ui: uiThemes[themeName],
       },

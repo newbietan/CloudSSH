@@ -584,7 +584,7 @@ describe('安全 — 自定义主题接口边界', () => {
     expect(res.status).toBe(200);
     expect(forwardedBody?.user_id).toBe(12);
     expect(JSON.parse(forwardedBody?.theme_data ?? '{}')).toEqual({
-      schemaVersion: 2,
+      schemaVersion: 3,
       name: 'Shared Theme',
       colorScheme: 'dark',
       ui: { '--accent': '#abcdef' },

@@ -4,8 +4,11 @@ import {
   type ColorScheme,
   type NormalizedThemeData,
   normalizeThemeData,
-  THEME_SCHEMA_VERSION,
+  type ThemeBackground,
+  type ThemeEffects,
+  type ThemeTypography,
   type ThemeAppearance,
+  type ThemeBlur,
   type ThemeComponentStyles,
   type ThemeDensity,
   type ThemeFont,
@@ -18,9 +21,13 @@ import {
 export {
   type BuiltInThemeName,
   type ColorScheme,
+  type ThemeBackground,
+  type ThemeEffects,
+  type ThemeTypography,
   THEME_MAX_BYTES,
   THEME_SCHEMA_VERSION,
   type ThemeAppearance,
+  type ThemeBlur,
   type ThemeComponentStyles,
   type ThemeDensity,
   type ThemeFont,
@@ -37,6 +44,7 @@ export interface ResolvedThemeAppearance {
   font: ThemeFont;
   shadow: ThemeShadow;
   motion: ThemeMotion;
+  blur: ThemeBlur;
   components: ThemeComponentStyles;
 }
 
@@ -57,6 +65,7 @@ export const UI_STYLE_PRESETS: Record<UIStylePresetName, ResolvedThemeAppearance
     font: 'system',
     shadow: 'subtle',
     motion: 'reduced',
+    blur: 'subtle',
     components: {
       button: 'solid',
       input: 'boxed',
@@ -71,6 +80,7 @@ export const UI_STYLE_PRESETS: Record<UIStylePresetName, ResolvedThemeAppearance
     font: 'mono',
     shadow: 'none',
     motion: 'full',
+    blur: 'none',
     components: {
       button: 'outline',
       input: 'underline',
@@ -85,6 +95,7 @@ export const UI_STYLE_PRESETS: Record<UIStylePresetName, ResolvedThemeAppearance
     font: 'system',
     shadow: 'elevated',
     motion: 'reduced',
+    blur: 'strong',
     components: {
       button: 'soft',
       input: 'boxed',
@@ -99,6 +110,7 @@ export const UI_STYLE_PRESETS: Record<UIStylePresetName, ResolvedThemeAppearance
     font: 'mono',
     shadow: 'none',
     motion: 'reduced',
+    blur: 'none',
     components: {
       button: 'outline',
       input: 'boxed',
@@ -196,6 +208,56 @@ export const THEMES = {
     cursor: '#d3869b',
     cursorAccent: '#282828',
     selectionBackground: '#504945',
+  },
+  crt: {
+    background: '#0f0a00',
+    foreground: '#ffb000',
+    cursor: '#ffd257',
+    cursorAccent: '#0f0a00',
+    selectionBackground: '#3d2e00',
+    selectionForeground: '#ffb000',
+    selectionInactiveBackground: '#2a2000',
+    black: '#241a00',
+    red: '#ff6b4a',
+    green: '#d4a017',
+    yellow: '#ffb000',
+    blue: '#f0c040',
+    magenta: '#e08e39',
+    cyan: '#c8b04a',
+    white: '#d9c08a',
+    brightBlack: '#8a7440',
+    brightRed: '#ffa080',
+    brightGreen: '#ffd257',
+    brightYellow: '#ffe08a',
+    brightBlue: '#ffe8b0',
+    brightMagenta: '#ffc27a',
+    brightCyan: '#e8d89a',
+    brightWhite: '#fff3c4',
+  },
+  glass: {
+    background: '#ffffff',
+    foreground: '#1a2332',
+    cursor: '#235cd8',
+    cursorAccent: '#ffffff',
+    selectionBackground: '#c4d8f7',
+    selectionForeground: '#1a2332',
+    selectionInactiveBackground: '#dde8f7',
+    black: '#1a2332',
+    red: '#c03528',
+    green: '#1e7d3c',
+    yellow: '#8a5a00',
+    blue: '#235cd8',
+    magenta: '#7c4dcc',
+    cyan: '#0e6e86',
+    white: '#56637a',
+    brightBlack: '#56637a',
+    brightRed: '#d9483b',
+    brightGreen: '#2a944f',
+    brightYellow: '#a86e10',
+    brightBlue: '#3870e8',
+    brightMagenta: '#8f5ce6',
+    brightCyan: '#2a8ba3',
+    brightWhite: '#0e1626',
   },
 } satisfies Record<string, ITheme>;
 
@@ -345,6 +407,64 @@ export const UI_THEMES: Record<BuiltInThemeName, Record<string, string>> = {
     '--agent-user-color': '#b8bb26',
     '--agent-agent-color': '#83a598',
   },
+  crt: {
+    '--bg': '#0f0a00',
+    '--bg-surface': '#171000',
+    '--bg-elevated': '#1d1600',
+    '--bg-terminal': '#0f0a00',
+    '--text': '#ffb000',
+    '--text-muted': '#bfa06a',
+    '--text-dim': '#937c46',
+    '--accent': '#ffb000',
+    '--accent-secondary': '#ffd257',
+    '--accent-secondary-light': '#ffe08a',
+    '--border': '#3d2e00',
+    '--border-strong': '#5c470a',
+    '--error': '#ff6b4a',
+    '--error-bg': '#3d1200',
+    '--on-accent': '#0f0a00',
+    '--surface-dot': '#3d2e00',
+    '--scrollbar-track': 'rgba(23, 16, 0, 0.5)',
+    '--scrollbar-thumb': 'rgba(255, 176, 0, 0.25)',
+    '--scrollbar-thumb-hover': 'rgba(255, 176, 0, 0.45)',
+    '--scanline-tint': 'rgba(255, 176, 0, 0.03)',
+    '--accent-glow': 'rgba(255, 176, 0, 0.12)',
+    '--accent-bg': 'rgba(255, 176, 0, 0.12)',
+    '--modal-overlay': 'rgba(0, 0, 0, 0.8)',
+    '--on-surface': '#fff3c4',
+    '--on-surface-variant': '#bfa06a',
+    '--agent-user-color': '#ffb000',
+    '--agent-agent-color': '#ffd257',
+  },
+  glass: {
+    '--bg': '#e8edf5',
+    '--bg-surface': '#f4f7fb',
+    '--bg-elevated': '#ffffff',
+    '--bg-terminal': '#ffffff',
+    '--text': '#1a2332',
+    '--text-muted': '#4d5a70',
+    '--text-dim': '#56637a',
+    '--accent': '#235cd8',
+    '--accent-secondary': '#3870e8',
+    '--accent-secondary-light': '#c4d8f7',
+    '--border': '#c9d4e3',
+    '--border-strong': '#a9b8cc',
+    '--error': '#c03528',
+    '--error-bg': '#f9e3e0',
+    '--on-accent': '#ffffff',
+    '--surface-dot': '#d5deea',
+    '--scrollbar-track': 'rgba(201, 212, 227, 0.45)',
+    '--scrollbar-thumb': 'rgba(77, 90, 112, 0.3)',
+    '--scrollbar-thumb-hover': 'rgba(77, 90, 112, 0.5)',
+    '--scanline-tint': 'transparent',
+    '--accent-glow': 'rgba(35, 92, 216, 0.1)',
+    '--accent-bg': 'rgba(35, 92, 216, 0.08)',
+    '--modal-overlay': 'rgba(26, 35, 50, 0.35)',
+    '--on-surface': '#1a2332',
+    '--on-surface-variant': '#4d5a70',
+    '--agent-user-color': '#235cd8',
+    '--agent-agent-color': '#7c4dcc',
+  },
 };
 
 export const BUILT_IN_APPEARANCE: Record<BuiltInThemeName, ThemeAppearance> = {
@@ -353,6 +473,8 @@ export const BUILT_IN_APPEARANCE: Record<BuiltInThemeName, ThemeAppearance> = {
   cyberpunk: { style: 'cyberpunk' },
   apple: { style: 'soft' },
   gruvbox: { style: 'dense' },
+  crt: { style: 'cyberpunk' },
+  glass: { style: 'soft', blur: 'strong' },
 };
 
 const COLOR_SCHEMES: Record<BuiltInThemeName, ColorScheme> = {
@@ -361,6 +483,46 @@ const COLOR_SCHEMES: Record<BuiltInThemeName, ColorScheme> = {
   cyberpunk: 'dark',
   apple: 'light',
   gruvbox: 'dark',
+  crt: 'dark',
+  glass: 'light',
+};
+
+/** V3 内置主题的背景层配置（未列出的主题保持纯色背景） */
+export const BUILT_IN_BACKGROUND: Partial<Record<BuiltInThemeName, ThemeBackground>> = {
+  cyberpunk: {
+    type: 'linear',
+    stops: ['#0a0a0a', '#11170c'],
+    angle: 165,
+    scrim: 0.3,
+    animation: 'none',
+  },
+  crt: {
+    type: 'radial',
+    stops: ['#261b00', '#0f0a00'],
+    angle: 160,
+    scrim: 0.3,
+    animation: 'none',
+  },
+  glass: {
+    type: 'mesh',
+    stops: ['#d3e3f8', '#e8edf5', '#ece0f6'],
+    angle: 135,
+    scrim: 0.35,
+    animation: 'drift',
+  },
+};
+
+/** V3 内置主题的效果配置（键存在且 >0 即启用） */
+export const BUILT_IN_EFFECTS: Partial<Record<BuiltInThemeName, ThemeEffects>> = {
+  cyberpunk: { scanline: 1, flicker: 1 },
+  crt: { scanline: 1, flicker: 0.6, glow: 0.5 },
+  glass: { glow: 0.4 },
+};
+
+/** V3 内置主题的版式缩放（缺省 1/1） */
+export const BUILT_IN_TYPOGRAPHY: Partial<Record<BuiltInThemeName, ThemeTypography>> = {
+  crt: { fontScale: 1, radiusScale: 0.75 },
+  glass: { fontScale: 1.05, radiusScale: 1.4 },
 };
 
 let activeTerminalTheme: ITheme = THEMES.cyberpunk;
@@ -379,7 +541,10 @@ export function applyBuiltInTheme(themeName: BuiltInThemeName): void {
     THEMES[themeName],
     COLOR_SCHEMES[themeName],
     themeName,
-    resolveThemeAppearance(BUILT_IN_APPEARANCE[themeName])
+    resolveThemeAppearance(BUILT_IN_APPEARANCE[themeName]),
+    BUILT_IN_BACKGROUND[themeName],
+    BUILT_IN_EFFECTS[themeName],
+    BUILT_IN_TYPOGRAPHY[themeName]
   );
 }
 
@@ -393,7 +558,10 @@ export function applyImportedTheme(data: ImportedThemeData): void {
   const terminal = { ...THEMES[fallbackName], ...normalized.terminal };
   const fallbackAppearance = resolveThemeAppearance(BUILT_IN_APPEARANCE[fallbackName]);
   const appearance = resolveThemeAppearance(normalized.appearance, fallbackAppearance);
-  applyTheme(ui, terminal, colorScheme, 'custom', appearance);
+  const background = normalized.background ?? BUILT_IN_BACKGROUND[fallbackName];
+  const effects = { ...BUILT_IN_EFFECTS[fallbackName], ...normalized.effects };
+  const typography = normalized.typography ?? BUILT_IN_TYPOGRAPHY[fallbackName];
+  applyTheme(ui, terminal, colorScheme, 'custom', appearance, background, effects, typography);
 }
 
 export function normalizeImportedTheme(data: unknown): ImportedThemeData | null {
@@ -429,7 +597,10 @@ function applyTheme(
   terminal: ITheme,
   colorScheme: ColorScheme,
   themeName: BuiltInThemeName | 'custom',
-  appearance: ResolvedThemeAppearance
+  appearance: ResolvedThemeAppearance,
+  background?: ThemeBackground,
+  effects?: ThemeEffects,
+  typography?: ThemeTypography
 ): void {
   activeTerminalTheme = terminal;
   activeColorScheme = colorScheme;
@@ -448,12 +619,14 @@ function applyTheme(
     root.dataset.uiFont = appearance.font;
     root.dataset.uiShadow = appearance.shadow;
     root.dataset.uiMotion = appearance.motion;
+    root.dataset.uiBlur = appearance.blur;
     root.dataset.componentButton = appearance.components.button;
     root.dataset.componentInput = appearance.components.input;
     root.dataset.componentCard = appearance.components.card;
     root.dataset.componentTabs = appearance.components.tabs;
     root.style.colorScheme = colorScheme;
     root.classList.toggle('dark', colorScheme === 'dark');
+    applyThemeV3Layers(root, background, effects, typography, colorScheme);
   }
 
   terminalThemeListeners.forEach((listener) => {
@@ -462,6 +635,66 @@ function applyTheme(
   colorSchemeListeners.forEach((listener) => {
     listener(colorScheme);
   });
+}
+
+/** V3 增量层：背景/效果/版式缩放全部走变量与 data 属性，不碰 DOM 结构 */
+function applyThemeV3Layers(
+  root: HTMLElement,
+  background: ThemeBackground | undefined,
+  effects: ThemeEffects | undefined,
+  typography: ThemeTypography | undefined,
+  colorScheme: ColorScheme
+): void {
+  root.style.setProperty('--app-bg-stack', resolveBackgroundStack(background, colorScheme));
+  root.dataset.bgAnimation =
+    background && background.animation === 'drift' && background.type !== 'solid'
+      ? 'drift'
+      : 'none';
+
+  root.dataset.fxScanline = effects?.scanline ? 'on' : 'off';
+  root.dataset.fxFlicker = effects?.flicker ? 'on' : 'off';
+  root.dataset.fxGlow = effects?.glow ? 'on' : 'off';
+  root.dataset.fxNoise = effects?.noise ? 'on' : 'off';
+  root.style.setProperty('--fx-scanline-opacity', String(effects?.scanline ?? 1));
+  // 闪烁频率随强度在 0.32s–0.12s 之间收紧
+  root.style.setProperty('--fx-flicker-speed', `${0.32 - 0.2 * (effects?.flicker ?? 1)}s`);
+  root.style.setProperty('--fx-glow-strength', String(effects?.glow ?? 0.6));
+  root.style.setProperty('--fx-noise-opacity', String(effects?.noise ?? 0.05));
+
+  root.style.setProperty('--radius-scale', String(typography?.radiusScale ?? 1));
+  root.style.setProperty('--type-scale', String(typography?.fontScale ?? 1));
+}
+
+/** 合成含读性遮罩的完整背景栈；无渐变时为 none，body 的 --bg 纯色兜底 */
+function resolveBackgroundStack(
+  background: ThemeBackground | undefined,
+  colorScheme: ColorScheme
+): string {
+  if (!background || background.type === 'solid' || background.stops.length < 2) return 'none';
+  const channel = colorScheme === 'dark' ? '0, 0, 0' : '255, 255, 255';
+  const scrim = `linear-gradient(rgba(${channel}, ${background.scrim}), rgba(${channel}, ${background.scrim}))`;
+  return `${scrim}, ${resolveBackgroundCss(background)}`;
+}
+
+/** 由 schema 背景配置合成 CSS 渐变串（停靠点均已过白名单校验，拼接安全） */
+export function resolveBackgroundCss(background: ThemeBackground | undefined): string {
+  if (!background || background.type === 'solid' || background.stops.length < 2) {
+    return 'var(--bg)';
+  }
+  switch (background.type) {
+    case 'linear':
+      return `linear-gradient(${background.angle}deg, ${background.stops.join(', ')})`;
+    case 'radial':
+      return `radial-gradient(ellipse at 50% 25%, ${background.stops.join(', ')})`;
+    case 'mesh': {
+      const [first, second, third] = background.stops;
+      return [
+        `radial-gradient(at 18% 22%, ${first} 0px, transparent 55%)`,
+        `radial-gradient(at 82% 28%, ${second ?? first} 0px, transparent 50%)`,
+        `radial-gradient(at 50% 88%, ${third ?? second ?? first} 0px, transparent 60%)`,
+      ].join(', ');
+    }
+  }
 }
 
 export function resolveThemeAppearance(
@@ -486,6 +719,9 @@ export function resolveThemeAppearance(
     motion: isOneOf(appearance?.motion, ['none', 'reduced', 'full'])
       ? appearance.motion
       : preset.motion,
+    blur: isOneOf(appearance?.blur, ['none', 'subtle', 'strong'])
+      ? appearance.blur
+      : preset.blur,
     components: {
       button: isOneOf(appearance?.components?.button, ['outline', 'solid', 'soft'])
         ? appearance.components.button

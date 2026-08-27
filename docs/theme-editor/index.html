@@ -261,7 +261,7 @@
       font-size: 11px;
     }
 
-    .setting-row input,
+    .setting-row input:not([type='range']),
     .setting-row select {
       width: 100%;
       min-width: 0;
@@ -272,6 +272,16 @@
       font-size: 11px;
       padding: 6px 8px;
       outline: none;
+    }
+
+    .setting-row:has(input[type='range']) {
+      grid-template-columns: minmax(110px, 1fr) minmax(96px, 1fr) 44px;
+    }
+
+    .setting-row .range-value {
+      font-size: 11px;
+      color: var(--editor-muted);
+      text-align: right;
     }
 
     .setting-row input:focus,
@@ -365,6 +375,58 @@
       --hover-lift: -2px;
       font-family: var(--font-ui);
       font-size: calc(1em * var(--font-size-scale));
+      position: relative;
+      isolation: isolate;
+      background-color: var(--bg);
+      background-image: var(--app-bg-stack, none);
+    }
+
+    /* V3：预览背景漂移（motion=none 时显式停止） */
+    .theme-scope[data-bg-animation='drift'] {
+      background-size: 200% 200%;
+      animation: theme-editor-bg-drift 40s ease-in-out infinite alternate;
+    }
+
+    .theme-scope[data-ui-motion='none'] {
+      animation: none;
+    }
+
+    @keyframes theme-editor-bg-drift {
+      0% {
+        background-position: 0% 0%;
+      }
+      100% {
+        background-position: 100% 100%;
+      }
+    }
+
+    /* V3：预览噪点层（垫在内容之下，仅作用于背景） */
+    .theme-scope[data-fx-noise='on']::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      opacity: var(--fx-noise-opacity, 0.05);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='en'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23en)'/%3E%3C/svg%3E");
+    }
+
+    /* V3：表面模糊档位（后置覆盖 shadow 派生值） */
+    .theme-scope[data-ui-blur='none'] {
+      --surface-blur: 0px;
+    }
+
+    .theme-scope[data-ui-blur='subtle'] {
+      --surface-blur: 6px;
+    }
+
+    .theme-scope[data-ui-blur='strong'] {
+      --surface-blur: 16px;
+    }
+
+    /* V3：预览辉光 */
+    .theme-scope[data-fx-glow='on'] .server-card {
+      box-shadow: var(--shadow-card), 0 4px calc(24px * var(--fx-glow-strength, 0.6)) var(--accent-glow);
     }
 
     .theme-scope[data-ui-shape="square"] {
@@ -589,10 +651,17 @@
       display: none;
     }
 
-    .theme-scope[data-ui-style="standard"] :is(.scanlines, .scanline, .flicker),
-    .theme-scope[data-ui-style="soft"] :is(.scanlines, .scanline, .flicker),
-    .theme-scope[data-ui-style="dense"] :is(.scanlines, .scanline, .flicker) {
+    .theme-scope:not([data-fx-scanline='on']) :is(.scanlines, .scanline),
+    .theme-scope:not([data-fx-flicker='on']) .flicker {
       display: none;
+    }
+
+    .theme-scope[data-fx-scanline='on'] .scanlines {
+      opacity: var(--fx-scanline-opacity, 1);
+    }
+
+    .theme-scope[data-fx-flicker='on'] .flicker {
+      animation-duration: var(--fx-flicker-speed, 0.15s);
     }
 
     .theme-scope[data-ui-motion="none"] * {
@@ -2117,6 +2186,8 @@
           <option value="cyberpunk" selected>Cyberpunk</option>
           <option value="apple">Apple</option>
           <option value="gruvbox">Gruvbox</option>
+          <option value="crt">CRT Amber</option>
+          <option value="glass">Glass</option>
         </select>
         <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
       </div>
@@ -2402,6 +2473,8 @@
                   <option value="cyberpunk" selected>Cyberpunk</option>
                   <option value="apple">Apple</option>
                   <option value="gruvbox">Gruvbox</option>
+                  <option value="crt">CRT Amber</option>
+                  <option value="glass">Glass</option>
                 </select>
                 <span class="material-symbols-outlined terminal-tool-icon">upload_file</span>
                 <span class="material-symbols-outlined terminal-tool-icon">folder_open</span>
@@ -2714,6 +2787,23 @@ const TRANSLATIONS = {
     'group.basic': '主题信息',
     'group.appearance': '整体外观',
     'group.componentStyles': '组件样式',
+    'group.themeV3Background': '背景层（V3）',
+    'group.themeV3Effects': '效果（V3）',
+    'group.themeV3Typography': '版式缩放（V3）',
+    'background.type': '背景类型',
+    'background.angle': '渐变角度',
+    'background.scrim': '读性遮罩',
+    'background.animation': '背景动画',
+    'background.stop1': '停靠点 1',
+    'background.stop2': '停靠点 2',
+    'background.stop3': '停靠点 3',
+    'background.stop4': '停靠点 4',
+    'effects.scanline': '扫描线',
+    'effects.flicker': '闪烁',
+    'effects.glow': '辉光',
+    'effects.noise': '噪点',
+    'typography.fontScale': '字号缩放',
+    'typography.radiusScale': '圆角缩放',
     'appearance.name': '主题名称',
     'appearance.colorScheme': '明暗模式',
     'appearance.style': '整体风格',
@@ -2722,6 +2812,7 @@ const TRANSLATIONS = {
     'appearance.font': '字体',
     'appearance.shadow': '阴影',
     'appearance.motion': '动效',
+    'appearance.blur': '表面模糊',
     'appearance.button': '按钮',
     'appearance.input': '输入框',
     'appearance.card': '卡片',
@@ -2742,6 +2833,11 @@ const TRANSLATIONS = {
     'option.none': '无',
     'option.subtle': '轻微',
     'option.elevated': '悬浮',
+    'option.solid': '纯色',
+    'option.linear': '线性渐变',
+    'option.radial': '径向渐变',
+    'option.mesh': '网格渐变',
+    'option.drift': '缓慢漂移',
     'option.reduced': '精简',
     'option.full': '完整',
     'option.outline': '描边',
@@ -2870,6 +2966,23 @@ const TRANSLATIONS = {
     'group.basic': 'THEME INFORMATION',
     'group.appearance': 'APPEARANCE',
     'group.componentStyles': 'COMPONENT STYLES',
+    'group.themeV3Background': 'BACKGROUND (V3)',
+    'group.themeV3Effects': 'EFFECTS (V3)',
+    'group.themeV3Typography': 'TYPOGRAPHY SCALE (V3)',
+    'background.type': 'Background type',
+    'background.angle': 'Gradient angle',
+    'background.scrim': 'Readability scrim',
+    'background.animation': 'Background animation',
+    'background.stop1': 'Stop 1',
+    'background.stop2': 'Stop 2',
+    'background.stop3': 'Stop 3',
+    'background.stop4': 'Stop 4',
+    'effects.scanline': 'Scanline',
+    'effects.flicker': 'Flicker',
+    'effects.glow': 'Glow',
+    'effects.noise': 'Noise',
+    'typography.fontScale': 'Font scale',
+    'typography.radiusScale': 'Radius scale',
     'appearance.name': 'Theme name',
     'appearance.colorScheme': 'Color scheme',
     'appearance.style': 'Style',
@@ -2878,6 +2991,7 @@ const TRANSLATIONS = {
     'appearance.font': 'Font',
     'appearance.shadow': 'Shadow',
     'appearance.motion': 'Motion',
+    'appearance.blur': 'Surface blur',
     'appearance.button': 'Button',
     'appearance.input': 'Input',
     'appearance.card': 'Card',
@@ -2898,6 +3012,11 @@ const TRANSLATIONS = {
     'option.none': 'None',
     'option.subtle': 'Subtle',
     'option.elevated': 'Elevated',
+    'option.solid': 'Solid',
+    'option.linear': 'Linear',
+    'option.radial': 'Radial',
+    'option.mesh': 'Mesh',
+    'option.drift': 'Drift',
     'option.reduced': 'Reduced',
     'option.full': 'Full',
     'option.outline': 'Outline',
@@ -3030,6 +3149,7 @@ const PRESETS = /* THEME_PRESETS_START */ {
       "font": "system",
       "shadow": "subtle",
       "motion": "reduced",
+      "blur": "subtle",
       "components": {
         "button": "solid",
         "input": "boxed",
@@ -3101,6 +3221,7 @@ const PRESETS = /* THEME_PRESETS_START */ {
       "font": "system",
       "shadow": "subtle",
       "motion": "reduced",
+      "blur": "subtle",
       "components": {
         "button": "solid",
         "input": "boxed",
@@ -3173,12 +3294,27 @@ const PRESETS = /* THEME_PRESETS_START */ {
       "font": "mono",
       "shadow": "none",
       "motion": "full",
+      "blur": "none",
       "components": {
         "button": "outline",
         "input": "underline",
         "card": "outlined",
         "tabs": "underline"
       }
+    },
+    "background": {
+      "type": "linear",
+      "stops": [
+        "#0a0a0a",
+        "#11170c"
+      ],
+      "angle": 165,
+      "scrim": 0.3,
+      "animation": "none"
+    },
+    "effects": {
+      "scanline": 1,
+      "flicker": 1
     },
     "terminal": {
       "background": "#0a0a0a",
@@ -3227,6 +3363,7 @@ const PRESETS = /* THEME_PRESETS_START */ {
       "font": "system",
       "shadow": "elevated",
       "motion": "reduced",
+      "blur": "strong",
       "components": {
         "button": "soft",
         "input": "boxed",
@@ -3299,6 +3436,7 @@ const PRESETS = /* THEME_PRESETS_START */ {
       "font": "mono",
       "shadow": "none",
       "motion": "reduced",
+      "blur": "none",
       "components": {
         "button": "outline",
         "input": "boxed",
@@ -3341,6 +3479,189 @@ const PRESETS = /* THEME_PRESETS_START */ {
       "--on-surface-variant": "#a89984",
       "--agent-user-color": "#b8bb26",
       "--agent-agent-color": "#83a598"
+    }
+  },
+  "crt": {
+    "name": "CRT Amber",
+    "colorScheme": "dark",
+    "appearance": {
+      "style": "cyberpunk",
+      "shape": "square",
+      "density": "compact",
+      "font": "mono",
+      "shadow": "none",
+      "motion": "full",
+      "blur": "none",
+      "components": {
+        "button": "outline",
+        "input": "underline",
+        "card": "outlined",
+        "tabs": "underline"
+      }
+    },
+    "background": {
+      "type": "radial",
+      "stops": [
+        "#261b00",
+        "#0f0a00"
+      ],
+      "angle": 160,
+      "scrim": 0.3,
+      "animation": "none"
+    },
+    "effects": {
+      "scanline": 1,
+      "flicker": 0.6,
+      "glow": 0.5
+    },
+    "typography": {
+      "fontScale": 1,
+      "radiusScale": 0.75
+    },
+    "terminal": {
+      "background": "#0f0a00",
+      "foreground": "#ffb000",
+      "cursor": "#ffd257",
+      "cursorAccent": "#0f0a00",
+      "selectionBackground": "#3d2e00",
+      "selectionForeground": "#ffb000",
+      "selectionInactiveBackground": "#2a2000",
+      "black": "#241a00",
+      "red": "#ff6b4a",
+      "green": "#d4a017",
+      "yellow": "#ffb000",
+      "blue": "#f0c040",
+      "magenta": "#e08e39",
+      "cyan": "#c8b04a",
+      "white": "#d9c08a",
+      "brightBlack": "#8a7440",
+      "brightRed": "#ffa080",
+      "brightGreen": "#ffd257",
+      "brightYellow": "#ffe08a",
+      "brightBlue": "#ffe8b0",
+      "brightMagenta": "#ffc27a",
+      "brightCyan": "#e8d89a",
+      "brightWhite": "#fff3c4"
+    },
+    "ui": {
+      "--bg": "#0f0a00",
+      "--bg-surface": "#171000",
+      "--bg-elevated": "#1d1600",
+      "--bg-terminal": "#0f0a00",
+      "--text": "#ffb000",
+      "--text-muted": "#bfa06a",
+      "--text-dim": "#937c46",
+      "--accent": "#ffb000",
+      "--accent-secondary": "#ffd257",
+      "--accent-secondary-light": "#ffe08a",
+      "--border": "#3d2e00",
+      "--border-strong": "#5c470a",
+      "--error": "#ff6b4a",
+      "--error-bg": "#3d1200",
+      "--on-accent": "#0f0a00",
+      "--surface-dot": "#3d2e00",
+      "--scrollbar-track": "rgba(23, 16, 0, 0.5)",
+      "--scrollbar-thumb": "rgba(255, 176, 0, 0.25)",
+      "--scrollbar-thumb-hover": "rgba(255, 176, 0, 0.45)",
+      "--scanline-tint": "rgba(255, 176, 0, 0.03)",
+      "--accent-glow": "rgba(255, 176, 0, 0.12)",
+      "--accent-bg": "rgba(255, 176, 0, 0.12)",
+      "--modal-overlay": "rgba(0, 0, 0, 0.8)",
+      "--on-surface": "#fff3c4",
+      "--on-surface-variant": "#bfa06a",
+      "--agent-user-color": "#ffb000",
+      "--agent-agent-color": "#ffd257"
+    }
+  },
+  "glass": {
+    "name": "Glass",
+    "colorScheme": "light",
+    "appearance": {
+      "style": "soft",
+      "shape": "soft",
+      "density": "comfortable",
+      "font": "system",
+      "shadow": "elevated",
+      "motion": "reduced",
+      "blur": "strong",
+      "components": {
+        "button": "soft",
+        "input": "boxed",
+        "card": "elevated",
+        "tabs": "segmented"
+      }
+    },
+    "background": {
+      "type": "mesh",
+      "stops": [
+        "#d3e3f8",
+        "#e8edf5",
+        "#ece0f6"
+      ],
+      "angle": 135,
+      "scrim": 0.35,
+      "animation": "drift"
+    },
+    "effects": {
+      "glow": 0.4
+    },
+    "typography": {
+      "fontScale": 1.05,
+      "radiusScale": 1.4
+    },
+    "terminal": {
+      "background": "#ffffff",
+      "foreground": "#1a2332",
+      "cursor": "#235cd8",
+      "cursorAccent": "#ffffff",
+      "selectionBackground": "#c4d8f7",
+      "selectionForeground": "#1a2332",
+      "selectionInactiveBackground": "#dde8f7",
+      "black": "#1a2332",
+      "red": "#c03528",
+      "green": "#1e7d3c",
+      "yellow": "#8a5a00",
+      "blue": "#235cd8",
+      "magenta": "#7c4dcc",
+      "cyan": "#0e6e86",
+      "white": "#56637a",
+      "brightBlack": "#56637a",
+      "brightRed": "#d9483b",
+      "brightGreen": "#2a944f",
+      "brightYellow": "#a86e10",
+      "brightBlue": "#3870e8",
+      "brightMagenta": "#8f5ce6",
+      "brightCyan": "#2a8ba3",
+      "brightWhite": "#0e1626"
+    },
+    "ui": {
+      "--bg": "#e8edf5",
+      "--bg-surface": "#f4f7fb",
+      "--bg-elevated": "#ffffff",
+      "--bg-terminal": "#ffffff",
+      "--text": "#1a2332",
+      "--text-muted": "#4d5a70",
+      "--text-dim": "#56637a",
+      "--accent": "#235cd8",
+      "--accent-secondary": "#3870e8",
+      "--accent-secondary-light": "#c4d8f7",
+      "--border": "#c9d4e3",
+      "--border-strong": "#a9b8cc",
+      "--error": "#c03528",
+      "--error-bg": "#f9e3e0",
+      "--on-accent": "#ffffff",
+      "--surface-dot": "#d5deea",
+      "--scrollbar-track": "rgba(201, 212, 227, 0.45)",
+      "--scrollbar-thumb": "rgba(77, 90, 112, 0.3)",
+      "--scrollbar-thumb-hover": "rgba(77, 90, 112, 0.5)",
+      "--scanline-tint": "transparent",
+      "--accent-glow": "rgba(35, 92, 216, 0.1)",
+      "--accent-bg": "rgba(35, 92, 216, 0.08)",
+      "--modal-overlay": "rgba(26, 35, 50, 0.35)",
+      "--on-surface": "#1a2332",
+      "--on-surface-variant": "#4d5a70",
+      "--agent-user-color": "#235cd8",
+      "--agent-agent-color": "#7c4dcc"
     }
   }
 } /* THEME_PRESETS_END */;
@@ -3392,6 +3713,9 @@ let activePreset = 'cyberpunk';
 let colorScheme = 'dark';
 let themeName = 'Cyberpunk';
 let appearance = {};
+let background = null;
+let effects = {};
+let typography = null;
 const THEME_MAX_BYTES = 64 * 1024;
 const invalidColorProperties = new Set();
 
@@ -3402,6 +3726,7 @@ const APPEARANCE_FIELDS = [
   { key: 'font', labelKey: 'appearance.font', values: ['mono', 'system'] },
   { key: 'shadow', labelKey: 'appearance.shadow', values: ['none', 'subtle', 'elevated'] },
   { key: 'motion', labelKey: 'appearance.motion', values: ['none', 'reduced', 'full'] },
+  { key: 'blur', labelKey: 'appearance.blur', values: ['none', 'subtle', 'strong'] },
 ];
 
 const COMPONENT_FIELDS = [
@@ -3431,6 +3756,9 @@ function initTheme(presetName) {
     ...preset.appearance,
     components: { ...preset.appearance.components },
   };
+  background = preset.background ? structuredClone(preset.background) : null;
+  effects = { ...(preset.effects || {}) };
+  typography = preset.typography ? { ...preset.typography } : null;
   renderControls();
   applyTheme();
   syncThemeSelectors(presetName);
@@ -3471,6 +3799,26 @@ function renderControls() {
       `data-component="${field.key}"`,
     ))
     .join('');
+
+  // V3：背景层 / 效果 / 版式面板
+  html += `<div class="section-title">${t('group.themeV3Background')}</div>`;
+  html += settingSelect('background.type', background?.type || 'solid', ['solid', 'linear', 'radial', 'mesh'], 'data-background="type"');
+  html += settingRange('background.angle', background?.angle ?? 160, 0, 360, 1, 'data-background="angle"');
+  html += settingRange('background.scrim', background?.scrim ?? 0.3, 0, 0.85, 0.01, 'data-background="scrim"');
+  html += settingSelect('background.animation', background?.animation || 'none', ['none', 'drift'], 'data-background="animation"');
+  for (let i = 0; i < 4; i++) {
+    html += settingInput(`background.stop${i + 1}`, background?.stops?.[i] || '', `data-background-stop="${i}"`);
+  }
+
+  html += `<div class="section-title">${t('group.themeV3Effects')}</div>`;
+  html += settingRange('effects.scanline', effects.scanline ?? 0, 0, 1, 0.05, 'data-effect="scanline"');
+  html += settingRange('effects.flicker', effects.flicker ?? 0, 0, 1, 0.05, 'data-effect="flicker"');
+  html += settingRange('effects.glow', effects.glow ?? 0, 0, 1, 0.05, 'data-effect="glow"');
+  html += settingRange('effects.noise', effects.noise ?? 0, 0, 1, 0.01, 'data-effect="noise"');
+
+  html += `<div class="section-title">${t('group.themeV3Typography')}</div>`;
+  html += settingRange('typography.fontScale', typography?.fontScale ?? 1, 0.85, 1.25, 0.01, 'data-typography="fontScale"');
+  html += settingRange('typography.radiusScale', typography?.radiusScale ?? 1, 0.5, 2, 0.05, 'data-typography="radiusScale"');
 
   for (const group of VARIABLE_GROUPS) {
     html += `<div class="section-title">${t(group.titleKey)}</div>`;
@@ -3513,6 +3861,69 @@ function renderControls() {
   container.querySelectorAll('[data-component]').forEach(select => {
     select.addEventListener('change', (event) => {
       appearance.components[event.target.dataset.component] = event.target.value;
+      markThemeCustomized();
+      applyTheme();
+    });
+  });
+
+  // V3：背景层 / 效果 / 版式控件事件
+  container.querySelectorAll('[data-background]').forEach(control => {
+    control.addEventListener('input', (event) => {
+      const target = event.target;
+      const key = target.dataset.background;
+      background = normalizeBackgroundState(background);
+      if (key === 'angle' || key === 'scrim') {
+        background[key] = Number(target.value);
+      } else {
+        background[key] = target.value;
+      }
+      markThemeCustomized();
+      applyTheme();
+    });
+  });
+
+  container.querySelectorAll('[data-background-stop]').forEach(input => {
+    input.addEventListener('input', (event) => {
+      const target = event.target;
+      const index = Number(target.dataset.backgroundStop);
+      background = normalizeBackgroundState(background);
+      const stops = [...(background.stops || [])];
+      const value = target.value.trim();
+      if (value === '') {
+        delete stops[index];
+      } else if (isSafeColor(value)) {
+        stops[index] = value;
+        target.setAttribute('aria-invalid', 'false');
+      } else {
+        target.setAttribute('aria-invalid', 'true');
+      }
+      background.stops = stops.filter(stop => stop !== undefined);
+      markThemeCustomized();
+      applyTheme();
+    });
+  });
+
+  container.querySelectorAll('[data-effect]').forEach(input => {
+    input.addEventListener('input', (event) => {
+      const key = event.target.dataset.effect;
+      const value = Number(event.target.value);
+      if (value > 0) effects[key] = value;
+      else delete effects[key];
+      markThemeCustomized();
+      applyTheme();
+    });
+  });
+
+  container.querySelectorAll('[data-typography]').forEach(input => {
+    input.addEventListener('input', (event) => {
+      const key = event.target.dataset.typography;
+      const value = Number(event.target.value);
+      typography = {
+        fontScale: typography?.fontScale ?? 1,
+        radiusScale: typography?.radiusScale ?? 1,
+        [key]: value,
+      };
+      if (typography.fontScale === 1 && typography.radiusScale === 1) typography = null;
       markThemeCustomized();
       applyTheme();
     });
@@ -3584,6 +3995,23 @@ function settingSelect(labelKey, value, values, attribute) {
     + `<select ${attribute} aria-label="${escapeAttribute(t(labelKey))}">${options}</select></div>`;
 }
 
+function settingRange(labelKey, value, min, max, step, attribute) {
+  return `<div class="setting-row"><label>${t(labelKey)}</label>`
+    + `<input type="range" min="${min}" max="${max}" step="${step}" value="${value}" ${attribute} aria-label="${escapeAttribute(t(labelKey))}">`
+    + `<span class="range-value">${value}</span></div>`;
+}
+
+function normalizeBackgroundState(current) {
+  if (current) return current;
+  return {
+    type: 'linear',
+    stops: ['#0a0a0a'],
+    angle: 160,
+    scrim: 0.3,
+    animation: 'none',
+  };
+}
+
 function applyTheme() {
   const scope = document.getElementById('theme-scope');
   scope.style.colorScheme = colorScheme;
@@ -3594,6 +4022,7 @@ function applyTheme() {
   scope.dataset.uiFont = appearance.font;
   scope.dataset.uiShadow = appearance.shadow;
   scope.dataset.uiMotion = appearance.motion;
+  scope.dataset.uiBlur = appearance.blur;
   scope.dataset.componentButton = appearance.components.button;
   scope.dataset.componentInput = appearance.components.input;
   scope.dataset.componentCard = appearance.components.card;
@@ -3601,6 +4030,40 @@ function applyTheme() {
   for (const [varName, val] of Object.entries(theme)) {
     scope.style.setProperty(varName, val);
   }
+  // V3：背景栈（含读性遮罩）与效果开关（与应用同构）
+  if (background && background.type !== 'solid' && (background.stops || []).length >= 2 && background.stops.every(isSafeColor)) {
+    const channel = colorScheme === 'dark' ? '0, 0, 0' : '255, 255, 255';
+    const scrimAlpha = background.scrim ?? 0.3;
+    const scrim = `linear-gradient(rgba(${channel}, ${scrimAlpha}), rgba(${channel}, ${scrimAlpha}))`;
+    let gradient;
+    if (background.type === 'linear') {
+      gradient = `linear-gradient(${background.angle ?? 160}deg, ${background.stops.join(', ')})`;
+    } else if (background.type === 'radial') {
+      gradient = `radial-gradient(ellipse at 50% 25%, ${background.stops.join(', ')})`;
+    } else {
+      const [a, b, c] = background.stops;
+      gradient = [
+        `radial-gradient(at 18% 22%, ${a} 0px, transparent 55%)`,
+        `radial-gradient(at 82% 28%, ${b || a} 0px, transparent 50%)`,
+        `radial-gradient(at 50% 88%, ${c || b || a} 0px, transparent 60%)`,
+      ].join(', ');
+    }
+    scope.style.setProperty('--app-bg-stack', `${scrim}, ${gradient}`);
+    scope.dataset.bgAnimation = background.animation === 'drift' ? 'drift' : 'none';
+  } else {
+    scope.style.setProperty('--app-bg-stack', 'none');
+    scope.dataset.bgAnimation = 'none';
+  }
+  scope.dataset.fxScanline = effects.scanline ? 'on' : 'off';
+  scope.dataset.fxFlicker = effects.flicker ? 'on' : 'off';
+  scope.dataset.fxGlow = effects.glow ? 'on' : 'off';
+  scope.dataset.fxNoise = effects.noise ? 'on' : 'off';
+  scope.style.setProperty('--fx-scanline-opacity', String(effects.scanline ?? 1));
+  scope.style.setProperty('--fx-flicker-speed', `${0.32 - 0.2 * (effects.flicker ?? 1)}s`);
+  scope.style.setProperty('--fx-glow-strength', String(effects.glow ?? 0.6));
+  scope.style.setProperty('--fx-noise-opacity', String(effects.noise ?? 0.05));
+  scope.style.setProperty('--radius-scale', String(typography?.radiusScale ?? 1));
+  scope.style.setProperty('--type-scale', String(typography?.fontScale ?? 1));
 }
 
 // Preset selector
@@ -3651,6 +4114,11 @@ document.getElementById('import-input').addEventListener('change', (e) => {
         ? data.name.trim().slice(0, 80)
         : 'Custom';
       appearance = mergeAppearance(fallbackPreset.appearance, importedAppearance);
+      background = sanitizeBackground(data.background, importedScheme)
+        || structuredClone(fallbackPreset.background || null);
+      effects = { ...(fallbackPreset.effects || {}), ...(sanitizeEffects(data.effects) || {}) };
+      typography = sanitizeTypography(data.typography)
+        || (fallbackPreset.typography ? { ...fallbackPreset.typography } : null);
       activePreset = requestedBase;
       invalidColorProperties.clear();
       syncThemeSelectors('custom');
@@ -3678,7 +4146,7 @@ document.getElementById('btn-export').addEventListener('click', () => {
     Object.keys(PRESETS['standard-dark'].terminal),
   );
   const output = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     name: themeName.trim() || 'Custom',
     baseTheme: activePreset || (colorScheme === 'light' ? 'standard-light' : 'cyberpunk'),
     colorScheme,
@@ -3696,6 +4164,12 @@ document.getElementById('btn-export').addEventListener('click', () => {
     },
     ui: safeUiTheme,
   };
+  const safeBackground = sanitizeBackground(background, colorScheme);
+  if (safeBackground) output.background = safeBackground;
+  const safeEffects = sanitizeEffects(effects);
+  if (safeEffects) output.effects = safeEffects;
+  const safeTypography = sanitizeTypography(typography);
+  if (safeTypography) output.typography = safeTypography;
 
   const json = JSON.stringify(output, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
@@ -3746,6 +4220,38 @@ function sanitizeAppearance(value) {
     if (field.values.includes(components[field.key])) result.components[field.key] = components[field.key];
   }
   return Object.keys(result).length > 1 || Object.keys(result.components).length ? result : null;
+}
+
+function sanitizeBackground(value, scheme) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const stops = Array.isArray(value.stops)
+    ? value.stops.filter(s => typeof s === 'string' && isSafeColor(s)).slice(0, 5)
+    : [];
+  if (stops.length === 0) return null;
+  const type = ['solid', 'linear', 'radial', 'mesh'].includes(value.type) ? value.type : 'linear';
+  const animation = value.animation === 'drift' ? 'drift' : 'none';
+  const angle = Math.min(360, Math.max(0, Number(value.angle) || 160));
+  let scrim = Math.min(0.85, Math.max(0, Number(value.scrim) || 0));
+  if (type !== 'solid') scrim = Math.max(scrim, scheme === 'light' ? 0.35 : 0.25);
+  return { type, stops, angle, scrim, animation };
+}
+
+function sanitizeEffects(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const result = {};
+  for (const name of ['scanline', 'flicker', 'glow', 'noise']) {
+    const raw = Number(value[name]);
+    if (Number.isFinite(raw) && raw > 0) result[name] = Math.min(1, raw);
+  }
+  return Object.keys(result).length ? result : undefined;
+}
+
+function sanitizeTypography(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const fontScale = Math.min(1.25, Math.max(0.85, Number(value.fontScale) || 1));
+  const radiusScale = Math.min(2, Math.max(0.5, Number(value.radiusScale) || 1));
+  if (fontScale === 1 && radiusScale === 1) return null;
+  return { fontScale, radiusScale };
 }
 
 function mergeAppearance(fallback, imported) {

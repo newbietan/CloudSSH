@@ -77,28 +77,28 @@
 }
 
 html[data-ui-shape="square"] {
-  --control-radius: 2px;
-  --card-radius: 0px;
-  --modal-radius: 0px;
+  --control-radius: calc(2px * var(--radius-scale, 1));
+  --card-radius: calc(0px * var(--radius-scale, 1));
+  --modal-radius: calc(0px * var(--radius-scale, 1));
   --terminal-frame-gap: 4px;
 }
 
 html[data-ui-shape="rounded"] {
-  --control-radius: 6px;
-  --card-radius: 9px;
-  --modal-radius: 12px;
+  --control-radius: calc(6px * var(--radius-scale, 1));
+  --card-radius: calc(9px * var(--radius-scale, 1));
+  --modal-radius: calc(12px * var(--radius-scale, 1));
   --terminal-frame-gap: 7px;
 }
 
 html[data-ui-shape="soft"] {
-  --control-radius: 10px;
-  --card-radius: 15px;
-  --modal-radius: 18px;
+  --control-radius: calc(10px * var(--radius-scale, 1));
+  --card-radius: calc(15px * var(--radius-scale, 1));
+  --modal-radius: calc(18px * var(--radius-scale, 1));
   --terminal-frame-gap: 10px;
 }
 
 html[data-ui-density="compact"] {
-  --font-size-scale: 0.94;
+  --font-size-scale: calc(0.94 * var(--type-scale, 1));
   --space-scale: 0.84;
   --control-padding-x: 0.62rem;
   --control-padding-y: 0.36rem;
@@ -108,7 +108,7 @@ html[data-ui-density="compact"] {
 }
 
 html[data-ui-density="comfortable"] {
-  --font-size-scale: 1;
+  --font-size-scale: calc(1 * var(--type-scale, 1));
   --space-scale: 1;
   --control-padding-x: 0.78rem;
   --control-padding-y: 0.5rem;
@@ -118,7 +118,7 @@ html[data-ui-density="comfortable"] {
 }
 
 html[data-ui-density="spacious"] {
-  --font-size-scale: 1.04;
+  --font-size-scale: calc(1.04 * var(--type-scale, 1));
   --space-scale: 1.12;
   --control-padding-x: 0.92rem;
   --control-padding-y: 0.62rem;
@@ -156,6 +156,19 @@ html[data-ui-shadow="elevated"] {
   --surface-blur: 10px;
 }
 
+/* V3：表面模糊独立档位，覆盖 shadow 预设派生值（后置规则同优先级胜出） */
+html[data-ui-blur='none'] {
+  --surface-blur: 0px;
+}
+
+html[data-ui-blur='subtle'] {
+  --surface-blur: 6px;
+}
+
+html[data-ui-blur='strong'] {
+  --surface-blur: 16px;
+}
+
 html[data-ui-motion="none"] {
   --motion-fast: 0ms;
   --motion-normal: 0ms;
@@ -182,6 +195,65 @@ body {
   background-color: var(--bg);
   color: var(--text);
   min-height: 100vh;
+}
+
+/* ==================== Theme V3：背景层 / 效果 / 版式缩放 ==================== */
+
+/* 背景层：固定全屏伪元素承载渐变栈；--app-bg-stack 为 none 时与 V2 纯色完全一致 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--app-bg-stack, none);
+}
+
+/* 环境背景漂移：主题显式声明 drift 时启用；motion=none 与系统级减少动态时停止 */
+html[data-bg-animation='drift'] body::before {
+  background-size: 200% 200%;
+  animation: theme-bg-drift 40s ease-in-out infinite alternate;
+}
+
+html[data-ui-motion='none'] body::before {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-bg-animation='drift'] body::before {
+    animation: none;
+  }
+}
+
+@keyframes theme-bg-drift {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: 100% 100%;
+  }
+}
+
+/* 噪点：内联 feTurbulence 纹理（静态资源，非主题数据），强度驱动透明度 */
+html[data-fx-noise='on'] body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--fx-noise-opacity, 0.05);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* 辉光：效果开启时卡片/按钮静止态即带强调辉光（hover 态全主题通用不变） */
+html[data-fx-glow='on'] .server-card {
+  box-shadow:
+    var(--shadow-card),
+    0 4px calc(24px * var(--fx-glow-strength, 0.6)) var(--accent-glow);
+}
+
+html[data-fx-glow='on'] .cyber-button {
+  box-shadow: 0 0 calc(12px * var(--fx-glow-strength, 0.6)) var(--accent-glow);
 }
 
 .language-toggle {
@@ -298,12 +370,17 @@ body.terminal-active {
   cursor: crosshair;
 }
 
-html:not([data-ui-style="cyberpunk"]) .scanlines,
-html:not([data-ui-style="cyberpunk"]) .scanline {
+/* V3 效果注册表：扫描线/闪烁按 fx 开关门控（取代旧的 style=cyberpunk 硬编码） */
+html:not([data-fx-scanline='on']) .scanlines,
+html:not([data-fx-scanline='on']) .scanline {
   display: none;
 }
 
-html:not([data-ui-style="cyberpunk"]) .flicker {
+html[data-fx-scanline='on'] .scanlines {
+  opacity: var(--fx-scanline-opacity, 1);
+}
+
+html:not([data-fx-flicker='on']) .flicker {
   animation: none;
   display: none;
 }
@@ -352,7 +429,7 @@ html:not([data-ui-style="cyberpunk"]) .flicker {
 }
 
 .flicker {
-  animation: flicker 0.15s infinite;
+  animation: flicker var(--fx-flicker-speed, 0.15s) infinite;
   pointer-events: none;
   position: fixed;
   top: 0;
