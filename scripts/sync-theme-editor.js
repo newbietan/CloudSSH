@@ -17,7 +17,7 @@ const labels = {
   'standard-dark': 'Standard Dark',
   'standard-light': 'Standard Light',
   cyberpunk: 'Cyberpunk',
-  glacier: 'Glacier',
+  apple: 'Apple',
   gruvbox: 'Gruvbox',
 };
 

@@ -5,7 +5,7 @@ export const BUILT_IN_THEME_NAMES = [
   'standard-dark',
   'standard-light',
   'cyberpunk',
-  'glacier',
+  'apple',
   'gruvbox',
 ] as const;
 

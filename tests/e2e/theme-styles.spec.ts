@@ -51,11 +51,11 @@ test('内置主题切换 UI 风格但保持服务器列表结构稳定', async (
   await expect(card).toHaveCount(1);
   await expect(grid).toHaveClass(/grid-cols-1/);
 
-  await selector.selectOption('glacier');
+  await selector.selectOption('apple');
   await expect(page.locator('html')).toHaveAttribute('data-ui-style', 'soft');
   await expect(page.locator('html')).toHaveAttribute('data-component-card', 'elevated');
   await expect(card).toHaveCSS('border-radius', '15px');
-  await expect(terminalSelector).toHaveValue('glacier');
+  await expect(terminalSelector).toHaveValue('apple');
 
   await selector.selectOption('gruvbox');
   await expect(page.locator('html')).toHaveAttribute('data-ui-style', 'dense');
@@ -140,7 +140,7 @@ test('终端四周留白按形状收窄并为圆角保留安全间距', async ({
   await expect(terminalMain).toHaveCSS('padding', '7px');
   await expect(terminalWrapper).toHaveCSS('border-radius', '9px');
 
-  await selector.selectOption('glacier');
+  await selector.selectOption('apple');
   await expect(terminalMain).toHaveCSS('padding', '10px');
   await expect(terminalWrapper).toHaveCSS('border-radius', '15px');
 });

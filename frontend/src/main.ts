@@ -566,6 +566,14 @@ function restoreTheme(): void {
   const selection = localStorage.getItem('cloudssh_theme_selection');
   localStorage.removeItem('cloudssh_theme');
 
+  // glacier 内置主题已被 Apple 主题取代：旧选择一次性迁移到同为深色的 Standard Dark
+  if (selection === 'glacier') {
+    localStorage.setItem('cloudssh_theme_selection', 'standard-dark');
+    applyBuiltInTheme('standard-dark');
+    syncThemeSelectors('standard-dark');
+    return;
+  }
+
   if (isBuiltInTheme(selection)) {
     applyBuiltInTheme(selection);
     syncThemeSelectors(selection);

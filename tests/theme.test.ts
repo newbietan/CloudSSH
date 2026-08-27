@@ -69,7 +69,7 @@ describe('Standard 内置主题', () => {
       'brightWhite',
     ] as const;
 
-    for (const themeName of ['standard-dark', 'standard-light'] as const) {
+    for (const themeName of ['standard-dark', 'standard-light', 'apple'] as const) {
       for (const key of ansiKeys) {
         expect(THEMES[themeName][key]).toMatch(/^#[0-9a-f]{6}$/i);
       }
@@ -77,7 +77,7 @@ describe('Standard 内置主题', () => {
   });
 
   it('主要文本、次要文本和强调色达到普通文字 4.5:1 对比度', () => {
-    for (const themeName of ['standard-dark', 'standard-light'] as const) {
+    for (const themeName of ['standard-dark', 'standard-light', 'apple'] as const) {
       const ui = UI_THEMES[themeName];
       for (const foreground of ['--text', '--text-muted', '--text-dim', '--accent', '--error']) {
         expect(contrastRatio(ui[foreground], ui['--bg'])).toBeGreaterThanOrEqual(4.5);
@@ -134,7 +134,7 @@ describe('Theme V2 界面风格', () => {
       'standard-dark': { style: 'standard' },
       'standard-light': { style: 'standard' },
       cyberpunk: { style: 'cyberpunk' },
-      glacier: { style: 'soft' },
+      apple: { style: 'soft' },
       gruvbox: { style: 'dense' },
     });
     expect(Object.keys(UI_STYLE_PRESETS).sort()).toEqual([
@@ -146,7 +146,7 @@ describe('Theme V2 界面风格', () => {
   });
 
   it('切换内置主题会同步形状、密度、字体、阴影、动效和组件风格', () => {
-    applyBuiltInTheme('glacier');
+    applyBuiltInTheme('apple');
     expect(getActiveThemeAppearance()).toEqual({
       style: 'soft',
       shape: 'soft',
@@ -235,7 +235,7 @@ describe('Theme V2 界面风格', () => {
       normalizeImportedTheme({
         schemaVersion: 999,
         name: ' My Theme ',
-        baseTheme: 'glacier',
+        baseTheme: 'gruvbox',
         colorScheme: 'dark',
         ui: {
           '--accent': '#abcdef',
@@ -250,13 +250,32 @@ describe('Theme V2 界面风格', () => {
     ).toEqual({
       schemaVersion: 2,
       name: 'My Theme',
-      baseTheme: 'glacier',
+      baseTheme: 'gruvbox',
       colorScheme: 'dark',
       ui: { '--accent': '#abcdef' },
       appearance: {
         shape: 'soft',
         components: { button: 'solid' },
       },
+    });
+  });
+
+  it('旧版 glacier 基础主题优雅降级：字段被丢弃但主题仍可导入', () => {
+    expect(
+      normalizeImportedTheme({
+        schemaVersion: 2,
+        name: 'Legacy Glacier Custom',
+        baseTheme: 'glacier',
+        colorScheme: 'dark',
+        ui: { '--accent': '#67e8f9' },
+        appearance: { style: 'soft' },
+      })
+    ).toEqual({
+      schemaVersion: 2,
+      name: 'Legacy Glacier Custom',
+      colorScheme: 'dark',
+      ui: { '--accent': '#67e8f9' },
+      appearance: { style: 'soft' },
     });
   });
 
@@ -314,7 +333,7 @@ describe('Standard 主题入口和编辑器', () => {
     expect(appHtml.match(/data-theme-import/g)).toHaveLength(3);
     expect(appHtml).not.toContain('data-theme-export');
     expect(appHtml).not.toContain('data-theme-delete');
-    expect(appHtml).toContain('Glacier · Soft');
+    expect(appHtml).toContain('Apple · Soft');
     expect(appHtml).toContain('Gruvbox · Dense');
   });
 
@@ -327,6 +346,9 @@ describe('Standard 主题入口和编辑器', () => {
     expect(mainSource).toContain(
       'void restoreCloudTheme(initialThemeSelection, themeSelectionRevision)'
     );
+    // glacier 已被 Apple 取代：旧选择在恢复时迁移到 Standard Dark，避免静默回退到默认主题
+    expect(mainSource).toContain("selection === 'glacier'");
+    expect(mainSource).toContain("'standard-dark'");
     expect(workerSource).toContain("url.pathname === '/api/user/theme'");
     expect(userDbSource).toContain('CREATE TABLE IF NOT EXISTS user_themes');
     expect(userDbSource).not.toContain('handleDeleteTheme');
@@ -358,7 +380,7 @@ describe('Standard 主题入口和编辑器', () => {
       'standard-dark',
       'standard-light',
       'cyberpunk',
-      'glacier',
+      'apple',
       'gruvbox',
     ]) {
       expect(editorHtml).toContain(`<option value="${themeName}"`);
@@ -395,7 +417,7 @@ describe('Standard 主题入口和编辑器', () => {
     expect(editorHtml).toContain('ui: safeUiTheme');
     expect(editorHtml).not.toContain('transition: all');
     expect(THEME_MAX_BYTES).toBe(64 * 1024);
-    expect(editorPresets.glacier.appearance).toMatchObject({
+    expect(editorPresets.apple.appearance).toMatchObject({
       style: 'soft',
       shape: 'soft',
       density: 'comfortable',

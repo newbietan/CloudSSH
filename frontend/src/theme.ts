@@ -4,7 +4,6 @@ import {
   type ColorScheme,
   type NormalizedThemeData,
   normalizeThemeData,
-  THEME_MAX_BYTES,
   THEME_SCHEMA_VERSION,
   type ThemeAppearance,
   type ThemeComponentStyles,
@@ -166,12 +165,30 @@ export const THEMES = {
     cursorAccent: '#0a0a0a',
     selectionBackground: '#273747',
   },
-  glacier: {
-    background: '#0a192f',
-    foreground: '#64ffda',
-    cursor: '#e6f1ff',
-    cursorAccent: '#0a192f',
-    selectionBackground: '#112240',
+  apple: {
+    background: '#ffffff',
+    foreground: '#1d1d1f',
+    cursor: '#0066da',
+    cursorAccent: '#ffffff',
+    selectionBackground: '#b3d7ff',
+    selectionForeground: '#1d1d1f',
+    selectionInactiveBackground: '#dde8f7',
+    black: '#1d1d1f',
+    red: '#d70015',
+    green: '#248a3d',
+    yellow: '#b25000',
+    blue: '#0040dd',
+    magenta: '#8944ab',
+    cyan: '#0b7285',
+    white: '#8e8e93',
+    brightBlack: '#6e6e73',
+    brightRed: '#ff3b30',
+    brightGreen: '#34c759',
+    brightYellow: '#c93400',
+    brightBlue: '#0071e3',
+    brightMagenta: '#af52de',
+    brightCyan: '#30b0c7',
+    brightWhite: '#1d1d1f',
   },
   gruvbox: {
     background: '#282828',
@@ -270,34 +287,34 @@ export const UI_THEMES: Record<BuiltInThemeName, Record<string, string>> = {
     '--agent-user-color': '#4af626',
     '--agent-agent-color': '#14d1ff',
   },
-  glacier: {
-    '--bg': '#0a192f',
-    '--bg-surface': '#0d2137',
-    '--bg-elevated': '#112240',
-    '--bg-terminal': '#061526',
-    '--text': '#64ffda',
-    '--text-muted': '#8892b0',
-    '--text-dim': '#495670',
-    '--accent': '#64ffda',
-    '--accent-secondary': '#e6f1ff',
-    '--accent-secondary-light': '#ccd6f6',
-    '--border': '#1d3557',
-    '--border-strong': '#495670',
-    '--error': '#ff6b6b',
-    '--error-bg': '#3d0000',
-    '--on-accent': '#0a192f',
-    '--surface-dot': '#1d3557',
-    '--scrollbar-track': 'rgba(10, 25, 47, 0.5)',
-    '--scrollbar-thumb': 'rgba(100, 255, 218, 0.2)',
-    '--scrollbar-thumb-hover': 'rgba(100, 255, 218, 0.4)',
-    '--scanline-tint': 'rgba(100, 255, 218, 0.02)',
-    '--accent-glow': 'rgba(100, 255, 218, 0.08)',
-    '--accent-bg': 'rgba(100, 255, 218, 0.1)',
-    '--modal-overlay': 'rgba(0, 0, 0, 0.85)',
-    '--on-surface': '#e6f1ff',
-    '--on-surface-variant': '#8892b0',
-    '--agent-user-color': '#64ffda',
-    '--agent-agent-color': '#e6f1ff',
+  apple: {
+    '--bg': '#f5f5f7',
+    '--bg-surface': '#ffffff',
+    '--bg-elevated': '#ffffff',
+    '--bg-terminal': '#ffffff',
+    '--text': '#1d1d1f',
+    '--text-muted': '#636368',
+    '--text-dim': '#6e6e73',
+    '--accent': '#0066da',
+    '--accent-secondary': '#0052b4',
+    '--accent-secondary-light': '#cce4ff',
+    '--border': '#d2d2d7',
+    '--border-strong': '#aeaeb2',
+    '--error': '#d70015',
+    '--error-bg': '#ffebe9',
+    '--on-accent': '#ffffff',
+    '--surface-dot': '#e8e8ed',
+    '--scrollbar-track': 'rgba(210, 210, 215, 0.45)',
+    '--scrollbar-thumb': 'rgba(99, 99, 104, 0.35)',
+    '--scrollbar-thumb-hover': 'rgba(99, 99, 104, 0.55)',
+    '--scanline-tint': 'transparent',
+    '--accent-glow': 'rgba(0, 102, 218, 0.08)',
+    '--accent-bg': 'rgba(0, 102, 218, 0.1)',
+    '--modal-overlay': 'rgba(0, 0, 0, 0.32)',
+    '--on-surface': '#1d1d1f',
+    '--on-surface-variant': '#636368',
+    '--agent-user-color': '#0066da',
+    '--agent-agent-color': '#5856d6',
   },
   gruvbox: {
     '--bg': '#282828',
@@ -334,7 +351,7 @@ export const BUILT_IN_APPEARANCE: Record<BuiltInThemeName, ThemeAppearance> = {
   'standard-dark': { style: 'standard' },
   'standard-light': { style: 'standard' },
   cyberpunk: { style: 'cyberpunk' },
-  glacier: { style: 'soft' },
+  apple: { style: 'soft' },
   gruvbox: { style: 'dense' },
 };
 
@@ -342,7 +359,7 @@ const COLOR_SCHEMES: Record<BuiltInThemeName, ColorScheme> = {
   'standard-dark': 'dark',
   'standard-light': 'light',
   cyberpunk: 'dark',
-  glacier: 'dark',
+  apple: 'light',
   gruvbox: 'dark',
 };
 
@@ -420,7 +437,9 @@ function applyTheme(
 
   if (typeof document !== 'undefined') {
     const root = document.documentElement;
-    Object.entries(ui).forEach(([property, value]) => root.style.setProperty(property, value));
+    Object.entries(ui).forEach(([property, value]) => {
+      root.style.setProperty(property, value);
+    });
     root.dataset.theme = themeName;
     root.dataset.colorScheme = colorScheme;
     root.dataset.uiStyle = appearance.style;
@@ -437,8 +456,12 @@ function applyTheme(
     root.classList.toggle('dark', colorScheme === 'dark');
   }
 
-  terminalThemeListeners.forEach((listener) => listener(terminal));
-  colorSchemeListeners.forEach((listener) => listener(colorScheme));
+  terminalThemeListeners.forEach((listener) => {
+    listener(terminal);
+  });
+  colorSchemeListeners.forEach((listener) => {
+    listener(colorScheme);
+  });
 }
 
 export function resolveThemeAppearance(
