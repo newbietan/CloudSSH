@@ -12,6 +12,7 @@ tests/
 ├── worker/                        # Worker 路由、安全、DNS、UserDB 与标签测试
 ├── agent-code-actions.test.ts # Agent 代码块复制/填入规则
 ├── agent-terminal-selection.test.ts # 终端选区附件和非授权安全边界
+├── api-errors.test.ts          # API 错误信息边界与状态码
 ├── auth-challenge-dialog.test.ts # RFC 4256 认证挑战对话框交互
 ├── clipboard.test.ts              # Clipboard API 与旧版复制回退
 ├── frontend-ux.test.ts            # 前端关键交互源码回归（标签栏/状态栏渲染等）
@@ -87,7 +88,7 @@ pnpm run verify
 - SFTP 单选、Cmd/Ctrl 多选、Shift 连选和全选
 - Agent 终端选区附件、问题组合和非授权安全边界
 - 终端选区自动复制、指针取消和旧版复制回退
-- i18n、主题、终端状态/文本、已知主机与片段本地存储
+- i18n、Theme V3 主题（背景/效果/版式钳制、对比度与 schema）、终端状态/文本、已知主机与片段本地存储
 - 构建可复现性、xterm 生产构建兼容和原生弹窗禁用
 
 ### 浏览器 E2E

@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `THEME_SCHEMA_VERSION` 升至 3；V2 主题数据自动升级（新模块缺省即旧行为），存量 `baseTheme: 'glacier'` 主题导入时优雅降级（字段丢弃、按明暗模式回退基底），Old 版选择在 localStorage 中一次性迁移到 Standard Dark。
+- `THEME_SCHEMA_VERSION` 升至 3；V2 主题数据自动升级（新模块缺省即旧行为），存量 `baseTheme: 'glacier'` 主题导入时优雅降级（字段丢弃、按明暗模式回退基底），旧版 glacier 选择在 localStorage 中一次性迁移到 Standard Dark。
 - 表面模糊由 shadow 预设派生值改为独立 blur 档位完全接管（后置规则同优先级胜出），geometry 变量（圆角/字号）改为 calc 乘法组合缩放。
 
 ### Fixed
