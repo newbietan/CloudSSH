@@ -7,6 +7,7 @@ import {
   SSH_MSG_USERAUTH_SUCCESS,
 } from '../types';
 import { concat, encodeString, encodeUint32, readUint32 } from './utils';
+import { type EcNamedCurve, type RsaComponents, parsePkcs1Rsa, parsePkcs8, parseSec1Ec } from './pkcs';
 
 // SSH key type constants
 const SSH_ED25519 = 'ssh-ed25519';
@@ -21,6 +22,38 @@ const RSA_ALGO = { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' };
 const ECDSA_P256_ALGO = { name: 'ECDSA', namedCurve: 'P-256' };
 const ECDSA_P384_ALGO = { name: 'ECDSA', namedCurve: 'P-384' };
 const ECDSA_P521_ALGO = { name: 'ECDSA', namedCurve: 'P-521' };
+
+// 私钥导入时的误贴/不支持的封装特征（详见 extractPrivateMaterial）
+const RE_CERTIFICATE = /-----BEGIN CERTIFICATE-----/;
+const RE_PUBLIC_KEY_PEM = /-----BEGIN [A-Z0-9 ]*PUBLIC KEY-----/;
+const RE_OPENSSH_PUBLIC_LINE =
+  /^(ssh-(rsa|dss|ed25519)|ecdsa-sha2-nistp(256|384|521))[ \t]+[A-Za-z0-9+/=]{20,}/m;
+const RE_PUTTY_PPK = /PuTTY-User-Key-File/;
+const RE_TRADITIONAL_ENCRYPTED = /Proc-Type:\s*4\s*,\s*ENCRYPTED/i;
+const RE_ANY_BEGIN = /-----BEGIN ([A-Z0-9 ]+)-----/;
+
+/** 解码 JWK 的 base64url 字段（x/y）。 */
+function base64UrlDecode(value: string): Uint8Array {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+  return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+}
+
+/**
+ * 解码 PEM 正文 Base64：合并所有空白行（容忍 CRLF/缩进），
+ * 非法字符给出友好错误而不是浏览器原生 InvalidCharacterError。
+ */
+function decodePemBase64(body: string): Uint8Array {
+  const b64 = body
+    .split(/\s+/)
+    .filter(Boolean)
+    .join('');
+  try {
+    return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  } catch {
+    throw new Error('私钥内容损坏：包含非 Base64 字符，请重新完整复制密钥');
+  }
+}
 
 // RFC 4256 fields are controlled by the SSH server. Keep their decoded size
 // bounded before forwarding them to the browser.
@@ -436,11 +469,89 @@ export class SSHAuth {
   /**
    * Parse an OpenSSH private key and detect its type.
    */
-  private static async parsePrivateKey(pem: string): Promise<ParsedKey> {
-    const lines = pem.trim().split('\n');
-    const b64 = lines.filter((l) => !l.startsWith('-----')).join('');
-    const raw = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  /**
+   * 识别 PEM 封装格式并提取 DER 内容。
+   *
+   * 不能简单剔除 "-----" 开头的行：复制来源带入的杂散文本（如
+   * "xxx-----BEGIN ..." 前缀污染）不在剔除范围内，会混进 Base64 解码出
+   * 垃圾字节，导致魔数校验误报"格式不支持"。这里按 BEGIN/END 标记对
+   * 精确提取正文，并对常见误贴（公钥/证书/PPK/加密 PEM）给出针对性提示。
+   */
+  private static extractPrivateMaterial(pem: string): {
+    format: 'openssh' | 'pkcs1' | 'sec1' | 'pkcs8';
+    der: Uint8Array;
+  } {
+    // 误贴/不支持封装检测：优先于格式分发，给出可执行的下一步指引
+    if (RE_CERTIFICATE.test(pem)) {
+      throw new Error('检测到 X.509 证书（CERTIFICATE），SSH 认证需要粘贴私钥文件');
+    }
+    if (RE_PUBLIC_KEY_PEM.test(pem)) {
+      throw new Error('检测到公钥（PUBLIC KEY），请粘贴对应的私钥文件（PRIVATE KEY）');
+    }
+    if (RE_OPENSSH_PUBLIC_LINE.test(pem)) {
+      throw new Error('检测到 OpenSSH 公钥（如 ssh-ed25519 AAAA...），请粘贴私钥（无 .pub 后缀的文件）');
+    }
+    if (RE_PUTTY_PPK.test(pem)) {
+      throw new Error('暂不支持 PuTTY PPK 格式，请在 PuTTYgen 中 Conversions → Export OpenSSH key 导出后重试');
+    }
+    if (RE_TRADITIONAL_ENCRYPTED.test(pem)) {
+      throw new Error('不支持口令加密的传统 PEM 私钥，请用 ssh-keygen -p 移除密码后重试');
+    }
 
+    // 注意：OPENSSH/RSA/EC 变体必须先于裸 'PRIVATE KEY' 匹配（后者是前缀交集）
+    const blocks: Array<{ header: string; format: 'openssh' | 'pkcs1' | 'sec1' | 'pkcs8' }> = [
+      { header: 'OPENSSH PRIVATE KEY', format: 'openssh' },
+      { header: 'RSA PRIVATE KEY', format: 'pkcs1' },
+      { header: 'EC PRIVATE KEY', format: 'sec1' },
+      { header: 'PRIVATE KEY', format: 'pkcs8' },
+    ];
+    for (const { header, format } of blocks) {
+      const match = pem.match(
+        new RegExp(`-----BEGIN ${header}-----([\\s\\S]*?)-----END ${header}-----`),
+      );
+      if (match) {
+        return { format, der: decodePemBase64(match[1]) };
+      }
+    }
+    const other = pem.match(RE_ANY_BEGIN);
+    if (other) {
+      throw new Error(
+        `不支持的密钥封装格式: ${other[1].trim()}（加密私钥暂不支持，请用 ssh-keygen -p 移除口令后重试）`,
+      );
+    }
+    // 无 PEM 标记：按裸 Base64 正文处理（兼容直接粘贴密钥内容），按魔数区分封装
+    const raw = decodePemBase64(pem);
+    const magic = 'openssh-key-v1\0';
+    const magicBytes = new TextEncoder().encode(magic);
+    let isOpenssh = raw.length >= magicBytes.length;
+    for (let i = 0; isOpenssh && i < magicBytes.length; i++) {
+      if (raw[i] !== magicBytes[i]) isOpenssh = false;
+    }
+    return isOpenssh ? { format: 'openssh', der: raw } : { format: 'pkcs8', der: raw };
+  }
+
+  /**
+   * 解析私钥：按封装格式分发到 OpenSSH / PKCS#1 / SEC1 / PKCS#8 解析器，
+   * 各路径殊途同归产出统一的 ParsedKey（signingKey + SSH 公钥 blob）。
+   */
+  private static async parsePrivateKey(pem: string): Promise<ParsedKey> {
+    const { format, der } = SSHAuth.extractPrivateMaterial(pem);
+    switch (format) {
+      case 'openssh':
+        return SSHAuth.parseOpenSSHPrivateKey(der);
+      case 'pkcs1':
+        return SSHAuth.parsedKeyFromPkcs1(der);
+      case 'sec1':
+        return SSHAuth.parsedKeyFromSec1(der);
+      case 'pkcs8':
+        return SSHAuth.parsedKeyFromPkcs8(der);
+      default:
+        throw new Error(`不支持的私钥封装格式: ${format}`);
+    }
+  }
+
+  /** 解析 OpenSSH 新格式（openssh-key-v1）私钥。 */
+  private static async parseOpenSSHPrivateKey(raw: Uint8Array): Promise<ParsedKey> {
     // Parse OpenSSH format: "openssh-key-v1\0" magic
     const magic = 'openssh-key-v1\0';
     const magicBytes = new TextEncoder().encode(magic);
@@ -449,7 +560,7 @@ export class SSHAuth {
     }
     for (let i = 0; i < magicBytes.length; i++) {
       if (raw[i] !== magicBytes[i]) {
-        throw new Error('不支持的私钥格式，仅支持 OpenSSH 格式');
+        throw new Error('私钥数据损坏：OpenSSH 魔数不匹配，请重新完整复制密钥');
       }
     }
     let offset = magicBytes.length;
@@ -613,18 +724,14 @@ export class SSHAuth {
   ): Promise<ParsedKey> {
     let po = offset;
 
-    let namedCurve: string;
-    let algo: any;
+    let namedCurve: EcNamedCurve;
 
     if (keyType === ECDSA_SHA2_NISTP256) {
       namedCurve = 'P-256';
-      algo = ECDSA_P256_ALGO;
     } else if (keyType === ECDSA_SHA2_NISTP384) {
       namedCurve = 'P-384';
-      algo = ECDSA_P384_ALGO;
     } else if (keyType === ECDSA_SHA2_NISTP521) {
       namedCurve = 'P-521';
-      algo = ECDSA_P521_ALGO;
     } else {
       throw new Error(`不支持的 ECDSA 曲线: ${keyType}`);
     }
@@ -657,17 +764,131 @@ export class SSHAuth {
     if (po + privKeyLen > privSection.length) throw new Error('私钥格式损坏：privKey 越界');
     const privKeyRaw = privSection.slice(po, po + privKeyLen);
 
-    const pkcs8 = SSHAuth.buildECDSAPKCS8(namedCurve, privKeyRaw);
+    // OpenSSH 格式自带公钥点，直接透传给共享构建器
+    return SSHAuth.parsedKeyFromEcComponents(namedCurve, privKeyRaw, pubKeyRaw);
+  }
+
+  /**
+   * 由 RSA CRT 组件构建 ParsedKey（PKCS#1 / PKCS#8 路径共用；OpenSSH 路径保留内联实现）。
+   */
+  private static async parsedKeyFromRsaComponents(key: RsaComponents): Promise<ParsedKey> {
+    const { n, e, d, p, q, iqmp } = key;
+
+    const pkcs8 = SSHAuth.buildRSAPKCS8(n, e, d, p, q, iqmp);
+
+    // 注意：RSASSA-PKCS1-v1_5 在 importKey 时把 hash 绑定到 CryptoKey 上，
+    // 后续 sign 时即使传不同 hash 也被某些 WebCrypto 实现忽略。
+    // 因此这里用一个固定 hash(任意)先导入，供 build 在使用 SHA-256 路径时复用；
+    // 用 SHA-512 时会基于 rsaPkcs8 字段重新 import。
+    const signingKey = await crypto.subtle.importKey('pkcs8', pkcs8, RSA_ALGO, false, ['sign']);
+
+    const publicKeyBlob = concat(encodeString(SSH_RSA), SSHAuth.sshMPInt(e), SSHAuth.sshMPInt(n));
+
+    return { signingKey, rsaPkcs8: pkcs8, publicKeyBlob, keyType: SSH_RSA };
+  }
+
+  /**
+   * 由 EC 组件构建 ParsedKey（OpenSSH / SEC1 / PKCS#8 路径共用）。
+   *
+   * @param publicKeyHint 非压缩公钥点（0x04 || X || Y）；OpenSSH/SEC1 文件通常自带。
+   *   缺失时（PKCS#8 等仅含私钥的封装）经 JWK 导出从私钥推导，此时 CryptoKey 为可导出。
+   */
+  private static async parsedKeyFromEcComponents(
+    namedCurve: EcNamedCurve,
+    privateKeyBytes: Uint8Array,
+    publicKeyHint: Uint8Array | null
+  ): Promise<ParsedKey> {
+    const keyType =
+      namedCurve === 'P-256'
+        ? ECDSA_SHA2_NISTP256
+        : namedCurve === 'P-384'
+          ? ECDSA_SHA2_NISTP384
+          : ECDSA_SHA2_NISTP521;
+    const algo =
+      namedCurve === 'P-256'
+        ? ECDSA_P256_ALGO
+        : namedCurve === 'P-384'
+          ? ECDSA_P384_ALGO
+          : ECDSA_P521_ALGO;
+    const sshCurve = namedCurve.replace('P-', 'nistp');
+    const pkcs8 = SSHAuth.buildECDSAPKCS8(namedCurve, privateKeyBytes);
+
+    if (!publicKeyHint) {
+      // 部分工具导出的私钥不含公钥点：导入后经 JWK 导出推导
+      const signingKey = await crypto.subtle.importKey('pkcs8', pkcs8, algo, true, ['sign']);
+      // 运行时 'jwk' 格式必然返回 JsonWebKey（DOM 类型为 ArrayBuffer | JsonWebKey 联合）
+      const jwk = (await crypto.subtle.exportKey('jwk', signingKey)) as JsonWebKey;
+      if (!jwk.x || !jwk.y) {
+        throw new Error('无法从 EC 私钥推导公钥，请使用包含公钥参数的密钥文件');
+      }
+      const q = concat(new Uint8Array([0x04]), base64UrlDecode(jwk.x), base64UrlDecode(jwk.y));
+      const publicKeyBlob = concat(
+        encodeString(keyType),
+        encodeString(sshCurve),
+        encodeString(q)
+      );
+      return { signingKey, publicKeyBlob, keyType };
+    }
 
     const signingKey = await crypto.subtle.importKey('pkcs8', pkcs8, algo, false, ['sign']);
 
     const publicKeyBlob = concat(
       encodeString(keyType),
-      encodeString(curve),
-      encodeString(pubKeyRaw)
+      encodeString(sshCurve),
+      encodeString(publicKeyHint)
     );
 
     return { signingKey, publicKeyBlob, keyType };
+  }
+
+  /**
+   * 由 Ed25519 种子构建 ParsedKey（PKCS#8 路径专用）。
+   * PKCS#8 不携带公钥：导入后经 JWK 导出推导（OpenSSH 路径自带公钥，不走此处）。
+   */
+  private static async parsedKeyFromEd25519Seed(seed: Uint8Array): Promise<ParsedKey> {
+    const pkcs8 = SSHAuth.buildEd25519PKCS8(seed);
+    const signingKey = await crypto.subtle.importKey(
+      'pkcs8',
+      pkcs8,
+      { name: ED25519_ALGO },
+      true,
+      ['sign']
+    );
+    const jwk = (await crypto.subtle.exportKey('jwk', signingKey)) as JsonWebKey;
+    if (!jwk.x) {
+      throw new Error('无法从 Ed25519 私钥推导公钥');
+    }
+    const publicKeyBlob = concat(
+      encodeString(SSH_ED25519),
+      encodeString(base64UrlDecode(jwk.x))
+    );
+    return { signingKey, publicKeyBlob, keyType: SSH_ED25519 };
+  }
+
+  /** PKCS#1（BEGIN RSA PRIVATE KEY）→ ParsedKey。 */
+  private static async parsedKeyFromPkcs1(der: Uint8Array): Promise<ParsedKey> {
+    return SSHAuth.parsedKeyFromRsaComponents(parsePkcs1Rsa(der));
+  }
+
+  /** SEC1（BEGIN EC PRIVATE KEY）→ ParsedKey。 */
+  private static async parsedKeyFromSec1(der: Uint8Array): Promise<ParsedKey> {
+    const key = parseSec1Ec(der);
+    return SSHAuth.parsedKeyFromEcComponents(key.namedCurve, key.privateKey, key.publicKey);
+  }
+
+  /** PKCS#8（BEGIN PRIVATE KEY）→ ParsedKey，按算法 OID 分发。 */
+  private static async parsedKeyFromPkcs8(der: Uint8Array): Promise<ParsedKey> {
+    const key = parsePkcs8(der);
+    switch (key.kind) {
+      case 'rsa':
+        return SSHAuth.parsedKeyFromRsaComponents(key);
+      case 'ec':
+        return SSHAuth.parsedKeyFromEcComponents(key.namedCurve, key.privateKey, key.publicKey);
+      case 'ed25519':
+        return SSHAuth.parsedKeyFromEd25519Seed(key.seed);
+      default:
+        throw new Error(`不支持的密钥类型: ${(key as { kind: string }).kind}`);
+    }
   }
 
   /**
