@@ -697,6 +697,11 @@ export class SSHSessionDO {
         chainSessions.push(hopSession);
         this.sessionChains.set(ws, chainSessions);
         await hopSession.startHandshake();
+        // Fix regression (v1.11.0 #102 removed this wait): openDirectTcpip requires
+        // state === 'tunnel-ready', which only becomes true after authentication
+        // completes. Without this await, jump host connections always fail with
+        // "SSH jump host is not ready for TCP forwarding".
+        await hopSession.waitUntilAuthenticated();
 
         const destination = jumpHosts[index + 1] || config;
         transport = await hopSession.openDirectTcpip(destination.host, destination.port);
