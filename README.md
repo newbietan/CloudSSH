@@ -431,7 +431,7 @@ test 分支（开发/测试）  ──合并──>  main 分支（生产）
 | [TanXin (@newbietan)](https://github.com/newbietan)  | 项目发起与持续维护；Cloudflare Serverless、SSH/SFTP、AI Agent、安全体系、主题系统及工程化建设                                                        |
 | [David xu (@xqdoo00o)](https://github.com/xqdoo00o)  | Dropbear 兼容、trzsz 文件传输迁移、PTY 尺寸处理，以及会话退出与重连交互优化                                                                          |
 | [vonl1 (@vonl1)](https://github.com/vonl1)           | 终端选区自动复制、兼容 Vim 的右键粘贴体验、服务器 IPv4/IPv6 掩码与完整地址快捷复制，以及服务器操作系统自动识别与品牌图标                                                     |
-| [Leon Xu (@xuthuslei)](https://github.com/xuthuslei) | 修复 `SSH_MSG_NEWKEYS` 与首个加密包同批到达时的加密状态切换和数据包解析兼容问题                                                                        |
+| [Leon Xu (@xuthuslei)](https://github.com/xuthuslei) | 修复 `SSH_MSG_NEWKEYS` 与首个加密包同批到达时的加密状态切换和数据包解析兼容问题；修复 v1.11.0 跳板认证时序回归（#108）                                                        |
 
 名单及贡献说明依据 Git 提交历史与已接收的 Pull Request 整理；同一贡献者在历史中可能使用过不同的 Git 作者名称或邮箱。完整记录请参阅 [GitHub Contributors](https://github.com/newbietan/CloudSSH/graphs/contributors)。欢迎通过 Issue 和 Pull Request 参与项目建设。
 
