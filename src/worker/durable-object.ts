@@ -697,6 +697,10 @@ export class SSHSessionDO {
         chainSessions.push(hopSession);
         this.sessionChains.set(ws, chainSessions);
         await hopSession.startHandshake();
+        // startHandshake 仅发送版本串即返回；必须等认证完成进入 tunnel-ready 后
+        // 才能 openDirectTcpip，否则跳板连接必现 "not ready for TCP forwarding"
+        // （v1.11.0 重构误删此等待导致回归，PR #109 修复，见 #108）
+        await hopSession.waitUntilAuthenticated();
 
         const destination = jumpHosts[index + 1] || config;
         transport = await hopSession.openDirectTcpip(destination.host, destination.port);
