@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.1] - 2026-08-28
+
+### Added
+
+- 支持直接粘贴 PKCS#1/PKCS#8/SEC1 封装的 PEM 私钥（RSA/EC/Ed25519）：新增最小 DER/ASN.1 读取器（`src/ssh/der.ts`）与 PKCS 解析器（`src/ssh/pkcs.ts`），`auth.ts` 按 PEM 封装统一分发，RSA/EC/Ed25519 各路径复用共享构建器产出一致公钥 blob；兼容 macOS `ssh-keygen -m PEM` 的 SpecifiedECDomain 显式曲线参数与 Ed25519 PKCS#8 嵌套 OCTET STRING 结构（RFC 8410）；公钥/X.509 证书/PuTTY PPK/口令加密 PEM 误贴给出指向性提示，新增 5 个同密钥多编码夹具与 16 个回归测试（跨编码 blob 一致性、端到端验签、误贴提示矩阵）。
+
+### Fixed
+
+- 修复 v1.11.0 起跳板机连接必现失败的问题：会话秒级恢复重构误删了跳板循环中的 `await hopSession.waitUntilAuthenticated()`，导致 `openDirectTcpip` 在跳板会话认证完成（`tunnel-ready`）前被调用，所有跳板连接必现 "SSH jump host is not ready for TCP forwarding"（#108，修复 PR #109 作者 @xuthuslei）；补充跳板会话就绪时序回归测试，锁定 SSHSession 与 DO 跳板循环之间的时序契约，防止同类回归漏过 CI；更新贡献者名单。
+
 ## [1.13.0] - 2026-08-27
 
 ### Added
