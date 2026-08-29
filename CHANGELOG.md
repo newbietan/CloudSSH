@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.0] - 2026-08-29
+
+### Added
+
+- **SFTP 在线编辑文件**（#111）：在 SFTP 文件管理器中直接编辑远端文本文件。后端新增 `sftp_edit_read` 消息：仅限 ≤2MB 文本（前后端常量一致），空字节嗅探（前 8KB，与 Git 同策略）拒绝二进制后才下发，`sftp_edit_start`（mtime/size 元数据）→ 128KB 二进制分帧 → `sftp_edit_done` 流式复用既有传输管道；前端基于 CodeMirror 6（单 bundle 内联构建）提供模态编辑器，支持 shell/YAML/JSON/Python/Markdown/HTML/CSS/Dockerfile/systemd 等语法高亮，配色全部映射主题变量跟随亮/暗/自定义主题；保存前以 mtime+size 快照比对做冲突检测，远端已被修改时要求显式确认覆盖，保存复用既有上传覆盖通道并在成功后刷新冲突基线；保留原文件换行符（LF/CRLF）与 BOM（字节级往返测试）；UTF-8 严格解码可编辑，GBK/GB18030 自动识别并以只读模式打开；关闭前未保存修改二次确认；编辑读取/保存随分享会话 `allowSftp` 门控并纳入 `edit` 审计操作。
+- **编辑器移动端适配**：≤520px 窄屏下编辑器近全屏（含左右安全区），软键盘弹出时跟随可视视口收缩；关闭按钮 44px 触摸目标、保存按钮加大；触屏/窄屏下 CodeMirror 编辑区与搜索面板输入框字号提升至 16px，规避 iOS 对 contenteditable 聚焦时的强制页面缩放；新增 390×844 窄视口 e2e。
+- **SFTP 面板桌面宽度有界弹性**：固定 420px 改为 `clamp(420px, 40vw, 600px)`，1280 主流笔记本下面板 512px、文件名列 +92px，1500px 起 600px 封顶保持终端可见；移动/平板全屏行为不变。
+
+### Fixed
+
+- **SFTP 操作栏按钮文字竖排**：新增编辑按钮后 6 个按钮总宽超出固定面板宽度，WebKit 对嵌套 flex 的内在尺寸计算把 CJK 标签压成单字竖排（Chromium 则表现为压缩换行）；防换行规则提升为全局无条件生效（标签 `white-space: nowrap` + 按钮 `flex: 0 0 auto` + 空间不足时整栏横向滚动），移动端媒体查询仅保留 40px 触摸目标；新增双视口 e2e 并纳入 webkit-mobile（iPhone 13）项目守护。
+
+### Changed
+
+- wrangler 升级至 4.125.0：修复 CI 部署时报 "Unable to fetch bindings, routes, or services metadata from the dashboard"（Cloudflare API 侧错误）；4.127.1 因发布不足 7 天被 `minimumReleaseAge` 供应链策略拦截，版本成熟后再跟进。
+
 ## [1.13.1] - 2026-08-28
 
 ### Added
