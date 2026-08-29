@@ -2368,6 +2368,28 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   animation: tp-pulse 1.5s ease-in-out infinite;
 }
 
+/* ==================== SFTP 操作栏（全局：面板恒定 ≤420px 宽） ====================
+   按钮禁止压缩换行：WebKit 对嵌套 flex 的内在尺寸计算会把 CJK 标签
+   压成单字竖排；空间不足时整栏横向滚动（滚动条隐藏，触摸可滑） */
+.sftp-panel-actions {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.sftp-panel-actions::-webkit-scrollbar {
+  display: none;
+}
+
+.sftp-panel-actions button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.sftp-panel-actions button > span[data-i18n] {
+  white-space: nowrap;
+}
+
 /* ==================== Responsive Adaptations ==================== */
 
 @media (max-width: 767px), (max-width: 1180px) and (pointer: coarse) {
@@ -2846,19 +2868,8 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
     padding-right: max(8px, env(safe-area-inset-right));
   }
 
-  .sftp-panel-actions {
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scrollbar-width: none;
-  }
-
-  .sftp-panel-actions::-webkit-scrollbar {
-    display: none;
-  }
-
   .sftp-panel-actions button {
     min-height: 40px;
-    flex: 0 0 auto;
   }
 
   .ask-ai-selection-float {
