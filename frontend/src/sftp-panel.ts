@@ -241,7 +241,7 @@ export class SFTPPanel {
     panel.id = 'sftp-panel';
     panel.className =
       'fixed top-0 right-0 h-full z-[90] flex transition-transform duration-300 ease-in-out';
-    panel.style.width = 'min(420px, 100vw)';
+    panel.style.width = 'min(clamp(420px, 40vw, 600px), 100vw)';
     panel.style.transform = 'translateX(100%)';
 
     // pi-lens-ignore: no-inner-html, ts-xss-dom-sink

@@ -38,7 +38,7 @@ async function measureActions(page: import('@playwright/test').Page) {
 test.describe('桌面视口', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test('操作栏按钮单行不换行，空间不足时整栏滚动', async ({ page }) => {
+  test('操作栏按钮单行不换行，面板宽度有界弹性', async ({ page }) => {
     await openPanel(page);
     const layout = await measureActions(page);
 
@@ -47,8 +47,11 @@ test.describe('桌面视口', () => {
     expect(layout.maxLabelHeight).toBeLessThan(24);
     expect(layout.maxButtonHeight).toBeLessThan(40);
     expect(layout.overflowX).toBe('auto');
-    // 桌面面板恒定 420px 宽，6 个按钮放不下时允许滚动
-    expect(layout.barScrollWidth).toBeGreaterThanOrEqual(layout.barClientWidth);
+    // 面板宽度 clamp(420px, 40vw, 600px)：1280 视口下应为 512px
+    const panelWidth = await page.evaluate(() =>
+      Math.round(document.getElementById('sftp-panel')!.getBoundingClientRect().width)
+    );
+    expect(panelWidth).toBe(512);
   });
 });
 

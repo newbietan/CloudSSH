@@ -2368,7 +2368,7 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   animation: tp-pulse 1.5s ease-in-out infinite;
 }
 
-/* ==================== SFTP 操作栏（全局：面板恒定 ≤420px 宽） ====================
+/* ==================== SFTP 操作栏（全局：桌面面板 420~600px、移动/平板全屏） ====================
    按钮禁止压缩换行：WebKit 对嵌套 flex 的内在尺寸计算会把 CJK 标签
    压成单字竖排；空间不足时整栏横向滚动（滚动条隐藏，触摸可滑） */
 .sftp-panel-actions {
