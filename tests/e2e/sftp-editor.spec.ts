@@ -398,3 +398,91 @@ test('非 UTF-8（GBK）文件以只读模式打开', async ({ page }) => {
   await expect(editor.locator('.remote-editor__button--save')).toBeDisabled();
   await expect(editor.locator('.cm-content')).toHaveAttribute('contenteditable', 'false');
 });
+
+test.describe('移动端视口', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test('窄视口下编辑器近全屏、无横向溢出且字号避免 iOS 缩放', async ({ page }) => {
+    await mockAnonymousSession(page);
+    await page.goto('/?lang=zh-CN');
+
+    await page.evaluate(async ({ fileBytes, mtime }: EditorEvalArgs) => {
+      const sftpModule = await (window as any).eval("import('/src/sftp-panel.ts')");
+      const panel = new sftpModule.SFTPPanel(() => null);
+
+      (panel as any).visible = true;
+      (panel as any).sftpReady = true;
+      (panel as any).sendJSON = (frame: Record<string, unknown>) => {
+        if (frame.type === 'sftp_edit_read') {
+          queueMicrotask(() => {
+            panel.handleMessage({
+              type: 'sftp_edit_start',
+              path: frame.path,
+              size: (fileBytes as string).length,
+              mtime,
+            });
+            panel.handleBinaryData(new TextEncoder().encode(fileBytes as string));
+            panel.handleMessage({
+              type: 'sftp_edit_done',
+              path: frame.path,
+              size: (fileBytes as string).length,
+              mtime,
+            });
+          });
+        } else if (frame.type === 'sftp_list') {
+          queueMicrotask(() =>
+            panel.handleMessage({ type: 'sftp_list_result', path: frame.path, entries: [] })
+          );
+        }
+      };
+      (panel as any).sendBinary = () => {};
+
+      void (panel as any).openEditorForFile(
+        '/home/deploy/nginx.conf',
+        'nginx.conf',
+        (fileBytes as string).length
+      );
+    }, { fileBytes: FILE_BYTES, mtime: DEFAULT_MTIME });
+
+    const editor = page.locator('dialog.remote-editor');
+    await expect(editor).toBeVisible();
+
+    const layout = await editor.evaluate((dialog) => {
+      const box = dialog.getBoundingClientRect();
+      const close = dialog.querySelector('.remote-editor__close');
+      const closeBox = close?.getBoundingClientRect();
+      const cmEditor = dialog.querySelector('.cm-editor');
+      return {
+        dialogWidth: Math.round(box.width),
+        dialogRight: Math.round(box.right),
+        dialogHeight: Math.round(box.height),
+        documentWidth: document.documentElement.scrollWidth,
+        viewportWidth: window.innerWidth,
+        closeTouchHeight: closeBox ? Math.round(closeBox.height) : 0,
+        cmFontSize: cmEditor ? getComputedStyle(cmEditor).fontSize : null,
+      };
+    });
+
+    // 近全屏：宽度含左右安全区，不超出视口且无横向溢出
+    expect(layout.documentWidth).toBe(layout.viewportWidth);
+    expect(layout.dialogWidth).toBeLessThanOrEqual(layout.viewportWidth);
+    expect(layout.dialogRight).toBeLessThanOrEqual(layout.viewportWidth);
+    expect(layout.dialogHeight).toBeLessThanOrEqual(844);
+    expect(layout.dialogHeight).toBeGreaterThan(600);
+    // 字号 16px 避免 iOS 聚焦缩放
+    expect(layout.cmFontSize).toBe('16px');
+    // 关闭按钮触摸目标
+    expect(layout.closeTouchHeight).toBeGreaterThanOrEqual(40);
+
+    // 移动端上仍可编辑并触发未保存确认
+    await editor.locator('.cm-content').click();
+    await page.keyboard.type('modified');
+    await expect(editor.locator('.remote-editor__status')).toContainText('有未保存修改');
+
+    await editor.locator('.remote-editor__close').click();
+    const dialog = page.locator('.app-dialog');
+    await expect(dialog).toBeVisible();
+    await dialog.locator('.app-dialog__button--cancel').click();
+    await expect(editor).toBeVisible();
+  });
+});

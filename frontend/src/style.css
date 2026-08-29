@@ -3030,6 +3030,11 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   transition: color var(--motion-fast) ease;
 }
 
+.remote-editor__close .material-symbols-outlined {
+  font-size: 20px;
+  line-height: 1;
+}
+
 .remote-editor__close:hover {
   color: var(--on-surface);
 }
@@ -3179,4 +3184,52 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 
 .remote-editor .tok-invalid {
   color: var(--error);
+}
+
+/* 移动端适配：窄屏近全屏 + 安全区 + 触摸目标（对齐 auth-challenge-dialog 先例） */
+@media (max-width: 520px) {
+  .remote-editor {
+    width: calc(100vw - 16px - env(safe-area-inset-left) - env(safe-area-inset-right));
+    height: calc(
+      var(--visual-viewport-height) -
+      16px -
+      env(safe-area-inset-top) -
+      env(safe-area-inset-bottom)
+    );
+  }
+
+  .remote-editor__header {
+    padding: 9px 12px;
+  }
+
+  .remote-editor__close {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    margin: -6px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .remote-editor__footer {
+    padding: 9px 12px;
+  }
+
+  .remote-editor__button {
+    min-width: 96px;
+    padding: 10px 14px;
+  }
+}
+
+/* iOS 规避：contenteditable 字号 < 16px 时聚焦会强制缩放页面；
+   触屏/窄屏下编辑器字号提到 16px，同时搜索面板输入框同理 */
+@media (pointer: coarse), (max-width: 520px) {
+  .remote-editor .cm-editor {
+    font-size: 16px;
+  }
+
+  .remote-editor .cm-panel input,
+  .remote-editor .cm-panel button {
+    font-size: 16px;
+  }
 }
