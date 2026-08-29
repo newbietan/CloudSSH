@@ -2933,3 +2933,250 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* SFTP 在线编辑器（CodeMirror 模态） */
+.remote-editor {
+  --editor-color: var(--accent);
+  width: min(1100px, calc(100vw - 24px));
+  max-width: none;
+  height: min(
+    760px,
+    calc(
+      var(--visual-viewport-height) -
+      24px -
+      env(safe-area-inset-top) -
+      env(safe-area-inset-bottom)
+    )
+  );
+  margin: auto;
+  padding: 0;
+  color: var(--on-surface);
+  background: transparent;
+  border: 0;
+  overflow: visible;
+}
+
+.remote-editor::backdrop {
+  background: var(--modal-overlay);
+  backdrop-filter: blur(var(--surface-blur));
+  animation: app-dialog-backdrop-in var(--motion-normal) ease-out;
+}
+
+.remote-editor[open] .remote-editor__panel {
+  animation: app-dialog-in var(--motion-normal) ease-out;
+}
+
+.remote-editor__panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-surface);
+  border: 1px solid color-mix(in srgb, var(--editor-color) 50%, var(--border));
+  border-radius: var(--modal-radius);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+
+.remote-editor__header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 16px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.remote-editor__icon {
+  color: var(--editor-color);
+  font-size: 20px;
+  font-variation-settings: "FILL" 1;
+}
+
+.remote-editor__titles {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.remote-editor__title {
+  color: var(--on-surface);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.remote-editor__path {
+  color: var(--text-dim);
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 10.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.remote-editor__close {
+  display: flex;
+  flex-shrink: 0;
+  padding: 4px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: color var(--motion-fast) ease;
+}
+
+.remote-editor__close:hover {
+  color: var(--on-surface);
+}
+
+.remote-editor__notice {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 16px 0;
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.55;
+  background: var(--accent-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--control-radius);
+}
+
+.remote-editor__notice[hidden] {
+  display: none;
+}
+
+.remote-editor__body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.remote-editor__footer {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border);
+}
+
+.remote-editor__status {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.remote-editor__actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 10px;
+}
+
+.remote-editor__button {
+  min-width: 86px;
+  padding: 8px 16px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  border-radius: var(--control-radius);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
+}
+
+.remote-editor__button:focus-visible {
+  outline: 2px solid var(--editor-color);
+  outline-offset: 2px;
+}
+
+.remote-editor__button--cancel {
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+}
+
+.remote-editor__button--cancel:hover {
+  color: var(--on-surface);
+  border-color: var(--text-muted);
+}
+
+.remote-editor__button--save {
+  color: var(--bg);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.remote-editor__button--save:hover {
+  filter: brightness(1.12);
+}
+
+.remote-editor__button--save:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: none;
+}
+
+/* CodeMirror 语法高亮：classHighlighter 令牌 → 主题变量，跟随亮/暗/自定义主题 */
+.remote-editor .tok-keyword,
+.remote-editor .tok-atom,
+.remote-editor .tok-bool,
+.remote-editor .tok-meta {
+  color: var(--accent-secondary);
+  font-weight: 600;
+}
+
+.remote-editor .tok-string,
+.remote-editor .tok-regexp,
+.remote-editor .tok-escape {
+  color: var(--accent);
+}
+
+.remote-editor .tok-number {
+  color: var(--accent-secondary-light);
+}
+
+.remote-editor .tok-typeName,
+.remote-editor .tok-className,
+.remote-editor .tok-namespace,
+.remote-editor .tok-macroName {
+  color: var(--accent-secondary-light);
+}
+
+.remote-editor .tok-comment {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.remote-editor .tok-operator,
+.remote-editor .tok-punctuation {
+  color: var(--text-muted);
+}
+
+.remote-editor .tok-tag,
+.remote-editor .tok-attributeName {
+  color: var(--accent-secondary);
+}
+
+.remote-editor .tok-heading,
+.remote-editor .tok-link {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.remote-editor .tok-invalid {
+  color: var(--error);
+}

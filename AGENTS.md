@@ -88,7 +88,9 @@ frontend/
 │   ├── mobile-input.ts    # Pure iOS IME diff and one-shot modifier helpers
 │   ├── known-hosts.ts     # 已验证主机指纹消息校验、本地/云端 TOFU 持久化
 │   ├── tab-manager.ts     # Tab manager (multi-session terminal/SFTP/Agent coordinator, 返回终端按钮联动)
-│   ├── sftp-panel.ts      # SFTP file manager UI (multi-select, batch actions, queue, cancel)
+│   ├── sftp-panel.ts      # SFTP file manager UI (multi-select, batch actions, queue, cancel, online editor)
+│   ├── code-editor.ts     # CodeMirror 6 modal wrapper for SFTP online editing (theme-variable highlighting)
+│   ├── editor-content.ts  # Online editing pure helpers (binary sniff, UTF-8/GB18030 decode, BOM/EOL round-trip)
 │   ├── sftp-selection.ts  # Pure multi-selection state model
 │   ├── auth-form.ts       # Auth form & encrypted anonymous credentials storage/autofill
 │   ├── server-list.ts     # Server UI (tags, search, responsive 9/6/3-card pagination, CRUD/connect)
@@ -333,6 +335,8 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 30. **Agent exec 输出有界性（弱网 OOM 防线）** - `AgentExecChannel` 对 exec 通道 stdout/stderr 执行有界捕获：合计 4MB 硬上限（`MAX_EXEC_CAPTURE_BYTES`，超限不再续 SSH window 并由会话层关闭通道击杀远端命令，如无界输出的 `docker logs`），保留头 128KB + 尾 256KB 环形视图并附加截断说明，`onData/onExtendedData` 的布尔返回值控制 window 续期，改动时勿恢复无界累积。守卫不只此一层：`docker_manage(logs)` 强制 `--tail 200` 且拒绝 `-f/--follow`；工具结果序列化进 LLM 前经 64K 字符中间截断；socket 写带 15s deadline（超时关底层 socket 解挂）；独立于写路径的被动 idle 看门狗（60s 无入站数据即关闭）与终端输入队列 4MB 上限共同保证弱网下会话必然收敛，勿移除任一防线。
 
 31. **pi-lens 项目策略口径** - `.pi-lens.json` 仅供本机 pi-lens（AI 代码审查插件）读取，不参与构建、部署与 CI 门禁（同 #27 的 Biome 定位），`pi-lens-ignore` 行内注释仅为工具豁免、无运行时行为。其中 `rules.disable` 是已**逐条评估后的误报静音**（以风格类规则为主；`ignore` 仅豁免测试夹具/README/生成文件等路径），而非无差别静音：**XSS 类规则（`no-inner-html`/`ts-xss-dom-sink`）刻意不做项目级禁用**——行内 `pi-lens-ignore` 只豁免逐处核实过的站点（agent-panel 的 Markdown 渲染经 DOMPurify 消毒，其余动态值均 escapeHtml 或来自可信 i18n 词条），未来新增的 innerHTML 站点仍会被规则捕获。新增 innerHTML 时请优先保证转义/消毒并核实后加行内豁免，切勿把这两条加入 `disable` 列表；安全类规则（如 `ast-grep:no-open-redirect`）同理保持克制——扩大禁用清单前先确认告警为误报，优先修复或局部豁免。pi-lens 版本/规则集随设备升级可能产生新告警，处理标准以“是否真实影响运行与门禁”为准。
+
+32. **SFTP 在线编辑** - 编辑器走独立 `sftp_edit_read` 消息（`SFTPHandler.editReadFile`）：仅限 ≤2MB 文本（`EDITOR_MAX_FILE_SIZE`，前后端常量须一致），worker 侧空字节嗅探（前 8KB，与 Git 一致）拒绝二进制后才发报文；前端 `editor-content.ts` 负责 UTF-8 严格解码（失败回退 GB18030 只读，浏览器无 GBK 编码器故不提供非 UTF-8 保存）、BOM 剥离/回写与 EOL 归一/还原；保存前以 mtime+size 快照比对做冲突检测（`statRemote`，stat 失败或基线 -1 必须弹确认，不得静默覆盖），保存复用 `enqueueUploadTask(overwriteFirst: true)` 上传覆盖通道（默认上传仍为非覆盖探测，`i18n.test.ts` 源码断言守护该语义）；编辑读取/保存与普通传输共享单一上传状态机且在分享会话中随 `allowSftp` 门控并纳入 `edit` 审计操作。CodeMirror 6 为单 bundle 内联构建的既有依赖，语法高亮配色全部映射主题变量（`classHighlighter` + style.css），勿替换为 Monaco 或引入 CDN 版本。
 
 ## Deployment Notes
 

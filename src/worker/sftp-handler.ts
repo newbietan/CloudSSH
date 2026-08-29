@@ -26,6 +26,21 @@ const DOWNLOAD_CONCURRENCY = 8;
 const DOWNLOAD_PROGRESS_CHUNKS = 8;
 const UPLOAD_PROGRESS_CHUNKS = 8;
 const MAX_SFTP_FILE_SIZE = 500 * 1024 * 1024; // 500MB limit
+const EDITOR_MAX_FILE_SIZE = 2 * 1024 * 1024; // 在线编辑仅限小文本文件
+const BINARY_SNIFF_BYTES = 8192; // 与 Git 一致的空字节嗅探窗口
+
+/**
+ * 二进制内容嗅探：在前 BINARY_SNIFF_BYTES 字节内出现 NUL 字节即判定为二进制。
+ * 文本文件（UTF-8/GBK 等多字节编码）不会出现 NUL；UTF-16 会被判定为二进制而拒绝编辑，
+ * 这是与 Git/主流编辑器一致的安全行为。
+ */
+export function containsBinaryMarker(content: Uint8Array): boolean {
+  const limit = Math.min(content.length, BINARY_SNIFF_BYTES);
+  for (let i = 0; i < limit; i++) {
+    if (content[i] === 0) return true;
+  }
+  return false;
+}
 
 type SendEncryptedFn = (payload: Uint8Array) => Promise<void>;
 type SendJSONFn = (msg: any) => void;
@@ -36,6 +51,7 @@ type SFTPOperation =
   | 'list'
   | 'stat'
   | 'download'
+  | 'edit'
   | 'upload'
   | 'delete'
   | 'rename'
@@ -547,6 +563,88 @@ export class SFTPHandler {
   private throwIfDownloadCancelled(): void {
     if (this.downloadCancelled) {
       throw new Error('Download cancelled');
+    }
+  }
+
+  /**
+   * 读取文件内容供在线编辑：仅限 ≤ EDITOR_MAX_FILE_SIZE 的文本文件。
+   * 全文缓冲在 DO 内存中（上限 2MB），通过既有二进制分帧管道发给浏览器：
+   * sftp_edit_start（元数据）→ 二进制分块 → sftp_edit_done。
+   * 二进制文件在发送前拒绝，不产生半途报文。
+   */
+  async editReadFile(path: string): Promise<void> {
+    if (!this.ready) {
+      this.sendError('edit', 'SFTP 未就绪');
+      return;
+    }
+
+    try {
+      const statResp = await this.sftp.stat(path);
+      const statType = statResp[0];
+
+      if (statType === SSH_FXP_STATUS) {
+        const status = this.sftp.parseStatusResponse(statResp);
+        this.sendError('edit', status.message);
+        return;
+      }
+      if (statType !== SSH_FXP_ATTRS) {
+        this.sendError('edit', '获取文件信息失败');
+        return;
+      }
+
+      const attrs = this.sftp.parseAttrsResponse(statResp);
+      const fileType = getFileTypeFromPermissions(attrs.permissions ?? 0);
+      if (fileType === 'dir') {
+        this.sendError('edit', '目标路径是目录，无法编辑');
+        return;
+      }
+
+      const fileSize = attrs.size || 0;
+      if (fileSize > EDITOR_MAX_FILE_SIZE) {
+        this.sendError(
+          'edit',
+          `文件过大 (${formatFileSize(fileSize)})，在线编辑最大支持 ${formatFileSize(EDITOR_MAX_FILE_SIZE)}`
+        );
+        return;
+      }
+
+      const openResp = await this.sftp.openFile(path, SSH_FXF_READ);
+      const openType = openResp[0];
+
+      if (openType === SSH_FXP_STATUS) {
+        const status = this.sftp.parseStatusResponse(openResp);
+        this.sendError('edit', status.message);
+        return;
+      }
+      if (openType !== SSH_FXP_HANDLE) {
+        this.sendError('edit', '打开文件失败');
+        return;
+      }
+
+      const handle = this.sftp.parseHandleResponse(openResp);
+      let content: Uint8Array;
+      try {
+        content = fileSize > 0 ? await this.readBlock(handle, 0, fileSize) : new Uint8Array(0);
+      } finally {
+        await this.sftp.closeHandle(handle).catch(() => {});
+      }
+
+      if (containsBinaryMarker(content)) {
+        this.sendError('edit', '文件包含二进制内容，不支持在线编辑');
+        return;
+      }
+
+      const mtime = attrs.mtime ?? 0;
+      this.sendJSON({ type: 'sftp_edit_start', path, size: fileSize, mtime });
+
+      for (let offset = 0; offset < content.length; offset += DOWNLOAD_CHUNK_SIZE) {
+        const end = Math.min(offset + DOWNLOAD_CHUNK_SIZE, content.length);
+        this.sendBinary(content.subarray(offset, end));
+      }
+
+      this.sendJSON({ type: 'sftp_edit_done', path, size: fileSize, mtime });
+    } catch (e) {
+      this.sendError('edit', '读取文件失败: ' + (e instanceof Error ? e.message : String(e)));
     }
   }
 

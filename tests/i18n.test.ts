@@ -105,8 +105,11 @@ describe('国际化核心', () => {
     const source = readFileSync(new URL('../frontend/src/sftp-panel.ts', import.meta.url), 'utf8');
     expect(source).toContain("title: t('sftp.overwriteTitle')");
     expect(source).toContain("confirmText: t('sftp.overwrite')");
-    expect(source).toContain("overwrite: false");
-    expect(source).toContain("overwrite: true");
+    // 默认上传必须先以非覆盖探测，确认后才以覆盖重发；编辑器保存路径显式声明 overwriteFirst
+    expect(source).toContain('overwriteFirst: boolean = false');
+    expect(source).toContain('overwrite: overwriteFirst');
+    expect(source).toContain('overwrite: true');
+    expect(source).toContain('overwriteFirst: true');
   });
 });
 

@@ -1,6 +1,14 @@
 import { onLocaleChange, t, translateDocument } from './i18n';
 import { updateSelection } from './sftp-selection';
-import { confirmAction, requestText } from './ui-feedback';
+import { confirmAction, notify, requestText } from './ui-feedback';
+import {
+  decodeEditorContent,
+  encodeEditorContent,
+  EDITOR_MAX_FILE_SIZE,
+  isEditorSizeAllowed,
+  type SupportedEncoding,
+} from './editor-content';
+import { openRemoteEditor, type RemoteEditorHandle } from './code-editor';
 
 export interface SFTPFileEntry {
   name: string;
@@ -20,6 +28,8 @@ const UPLOAD_CHUNK_SIZE = 128 * 1024;
 const UPLOAD_CONCURRENCY = 8;
 const DOWNLOAD_URL_REVOKE_DELAY_MS = 1000;
 const SFTP_HEARTBEAT_INTERVAL_MS = 30000;
+const EDIT_READ_TIMEOUT_MS = 30000;
+const STAT_TIMEOUT_MS = 15000;
 
 function validateRemoteName(value: string): string | null {
   if (value === '.' || value === '..') return t('sftp.invalidName');
@@ -46,6 +56,35 @@ interface UploadConflict {
 }
 
 type UploadStartResult = { status: 'ready' } | { status: 'conflict'; conflict: UploadConflict };
+
+/** sftp_edit_read 一次性读取结果（含失败路径，失败时 bytes 为空） */
+interface EditorReadResult {
+  ok: boolean;
+  path: string;
+  bytes: Uint8Array;
+  mtime: number;
+  size: number;
+  errorMessage?: string;
+}
+
+/** 保存前冲突检测用的远端 stat 快照 */
+interface RemoteStatResult {
+  ok: boolean;
+  mtime: number;
+  size: number;
+}
+
+/** 当前打开的在线编辑会话（含冲突检测基线与编码信息） */
+interface ActiveEditorSession {
+  path: string;
+  filename: string;
+  encoding: SupportedEncoding;
+  bom: boolean;
+  eol: '\n' | '\r\n';
+  mtime: number;
+  size: number;
+  handle: RemoteEditorHandle;
+}
 
 class UploadWaiter {
   private ready: Deferred<UploadStartResult> | null = null;
@@ -162,6 +201,14 @@ export class SFTPPanel {
   private downloadActive: boolean = false;
   private downloadCancelRequested: boolean = false;
   private downloadQueueGeneration: number = 0;
+  private activeEditor: ActiveEditorSession | null = null;
+  private editReadActive = false;
+  private editReadChunks: Uint8Array[] = [];
+  private editReadMeta: { path: string; size: number; mtime: number } | null = null;
+  private editReadWaiter: Deferred<EditorReadResult> | null = null;
+  private editReadTimeout: ReturnType<typeof setTimeout> | null = null;
+  private statWaiter: Deferred<RemoteStatResult> | null = null;
+  private statTimeout: ReturnType<typeof setTimeout> | null = null;
   private localeCleanup: (() => void) | null = null;
   private readonly keydownHandler = (e: KeyboardEvent): void => {
     if (!this.visible || document.querySelector('dialog[open]')) return;
@@ -242,6 +289,10 @@ export class SFTPPanel {
             <span class="material-symbols-outlined" style="font-size: 14px;">download</span>
             <span data-i18n="sftp.downloadAction">下载</span>
           </button>
+          <button id="sftp-edit-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.edit" title="在线编辑" disabled>
+            <span class="material-symbols-outlined" style="font-size: 14px;">edit_note</span>
+            <span data-i18n="sftp.editAction">编辑</span>
+          </button>
           <button id="sftp-delete-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-error-container rounded transition-colors cursor-pointer text-error disabled:opacity-30" data-i18n-title="common.delete" title="删除" disabled>
             <span class="material-symbols-outlined" style="font-size: 14px;">delete</span>
             <span data-i18n="sftp.deleteAction">删除</span>
@@ -320,6 +371,7 @@ export class SFTPPanel {
     const uploadBtn = this.container.querySelector('#sftp-upload-btn')!;
     const mkdirBtn = this.container.querySelector('#sftp-mkdir-btn')!;
     const downloadBtn = this.container.querySelector('#sftp-download-btn')!;
+    const editBtn = this.container.querySelector('#sftp-edit-btn')!;
     const deleteBtn = this.container.querySelector('#sftp-delete-btn')!;
     const renameBtn = this.container.querySelector('#sftp-rename-btn')!;
     const cancelTransferBtn = this.container.querySelector('#sftp-transfer-cancel-btn')!;
@@ -338,6 +390,7 @@ export class SFTPPanel {
     uploadBtn.addEventListener('click', () => fileInput.click());
     mkdirBtn.addEventListener('click', () => this.showMkdirDialog());
     downloadBtn.addEventListener('click', () => this.downloadSelected());
+    editBtn.addEventListener('click', () => this.editSelected());
     deleteBtn.addEventListener('click', () => this.deleteSelected());
     renameBtn.addEventListener('click', () => this.showRenameDialog());
     cancelTransferBtn.addEventListener('click', () => this.cancelCurrentTransfer());
@@ -386,6 +439,8 @@ export class SFTPPanel {
   }
 
   hide(): void {
+    this.closeActiveEditor();
+    this.resetEditState();
     this.resetUploadQueue();
     this.resetDownloadQueue();
     this.visible = false;
@@ -410,6 +465,8 @@ export class SFTPPanel {
 
   handleSSHReady(): void {
     this.closeWebSocket(1000, 'SSH session refreshed');
+    this.closeActiveEditor();
+    this.resetEditState();
     this.resetUploadQueue();
     this.resetDownloadQueue();
     this.uploadWaiter.reset();
@@ -596,12 +653,32 @@ export class SFTPPanel {
         this.onListResult(msg.path, msg.entries, msg.isTruncated);
         break;
       case 'sftp_stat_result':
+        this.resolveStatWaiter(msg);
         break;
       case 'pong':
         break;
       case 'sftp_download_start':
         this.onDownloadStart(msg.filename, msg.size);
         break;
+      case 'sftp_edit_start':
+        this.editReadMeta = {
+          path: typeof msg.path === 'string' ? msg.path : '',
+          size: Number(msg.size) || 0,
+          mtime: Number(msg.mtime) || 0,
+        };
+        break;
+      case 'sftp_edit_done': {
+        const meta = this.editReadMeta;
+        this.editReadMeta = null;
+        this.resolveEditRead({
+          ok: true,
+          path: typeof msg.path === 'string' ? msg.path : (meta?.path ?? ''),
+          bytes: this.concatEditChunks(),
+          mtime: Number(msg.mtime ?? meta?.mtime ?? 0) || 0,
+          size: Number(msg.size ?? meta?.size ?? 0) || 0,
+        });
+        break;
+      }
       case 'sftp_download_progress':
         this.onDownloadProgress(msg.loaded, msg.total);
         break;
@@ -661,6 +738,22 @@ export class SFTPPanel {
   private handleSFTPError(msg: any): void {
     const operation = typeof msg.operation === 'string' ? msg.operation : '';
 
+    // 编辑器打开失败：由 openEditorForFile 统一 notify，避免双重报错；
+    // 无待决请求时才落到面板错误横幅
+    if (operation === 'edit') {
+      const hadPending = this.editReadWaiter !== null;
+      const message = typeof msg.message === 'string' ? msg.message : '';
+      this.rejectEditRead(message);
+      if (!hadPending) {
+        this.showError(msg.message);
+      }
+      return;
+    }
+
+    if (operation === 'stat' && this.statWaiter) {
+      this.resolveStatWaiter(null);
+    }
+
     if (operation === 'init' || !this.sftpReady) {
       this.initializing = false;
       if (operation === 'init') {
@@ -692,6 +785,11 @@ export class SFTPPanel {
 
   // Handle binary data (download chunks)
   handleBinaryData(data: Uint8Array): void {
+    // 在线编辑读取与下载互斥使用同一条二进制流：编辑读取优先路由
+    if (this.editReadActive) {
+      this.editReadChunks.push(data);
+      return;
+    }
     if (this.downloadFilename) {
       this.downloadChunks.push(data);
     }
@@ -879,12 +977,14 @@ export class SFTPPanel {
 
   private updateActionButtons(): void {
     const downloadBtn = this.container.querySelector('#sftp-download-btn') as HTMLButtonElement;
+    const editBtn = this.container.querySelector('#sftp-edit-btn') as HTMLButtonElement;
     const deleteBtn = this.container.querySelector('#sftp-delete-btn') as HTMLButtonElement;
     const renameBtn = this.container.querySelector('#sftp-rename-btn') as HTMLButtonElement;
 
     const selected = [...this.selectedEntries.values()];
     const hasSelection = selected.length > 0;
     downloadBtn.disabled = !selected.some((entry) => !entry.isDir);
+    editBtn.disabled = !(selected.length === 1 && !selected[0].isDir);
     deleteBtn.disabled = !hasSelection;
     renameBtn.disabled = selected.length !== 1;
     this.setIdleStatus(
@@ -919,6 +1019,19 @@ export class SFTPPanel {
           }
         },
       });
+      if (!entry.isDir) {
+        items.push({
+          label: t('sftp.contextEdit'),
+          icon: 'edit_note',
+          action: () => {
+            void this.openEditorForFile(
+              this.currentPath === '/' ? `/${entry.name}` : `${this.currentPath}/${entry.name}`,
+              entry.name,
+              entry.size
+            );
+          },
+        });
+      }
     }
     if (selected.some((selectedEntry) => !selectedEntry.isDir)) {
       items.push({
@@ -998,45 +1111,58 @@ export class SFTPPanel {
     if (batch.length === 0) return;
 
     const targetPath = this.currentPath;
-    const generation = this.uploadQueueGeneration;
-    let queuedFilesAdded = 0;
-
     for (const file of batch) {
-      const queuedBehindExistingWork = this.uploadQueuePending > 0;
-      this.uploadQueuePending++;
-
-      if (queuedBehindExistingWork) {
-        this.uploadQueuedFiles++;
-        queuedFilesAdded++;
-      }
-
-      const run = this.uploadQueueTail.then(async () => {
-        if (queuedBehindExistingWork) {
-          this.uploadQueuedFiles = Math.max(0, this.uploadQueuedFiles - 1);
-          this.setQueueStatus();
-        }
-        if (generation !== this.uploadQueueGeneration || !this.visible) return;
-        await this.uploadSingleFile(file, targetPath);
-      });
-
-      this.uploadQueueTail = run
-        .catch((e) => {
-          this.showError(
-            t('sftp.uploadFailed', { message: e instanceof Error ? e.message : String(e) })
-          );
-        })
-        .finally(() => {
-          if (generation === this.uploadQueueGeneration) {
-            this.uploadQueuePending = Math.max(0, this.uploadQueuePending - 1);
-          }
-        });
+      void this.enqueueUploadTask(file, targetPath);
     }
+  }
 
-    if (queuedFilesAdded > 0) {
+  /**
+   * 入队一个上传任务（编辑器保存也走此通道，与普通上传串行复用单一上传状态机）。
+   * 返回是否真正完成上传（面板隐藏/队列重置时静默跳过返回 false）。
+   * reportError=false 表示由调用方自行报告错误（编辑器保存路径用 notify 呈现）。
+   */
+  private enqueueUploadTask(
+    file: File,
+    targetPath: string,
+    options: { overwriteFirst?: boolean; reportError?: boolean } = {}
+  ): Promise<boolean> {
+    const generation = this.uploadQueueGeneration;
+    const queuedBehindExistingWork = this.uploadQueuePending > 0;
+    this.uploadQueuePending++;
+
+    if (queuedBehindExistingWork) {
+      this.uploadQueuedFiles++;
       this.setQueueStatus();
     }
 
+    const run = this.uploadQueueTail.then(async () => {
+      if (queuedBehindExistingWork) {
+        this.uploadQueuedFiles = Math.max(0, this.uploadQueuedFiles - 1);
+        this.setQueueStatus();
+      }
+      if (generation !== this.uploadQueueGeneration || !this.visible) return false;
+      return this.uploadSingleFile(file, targetPath, options.overwriteFirst === true);
+    });
+
+    const tail: Promise<void> = run.then(
+      () => undefined,
+      (e) => {
+        if (options.reportError !== false) {
+          this.showError(
+            t('sftp.uploadFailed', { message: e instanceof Error ? e.message : String(e) })
+          );
+        }
+      }
+    );
+
+    this.uploadQueueTail = tail.finally(() => {
+      if (generation === this.uploadQueueGeneration) {
+        this.uploadQueuePending = Math.max(0, this.uploadQueuePending - 1);
+      }
+    });
+
     void this.uploadQueueTail;
+    return run;
   }
 
   private resetUploadQueue(): void {
@@ -1052,7 +1178,11 @@ export class SFTPPanel {
     this.uploadQueueTail = Promise.resolve();
   }
 
-  private async uploadSingleFile(file: File, targetPath: string): Promise<void> {
+  private async uploadSingleFile(
+    file: File,
+    targetPath: string,
+    overwriteFirst: boolean = false
+  ): Promise<boolean> {
     const path = targetPath === '/' ? `/${file.name}` : `${targetPath}/${file.name}`;
 
     let sendOffset = 0;
@@ -1070,7 +1200,7 @@ export class SFTPPanel {
 
     try {
       const readyPromise = this.uploadWaiter.waitReady();
-      this.sendJSON({ type: 'sftp_upload_start', path, size: file.size, overwrite: false });
+      this.sendJSON({ type: 'sftp_upload_start', path, size: file.size, overwrite: overwriteFirst });
       let startResult = await readyPromise;
 
       if (startResult.status === 'conflict') {
@@ -1088,7 +1218,7 @@ export class SFTPPanel {
         if (!confirmed || this.uploadCancelRequested || !this.visible) {
           this.uploadActive = false;
           this.setIdleStatus(t('sftp.uploadSkipped'));
-          return;
+          return false;
         }
 
         const overwriteReadyPromise = this.uploadWaiter.waitReady();
@@ -1104,7 +1234,7 @@ export class SFTPPanel {
       this.showProgress(t('sftp.uploading', { name: file.name }), 0);
       if (this.uploadCancelRequested) {
         await this.waitForUploadCancel();
-        return;
+        return false;
       }
 
       const readNextChunk = async (): Promise<Uint8Array | null> => {
@@ -1135,7 +1265,7 @@ export class SFTPPanel {
       while (sendOffset < file.size && sendOffset - acknowledged < maxBufferedBytes) {
         if (this.uploadCancelRequested) {
           await this.waitForUploadCancel();
-          return;
+          return false;
         }
         if (!(await sendNextChunk())) {
           throw new Error(t('sftp.uploadStreamEnded'));
@@ -1146,7 +1276,7 @@ export class SFTPPanel {
         acknowledged = await this.uploadWaiter.waitProgress();
         if (this.uploadCancelRequested) {
           await this.waitForUploadCancel();
-          return;
+          return false;
         }
         while (sendOffset < file.size && sendOffset - acknowledged < maxBufferedBytes) {
           if (!(await sendNextChunk())) {
@@ -1158,17 +1288,17 @@ export class SFTPPanel {
       const completePromise = this.uploadWaiter.waitComplete();
       this.sendJSON({ type: 'sftp_upload_end' });
       await completePromise;
+      return true;
     } catch (e) {
       if (this.uploadCancelRequested) {
         await this.waitForUploadCancel();
-      } else {
-        this.sendJSON({ type: 'sftp_upload_cancel' });
-        this.showError(
-          t('sftp.uploadFailed', { message: e instanceof Error ? e.message : String(e) })
-        );
+        this.uploadWaiter.reset();
+        return false;
       }
+      // 错误上报交由调用方（队列默认 showError / 编辑器保存路径 notify）
+      this.sendJSON({ type: 'sftp_upload_cancel' });
       this.uploadWaiter.reset();
-      return;
+      throw e;
     } finally {
       this.uploadActive = false;
       this.uploadCancelRequested = false;
@@ -1316,6 +1446,315 @@ export class SFTPPanel {
   private rejectDownloadWaiter(message: string): void {
     this.downloadWaiter?.reject(new Error(message));
     this.downloadWaiter = null;
+  }
+
+  // ==================== 在线编辑 ====================
+
+  private editSelected(): void {
+    const selected = [...this.selectedEntries.values()];
+    if (selected.length !== 1 || selected[0].isDir) return;
+    const entry = selected[0];
+    const path = this.currentPath === '/' ? `/${entry.name}` : `${this.currentPath}/${entry.name}`;
+    void this.openEditorForFile(path, entry.name, entry.size);
+  }
+
+  private async openEditorForFile(
+    path: string,
+    filename: string,
+    knownSize: number
+  ): Promise<void> {
+    if (this.activeEditor) {
+      this.activeEditor.handle.focus();
+      notify(t('sftp.editorAlreadyOpen'), { variant: 'warning' });
+      return;
+    }
+    if (!isEditorSizeAllowed(knownSize)) {
+      notify(
+        t('sftp.editorTooLarge', {
+          name: filename,
+          size: this.formatSize(knownSize),
+          max: this.formatSize(EDITOR_MAX_FILE_SIZE),
+        }),
+        { variant: 'danger' }
+      );
+      return;
+    }
+
+    this.editReadActive = true;
+    this.editReadChunks = [];
+    this.editReadMeta = null;
+    const waiter = new Deferred<EditorReadResult>();
+    this.editReadWaiter = waiter;
+    this.editReadTimeout = setTimeout(() => {
+      if (this.editReadWaiter === waiter) {
+        this.editReadWaiter = null;
+        waiter.resolve({
+          ok: false,
+          path,
+          bytes: new Uint8Array(0),
+          mtime: 0,
+          size: 0,
+          errorMessage: t('sftp.editorLoadTimeout'),
+        });
+      }
+    }, EDIT_READ_TIMEOUT_MS);
+    this.setStatus(t('sftp.editorLoading', { name: filename }));
+
+    try {
+      this.sendJSON({ type: 'sftp_edit_read', path });
+      const result = await waiter.promise;
+
+      if (!result.ok) {
+        // Worker 侧错误已携带完整文案（大小上限/二进制拒绝/权限等）
+        if (result.errorMessage) {
+          notify(result.errorMessage, { variant: 'danger' });
+        }
+        return;
+      }
+
+      const decoded = decodeEditorContent(result.bytes);
+      if (!decoded.ok) {
+        notify(
+          decoded.reason === 'binary'
+            ? t('sftp.editorBinary')
+            : t('sftp.editorEncodingUnsupported'),
+          { variant: 'warning' }
+        );
+        return;
+      }
+
+      // 非 UTF-8（GB18030 解码成功）无浏览器侧编码器可安全回写，仅只读呈现
+      const readOnly = decoded.content.encoding !== 'utf-8';
+      const encodingLabel =
+        decoded.content.encoding === 'gb18030'
+          ? t('sftp.editorEncodingGb18030')
+          : t('sftp.editorEncodingUtf8');
+      const handle = openRemoteEditor({
+        filename,
+        path,
+        content: decoded.content,
+        readOnly,
+        notice: readOnly ? t('sftp.editorReadOnlyNotice', { encoding: encodingLabel }) : undefined,
+        onSave: () => this.saveActiveEditor(),
+        onClose: () => {
+          this.activeEditor = null;
+          if (this.visible && this.sftpReady) this.refresh();
+        },
+      });
+
+      this.activeEditor = {
+        path,
+        filename,
+        encoding: decoded.content.encoding,
+        bom: decoded.content.bom,
+        eol: decoded.content.eol,
+        mtime: result.mtime,
+        size: result.size,
+        handle,
+      };
+    } catch (e) {
+      notify(
+        t('sftp.editorLoadFailed', { message: e instanceof Error ? e.message : String(e) }),
+        { variant: 'danger' }
+      );
+    } finally {
+      this.editReadActive = false;
+      this.editReadChunks = [];
+      this.editReadMeta = null;
+      if (this.editReadTimeout) {
+        clearTimeout(this.editReadTimeout);
+        this.editReadTimeout = null;
+      }
+      this.setIdleStatus(this.getItemsStatus());
+    }
+  }
+
+  private async saveActiveEditor(): Promise<boolean> {
+    const session = this.activeEditor;
+    if (!session) return false;
+    if (!this.sftpReady) {
+      notify(t('sftp.editorSaveFailed', { message: t('sftp.disconnected') }), {
+        variant: 'danger',
+      });
+      return false;
+    }
+    const content = session.handle.getContent();
+
+    // 保存冲突检测：重新 stat 远端并与打开时基线比对（业界规范的 mtime+size 快照法）
+    const remote = await this.statRemote(session.path);
+    if (remote.ok) {
+      if (remote.mtime !== session.mtime || remote.size !== session.size) {
+        const overwrite = await confirmAction({
+          title: t('sftp.editorRemoteChangedTitle'),
+          message: t('sftp.editorRemoteChangedMessage', { name: session.filename }),
+          confirmText: t('sftp.editorOverwrite'),
+          cancelText: t('common.cancel'),
+          variant: 'danger',
+        });
+        if (!overwrite) return false;
+      }
+    } else {
+      const proceed = await confirmAction({
+        title: t('sftp.editorUnverifiableTitle'),
+        message: t('sftp.editorUnverifiableMessage', { name: session.filename }),
+        confirmText: t('sftp.editorOverwrite'),
+        cancelText: t('common.cancel'),
+        variant: 'danger',
+      });
+      if (!proceed) return false;
+    }
+
+    // 按原文件 EOL/BOM 编码回 UTF-8 字节，经既有上传队列覆盖保存（保留 inode 属主）
+    const bytes = encodeEditorContent(content, { bom: session.bom, eol: session.eol });
+    const file = new File([bytes], session.filename);
+    const dirPath = session.path.slice(0, session.path.lastIndexOf('/')) || '/';
+    let uploaded: boolean;
+    try {
+      uploaded = await this.enqueueUploadTask(file, dirPath, {
+        overwriteFirst: true,
+        reportError: false,
+      });
+    } catch (e) {
+      notify(
+        t('sftp.editorSaveFailed', { message: e instanceof Error ? e.message : String(e) }),
+        { variant: 'danger' }
+      );
+      return false;
+    }
+    if (!uploaded) {
+      notify(t('sftp.editorSaveFailed', { message: t('sftp.uploadCancelled') }), {
+        variant: 'danger',
+      });
+      return false;
+    }
+
+    // 保存成功后刷新基线：stat 在 sftpTaskQueue 中排在 upload_end 之后，读到的是新 mtime；
+    // 若此次 stat 失败则基线置为 -1，下次保存必然触发冲突确认，不会静默覆盖
+    const after = await this.statRemote(session.path);
+    if (after.ok) {
+      session.mtime = after.mtime;
+      session.size = after.size;
+    } else {
+      session.mtime = -1;
+      session.size = -1;
+    }
+    session.handle.markSaved();
+    notify(t('sftp.editorSaved', { name: session.filename }), { variant: 'success' });
+    return true;
+  }
+
+  private statRemote(path: string): Promise<RemoteStatResult> {
+    if (this.statWaiter) {
+      return Promise.resolve({ ok: false, mtime: 0, size: 0 });
+    }
+    const deferred = new Deferred<RemoteStatResult>();
+    this.statWaiter = deferred;
+    this.statTimeout = setTimeout(() => {
+      if (this.statWaiter === deferred) {
+        this.statWaiter = null;
+        deferred.resolve({ ok: false, mtime: 0, size: 0 });
+      }
+    }, STAT_TIMEOUT_MS);
+    void deferred.promise
+      .then(() => this.clearStatTimeout())
+      .catch(() => this.clearStatTimeout());
+    this.sendJSON({ type: 'sftp_stat', path });
+    return deferred.promise;
+  }
+
+  private clearStatTimeout(): void {
+    if (this.statTimeout) {
+      clearTimeout(this.statTimeout);
+      this.statTimeout = null;
+    }
+  }
+
+  private resolveStatWaiter(msg: any): void {
+    const waiter = this.statWaiter;
+    this.statWaiter = null;
+    this.clearStatTimeout();
+    if (!waiter) return;
+    const attrs = msg?.attrs;
+    if (attrs && typeof attrs === 'object') {
+      waiter.resolve({
+        ok: true,
+        mtime: Number(attrs.modifiedTime) || 0,
+        size: Number(attrs.size) || 0,
+      });
+    } else {
+      waiter.resolve({ ok: false, mtime: 0, size: 0 });
+    }
+  }
+
+  private resolveEditRead(result: EditorReadResult): void {
+    const waiter = this.editReadWaiter;
+    this.editReadWaiter = null;
+    if (this.editReadTimeout) {
+      clearTimeout(this.editReadTimeout);
+      this.editReadTimeout = null;
+    }
+    waiter?.resolve(result);
+  }
+
+  private rejectEditRead(message: string): void {
+    const waiter = this.editReadWaiter;
+    this.editReadWaiter = null;
+    if (this.editReadTimeout) {
+      clearTimeout(this.editReadTimeout);
+      this.editReadTimeout = null;
+    }
+    this.editReadChunks = [];
+    const path = this.editReadMeta?.path ?? '';
+    this.editReadMeta = null;
+    waiter?.resolve({
+      ok: false,
+      path,
+      bytes: new Uint8Array(0),
+      mtime: 0,
+      size: 0,
+      errorMessage: message,
+    });
+  }
+
+  private concatEditChunks(): Uint8Array {
+    const chunks = this.editReadChunks;
+    this.editReadChunks = [];
+    const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      out.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return out;
+  }
+
+  private closeActiveEditor(): void {
+    const editor = this.activeEditor;
+    this.activeEditor = null;
+    editor?.handle.close();
+  }
+
+  private resetEditState(): void {
+    this.editReadActive = false;
+    this.editReadChunks = [];
+    this.editReadMeta = null;
+    if (this.editReadTimeout) {
+      clearTimeout(this.editReadTimeout);
+      this.editReadTimeout = null;
+    }
+    this.editReadWaiter?.resolve({
+      ok: false,
+      path: '',
+      bytes: new Uint8Array(0),
+      mtime: 0,
+      size: 0,
+      errorMessage: t('sftp.editorLoadTimeout'),
+    });
+    this.editReadWaiter = null;
+    this.clearStatTimeout();
+    this.statWaiter?.resolve({ ok: false, mtime: 0, size: 0 });
+    this.statWaiter = null;
   }
 
   private cancelCurrentTransfer(): void {

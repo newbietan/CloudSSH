@@ -2328,6 +2328,9 @@ export class SSHSession {
       case 'sftp_download':
         await this.sftpHandler.downloadFile(msg.path);
         break;
+      case 'sftp_edit_read':
+        await this.sftpHandler.editReadFile(msg.path);
+        break;
       case 'sftp_download_cancel':
         this.sftpHandler.cancelDownload();
         break;
@@ -2431,6 +2434,8 @@ export class SSHSession {
       case 'sftp_download':
       case 'sftp_download_cancel':
         return 'download';
+      case 'sftp_edit_read':
+        return 'edit';
       case 'sftp_upload_start':
       case 'sftp_upload_end':
       case 'sftp_upload_cancel':
@@ -2451,7 +2456,7 @@ export class SSHSession {
   private async auditSFTPRequest(msg: Record<string, unknown>): Promise<boolean> {
     if (this.config.sessionPolicy?.source !== 'share') return true;
     const operation = this.getSFTPOperation(typeof msg.type === 'string' ? msg.type : undefined);
-    const auditable = new Set(['download', 'upload', 'delete', 'rename', 'mkdir', 'rmdir']);
+    const auditable = new Set(['download', 'edit', 'upload', 'delete', 'rename', 'mkdir', 'rmdir']);
     if (!auditable.has(operation)) return true;
     if (msg.type === 'sftp_upload_end') return true;
 
@@ -2478,6 +2483,7 @@ export class SSHSession {
     if (this.config.sessionPolicy?.source !== 'share' || typeof msg.type !== 'string') return;
     const successTypes: Record<string, string> = {
       sftp_download_done: 'download',
+      sftp_edit_done: 'edit',
       sftp_upload_complete: 'upload',
       sftp_delete_result: 'delete',
       sftp_rename_result: 'rename',
