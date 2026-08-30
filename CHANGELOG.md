@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.1] - 2026-08-30
+
+### Added
+
+- **SFTP 编辑器自动换行**（#113）：编辑器页脚新增「自动换行」开关，基于 CodeMirror 6 `EditorView.lineWrapping` 经 `Compartment` 动态切换（不重建编辑器、不丢状态，切换后焦点回到编辑区）；触屏/窄屏（`pointer: coarse` 或 ≤520px）默认开启、桌面端默认关闭由用户手动开启，检测口径与编辑器 16px 字号媒体查询一致；偏好持久化于 `localStorage`（`cloudssh_editor_wrap`），隐私模式等存储不可用时静默回退设备默认值；移动端页脚三按钮空间优化（min-width 96→84px，320px 窄屏不溢出）；i18n 双语词条；新增桌面/移动双视口 e2e 守护默认值、切换与持久化。
+
 ## [1.14.0] - 2026-08-29
 
 ### Added
