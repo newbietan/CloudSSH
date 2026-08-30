@@ -426,6 +426,7 @@ CLI: `npx wrangler secret set <SECRET_NAME>`
    2. 创建 PR 合并 `test` 到 `main`：
       - 标题遵循 `release: 发布 vX.Y.Z <主题>版本` 格式（与提交信息主题一致）。
       - 正文必须说明本次版本的更新内容：包含提交列表、关联 Issue/PR、验证结果。
+      - **Issue 默认保持 open**：发布 PR 正文不得使用 `Closes #xxx` / `Fixes #xxx` 等自动关闭关键字，除非用户明确要求关闭；关联 Issue 仅以「关联 Issue：#xxx」形式列出，由用户后续手动关闭（用户可能仍有反馈需要跟进）。
    3. **PR 的审核与合并由用户手动完成**：AI 创建 PR 后应等待用户审核并合并，不得自行合并或使用管理员旁路合并。
    4. 用户合并 PR 到 `main` 后（生产环境自动部署），AI 执行以下命令同步本地分支：
 
