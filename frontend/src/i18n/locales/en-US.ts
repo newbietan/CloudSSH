@@ -434,6 +434,8 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'sftp.editorStatusSaved': 'No unsaved changes',
   'sftp.editorEncodingUtf8': 'UTF-8',
   'sftp.editorEncodingGb18030': 'GBK/GB18030 (read-only)',
+  'sftp.editorWrap': 'Word wrap',
+  'sftp.editorWrapTitle': 'Toggle word wrap',
   'agent.title': 'AI Agent assistant',
   'agent.settings': 'AI Agent settings',
   'agent.close': 'Close Agent panel',

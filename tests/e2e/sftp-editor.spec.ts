@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { mockAnonymousSession } from './helpers';
 
 const FILE_BYTES = '# config\nlisten 80;\n';
@@ -11,6 +11,55 @@ interface EditorEvalArgs {
   mtime: number;
   /** 保存前 re-stat 返回的远端快照；null 表示与打开时一致 */
   nextStat?: { modifiedTime: number; size: number } | null;
+}
+
+/** 最简编辑器打开桩：仅 mock edit_read 与 list，用于换行等非保存链路断言 */
+async function openEditorMinimal(page: Page): Promise<void> {
+  await mockAnonymousSession(page);
+  await page.goto('/?lang=zh-CN');
+  await page.evaluate(async ({ fileBytes, mtime }: EditorEvalArgs) => {
+    const sftpModule = await (window as any).eval("import('/src/sftp-panel.ts')");
+    const panel = new sftpModule.SFTPPanel(() => null);
+    (panel as any).visible = true;
+    (panel as any).sftpReady = true;
+    (panel as any).sendJSON = (frame: Record<string, unknown>) => {
+      if (frame.type === 'sftp_edit_read') {
+        queueMicrotask(() => {
+          panel.handleMessage({
+            type: 'sftp_edit_start',
+            path: frame.path,
+            size: (fileBytes as string).length,
+            mtime,
+          });
+          panel.handleBinaryData(new TextEncoder().encode(fileBytes as string));
+          panel.handleMessage({
+            type: 'sftp_edit_done',
+            path: frame.path,
+            size: (fileBytes as string).length,
+            mtime,
+          });
+        });
+      } else if (frame.type === 'sftp_list') {
+        queueMicrotask(() =>
+          panel.handleMessage({ type: 'sftp_list_result', path: frame.path, entries: [] })
+        );
+      }
+    };
+    (panel as any).sendBinary = () => {};
+    void (panel as any).openEditorForFile(
+      '/home/deploy/nginx.conf',
+      'nginx.conf',
+      (fileBytes as string).length
+    );
+  }, { fileBytes: FILE_BYTES, mtime: DEFAULT_MTIME });
+  await expect(page.locator('dialog.remote-editor')).toBeVisible();
+}
+
+/** 自动换行状态：CM6 lineWrapping 会在 .cm-content 上挂 cm-lineWrapping 类 */
+function wrapState(page: Page): Promise<boolean> {
+  return page.evaluate(
+    () => document.querySelector('.cm-content')!.classList.contains('cm-lineWrapping')
+  );
 }
 
 // 注意：page.evaluate 的回调在浏览器上下文执行，所有数据必须经参数传入，
@@ -399,6 +448,25 @@ test('非 UTF-8（GBK）文件以只读模式打开', async ({ page }) => {
   await expect(editor.locator('.cm-content')).toHaveAttribute('contenteditable', 'false');
 });
 
+test('桌面端编辑器默认不换行，可开启并持久化偏好', async ({ page }) => {
+  await openEditorMinimal(page);
+  const editor = page.locator('dialog.remote-editor');
+
+  expect(await wrapState(page)).toBe(false);
+
+  await editor.locator('.remote-editor__button--wrap').click();
+  expect(await wrapState(page)).toBe(true);
+  expect(await page.evaluate(() => window.localStorage.getItem('cloudssh_editor_wrap'))).toBe(
+    'on'
+  );
+
+  // 关闭后重新打开仍为开启（持久化偏好优先于设备默认值）
+  await editor.locator('.remote-editor__close').click();
+  await expect(editor).not.toBeAttached();
+  await openEditorMinimal(page);
+  expect(await wrapState(page)).toBe(true);
+});
+
 test.describe('移动端视口', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
@@ -484,5 +552,18 @@ test.describe('移动端视口', () => {
     await expect(dialog).toBeVisible();
     await dialog.locator('.app-dialog__button--cancel').click();
     await expect(editor).toBeVisible();
+  });
+
+  test('移动端编辑器默认开启自动换行，可关闭并持久化', async ({ page }) => {
+    await openEditorMinimal(page);
+    const editor = page.locator('dialog.remote-editor');
+
+    expect(await wrapState(page)).toBe(true);
+
+    await editor.locator('.remote-editor__button--wrap').click();
+    expect(await wrapState(page)).toBe(false);
+    expect(await page.evaluate(() => window.localStorage.getItem('cloudssh_editor_wrap'))).toBe(
+      'off'
+    );
   });
 });

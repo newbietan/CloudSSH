@@ -3146,6 +3146,23 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   filter: none;
 }
 
+.remote-editor__button--wrap {
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+}
+
+.remote-editor__button--wrap:hover {
+  color: var(--on-surface);
+  border-color: var(--text-muted);
+}
+
+.remote-editor__button--wrap[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: var(--accent);
+}
+
 /* CodeMirror 语法高亮：classHighlighter 令牌 → 主题变量，跟随亮/暗/自定义主题 */
 .remote-editor .tok-keyword,
 .remote-editor .tok-atom,
@@ -3227,8 +3244,8 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   }
 
   .remote-editor__button {
-    min-width: 96px;
-    padding: 10px 14px;
+    min-width: 84px;
+    padding: 10px 12px;
   }
 }
 

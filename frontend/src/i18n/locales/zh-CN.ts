@@ -395,6 +395,8 @@ export const zhCN = {
   'sftp.editorStatusSaved': '无未保存修改',
   'sftp.editorEncodingUtf8': 'UTF-8',
   'sftp.editorEncodingGb18030': 'GBK/GB18030（只读）',
+  'sftp.editorWrap': '自动换行',
+  'sftp.editorWrapTitle': '切换自动换行',
   'agent.title': 'AI Agent 助手',
   'agent.settings': 'AI Agent 设置',
   'agent.close': '关闭 Agent 面板',

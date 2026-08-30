@@ -29,7 +29,7 @@ import { python } from '@codemirror/lang-python';
 import { yaml } from '@codemirror/lang-yaml';
 import { classHighlighter } from '@lezer/highlight';
 import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
-import { EditorState, type Extension } from '@codemirror/state';
+import { Compartment, EditorState, type Extension } from '@codemirror/state';
 import {
   EditorView,
   drawSelection,
@@ -205,12 +205,47 @@ function languageExtensionFor(filename: string): Extension {
   }
 }
 
+/** 自动换行偏好存储键（沿用 cloudssh_ 前缀约定） */
+const WRAP_STORAGE_KEY = 'cloudssh_editor_wrap';
+
+/**
+ * 自动换行默认值（Issue #113）：触屏/窄屏默认开启——长行（URL、证书串等）
+ * 在移动端横向拖动查看是明确痛点；桌面端默认关闭，由用户手动开启。
+ * 检测口径与编辑器 16px 字号媒体查询保持一致（pointer: coarse 或 ≤520px）。
+ */
+function detectDefaultWrap(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(pointer: coarse)').matches || window.innerWidth <= 520;
+}
+
+function readStoredWrapPreference(): boolean | null {
+  try {
+    const stored = window.localStorage.getItem(WRAP_STORAGE_KEY);
+    if (stored === 'on') return true;
+    if (stored === 'off') return false;
+  } catch {
+    // 隐私模式等存储不可用场景回退设备默认值
+  }
+  return null;
+}
+
+function storeWrapPreference(enabled: boolean): void {
+  try {
+    window.localStorage.setItem(WRAP_STORAGE_KEY, enabled ? 'on' : 'off');
+  } catch {
+    // 同上，忽略持久化失败，仅影响下次打开的默认值
+  }
+}
+
 class RemoteEditor implements RemoteEditorHandle {
   private readonly dialog: HTMLDialogElement;
   private readonly view: EditorView;
   private readonly options: RemoteEditorOptions;
   private readonly statusEl: HTMLElement;
   private readonly saveButton: HTMLButtonElement;
+  private readonly wrapCompartment = new Compartment();
+  private wrapButton: HTMLButtonElement | null = null;
+  private wrapEnabled = false;
   private baseline: string;
   private saving = false;
   private closed = false;
@@ -218,6 +253,7 @@ class RemoteEditor implements RemoteEditorHandle {
   constructor(options: RemoteEditorOptions) {
     this.options = options;
     this.baseline = options.content.text;
+    this.wrapEnabled = readStoredWrapPreference() ?? detectDefaultWrap();
 
     this.dialog = this.buildDialog();
     document.body.appendChild(this.dialog);
@@ -233,6 +269,9 @@ class RemoteEditor implements RemoteEditorHandle {
     ) as HTMLButtonElement;
     this.saveButton = this.dialog.querySelector(
       '.remote-editor__button--save'
+    ) as HTMLButtonElement;
+    this.wrapButton = this.dialog.querySelector(
+      '.remote-editor__button--wrap'
     ) as HTMLButtonElement;
 
     titleEl.textContent = options.filename;
@@ -251,6 +290,7 @@ class RemoteEditor implements RemoteEditorHandle {
     closeButton.addEventListener('click', () => void this.requestClose());
     discardButton.addEventListener('click', () => void this.requestClose());
     this.saveButton.addEventListener('click', () => void this.requestSave());
+    this.wrapButton.addEventListener('click', () => this.toggleWrap());
     this.dialog.addEventListener('cancel', (event) => {
       event.preventDefault();
       void this.requestClose();
@@ -263,6 +303,7 @@ class RemoteEditor implements RemoteEditorHandle {
     });
 
     this.updateStatus();
+    this.syncWrapButton();
     this.dialog.showModal();
     this.view.focus();
   }
@@ -291,6 +332,7 @@ class RemoteEditor implements RemoteEditorHandle {
         <div class="remote-editor__footer">
           <span class="remote-editor__status"></span>
           <div class="remote-editor__actions">
+            <button type="button" class="remote-editor__button remote-editor__button--wrap" data-i18n="sftp.editorWrap" data-i18n-title="sftp.editorWrapTitle" aria-pressed="false"></button>
             <button type="button" class="remote-editor__button remote-editor__button--cancel"></button>
             <button type="button" class="remote-editor__button remote-editor__button--save"></button>
           </div>
@@ -331,6 +373,7 @@ class RemoteEditor implements RemoteEditorHandle {
         indentWithTab,
       ]),
       languageExtensionFor(this.options.filename),
+      this.wrapCompartment.of(this.wrapEnabled ? EditorView.lineWrapping : []),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) this.updateStatus();
       }),
@@ -358,6 +401,23 @@ class RemoteEditor implements RemoteEditorHandle {
 
   focus(): void {
     if (!this.closed) this.view.focus();
+  }
+
+  /** 切换自动换行（Issue #113）：Compartment 动态重配置 + 偏好持久化 */
+  private toggleWrap(): void {
+    this.wrapEnabled = !this.wrapEnabled;
+    this.view.dispatch({
+      effects: this.wrapCompartment.reconfigure(
+        this.wrapEnabled ? EditorView.lineWrapping : []
+      ),
+    });
+    storeWrapPreference(this.wrapEnabled);
+    this.syncWrapButton();
+    this.view.focus();
+  }
+
+  private syncWrapButton(): void {
+    this.wrapButton?.setAttribute('aria-pressed', String(this.wrapEnabled));
   }
 
   /** 立即关闭（不经确认）：面板会话拆除等强制场景使用 */
