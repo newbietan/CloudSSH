@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.2] - 2026-08-30
+
+### Fixed
+
+- **匿名连接页删除最近记录误触发建立连接**：最近连接列表的删除按钮未声明 `type`，位于 `connection-form` 内默认按 `type="submit"` 处理，点击「x」在删除记录的同时会误提交表单并触发 `handleConnect()` 建立新连接；`stopPropagation` 无法阻止按钮的默认表单提交动作，删除按钮显式补上 `type="button"` 根治误触连接。
+- **连接成功后清空敏感凭据字段**：连接成功后清空密码/私钥输入框，避免关闭 SSH 会话返回匿名连接页时密码仍残留于输入框（此前密码残留会放大删除按钮误触连接问题——密码非空时点「x」直接建立连接，清空后才只能看到删除效果）。
+- **回归测试**：新增源码级断言，守护删除按钮必须显式 `type="button"`、敏感字段清空语句必须位于 `terminal.connect` 之后，防止该问题回归。
+
 ## [1.14.1] - 2026-08-30
 
 ### Added

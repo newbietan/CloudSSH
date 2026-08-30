@@ -1,6 +1,6 @@
 {
   "name": "cloudssh",
-  "version": "1.14.1",
+  "version": "1.14.2",
   "packageManager": "pnpm@11.8.0",
   "description": "纯 Cloudflare 架构 Web SSH 工具",
   "main": "src/worker/index.ts",
