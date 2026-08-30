@@ -394,7 +394,7 @@ export class ConnectionForm {
           <span class="text-on-surface truncate" title="${labelText}">${labelText}</span>
           <span class="text-[9px] font-bold tracking-[0.05em] text-muted border border-dim px-1.5 py-0.2 shrink-0">${authLabel}</span>
         </div>
-        <button class="delete-history-btn text-muted hover:text-error flex items-center justify-center p-0.5" title="${t('auth.removeHistory')}">
+        <button type="button" class="delete-history-btn text-muted hover:text-error flex items-center justify-center p-0.5" title="${t('auth.removeHistory')}">
           <span class="material-symbols-outlined" style="font-size: 14px;">close</span>
         </button>
       `;
@@ -653,6 +653,10 @@ export class ConnectionForm {
         expectedFingerprint: expectedFingerprint || undefined,
         locationHint: regionValue || undefined,
       });
+
+      // 连接成功后清空敏感凭据字段，避免返回匿名连接页时密码/私钥残留（安全）
+      (document.getElementById('password') as HTMLInputElement).value = '';
+      (document.getElementById('private-key') as HTMLTextAreaElement).value = '';
     } catch {
       // 连接失败时关闭该标签
       tm.closeTab(tab.id);

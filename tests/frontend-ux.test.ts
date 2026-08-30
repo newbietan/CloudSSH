@@ -136,6 +136,37 @@ describe('连接表单提交与端口校验', () => {
     expect(authSource).toContain('type="submit"');
     expect(html).toMatch(/id="server-submit-btn"[^>]+type="submit"/);
   });
+
+  it('最近连接删除按钮显式 type="button"，点击不会误提交连接表单', () => {
+    const authSource = readFileSync(
+      new URL('../frontend/src/auth-form.ts', import.meta.url),
+      'utf8'
+    );
+    // 删除按钮位于 <form id="connection-form"> 内；若缺省 type 会默认 submit，
+    // 点击 "x" 会触发 handleConnect()（stopPropagation 无法阻止默认提交动作）。
+    const deleteBtn =
+      authSource.match(/<button[^>]*class="[^"]*delete-history-btn[^"]*"[^>]*>/)?.[0] ?? '';
+    expect(deleteBtn).toContain('type="button"');
+    expect(deleteBtn).not.toContain('type="submit"');
+  });
+
+  it('连接成功后清空密码与私钥输入框，避免返回匿名页时凭据残留', () => {
+    const authSource = readFileSync(
+      new URL('../frontend/src/auth-form.ts', import.meta.url),
+      'utf8'
+    );
+    const connectIdx = authSource.lastIndexOf('await terminal.connect(');
+    const clearPwIdx = authSource.lastIndexOf(
+      "(document.getElementById('password') as HTMLInputElement).value = ''"
+    );
+    const clearKeyIdx = authSource.lastIndexOf(
+      "(document.getElementById('private-key') as HTMLTextAreaElement).value = ''"
+    );
+    expect(connectIdx).toBeGreaterThan(-1);
+    // 清空语句必须出现在 terminal.connect 之后（连接成功后才清空）
+    expect(clearPwIdx).toBeGreaterThan(connectIdx);
+    expect(clearKeyIdx).toBeGreaterThan(connectIdx);
+  });
 });
 
 describe('Agent 危险确认交互', () => {
