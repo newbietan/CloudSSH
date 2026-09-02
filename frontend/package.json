@@ -1,6 +1,6 @@
 {
   "name": "cloudssh-frontend",
-  "version": "1.14.3",
+  "version": "1.14.4",
   "type": "module",
   "scripts": {
     "dev": "vite",

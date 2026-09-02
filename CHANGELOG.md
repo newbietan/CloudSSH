@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.4] - 2026-09-02
+
+### Fixed
+
+- **SFTP 在线编辑错误横幅绕过消息边界校验**：`handleSFTPError` 的 edit 分支在无待决请求时此前用原始 `msg.message` 直接展示面板错误横幅，绕过边界校验；统一改用校验后的 `message` 变量，与 `rejectEditRead` 同源。保留 hadPending 以 waiter 为准的判定并补充注释：超时回调置空 waiter 后 finally 在同一微任务级联中复位 `editReadActive`，迟到错误帧不可能于读取在途时被处理，横幅兜底不构成双重报错。
+
 ## [1.14.3] - 2026-09-02
 
 ### Changed
