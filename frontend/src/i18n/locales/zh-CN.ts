@@ -368,6 +368,7 @@ export const zhCN = {
   'sftp.contextEdit': '在线编辑',
   'sftp.editorTitle': '在线编辑：{name}',
   'sftp.editorLoading': '正在打开编辑器：{name}',
+  'sftp.editorLoadingOther': '正在读取其他文件，请稍候再试。',
   'sftp.editorLoadFailed': '打开编辑器失败：{message}',
   'sftp.editorLoadTimeout': '打开编辑器超时，请检查连接后重试。',
   'sftp.editorBinary': '文件包含二进制内容，无法在线编辑。',

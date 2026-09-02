@@ -406,6 +406,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'sftp.contextEdit': 'Edit online',
   'sftp.editorTitle': 'Edit online: {name}',
   'sftp.editorLoading': 'Opening editor: {name}',
+  'sftp.editorLoadingOther': 'Still loading another file, please try again shortly.',
   'sftp.editorLoadFailed': 'Failed to open editor: {message}',
   'sftp.editorLoadTimeout': 'Timed out opening the editor. Check the connection and try again.',
   'sftp.editorBinary': 'The file contains binary content and cannot be edited online.',

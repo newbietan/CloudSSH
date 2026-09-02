@@ -201,8 +201,12 @@ export class SFTPHandler {
     this.uploadError = null;
   }
 
-  private sendError(operation: SFTPOperation, message: string): void {
-    this.sendJSON({ type: 'sftp_error', operation, message });
+  private sendError(operation: SFTPOperation, message: string, code?: string): void {
+    if (code) {
+      this.sendJSON({ type: 'sftp_error', operation, message, code });
+    } else {
+      this.sendJSON({ type: 'sftp_error', operation, message });
+    }
   }
 
   private trackUploadWrite(writePromise: Promise<void>): Promise<void> {
@@ -603,7 +607,8 @@ export class SFTPHandler {
       if (fileSize > EDITOR_MAX_FILE_SIZE) {
         this.sendError(
           'edit',
-          `文件过大 (${formatFileSize(fileSize)})，在线编辑最大支持 ${formatFileSize(EDITOR_MAX_FILE_SIZE)}`
+          `文件过大 (${formatFileSize(fileSize)})，在线编辑最大支持 ${formatFileSize(EDITOR_MAX_FILE_SIZE)}`,
+          'too_large'
         );
         return;
       }
@@ -630,7 +635,7 @@ export class SFTPHandler {
       }
 
       if (containsBinaryMarker(content)) {
-        this.sendError('edit', '文件包含二进制内容，不支持在线编辑');
+        this.sendError('edit', '文件包含二进制内容，不支持在线编辑', 'binary');
         return;
       }
 

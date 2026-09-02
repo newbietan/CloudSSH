@@ -31,6 +31,21 @@ const SFTP_HEARTBEAT_INTERVAL_MS = 30000;
 const EDIT_READ_TIMEOUT_MS = 30000;
 const STAT_TIMEOUT_MS = 15000;
 
+/** worker sftp_error 中“明确不可在线编辑”的结构化错误码（消息边界白名单化后进入判定） */
+export type EditReadErrorCode = 'binary' | 'too_large';
+
+/**
+ * 双击智能“打开”判定：worker 明确判定不可在线编辑或内容无法解码时转下载。
+ * 超时、权限等瞬时/环境错误不在其中，避免静默发起注定失败的下载。
+ * 未知错误码在消息解析边界会被丢弃（undefined），不会走到这里。
+ */
+export function shouldFallbackToDownload(
+  editErrorCode: EditReadErrorCode | undefined,
+  decodeReason: 'binary' | 'encoding' | null
+): boolean {
+  return decodeReason !== null || editErrorCode !== undefined;
+}
+
 function validateRemoteName(value: string): string | null {
   if (value === '.' || value === '..') return t('sftp.invalidName');
   if (value.includes('/') || value.includes('\0')) return t('sftp.invalidName');
@@ -65,6 +80,8 @@ interface EditorReadResult {
   mtime: number;
   size: number;
   errorMessage?: string;
+  /** worker 侧结构化错误码（消息边界白名单化），用于双击智能回退判定 */
+  errorCode?: EditReadErrorCode;
 }
 
 /** 保存前冲突检测用的远端 stat 快照 */
@@ -184,7 +201,6 @@ export class SFTPPanel {
   private sftpReady: boolean = false;
   private downloadChunks: Uint8Array[] = [];
   private downloadFilename: string = '';
-  private downloadSize: number = 0;
   private uploadCancelRequested: boolean = false;
   private uploadCancelConfirmed: boolean = false;
   private uploadCancelWaiter: Deferred<void> | null = null;
@@ -473,7 +489,6 @@ export class SFTPPanel {
     this.sftpReady = false;
     this.downloadChunks = [];
     this.downloadFilename = '';
-    this.downloadSize = 0;
     this.hideProgress();
     this.hideError();
 
@@ -658,7 +673,7 @@ export class SFTPPanel {
       case 'pong':
         break;
       case 'sftp_download_start':
-        this.onDownloadStart(msg.filename, msg.size);
+        this.onDownloadStart(msg.filename);
         break;
       case 'sftp_edit_start':
         this.editReadMeta = {
@@ -743,7 +758,9 @@ export class SFTPPanel {
     if (operation === 'edit') {
       const hadPending = this.editReadWaiter !== null;
       const message = typeof msg.message === 'string' ? msg.message : '';
-      this.rejectEditRead(message);
+      // 消息边界白名单校验：未知错误码一律丢弃，不触发下载回退
+      const code = msg.code === 'binary' || msg.code === 'too_large' ? msg.code : undefined;
+      this.rejectEditRead(message, code);
       if (!hadPending) {
         this.showError(msg.message);
       }
@@ -909,9 +926,12 @@ export class SFTPPanel {
           this.navigate(
             this.currentPath === '/' ? `/${entry.name}` : `${this.currentPath}/${entry.name}`
           );
-        } else {
-          this.downloadEntries([entry]);
+          return;
         }
+        // 双击智能“打开”：可编辑候选先尝试编辑器，明确不可编辑（超大/二进制/无法解码）时自动转下载
+        const path =
+          this.currentPath === '/' ? `/${entry.name}` : `${this.currentPath}/${entry.name}`;
+        void this.openEditorForFile(path, entry.name, entry.size, { fallbackToDownload: true });
       });
 
       // Right-click context menu
@@ -1374,7 +1394,6 @@ export class SFTPPanel {
     this.downloadWaiter = new Deferred<void>();
     this.downloadChunks = [];
     this.downloadFilename = filename;
-    this.downloadSize = 0;
     this.sendJSON({ type: 'sftp_download', path });
     this.showProgress(t('sftp.downloading', { name: filename }), 0);
     try {
@@ -1387,9 +1406,8 @@ export class SFTPPanel {
     }
   }
 
-  private onDownloadStart(filename: string, size: number): void {
+  private onDownloadStart(filename: string): void {
     this.downloadFilename = filename;
-    this.downloadSize = size;
     this.downloadChunks = [];
     this.showProgress(t('sftp.downloading', { name: filename }), 0);
   }
@@ -1461,14 +1479,27 @@ export class SFTPPanel {
   private async openEditorForFile(
     path: string,
     filename: string,
-    knownSize: number
+    knownSize: number,
+    options: { fallbackToDownload?: boolean } = {}
   ): Promise<void> {
+    // 双击智能“打开”：明确不可编辑时自动转下载，不打断操作流
+    const fallbackToDownload = options.fallbackToDownload === true;
     if (this.activeEditor) {
       this.activeEditor.handle.focus();
       notify(t('sftp.editorAlreadyOpen'), { variant: 'warning' });
       return;
     }
+    // 编辑读取互斥：同一时间只允许一次读取在途，避免后续请求覆盖 waiter/二进制分块归属
+    if (this.editReadActive) {
+      notify(t('sftp.editorLoadingOther'), { variant: 'info' });
+      return;
+    }
     if (!isEditorSizeAllowed(knownSize)) {
+      if (fallbackToDownload) {
+        // 回退下载走既有串行下载队列，避免与在途下载并发占用二进制流
+        this.queueDownloadFile(path, filename);
+        return;
+      }
       notify(
         t('sftp.editorTooLarge', {
           name: filename,
@@ -1507,6 +1538,10 @@ export class SFTPPanel {
       if (!result.ok) {
         // Worker 侧错误已携带完整文案（大小上限/二进制拒绝/权限等）
         if (result.errorMessage) {
+          if (fallbackToDownload && shouldFallbackToDownload(result.errorCode, null)) {
+            this.queueDownloadFile(path, filename);
+            return;
+          }
           notify(result.errorMessage, { variant: 'danger' });
         }
         return;
@@ -1514,6 +1549,10 @@ export class SFTPPanel {
 
       const decoded = decodeEditorContent(result.bytes);
       if (!decoded.ok) {
+        if (fallbackToDownload && shouldFallbackToDownload(undefined, decoded.reason)) {
+          this.queueDownloadFile(path, filename);
+          return;
+        }
         notify(
           decoded.reason === 'binary'
             ? t('sftp.editorBinary')
@@ -1696,7 +1735,7 @@ export class SFTPPanel {
     waiter?.resolve(result);
   }
 
-  private rejectEditRead(message: string): void {
+  private rejectEditRead(message: string, code?: EditReadErrorCode): void {
     const waiter = this.editReadWaiter;
     this.editReadWaiter = null;
     if (this.editReadTimeout) {
@@ -1713,6 +1752,7 @@ export class SFTPPanel {
       mtime: 0,
       size: 0,
       errorMessage: message,
+      errorCode: code,
     });
   }
 
