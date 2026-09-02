@@ -756,13 +756,16 @@ export class SFTPPanel {
     // 编辑器打开失败：由 openEditorForFile 统一 notify，避免双重报错；
     // 无待决请求时才落到面板错误横幅
     if (operation === 'edit') {
+      // hadPending 以 waiter 为准：超时回调置空 waiter 后，finally 会在同一微任务级联中复位
+      // editReadActive，迟到错误帧不可能在读取在途时被处理；此时横幅正是无待决请求的兜底展示面
       const hadPending = this.editReadWaiter !== null;
       const message = typeof msg.message === 'string' ? msg.message : '';
       // 消息边界白名单校验：未知错误码一律丢弃，不触发下载回退
       const code = msg.code === 'binary' || msg.code === 'too_large' ? msg.code : undefined;
       this.rejectEditRead(message, code);
       if (!hadPending) {
-        this.showError(msg.message);
+        // 与 rejectEditRead 一致使用边界校验后的 message，不再绕回未校验的 msg.message
+        this.showError(message);
       }
       return;
     }
