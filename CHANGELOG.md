@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.3] - 2026-09-02
+
+### Changed
+
+- **SFTP 双击智能“打开”**：文件管理器双击文件不再一律下载——目录仍为导航，文本文件直接打开在线编辑器；文件明确不可在线编辑时（超过 2MB、空字节嗅探判定的二进制、内容无法解码）自动转为下载，不打断操作流。回退下载统一走既有串行下载队列，避免与在途下载并发占用二进制流；`sftp_error` 增加结构化 `code`（`binary`/`too_large`），消息边界白名单校验后才进入回退判定，超时/权限等瞬时错误保持提示、不触发静默下载；编辑读取增加互斥保护，防止并发请求覆盖分块归属。显式「编辑」按钮行为不变。
+- **回归测试**：新增双击智能打开单元测试（回退判定语义）与 4 条 e2e（文本→编辑器、二进制→转下载、超大→直接下载且不发起编辑读取、目录→导航），既有 SFTP 在线编辑相关 e2e 保持全量通过。
+
 ## [1.14.2] - 2026-08-30
 
 ### Fixed
