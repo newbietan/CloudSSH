@@ -39,6 +39,9 @@ export class TabManager {
   private tabCounter = 0;
   private _isLoggedIn: boolean = false;
 
+  /** 标签右键菜单的 document click 监听器（关闭菜单时统一移除，防止累积） */
+  private tabCtxCloseHandler: ((e: MouseEvent) => void) | null = null;
+
   /** 当所有标签都被关闭时触发，外部可以用它来回到连接页面 */
   private onAllTabsClosed?: () => void;
 
@@ -461,12 +464,11 @@ export class TabManager {
     const tab = this.tabs.get(tabId);
     if (!tab) return;
     const trimmed = newLabel.trim();
-    if (trimmed) {
-      tab.label = trimmed;
-      this.renderTabBar();
-      if (this.activeTabId === tabId) {
-        this.updateStatusBar(tab);
-      }
+    if (trimmed) tab.label = trimmed;
+    // 空值/未变更时同样重新渲染，恢复原标签显示（避免重命名输入框卡在标签栏）
+    this.renderTabBar();
+    if (this.activeTabId === tabId) {
+      this.updateStatusBar(tab);
     }
   }
 
@@ -574,13 +576,20 @@ export class TabManager {
     const closeHandler = (e: MouseEvent) => {
       if (!menu.contains(e.target as Node)) {
         this.hideTabContextMenu();
-        document.removeEventListener('click', closeHandler);
       }
     };
-    setTimeout(() => document.addEventListener('click', closeHandler), 0);
+    // capture 阶段挂载，确保菜单项等内部 stopPropagation 不影响包含性判断；
+    // setTimeout(0) 避开部分平台 contextmenu 后紧跟的合成 click
+    this.tabCtxCloseHandler = closeHandler;
+    setTimeout(() => document.addEventListener('click', closeHandler, true), 0);
   }
 
   private hideTabContextMenu(): void {
+    // 统一移除 document 监听器：菜单项点击（stopPropagation）与外部点击均不残留
+    if (this.tabCtxCloseHandler) {
+      document.removeEventListener('click', this.tabCtxCloseHandler, true);
+      this.tabCtxCloseHandler = null;
+    }
     const existing = document.getElementById('tab-context-menu');
     existing?.remove();
   }
