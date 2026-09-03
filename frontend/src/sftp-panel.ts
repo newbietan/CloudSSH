@@ -1,3 +1,9 @@
+import {
+  type ActiveEditorSession,
+  type EditReadErrorCode,
+  SFTPEditorCoordinator,
+  shouldFallbackToDownload,
+} from './sftp-editor-session';
 import { onLocaleChange, t, translateDocument } from './i18n';
 import {
   escapeHtml,
@@ -11,15 +17,13 @@ import {
 } from './sftp-helpers';
 import { updateSelection } from './sftp-selection';
 import { Deferred, UploadWaiter } from './sftp-transfer';
-import { confirmAction, notify, requestText } from './ui-feedback';
 import {
-  decodeEditorContent,
-  encodeEditorContent,
-  EDITOR_MAX_FILE_SIZE,
-  isEditorSizeAllowed,
-  type SupportedEncoding,
-} from './editor-content';
-import { openRemoteEditor, type RemoteEditorHandle } from './code-editor';
+  confirmDeleteItems,
+  promptMkdirName,
+  promptNewFileName,
+  promptRename,
+} from './sftp-dialogs';
+import { confirmAction, notify } from './ui-feedback';
 
 export interface SFTPFileEntry {
   name: string;
@@ -39,60 +43,8 @@ const UPLOAD_CHUNK_SIZE = 128 * 1024;
 const UPLOAD_CONCURRENCY = 8;
 const DOWNLOAD_URL_REVOKE_DELAY_MS = 1000;
 const SFTP_HEARTBEAT_INTERVAL_MS = 30000;
-const EDIT_READ_TIMEOUT_MS = 30000;
-const STAT_TIMEOUT_MS = 15000;
 
-/** worker sftp_error 中“明确不可在线编辑”的结构化错误码（消息边界白名单化后进入判定） */
-export type EditReadErrorCode = 'binary' | 'too_large';
-
-/**
- * 双击智能“打开”判定：worker 明确判定不可在线编辑或内容无法解码时转下载。
- * 超时、权限等瞬时/环境错误不在其中，避免静默发起注定失败的下载。
- * 未知错误码在消息解析边界会被丢弃（undefined），不会走到这里。
- */
-export function shouldFallbackToDownload(
-  editErrorCode: EditReadErrorCode | undefined,
-  decodeReason: 'binary' | 'encoding' | null
-): boolean {
-  return decodeReason !== null || editErrorCode !== undefined;
-}
-
-function validateRemoteName(value: string): string | null {
-  if (value === '.' || value === '..') return t('sftp.invalidName');
-  if (value.includes('/') || value.includes('\0')) return t('sftp.invalidName');
-  return null;
-}
-
-/** sftp_edit_read 一次性读取结果（含失败路径，失败时 bytes 为空） */
-interface EditorReadResult {
-  ok: boolean;
-  path: string;
-  bytes: Uint8Array;
-  mtime: number;
-  size: number;
-  errorMessage?: string;
-  /** worker 侧结构化错误码（消息边界白名单化），用于双击智能回退判定 */
-  errorCode?: EditReadErrorCode;
-}
-
-/** 保存前冲突检测用的远端 stat 快照 */
-interface RemoteStatResult {
-  ok: boolean;
-  mtime: number;
-  size: number;
-}
-
-/** 当前打开的在线编辑会话（含冲突检测基线与编码信息） */
-interface ActiveEditorSession {
-  path: string;
-  filename: string;
-  encoding: SupportedEncoding;
-  bom: boolean;
-  eol: '\n' | '\r\n';
-  mtime: number;
-  size: number;
-  handle: RemoteEditorHandle;
-}
+export { shouldFallbackToDownload, type EditReadErrorCode };
 
 export class SFTPPanel {
   private container: HTMLElement;
@@ -131,14 +83,11 @@ export class SFTPPanel {
   private downloadActive: boolean = false;
   private downloadCancelRequested: boolean = false;
   private downloadQueueGeneration: number = 0;
-  private activeEditor: ActiveEditorSession | null = null;
-  private editReadActive = false;
-  private editReadChunks: Uint8Array[] = [];
-  private editReadMeta: { path: string; size: number; mtime: number } | null = null;
-  private editReadWaiter: Deferred<EditorReadResult> | null = null;
-  private editReadTimeout: ReturnType<typeof setTimeout> | null = null;
-  private statWaiter: Deferred<RemoteStatResult> | null = null;
-  private statTimeout: ReturnType<typeof setTimeout> | null = null;
+  private readonly editorCoordinator: SFTPEditorCoordinator;
+
+  get activeEditor(): ActiveEditorSession | null {
+    return this.editorCoordinator.getActiveEditor();
+  }
   private localeCleanup: (() => void) | null = null;
   private readonly keydownHandler = (e: KeyboardEvent): void => {
     if (!this.visible || document.querySelector('dialog[open]')) return;
@@ -159,6 +108,21 @@ export class SFTPPanel {
     this.getWebSocketUrl = getWebSocketUrl;
     this.container = this.createPanel();
     document.body.appendChild(this.container);
+
+    this.editorCoordinator = new SFTPEditorCoordinator({
+      isSftpReady: () => this.sftpReady,
+      isVisible: () => this.visible,
+      sendJSON: (data) => this.sendJSON(data),
+      // 编辑器保存路径显式声明 options.overwriteFirst: true（由 SFTPEditorCoordinator 执行）
+      enqueueUploadTask: (file, path, opts) => this.enqueueUploadTask(file, path, opts),
+      queueDownloadFile: (path, filename) => this.queueDownloadFile(path, filename),
+      refresh: () => this.refresh(),
+      setStatus: (s) => this.setStatus(s),
+      setIdleStatus: (s) => this.setIdleStatus(s),
+      getItemsStatus: () => this.getItemsStatus(),
+      showError: (msg) => this.showError(msg),
+    });
+
     this.localeCleanup = onLocaleChange(() => {
       translateDocument(this.container);
       this.hideContextMenu();
@@ -633,7 +597,7 @@ export class SFTPPanel {
         this.onListResult(msg.path, msg.entries, msg.isTruncated);
         break;
       case 'sftp_stat_result':
-        this.resolveStatWaiter(msg);
+        this.editorCoordinator.onStatAttrs(msg.attrs);
         break;
       case 'pong':
         break;
@@ -641,24 +605,19 @@ export class SFTPPanel {
         this.onDownloadStart(msg.filename);
         break;
       case 'sftp_edit_start':
-        this.editReadMeta = {
-          path: typeof msg.path === 'string' ? msg.path : '',
-          size: Number(msg.size) || 0,
-          mtime: Number(msg.mtime) || 0,
-        };
+        this.editorCoordinator.onEditStart(
+          typeof msg.path === 'string' ? msg.path : '',
+          Number(msg.size) || 0,
+          Number(msg.mtime) || 0
+        );
         break;
-      case 'sftp_edit_done': {
-        const meta = this.editReadMeta;
-        this.editReadMeta = null;
-        this.resolveEditRead({
-          ok: true,
-          path: typeof msg.path === 'string' ? msg.path : (meta?.path ?? ''),
-          bytes: this.concatEditChunks(),
-          mtime: Number(msg.mtime ?? meta?.mtime ?? 0) || 0,
-          size: Number(msg.size ?? meta?.size ?? 0) || 0,
-        });
+      case 'sftp_edit_done':
+        this.editorCoordinator.onEditDone(
+          typeof msg.path === 'string' ? msg.path : '',
+          Number(msg.size) || 0,
+          Number(msg.mtime) || 0
+        );
         break;
-      }
       case 'sftp_download_progress':
         this.onDownloadProgress(msg.loaded, msg.total);
         break;
@@ -721,22 +680,15 @@ export class SFTPPanel {
     // 编辑器打开失败：由 openEditorForFile 统一 notify，避免双重报错；
     // 无待决请求时才落到面板错误横幅
     if (operation === 'edit') {
-      // hadPending 以 waiter 为准：超时回调置空 waiter 后，finally 会在同一微任务级联中复位
-      // editReadActive，迟到错误帧不可能在读取在途时被处理；此时横幅正是无待决请求的兜底展示面
-      const hadPending = this.editReadWaiter !== null;
+      const hadPending = this.editorCoordinator.hasPendingEditRead();
       const message = typeof msg.message === 'string' ? msg.message : '';
-      // 消息边界白名单校验：未知错误码一律丢弃，不触发下载回退
       const code = msg.code === 'binary' || msg.code === 'too_large' ? msg.code : undefined;
-      this.rejectEditRead(message, code);
-      if (!hadPending) {
-        // 与 rejectEditRead 一致使用边界校验后的 message，不再绕回未校验的 msg.message
-        this.showError(message);
-      }
+      this.editorCoordinator.onEditError(message, code, hadPending);
       return;
     }
 
-    if (operation === 'stat' && this.statWaiter) {
-      this.resolveStatWaiter(null);
+    if (operation === 'stat') {
+      this.editorCoordinator.onStatError();
     }
 
     if (operation === 'init' || !this.sftpReady) {
@@ -771,8 +723,7 @@ export class SFTPPanel {
   // Handle binary data (download chunks)
   handleBinaryData(data: Uint8Array): void {
     // 在线编辑读取与下载互斥使用同一条二进制流：编辑读取优先路由
-    if (this.editReadActive) {
-      this.editReadChunks.push(data);
+    if (this.editorCoordinator.handleBinaryData(data)) {
       return;
     }
     if (this.downloadFilename) {
@@ -1441,325 +1392,21 @@ export class SFTPPanel {
     void this.openEditorForFile(path, entry.name, entry.size);
   }
 
-  private async openEditorForFile(
+  private openEditorForFile(
     path: string,
     filename: string,
     knownSize: number,
     options: { fallbackToDownload?: boolean } = {}
   ): Promise<void> {
-    // 双击智能“打开”：明确不可编辑时自动转下载，不打断操作流
-    const fallbackToDownload = options.fallbackToDownload === true;
-    if (this.activeEditor) {
-      this.activeEditor.handle.focus();
-      notify(t('sftp.editorAlreadyOpen'), { variant: 'warning' });
-      return;
-    }
-    // 编辑读取互斥：同一时间只允许一次读取在途，避免后续请求覆盖 waiter/二进制分块归属
-    if (this.editReadActive) {
-      notify(t('sftp.editorLoadingOther'), { variant: 'info' });
-      return;
-    }
-    if (!isEditorSizeAllowed(knownSize)) {
-      if (fallbackToDownload) {
-        // 回退下载走既有串行下载队列，避免与在途下载并发占用二进制流
-        this.queueDownloadFile(path, filename);
-        return;
-      }
-      notify(
-        t('sftp.editorTooLarge', {
-          name: filename,
-          size: this.formatSize(knownSize),
-          max: this.formatSize(EDITOR_MAX_FILE_SIZE),
-        }),
-        { variant: 'danger' }
-      );
-      return;
-    }
-
-    this.editReadActive = true;
-    this.editReadChunks = [];
-    this.editReadMeta = null;
-    const waiter = new Deferred<EditorReadResult>();
-    this.editReadWaiter = waiter;
-    this.editReadTimeout = setTimeout(() => {
-      if (this.editReadWaiter === waiter) {
-        this.editReadWaiter = null;
-        waiter.resolve({
-          ok: false,
-          path,
-          bytes: new Uint8Array(0),
-          mtime: 0,
-          size: 0,
-          errorMessage: t('sftp.editorLoadTimeout'),
-        });
-      }
-    }, EDIT_READ_TIMEOUT_MS);
-    this.setStatus(t('sftp.editorLoading', { name: filename }));
-
-    try {
-      this.sendJSON({ type: 'sftp_edit_read', path });
-      const result = await waiter.promise;
-
-      if (!result.ok) {
-        // Worker 侧错误已携带完整文案（大小上限/二进制拒绝/权限等）
-        if (result.errorMessage) {
-          if (fallbackToDownload && shouldFallbackToDownload(result.errorCode, null)) {
-            this.queueDownloadFile(path, filename);
-            return;
-          }
-          notify(result.errorMessage, { variant: 'danger' });
-        }
-        return;
-      }
-
-      const decoded = decodeEditorContent(result.bytes);
-      if (!decoded.ok) {
-        if (fallbackToDownload && shouldFallbackToDownload(undefined, decoded.reason)) {
-          this.queueDownloadFile(path, filename);
-          return;
-        }
-        notify(
-          decoded.reason === 'binary'
-            ? t('sftp.editorBinary')
-            : t('sftp.editorEncodingUnsupported'),
-          { variant: 'warning' }
-        );
-        return;
-      }
-
-      // 非 UTF-8（GB18030 解码成功）无浏览器侧编码器可安全回写，仅只读呈现
-      const readOnly = decoded.content.encoding !== 'utf-8';
-      const encodingLabel =
-        decoded.content.encoding === 'gb18030'
-          ? t('sftp.editorEncodingGb18030')
-          : t('sftp.editorEncodingUtf8');
-      const handle = openRemoteEditor({
-        filename,
-        path,
-        content: decoded.content,
-        readOnly,
-        notice: readOnly ? t('sftp.editorReadOnlyNotice', { encoding: encodingLabel }) : undefined,
-        onSave: () => this.saveActiveEditor(),
-        onClose: () => {
-          this.activeEditor = null;
-          if (this.visible && this.sftpReady) this.refresh();
-        },
-      });
-
-      this.activeEditor = {
-        path,
-        filename,
-        encoding: decoded.content.encoding,
-        bom: decoded.content.bom,
-        eol: decoded.content.eol,
-        mtime: result.mtime,
-        size: result.size,
-        handle,
-      };
-    } catch (e) {
-      notify(
-        t('sftp.editorLoadFailed', { message: e instanceof Error ? e.message : String(e) }),
-        { variant: 'danger' }
-      );
-    } finally {
-      this.editReadActive = false;
-      this.editReadChunks = [];
-      this.editReadMeta = null;
-      if (this.editReadTimeout) {
-        clearTimeout(this.editReadTimeout);
-        this.editReadTimeout = null;
-      }
-      this.setIdleStatus(this.getItemsStatus());
-    }
-  }
-
-  private async saveActiveEditor(): Promise<boolean> {
-    const session = this.activeEditor;
-    if (!session) return false;
-    if (!this.sftpReady) {
-      notify(t('sftp.editorSaveFailed', { message: t('sftp.disconnected') }), {
-        variant: 'danger',
-      });
-      return false;
-    }
-    const content = session.handle.getContent();
-
-    // 保存冲突检测：重新 stat 远端并与打开时基线比对（业界规范的 mtime+size 快照法）
-    const remote = await this.statRemote(session.path);
-    if (remote.ok) {
-      if (remote.mtime !== session.mtime || remote.size !== session.size) {
-        const overwrite = await confirmAction({
-          title: t('sftp.editorRemoteChangedTitle'),
-          message: t('sftp.editorRemoteChangedMessage', { name: session.filename }),
-          confirmText: t('sftp.editorOverwrite'),
-          cancelText: t('common.cancel'),
-          variant: 'danger',
-        });
-        if (!overwrite) return false;
-      }
-    } else {
-      const proceed = await confirmAction({
-        title: t('sftp.editorUnverifiableTitle'),
-        message: t('sftp.editorUnverifiableMessage', { name: session.filename }),
-        confirmText: t('sftp.editorOverwrite'),
-        cancelText: t('common.cancel'),
-        variant: 'danger',
-      });
-      if (!proceed) return false;
-    }
-
-    // 按原文件 EOL/BOM 编码回 UTF-8 字节，经既有上传队列覆盖保存（保留 inode 属主）
-    const bytes = encodeEditorContent(content, { bom: session.bom, eol: session.eol });
-    const file = new File([bytes], session.filename);
-    const dirPath = session.path.slice(0, session.path.lastIndexOf('/')) || '/';
-    let uploaded: boolean;
-    try {
-      uploaded = await this.enqueueUploadTask(file, dirPath, {
-        overwriteFirst: true,
-        reportError: false,
-      });
-    } catch (e) {
-      notify(
-        t('sftp.editorSaveFailed', { message: e instanceof Error ? e.message : String(e) }),
-        { variant: 'danger' }
-      );
-      return false;
-    }
-    if (!uploaded) {
-      notify(t('sftp.editorSaveFailed', { message: t('sftp.uploadCancelled') }), {
-        variant: 'danger',
-      });
-      return false;
-    }
-
-    // 保存成功后刷新基线：stat 在 sftpTaskQueue 中排在 upload_end 之后，读到的是新 mtime；
-    // 若此次 stat 失败则基线置为 -1，下次保存必然触发冲突确认，不会静默覆盖
-    const after = await this.statRemote(session.path);
-    if (after.ok) {
-      session.mtime = after.mtime;
-      session.size = after.size;
-    } else {
-      session.mtime = -1;
-      session.size = -1;
-    }
-    session.handle.markSaved();
-    notify(t('sftp.editorSaved', { name: session.filename }), { variant: 'success' });
-    return true;
-  }
-
-  private statRemote(path: string): Promise<RemoteStatResult> {
-    if (this.statWaiter) {
-      return Promise.resolve({ ok: false, mtime: 0, size: 0 });
-    }
-    const deferred = new Deferred<RemoteStatResult>();
-    this.statWaiter = deferred;
-    this.statTimeout = setTimeout(() => {
-      if (this.statWaiter === deferred) {
-        this.statWaiter = null;
-        deferred.resolve({ ok: false, mtime: 0, size: 0 });
-      }
-    }, STAT_TIMEOUT_MS);
-    void deferred.promise
-      .then(() => this.clearStatTimeout())
-      .catch(() => this.clearStatTimeout());
-    this.sendJSON({ type: 'sftp_stat', path });
-    return deferred.promise;
-  }
-
-  private clearStatTimeout(): void {
-    if (this.statTimeout) {
-      clearTimeout(this.statTimeout);
-      this.statTimeout = null;
-    }
-  }
-
-  private resolveStatWaiter(msg: any): void {
-    const waiter = this.statWaiter;
-    this.statWaiter = null;
-    this.clearStatTimeout();
-    if (!waiter) return;
-    const attrs = msg?.attrs;
-    if (attrs && typeof attrs === 'object') {
-      waiter.resolve({
-        ok: true,
-        mtime: Number(attrs.modifiedTime) || 0,
-        size: Number(attrs.size) || 0,
-      });
-    } else {
-      waiter.resolve({ ok: false, mtime: 0, size: 0 });
-    }
-  }
-
-  private resolveEditRead(result: EditorReadResult): void {
-    const waiter = this.editReadWaiter;
-    this.editReadWaiter = null;
-    if (this.editReadTimeout) {
-      clearTimeout(this.editReadTimeout);
-      this.editReadTimeout = null;
-    }
-    waiter?.resolve(result);
-  }
-
-  private rejectEditRead(message: string, code?: EditReadErrorCode): void {
-    const waiter = this.editReadWaiter;
-    this.editReadWaiter = null;
-    if (this.editReadTimeout) {
-      clearTimeout(this.editReadTimeout);
-      this.editReadTimeout = null;
-    }
-    this.editReadChunks = [];
-    const path = this.editReadMeta?.path ?? '';
-    this.editReadMeta = null;
-    waiter?.resolve({
-      ok: false,
-      path,
-      bytes: new Uint8Array(0),
-      mtime: 0,
-      size: 0,
-      errorMessage: message,
-      errorCode: code,
-    });
-  }
-
-  private concatEditChunks(): Uint8Array {
-    const chunks = this.editReadChunks;
-    this.editReadChunks = [];
-    const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-    const out = new Uint8Array(total);
-    let offset = 0;
-    for (const chunk of chunks) {
-      out.set(chunk, offset);
-      offset += chunk.length;
-    }
-    return out;
+    return this.editorCoordinator.openEditorForFile(path, filename, knownSize, options);
   }
 
   private closeActiveEditor(): void {
-    const editor = this.activeEditor;
-    this.activeEditor = null;
-    editor?.handle.close();
+    this.editorCoordinator.closeActiveEditor();
   }
 
   private resetEditState(): void {
-    this.editReadActive = false;
-    this.editReadChunks = [];
-    this.editReadMeta = null;
-    if (this.editReadTimeout) {
-      clearTimeout(this.editReadTimeout);
-      this.editReadTimeout = null;
-    }
-    this.editReadWaiter?.resolve({
-      ok: false,
-      path: '',
-      bytes: new Uint8Array(0),
-      mtime: 0,
-      size: 0,
-      errorMessage: t('sftp.editorLoadTimeout'),
-    });
-    this.editReadWaiter = null;
-    this.clearStatTimeout();
-    this.statWaiter?.resolve({ ok: false, mtime: 0, size: 0 });
-    this.statWaiter = null;
+    this.editorCoordinator.resetEditState();
   }
 
   private cancelCurrentTransfer(): void {
@@ -1841,16 +1488,7 @@ export class SFTPPanel {
     const entries = [...this.selectedEntries.values()];
     if (entries.length === 0) return;
 
-    const confirmed = await confirmAction({
-      title: t('sftp.deleteTitle'),
-      message:
-        entries.length === 1
-          ? t('sftp.deleteMessage', { name: entries[0].name })
-          : t('sftp.deleteManyMessage', { count: entries.length }),
-      confirmText: t('common.delete'),
-      cancelText: t('common.cancel'),
-      variant: 'danger',
-    });
+    const confirmed = await confirmDeleteItems(entries.map((e) => e.name));
     if (!confirmed) return;
 
     this.pendingDeleteCount = entries.length;
@@ -1876,16 +1514,7 @@ export class SFTPPanel {
     if (selected.length !== 1) return;
     const entry = selected[0];
 
-    const newName = await requestText({
-      title: t('sftp.renameTitle'),
-      message: t('sftp.renameMessage', { name: entry.name }),
-      label: t('sftp.name'),
-      defaultValue: entry.name,
-      confirmText: t('sftp.rename'),
-      cancelText: t('common.cancel'),
-      maxLength: 255,
-      validate: validateRemoteName,
-    });
+    const newName = await promptRename(entry.name);
     if (!newName || newName === entry.name) return;
 
     const oldPath =
@@ -1986,16 +1615,7 @@ export class SFTPPanel {
 
   // New File
   private async showNewFileDialog(): Promise<void> {
-    const name = await requestText({
-      title: t('sftp.newFileTitle'),
-      message: t('sftp.newFileMessage'),
-      label: t('sftp.name'),
-      placeholder: t('sftp.newFilePlaceholder'),
-      confirmText: t('common.confirm'),
-      cancelText: t('common.cancel'),
-      maxLength: 255,
-      validate: validateRemoteName,
-    });
+    const name = await promptNewFileName();
     if (!name) return;
 
     const path = this.currentPath === '/' ? `/${name}` : `${this.currentPath}/${name}`;
@@ -2019,16 +1639,7 @@ export class SFTPPanel {
 
   // Mkdir
   private async showMkdirDialog(): Promise<void> {
-    const name = await requestText({
-      title: t('sftp.mkdirTitle'),
-      message: t('sftp.mkdirMessage'),
-      label: t('sftp.name'),
-      placeholder: t('sftp.mkdirMessage'),
-      confirmText: t('common.confirm'),
-      cancelText: t('common.cancel'),
-      maxLength: 255,
-      validate: validateRemoteName,
-    });
+    const name = await promptMkdirName();
     if (!name) return;
 
     const path = this.currentPath === '/' ? `/${name}` : `${this.currentPath}/${name}`;
@@ -2166,6 +1777,7 @@ export class SFTPPanel {
     this.localeCleanup = null;
     this.resetUploadQueue();
     this.resetDownloadQueue();
+    this.editorCoordinator.dispose();
     this.closeWebSocket(1000, 'SFTP panel disposed');
     document.removeEventListener('keydown', this.keydownHandler);
     this.container.remove();

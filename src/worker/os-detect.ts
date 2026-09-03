@@ -4,6 +4,7 @@
  * 通过 exec channel 在远端执行一条命令获取系统标识，再把输出解析为
  * 规范的操作系统 key（小写），用于服务器卡片图标与数据库持久化。
  */
+import type { Env } from '../types';
 
 /**
  * 检测命令：优先读取 /etc/os-release（现代发行版），其次旧式
@@ -148,4 +149,56 @@ export function parseDetectedOS(output: string): string {
   }
 
   return 'unknown';
+}
+
+export interface DetectRemoteOSContext {
+  serverId: number;
+  userId: string;
+  githubId: string;
+  env?: Env | null;
+  executeCommand: (command: string, timeout: number) => Promise<{ stdout: string }>;
+  onOSDetected?: (os: string) => void;
+  sendDebug?: (message: string) => void;
+}
+
+/**
+ * 在远端执行检测命令，解析操作系统，并在识别成功后写入 UserDBDO。
+ */
+export async function detectAndPersistRemoteOS(
+  ctx: DetectRemoteOSContext
+): Promise<string | null> {
+  try {
+    const result = await ctx.executeCommand(DETECT_OS_COMMAND, 5000);
+    // stderr 可能包含 Shell 或权限错误，不能参与发行版名称解析。
+    const os = parseDetectedOS(result.stdout);
+    if (!isDetectedOS(os)) {
+      ctx.sendDebug?.('OS detect returned unknown; leaving it unset for the next connection');
+      return null;
+    }
+
+    if (ctx.env) {
+      try {
+        const userDb = ctx.env.USER_DB as any;
+        const stub = userDb.get(userDb.idFromName(ctx.githubId));
+        const res = await stub.fetch(
+          new Request(`http://internal/internal/servers/${ctx.serverId}/os`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: Number(ctx.userId), os }),
+          })
+        );
+        if (!res.ok) {
+          ctx.sendDebug?.(`OS detect persist failed: ${res.status}`);
+        }
+      } catch (e) {
+        ctx.sendDebug?.(`OS detect persist error: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    ctx.onOSDetected?.(os);
+    return os;
+  } catch (e) {
+    ctx.sendDebug?.(`OS detect error: ${e instanceof Error ? e.message : String(e)}`);
+    return null;
+  }
 }
