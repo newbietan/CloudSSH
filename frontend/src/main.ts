@@ -195,7 +195,7 @@ function initTerminalTab(): void {
   const wsUrl = params.get('wsUrl')!;
   const serverName = params.get('name') || 'Server';
   const host = params.get('host') || '';
-  const port = parseInt(params.get('port') || '0') || 0;
+  const port = parseInt(params.get('port') || '0', 10) || 0;
 
   if (!validateWsUrl(wsUrl)) {
     const errorDiv = document.createElement('div');

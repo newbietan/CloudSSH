@@ -969,7 +969,7 @@ export class SFTPPanel {
     entriesContainer.querySelectorAll('.sftp-entry').forEach((el) => {
       el.addEventListener('click', (e) => {
         const target = el as HTMLElement;
-        const idx = parseInt(target.dataset['idx']!);
+        const idx = parseInt(target.dataset.idx!, 10);
         this.selectEntry(idx, {
           additive: (e as MouseEvent).ctrlKey || (e as MouseEvent).metaKey,
           range: (e as MouseEvent).shiftKey,
@@ -978,7 +978,7 @@ export class SFTPPanel {
 
       el.addEventListener('dblclick', () => {
         const target = el as HTMLElement;
-        const idx = parseInt(target.dataset['idx']!);
+        const idx = parseInt(target.dataset.idx!, 10);
         const entry = sorted[idx];
         if (entry.isDir) {
           this.navigate(
@@ -997,7 +997,7 @@ export class SFTPPanel {
         const me = e as MouseEvent;
         me.preventDefault();
         const target = el as HTMLElement;
-        const idx = parseInt(target.dataset['idx']!);
+        const idx = parseInt(target.dataset.idx!, 10);
         const entry = sorted[idx];
         if (!this.selectedEntries.has(entry.name)) {
           this.selectEntry(idx, { additive: false, range: false });
@@ -1047,7 +1047,7 @@ export class SFTPPanel {
 
   private syncSelectionUI(): void {
     this.container.querySelectorAll<HTMLElement>('.sftp-entry').forEach((element) => {
-      const selected = this.selectedEntries.has(element.dataset['name'] || '');
+      const selected = this.selectedEntries.has(element.dataset.name || '');
       element.classList.toggle('bg-surface-variant', selected);
       element.setAttribute('aria-selected', String(selected));
     });
@@ -2042,7 +2042,7 @@ export class SFTPPanel {
           <button type="button" class="sftp-crumb-item flex items-center px-1 py-0.5 rounded hover:bg-surface-variant text-[12px] cursor-pointer transition-colors ${isLast ? 'text-primary-container font-semibold' : 'text-on-surface-variant'}" data-path="${this.escapeHtml(crumb.path)}" title="${this.escapeHtml(crumb.path)}">
             ${isRoot ? '<span class="material-symbols-outlined" style="font-size: 15px; font-variation-settings: \'FILL\' 1;">storage</span>' : this.escapeHtml(crumb.name)}
           </button>
-          ${!isLast ? '<span class="text-on-surface-variant/40 text-[10px] select-none mx-0.5">/</span>' : ''}
+          ${isLast ? '' : '<span class="text-on-surface-variant/40 text-[10px] select-none mx-0.5">/</span>'}
         `;
       })
       .join('');

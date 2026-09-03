@@ -217,9 +217,9 @@ export async function inferLocationHint(host: string): Promise<InferResult> {
 
     // US/CA 用经度切东西海岸；其他国家直接取映射值
     const hint =
-      longitude !== undefined
-        ? refineForUsCanada(data.country, longitude)
-        : COUNTRY_TO_HINT[data.country];
+      longitude === undefined
+        ? COUNTRY_TO_HINT[data.country]
+        : refineForUsCanada(data.country, longitude);
 
     debug.push(`[IP-GEO] 国家 ${data.country} 映射为: ${hint}`);
 

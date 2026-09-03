@@ -257,7 +257,7 @@ export class UserDBDO {
       if (path === '/internal/servers' && request.method === 'GET') {
         const userIdStr = url.searchParams.get('user_id');
         if (!userIdStr) return Response.json({ error: 'Missing user_id' }, { status: 400 });
-        const userId = parseInt(userIdStr);
+        const userId = parseInt(userIdStr, 10);
         if (isNaN(userId)) return Response.json({ error: 'Invalid user_id' }, { status: 400 });
         return this.handleGetServers(userId);
       }
@@ -268,7 +268,7 @@ export class UserDBDO {
       // /internal/servers/:id
       const serverMatch = path.match(/^\/internal\/servers\/(\d+)$/);
       if (serverMatch) {
-        const serverId = parseInt(serverMatch[1]);
+        const serverId = parseInt(serverMatch[1], 10);
         if (request.method === 'PUT') return this.handleUpdateServer(serverId, request);
         if (request.method === 'DELETE') return this.handleDeleteServer(serverId, request);
       }
@@ -276,19 +276,19 @@ export class UserDBDO {
       // /internal/servers/:id/connect
       const connectMatch = path.match(/^\/internal\/servers\/(\d+)\/connect$/);
       if (connectMatch && request.method === 'POST') {
-        return this.handleConnectServer(parseInt(connectMatch[1]), request);
+        return this.handleConnectServer(parseInt(connectMatch[1], 10), request);
       }
 
       // /internal/servers/:id/share-config —— 仅由 SSHShareDO 兑换一次性分享时调用
       const shareConfigMatch = path.match(/^\/internal\/servers\/(\d+)\/share-config$/);
       if (shareConfigMatch && request.method === 'POST') {
-        return this.handleShareConnectionConfig(parseInt(shareConfigMatch[1]), request);
+        return this.handleShareConnectionConfig(parseInt(shareConfigMatch[1], 10), request);
       }
 
       // /internal/servers/:id/shares —— 分享元数据归所有者 UserDBDO 管理
       const serverSharesMatch = path.match(/^\/internal\/servers\/(\d+)\/shares$/);
       if (serverSharesMatch) {
-        const serverId = parseInt(serverSharesMatch[1]);
+        const serverId = parseInt(serverSharesMatch[1], 10);
         if (request.method === 'GET') {
           const userId = Number(url.searchParams.get('user_id'));
           return this.handleListShares(serverId, userId);
@@ -314,14 +314,14 @@ export class UserDBDO {
       // /internal/servers/:id/os —— 仅由 SSHSession（可信会话）通过 DO stub 调用
       const osMatch = path.match(/^\/internal\/servers\/(\d+)\/os$/);
       if (osMatch && request.method === 'PUT') {
-        return this.handleUpdateServerOS(parseInt(osMatch[1]), request);
+        return this.handleUpdateServerOS(parseInt(osMatch[1], 10), request);
       }
 
       // --- 用户自定义主题 ---
       if (path === '/internal/theme' && request.method === 'GET') {
         const userIdStr = url.searchParams.get('user_id');
         if (!userIdStr) return Response.json({ error: 'Missing user_id' }, { status: 400 });
-        const userId = parseInt(userIdStr);
+        const userId = parseInt(userIdStr, 10);
         if (isNaN(userId)) return Response.json({ error: 'Invalid user_id' }, { status: 400 });
         return this.handleGetTheme(userId);
       }
@@ -337,7 +337,7 @@ export class UserDBDO {
       if (path === '/internal/known-hosts' && request.method === 'GET') {
         const userIdStr = url.searchParams.get('user_id');
         if (!userIdStr) return Response.json({ error: 'Missing user_id' }, { status: 400 });
-        const userId = parseInt(userIdStr);
+        const userId = parseInt(userIdStr, 10);
         if (isNaN(userId)) return Response.json({ error: 'Invalid user_id' }, { status: 400 });
         return this.handleGetKnownHosts(
           userId,
@@ -356,7 +356,7 @@ export class UserDBDO {
       if (path === '/internal/snippets' && request.method === 'GET') {
         const userIdStr = url.searchParams.get('user_id');
         if (!userIdStr) return Response.json({ error: 'Missing user_id' }, { status: 400 });
-        const userId = parseInt(userIdStr);
+        const userId = parseInt(userIdStr, 10);
         if (isNaN(userId)) return Response.json({ error: 'Invalid user_id' }, { status: 400 });
         return this.handleGetSnippets(userId);
       }
@@ -365,7 +365,7 @@ export class UserDBDO {
       }
       const snippetMatch = path.match(/^\/internal\/snippets\/(\d+)$/);
       if (snippetMatch) {
-        const snippetId = parseInt(snippetMatch[1]);
+        const snippetId = parseInt(snippetMatch[1], 10);
         if (request.method === 'PUT') return this.handleUpdateSnippet(snippetId, request);
         if (request.method === 'DELETE') return this.handleDeleteSnippet(snippetId, request);
       }
@@ -374,7 +374,7 @@ export class UserDBDO {
       if (path === '/internal/ai-config' && request.method === 'GET') {
         const userIdStr = url.searchParams.get('user_id');
         if (!userIdStr) return Response.json({ error: 'Missing user_id' }, { status: 400 });
-        const userId = parseInt(userIdStr);
+        const userId = parseInt(userIdStr, 10);
         if (isNaN(userId)) return Response.json({ error: 'Invalid user_id' }, { status: 400 });
         return this.handleGetAIConfig(userId);
       }
@@ -384,7 +384,7 @@ export class UserDBDO {
       if (path === '/internal/ai-config/decrypt' && request.method === 'GET') {
         const userIdStr = url.searchParams.get('user_id');
         if (!userIdStr) return Response.json({ error: 'Missing user_id' }, { status: 400 });
-        const userId = parseInt(userIdStr);
+        const userId = parseInt(userIdStr, 10);
         if (isNaN(userId)) return Response.json({ error: 'Invalid user_id' }, { status: 400 });
         return this.handleGetAIConfigDecrypted(userId);
       }
@@ -1474,7 +1474,7 @@ export class UserDBDO {
         'SELECT fingerprint FROM known_hosts WHERE user_id = ? AND host = ? AND port = ?',
         userId,
         host,
-        parseInt(port)
+        parseInt(port, 10)
       );
         if (rows.length === 0) {
           return Response.json({ fingerprint: null });

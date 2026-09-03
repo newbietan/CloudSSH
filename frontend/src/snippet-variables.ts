@@ -34,7 +34,7 @@ export function resolveSnippetVariables(
 ): string {
   return command.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (fullMatch, varName: string) => {
     const key = varName.trim();
-    if (Object.prototype.hasOwnProperty.call(values, key)) {
+    if (Object.hasOwn(values, key)) {
       return values[key];
     }
     return fullMatch;
