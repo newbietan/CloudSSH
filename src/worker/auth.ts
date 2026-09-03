@@ -101,7 +101,7 @@ function oauthFailure(message: string, status: number): Response {
  */
 export async function getAuthenticatedUser(request: Request, env: Env): Promise<UserInfo | null> {
   const cookies = parseCookies(request);
-  const sessionToken = cookies['session'];
+  const sessionToken = cookies.session;
   if (!sessionToken) return null;
 
   const [githubId] = sessionToken.split(':');
@@ -172,7 +172,7 @@ export async function handleGitHubCallback(request: Request, env: Env): Promise<
 
   // 1. 验证 state (防 CSRF)
   const cookies = parseCookies(request);
-  if (!state || state !== cookies['oauth_state']) {
+  if (!state || state !== cookies.oauth_state) {
     return new Response('Invalid state parameter (CSRF protection)', { status: 403 });
   }
 
@@ -277,7 +277,7 @@ export async function handleGitHubCallback(request: Request, env: Env): Promise<
  */
 export async function handleLogout(request: Request, env: Env): Promise<Response> {
   const cookies = parseCookies(request);
-  const sessionToken = cookies['session'];
+  const sessionToken = cookies.session;
 
   if (sessionToken) {
     const [githubId] = sessionToken.split(':');

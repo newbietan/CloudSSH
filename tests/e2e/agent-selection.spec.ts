@@ -84,3 +84,30 @@ test('terminal selection is attached for review and sent only with a user questi
   await expect(context).toBeHidden();
   await expect(input).toBeFocused();
 });
+
+test('clicking quick prompt chips populates agent input', async ({ page }) => {
+  await mockAnonymousSession(page);
+  await page.goto('/?lang=zh-CN');
+
+  await page.evaluate(async () => {
+    const agentModule = await (window as any).eval("import('/src/agent/agent-panel.ts')");
+    const root = document.createElement('div');
+    root.id = 'agent-chip-test-root';
+    root.style.width = '900px';
+    root.style.height = '640px';
+    root.style.display = 'flex';
+    document.body.appendChild(root);
+
+    const panel = new agentModule.AgentPanel(root, true);
+    panel.render();
+    panel.show();
+  });
+
+  const chip = page.locator('.agent-quick-chip[data-prompt-key="promptError"]');
+  await expect(chip).toBeVisible();
+  await chip.click();
+
+  const input = page.locator('#agent-input');
+  await expect(input).toHaveValue('请读取当前终端上下文，分析最近输出的报错信息并提供排查建议。');
+  await expect(page.locator('#agent-send-btn')).toBeEnabled();
+});

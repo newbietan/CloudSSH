@@ -143,3 +143,19 @@ test('展示多级跳转路径并在编辑时排除自身跳板', async ({ page 
   await expect(regionSelect).toBeEnabled();
   await expect(regionSelect).toHaveValue('');
 });
+
+test('点击克隆服务器按钮打开预填表单并附带复制后缀', async ({ page }) => {
+  await page.goto('/?lang=zh-CN');
+
+  const cloneBtn = page.locator('#clone-1');
+  await expect(cloneBtn).toBeVisible();
+  await cloneBtn.click();
+
+  const modal = page.locator('#server-modal');
+  await expect(modal).toBeVisible();
+  await expect(page.locator('#modal-title')).toContainText('克隆服务器');
+  await expect(page.locator('#server-name')).toHaveValue('Server 01 (复制)');
+  await expect(page.locator('#server-host')).toHaveValue('203.0.113.42');
+  await expect(page.locator('#server-port')).toHaveValue('22');
+  await expect(page.locator('#server-username')).toHaveValue('deploy');
+});

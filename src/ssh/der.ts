@@ -84,7 +84,7 @@ function readTLV(
   }
   const value = data.subarray(pos, pos + length);
   const end = pos + length;
-  const children = (tag & CONSTRUCTED_FLAG) !== 0 ? parseChildren(value, context) : null;
+  const children = (tag & CONSTRUCTED_FLAG) === 0 ? null : parseChildren(value, context);
   return [{ tag, value, children }, end];
 }
 

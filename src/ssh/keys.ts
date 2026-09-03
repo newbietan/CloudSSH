@@ -1,5 +1,5 @@
 import type { SessionKeys } from '../types';
-import { concat, encodeString } from './utils';
+import { concat } from './utils';
 
 export class KeyDerivation {
   static async deriveKeys(

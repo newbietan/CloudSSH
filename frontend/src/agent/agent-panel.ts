@@ -131,6 +131,24 @@ export class AgentPanel {
       </div>
       <div id="agent-messages" class="flex-1 overflow-y-auto px-4 py-3 space-y-3 custom-scrollbar text-[13px]"></div>
       <div class="agent-panel-composer px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-elevated)]">
+        <div id="agent-quick-chips" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-2 select-none">
+          <button type="button" class="agent-quick-chip shrink-0 text-[11px] px-2 py-0.5 rounded border border-outline-variant/60 hover:border-[var(--accent)] text-muted hover:text-primary transition-colors cursor-pointer flex items-center gap-1 bg-[var(--bg)]" data-prompt-key="promptError">
+            <span class="material-symbols-outlined text-[13px] text-error">error_outline</span>
+            <span data-i18n="agent.chipError">分析报错</span>
+          </button>
+          <button type="button" class="agent-quick-chip shrink-0 text-[11px] px-2 py-0.5 rounded border border-outline-variant/60 hover:border-[var(--accent)] text-muted hover:text-primary transition-colors cursor-pointer flex items-center gap-1 bg-[var(--bg)]" data-prompt-key="promptSystem">
+            <span class="material-symbols-outlined text-[13px] text-primary">monitoring</span>
+            <span data-i18n="agent.chipSystem">系统负载</span>
+          </button>
+          <button type="button" class="agent-quick-chip shrink-0 text-[11px] px-2 py-0.5 rounded border border-outline-variant/60 hover:border-[var(--accent)] text-muted hover:text-primary transition-colors cursor-pointer flex items-center gap-1 bg-[var(--bg)]" data-prompt-key="promptNetwork">
+            <span class="material-symbols-outlined text-[13px] text-secondary">lan</span>
+            <span data-i18n="agent.chipNetwork">端口网络</span>
+          </button>
+          <button type="button" class="agent-quick-chip shrink-0 text-[11px] px-2 py-0.5 rounded border border-outline-variant/60 hover:border-[var(--accent)] text-muted hover:text-primary transition-colors cursor-pointer flex items-center gap-1 bg-[var(--bg)]" data-prompt-key="promptDocker">
+            <span class="material-symbols-outlined text-[13px]">deployed_code</span>
+            <span data-i18n="agent.chipDocker">Docker 状态</span>
+          </button>
+        </div>
         <div id="agent-context" class="agent-context-container hidden"></div>
         <div class="flex gap-2.5 items-end">
           <textarea id="agent-input" data-i18n-placeholder="agent.placeholder" placeholder="描述你希望 Agent 完成的任务…"
@@ -162,6 +180,19 @@ export class AgentPanel {
 
   private bindEvents(): void {
     this.panelEl?.querySelector('#agent-close-btn')?.addEventListener('click', () => this.hide());
+
+    this.panelEl?.querySelectorAll('.agent-quick-chip').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const key = (btn as HTMLElement).dataset.promptKey;
+        if (!key || !this.inputEl) return;
+        const promptText = t(`agent.${key}` as any);
+        this.inputEl.value = promptText;
+        this.inputEl.focus();
+        this.inputEl.style.height = 'auto';
+        this.inputEl.style.height = `${Math.min(this.inputEl.scrollHeight, 140)}px`;
+        this.updateInputState();
+      });
+    });
 
     this.sendBtn?.addEventListener('click', () => this.handleSend());
 

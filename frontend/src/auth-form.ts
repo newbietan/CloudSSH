@@ -492,7 +492,7 @@ export class ConnectionForm {
         const item = {
           id: `${cred.username}@${cred.host}:${cred.port}`,
           host: cred.host,
-          port: parseInt(cred.port) || 22,
+          port: parseInt(cred.port, 10) || 22,
           username: cred.username,
           authMethod: cred.authMethod === 'publickey' ? 'publickey' : 'password',
           timestamp: Date.now(),

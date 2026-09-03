@@ -77,17 +77,18 @@ export class SSHPacketParser {
 
     this.bufferedLength -= bytes;
 
-    while (bytes > 0) {
+    let remaining = bytes;
+    while (remaining > 0) {
       const chunk = this.chunks[this.chunkIndex];
       const available = chunk.length - this.readOffset;
 
-      if (bytes < available) {
-        this.readOffset += bytes;
+      if (remaining < available) {
+        this.readOffset += remaining;
         this.compactChunks();
         return;
       }
 
-      bytes -= available;
+      remaining -= available;
       this.chunkIndex++;
       this.readOffset = 0;
     }

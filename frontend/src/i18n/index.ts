@@ -115,7 +115,9 @@ export function setLocale(locale: Locale, options: { persist?: boolean } = {}): 
       /* storage may be disabled */
     }
   }
-  listeners.forEach((listener) => listener(locale));
+  listeners.forEach((listener) => {
+    listener(locale);
+  });
 }
 
 export function onLocaleChange(listener: (locale: Locale) => void): () => void {

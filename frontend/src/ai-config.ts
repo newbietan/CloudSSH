@@ -5,8 +5,6 @@ import { t, translateDocument } from './i18n';
 export class AIConfigPanel {
   private modalEl: HTMLElement | null = null;
 
-  constructor() {}
-
   show(): void {
     if (!this.modalEl) this.render();
     this.modalEl!.classList.remove('hidden');
