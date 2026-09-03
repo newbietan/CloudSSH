@@ -15,8 +15,12 @@ import {
   type SnippetStore,
   snippetErrorMessage,
 } from './snippet-store';
+import {
+  extractSnippetVariables,
+  resolveSnippetVariables,
+} from './snippet-variables';
 import type { SSHTerminal } from './terminal';
-import { confirmAction, notify } from './ui-feedback';
+import { confirmAction, notify, requestText } from './ui-feedback';
 
 export interface SnippetManagerDeps {
   /** 返回当前激活标签页的终端；无激活会话时返回 null。 */
@@ -328,8 +332,8 @@ export class SnippetManager {
     if (!snippet) return;
 
     const action = actionEl.dataset.action;
-    if (action === 'insert') this.insertSnippet(snippet, false);
-    else if (action === 'insert_and_run') this.insertSnippet(snippet, true);
+    if (action === 'insert') await this.insertSnippet(snippet, false);
+    else if (action === 'insert_and_run') await this.insertSnippet(snippet, true);
     else if (action === 'copy') void this.copySnippet(snippet);
     else if (action === 'edit') this.startEdit(snippet);
     else if (action === 'delete') await this.deleteSnippet(snippet);
@@ -344,13 +348,36 @@ export class SnippetManager {
     }
   }
 
-  private insertSnippet(snippet: CommandSnippet, run: boolean): void {
+  private async insertSnippet(snippet: CommandSnippet, run: boolean): Promise<void> {
     const terminal = this.deps.getTerminal();
     if (!terminal) {
       notify(t('snippets.noActiveTerminal'), { variant: 'warning' });
       return;
     }
-    if (!terminal.insertSnippet(snippet.command, run)) {
+
+    let finalCommand = snippet.command;
+    const variables = extractSnippetVariables(snippet.command);
+    if (variables.length > 0) {
+      const values: Record<string, string> = {};
+      for (const varName of variables) {
+        const val = await requestText({
+          title: t('snippets.variableTitle'),
+          message: t('snippets.promptVariable', { name: varName }),
+          label: varName,
+          placeholder: varName,
+          confirmText: t('common.confirm'),
+          cancelText: t('common.cancel'),
+        });
+        if (val === null) {
+          // 用户取消输入参数，中止本次填入
+          return;
+        }
+        values[varName] = val;
+      }
+      finalCommand = resolveSnippetVariables(snippet.command, values);
+    }
+
+    if (!terminal.insertSnippet(finalCommand, run)) {
       notify(t('snippets.insertFailed'), { variant: 'warning' });
       return;
     }

@@ -1535,6 +1535,16 @@ select optgroup {
   max-width: 120px;
 }
 
+.tab-rename-input {
+  max-width: 120px;
+  height: 20px;
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 20px;
+  border-radius: 2px;
+  outline: none;
+}
+
 .network-latency-item {
   display: inline-flex;
   align-items: center;
