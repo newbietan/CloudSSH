@@ -1,4 +1,10 @@
 import { onLocaleChange, t, translateDocument } from './i18n';
+import {
+  parsePathBreadcrumbs,
+  sortSFTPEntries,
+  type SFTPSortField,
+  type SFTPSortOptions,
+} from './sftp-helpers';
 import { updateSelection } from './sftp-selection';
 import { confirmAction, notify, requestText } from './ui-feedback';
 import {
@@ -186,6 +192,7 @@ export class SFTPPanel {
   private currentPath: string = '/';
   private entries: SFTPFileEntry[] = [];
   private renderedEntries: SFTPFileEntry[] = [];
+  private sortOptions: SFTPSortOptions = { field: 'name', direction: 'asc' };
   private selectedEntries: Map<string, SFTPFileEntry> = new Map();
   private selectionAnchorIndex: number | null = null;
   private pendingDeleteCount = 0;
@@ -276,26 +283,33 @@ export class SFTPPanel {
 
         <!-- Toolbar -->
         <div class="sftp-panel-toolbar flex items-center gap-2 px-3 py-2 border-b border-outline-variant bg-surface shrink-0">
-          <button id="sftp-back-btn" class="p-1 hover:bg-surface-variant rounded transition-colors cursor-pointer" data-i18n-title="sftp.back" title="返回上一级">
+          <button id="sftp-back-btn" class="p-1 hover:bg-surface-variant rounded transition-colors cursor-pointer shrink-0" data-i18n-title="sftp.back" title="返回上一级">
             <span class="material-symbols-outlined" style="font-size: 18px;">arrow_back</span>
           </button>
-          <button id="sftp-home-btn" class="p-1 hover:bg-surface-variant rounded transition-colors cursor-pointer" data-i18n-title="sftp.home" title="主目录">
+          <button id="sftp-home-btn" class="p-1 hover:bg-surface-variant rounded transition-colors cursor-pointer shrink-0" data-i18n-title="sftp.home" title="主目录">
             <span class="material-symbols-outlined" style="font-size: 18px;">home</span>
           </button>
-          <button id="sftp-refresh-btn" class="p-1 hover:bg-surface-variant rounded transition-colors cursor-pointer" data-i18n-title="sftp.refresh" title="刷新">
+          <button id="sftp-refresh-btn" class="p-1 hover:bg-surface-variant rounded transition-colors cursor-pointer shrink-0" data-i18n-title="sftp.refresh" title="刷新">
             <span class="material-symbols-outlined" style="font-size: 18px;">refresh</span>
           </button>
-          <input id="sftp-path-input" class="flex-1 terminal-input text-[12px] px-2 py-1" type="text" value="/" />
-          <button id="sftp-go-btn" class="p-1 hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" data-i18n-title="sftp.go" title="前往">
+          <div id="sftp-path-bar" class="flex-1 relative flex items-center min-w-0 h-[28px] rounded border border-outline-variant bg-surface-variant/20 focus-within:border-primary-container overflow-hidden">
+            <div id="sftp-breadcrumbs" class="flex items-center gap-0.5 px-2 text-[12px] overflow-x-auto no-scrollbar w-full h-full select-none cursor-text"></div>
+            <input id="sftp-path-input" class="hidden w-full h-full bg-transparent px-2 text-[12px] font-code outline-none terminal-input border-0" type="text" value="/" />
+          </div>
+          <button id="sftp-go-btn" class="p-1 hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container shrink-0" data-i18n-title="sftp.go" title="前往">
             <span class="material-symbols-outlined" style="font-size: 18px;">arrow_forward</span>
           </button>
         </div>
 
         <!-- Actions Bar -->
-        <div class="sftp-panel-actions flex items-center gap-1 px-3 py-1.5 border-b border-outline-variant bg-surface shrink-0">
+        <div class="sftp-panel-actions flex items-center gap-1 px-3 py-1.5 border-b border-outline-variant bg-surface shrink-0 overflow-x-auto no-scrollbar">
           <button id="sftp-upload-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" data-i18n-title="sftp.upload" title="上传文件">
             <span class="material-symbols-outlined" style="font-size: 14px;">upload_file</span>
             <span data-i18n="sftp.uploadAction">上传文件</span>
+          </button>
+          <button id="sftp-new-file-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" data-i18n-title="sftp.newFile" title="新建文件">
+            <span class="material-symbols-outlined" style="font-size: 14px;">note_add</span>
+            <span data-i18n="sftp.newFileAction">新建文件</span>
           </button>
           <button id="sftp-mkdir-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-secondary-container" data-i18n-title="sftp.newFolder" title="新建文件夹">
             <span class="material-symbols-outlined" style="font-size: 14px;">create_new_folder</span>
@@ -334,6 +348,23 @@ export class SFTPPanel {
           <div class="w-full h-1.5 bg-surface-variant rounded-full overflow-hidden">
             <div id="sftp-progress-bar" class="h-full bg-primary-container rounded-full transition-all duration-200" style="width: 0%"></div>
           </div>
+        </div>
+
+        <!-- Table Header (Sortable) -->
+        <div id="sftp-table-header" class="flex items-center gap-2 px-3 py-1.5 border-b border-outline-variant bg-surface-variant/20 text-[11px] font-medium text-on-surface-variant select-none shrink-0">
+          <button id="sftp-sort-name" type="button" class="flex-1 flex items-center gap-1 hover:text-primary-container cursor-pointer transition-colors text-left" data-i18n-title="sftp.sortByName" title="按名称排序">
+            <span data-i18n="sftp.name">名称</span>
+            <span class="sftp-sort-icon material-symbols-outlined text-[14px]">arrow_upward</span>
+          </button>
+          <button id="sftp-sort-size" type="button" class="w-16 flex items-center justify-end gap-1 hover:text-primary-container cursor-pointer transition-colors text-right shrink-0" data-i18n-title="sftp.sortBySize" title="按大小排序">
+            <span data-i18n="sftp.size">大小</span>
+            <span class="sftp-sort-icon material-symbols-outlined text-[14px] hidden"></span>
+          </button>
+          <span class="w-20 text-right shrink-0 hidden md:block" data-i18n="sftp.permissions">权限</span>
+          <button id="sftp-sort-mtime" type="button" class="w-24 flex items-center justify-end gap-1 hover:text-primary-container cursor-pointer transition-colors text-right shrink-0 hidden lg:flex" data-i18n-title="sftp.sortByModified" title="按修改时间排序">
+            <span data-i18n="sftp.modified">修改时间</span>
+            <span class="sftp-sort-icon material-symbols-outlined text-[14px] hidden"></span>
+          </button>
         </div>
 
         <!-- File List -->
@@ -385,6 +416,7 @@ export class SFTPPanel {
     const refreshBtn = this.container.querySelector('#sftp-refresh-btn')!;
     const goBtn = this.container.querySelector('#sftp-go-btn')!;
     const uploadBtn = this.container.querySelector('#sftp-upload-btn')!;
+    const newFileBtn = this.container.querySelector('#sftp-new-file-btn')!;
     const mkdirBtn = this.container.querySelector('#sftp-mkdir-btn')!;
     const downloadBtn = this.container.querySelector('#sftp-download-btn')!;
     const editBtn = this.container.querySelector('#sftp-edit-btn')!;
@@ -393,23 +425,49 @@ export class SFTPPanel {
     const cancelTransferBtn = this.container.querySelector('#sftp-transfer-cancel-btn')!;
     const fileInput = this.container.querySelector('#sftp-file-input') as HTMLInputElement;
     const pathInput = this.container.querySelector('#sftp-path-input') as HTMLInputElement;
+    const pathBar = this.container.querySelector('#sftp-path-bar');
 
     closeBtn.addEventListener('click', () => this.hide());
     backBtn.addEventListener('click', () => this.goBack());
     homeBtn.addEventListener('click', () => this.navigate('~'));
     refreshBtn.addEventListener('click', () => this.refresh());
-    goBtn.addEventListener('click', () => this.navigate(pathInput.value));
+    goBtn.addEventListener('click', () => {
+      this.navigate(pathInput.value);
+      this.showBreadcrumbs();
+    });
+    pathBar?.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('.sftp-crumb-item')) return;
+      this.showPathInput();
+    });
     pathInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') this.navigate(pathInput.value);
+      if (e.key === 'Enter') {
+        this.navigate(pathInput.value);
+        this.showBreadcrumbs();
+      } else if (e.key === 'Escape') {
+        this.showBreadcrumbs();
+      }
+    });
+    pathInput.addEventListener('blur', () => {
+      this.showBreadcrumbs();
     });
 
     uploadBtn.addEventListener('click', () => fileInput.click());
+    newFileBtn.addEventListener('click', () => this.showNewFileDialog());
     mkdirBtn.addEventListener('click', () => this.showMkdirDialog());
     downloadBtn.addEventListener('click', () => this.downloadSelected());
     editBtn.addEventListener('click', () => this.editSelected());
     deleteBtn.addEventListener('click', () => this.deleteSelected());
     renameBtn.addEventListener('click', () => this.showRenameDialog());
     cancelTransferBtn.addEventListener('click', () => this.cancelCurrentTransfer());
+
+    const sortNameBtn = this.container.querySelector('#sftp-sort-name');
+    const sortSizeBtn = this.container.querySelector('#sftp-sort-size');
+    const sortMtimeBtn = this.container.querySelector('#sftp-sort-mtime');
+    sortNameBtn?.addEventListener('click', () => this.toggleSort('name'));
+    sortSizeBtn?.addEventListener('click', () => this.toggleSort('size'));
+    sortMtimeBtn?.addEventListener('click', () => this.toggleSort('mtime'));
+
+    this.renderBreadcrumbs(this.currentPath);
 
     fileInput.addEventListener('change', (e) => {
       const files = (e.target as HTMLInputElement).files;
@@ -847,7 +905,8 @@ export class SFTPPanel {
     this.entries = entries;
 
     const pathInput = this.container.querySelector('#sftp-path-input') as HTMLInputElement;
-    pathInput.value = path;
+    if (pathInput) pathInput.value = path;
+    this.renderBreadcrumbs(path);
 
     const warningEl = this.container.querySelector('#sftp-truncated-warning');
     if (warningEl) {
@@ -880,12 +939,8 @@ export class SFTPPanel {
     emptyState.classList.add('hidden');
     emptyState.classList.remove('flex');
 
-    // Sort: directories first, then by name
-    const sorted = [...this.entries].sort((a, b) => {
-      if (a.isDir && !b.isDir) return -1;
-      if (!a.isDir && b.isDir) return 1;
-      return a.name.localeCompare(b.name);
-    });
+    // Sort: directories first, then by chosen sortOptions
+    const sorted = sortSFTPEntries(this.entries, this.sortOptions);
     this.renderedEntries = sorted;
 
     // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
@@ -1937,6 +1992,122 @@ export class SFTPPanel {
     this.setStatus(t('sftp.renamed'));
     this.clearSelection();
     this.refresh();
+  }
+
+  // Sorting
+  private toggleSort(field: SFTPSortField): void {
+    if (this.sortOptions.field === field) {
+      this.sortOptions.direction = this.sortOptions.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.sortOptions.field = field;
+      this.sortOptions.direction = field === 'name' ? 'asc' : 'desc';
+    }
+    this.updateSortHeaderUI();
+    this.renderEntries();
+  }
+
+  private updateSortHeaderUI(): void {
+    const fields: SFTPSortField[] = ['name', 'size', 'mtime'];
+    for (const f of fields) {
+      const btn = this.container.querySelector(`#sftp-sort-${f}`);
+      if (!btn) continue;
+      const icon = btn.querySelector('.sftp-sort-icon') as HTMLElement | null;
+      if (!icon) continue;
+
+      if (this.sortOptions.field === f) {
+        icon.classList.remove('hidden');
+        icon.textContent = this.sortOptions.direction === 'asc' ? 'arrow_upward' : 'arrow_downward';
+        btn.classList.add('text-primary-container');
+        btn.classList.remove('text-on-surface-variant');
+      } else {
+        icon.classList.add('hidden');
+        btn.classList.remove('text-primary-container');
+        btn.classList.add('text-on-surface-variant');
+      }
+    }
+  }
+
+  // Breadcrumbs
+  private renderBreadcrumbs(path: string): void {
+    const breadcrumbsEl = this.container.querySelector('#sftp-breadcrumbs');
+    if (!breadcrumbsEl) return;
+
+    const crumbs = parsePathBreadcrumbs(path);
+    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
+    breadcrumbsEl.innerHTML = crumbs
+      .map((crumb, idx) => {
+        const isLast = idx === crumbs.length - 1;
+        const isRoot = idx === 0;
+        return `
+          <button type="button" class="sftp-crumb-item flex items-center px-1 py-0.5 rounded hover:bg-surface-variant text-[12px] cursor-pointer transition-colors ${isLast ? 'text-primary-container font-semibold' : 'text-on-surface-variant'}" data-path="${this.escapeHtml(crumb.path)}" title="${this.escapeHtml(crumb.path)}">
+            ${isRoot ? '<span class="material-symbols-outlined" style="font-size: 15px; font-variation-settings: \'FILL\' 1;">storage</span>' : this.escapeHtml(crumb.name)}
+          </button>
+          ${!isLast ? '<span class="text-on-surface-variant/40 text-[10px] select-none mx-0.5">/</span>' : ''}
+        `;
+      })
+      .join('');
+
+    breadcrumbsEl.querySelectorAll('.sftp-crumb-item').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const targetPath = (el as HTMLElement).dataset.path;
+        if (targetPath && targetPath !== this.currentPath) {
+          this.navigate(targetPath);
+        }
+      });
+    });
+  }
+
+  private showPathInput(): void {
+    const breadcrumbsEl = this.container.querySelector('#sftp-breadcrumbs');
+    const pathInput = this.container.querySelector('#sftp-path-input') as HTMLInputElement | null;
+    if (!breadcrumbsEl || !pathInput) return;
+    breadcrumbsEl.classList.add('hidden');
+    pathInput.classList.remove('hidden');
+    pathInput.value = this.currentPath;
+    pathInput.focus();
+    pathInput.select();
+  }
+
+  private showBreadcrumbs(): void {
+    const breadcrumbsEl = this.container.querySelector('#sftp-breadcrumbs');
+    const pathInput = this.container.querySelector('#sftp-path-input') as HTMLInputElement | null;
+    if (!breadcrumbsEl || !pathInput) return;
+    pathInput.classList.add('hidden');
+    breadcrumbsEl.classList.remove('hidden');
+  }
+
+  // New File
+  private async showNewFileDialog(): Promise<void> {
+    const name = await requestText({
+      title: t('sftp.newFileTitle'),
+      message: t('sftp.newFileMessage'),
+      label: t('sftp.name'),
+      placeholder: t('sftp.newFilePlaceholder'),
+      confirmText: t('common.confirm'),
+      cancelText: t('common.cancel'),
+      maxLength: 255,
+      validate: validateRemoteName,
+    });
+    if (!name) return;
+
+    const path = this.currentPath === '/' ? `/${name}` : `${this.currentPath}/${name}`;
+    const emptyFile = new File([new Uint8Array(0)], name, { type: 'text/plain' });
+
+    try {
+      const ok = await this.enqueueUploadTask(emptyFile, this.currentPath, {
+        overwriteFirst: false,
+        reportError: true,
+      });
+      if (!ok) return;
+
+      this.refresh();
+      await this.openEditorForFile(path, name, 0);
+    } catch (e) {
+      notify(t('sftp.newFileFailed', { message: e instanceof Error ? e.message : String(e) }), {
+        variant: 'danger',
+      });
+    }
   }
 
   // Mkdir

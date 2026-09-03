@@ -72,6 +72,30 @@ export interface TerminalSelectionAnchor {
   clientY: number;
 }
 
+export type TerminalShortcutAction = 'search' | 'clear';
+
+/**
+ * 匹配终端快捷键：
+ * - 搜索：Ctrl+Shift+F（通用）或 Cmd+F（macOS）
+ * - 清屏/清除滚动缓冲区：Cmd+K（macOS）或 Ctrl+Shift+K（Win/Linux）
+ */
+export function matchTerminalShortcut(
+  e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'>
+): TerminalShortcutAction | null {
+  const key = e.key.toLowerCase();
+  const isSearchShortcut =
+    (e.ctrlKey && e.shiftKey && key === 'f') ||
+    (e.metaKey && !e.ctrlKey && !e.altKey && key === 'f');
+  if (isSearchShortcut) return 'search';
+
+  const isClearShortcut =
+    (e.metaKey && !e.ctrlKey && !e.altKey && key === 'k') ||
+    (e.ctrlKey && e.shiftKey && key === 'k');
+  if (isClearShortcut) return 'clear';
+
+  return null;
+}
+
 /** 末次恢复尝试所需的最小窗口余量：预留一次握手往返，避免注定失败的冲刺。 */
 const RESUME_FINAL_ATTEMPT_MARGIN_MS = 3000;
 
@@ -317,15 +341,27 @@ export class SSHTerminal {
     window.addEventListener('pointerup', this.selectionPointerUpListener, true);
     window.addEventListener('pointercancel', this.selectionPointerCancelListener, true);
 
-    // Ctrl+Shift+F to toggle search bar
+    // Terminal shortcuts: Search (Ctrl+Shift+F / Cmd+F) & Clear Buffer (Cmd+K / Ctrl+Shift+K)
     this.terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && (e.key === 'F' || e.key === 'f')) {
-        e.preventDefault();
-        this.toggleSearch();
+      const action = matchTerminalShortcut(e);
+      if (action === 'search') {
+        if (e.type === 'keydown') {
+          e.preventDefault();
+          this.toggleSearch();
+        }
+        return false;
+      }
+      if (action === 'clear') {
+        if (e.type === 'keydown') {
+          e.preventDefault();
+          this.clearBuffer();
+        }
         return false;
       }
       if (e.key === 'Escape' && this.searchVisible) {
-        this.hideSearch();
+        if (e.type === 'keydown') {
+          this.hideSearch();
+        }
         return false;
       }
       return true;
@@ -790,6 +826,13 @@ export class SSHTerminal {
     this.searchBox.style.display = 'none';
     this.searchVisible = false;
     this.terminal.focus();
+  }
+
+  /**
+   * 清除滚动历史缓冲区（Scrollback Buffer），使当前行为首行。
+   */
+  clearBuffer(): void {
+    this.terminal.clear();
   }
 
   // ==================== known_hosts (TOFU) ====================

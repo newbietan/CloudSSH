@@ -6,6 +6,7 @@
  *   “填入并执行”才会在填入后追加一个回车。
  * - 片段是用户个人数据：一次性分享会话（sharedSessionMode）中不展示入口。
  */
+import { copyTextToClipboard } from './clipboard';
 import { t } from './i18n';
 import {
   type CommandSnippet,
@@ -25,6 +26,17 @@ export interface SnippetManagerDeps {
 }
 
 const MODAL_ID = 'snippet-manager-modal';
+
+/**
+ * 纯函数：根据搜索关键词过滤命令片段（名称或命令模糊匹配）。
+ */
+export function filterSnippets(snippets: CommandSnippet[], query: string): CommandSnippet[] {
+  const trimmed = query.trim().toLowerCase();
+  if (!trimmed) return snippets;
+  return snippets.filter(
+    (s) => s.name.toLowerCase().includes(trimmed) || s.command.toLowerCase().includes(trimmed)
+  );
+}
 
 function createElement<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -47,6 +59,7 @@ export class SnippetManager {
   private snippets: CommandSnippet[] = [];
   private editingId: string | null = null;
   private busy = false;
+  private searchQuery = '';
 
   constructor(private readonly deps: SnippetManagerDeps) {}
 
@@ -68,6 +81,9 @@ export class SnippetManager {
     const modal = document.getElementById(MODAL_ID);
     modal?.classList.add('hidden');
     modal?.classList.remove('flex');
+    this.searchQuery = '';
+    const searchInput = document.getElementById('snippet-search-input') as HTMLInputElement | null;
+    if (searchInput) searchInput.value = '';
     this.resetForm();
   }
 
@@ -177,9 +193,9 @@ export class SnippetManager {
     form.appendChild(actions);
     panel.appendChild(form);
 
-    // 列表区：标题 + 计数 + 列表容器
+    // 列表区：标题 + 计数 + 搜索框 + 列表容器
     const listSection = createElement('div', 'pt-4 border-t border-dim');
-    const listHeader = createElement('div', 'flex items-center justify-between mb-3');
+    const listHeader = createElement('div', 'flex items-center justify-between mb-2');
     listHeader.appendChild(
       createElement('h3', 'text-xs font-bold text-primary', t('snippets.title'))
     );
@@ -187,6 +203,13 @@ export class SnippetManager {
     count.id = 'snippet-count';
     listHeader.appendChild(count);
     listSection.appendChild(listHeader);
+
+    const searchInput = createElement('input', 'terminal-input w-full text-xs px-2.5 py-1 mb-3');
+    searchInput.id = 'snippet-search-input';
+    searchInput.type = 'search';
+    searchInput.placeholder = t('snippets.searchPlaceholder');
+    listSection.appendChild(searchInput);
+
     const list = createElement('div', 'space-y-2');
     list.id = 'snippet-list';
     listSection.appendChild(list);
@@ -199,6 +222,10 @@ export class SnippetManager {
     });
     modal.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') this.close();
+    });
+    searchInput.addEventListener('input', () => {
+      this.searchQuery = searchInput.value;
+      this.renderList();
     });
     form.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -221,9 +248,19 @@ export class SnippetManager {
     const countEl = document.getElementById('snippet-count');
     if (!listEl) return;
     listEl.textContent = '';
+
+    const filtered = filterSnippets(this.snippets, this.searchQuery);
+
     if (countEl) {
-      countEl.textContent =
-        this.snippets.length > 0 ? t('snippets.count', { count: this.snippets.length }) : '';
+      if (this.searchQuery.trim()) {
+        countEl.textContent = t('snippets.filteredCount', {
+          filtered: filtered.length,
+          total: this.snippets.length,
+        });
+      } else {
+        countEl.textContent =
+          this.snippets.length > 0 ? t('snippets.count', { count: this.snippets.length }) : '';
+      }
     }
 
     if (this.snippets.length === 0) {
@@ -231,7 +268,12 @@ export class SnippetManager {
       return;
     }
 
-    for (const snippet of this.snippets) {
+    if (filtered.length === 0) {
+      listEl.appendChild(createElement('p', 'text-xs text-muted', t('snippets.noMatches')));
+      return;
+    }
+
+    for (const snippet of filtered) {
       listEl.appendChild(this.buildItem(snippet));
     }
   }
@@ -256,6 +298,7 @@ export class SnippetManager {
     body.appendChild(command);
     row.appendChild(body);
 
+    row.appendChild(this.buildActionButton('copy', 'content_copy', t('common.copy')));
     row.appendChild(
       this.buildActionButton('insert_and_run', 'play_arrow', t('snippets.insertAndRun'))
     );
@@ -287,8 +330,18 @@ export class SnippetManager {
     const action = actionEl.dataset.action;
     if (action === 'insert') this.insertSnippet(snippet, false);
     else if (action === 'insert_and_run') this.insertSnippet(snippet, true);
+    else if (action === 'copy') void this.copySnippet(snippet);
     else if (action === 'edit') this.startEdit(snippet);
     else if (action === 'delete') await this.deleteSnippet(snippet);
+  }
+
+  private async copySnippet(snippet: CommandSnippet): Promise<void> {
+    const success = await copyTextToClipboard(snippet.command);
+    if (success) {
+      notify(t('snippets.copied'), { variant: 'success' });
+    } else {
+      notify(t('snippets.copyFailed'), { variant: 'danger' });
+    }
   }
 
   private insertSnippet(snippet: CommandSnippet, run: boolean): void {
