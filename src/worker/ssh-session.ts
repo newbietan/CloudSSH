@@ -7,7 +7,13 @@ import {
 } from '../ssh/algorithms';
 import { SSHAuth } from '../ssh/auth';
 import { type ChannelDataChunk, SSHChannel } from '../ssh/channel';
-import { SSHAESCTRCipher, SSHAESGCMCipher, SSHHMAC } from '../ssh/crypto';
+import {
+  base64UrlEncodeUnsigned,
+  convertSSHECDSASig,
+  SSHAESCTRCipher,
+  SSHAESGCMCipher,
+  SSHHMAC,
+} from '../ssh/crypto';
 import {
   filterExtInfo,
   KEXInitBuilder,
@@ -21,6 +27,7 @@ import { KeyDerivation } from '../ssh/keys';
 import { nextSequenceNumber, SSHPacketBuilder, SSHPacketParser } from '../ssh/packet';
 import { SSHTransport } from '../ssh/transport';
 import type { Env } from '../types';
+import { ShareAuditWriter } from './share-audit-writer';
 import {
   normalizeTerminalSize,
   SESSION_RING_BUFFER_MAX_BYTES,
@@ -69,10 +76,6 @@ const AUTH_CHALLENGE_ACK_TIMEOUT_MS = 10 * 1000;
 const AUTH_CHALLENGE_RESPONSE_TIMEOUT_MS = 2 * 60 * 1000;
 const MAX_KEYBOARD_INTERACTIVE_ROUNDS = 8;
 const MAX_PARTIAL_AUTHENTICATION_STAGES = 8;
-// Keep every JSON audit event safely below ShareDO's request-size ceiling even
-// when the terminal output consists entirely of four-byte Unicode characters.
-const SHARE_AUDIT_FLUSH_CHARS = 8 * 1024;
-const SHARE_AUDIT_FLUSH_MS = 1000;
 // Socket 写超时（write deadline）：弱网 TCP 半开时 write() 可能永不 settle，
 // 超时即关闭底层 socket 会拒绝所有 pending 写，读循环随之走正常 close() 流程。
 const SOCKET_WRITE_TIMEOUT_MS = 15_000;
@@ -206,12 +209,13 @@ export class SSHSession {
   private userId: string | null = null;
   private githubId: string | null = null;
   private osDetectInProgress: boolean = false;
-  private readonly auditTextDecoder = new TextDecoder();
-  private shareAuditBuffer = '';
-  private shareAuditFlushTimer: ReturnType<typeof setTimeout> | null = null;
-  private shareAuditWrite: Promise<boolean> = Promise.resolve(true);
-  private shareAuditStarted = false;
-  private shareAuditClosed = false;
+  private readonly shareAuditor: ShareAuditWriter;
+  private get shareAuditStarted(): boolean {
+    return this.shareAuditor.isStarted();
+  }
+  private set shareAuditStarted(started: boolean) {
+    if (started) this.shareAuditor.start();
+  }
   private shareSessionExpiryTimer: ReturnType<typeof setTimeout> | null = null;
   private shareExpiryWarningTimer: ReturnType<typeof setTimeout> | null = null;
   private sftpAuditContext = new Map<string, Record<string, unknown>>();
@@ -266,6 +270,18 @@ export class SSHSession {
     this.shellChannel = new SSHChannel();
     this.channels.set(0, this.shellChannel);
     this.updateTerminalSize(config.cols, config.rows);
+
+    this.shareAuditor = new ShareAuditWriter({
+      env: this.env || undefined,
+      sessionPolicy: config.sessionPolicy,
+      waitUntil: options.waitUntil,
+      onFatalAuditFailure: (msg) => {
+        if (!this.closed) {
+          this.sendError(msg, 'share_audit_unavailable');
+          this.close(true);
+        }
+      },
+    });
   }
 
   async startHandshake(): Promise<void> {
@@ -1203,7 +1219,7 @@ export class SSHSession {
       );
 
       // Convert SSH (r||s) signature to raw r||s for Web Crypto（按曲线坐标长度 pad）
-      const ecdsaRawSig = this.convertSSHECDSASig(rawSig, coordBytes);
+      const ecdsaRawSig = convertSSHECDSASig(rawSig, coordBytes);
       this.sendDebug(`ECDSA raw sig: ${ecdsaRawSig.length} bytes`);
 
       return await crypto.subtle.verify({ name: 'ECDSA', hash }, pubKey, ecdsaRawSig, exchangeHash);
@@ -1243,8 +1259,8 @@ export class SSHSession {
       // Convert to JWK format for import
       const jwk = {
         kty: 'RSA',
-        e: this.base64UrlEncodeUnsigned(eRaw),
-        n: this.base64UrlEncodeUnsigned(nRaw),
+        e: base64UrlEncodeUnsigned(eRaw),
+        n: base64UrlEncodeUnsigned(nRaw),
         ext: true,
       };
 
@@ -1266,49 +1282,6 @@ export class SSHSession {
 
     this.sendDebug(`Unsupported key type for verification: ${keyType}`);
     return null; // Return null for unsupported algorithms instead of failing
-  }
-
-  // Convert Uint8Array to base64url string without leading zero bytes (useful for JWK mpint)
-  private base64UrlEncodeUnsigned(buffer: Uint8Array): string {
-    let start = 0;
-    while (start < buffer.length - 1 && buffer[start] === 0x00) {
-      start++;
-    }
-    let binary = '';
-    for (let i = start; i < buffer.length; i++) {
-      binary += String.fromCharCode(buffer[i]);
-    }
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  }
-
-  private convertSSHECDSASig(sshSig: Uint8Array, coordBytes: number = 32): Uint8Array {
-    // SSH ECDSA sig is: string r, string s (each mpint)
-    let offset = 0;
-    const rLen =
-      (sshSig[offset] << 24) |
-      (sshSig[offset + 1] << 16) |
-      (sshSig[offset + 2] << 8) |
-      sshSig[offset + 3];
-    offset += 4;
-    let r = sshSig.subarray(offset, offset + rLen);
-    offset += rLen;
-    const sLen =
-      (sshSig[offset] << 24) |
-      (sshSig[offset + 1] << 16) |
-      (sshSig[offset + 2] << 8) |
-      sshSig[offset + 3];
-    offset += 4;
-    let s = sshSig.subarray(offset, offset + sLen);
-
-    // Strip leading zero bytes (mpint sign extension)
-    if (r.length > coordBytes && r[0] === 0) r = r.subarray(1);
-    if (s.length > coordBytes && s[0] === 0) s = s.subarray(1);
-
-    // Pad to coordBytes each (P-256=32, P-384=48, P-521=66)
-    const result = new Uint8Array(coordBytes * 2);
-    result.set(r, coordBytes - r.length);
-    result.set(s, coordBytes * 2 - s.length);
-    return result;
   }
 
   private async enableEncryption(): Promise<void> {
@@ -2763,93 +2736,15 @@ export class SSHSession {
   // ==================== 分享会话审计 ====================
 
   private writeShareAudit(eventType: string, details: Record<string, unknown>): Promise<boolean> {
-    const policy = this.config.sessionPolicy;
-    if (policy?.source !== 'share' || !this.env?.SSH_SHARE) return Promise.resolve(false);
-    const operation = this.shareAuditWrite.then(async () => {
-      try {
-        const stub = this.env!.SSH_SHARE.get(this.env!.SSH_SHARE.idFromName(policy.shareRef));
-        const response = await stub.fetch(
-          new Request('http://internal/internal/audit/event', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ eventType, occurredAt: Date.now(), details }),
-          })
-        );
-        return response.ok;
-      } catch {
-        return false;
-      }
-    });
-    this.shareAuditWrite = operation.catch(() => false);
-    return operation;
+    return this.shareAuditor.writeAudit(eventType, details);
   }
 
   private recordShareTerminalOutput(data: Uint8Array): void {
-    if (
-      !this.shareAuditStarted ||
-      this.config.sessionPolicy?.source !== 'share' ||
-      data.length === 0
-    )
-      return;
-    this.shareAuditBuffer += this.auditTextDecoder.decode(data, { stream: true });
-    if (this.shareAuditBuffer.length >= SHARE_AUDIT_FLUSH_CHARS) {
-      this.runShareBackground(this.flushShareAuditOutput());
-      return;
-    }
-    if (!this.shareAuditFlushTimer) {
-      this.shareAuditFlushTimer = setTimeout(() => {
-        this.shareAuditFlushTimer = null;
-        this.runShareBackground(this.flushShareAuditOutput());
-      }, SHARE_AUDIT_FLUSH_MS);
-    }
-  }
-
-  private async flushShareAuditOutput(): Promise<boolean> {
-    if (this.shareAuditFlushTimer) {
-      clearTimeout(this.shareAuditFlushTimer);
-      this.shareAuditFlushTimer = null;
-    }
-    let text = this.shareAuditBuffer;
-    this.shareAuditBuffer = '';
-    if (!text) return true;
-    while (text.length > 0) {
-      const chunk = text.slice(0, SHARE_AUDIT_FLUSH_CHARS);
-      text = text.slice(SHARE_AUDIT_FLUSH_CHARS);
-      const recorded = await this.writeShareAudit('terminal.output', { text: chunk });
-      if (!recorded) {
-        if (!this.closed) {
-          this.sendError(
-            '分享会话审计写入失败或已达到容量上限，连接已终止',
-            'share_audit_unavailable'
-          );
-          this.close(true);
-        }
-        return false;
-      }
-    }
-    return true;
+    this.shareAuditor.recordTerminalOutput(data);
   }
 
   private notifyShareSessionClosed(normal: boolean): void {
-    const policy = this.config.sessionPolicy;
-    if (policy?.source !== 'share' || !this.env?.SSH_SHARE || this.shareAuditClosed) return;
-    this.shareAuditClosed = true;
-    this.runShareBackground(
-      this.flushShareAuditOutput().finally(async () => {
-        try {
-          const stub = this.env!.SSH_SHARE.get(this.env!.SSH_SHARE.idFromName(policy.shareRef));
-          await stub.fetch(
-            new Request('http://internal/internal/session/closed', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ normal }),
-            })
-          );
-        } catch {
-          /* 审计关闭通知失败不影响清理流程 */
-        }
-      })
-    );
+    this.shareAuditor.notifySessionClosed(normal);
   }
 
   private runShareBackground(promise: Promise<unknown>): void {
@@ -3403,10 +3298,7 @@ export class SSHSession {
       clearTimeout(this.shareExpiryWarningTimer);
       this.shareExpiryWarningTimer = null;
     }
-    if (this.shareAuditFlushTimer) {
-      clearTimeout(this.shareAuditFlushTimer);
-      this.shareAuditFlushTimer = null;
-    }
+    this.shareAuditor.dispose();
     if (this.sftpHandler) {
       this.sftpHandler.dispose();
       this.sftpHandler = null;

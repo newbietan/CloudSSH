@@ -1,11 +1,16 @@
 import { onLocaleChange, t, translateDocument } from './i18n';
 import {
+  escapeHtml,
+  formatSize,
+  formatTimestamp,
+  getFileIcon,
   parsePathBreadcrumbs,
   sortSFTPEntries,
   type SFTPSortField,
   type SFTPSortOptions,
 } from './sftp-helpers';
 import { updateSelection } from './sftp-selection';
+import { Deferred, UploadWaiter } from './sftp-transfer';
 import { confirmAction, notify, requestText } from './ui-feedback';
 import {
   decodeEditorContent,
@@ -58,26 +63,6 @@ function validateRemoteName(value: string): string | null {
   return null;
 }
 
-class Deferred<T> {
-  promise: Promise<T>;
-  resolve!: (value: T | PromiseLike<T>) => void;
-  reject!: (reason?: unknown) => void;
-
-  constructor() {
-    this.promise = new Promise<T>((resolve, reject) => {
-      this.resolve = resolve;
-      this.reject = reject;
-    });
-  }
-}
-
-interface UploadConflict {
-  path: string;
-  existingSize: number;
-}
-
-type UploadStartResult = { status: 'ready' } | { status: 'conflict'; conflict: UploadConflict };
-
 /** sftp_edit_read 一次性读取结果（含失败路径，失败时 bytes 为空） */
 interface EditorReadResult {
   ok: boolean;
@@ -107,84 +92,6 @@ interface ActiveEditorSession {
   mtime: number;
   size: number;
   handle: RemoteEditorHandle;
-}
-
-class UploadWaiter {
-  private ready: Deferred<UploadStartResult> | null = null;
-  private progress: Deferred<number> | null = null;
-  private complete: Deferred<void> | null = null;
-  private progressQueue: number[] = [];
-  private progressQueueHead = 0;
-
-  waitReady(): Promise<UploadStartResult> {
-    this.ready = new Deferred<UploadStartResult>();
-    return this.ready.promise;
-  }
-
-  resolveReady(): void {
-    this.ready?.resolve({ status: 'ready' });
-    this.ready = null;
-  }
-
-  resolveConflict(conflict: UploadConflict): void {
-    this.ready?.resolve({ status: 'conflict', conflict });
-    this.ready = null;
-  }
-
-  waitProgress(): Promise<number> {
-    const queued = this.progressQueue[this.progressQueueHead];
-    if (queued !== undefined) {
-      this.progressQueueHead++;
-      this.compactProgressQueue();
-      return Promise.resolve(queued);
-    }
-
-    this.progress = new Deferred<number>();
-    return this.progress.promise;
-  }
-
-  resolveProgress(loaded: number): void {
-    if (this.progress) {
-      this.progress.resolve(loaded);
-      this.progress = null;
-      return;
-    }
-
-    this.progressQueue.push(loaded);
-  }
-
-  waitComplete(): Promise<void> {
-    this.complete = new Deferred<void>();
-    return this.complete.promise;
-  }
-
-  resolveComplete(): void {
-    this.complete?.resolve();
-    this.reset();
-  }
-
-  reject(message: string): void {
-    const error = new Error(message);
-    this.ready?.reject(error);
-    this.progress?.reject(error);
-    this.complete?.reject(error);
-    this.reset();
-  }
-
-  reset(): void {
-    this.ready = null;
-    this.progress = null;
-    this.complete = null;
-    this.progressQueue = [];
-    this.progressQueueHead = 0;
-  }
-
-  private compactProgressQueue(): void {
-    if (this.progressQueueHead > 32 && this.progressQueueHead * 2 > this.progressQueue.length) {
-      this.progressQueue = this.progressQueue.slice(this.progressQueueHead);
-      this.progressQueueHead = 0;
-    }
-  }
 }
 
 export class SFTPPanel {
@@ -2239,120 +2146,19 @@ export class SFTPPanel {
   }
 
   private getFileIcon(filename: string): string {
-    const ext = filename.split('.').pop()?.toLowerCase() || '';
-    switch (ext) {
-      case 'js':
-      case 'ts':
-      case 'jsx':
-      case 'tsx':
-        return 'javascript';
-      case 'py':
-        return 'code';
-      case 'sh':
-      case 'bash':
-      case 'zsh':
-        return 'terminal';
-      case 'json':
-      case 'yaml':
-      case 'yml':
-      case 'toml':
-        return 'data_object';
-      case 'md':
-      case 'txt':
-      case 'log':
-        return 'description';
-      case 'png':
-      case 'jpg':
-      case 'jpeg':
-      case 'gif':
-      case 'svg':
-      case 'webp':
-        return 'image';
-      case 'mp4':
-      case 'mkv':
-      case 'avi':
-      case 'mov':
-        return 'movie';
-      case 'mp3':
-      case 'wav':
-      case 'ogg':
-        return 'audio_file';
-      case 'zip':
-      case 'tar':
-      case 'gz':
-      case 'bz2':
-      case 'xz':
-      case '7z':
-        return 'folder_zip';
-      case 'pdf':
-        return 'picture_as_pdf';
-      case 'html':
-      case 'htm':
-        return 'html';
-      case 'css':
-      case 'scss':
-      case 'less':
-        return 'css';
-      case 'go':
-        return 'code';
-      case 'rs':
-        return 'code';
-      case 'c':
-      case 'h':
-      case 'cpp':
-      case 'hpp':
-        return 'code';
-      case 'java':
-      case 'kt':
-        return 'code';
-      case 'rb':
-        return 'code';
-      case 'php':
-        return 'code';
-      case 'sql':
-        return 'database';
-      case 'xml':
-        return 'code';
-      case 'conf':
-      case 'cfg':
-      case 'ini':
-      case 'env':
-        return 'settings';
-      default:
-        return 'draft';
-    }
+    return getFileIcon(filename);
   }
 
   private formatSize(bytes: number): string {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-    return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+    return formatSize(bytes);
   }
 
   private formatTimestamp(unixTime: number): string {
-    if (!unixTime) return '';
-
-    const date = new Date(unixTime * 1000);
-    const now = new Date();
-    const sixMonthsAgo = new Date(now);
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-
-    const pad = (n: number) => n.toString().padStart(2, '0');
-
-    if (date > sixMonthsAgo) {
-      return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-    }
-
-    return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${date.getFullYear()}`;
+    return formatTimestamp(unixTime);
   }
 
   private escapeHtml(str: string): string {
-    return str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+    return escapeHtml(str);
   }
 
   dispose(): void {

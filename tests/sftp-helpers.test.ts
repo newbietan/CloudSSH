@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  escapeHtml,
+  formatSize,
+  formatTimestamp,
+  getFileIcon,
   parsePathBreadcrumbs,
   sortSFTPEntries,
   type SFTPSortOptions,
@@ -121,5 +125,35 @@ describe('SFTP 文件条目排序 (sortSFTPEntries)', () => {
       'beta.txt',
       'alpha.txt',
     ]);
+  });
+
+  describe('SFTP 格式化与辅助工具 (sftp-helpers)', () => {
+    it('formatSize 格式化不同字节大小', () => {
+      expect(formatSize(500)).toBe('500 B');
+      expect(formatSize(2048)).toBe('2.0 KB');
+      expect(formatSize(10 * 1024 * 1024)).toBe('10.0 MB');
+      expect(formatSize(2 * 1024 * 1024 * 1024)).toBe('2.0 GB');
+    });
+
+    it('formatTimestamp 格式化时间戳', () => {
+      expect(formatTimestamp(0)).toBe('');
+      const recent = Math.floor(Date.now() / 1000) - 3600; // 1小时前
+      expect(formatTimestamp(recent)).toMatch(/^\d{2}-\d{2} \d{2}:\d{2}$/);
+    });
+
+    it('getFileIcon 映射扩展名到图标', () => {
+      expect(getFileIcon('app.ts')).toBe('javascript');
+      expect(getFileIcon('index.py')).toBe('code');
+      expect(getFileIcon('run.sh')).toBe('terminal');
+      expect(getFileIcon('image.png')).toBe('image');
+      expect(getFileIcon('archive.tar.gz')).toBe('folder_zip');
+      expect(getFileIcon('unknown_file')).toBe('draft');
+    });
+
+    it('escapeHtml 转义特殊危险字符', () => {
+      expect(escapeHtml('<script>alert("xss")&</script>')).toBe(
+        '&lt;script&gt;alert(&quot;xss&quot;)&amp;&lt;/script&gt;'
+      );
+    });
   });
 });
