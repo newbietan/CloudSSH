@@ -207,12 +207,23 @@ export class AgentPanel {
       }
     });
 
+    this.panelEl?.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        this.hide();
+      }
+    });
+
     this.inputEl?.addEventListener('input', () => {
       const el = this.inputEl!;
       el.style.height = 'auto';
       el.style.height = Math.min(el.scrollHeight, 140) + 'px';
       this.updateInputState();
     });
+  }
+
+  get isOpen(): boolean {
+    return this.isVisible;
   }
 
   toggle(): void {
@@ -223,6 +234,7 @@ export class AgentPanel {
     if (!this.isLoggedIn) return;
     this.isVisible = true;
     if (this.panelEl) this.panelEl.style.display = 'flex';
+    document.body.classList.add('agent-panel-open');
     this.inputEl?.focus();
     // 触发终端重新适配（面板展开后终端区域缩小，需要 refit）
     requestAnimationFrame(() => this.onLayoutChange?.());
@@ -232,6 +244,7 @@ export class AgentPanel {
     this.rejectPendingConfirmation(false);
     this.isVisible = false;
     if (this.panelEl) this.panelEl.style.display = 'none';
+    document.body.classList.remove('agent-panel-open');
     // 触发终端重新适配（面板收起后终端区域恢复，需要 refit）
     requestAnimationFrame(() => this.onLayoutChange?.());
   }
@@ -356,7 +369,7 @@ export class AgentPanel {
     if (!this.contextEl) return;
     const context = this.pendingTerminalSelection;
     this.contextEl.classList.toggle('hidden', !context);
-    this.contextEl.innerHTML = '';
+    this.contextEl.replaceChildren();
     if (!context) return;
 
     const source = context.sourceLabel || t('agent.selectionUnknownSource');
@@ -486,7 +499,7 @@ export class AgentPanel {
         this.thinkingStepsEl.removeChild(this.thinkingStepsEl.firstChild!);
       }
     }
-    this.thinkingCurrentEl.innerHTML = '';
+    this.thinkingCurrentEl.replaceChildren();
     this.thinkingStepCount++;
 
     const stepEl = document.createElement('div');
@@ -518,11 +531,11 @@ export class AgentPanel {
     if (this.thinkingCurrentEl?.firstElementChild) {
       this.thinkingStepsEl?.appendChild(this.thinkingCurrentEl.firstElementChild);
     }
-    this.thinkingCurrentEl!.innerHTML = '';
+    this.thinkingCurrentEl!.replaceChildren();
 
     // 完成时从完整记录重建，展示所有步骤
     if (this.thinkingStepsEl) {
-      this.thinkingStepsEl.innerHTML = '';
+      this.thinkingStepsEl.replaceChildren();
       for (const step of this.thinkingAllSteps) {
         const stepEl = document.createElement('div');
         stepEl.className = 'tp-step tp-step-done';
@@ -559,7 +572,7 @@ export class AgentPanel {
     this.thinkingProcessEl.classList.add('tp-done');
 
     // Hide live preview when collapsed — historical steps are accessible via expand
-    if (this.thinkingLiveEl) this.thinkingLiveEl.innerHTML = '';
+    if (this.thinkingLiveEl) this.thinkingLiveEl.replaceChildren();
   }
 
   private removeThinkingProcess(): void {
@@ -1017,5 +1030,6 @@ export class AgentPanel {
     this.inputEl = null;
     this.sendBtn = null;
     this.isVisible = false;
+    document.body.classList.remove('agent-panel-open');
   }
 }

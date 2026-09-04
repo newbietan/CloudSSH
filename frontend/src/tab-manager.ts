@@ -243,6 +243,7 @@ export class TabManager {
     // 显示目标标签
     tab.containerEl.style.display = 'flex';
     this.activeTabId = tabId;
+    document.body.classList.toggle('agent-panel-open', tab.agentPanel?.isOpen ?? false);
     document.dispatchEvent(new Event('cloudssh:active-terminal-change'));
 
     // Mount 并 fit 终端
@@ -280,6 +281,7 @@ export class TabManager {
       if (remaining.length > 0) {
         this.switchTab(remaining[remaining.length - 1]);
       } else {
+        document.body.classList.remove('agent-panel-open');
         this.onAllTabsClosed?.();
       }
     }
@@ -309,6 +311,7 @@ export class TabManager {
 
     this.tabs.clear();
     this.activeTabId = null;
+    document.body.classList.remove('agent-panel-open');
     this.renderTabBar();
     this.updateSelectionAction();
     this.onAllTabsClosed?.();

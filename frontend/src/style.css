@@ -2779,6 +2779,13 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
     padding-bottom: 0;
   }
 
+  /* 移动端打开 AI Agent 时隐藏终端快捷键工具栏，防止遮挡 Agent 底部输入框与操作区 */
+  body.agent-panel-open .mobile-terminal-toolbar,
+  body:has(#agent-panel:not([style*="display: none"])) .mobile-terminal-toolbar,
+  #terminal-section:has(#agent-panel:not([style*="display: none"])) .mobile-terminal-toolbar {
+    display: none !important;
+  }
+
   .mobile-terminal-toolbar-scroll {
     display: flex;
     width: 100%;

@@ -347,6 +347,9 @@ test('移动端 Agent 可返回终端且 SFTP 面板占满可用区域', async (
   expect(dimensions.sftpWidth).toBe(390);
   expect(dimensions.sftpHeight).toBeGreaterThan(0);
 
+  // 移动端打开 Agent 面板时，底部的终端快捷键工具栏应自动隐藏，防止遮挡输入框
+  await expect(page.locator('#mobile-terminal-toolbar')).toBeHidden();
+
   const backButton = page.locator('#agent-close-btn');
   await expect(backButton).toBeVisible();
   await expect(backButton).toContainText('返回终端');
@@ -356,4 +359,7 @@ test('移动端 Agent 可返回终端且 SFTP 面板占满可用区域', async (
   await backButton.click();
   await expect(page.locator('#agent-panel')).toBeHidden();
   await expect(page.locator('#terminal-wrapper')).toBeVisible();
+
+  // 返回终端后，终端快捷键工具栏应重新显示
+  await expect(page.locator('#mobile-terminal-toolbar')).toBeVisible();
 });
