@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-09-04
+
+### Added
+
+- **代号 Gem-Alpha 版本发布**：围绕核心交互优化、SFTP 深度体验、命令片段库增强、多标签页上下文操作、AI Agent 体验升级及架构单体解耦瘦身展开的重大版本里程碑。
+- **架构深度解耦瘦身**：
+  - 抽离 `ShareAuditWriter`（`src/worker/share-audit-writer.ts`），解耦分享审计记录持久化管道，封装防抖刷新与互斥写锁。
+  - 抽离 `KeyboardInteractiveAuthHandler`（`src/worker/ssh-interactive-auth.ts`），解耦 RFC 4256 交互式键盘认证状态机，独立管理多轮挑战 ID、超时看门狗及组包响应。
+  - 抽离 `DetachedSessionBuffer`（`src/worker/ssh-detached-buffer.ts`），解耦弱网断线保持 128KB 有界环形缓冲队列与重连补偿逻辑。
+  - 抽离 `detectAndPersistRemoteOS`（`src/worker/os-detect.ts`），解耦远端操作系统探测执行器，独立管理命令探测与 UserDB 持久化。
+  - 解耦 SFTP 在线编辑与交互体系：抽离 `SFTPEditorCoordinator`（`frontend/src/sftp-editor-session.ts`，编辑挂载与冲突比对）、`sftp-dialogs.ts`（文件/目录创建/重命名弹窗与合法性校验）、`sftp-helpers.ts`（面包屑与三向排序辅助）与 `sftp-transfer.ts`（传输状态模型）。
+- **SFTP 路径面包屑与多维排列表头**：引入可点击导航的面包屑路径组件，保留输入框快速跳转与失焦自动恢复；表头支持按名称、大小、修改时间三向排序，目录智能置顶。
+- **SFTP 工具栏新建文件**：点击工具栏「新建文件」按钮呼出命名弹窗，通过 0 字节探测上传后无缝调起在线编辑器。
+- **命令片段模糊搜索与一键复制**：片段库新增实时搜索过滤，支持名称与命令模糊匹配；列表项增加一键复制到剪贴板按钮。
+- **命令片段动态参数占位符**：支持 `{{variable}}` 语法，插入或执行前自动提取变量并弹出输入弹窗，支持默认值与输入记忆。
+- **服务器一键克隆**：服务器卡片增加复制操作，快速复用主机、端口、用户名、跳板机关系与标签，自动附加 `(Copy)` 后缀并安全剔除敏感凭据。
+- **多标签页双击重命名与上下文菜单**：双击标签页标题直接进行内联编辑（`Enter` 保存，`Esc` 取消，空值自动恢复原名）；右键标签弹出操作菜单（重命名、克隆会话、关闭其他、关闭当前）。
+- **终端快捷键增强**：macOS 新增 `Cmd+F` 调出搜索栏，`Cmd+K` / `Ctrl+Shift+K` 清除终端屏幕缓冲区（`terminal.clear()`），并完好保留 Linux/Bash 默认的 `Ctrl+K` 剪切行尾逻辑。
+- **AI Agent 助手体验全面升级**：
+  - **动态 Clamp 响应式窗口**：参考 SFTP 采用 `min(clamp(420px, 40vw, 600px), 100%)` 弹性宽度策略，顶栏对齐 `h-12` 规范并内联 `smart_toy` 助手图标。
+  - **桌面端上下垂直范围严格限制于终端窗口内**：分栏高度严格限制在 `#terminal-area` 内部，绝不遮挡顶部状态栏右上方的双端延迟展示（`#term-info`）与连接状态。
+  - **移动端全屏覆盖与软键盘联动**：移动端保持全屏覆盖（`position: fixed; top: 48px;`）保证小屏下充裕的对话阅读空间；打开 Agent 时联动隐藏底部软键盘终端快捷工具栏，彻底解决输入框和发送按钮被遮挡问题；退出返回终端后自动恢复工具栏。
+  - **诊断 Prompt 预设与触控热区强化**：提供 4 组一键场景诊断 Prompt 胶囊（分析报错、系统负载、端口网络、Docker 状态），移动端全面优化 Prompt 胶囊（`32px`）、发送按钮（`40px`）、代码块操作（`30px`）和高危命令确认弹窗按钮触控热区；支持按 `Esc` 快速退出 Agent 返回终端。
+
+### Fixed
+
+- **多标签页空值重命名卡死**：修复标签页重命名提交空字符串或纯空白时卡死输入框状态的问题，空值自动恢复原标签名。
+- **右键上下文菜单监听器泄漏**：修复连续右键或外部点击关闭右键菜单时，全局事件监听器残留的隐患。
+- **移动端 AI Agent 底部输入框被工具栏遮挡**：修复移动端打开 Agent 时底部软键盘终端快捷键工具栏覆盖输入框与发送按钮的层级冲突。
+
+### Changed
+
+- **代码健康规范治理**：全局显式声明 `parseInt` 10 进制基数，消解无用构造函数、多处冗余导入、收敛严格类型断言与类型系统静态警告。
+
 ## [1.14.4] - 2026-09-02
 
 ### Fixed
