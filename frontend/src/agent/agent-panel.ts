@@ -116,14 +116,18 @@ export class AgentPanel {
     this.panelEl = document.createElement('div');
     this.panelEl.id = 'agent-panel';
     this.panelEl.className =
-      'w-[560px] max-w-[calc(100vw-200px)] shrink-0 border-l border-[var(--border)] flex flex-col bg-[var(--bg)] overflow-hidden';
+      'shrink-0 border-l border-[var(--border)] flex flex-col bg-[var(--bg)] overflow-hidden h-full';
+    this.panelEl.style.width = 'min(clamp(420px, 40vw, 600px), 100%)';
     this.panelEl.style.display = 'none';
 
     // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     this.panelEl.innerHTML = `
-      <div class="agent-panel-header flex items-center justify-between px-4 py-2.5 border-b border-[var(--border)] bg-[var(--bg-elevated)]">
-        <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]" data-i18n="agent.title">AI Agent 助手</span>
-        <button id="agent-close-btn" class="agent-close-button text-muted hover:text-primary transition-colors cursor-pointer" data-i18n-title="agent.backToTerminal" data-i18n-aria-label="agent.backToTerminal" title="返回终端" aria-label="返回终端">
+      <div class="agent-panel-header flex items-center justify-between px-4 h-12 border-b border-[var(--border)] bg-[var(--bg-elevated)] shrink-0">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="material-symbols-outlined text-[var(--accent-secondary)]" style="font-size: 18px; font-variation-settings: 'FILL' 1;">smart_toy</span>
+          <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)] truncate" data-i18n="agent.title">AI Agent 助手</span>
+        </div>
+        <button id="agent-close-btn" class="agent-close-button text-muted hover:text-primary transition-colors cursor-pointer p-1" data-i18n-title="agent.backToTerminal" data-i18n-aria-label="agent.backToTerminal" title="返回终端" aria-label="返回终端">
           <span class="agent-mobile-back material-symbols-outlined" style="font-size:18px;" aria-hidden="true">arrow_back</span>
           <span class="agent-mobile-back agent-back-label" data-i18n="agent.backToTerminal">返回终端</span>
           <span class="agent-desktop-close material-symbols-outlined" style="font-size:18px;" aria-hidden="true">close</span>

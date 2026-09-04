@@ -1836,6 +1836,9 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 
 #agent-panel {
   min-width: 280px;
+  width: min(clamp(420px, 40vw, 600px), 100%);
+  max-width: 100%;
+  height: 100%;
 }
 
 .agent-mobile-back {
@@ -2819,14 +2822,11 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   }
 
   #agent-panel {
-    position: fixed;
-    top: 48px;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    z-index: 80;
+    position: absolute;
+    inset: 0;
+    z-index: 30;
     width: 100% !important;
-    height: calc(var(--visual-viewport-height) - 48px);
+    height: 100% !important;
     max-width: none !important;
     min-width: 0;
     border-left: 0;
@@ -2857,6 +2857,28 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 
   .agent-desktop-close {
     display: none;
+  }
+
+  .agent-quick-chip {
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .agent-send-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .agent-md-content .agent-md-code-action {
+    min-height: 30px;
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  .agent-confirm button {
+    min-height: 38px;
+    font-size: 12px;
   }
 
   .sftp-panel-header {
