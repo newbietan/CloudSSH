@@ -2822,11 +2822,14 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   }
 
   #agent-panel {
-    position: absolute;
-    inset: 0;
-    z-index: 30;
+    position: fixed;
+    top: 48px;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 80;
     width: 100% !important;
-    height: 100% !important;
+    height: calc(var(--visual-viewport-height) - 48px);
     max-width: none !important;
     min-width: 0;
     border-left: 0;

@@ -327,31 +327,23 @@ test('移动端 Agent 可返回终端且 SFTP 面板占满可用区域', async (
     document.body.appendChild(sftp);
 
     const agentElement = document.getElementById('agent-panel')!;
-    const terminalArea = document.getElementById('terminal-area')!;
-    const statusBar = document.querySelector('.terminal-status-bar')!;
     const agentRect = agentElement.getBoundingClientRect();
     const headerRect = agentElement.querySelector('.agent-panel-header')!.getBoundingClientRect();
-    const terminalAreaRect = terminalArea.getBoundingClientRect();
-    const statusBarRect = statusBar.getBoundingClientRect();
     const sftpRect = sftp.getBoundingClientRect();
     return {
       agentWidth: Math.round(agentRect.width),
       agentHeight: Math.round(agentRect.height),
       agentTop: Math.round(agentRect.top),
       agentHeaderTop: Math.round(headerRect.top),
-      terminalAreaTop: Math.round(terminalAreaRect.top),
-      terminalAreaWidth: Math.round(terminalAreaRect.width),
-      statusBarBottom: Math.round(statusBarRect.bottom),
       sftpWidth: Math.round(sftpRect.width),
       sftpHeight: Math.round(sftpRect.height),
     };
   });
 
-  expect(dimensions.agentWidth).toBe(dimensions.terminalAreaWidth);
+  expect(dimensions.agentWidth).toBe(390);
   expect(dimensions.agentHeight).toBeGreaterThan(0);
-  expect(dimensions.agentTop).toBe(dimensions.terminalAreaTop);
-  expect(dimensions.agentHeaderTop).toBe(dimensions.terminalAreaTop);
-  expect(dimensions.agentTop).toBeGreaterThanOrEqual(dimensions.statusBarBottom);
+  expect(dimensions.agentTop).toBe(48);
+  expect(dimensions.agentHeaderTop).toBe(48);
   expect(dimensions.sftpWidth).toBe(390);
   expect(dimensions.sftpHeight).toBeGreaterThan(0);
 
