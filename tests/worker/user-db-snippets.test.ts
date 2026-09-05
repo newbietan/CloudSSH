@@ -46,6 +46,7 @@ class FakeSql {
         user_id: values[0],
         name: values[1],
         command: values[2],
+        category: values[3] ?? '',
         created_at: '2024-01-01T00:00:00.000Z',
         updated_at: '2024-01-01T00:00:00.000Z',
       };
@@ -54,7 +55,7 @@ class FakeSql {
     }
     if (
       query.includes(
-        'SELECT id, name, command, created_at, updated_at FROM command_snippets WHERE user_id = ? ORDER BY id DESC LIMIT 1'
+        'FROM command_snippets WHERE user_id = ? ORDER BY id DESC LIMIT 1'
       )
     ) {
       const uid = values[0];
@@ -73,8 +74,9 @@ class FakeSql {
       };
     }
     if (
-      query ===
-      'SELECT id, name, command, created_at, updated_at FROM command_snippets WHERE user_id = ? AND id = ?'
+      query.startsWith('SELECT') &&
+      query.includes('FROM command_snippets WHERE user_id = ? AND id = ?') &&
+      !query.includes('SELECT id FROM')
     ) {
       const [uid, id] = values;
       return {
@@ -82,9 +84,9 @@ class FakeSql {
       };
     }
     if (query.startsWith('UPDATE command_snippets SET')) {
-      const [name, command, uid, id] = values;
+      const [name, command, category, uid, id] = values;
       this.snippets = this.snippets.map((r) =>
-        r.user_id === uid && r.id === id ? { ...r, name, command } : r
+        r.user_id === uid && r.id === id ? { ...r, name, command, category } : r
       );
       return { toArray: () => [] };
     }
@@ -118,8 +120,12 @@ describe('UserDB 命令片段', () => {
       s.query.includes('CREATE TABLE IF NOT EXISTS command_snippets')
     );
     const hasIndex = sql.statements.some((s) => s.query.includes('idx_command_snippets_user'));
+    const hasCategoryMigration = sql.statements.some((s) =>
+      s.query.includes('ALTER TABLE command_snippets ADD COLUMN category')
+    );
     expect(hasTable).toBe(true);
     expect(hasIndex).toBe(true);
+    expect(hasCategoryMigration).toBe(true);
   });
 
   it('GET 按 user_id 隔离', async () => {
@@ -192,16 +198,59 @@ describe('UserDB 命令片段', () => {
     expect(((await res.json()) as { error: string }).error).toBe('limitReached');
   });
 
-  it('PUT 仅允许更新属于当前用户的片段', async () => {
+  it('POST 支持保存 category 并在超长时拒绝', async () => {
+    const sql = new FakeSql();
+    const db = createUserDB(sql);
+    let res = await db.fetch(
+      jsonRequest('http://internal/internal/snippets', {
+        method: 'POST',
+        body: JSON.stringify({
+          user_id: 7,
+          name: '查看 Docker',
+          command: 'docker ps',
+          category: 'Docker/容器',
+        }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    expect(res.status).toBe(201);
+    const created = (await res.json()) as { category: string };
+    expect(created.category).toBe('Docker/容器');
+
+    res = await db.fetch(
+      jsonRequest('http://internal/internal/snippets', {
+        method: 'POST',
+        body: JSON.stringify({
+          user_id: 7,
+          name: '超长分类',
+          command: 'echo 1',
+          category: 'a'.repeat(31),
+        }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe('categoryTooLong');
+  });
+
+  it('PUT 仅允许更新属于当前用户的片段并支持更新分类', async () => {
     const sql = new FakeSql();
     sql.snippets = [
-      { id: 1, user_id: 7, name: 'a', command: 'echo a', created_at: '', updated_at: '' },
+      {
+        id: 1,
+        user_id: 7,
+        name: 'a',
+        command: 'echo a',
+        category: 'old',
+        created_at: '',
+        updated_at: '',
+      },
     ];
     const db = createUserDB(sql);
     let res = await db.fetch(
       jsonRequest('http://internal/internal/snippets/1', {
         method: 'PUT',
-        body: JSON.stringify({ user_id: 8, name: 'hacked', command: 'rm -rf /' }),
+        body: JSON.stringify({ user_id: 8, name: 'hacked', command: 'rm -rf /', category: 'hack' }),
         headers: { 'Content-Type': 'application/json' },
       })
     );
@@ -210,12 +259,19 @@ describe('UserDB 命令片段', () => {
     res = await db.fetch(
       jsonRequest('http://internal/internal/snippets/1', {
         method: 'PUT',
-        body: JSON.stringify({ user_id: 7, name: 'updated', command: 'echo updated' }),
+        body: JSON.stringify({
+          user_id: 7,
+          name: 'updated',
+          command: 'echo updated',
+          category: 'newCategory',
+        }),
         headers: { 'Content-Type': 'application/json' },
       })
     );
     expect(res.status).toBe(200);
-    expect(((await res.json()) as { name: string }).name).toBe('updated');
+    const updated = (await res.json()) as { name: string; category: string };
+    expect(updated.name).toBe('updated');
+    expect(updated.category).toBe('newCategory');
   });
 
   it('DELETE 按 user_id 隔离', async () => {

@@ -177,6 +177,7 @@ export class UserDBDO {
         user_id     INTEGER NOT NULL REFERENCES users(id),
         name        TEXT NOT NULL,
         command     TEXT NOT NULL,
+        category    TEXT NOT NULL DEFAULT '',
         created_at  TEXT DEFAULT (datetime('now')),
         updated_at  TEXT DEFAULT (datetime('now'))
       );
@@ -229,6 +230,12 @@ export class UserDBDO {
     }
     if (!shareCols.some((c: any) => c.name === 'audit_purge_type')) {
       this.db.exec('ALTER TABLE ssh_shares ADD COLUMN audit_purge_type TEXT DEFAULT NULL');
+    }
+
+    // === Migration: 给既有 command_snippets 表追加 category 列（幂等） ===
+    const snippetCols = this.db.exec('PRAGMA table_info(command_snippets)').toArray();
+    if (!snippetCols.some((c: any) => c.name === 'category')) {
+      this.db.exec("ALTER TABLE command_snippets ADD COLUMN category TEXT NOT NULL DEFAULT ''");
     }
   }
 
@@ -1541,7 +1548,7 @@ export class UserDBDO {
   private handleGetSnippets(userId: number): Response {
     const rows = this.db
       .exec(
-        'SELECT id, name, command, created_at, updated_at FROM command_snippets WHERE user_id = ? ORDER BY id ASC',
+        'SELECT id, name, command, category, created_at, updated_at FROM command_snippets WHERE user_id = ? ORDER BY id ASC',
         userId
       )
       .toArray();
@@ -1549,8 +1556,13 @@ export class UserDBDO {
   }
 
   private async handleCreateSnippet(request: Request): Promise<Response> {
-    const body = await request.json<{ user_id: number; name?: unknown; command?: unknown }>();
-    const normalized = normalizeSnippetInput(body.name, body.command);
+    const body = await request.json<{
+      user_id: number;
+      name?: unknown;
+      command?: unknown;
+      category?: unknown;
+    }>();
+    const normalized = normalizeSnippetInput(body.name, body.command, body.category);
     if (!normalized.ok) {
       return Response.json({ error: normalized.error }, { status: 400 });
     }
@@ -1562,14 +1574,15 @@ export class UserDBDO {
       return Response.json({ error: 'limitReached' }, { status: 400 });
     }
     this.db.exec(
-      `INSERT INTO command_snippets (user_id, name, command, created_at, updated_at) VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
+      `INSERT INTO command_snippets (user_id, name, command, category, created_at, updated_at) VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
       body.user_id,
       normalized.value.name,
-      normalized.value.command
+      normalized.value.command,
+      normalized.value.category
     );
     const rows = this.db
       .exec(
-        'SELECT id, name, command, created_at, updated_at FROM command_snippets WHERE user_id = ? ORDER BY id DESC LIMIT 1',
+        'SELECT id, name, command, category, created_at, updated_at FROM command_snippets WHERE user_id = ? ORDER BY id DESC LIMIT 1',
         body.user_id
       )
       .toArray();
@@ -1577,8 +1590,13 @@ export class UserDBDO {
   }
 
   private async handleUpdateSnippet(snippetId: number, request: Request): Promise<Response> {
-    const body = await request.json<{ user_id: number; name?: unknown; command?: unknown }>();
-    const normalized = normalizeSnippetInput(body.name, body.command);
+    const body = await request.json<{
+      user_id: number;
+      name?: unknown;
+      command?: unknown;
+      category?: unknown;
+    }>();
+    const normalized = normalizeSnippetInput(body.name, body.command, body.category);
     if (!normalized.ok) {
       return Response.json({ error: normalized.error }, { status: 400 });
     }
@@ -1589,15 +1607,16 @@ export class UserDBDO {
       return Response.json({ error: 'notFound' }, { status: 404 });
     }
     this.db.exec(
-      `UPDATE command_snippets SET name = ?, command = ?, updated_at = datetime('now') WHERE user_id = ? AND id = ?`,
+      `UPDATE command_snippets SET name = ?, command = ?, category = ?, updated_at = datetime('now') WHERE user_id = ? AND id = ?`,
       normalized.value.name,
       normalized.value.command,
+      normalized.value.category,
       body.user_id,
       snippetId
     );
     const rows = this.db
       .exec(
-        'SELECT id, name, command, created_at, updated_at FROM command_snippets WHERE user_id = ? AND id = ?',
+        'SELECT id, name, command, category, created_at, updated_at FROM command_snippets WHERE user_id = ? AND id = ?',
         body.user_id,
         snippetId
       )

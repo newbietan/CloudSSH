@@ -9,6 +9,8 @@
 export const SNIPPET_MAX_COUNT = 100;
 /** 片段名称最大长度（Unicode 码点）。 */
 export const SNIPPET_NAME_MAX_LENGTH = 50;
+/** 片段分类最大长度（Unicode 码点）。 */
+export const SNIPPET_CATEGORY_MAX_LENGTH = 30;
 /** 片段命令最大长度（Unicode 码点）。 */
 export const SNIPPET_COMMAND_MAX_LENGTH = 2000;
 
@@ -16,11 +18,13 @@ export type SnippetValidationError =
   | 'nameRequired'
   | 'commandRequired'
   | 'nameTooLong'
-  | 'commandTooLong';
+  | 'commandTooLong'
+  | 'categoryTooLong';
 
 export interface NormalizedSnippetInput {
   name: string;
   command: string;
+  category: string;
 }
 
 export type SnippetInputResult =
@@ -29,9 +33,14 @@ export type SnippetInputResult =
 
 /**
  * 校验并规范化片段输入：去除首尾空白后要求名称与命令均非空且不超过长度上限。
+ * 分类为可选字段，去除首尾空白后不得超过长度上限，未提供时归一化为空字符串。
  * 长度按 Unicode 码点计数，避免多字节字符被字节长度误判。
  */
-export function normalizeSnippetInput(name: unknown, command: unknown): SnippetInputResult {
+export function normalizeSnippetInput(
+  name: unknown,
+  command: unknown,
+  category?: unknown
+): SnippetInputResult {
   if (typeof name !== 'string') return { ok: false, error: 'nameRequired' };
   const trimmedName = name.trim();
   if (!trimmedName) return { ok: false, error: 'nameRequired' };
@@ -46,5 +55,23 @@ export function normalizeSnippetInput(name: unknown, command: unknown): SnippetI
     return { ok: false, error: 'commandTooLong' };
   }
 
-  return { ok: true, value: { name: trimmedName, command: trimmedCommand } };
+  let trimmedCategory = '';
+  if (category !== undefined && category !== null) {
+    if (typeof category !== 'string') {
+      return { ok: false, error: 'categoryTooLong' };
+    }
+    trimmedCategory = category.trim();
+    if ([...trimmedCategory].length > SNIPPET_CATEGORY_MAX_LENGTH) {
+      return { ok: false, error: 'categoryTooLong' };
+    }
+  }
+
+  return {
+    ok: true,
+    value: {
+      name: trimmedName,
+      command: trimmedCommand,
+      category: trimmedCategory,
+    },
+  };
 }

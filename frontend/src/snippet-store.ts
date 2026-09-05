@@ -9,6 +9,7 @@
 
 import {
   normalizeSnippetInput,
+  SNIPPET_CATEGORY_MAX_LENGTH,
   SNIPPET_COMMAND_MAX_LENGTH,
   SNIPPET_MAX_COUNT,
   SNIPPET_NAME_MAX_LENGTH,
@@ -20,6 +21,7 @@ export interface CommandSnippet {
   id: string;
   name: string;
   command: string;
+  category: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -35,8 +37,8 @@ export class SnippetStoreError extends Error {
 
 export interface SnippetStore {
   list(): Promise<CommandSnippet[]>;
-  create(name: string, command: string): Promise<CommandSnippet>;
-  update(id: string, name: string, command: string): Promise<CommandSnippet>;
+  create(name: string, command: string, category?: string): Promise<CommandSnippet>;
+  update(id: string, name: string, command: string, category?: string): Promise<CommandSnippet>;
   remove(id: string): Promise<void>;
 }
 
@@ -56,12 +58,18 @@ export function snippetErrorMessage(error: unknown): string {
         return t('snippets.error.commandTooLong', {
           max: SNIPPET_COMMAND_MAX_LENGTH,
         });
+      case 'categoryTooLong':
+        return t('snippets.error.categoryTooLong', {
+          max: SNIPPET_CATEGORY_MAX_LENGTH,
+        });
       case 'limitReached':
         return t('snippets.error.limitReached', { max: SNIPPET_MAX_COUNT });
       case 'notFound':
         return t('snippets.error.notFound');
       case 'network':
         return t('snippets.error.network');
+      default:
+        return t('snippets.saveFailed');
     }
   }
   return t('snippets.saveFailed');
@@ -73,6 +81,7 @@ interface SnippetRow {
   id: number | string;
   name: string;
   command: string;
+  category?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -82,6 +91,7 @@ function toSnippet(row: SnippetRow): CommandSnippet {
     id: String(row.id),
     name: row.name,
     command: row.command,
+    category: row.category ?? '',
     createdAt: row.created_at ?? '',
     updatedAt: row.updated_at ?? '',
   };
@@ -106,8 +116,8 @@ export class RemoteSnippetStore implements SnippetStore {
     return Array.isArray(rows) ? rows.map(toSnippet) : [];
   }
 
-  async create(name: string, command: string): Promise<CommandSnippet> {
-    const normalized = normalizeSnippetInput(name, command);
+  async create(name: string, command: string, category?: string): Promise<CommandSnippet> {
+    const normalized = normalizeSnippetInput(name, command, category);
     if (!normalized.ok) throw new SnippetStoreError(normalized.error);
     const response = await fetch('/api/snippets', {
       method: 'POST',
@@ -115,14 +125,20 @@ export class RemoteSnippetStore implements SnippetStore {
       body: JSON.stringify({
         name: normalized.value.name,
         command: normalized.value.command,
+        category: normalized.value.category,
       }),
     });
     if (!response.ok) throw await toStoreError(response);
     return toSnippet((await response.json()) as SnippetRow);
   }
 
-  async update(id: string, name: string, command: string): Promise<CommandSnippet> {
-    const normalized = normalizeSnippetInput(name, command);
+  async update(
+    id: string,
+    name: string,
+    command: string,
+    category?: string
+  ): Promise<CommandSnippet> {
+    const normalized = normalizeSnippetInput(name, command, category);
     if (!normalized.ok) throw new SnippetStoreError(normalized.error);
     const response = await fetch(`/api/snippets/${encodeURIComponent(id)}`, {
       method: 'PUT',
@@ -130,6 +146,7 @@ export class RemoteSnippetStore implements SnippetStore {
       body: JSON.stringify({
         name: normalized.value.name,
         command: normalized.value.command,
+        category: normalized.value.category,
       }),
     });
     if (!response.ok) throw await toStoreError(response);
@@ -157,6 +174,7 @@ function isStoredSnippet(value: unknown): value is CommandSnippet {
     typeof item.id === 'string' &&
     typeof item.name === 'string' &&
     typeof item.command === 'string' &&
+    (item.category === undefined || typeof item.category === 'string') &&
     typeof item.createdAt === 'string' &&
     typeof item.updatedAt === 'string'
   );
@@ -169,8 +187,8 @@ export class LocalSnippetStore implements SnippetStore {
     return this.read();
   }
 
-  async create(name: string, command: string): Promise<CommandSnippet> {
-    const normalized = normalizeSnippetInput(name, command);
+  async create(name: string, command: string, category?: string): Promise<CommandSnippet> {
+    const normalized = normalizeSnippetInput(name, command, category);
     if (!normalized.ok) throw new SnippetStoreError(normalized.error);
     const items = this.read();
     if (items.length >= SNIPPET_MAX_COUNT) throw new SnippetStoreError('limitReached');
@@ -179,6 +197,7 @@ export class LocalSnippetStore implements SnippetStore {
       id: crypto.randomUUID(),
       name: normalized.value.name,
       command: normalized.value.command,
+      category: normalized.value.category,
       createdAt: now,
       updatedAt: now,
     };
@@ -187,8 +206,13 @@ export class LocalSnippetStore implements SnippetStore {
     return snippet;
   }
 
-  async update(id: string, name: string, command: string): Promise<CommandSnippet> {
-    const normalized = normalizeSnippetInput(name, command);
+  async update(
+    id: string,
+    name: string,
+    command: string,
+    category?: string
+  ): Promise<CommandSnippet> {
+    const normalized = normalizeSnippetInput(name, command, category);
     if (!normalized.ok) throw new SnippetStoreError(normalized.error);
     const items = this.read();
     const index = items.findIndex((item) => item.id === id);
@@ -197,6 +221,7 @@ export class LocalSnippetStore implements SnippetStore {
       ...items[index],
       name: normalized.value.name,
       command: normalized.value.command,
+      category: normalized.value.category,
       updatedAt: new Date().toISOString(),
     };
     items[index] = updated;
@@ -214,7 +239,10 @@ export class LocalSnippetStore implements SnippetStore {
       if (!raw) return [];
       const parsed: unknown = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
-      return parsed.filter(isStoredSnippet);
+      return parsed.filter(isStoredSnippet).map((item) => ({
+        ...item,
+        category: item.category ?? '',
+      }));
     } catch {
       return [];
     }

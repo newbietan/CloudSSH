@@ -426,12 +426,12 @@ document.getElementById('disconnect-btn')?.addEventListener('click', () => {
 
 // ==================== 命令片段库 ====================
 
-function openSnippetManager(): void {
-  void snippetManager.open();
+function toggleSnippetManager(): void {
+  snippetManager.toggle();
 }
 
-document.getElementById('snippet-toggle-btn')?.addEventListener('click', openSnippetManager);
-document.getElementById('mobile-snippets-btn')?.addEventListener('click', openSnippetManager);
+document.getElementById('snippet-toggle-btn')?.addEventListener('click', toggleSnippetManager);
+document.getElementById('mobile-snippets-btn')?.addEventListener('click', toggleSnippetManager);
 
 // ==================== SFTP 面板 ====================
 
