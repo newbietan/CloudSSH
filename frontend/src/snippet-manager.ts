@@ -155,6 +155,8 @@ export class SnippetManager {
     this.searchQuery = '';
     const searchInput = document.getElementById('snippet-search-input') as HTMLInputElement | null;
     if (searchInput) searchInput.value = '';
+    const clearBtn = document.getElementById('snippet-search-clear-btn');
+    if (clearBtn) clearBtn.classList.add('hidden');
 
     this.collapseForm();
   }
@@ -278,7 +280,10 @@ export class SnippetManager {
     );
     titleBlock.appendChild(title);
 
-    const badge = createElement('span', 'text-[10px] px-1.5 py-0.5 rounded border');
+    const badge = createElement(
+      'span',
+      'flex items-center gap-1.5 text-[11px] text-muted select-none'
+    );
     badge.id = 'snippet-storage-badge';
     titleBlock.appendChild(badge);
     header.appendChild(titleBlock);
@@ -307,21 +312,42 @@ export class SnippetManager {
     // 搜索输入框
     const searchWrapper = createElement(
       'div',
-      'flex-1 relative flex items-center min-w-0 h-[30px] rounded border border-outline-variant bg-surface-variant/20 focus-within:border-primary-container overflow-hidden'
+      'flex-1 relative flex items-center min-w-0 h-[30px] rounded border border-outline-variant bg-surface-variant/20 focus-within:border-primary-container'
     );
-    const searchIcon = createIcon('search', '16px');
-    searchIcon.className = 'material-symbols-outlined text-muted pl-2 shrink-0';
+    const searchIcon = createIcon('search', '15px');
+    searchIcon.className =
+      'material-symbols-outlined absolute left-2.5 text-muted pointer-events-none select-none';
     searchWrapper.appendChild(searchIcon);
 
     const searchInput = createElement(
       'input',
-      'w-full h-full bg-transparent px-2 text-[12px] outline-none terminal-input border-0 font-ui'
+      'w-full h-full bg-transparent pl-8 pr-7 text-[12px] outline-none terminal-input border-0 font-ui'
     );
     searchInput.id = 'snippet-search-input';
     searchInput.type = 'search';
     searchInput.placeholder = t('snippets.searchPlaceholder');
+
+    const clearBtn = createElement(
+      'button',
+      'absolute right-1.5 top-1/2 -translate-y-1/2 text-muted hover:text-primary p-0.5 cursor-pointer hidden'
+    );
+    clearBtn.id = 'snippet-search-clear-btn';
+    clearBtn.type = 'button';
+    clearBtn.title = t('common.cancel');
+    clearBtn.setAttribute('aria-label', t('common.cancel'));
+    clearBtn.appendChild(createIcon('close', '14px'));
+    clearBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      this.searchQuery = '';
+      clearBtn.classList.add('hidden');
+      this.renderList();
+      searchInput.focus();
+    });
+    searchWrapper.appendChild(clearBtn);
+
     searchInput.addEventListener('input', () => {
       this.searchQuery = searchInput.value;
+      clearBtn.classList.toggle('hidden', !searchInput.value.trim());
       this.renderList();
     });
     searchWrapper.appendChild(searchInput);
@@ -460,12 +486,23 @@ export class SnippetManager {
     cmdLabel.appendChild(cmdInput);
     form.appendChild(cmdLabel);
 
-    // 参数占位符说明
+    // 参数占位符说明（使用 [!] 代替 emoji 图标）
     const hint = createElement(
       'p',
-      'text-[11px] text-muted opacity-80 select-none leading-relaxed',
-      t('snippets.variableHint')
+      'text-[11px] text-muted opacity-80 select-none leading-relaxed font-ui flex items-center gap-1'
     );
+    const hintPrefix = createElement(
+      'span',
+      'text-primary-container font-code font-bold text-[11px]',
+      '[!]'
+    );
+    hint.appendChild(hintPrefix);
+    const hintBody = createElement(
+      'span',
+      undefined,
+      t('snippets.variableHint').replace(/^\[!\]\s*/, '')
+    );
+    hint.appendChild(hintBody);
     form.appendChild(hint);
 
     // 操作按钮
@@ -523,15 +560,21 @@ export class SnippetManager {
     const badge = document.getElementById('snippet-storage-badge');
     if (!badge) return;
     const isAuth = this.deps.isAuthenticated();
-    if (isAuth) {
-      badge.textContent = t('snippets.cloudSync');
-      badge.className =
-        'text-[10px] px-1.5 py-0.5 rounded border border-primary-container/40 text-primary-container bg-primary-container/10';
-    } else {
-      badge.textContent = t('snippets.localStore');
-      badge.className =
-        'text-[10px] px-1.5 py-0.5 rounded border border-outline-variant text-muted bg-surface-variant/30';
-    }
+    badge.textContent = '';
+
+    const dot = createElement(
+      'span',
+      `w-1.5 h-1.5 rounded-full shrink-0 ${
+        isAuth ? 'bg-primary-container shadow-[0_0_6px_var(--accent)]' : 'bg-muted/60'
+      }`
+    );
+    const label = createElement(
+      'span',
+      'text-[11px] text-muted select-none',
+      isAuth ? t('snippets.cloudSync') : t('snippets.localStore')
+    );
+    badge.appendChild(dot);
+    badge.appendChild(label);
   }
 
   private render(): void {
@@ -700,33 +743,45 @@ export class SnippetManager {
     );
     infoCol.appendChild(nameEl);
 
-    const badges = createElement('div', 'flex items-center gap-1.5 mt-1 flex-wrap');
+    const badges = createElement('div', 'flex items-center gap-2 mt-1 flex-wrap');
 
-    // 分类 Badge
+    // 分类 Tag（轻量标签元数据展示，避免伪装成可点击按钮）
     if (snippet.category && snippet.category.trim()) {
-      const catBadge = createElement(
+      const catTag = createElement(
         'span',
-        'text-[10px] px-1.5 py-0.5 rounded border border-primary-container/30 text-primary-container bg-primary-container/10 select-none',
-        snippet.category.trim()
+        'text-[11px] text-muted/80 flex items-center gap-0.5 select-none'
       );
-      badges.appendChild(catBadge);
+      const prefix = createElement(
+        'span',
+        'text-primary-container font-code font-bold text-[11px]',
+        '#'
+      );
+      const name = createElement('span', undefined, snippet.category.trim());
+      catTag.appendChild(prefix);
+      catTag.appendChild(name);
+      badges.appendChild(catTag);
     }
 
-    // 变量 Badge
+    // 变量标识（文本元数据展示，避免伪装成按钮）
     const variables = extractSnippetVariables(snippet.command);
     if (variables.length > 0) {
-      const varBadge = createElement(
+      const varTag = createElement(
         'span',
-        'text-[10px] px-1.5 py-0.5 rounded border border-secondary-container/40 text-secondary-container bg-secondary-container/10 flex items-center gap-0.5 select-none'
+        'text-[11px] text-muted/70 flex items-center gap-1 select-none font-code'
       );
-      varBadge.appendChild(createIcon('tune', '11px'));
+      const varSymbol = createElement(
+        'span',
+        'text-secondary-container text-[11px]',
+        '{ }'
+      );
       const varText = createElement(
         'span',
-        undefined,
-        `${t('snippets.hasVariables')} (${variables.join(', ')})`
+        'font-ui text-[11px]',
+        `${t('snippets.hasVariables')} (${variables.map((v) => `{{${v}}}`).join(', ')})`
       );
-      varBadge.appendChild(varText);
-      badges.appendChild(varBadge);
+      varTag.appendChild(varSymbol);
+      varTag.appendChild(varText);
+      badges.appendChild(varTag);
     }
     infoCol.appendChild(badges);
     headerRow.appendChild(infoCol);

@@ -583,7 +583,7 @@ export const zhCN = {
   'snippets.allCategories': '全部',
   'snippets.uncategorized': '未分类',
   'snippets.hasVariables': '含动态参数',
-  'snippets.variableHint': '💡 支持使用 {{变量名}} 定义动态参数，填入时将自动弹窗输入',
+  'snippets.variableHint': '[!] 支持使用 {{变量名}} 定义动态参数，填入时将自动弹窗输入',
   'snippets.newSnippet': '新建片段',
   'snippets.close': '关闭片段库',
   'snippets.add': '新增片段',

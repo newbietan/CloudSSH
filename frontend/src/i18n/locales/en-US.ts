@@ -631,7 +631,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'snippets.uncategorized': 'Uncategorized',
   'snippets.hasVariables': 'With variables',
   'snippets.variableHint':
-    '💡 Use {{variable}} to define dynamic placeholders prompted before insertion',
+    '[!] Use {{variable}} to define dynamic placeholders prompted before insertion',
   'snippets.newSnippet': 'New Snippet',
   'snippets.close': 'Close snippets',
   'snippets.add': 'New snippet',
