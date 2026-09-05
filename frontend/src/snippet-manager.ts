@@ -316,16 +316,18 @@ export class SnippetManager {
     );
     const searchIcon = createIcon('search', '15px');
     searchIcon.className =
-      'material-symbols-outlined absolute left-2.5 text-muted pointer-events-none select-none';
+      'material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none select-none';
     searchWrapper.appendChild(searchIcon);
 
     const searchInput = createElement(
       'input',
-      'w-full h-full bg-transparent pl-8 pr-7 text-[12px] outline-none terminal-input border-0 font-ui'
+      'w-full h-full bg-transparent text-[12px] outline-none terminal-input border-0 font-ui'
     );
     searchInput.id = 'snippet-search-input';
     searchInput.type = 'search';
     searchInput.placeholder = t('snippets.searchPlaceholder');
+    searchInput.style.paddingLeft = '32px';
+    searchInput.style.paddingRight = '28px';
 
     const clearBtn = createElement(
       'button',
