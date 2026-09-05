@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-09-05
+
+### Added
+
+- **命令片段库抽屉式面板重构（对齐 SFTP 规范）**：
+  - 彻底摒弃原有的小弹窗（Dialog）设计，对齐 SFTP 与 Agent 规范，重构为右侧滑出抽屉（Slide-over Drawer Panel），宽度自适应 `min(clamp(440px, 45vw, 680px), 100vw)`，移动端自适应全屏。
+  - 抽屉展开时左侧终端保持可见，用户可在同一屏幕内完成片段浏览、填入终端或执行验证。
+  - 表单重构为内联折叠模式（Collapsible Form），默认收起，点击“+ 新建”或“编辑”平滑展开，大幅释放可视空间，单屏可展示 10+ 条片段卡片。
+- **命令片段分类管理体系（Category）**：
+  - 顶部增加横向分类筛选胶囊栏（Category Chips）：`[全部 (N)] [分类A (x)] ... [未分类 (z)]`，动态去重聚合各分类片段数量。
+  - 表单内新增分类输入项，搭配 `<datalist>` 分类建议自动联想，支持直接录入新分类或快速复用已有分类。
+  - 联动检索：分类筛选胶囊与搜索框关键词（支持匹配名称、命令、分类）执行交集过滤，支持精准检索。
+- **后端架构与存储层无缝迁移**：
+  - `src/snippet-schema.ts`：扩展 `SNIPPET_CATEGORY_MAX_LENGTH = 30` 与分类字段规范化校验。
+  - `src/worker/user-db.ts`：SQLite `command_snippets` 表动态追加 `category TEXT NOT NULL DEFAULT ''` 列，启动时通过 `PRAGMA table_info` 自动幂等迁移，旧数据自动归入“未分类”，零停机零风险。
+  - `frontend/src/snippet-store.ts`：云端（`RemoteSnippetStore`）与本地（`LocalSnippetStore`）存储层同步扩展 `category` 字段。
+- **UI 交互与终端原生质感优化**：
+  - 优化 Header“云端同步 / 本地存储”为状态圆点指示器，卡片分类重构为 `#tag` 格式、动态参数重构为 `{ }` 元数据格式，彻底消除与操作按钮的视觉混淆。
+  - 修复搜索输入框内放大镜图标因简写 padding 导致的字形裁剪与重叠问题，规范居中布局与一键清空按钮。
+  - 移除前端文案中的 emoji（将 `💡` 替换为终端原生风格的 `[!]` 符号）。
+
 ## [2.0.0] - 2026-09-04
 
 ### Added
