@@ -417,7 +417,8 @@ export class AgentCore {
           content: choice.message.content || (this.preferredLocale === 'en-US' ? 'Task completed.' : '任务已执行完成。'),
         });
         this.state.status = 'idle';
-        void this.triggerDistillationIfEligible();
+        const snapshotMsgs = this.state.messages.slice(-10);
+        void this.triggerDistillationIfEligible(snapshotMsgs);
         return;
       }
 
@@ -914,17 +915,46 @@ ${conversationText}${previousSection}`;
     return null;
   }
 
-  private async triggerDistillationIfEligible(): Promise<void> {
+  private hasPlausibleFactCommands(commands: Set<string>): boolean {
+    const TRIVIAL_EXACT_COMMANDS = new Set([
+      'date',
+      'whoami',
+      'pwd',
+      'uptime',
+      'id',
+      'hostname',
+      'clear',
+    ]);
+    let hasMeaningful = false;
+    for (const cmd of commands) {
+      const trimmed = cmd.trim();
+      if (!trimmed || TRIVIAL_EXACT_COMMANDS.has(trimmed)) continue;
+      if (
+        trimmed.includes('/') ||
+        trimmed.includes('.') ||
+        /(?:conf|etc|var|opt|systemctl|service|docker|podman|nginx|caddy|port|listen|env|install|deploy)/i.test(
+          trimmed
+        )
+      ) {
+        return true;
+      }
+      hasMeaningful = true;
+    }
+    return hasMeaningful;
+  }
+
+  private async triggerDistillationIfEligible(snapshotMsgs: ChatMessage[]): Promise<void> {
     if (
       !this.memoryProvider ||
       this.progress.uniqueCommands.size === 0 ||
+      !this.hasPlausibleFactCommands(this.progress.uniqueCommands) ||
       this.distillationInProgress
     ) {
       return;
     }
     this.distillationInProgress = true;
     try {
-      await this.distillMemoriesWithLLM();
+      await this.distillMemoriesWithLLM(snapshotMsgs);
     } catch {
       // 提炼失败不得影响正常交互
     } finally {
@@ -932,13 +962,12 @@ ${conversationText}${previousSection}`;
     }
   }
 
-  private async distillMemoriesWithLLM(): Promise<void> {
+  private async distillMemoriesWithLLM(snapshotMsgs: ChatMessage[]): Promise<void> {
     const config = this.agentConfig;
     if (!config || !this.memoryProvider) return;
 
-    // 选取最近的交互片段用于分析
-    const recentMsgs = this.state.messages
-      .slice(-10)
+    // 选取刚才同步快照的最后几条消息用于分析
+    const recentMsgs = snapshotMsgs
       .map((m) => {
         if (m.role === 'user') return `用户: ${m.content}`;
         if (m.role === 'assistant') {
@@ -982,6 +1011,11 @@ ${conversationText}${previousSection}`;
         }),
         signal: AbortSignal.timeout(10000),
       });
+
+      if (res.status >= 300 && res.status < 400) {
+        console.error('SSRF Distillation Fetch Redirect blocked:', res.status);
+        return;
+      }
 
       if (!res.ok) return;
 

@@ -263,6 +263,10 @@ export class AgentPanel {
     this.panelEl?.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         e.preventDefault();
+        if (this.isMemoryDrawerOpen) {
+          this.closeMemoryDrawer();
+          return;
+        }
         this.hide();
       }
     });
@@ -367,6 +371,9 @@ export class AgentPanel {
   }
 
   private handleSend(): void {
+    if (this.isMemoryDrawerOpen) {
+      this.closeMemoryDrawer();
+    }
     const text = this.inputEl?.value || '';
     const selection = this.pendingTerminalSelection;
     if (!this.sendMessage(text, selection)) return;
@@ -1009,7 +1016,7 @@ export class AgentPanel {
       if (this.serverId) {
         const pinButton = this.createCodeActionButton('pin', 'bookmark_add', t('agent.codePinMemory'));
         pinButton.addEventListener('click', () => {
-          this.openMemoryFormWithPrefill('custom', '', code.trim());
+          this.openMemoryFormWithPrefill('custom', '', code.trim().slice(0, 512));
         });
         actionsEl.appendChild(pinButton);
       }
@@ -1254,16 +1261,25 @@ export class AgentPanel {
       custom: t('agent.memoryCategoryCustom'),
     } as Record<string, string>;
 
+    const categoryClasses = {
+      path: 'bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/30',
+      service: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30',
+      env: 'bg-[var(--accent-secondary)]/10 text-[var(--accent-secondary)] border border-[var(--accent-secondary)]/30',
+      rule: 'bg-amber-500/10 text-amber-400 border border-amber-500/30',
+      custom: 'bg-[var(--bg-hover)] text-muted border border-outline-variant/30',
+    } as Record<string, string>;
+
     const cardsHtml = this.memories
       .map((m) => {
         const catLabel = categoryNames[m.category] || t('agent.memoryCategoryCustom');
+        const catClass = categoryClasses[m.category] || categoryClasses.custom;
         const isManual = m.source === 'manual';
         const sourceLabel = isManual ? t('agent.memorySourceManual') : t('agent.memorySourceAuto');
         return `
           <div class="agent-memory-card p-2.5 rounded border border-[var(--border)] bg-[var(--bg-elevated)] flex flex-col gap-1.5" data-memory-id="${m.id}">
             <div class="flex items-center justify-between text-[11px]">
               <div class="flex items-center gap-1.5 min-w-0">
-                <span class="px-1.5 py-0.2 rounded text-[10px] font-medium bg-[var(--bg-hover)] text-secondary shrink-0">${escapeHtml(catLabel)}</span>
+                <span class="px-1.5 py-0.2 rounded text-[10px] font-medium shrink-0 ${catClass}">${escapeHtml(catLabel)}</span>
                 <span class="font-code font-bold text-primary truncate">${escapeHtml(m.fact_key)}</span>
                 <span class="text-[10px] px-1 rounded shrink-0 ${isManual ? 'bg-primary/10 text-primary border border-primary/30' : 'text-muted border border-outline-variant/30'}">${escapeHtml(sourceLabel)}</span>
               </div>

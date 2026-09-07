@@ -53,6 +53,36 @@ class FakeSql {
       return { toArray: () => (s ? [{ user_id: s.user_id }] : []) };
     }
 
+    if (q.includes('FROM servers WHERE id = ?')) {
+      const serverId = values[0];
+      const s = this.servers.find((srv) => srv.id === serverId);
+      if (!s) return { toArray: () => [] };
+      return {
+        toArray: () => [
+          {
+            id: s.id,
+            user_id: s.user_id,
+            name: s.name,
+            host: '1.2.3.4',
+            port: 22,
+            username: 'root',
+            auth_method: 'password',
+            region: null,
+            inferred_hint: null,
+            tags: '[]',
+            os: null,
+            jump_server_id: null,
+            created_at: '2026-01-01',
+            updated_at: '2026-01-01',
+          },
+        ],
+      };
+    }
+
+    if (q.startsWith('UPDATE servers SET')) {
+      return { toArray: () => [] };
+    }
+
     if (q.includes('FROM server_memories WHERE server_id = ? AND user_id = ? AND fact_key = ?')) {
       const [serverId, userId, factKey] = values as [number, number, string];
       const row = this.memories.filter(
@@ -316,5 +346,37 @@ describe('UserDBDO server memories', () => {
     );
     const list = (await resList.json()) as MemoryRowRecord[];
     expect(list).toHaveLength(0);
+  });
+
+  it('clears memories when server host or port changes', async () => {
+    // Add a memory
+    await userDb.fetch(
+      new Request('http://internal/internal/servers/1/memories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: 10,
+          category: 'path',
+          fact_key: 'web_root',
+          fact_value: '/var/www',
+        }),
+      })
+    );
+    expect(fakeSql.memories).toHaveLength(1);
+
+    // Update server host
+    await userDb.fetch(
+      new Request('http://internal/internal/servers/1', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: 10,
+          host: '10.0.0.99',
+        }),
+      })
+    );
+
+    // Memories should be cleared
+    expect(fakeSql.memories).toHaveLength(0);
   });
 });

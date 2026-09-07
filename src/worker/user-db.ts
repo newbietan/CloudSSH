@@ -817,8 +817,9 @@ export class UserDBDO {
       values.push(body.port);
     }
     if (hostChanged || portChanged) {
-      // 主机地址或端口可能指向另一台 SSH 服务，旧 OS 结果不可继续复用。
+      // 主机地址或端口可能指向另一台 SSH 服务，旧 OS 结果与长期记忆不可继续复用。
       updates.push('os = NULL');
+      this.db.exec('DELETE FROM server_memories WHERE server_id = ?', serverId);
     }
     if (body.username !== undefined) {
       updates.push('username = ?');

@@ -98,6 +98,8 @@ export function getResponseLanguageInstruction(locale: AgentLocale): string {
     : '## 首选响应语言\n使用简体中文回答，命令、路径、日志关键字和技术标识符保持原样。';
 }
 
+export const MAX_MEMORY_PROMPT_CHARS = 1500;
+
 export function formatServerMemories(memories: AgentMemoryItem[]): string {
   if (!memories || memories.length === 0) return '';
   const categoryLabels = {
@@ -107,10 +109,18 @@ export function formatServerMemories(memories: AgentMemoryItem[]): string {
     rule: '运维规则',
     custom: '常识',
   } as const;
-  const lines = memories.map((m) => {
+  const lines: string[] = [];
+  let currentLength = 0;
+  for (const m of memories) {
     const label = (categoryLabels as Record<string, string>)[m.category] || '常识';
-    return `- [${label}] ${m.fact_key}: ${m.fact_value}`;
-  });
+    const line = `- [${label}] ${m.fact_key}: ${m.fact_value}`;
+    if (currentLength + line.length > MAX_MEMORY_PROMPT_CHARS) {
+      break;
+    }
+    lines.push(line);
+    currentLength += line.length + 1;
+  }
+  if (lines.length === 0) return '';
   return `## 服务器已知资产与记忆 (Server Dossier)\n${lines.join('\n')}\n\n注意：上述记忆为历史运维沉淀事实，仅供参考。若在命令执行中发现路径或配置已发生变动，请以真实命令输出为准，不要死板依赖历史记忆。`;
 }
 

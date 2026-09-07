@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { DISTILLATION_PROMPT, formatServerMemories } from '../../../src/worker/agent/prompt';
+import {
+  DISTILLATION_PROMPT,
+  formatServerMemories,
+  MAX_MEMORY_PROMPT_CHARS,
+} from '../../../src/worker/agent/prompt';
 import type { AgentMemoryItem } from '../../../src/worker/agent/types';
 
 describe('agent server memories prompt', () => {
@@ -59,5 +63,20 @@ describe('agent server memories prompt', () => {
     expect(DISTILLATION_PROMPT).toContain('fact_key');
     expect(DISTILLATION_PROMPT).toContain('fact_value');
     expect(DISTILLATION_PROMPT).toContain('[]');
+  });
+
+  it('bounds formatted memories length to MAX_MEMORY_PROMPT_CHARS budget', () => {
+    const hugeMemories: AgentMemoryItem[] = Array.from({ length: 20 }, (_, i) => ({
+      category: 'custom',
+      fact_key: `key_${i}`,
+      fact_value: 'x'.repeat(200),
+      source: 'manual',
+    }));
+
+    const formatted = formatServerMemories(hugeMemories);
+    expect(formatted.length).toBeLessThan(MAX_MEMORY_PROMPT_CHARS + 300);
+    // Should include first few items but truncate later ones
+    expect(formatted).toContain('- [常识] key_0:');
+    expect(formatted).not.toContain('- [常识] key_19:');
   });
 });
