@@ -1,3 +1,9 @@
+import {
+  MAX_SERVER_MEMORIES,
+  normalizeMemoryInput,
+  type ServerMemoryCategory,
+  type ServerMemorySource,
+} from '../memory-schema';
 import { normalizeSnippetInput, SNIPPET_MAX_COUNT } from '../snippet-schema';
 import {
   ALLOWED_LOCATION_HINTS,
@@ -62,6 +68,17 @@ type ThemeRow = { theme_data: string };
 type FingerprintRow = { fingerprint: string };
 type AIConfigRow = { base_url: string; model: string; api_key_last4: string; updated_at: string };
 type AIConfigSecretRow = { base_url: string; model: string; api_key_enc: string };
+type MemoryRow = {
+  id: number;
+  user_id: number;
+  server_id: number;
+  category: ServerMemoryCategory;
+  fact_key: string;
+  fact_value: string;
+  source: ServerMemorySource;
+  created_at: number;
+  updated_at: number;
+};
 
 /**
  * UserDBDO — 按 GitHub 用户 ID 命名并隔离的用户数据库 Durable Object
@@ -200,6 +217,21 @@ export class UserDBDO {
       );
       CREATE INDEX IF NOT EXISTS idx_ssh_shares_user_server
         ON ssh_shares(user_id, server_id, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS server_memories (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL REFERENCES users(id),
+        server_id   INTEGER NOT NULL REFERENCES servers(id),
+        category    TEXT NOT NULL,
+        fact_key    TEXT NOT NULL,
+        fact_value  TEXT NOT NULL,
+        source      TEXT NOT NULL DEFAULT 'auto',
+        created_at  INTEGER NOT NULL,
+        updated_at  INTEGER NOT NULL,
+        UNIQUE(user_id, server_id, fact_key)
+      );
+      CREATE INDEX IF NOT EXISTS idx_server_memories_user_server
+        ON server_memories(user_id, server_id);
     `);
 
     // === Migration: 给既有 servers 表追加 region / inferred_hint 列（幂等） ===
@@ -322,6 +354,37 @@ export class UserDBDO {
       const osMatch = path.match(/^\/internal\/servers\/(\d+)\/os$/);
       if (osMatch && request.method === 'PUT') {
         return this.handleUpdateServerOS(parseInt(osMatch[1], 10), request);
+      }
+
+      // /internal/servers/:id/memories/batch
+      const batchMemoriesMatch = path.match(/^\/internal\/servers\/(\d+)\/memories\/batch$/);
+      if (batchMemoriesMatch && request.method === 'POST') {
+        const serverId = parseInt(batchMemoriesMatch[1], 10);
+        return this.handleBatchSaveServerMemories(serverId, request);
+      }
+
+      // /internal/servers/:id/memories/:memId
+      const singleMemoryMatch = path.match(/^\/internal\/servers\/(\d+)\/memories\/(\d+)$/);
+      if (singleMemoryMatch && request.method === 'DELETE') {
+        const serverId = parseInt(singleMemoryMatch[1], 10);
+        const memId = parseInt(singleMemoryMatch[2], 10);
+        const userIdStr = url.searchParams.get('user_id');
+        if (!userIdStr) return Response.json({ error: 'Missing user_id' }, { status: 400 });
+        return this.handleDeleteServerMemory(serverId, memId, parseInt(userIdStr, 10));
+      }
+
+      // /internal/servers/:id/memories
+      const memoriesMatch = path.match(/^\/internal\/servers\/(\d+)\/memories$/);
+      if (memoriesMatch) {
+        const serverId = parseInt(memoriesMatch[1], 10);
+        if (request.method === 'GET') {
+          const userIdStr = url.searchParams.get('user_id');
+          if (!userIdStr) return Response.json({ error: 'Missing user_id' }, { status: 400 });
+          return this.handleGetServerMemories(serverId, parseInt(userIdStr, 10));
+        }
+        if (request.method === 'POST') {
+          return this.handleSaveServerMemory(serverId, request);
+        }
       }
 
       // --- 用户自定义主题 ---
@@ -846,6 +909,7 @@ export class UserDBDO {
       );
     }
 
+    this.db.exec('DELETE FROM server_memories WHERE server_id = ?', serverId);
     this.db.exec('DELETE FROM servers WHERE id = ?', serverId);
     return Response.json({ success: true });
   }
@@ -1737,5 +1801,187 @@ export class UserDBDO {
       model: row.model,
       api_key: decrypted,
     });
+  }
+
+  // ==================== 服务器记忆档案 (Server Dossier) ====================
+
+  private handleGetServerMemories(serverId: number, userId: number): Response {
+    const existing = this.query<UserIdRow>('SELECT user_id FROM servers WHERE id = ?', serverId);
+    if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
+    if (existing[0].user_id !== userId) return Response.json({ error: 'Forbidden' }, { status: 403 });
+
+    const rows = this.query<MemoryRow>(
+      `SELECT id, user_id, server_id, category, fact_key, fact_value, source, created_at, updated_at
+       FROM server_memories
+       WHERE server_id = ? AND user_id = ?
+       ORDER BY CASE WHEN source = 'manual' THEN 1 ELSE 0 END DESC, updated_at DESC
+       LIMIT ?`,
+      serverId,
+      userId,
+      MAX_SERVER_MEMORIES
+    );
+
+    return Response.json(rows);
+  }
+
+  private async handleSaveServerMemory(serverId: number, request: Request): Promise<Response> {
+    const body = await request.json<{
+      user_id: number;
+      category?: unknown;
+      fact_key?: unknown;
+      fact_value?: unknown;
+      source?: unknown;
+    }>();
+
+    if (!body.user_id) return Response.json({ error: 'Missing user_id' }, { status: 400 });
+
+    const existing = this.query<UserIdRow>('SELECT user_id FROM servers WHERE id = ?', serverId);
+    if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
+    if (existing[0].user_id !== body.user_id) return Response.json({ error: 'Forbidden' }, { status: 403 });
+
+    const normalized = normalizeMemoryInput({
+      category: body.category,
+      fact_key: body.fact_key,
+      fact_value: body.fact_value,
+      source: body.source,
+    });
+
+    if (!normalized.ok) {
+      const errorMap = {
+        keyRequired: '记忆键名不能为空',
+        valueRequired: '记忆内容不能为空',
+        keyTooLong: '记忆键名不能超过 64 个字符',
+        valueTooLong: '记忆内容不能超过 512 个字符',
+        sensitiveDataDetected: '检测到敏感凭据信息，拒绝记录',
+      } as Record<string, string>;
+      return Response.json({ error: errorMap[normalized.error] || '记忆输入不合法' }, { status: 400 });
+    }
+
+    const { category, fact_key, fact_value, source } = normalized.value;
+
+    const countRow = this.one<{ count: number }>(
+      'SELECT COUNT(*) as count FROM server_memories WHERE server_id = ? AND user_id = ? AND fact_key != ?',
+      serverId,
+      body.user_id,
+      fact_key
+    );
+    if ((countRow?.count ?? 0) >= MAX_SERVER_MEMORIES) {
+      return Response.json(
+        { error: `该服务器记忆条目已达上限（最多 ${MAX_SERVER_MEMORIES} 条）` },
+        { status: 400 }
+      );
+    }
+
+    const now = Date.now();
+    this.db.exec(
+      `INSERT INTO server_memories (user_id, server_id, category, fact_key, fact_value, source, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, server_id, fact_key) DO UPDATE SET
+         category = excluded.category,
+         fact_value = excluded.fact_value,
+         source = excluded.source,
+         updated_at = excluded.updated_at`,
+      body.user_id,
+      serverId,
+      category,
+      fact_key,
+      fact_value,
+      source,
+      now,
+      now
+    );
+
+    const saved = this.query<MemoryRow>(
+      `SELECT id, user_id, server_id, category, fact_key, fact_value, source, created_at, updated_at
+       FROM server_memories
+       WHERE server_id = ? AND user_id = ? AND fact_key = ?`,
+      serverId,
+      body.user_id,
+      fact_key
+    );
+
+    return Response.json(saved[0] ?? { success: true }, { status: 201 });
+  }
+
+  private async handleBatchSaveServerMemories(serverId: number, request: Request): Promise<Response> {
+    const body = await request.json<{
+      user_id: number;
+      memories: Array<{
+        category?: unknown;
+        fact_key?: unknown;
+        fact_value?: unknown;
+        source?: unknown;
+      }>;
+    }>();
+
+    if (!body.user_id || !Array.isArray(body.memories)) {
+      return Response.json({ error: 'Invalid request' }, { status: 400 });
+    }
+
+    const existing = this.query<UserIdRow>('SELECT user_id FROM servers WHERE id = ?', serverId);
+    if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
+    if (existing[0].user_id !== body.user_id) return Response.json({ error: 'Forbidden' }, { status: 403 });
+
+    let savedCount = 0;
+    const now = Date.now();
+
+    for (const mem of body.memories) {
+      const normalized = normalizeMemoryInput({
+        category: mem.category,
+        fact_key: mem.fact_key,
+        fact_value: mem.fact_value,
+        source: mem.source ?? 'auto',
+      });
+      if (!normalized.ok) continue;
+
+      const { category, fact_key, fact_value, source } = normalized.value;
+
+      const countRow = this.one<{ count: number }>(
+        'SELECT COUNT(*) as count FROM server_memories WHERE server_id = ? AND user_id = ? AND fact_key != ?',
+        serverId,
+        body.user_id,
+        fact_key
+      );
+      if ((countRow?.count ?? 0) >= MAX_SERVER_MEMORIES) continue;
+
+      this.db.exec(
+        `INSERT INTO server_memories (user_id, server_id, category, fact_key, fact_value, source, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(user_id, server_id, fact_key) DO UPDATE SET
+           category = CASE WHEN server_memories.source = 'manual' AND excluded.source = 'auto' THEN server_memories.category ELSE excluded.category END,
+           fact_value = CASE WHEN server_memories.source = 'manual' AND excluded.source = 'auto' THEN server_memories.fact_value ELSE excluded.fact_value END,
+           source = CASE WHEN server_memories.source = 'manual' AND excluded.source = 'auto' THEN 'manual' ELSE excluded.source END,
+           updated_at = CASE WHEN server_memories.source = 'manual' AND excluded.source = 'auto' THEN server_memories.updated_at ELSE excluded.updated_at END`,
+        body.user_id,
+        serverId,
+        category,
+        fact_key,
+        fact_value,
+        source,
+        now,
+        now
+      );
+      savedCount++;
+    }
+
+    return Response.json({ success: true, savedCount });
+  }
+
+  private handleDeleteServerMemory(serverId: number, memoryId: number, userId: number): Response {
+    const existing = this.query<UserIdRow>(
+      'SELECT user_id FROM server_memories WHERE id = ? AND server_id = ?',
+      memoryId,
+      serverId
+    );
+    if (existing.length === 0) return Response.json({ error: 'Memory not found' }, { status: 404 });
+    if (existing[0].user_id !== userId) return Response.json({ error: 'Forbidden' }, { status: 403 });
+
+    this.db.exec(
+      'DELETE FROM server_memories WHERE id = ? AND server_id = ? AND user_id = ?',
+      memoryId,
+      serverId,
+      userId
+    );
+    return Response.json({ success: true });
   }
 }

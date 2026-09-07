@@ -1,11 +1,20 @@
 // Agent Core — control loop that runs inside Durable Object
 
-import { type AgentLocale, getResponseLanguageInstruction, getSystemPrompt } from './prompt';
+import { normalizeMemoryInput } from '../../memory-schema';
+import {
+  type AgentLocale,
+  DISTILLATION_PROMPT,
+  formatServerMemories,
+  getResponseLanguageInstruction,
+  getSystemPrompt,
+} from './prompt';
 import type { TerminalContext } from './terminal-context';
 import { ToolExecutor } from './tool-executor';
 import { AGENT_TOOLS } from './tools';
 import type {
   AgentConfig,
+  AgentMemoryItem,
+  AgentMemoryProvider,
   AgentState,
   AIConfig,
   ChatCompletionResponse,
@@ -51,6 +60,8 @@ export class AgentCore {
   private environmentContext: string = '';
   private terminalContextSnapshot: string = '';
   private preferredLocale: AgentLocale = 'zh-CN';
+  private memories: AgentMemoryItem[] = [];
+  private distillationInProgress: boolean = false;
 
   constructor(
     private terminalContext: TerminalContext,
@@ -66,7 +77,8 @@ export class AgentCore {
       exitCode: number;
     }>,
     private askConfirmation: (command: string, reason: string) => Promise<boolean>,
-    config?: Partial<AgentConfig>
+    config?: Partial<AgentConfig>,
+    private memoryProvider?: AgentMemoryProvider
   ) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.toolExecutor = new ToolExecutor(
@@ -183,6 +195,9 @@ export class AgentCore {
     }
 
     if (isNewSession) {
+      if (this.memoryProvider) {
+        this.memories = await this.memoryProvider.fetchMemories().catch(() => []);
+      }
       // 2. 首次启动：采集环境 + 终端上下文（注入 system prompt），用户消息保持干净
       this.terminalContextSnapshot = this.terminalContext.snapshot(200);
       const envSnapshot = await this.toolExecutor
@@ -402,6 +417,7 @@ export class AgentCore {
           content: choice.message.content || (this.preferredLocale === 'en-US' ? 'Task completed.' : '任务已执行完成。'),
         });
         this.state.status = 'idle';
+        void this.triggerDistillationIfEligible();
         return;
       }
 
@@ -795,6 +811,12 @@ export class AgentCore {
     if (this.state.summary) {
       parts.push(`## 之前的对话摘要\n${this.state.summary}`);
     }
+    if (this.memories.length > 0) {
+      const memoryText = formatServerMemories(this.memories);
+      if (memoryText) {
+        parts.push(memoryText);
+      }
+    }
 
     return parts.join('\n\n');
   }
@@ -890,5 +912,121 @@ ${conversationText}${previousSection}`;
     }
 
     return null;
+  }
+
+  private async triggerDistillationIfEligible(): Promise<void> {
+    if (
+      !this.memoryProvider ||
+      this.progress.uniqueCommands.size === 0 ||
+      this.distillationInProgress
+    ) {
+      return;
+    }
+    this.distillationInProgress = true;
+    try {
+      await this.distillMemoriesWithLLM();
+    } catch {
+      // 提炼失败不得影响正常交互
+    } finally {
+      this.distillationInProgress = false;
+    }
+  }
+
+  private async distillMemoriesWithLLM(): Promise<void> {
+    const config = this.agentConfig;
+    if (!config || !this.memoryProvider) return;
+
+    // 选取最近的交互片段用于分析
+    const recentMsgs = this.state.messages
+      .slice(-10)
+      .map((m) => {
+        if (m.role === 'user') return `用户: ${m.content}`;
+        if (m.role === 'assistant') {
+          if (m.tool_calls) {
+            const cmds = m.tool_calls.map((tc) => tc.function.arguments).join(', ');
+            return `AI执行命令: ${cmds}`;
+          }
+          return `AI回复: ${m.content}`;
+        }
+        if (m.role === 'tool') {
+          return `命令输出: ${m.content?.slice(0, 300)}`;
+        }
+        return '';
+      })
+      .filter(Boolean)
+      .join('\n');
+
+    if (!recentMsgs || recentMsgs.length < 50) return;
+
+    try {
+      let cleanBaseUrl = config.base_url.replace(/\/$/, '');
+      if (cleanBaseUrl.endsWith('/chat/completions')) {
+        cleanBaseUrl = cleanBaseUrl.slice(0, -'/chat/completions'.length);
+      }
+
+      const res = await fetch(`${cleanBaseUrl}/chat/completions`, {
+        method: 'POST',
+        redirect: 'manual',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.api_key}`,
+        },
+        body: JSON.stringify({
+          model: config.model,
+          messages: [
+            { role: 'system', content: DISTILLATION_PROMPT },
+            { role: 'user', content: `排查记录如下：\n${recentMsgs}` },
+          ],
+          max_tokens: 512,
+          temperature: 0.1,
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!res.ok) return;
+
+      const data = await res.json<{ choices: Array<{ message: { content: string } }> }>();
+      const rawContent = data.choices?.[0]?.message?.content?.trim();
+      if (!rawContent) return;
+
+      let jsonStr = rawContent;
+      const jsonMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[1].trim();
+      }
+
+      let parsed: any[] = [];
+      try {
+        parsed = JSON.parse(jsonStr);
+      } catch {
+        return;
+      }
+
+      if (!Array.isArray(parsed) || parsed.length === 0) return;
+
+      const validMemories = [];
+      for (const item of parsed) {
+        const normalized = normalizeMemoryInput({
+          category: item.category,
+          fact_key: item.fact_key || item.key,
+          fact_value: item.fact_value || item.value,
+          source: 'auto',
+        });
+        if (normalized.ok) {
+          validMemories.push(normalized.value);
+        }
+      }
+
+      if (validMemories.length > 0) {
+        await this.memoryProvider.saveMemories(validMemories);
+        this.memories = await this.memoryProvider.fetchMemories().catch(() => this.memories);
+        this.sendToFrontend({
+          type: 'agent_frame',
+          subType: 'memories_updated',
+        });
+      }
+    } catch {
+      // 蒸馏失败静默忽略
+    }
   }
 }

@@ -70,6 +70,7 @@ import {
 import { AgentCore } from './agent/core';
 import { AgentExecChannel } from './agent/exec-channel';
 import { TerminalContext } from './agent/terminal-context';
+import type { AgentMemoryItem, AgentMemoryProvider } from './agent/types';
 import { DirectTcpipStream } from './direct-tcpip-stream';
 import { detectAndPersistRemoteOS } from './os-detect';
 import { SFTPHandler } from './sftp-handler';
@@ -2799,13 +2800,51 @@ export class SSHSession {
     }
 
     if (!this.agentCore) {
+      let memoryProvider: AgentMemoryProvider | undefined;
+      const serverId = this.config.serverId;
+      const uid = this.userId;
+      const gid = this.githubId;
+      const env = this.env;
+      if (serverId && uid && gid && env) {
+        memoryProvider = {
+          fetchMemories: async () => {
+            try {
+              const stub = env.USER_DB.get(env.USER_DB.idFromName(gid));
+              const res = await stub.fetch(
+                new Request(`http://internal/internal/servers/${serverId}/memories?user_id=${uid}`)
+              );
+              if (!res.ok) return [];
+              return (await res.json()) as AgentMemoryItem[];
+            } catch {
+              return [];
+            }
+          },
+          saveMemories: async (memories) => {
+            try {
+              const stub = env.USER_DB.get(env.USER_DB.idFromName(gid));
+              await stub.fetch(
+                new Request(`http://internal/internal/servers/${serverId}/memories/batch`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ user_id: Number(uid), memories }),
+                })
+              );
+            } catch {
+              /* ignore error */
+            }
+          },
+        };
+      }
+
       this.agentCore = new AgentCore(
         this.terminalContext,
         (msg: any) => this.sendAgentFrame(msg),
-        async (uid: string) => this.fetchAgentAIConfig(uid, this.githubId!),
+        async (uId: string) => this.fetchAgentAIConfig(uId, this.githubId!),
         async (command: string, timeout: number, signal?: AbortSignal) =>
           this.executeAgentCommand(command, timeout, signal),
-        async (command: string, reason: string) => this.askAgentConfirmation(command, reason)
+        async (command: string, reason: string) => this.askAgentConfirmation(command, reason),
+        undefined,
+        memoryProvider
       );
     }
 

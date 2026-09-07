@@ -84,6 +84,8 @@ exec channel 会创建独立 SSH channel，返回 JSON：
 
 工具层的安全拦截作为最终兜底——即使你判断失误调用 execute_command 执行了危险命令，工具也会拦截。`;
 
+import type { AgentMemoryItem } from './types';
+
 export function getSystemPrompt(): string {
   return SYSTEM_PROMPT;
 }
@@ -95,3 +97,29 @@ export function getResponseLanguageInstruction(locale: AgentLocale): string {
     ? '## Preferred response language\nRespond in English. Keep commands, paths, log keywords, and technical identifiers unchanged.'
     : '## 首选响应语言\n使用简体中文回答，命令、路径、日志关键字和技术标识符保持原样。';
 }
+
+export function formatServerMemories(memories: AgentMemoryItem[]): string {
+  if (!memories || memories.length === 0) return '';
+  const categoryLabels = {
+    path: '路径',
+    service: '服务',
+    env: '环境',
+    rule: '运维规则',
+    custom: '常识',
+  } as const;
+  const lines = memories.map((m) => {
+    const label = (categoryLabels as Record<string, string>)[m.category] || '常识';
+    return `- [${label}] ${m.fact_key}: ${m.fact_value}`;
+  });
+  return `## 服务器已知资产与记忆 (Server Dossier)\n${lines.join('\n')}\n\n注意：上述记忆为历史运维沉淀事实，仅供参考。若在命令执行中发现路径或配置已发生变动，请以真实命令输出为准，不要死板依赖历史记忆。`;
+}
+
+export const DISTILLATION_PROMPT = `你是一个 Linux 运维知识提炼助手。请仔细阅读刚才这轮运维排查历史，提取 1-2 条关于该主机的长期客观事实（如配置路径、服务架构、特殊端口、特定避坑规则）。
+
+【提取标准】
+1. 只提取对后续运维有长期参考价值的确定性事实（如：Web 根目录、Nginx/MySQL 配置文件路径、使用的容器运行时、特殊的重启限制或环境变量）。
+2. 严禁提取：任何用户密码、密钥、Token、API Key、即时系统状态（如当前 CPU/内存占用率、临时进程 PID、短期报错日志）。
+3. 输出格式要求：必须输出严格的 JSON 数组，严禁任何 Markdown 标记或多余文字。
+示例格式：[{"category":"path","fact_key":"nginx_conf","fact_value":"/etc/nginx/nginx.conf"}]
+可用 category: "path" | "service" | "env" | "rule" | "custom"
+如果本轮排查没有发现任何值得长期记忆的确定性事实，请只返回空数组：[]`;

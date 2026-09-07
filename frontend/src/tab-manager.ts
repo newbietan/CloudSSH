@@ -149,7 +149,7 @@ export class TabManager {
 
         // 初始化 Agent 面板（仅登录用户）
         if (this._isLoggedIn && !tab.agentPanel) {
-          tab.agentPanel = new AgentPanel(tab.containerEl, true);
+          tab.agentPanel = new AgentPanel(tab.containerEl, true, tab.hostInfo?.serverId);
           tab.agentPanel.render();
           tab.agentPanel.setWebSocketSend((data: string) =>
             tab.terminal.sendWebSocketMessage(data)

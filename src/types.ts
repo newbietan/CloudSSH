@@ -199,6 +199,8 @@ export interface ServerConfig {
   updated_at: string;
 }
 
+export type { ServerMemory, ServerMemoryCategory, ServerMemorySource } from './memory-schema';
+
 export const SSH_MSG_DISCONNECT = 1;
 export const SSH_MSG_IGNORE = 2;
 export const SSH_MSG_UNIMPLEMENTED = 3;

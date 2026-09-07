@@ -87,3 +87,23 @@ export interface AIConfig {
   model: string;
   api_key: string;
 }
+
+export interface AgentMemoryItem {
+  id?: number;
+  category: 'path' | 'service' | 'env' | 'rule' | 'custom';
+  fact_key: string;
+  fact_value: string;
+  source: 'auto' | 'manual';
+}
+
+export interface AgentMemoryProvider {
+  fetchMemories(): Promise<AgentMemoryItem[]>;
+  saveMemories(
+    memories: Array<{
+      category?: string;
+      fact_key: string;
+      fact_value: string;
+      source?: string;
+    }>
+  ): Promise<void>;
+}
