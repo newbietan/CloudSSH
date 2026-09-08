@@ -211,7 +211,8 @@ export class UserDBDO {
       CREATE TABLE IF NOT EXISTS server_task_checkpoints (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id     INTEGER NOT NULL REFERENCES users(id),
-        server_id   INTEGER NOT NULL REFERENCES servers(id),
+        -- 不与 servers 设强外键约束：对齐 ssh_shares 设计原则，服务器删除时由业务显式清理，避免偶发的外键级联锁定
+        server_id   INTEGER NOT NULL,
         title       TEXT NOT NULL,
         status      TEXT NOT NULL DEFAULT 'in_progress',
         done_summary TEXT NOT NULL,
@@ -258,6 +259,9 @@ export class UserDBDO {
     if (!snippetCols.some((c: any) => c.name === 'category')) {
       this.db.exec("ALTER TABLE command_snippets ADD COLUMN category TEXT NOT NULL DEFAULT ''");
     }
+
+    // === Migration: 彻底清理已废弃的旧版 server_memories 表（解除其对 servers 的外键阻碍） ===
+    this.db.exec('DROP TABLE IF EXISTS server_memories');
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -806,6 +810,11 @@ export class UserDBDO {
     if (hostChanged || portChanged) {
       // 主机地址或端口可能指向另一台 SSH 服务，旧 OS 结果与任务断点不可继续复用。
       updates.push('os = NULL');
+      try {
+        this.db.exec('DELETE FROM server_memories WHERE server_id = ?', serverId);
+      } catch {
+        /* ignore if legacy table was already dropped */
+      }
       this.db.exec('DELETE FROM server_task_checkpoints WHERE server_id = ?', serverId);
     }
     if (body.username !== undefined) {
@@ -897,6 +906,11 @@ export class UserDBDO {
       );
     }
 
+    try {
+      this.db.exec('DELETE FROM server_memories WHERE server_id = ?', serverId);
+    } catch {
+      /* ignore if legacy table was already dropped */
+    }
     this.db.exec('DELETE FROM server_task_checkpoints WHERE server_id = ?', serverId);
     this.db.exec('DELETE FROM servers WHERE id = ?', serverId);
     return Response.json({ success: true });

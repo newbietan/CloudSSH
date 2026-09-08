@@ -39,7 +39,8 @@ class FakeSql {
     if (
       q.includes('CREATE TABLE') ||
       q.includes('CREATE INDEX') ||
-      q.includes('PRAGMA table_info')
+      q.includes('PRAGMA table_info') ||
+      q.includes('DROP TABLE')
     ) {
       if (q.includes('PRAGMA table_info(servers)')) {
         return { toArray: () => [{ name: 'region' }, { name: 'inferred_hint' }] as unknown[] };
@@ -400,5 +401,31 @@ describe('UserDBDO server task checkpoints', () => {
     );
     expect(resUpdate.status).toBe(200);
     expect(fakeSql.checkpoints).toHaveLength(0);
+  });
+
+  it('drops legacy server_memories table during initSchema migration and cleans up during server delete', async () => {
+    // Check that DROP TABLE IF EXISTS server_memories was executed during init
+    const dropped = fakeSql.statements.some((s) =>
+      s.query.includes('DROP TABLE IF EXISTS server_memories')
+    );
+    expect(dropped).toBe(true);
+
+    // Deleting a server succeeds and executes both cleanup queries
+    const resDel = await userDb.fetch(
+      new Request('http://internal/internal/servers/1', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: 10 }),
+      })
+    );
+    expect(resDel.status).toBe(200);
+    const deletedServerMemories = fakeSql.statements.some((s) =>
+      s.query.includes('DELETE FROM server_memories WHERE server_id = ?')
+    );
+    const deletedCheckpoints = fakeSql.statements.some((s) =>
+      s.query.includes('DELETE FROM server_task_checkpoints WHERE server_id = ?')
+    );
+    expect(deletedServerMemories).toBe(true);
+    expect(deletedCheckpoints).toBe(true);
   });
 });
