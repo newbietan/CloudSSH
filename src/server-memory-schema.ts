@@ -8,7 +8,7 @@
  */
 
 export const MAX_SERVER_WORK_LOGS = 10;
-export const MAX_SERVER_KNOWLEDGE = 20;
+export const MAX_SERVER_KNOWLEDGE = 50;
 
 export const WORK_LOG_TITLE_MAX_LENGTH = 64;
 export const WORK_LOG_SUMMARY_MAX_LENGTH = 300;

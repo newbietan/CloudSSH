@@ -230,7 +230,7 @@ class FakeSql {
       const sK = this.knowledge
         .filter((k) => k.server_id === serverId && k.user_id === userId)
         .sort((a, b) => b.updated_at - a.updated_at);
-      const keep = new Set(sK.slice(0, 20).map((k) => k.id));
+      const keep = new Set(sK.slice(0, 50).map((k) => k.id));
       this.knowledge = this.knowledge.filter(
         (k) => !(k.server_id === serverId && k.user_id === userId && !keep.has(k.id))
       );

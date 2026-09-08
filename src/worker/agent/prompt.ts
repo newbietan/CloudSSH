@@ -102,7 +102,7 @@ export function getResponseLanguageInstruction(locale: AgentLocale): string {
     : '## 首选响应语言\n使用简体中文回答，命令、路径、日志关键字和技术标识符保持原样。';
 }
 
-export const MAX_MEMORY_PROMPT_CHARS = 1200;
+export const MAX_MEMORY_PROMPT_CHARS = 2000;
 
 export function formatServerMemoryForPrompt(
   memory: UnifiedServerMemory,
@@ -149,7 +149,7 @@ export function formatServerMemoryForPrompt(
       rule: 'Rule',
       note: 'Note',
     };
-    const kLines = memory.knowledge.slice(0, 15).map((k) => {
+    const kLines = memory.knowledge.slice(0, 50).map((k) => {
       const catLabel = (isEn ? catNamesEn[k.category] : catNamesZh[k.category]) || k.category;
       return `- [${catLabel}] ${k.key}: ${k.value}`;
     });

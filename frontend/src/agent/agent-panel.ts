@@ -5,6 +5,8 @@ import { marked, type Tokens } from 'marked';
 import {
   formatTimestampWithRelative,
   isSensitiveKeyOrValue,
+  MAX_SERVER_KNOWLEDGE,
+  MAX_SERVER_WORK_LOGS,
   normalizeKnowledgeInput,
   type UnifiedServerMemory,
 } from '../../../src/server-memory-schema';
@@ -1202,9 +1204,13 @@ export class AgentPanel {
 
     if (this.memoryCountEl) {
       if (this.activeMemoryTab === 'workLog') {
-        this.memoryCountEl.textContent = this.serverId ? `(${this.unifiedMemory.workLogs.length}/10)` : '';
+        this.memoryCountEl.textContent = this.serverId
+          ? `(${this.unifiedMemory.workLogs.length}/${MAX_SERVER_WORK_LOGS})`
+          : '';
       } else {
-        this.memoryCountEl.textContent = this.serverId ? `(${this.unifiedMemory.knowledge.length}/20)` : '';
+        this.memoryCountEl.textContent = this.serverId
+          ? `(${this.unifiedMemory.knowledge.length}/${MAX_SERVER_KNOWLEDGE})`
+          : '';
       }
     }
 
