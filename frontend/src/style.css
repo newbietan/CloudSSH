@@ -736,6 +736,25 @@ select optgroup {
   background: color-mix(in srgb, var(--agent-agent-color) 8%, transparent);
 }
 
+/* Agent Work Log Summary clamp and expansion */
+.agent-log-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+  transition: color 0.15s ease;
+}
+
+.agent-log-summary.expanded {
+  display: block;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  overflow: visible;
+}
+
 /* ==================== User Space Styles ==================== */
 
 .user-space-action-label {

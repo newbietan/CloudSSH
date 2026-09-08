@@ -1244,14 +1244,14 @@ export class AgentPanel {
             <div class="agent-memory-card p-2.5 rounded border border-[var(--border)] bg-[var(--bg-elevated)] flex flex-col gap-1.5" data-log-id="${log.id}">
               <div class="flex items-center justify-between text-[11px]">
                 <div class="flex items-center gap-1.5 min-w-0">
-                  <span class="font-bold text-primary truncate">${escapeHtml(log.title)}</span>
+                  <span class="font-bold text-primary truncate" title="${escapeHtml(log.title)}">${escapeHtml(log.title)}</span>
                   <span class="text-[10px] text-muted font-code shrink-0">${escapeHtml(timeStr)}</span>
                 </div>
                 <button type="button" class="agent-log-delete-btn text-muted hover:text-error transition-colors p-0.5 cursor-pointer shrink-0" data-id="${log.id}" title="${t('common.delete')}">
                   <span class="material-symbols-outlined text-[15px]">delete</span>
                 </button>
               </div>
-              <div class="text-[11px] text-muted leading-relaxed">${escapeHtml(log.summary)}</div>
+              <div class="agent-log-summary text-[11px] text-muted leading-relaxed cursor-pointer hover:text-text transition-colors select-text" title="${escapeHtml(log.summary)}">${escapeHtml(log.summary)}</div>
             </div>
           `;
         })
@@ -1259,6 +1259,13 @@ export class AgentPanel {
 
       // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
       this.memoryContentEl.innerHTML = logsHtml;
+
+      this.memoryContentEl.querySelectorAll<HTMLElement>('.agent-log-summary').forEach((el) => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          el.classList.toggle('expanded');
+        });
+      });
 
       this.memoryContentEl.querySelectorAll<HTMLButtonElement>('.agent-log-delete-btn').forEach((btn) => {
         btn.addEventListener('click', async () => {
