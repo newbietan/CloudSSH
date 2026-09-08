@@ -63,6 +63,7 @@ export class AgentCore {
   private environmentContext: string = '';
   private terminalContextSnapshot: string = '';
   private preferredLocale: AgentLocale = 'zh-CN';
+  private userTimezone: string = 'UTC';
   private unifiedMemory: UnifiedServerMemory = { workLogs: [], knowledge: [] };
   private distillationInProgress: boolean = false;
 
@@ -165,9 +166,13 @@ export class AgentCore {
   async handleAgentStart(
     userId: string,
     userMessage: string,
-    locale: AgentLocale = 'zh-CN'
+    locale: AgentLocale = 'zh-CN',
+    timezone?: string
   ): Promise<void> {
     this.preferredLocale = locale;
+    if (timezone && typeof timezone === 'string' && timezone.length <= 64) {
+      this.userTimezone = timezone;
+    }
     // Cancel stale timeout from previous loop so it can't abort the new controller
     if (this.loopTimeout) {
       clearTimeout(this.loopTimeout);
@@ -226,7 +231,16 @@ export class AgentCore {
         { role: 'user', content: userMessage },
       ];
     } else {
-      // 3. 后续请求：追加新用户消息到已有对话历史
+      // 3. 后续请求：追加新用户消息到已有对话历史，并刷新 system prompt 以同步最新时间与记忆
+      if (this.memoryProvider) {
+        this.unifiedMemory = await this.memoryProvider
+          .fetchUnifiedMemory()
+          .catch(() => this.unifiedMemory);
+      }
+      this.state.messages[0] = {
+        role: 'system',
+        content: this.buildSystemPromptWithSummary(),
+      };
       this.state.messages.push({
         role: 'user',
         content: userMessage,
@@ -819,7 +833,12 @@ export class AgentCore {
       parts.push(`## 之前的对话摘要\n${this.state.summary}`);
     }
     if (this.unifiedMemory.workLogs.length > 0 || this.unifiedMemory.knowledge.length > 0) {
-      const memoryText = formatServerMemoryForPrompt(this.unifiedMemory, this.preferredLocale);
+      const memoryText = formatServerMemoryForPrompt(
+        this.unifiedMemory,
+        this.preferredLocale,
+        Date.now(),
+        this.userTimezone
+      );
       if (memoryText) {
         parts.push(memoryText);
       }

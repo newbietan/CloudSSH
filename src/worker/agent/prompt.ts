@@ -107,13 +107,14 @@ export const MAX_MEMORY_PROMPT_CHARS = 1200;
 export function formatServerMemoryForPrompt(
   memory: UnifiedServerMemory,
   locale: AgentLocale = 'zh-CN',
-  now: number = Date.now()
+  now: number = Date.now(),
+  timeZone?: string
 ): string {
   const isEn = locale === 'en-US';
   const parts: string[] = [];
 
   // 1. 始终注入当前系统时间基准（解决“昨天”、“今天”、“刚才”等时态理解）
-  const timeAnchor = formatCurrentTimeAnchor(now, locale);
+  const timeAnchor = formatCurrentTimeAnchor(now, locale, timeZone);
   parts.push(isEn ? `## Current System Time\n${timeAnchor}` : `## 当前系统时间基准\n${timeAnchor}`);
 
   const hasLogs = memory?.workLogs && memory.workLogs.length > 0;
@@ -127,7 +128,7 @@ export function formatServerMemoryForPrompt(
   if (hasLogs) {
     const logHeader = isEn ? '## Recent Server Work Logs (Activity History)' : '## 服务器近期工作历程与操作备忘';
     const logLines = memory.workLogs.slice(0, 6).map((log) => {
-      const timeStr = formatTimestampWithRelative(log.created_at, now, locale);
+      const timeStr = formatTimestampWithRelative(log.created_at, now, locale, timeZone);
       return `- [${timeStr}] ${log.title}: ${log.summary}`;
     });
     parts.push(`${logHeader}\n${logLines.join('\n')}`);
@@ -157,8 +158,8 @@ export function formatServerMemoryForPrompt(
 
   // 4. 行动指引
   const guidance = isEn
-    ? '【Memory & Continuity Guidance】\n1. If the user asks what work was done (e.g., "What did I do yesterday?", "Show recent operations"), refer to the [Work Logs] above and answer directly with specific dates and tasks.\n2. If an operation requires a token, password, credential, URL, or rule that exists in [Saved Context Knowledge], REUSE IT DIRECTLY. DO NOT repeatedly ask the user for it!'
-    : '【记忆与连续性行为指引】\n1. 当用户询问历史工作（如“昨天干了什么”、“之前做过哪些操作”），请结合【当前系统时间基准】与【工作历程】中的时间戳直接清晰回答。\n2. 若当前任务需要用到【关键上下文知识、参数与凭据备忘】中已存在的 Token、密钥密码、路径或配置参数，**请直接带入使用，严禁再次向用户重复索取**！';
+    ? `【Memory & Continuity Guidance】\n1. If the user asks what work was done (e.g., "What did I do today/yesterday?", "Show recent operations"), refer to [Recent Server Work Logs] above and answer strictly using the timestamps provided (${timeZone || 'local time'}). DO NOT convert or guess UTC times.\n2. If an operation requires a token, password, credential, URL, or rule that exists in [Saved Context Knowledge], REUSE IT DIRECTLY. DO NOT repeatedly ask the user for it!`
+    : `【记忆与连续性行为指引】\n1. 当用户询问历史工作（如“今天做了哪些工作”、“昨天干了什么”、“之前做过哪些操作”），必须严格结合【当前系统时间基准】与【工作历程】中已转换为当地时区（${timeZone || '当地时区'}）的时间戳进行回答，切勿自行换算成 UTC 导致时间与用户记录不一致！\n2. 若当前任务需要用到【关键上下文知识、参数与凭据备忘】中已存在的 Token、密钥密码、路径或配置参数，**请直接带入使用，严禁再次向用户重复索取**！`;
 
   parts.push(guidance);
 

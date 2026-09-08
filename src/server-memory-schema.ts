@@ -135,27 +135,85 @@ export function normalizeKnowledgeInput(input: {
   };
 }
 
+function getTimeParts(timestamp: number, timeZone?: string) {
+  if (!timeZone) {
+    const d = new Date(timestamp);
+    return {
+      year: d.getFullYear(),
+      month: d.getMonth() + 1,
+      day: d.getDate(),
+      hours: d.getHours(),
+      minutes: d.getMinutes(),
+      seconds: d.getSeconds(),
+      dayOfWeek: d.getDay(),
+    };
+  }
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+      hour12: false,
+      weekday: 'short',
+    });
+    const parts = formatter.formatToParts(new Date(timestamp));
+    const map: Record<string, string> = {};
+    for (const p of parts) {
+      map[p.type] = p.value;
+    }
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dayOfWeek =
+      days.includes(map.weekday) ? days.indexOf(map.weekday) : new Date(timestamp).getDay();
+    return {
+      year: parseInt(map.year, 10),
+      month: parseInt(map.month, 10),
+      day: parseInt(map.day, 10),
+      hours: parseInt(map.hour, 10) === 24 ? 0 : parseInt(map.hour, 10),
+      minutes: parseInt(map.minute, 10),
+      seconds: parseInt(map.second, 10),
+      dayOfWeek,
+    };
+  } catch {
+    const d = new Date(timestamp);
+    return {
+      year: d.getFullYear(),
+      month: d.getMonth() + 1,
+      day: d.getDate(),
+      hours: d.getHours(),
+      minutes: d.getMinutes(),
+      seconds: d.getSeconds(),
+      dayOfWeek: d.getDay(),
+    };
+  }
+}
+
 /**
  * 格式化当前系统时间基准（供 Agent 计算相对日期）
  */
 export function formatCurrentTimeAnchor(
   timestamp: number = Date.now(),
-  locale: 'zh-CN' | 'en-US' = 'zh-CN'
+  locale: 'zh-CN' | 'en-US' = 'zh-CN',
+  timeZone?: string
 ): string {
-  const date = new Date(timestamp);
+  const parts = getTimeParts(timestamp, timeZone);
   const pad = (n: number) => String(n).padStart(2, '0');
-  const y = date.getFullYear();
-  const m = pad(date.getMonth() + 1);
-  const d = pad(date.getDate());
-  const hh = pad(date.getHours());
-  const mm = pad(date.getMinutes());
-  const ss = pad(date.getSeconds());
+  const y = parts.year;
+  const m = pad(parts.month);
+  const d = pad(parts.day);
+  const hh = pad(parts.hours);
+  const mm = pad(parts.minutes);
+  const ss = pad(parts.seconds);
 
   const daysZh = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   const daysEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const dayStr = locale === 'en-US' ? daysEn[date.getDay()] : daysZh[date.getDay()];
+  const dayStr = locale === 'en-US' ? daysEn[parts.dayOfWeek] : daysZh[parts.dayOfWeek];
+  const tzSuffix = timeZone ? (locale === 'en-US' ? `, Timezone: ${timeZone}` : `, 时区: ${timeZone}`) : '';
 
-  return `${y}-${m}-${d} ${hh}:${mm}:${ss} (${dayStr})`;
+  return `${y}-${m}-${d} ${hh}:${mm}:${ss} (${dayStr}${tzSuffix})`;
 }
 
 /**
@@ -164,21 +222,22 @@ export function formatCurrentTimeAnchor(
 export function formatTimestampWithRelative(
   timestamp: number,
   baseTimestamp: number = Date.now(),
-  locale: 'zh-CN' | 'en-US' = 'zh-CN'
+  locale: 'zh-CN' | 'en-US' = 'zh-CN',
+  timeZone?: string
 ): string {
   const isEn = locale === 'en-US';
-  const targetDate = new Date(timestamp);
-  const baseDate = new Date(baseTimestamp);
+  const targetParts = getTimeParts(timestamp, timeZone);
+  const baseParts = getTimeParts(baseTimestamp, timeZone);
 
   const pad = (n: number) => String(n).padStart(2, '0');
-  const y = targetDate.getFullYear();
-  const m = pad(targetDate.getMonth() + 1);
-  const d = pad(targetDate.getDate());
-  const hh = pad(targetDate.getHours());
-  const mm = pad(targetDate.getMinutes());
+  const y = targetParts.year;
+  const m = pad(targetParts.month);
+  const d = pad(targetParts.day);
+  const hh = pad(targetParts.hours);
+  const mm = pad(targetParts.minutes);
 
-  const startOfTarget = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate()).getTime();
-  const startOfBase = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate()).getTime();
+  const startOfTarget = new Date(Date.UTC(targetParts.year, targetParts.month - 1, targetParts.day)).getTime();
+  const startOfBase = new Date(Date.UTC(baseParts.year, baseParts.month - 1, baseParts.day)).getTime();
   const dayDiff = Math.round((startOfBase - startOfTarget) / 86_400_000);
 
   let relative = '';

@@ -2086,7 +2086,12 @@ export class SSHSession {
         // agent_stop / agent_confirm 已由 durable-object.ts 在 webSocketMessage 入口
         // 提前拦截并通过 handleAgentControl 同步处理，不再到达此处。
         if (parsed.type === 'agent_start') {
-          await this.handleAgentStart(parsed.message, parsed.user_id, parsed.locale);
+          await this.handleAgentStart(
+            parsed.message,
+            parsed.user_id,
+            parsed.locale,
+            parsed.timezone
+          );
           return;
         }
 
@@ -2754,7 +2759,8 @@ export class SSHSession {
   private async handleAgentStart(
     userMessage: string,
     userId?: string,
-    requestedLocale?: string
+    requestedLocale?: string,
+    requestedTimezone?: string
   ): Promise<void> {
     if (this.config.sessionPolicy?.source === 'share') {
       this.sendAgentFrame({
@@ -2849,7 +2855,13 @@ export class SSHSession {
     }
 
     const locale = requestedLocale === 'en-US' ? 'en-US' : 'zh-CN';
-    void this.agentCore.handleAgentStart(effectiveUserId, userMessage, locale);
+    const timezone =
+      typeof requestedTimezone === 'string' &&
+      requestedTimezone.length > 0 &&
+      requestedTimezone.length <= 64
+        ? requestedTimezone
+        : undefined;
+    void this.agentCore.handleAgentStart(effectiveUserId, userMessage, locale, timezone);
   }
 
   /**

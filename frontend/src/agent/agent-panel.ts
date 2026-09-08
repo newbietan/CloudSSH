@@ -428,11 +428,13 @@ export class AgentPanel {
     this.isAgentRunning = true;
     this.updateInputState();
 
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai';
     this.wsSend?.(
       JSON.stringify({
         type: 'agent_start',
         message: outboundMessage,
         locale: getLocale(),
+        timezone,
       })
     );
     return true;
@@ -1288,54 +1290,62 @@ export class AgentPanel {
       return;
     }
 
-    const catClasses: Record<string, string> = {
-      credential: 'bg-amber-500/10 text-amber-400 border border-amber-500/30',
-      config: 'bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/30',
-      rule: 'bg-[var(--accent-secondary)]/10 text-[var(--accent-secondary)] border border-[var(--accent-secondary)]/30',
-      note: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30',
-    };
-
-    const catLabels: Record<string, string> = {
-      credential: t('agent.categoryCredential'),
-      config: t('agent.categoryConfig'),
-      rule: t('agent.categoryRule'),
-      note: t('agent.categoryNote'),
+    const catBadges: Record<string, { label: string; tagClass: string; borderClass: string }> = {
+      credential: {
+        label: t('agent.categoryCredential'),
+        tagClass: 'bg-amber-500/15 text-amber-400',
+        borderClass: 'border-l-amber-500',
+      },
+      config: {
+        label: t('agent.categoryConfig'),
+        tagClass: 'bg-[var(--accent)]/15 text-[var(--accent)]',
+        borderClass: 'border-l-[var(--accent)]',
+      },
+      rule: {
+        label: t('agent.categoryRule'),
+        tagClass: 'bg-[var(--accent-secondary)]/15 text-[var(--accent-secondary)]',
+        borderClass: 'border-l-[var(--accent-secondary)]',
+      },
+      note: {
+        label: t('agent.categoryNote'),
+        tagClass: 'bg-emerald-500/15 text-emerald-400',
+        borderClass: 'border-l-emerald-500',
+      },
     };
 
     const knowledgeHtml = this.unifiedMemory.knowledge
       .map((k) => {
-        const catClass = catClasses[k.category] || catClasses.note;
-        const catLabel = catLabels[k.category] || k.category;
+        const meta = catBadges[k.category] || catBadges.note;
         const isSecret = k.category === 'credential' || isSensitiveKeyOrValue(k.key, k.value);
         const isRevealed = this.revealedSecretIds.has(k.id);
         const displayValue = isSecret && !isRevealed ? '••••••••••••••••' : k.value;
 
         return `
-          <div class="agent-memory-card p-2.5 rounded border border-[var(--border)] bg-[var(--bg-elevated)] flex flex-col gap-1.5" data-knowledge-id="${k.id}">
+          <div class="agent-memory-card p-2.5 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] flex flex-col gap-1.5 select-text" data-knowledge-id="${k.id}">
             <div class="flex items-center justify-between text-[11px]">
-              <div class="flex items-center gap-1.5 min-w-0">
-                <span class="px-1.5 py-0.2 rounded text-[10px] font-medium shrink-0 ${catClass}">${escapeHtml(catLabel)}</span>
-                <span class="font-code font-bold text-primary truncate">${escapeHtml(k.key)}</span>
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="px-1.5 py-0.5 rounded text-[10px] font-medium tracking-wide uppercase ${meta.tagClass}">${escapeHtml(meta.label)}</span>
+                <span class="font-mono font-bold text-primary truncate select-all">${escapeHtml(k.key)}</span>
               </div>
               <div class="flex items-center gap-1 shrink-0">
                 ${
                   isSecret
                     ? `
-                  <button type="button" class="agent-secret-toggle-btn text-muted hover:text-primary transition-colors p-0.5 cursor-pointer" data-id="${k.id}" title="${isRevealed ? t('agent.hideSecret') : t('agent.revealSecret')}">
+                  <button type="button" class="agent-secret-toggle-btn text-muted hover:text-primary transition-colors p-1 rounded hover:bg-[var(--bg-hover)] cursor-pointer flex items-center justify-center" data-id="${k.id}" title="${isRevealed ? t('agent.hideSecret') : t('agent.revealSecret')}">
                     <span class="material-symbols-outlined text-[15px]">${isRevealed ? 'visibility_off' : 'visibility'}</span>
                   </button>
                 `
                     : ''
                 }
-                <button type="button" class="agent-knowledge-copy-btn text-muted hover:text-primary transition-colors p-0.5 cursor-pointer" data-value="${escapeHtml(k.value)}" title="${t('agent.codeCopy')}">
+                <button type="button" class="agent-knowledge-copy-btn text-muted hover:text-primary transition-colors p-1 rounded hover:bg-[var(--bg-hover)] cursor-pointer flex items-center justify-center" data-value="${escapeHtml(k.value)}" title="${t('agent.codeCopy')}">
                   <span class="material-symbols-outlined text-[15px]">content_copy</span>
                 </button>
-                <button type="button" class="agent-knowledge-delete-btn text-muted hover:text-error transition-colors p-0.5 cursor-pointer" data-id="${k.id}" title="${t('common.delete')}">
+                <button type="button" class="agent-knowledge-delete-btn text-muted hover:text-error transition-colors p-1 rounded hover:bg-[var(--bg-hover)] cursor-pointer flex items-center justify-center" data-id="${k.id}" title="${t('common.delete')}">
                   <span class="material-symbols-outlined text-[15px]">delete</span>
                 </button>
               </div>
             </div>
-            <div class="text-[12px] font-code text-on-surface bg-[var(--bg)] px-2 py-1 rounded border border-[var(--border)]/50 break-all select-all font-mono">${escapeHtml(displayValue)}</div>
+            <div class="text-[12px] font-mono text-primary/90 bg-[var(--bg-hover)]/30 rounded-r px-2.5 py-1.5 break-all select-all leading-relaxed border-l-2 ${meta.borderClass}">${escapeHtml(displayValue)}</div>
           </div>
         `;
       })

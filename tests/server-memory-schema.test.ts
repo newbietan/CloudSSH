@@ -37,6 +37,25 @@ describe('server-memory-schema', () => {
     expect(formatTimestampWithRelative(twoDaysAgo, base, 'en-US')).toContain('2 days ago');
   });
 
+  it('formats current time anchor and relative timestamps with custom user timezone', () => {
+    // 2026-09-08 12:00:00 UTC = 2026-09-08 20:00:00 Asia/Shanghai = 2026-09-08 08:00:00 America/New_York
+    const ts = new Date('2026-09-08T12:00:00Z').getTime();
+
+    const anchorShanghai = formatCurrentTimeAnchor(ts, 'zh-CN', 'Asia/Shanghai');
+    expect(anchorShanghai).toContain('2026-09-08 20:00:00');
+    expect(anchorShanghai).toContain('时区: Asia/Shanghai');
+
+    const anchorNY = formatCurrentTimeAnchor(ts, 'en-US', 'America/New_York');
+    expect(anchorNY).toContain('2026-09-08 08:00:00');
+    expect(anchorNY).toContain('Timezone: America/New_York');
+
+    const relativeShanghai = formatTimestampWithRelative(ts, ts + 3600_000, 'zh-CN', 'Asia/Shanghai');
+    expect(relativeShanghai).toContain('20:00 (今天)');
+
+    const relativeNY = formatTimestampWithRelative(ts, ts + 3600_000, 'en-US', 'America/New_York');
+    expect(relativeNY).toContain('08:00 (Today)');
+  });
+
   it('validates work log inputs', () => {
     expect(normalizeWorkLogInput({})).toEqual({ ok: false, error: 'titleRequired' });
     expect(normalizeWorkLogInput({ title: '  ' })).toEqual({ ok: false, error: 'titleRequired' });
