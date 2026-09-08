@@ -428,7 +428,7 @@ export class AgentPanel {
     this.isAgentRunning = true;
     this.updateInputState();
 
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai';
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
     this.wsSend?.(
       JSON.stringify({
         type: 'agent_start',
@@ -1218,6 +1218,8 @@ export class AgentPanel {
       return;
     }
 
+    const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
     if (this.activeMemoryTab === 'workLog') {
       if (this.unifiedMemory.workLogs.length === 0) {
         // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
@@ -1231,7 +1233,7 @@ export class AgentPanel {
 
       const logsHtml = this.unifiedMemory.workLogs
         .map((log) => {
-          const timeStr = formatTimestampWithRelative(log.created_at, Date.now(), locale);
+          const timeStr = formatTimestampWithRelative(log.created_at, Date.now(), locale, userTz);
           return `
             <div class="agent-memory-card p-2.5 rounded border border-[var(--border)] bg-[var(--bg-elevated)] flex flex-col gap-1.5" data-log-id="${log.id}">
               <div class="flex items-center justify-between text-[11px]">
