@@ -199,7 +199,7 @@ export interface ServerConfig {
   updated_at: string;
 }
 
-export type { ServerMemory, ServerMemoryCategory, ServerMemorySource } from './memory-schema';
+export type { ServerTaskCheckpoint, CheckpointStatus } from './checkpoint-schema';
 
 export const SSH_MSG_DISCONNECT = 1;
 export const SSH_MSG_IGNORE = 2;

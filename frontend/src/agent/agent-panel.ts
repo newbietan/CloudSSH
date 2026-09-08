@@ -2,7 +2,7 @@
 
 import DOMPurify from 'dompurify';
 import { marked, type Tokens } from 'marked';
-import { normalizeMemoryInput, type ServerMemory } from '../../../src/memory-schema';
+import type { ServerTaskCheckpoint } from '../../../src/checkpoint-schema';
 import { copyTextToClipboard } from '../clipboard';
 import { getLocale, onLocaleChange, t, translateDocument } from '../i18n';
 import { confirmAction, notify } from '../ui-feedback';
@@ -91,13 +91,14 @@ export class AgentPanel {
     previousFocus: HTMLElement | null;
   } | null = null;
 
-  // Server Dossier / Memory state
-  private isMemoryDrawerOpen: boolean = false;
-  private memories: ServerMemory[] = [];
-  private memoryDrawerEl: HTMLElement | null = null;
-  private memoryListEl: HTMLElement | null = null;
-  private memoryCountEl: HTMLElement | null = null;
-  private memoryFormContainerEl: HTMLElement | null = null;
+  // Server Task Checkpoints state
+  private isCheckpointDrawerOpen: boolean = false;
+  private checkpoints: ServerTaskCheckpoint[] = [];
+  private checkpointDrawerEl: HTMLElement | null = null;
+  private checkpointListEl: HTMLElement | null = null;
+  private checkpointCountEl: HTMLElement | null = null;
+  private checkpointBannerEl: HTMLElement | null = null;
+  private dismissedBannerCheckpointId: number | null = null;
 
   constructor(
     private parentEl: HTMLElement,
@@ -107,8 +108,11 @@ export class AgentPanel {
 
   setServerId(serverId?: number): void {
     this.serverId = serverId;
-    if (this.isMemoryDrawerOpen) {
-      void this.fetchMemories();
+    this.dismissedBannerCheckpointId = null;
+    if (this.isCheckpointDrawerOpen) {
+      void this.fetchCheckpoints();
+    } else if (this.isVisible && this.serverId) {
+      void this.fetchCheckpoints();
     }
   }
 
@@ -146,8 +150,8 @@ export class AgentPanel {
           <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)] truncate" data-i18n="agent.title">AI Agent 助手</span>
         </div>
         <div class="flex items-center gap-1">
-          <button id="agent-memory-btn" class="agent-header-btn text-muted hover:text-primary transition-colors cursor-pointer p-1 rounded hover:bg-[var(--bg-hover)] flex items-center justify-center" data-i18n-title="agent.memoryTitle" title="服务器记忆" aria-label="服务器记忆">
-            <span class="material-symbols-outlined" style="font-size:18px;" aria-hidden="true">psychology</span>
+          <button id="agent-checkpoint-btn" class="agent-header-btn text-muted hover:text-primary transition-colors cursor-pointer p-1 rounded hover:bg-[var(--bg-hover)] flex items-center justify-center" data-i18n-title="agent.checkpointTitle" title="运维断点" aria-label="运维断点">
+            <span class="material-symbols-outlined" style="font-size:18px;" aria-hidden="true">history_toggle_off</span>
           </button>
           <button id="agent-close-btn" class="agent-close-button text-muted hover:text-primary transition-colors cursor-pointer p-1" data-i18n-title="agent.backToTerminal" data-i18n-aria-label="agent.backToTerminal" title="返回终端" aria-label="返回终端">
             <span class="agent-mobile-back material-symbols-outlined" style="font-size:18px;" aria-hidden="true">arrow_back</span>
@@ -156,26 +160,22 @@ export class AgentPanel {
           </button>
         </div>
       </div>
-      <div id="agent-memory-drawer" class="agent-memory-drawer hidden flex flex-col bg-[var(--bg)] absolute inset-x-0 top-12 bottom-0 z-20 overflow-hidden">
+      <div id="agent-checkpoint-drawer" class="agent-checkpoint-drawer hidden flex flex-col bg-[var(--bg)] absolute inset-x-0 top-12 bottom-0 z-20 overflow-hidden">
         <div class="flex items-center justify-between px-4 py-2 border-b border-[var(--border)] bg-[var(--bg-elevated)] shrink-0">
           <div class="flex items-center gap-2 min-w-0">
-            <span class="material-symbols-outlined text-[var(--accent-secondary)]" style="font-size: 16px;">psychology</span>
-            <span class="text-xs font-bold text-primary truncate" data-i18n="agent.memoryDossier">服务器记忆档案</span>
-            <span id="agent-memory-count" class="text-[11px] text-muted font-code shrink-0"></span>
+            <span class="material-symbols-outlined text-[var(--accent-secondary)]" style="font-size: 16px;">history_toggle_off</span>
+            <span class="text-xs font-bold text-primary truncate" data-i18n="agent.checkpointHeader">运维任务断点</span>
+            <span id="agent-checkpoint-count" class="text-[11px] text-muted font-code shrink-0"></span>
           </div>
           <div class="flex items-center gap-1 shrink-0">
-            <button id="agent-memory-add-btn" type="button" class="text-[11px] px-2 py-0.5 rounded border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors flex items-center gap-1 cursor-pointer">
-              <span class="material-symbols-outlined text-[13px]">add</span>
-              <span data-i18n="agent.memoryAdd">添加记忆</span>
-            </button>
-            <button id="agent-memory-close-btn" type="button" class="text-muted hover:text-primary p-1 cursor-pointer" data-i18n-title="agent.close" title="关闭">
+            <button id="agent-checkpoint-close-btn" type="button" class="text-muted hover:text-primary p-1 cursor-pointer" data-i18n-title="agent.close" title="关闭">
               <span class="material-symbols-outlined text-[16px]">close</span>
             </button>
           </div>
         </div>
-        <div id="agent-memory-form-container" class="hidden p-3 border-b border-[var(--border)] bg-[var(--bg-elevated)] shrink-0"></div>
-        <div id="agent-memory-list" class="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar text-[12px]"></div>
+        <div id="agent-checkpoint-list" class="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar text-[12px]"></div>
       </div>
+      <div id="agent-checkpoint-banner" class="hidden shrink-0 border-b border-[var(--border)] bg-[var(--bg-elevated)] px-4 py-2 text-xs"></div>
       <div id="agent-messages" class="flex-1 overflow-y-auto px-4 py-3 space-y-3 custom-scrollbar text-[13px]"></div>
       <div class="agent-panel-composer px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-elevated)]">
         <div id="agent-quick-chips" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-2 select-none">
@@ -214,9 +214,10 @@ export class AgentPanel {
       this.updateInputState();
       this.renderTerminalSelectionContext();
       this.refreshCodeBlockActions();
-      if (this.isMemoryDrawerOpen) {
-        this.renderMemoryList();
+      if (this.isCheckpointDrawerOpen) {
+        this.renderCheckpointList();
       }
+      this.renderCheckpointBanner();
     });
 
     this.parentEl.appendChild(this.panelEl);
@@ -224,19 +225,18 @@ export class AgentPanel {
     this.contextEl = this.panelEl.querySelector('#agent-context');
     this.inputEl = this.panelEl.querySelector('#agent-input') as HTMLTextAreaElement;
     this.sendBtn = this.panelEl.querySelector('#agent-send-btn');
-    this.memoryDrawerEl = this.panelEl.querySelector('#agent-memory-drawer');
-    this.memoryListEl = this.panelEl.querySelector('#agent-memory-list');
-    this.memoryCountEl = this.panelEl.querySelector('#agent-memory-count');
-    this.memoryFormContainerEl = this.panelEl.querySelector('#agent-memory-form-container');
+    this.checkpointDrawerEl = this.panelEl.querySelector('#agent-checkpoint-drawer');
+    this.checkpointListEl = this.panelEl.querySelector('#agent-checkpoint-list');
+    this.checkpointCountEl = this.panelEl.querySelector('#agent-checkpoint-count');
+    this.checkpointBannerEl = this.panelEl.querySelector('#agent-checkpoint-banner');
     this.bindEvents();
     this.updateInputState();
   }
 
   private bindEvents(): void {
     this.panelEl?.querySelector('#agent-close-btn')?.addEventListener('click', () => this.hide());
-    this.panelEl?.querySelector('#agent-memory-btn')?.addEventListener('click', () => this.toggleMemoryDrawer());
-    this.panelEl?.querySelector('#agent-memory-close-btn')?.addEventListener('click', () => this.closeMemoryDrawer());
-    this.panelEl?.querySelector('#agent-memory-add-btn')?.addEventListener('click', () => this.toggleMemoryForm());
+    this.panelEl?.querySelector('#agent-checkpoint-btn')?.addEventListener('click', () => this.toggleCheckpointDrawer());
+    this.panelEl?.querySelector('#agent-checkpoint-close-btn')?.addEventListener('click', () => this.closeCheckpointDrawer());
 
     this.panelEl?.querySelectorAll('.agent-quick-chip').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -263,8 +263,8 @@ export class AgentPanel {
     this.panelEl?.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        if (this.isMemoryDrawerOpen) {
-          this.closeMemoryDrawer();
+        if (this.isCheckpointDrawerOpen) {
+          this.closeCheckpointDrawer();
           return;
         }
         this.hide();
@@ -293,6 +293,7 @@ export class AgentPanel {
     if (this.panelEl) this.panelEl.style.display = 'flex';
     document.body.classList.add('agent-panel-open');
     this.inputEl?.focus();
+    if (this.serverId) void this.fetchCheckpoints();
     // 触发终端重新适配（面板展开后终端区域缩小，需要 refit）
     requestAnimationFrame(() => this.onLayoutChange?.());
   }
@@ -362,17 +363,17 @@ export class AgentPanel {
       case 'progress_extend':
         this.showProgressExtend(msg.message, msg.currentIteration, msg.newMax, msg.reason);
         break;
-      case 'memories_updated':
+      case 'checkpoints_updated':
         if (this.serverId) {
-          void this.fetchMemories();
+          void this.fetchCheckpoints();
         }
         break;
     }
   }
 
   private handleSend(): void {
-    if (this.isMemoryDrawerOpen) {
-      this.closeMemoryDrawer();
+    if (this.isCheckpointDrawerOpen) {
+      this.closeCheckpointDrawer();
     }
     const text = this.inputEl?.value || '';
     const selection = this.pendingTerminalSelection;
@@ -1013,14 +1014,6 @@ export class AgentPanel {
         actionsEl.appendChild(fillButton);
       }
 
-      if (this.serverId) {
-        const pinButton = this.createCodeActionButton('pin', 'bookmark_add', t('agent.codePinMemory'));
-        pinButton.addEventListener('click', () => {
-          this.openMemoryFormWithPrefill('custom', '', code.trim().slice(0, 512));
-        });
-        actionsEl.appendChild(pinButton);
-      }
-
       block.dataset.actionsReady = 'true';
     });
   }
@@ -1041,14 +1034,11 @@ export class AgentPanel {
           metaEl.title = target.label;
         }
       }
-
-      const pinButton = block.querySelector<HTMLButtonElement>('[data-code-action="pin"]');
-      if (pinButton) this.setCodeActionButton(pinButton, 'bookmark_add', t('agent.codePinMemory'));
     });
   }
 
   private createCodeActionButton(
-    action: 'copy' | 'fill' | 'pin',
+    action: 'copy' | 'fill',
     icon: string,
     label: string
   ): HTMLButtonElement {
@@ -1105,271 +1095,274 @@ export class AgentPanel {
     this.contextEl = null;
     this.inputEl = null;
     this.sendBtn = null;
-    this.memoryDrawerEl = null;
-    this.memoryListEl = null;
-    this.memoryCountEl = null;
-    this.memoryFormContainerEl = null;
+    this.checkpointDrawerEl = null;
+    this.checkpointListEl = null;
+    this.checkpointCountEl = null;
+    this.checkpointBannerEl = null;
     this.isVisible = false;
     document.body.classList.remove('agent-panel-open');
   }
 
-  // ==================== Server Memories Management ====================
+  // ==================== Server Task Checkpoints Management ====================
 
-  toggleMemoryDrawer(): void {
-    if (this.isMemoryDrawerOpen) {
-      this.closeMemoryDrawer();
+  toggleCheckpointDrawer(): void {
+    if (this.isCheckpointDrawerOpen) {
+      this.closeCheckpointDrawer();
     } else {
-      this.openMemoryDrawer();
+      this.openCheckpointDrawer();
     }
   }
 
-  openMemoryDrawer(): void {
-    this.isMemoryDrawerOpen = true;
-    if (this.memoryDrawerEl) {
-      this.memoryDrawerEl.classList.remove('hidden');
+  openCheckpointDrawer(): void {
+    this.isCheckpointDrawerOpen = true;
+    if (this.checkpointDrawerEl) {
+      this.checkpointDrawerEl.classList.remove('hidden');
     }
-    void this.fetchMemories();
+    void this.fetchCheckpoints();
   }
 
-  closeMemoryDrawer(): void {
-    this.isMemoryDrawerOpen = false;
-    if (this.memoryDrawerEl) {
-      this.memoryDrawerEl.classList.add('hidden');
-    }
-    this.closeMemoryForm();
-  }
-
-  toggleMemoryForm(): void {
-    if (!this.memoryFormContainerEl) return;
-    if (this.memoryFormContainerEl.classList.contains('hidden')) {
-      this.openMemoryFormWithPrefill();
-    } else {
-      this.closeMemoryForm();
+  closeCheckpointDrawer(): void {
+    this.isCheckpointDrawerOpen = false;
+    if (this.checkpointDrawerEl) {
+      this.checkpointDrawerEl.classList.add('hidden');
     }
   }
 
-  openMemoryFormWithPrefill(
-    category: string = 'path',
-    key: string = '',
-    value: string = ''
-  ): void {
-    if (!this.isMemoryDrawerOpen) {
-      this.openMemoryDrawer();
-    }
-    if (!this.memoryFormContainerEl) return;
-    this.memoryFormContainerEl.classList.remove('hidden');
-
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
-    this.memoryFormContainerEl.innerHTML = `
-      <form id="agent-memory-form" class="space-y-2">
-        <div class="flex gap-2">
-          <select id="agent-memory-category" class="terminal-input text-xs py-1 px-2 rounded border border-[var(--border)] bg-[var(--bg)] text-primary">
-            <option value="path"${category === 'path' ? ' selected' : ''}>${t('agent.memoryCategoryPath')}</option>
-            <option value="service"${category === 'service' ? ' selected' : ''}>${t('agent.memoryCategoryService')}</option>
-            <option value="env"${category === 'env' ? ' selected' : ''}>${t('agent.memoryCategoryEnv')}</option>
-            <option value="rule"${category === 'rule' ? ' selected' : ''}>${t('agent.memoryCategoryRule')}</option>
-            <option value="custom"${category === 'custom' ? ' selected' : ''}>${t('agent.memoryCategoryCustom')}</option>
-          </select>
-          <input id="agent-memory-key" type="text" placeholder="${t('agent.memoryKey')}" value="${escapeHtml(key)}" class="terminal-input flex-1 text-xs py-1 px-2 rounded border border-[var(--border)] bg-[var(--bg)] font-code text-primary" required maxlength="64" />
-        </div>
-        <div>
-          <textarea id="agent-memory-value" rows="2" placeholder="${t('agent.memoryValue')}" class="terminal-input w-full text-xs py-1 px-2 rounded border border-[var(--border)] bg-[var(--bg)] font-code resize-none text-primary" required maxlength="512">${escapeHtml(value)}</textarea>
-        </div>
-        <div class="flex justify-end gap-2">
-          <button type="button" id="agent-memory-cancel-btn" class="px-2 py-0.5 text-xs text-muted hover:text-primary cursor-pointer">${t('agent.memoryCancel')}</button>
-          <button type="submit" id="agent-memory-submit-btn" class="cyber-button px-3 py-0.5 text-xs font-bold text-white bg-[var(--accent)] cursor-pointer">${t('agent.memorySave')}</button>
-        </div>
-      </form>
-    `;
-
-    const form = this.memoryFormContainerEl.querySelector<HTMLFormElement>('#agent-memory-form');
-    const cancelBtn =
-      this.memoryFormContainerEl.querySelector<HTMLButtonElement>('#agent-memory-cancel-btn');
-    const keyInput = this.memoryFormContainerEl.querySelector<HTMLInputElement>('#agent-memory-key');
-    const valueInput =
-      this.memoryFormContainerEl.querySelector<HTMLTextAreaElement>('#agent-memory-value');
-
-    cancelBtn?.addEventListener('click', () => this.closeMemoryForm());
-    form?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      await this.handleSaveMemory();
-    });
-
-    if (key) {
-      valueInput?.focus();
-    } else {
-      keyInput?.focus();
-    }
-  }
-
-  private closeMemoryForm(): void {
-    if (!this.memoryFormContainerEl) return;
-    this.memoryFormContainerEl.classList.add('hidden');
-    this.memoryFormContainerEl.replaceChildren();
-  }
-
-  private async fetchMemories(): Promise<void> {
+  private async fetchCheckpoints(): Promise<void> {
     if (!this.serverId) {
-      this.memories = [];
-      this.renderMemoryList();
+      this.checkpoints = [];
+      this.renderCheckpointList();
+      this.renderCheckpointBanner();
       return;
     }
     try {
-      const res = await fetch(`/api/servers/${this.serverId}/memories`);
+      const res = await fetch(`/api/servers/${this.serverId}/checkpoints`);
       if (res.ok) {
-        this.memories = (await res.json()) as ServerMemory[];
+        this.checkpoints = (await res.json()) as ServerTaskCheckpoint[];
       } else {
-        this.memories = [];
+        this.checkpoints = [];
       }
     } catch {
-      this.memories = [];
+      this.checkpoints = [];
     }
-    this.renderMemoryList();
+    this.renderCheckpointList();
+    this.renderCheckpointBanner();
   }
 
-  private renderMemoryList(): void {
-    if (!this.memoryListEl) return;
-    if (this.memoryCountEl) {
-      this.memoryCountEl.textContent = this.serverId ? `(${this.memories.length}/20)` : '';
+  private renderCheckpointBanner(): void {
+    if (!this.checkpointBannerEl) return;
+
+    if (!this.serverId || this.checkpoints.length === 0) {
+      this.checkpointBannerEl.classList.add('hidden');
+      this.checkpointBannerEl.replaceChildren();
+      return;
+    }
+
+    const active = this.checkpoints.find(
+      (c) =>
+        (c.status === 'in_progress' || c.status === 'interrupted') &&
+        c.id !== this.dismissedBannerCheckpointId
+    );
+
+    if (!active) {
+      this.checkpointBannerEl.classList.add('hidden');
+      this.checkpointBannerEl.replaceChildren();
+      return;
+    }
+
+    this.checkpointBannerEl.classList.remove('hidden');
+    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
+    this.checkpointBannerEl.innerHTML = `
+      <div class="flex items-start gap-2.5">
+        <span class="material-symbols-outlined text-amber-400 text-[16px] shrink-0 mt-0.5" aria-hidden="true">flag</span>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-primary truncate">${escapeHtml(active.title)}</span>
+            <span class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium shrink-0">${t('agent.checkpointBannerLabel')}</span>
+          </div>
+          <div class="text-muted text-[11px] mt-0.5 truncate font-code">${escapeHtml(active.next_step)}</div>
+          <div class="flex items-center gap-2 mt-1.5">
+            <button type="button" id="agent-banner-resume-btn" class="px-2 py-0.5 rounded bg-[var(--accent)] text-white hover:opacity-90 transition-opacity font-medium text-[11px] cursor-pointer flex items-center gap-1">
+              <span class="material-symbols-outlined text-[13px]">play_arrow</span>
+              <span>${t('agent.checkpointBannerResume')}</span>
+            </button>
+            <button type="button" id="agent-banner-dismiss-btn" class="px-2 py-0.5 text-muted hover:text-primary transition-colors text-[11px] cursor-pointer">
+              ${t('agent.checkpointBannerDismiss')}
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    this.checkpointBannerEl
+      .querySelector<HTMLButtonElement>('#agent-banner-resume-btn')
+      ?.addEventListener('click', () => {
+        this.resumeCheckpoint(active);
+        this.dismissedBannerCheckpointId = active.id;
+        this.renderCheckpointBanner();
+      });
+
+    this.checkpointBannerEl
+      .querySelector<HTMLButtonElement>('#agent-banner-dismiss-btn')
+      ?.addEventListener('click', () => {
+        this.dismissedBannerCheckpointId = active.id;
+        this.renderCheckpointBanner();
+      });
+  }
+
+  private resumeCheckpoint(cp: ServerTaskCheckpoint): void {
+    const isEn = getLocale() === 'en-US';
+    const prompt = isEn
+      ? `Resume task: ${cp.title}. Currently stopped at: ${cp.next_step}`
+      : `继续任务：${cp.title}。当前停留在：${cp.next_step}，请基于此继续推进。`;
+
+    if (this.inputEl) {
+      this.inputEl.value = prompt;
+      this.inputEl.focus();
+      this.inputEl.style.height = 'auto';
+      this.inputEl.style.height = `${Math.min(this.inputEl.scrollHeight, 140)}px`;
+      this.updateInputState();
+    }
+  }
+
+  private renderCheckpointList(): void {
+    if (!this.checkpointListEl) return;
+    if (this.checkpointCountEl) {
+      this.checkpointCountEl.textContent = this.serverId ? `(${this.checkpoints.length}/5)` : '';
     }
 
     if (!this.serverId) {
       // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
-      this.memoryListEl.innerHTML = `
+      this.checkpointListEl.innerHTML = `
         <div class="p-4 text-center text-muted text-xs">
-          ${t('agent.memoryDirectNotice')}
+          ${t('agent.checkpointDirectNotice')}
         </div>
       `;
       return;
     }
 
-    if (this.memories.length === 0) {
+    if (this.checkpoints.length === 0) {
       // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
-      this.memoryListEl.innerHTML = `
+      this.checkpointListEl.innerHTML = `
         <div class="p-4 text-center text-muted text-xs">
-          ${t('agent.memoryEmpty')}
+          ${t('agent.checkpointEmpty')}
         </div>
       `;
       return;
     }
 
-    const categoryNames = {
-      path: t('agent.memoryCategoryPath'),
-      service: t('agent.memoryCategoryService'),
-      env: t('agent.memoryCategoryEnv'),
-      rule: t('agent.memoryCategoryRule'),
-      custom: t('agent.memoryCategoryCustom'),
+    const statusLabels = {
+      in_progress: t('agent.checkpointStatusInProgress'),
+      completed: t('agent.checkpointStatusCompleted'),
+      interrupted: t('agent.checkpointStatusInterrupted'),
     } as Record<string, string>;
 
-    const categoryClasses = {
-      path: 'bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/30',
-      service: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30',
-      env: 'bg-[var(--accent-secondary)]/10 text-[var(--accent-secondary)] border border-[var(--accent-secondary)]/30',
-      rule: 'bg-amber-500/10 text-amber-400 border border-amber-500/30',
-      custom: 'bg-[var(--bg-hover)] text-muted border border-outline-variant/30',
+    const statusClasses = {
+      in_progress: 'bg-amber-500/10 text-amber-400 border border-amber-500/30',
+      completed: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30',
+      interrupted: 'bg-rose-500/10 text-rose-400 border border-rose-500/30',
     } as Record<string, string>;
 
-    const cardsHtml = this.memories
-      .map((m) => {
-        const catLabel = categoryNames[m.category] || t('agent.memoryCategoryCustom');
-        const catClass = categoryClasses[m.category] || categoryClasses.custom;
-        const isManual = m.source === 'manual';
-        const sourceLabel = isManual ? t('agent.memorySourceManual') : t('agent.memorySourceAuto');
+    const cardsHtml = this.checkpoints
+      .map((cp) => {
+        const statusLabel = statusLabels[cp.status] || statusLabels.in_progress;
+        const statusClass = statusClasses[cp.status] || statusClasses.in_progress;
+        const isCompleted = cp.status === 'completed';
+
         return `
-          <div class="agent-memory-card p-2.5 rounded border border-[var(--border)] bg-[var(--bg-elevated)] flex flex-col gap-1.5" data-memory-id="${m.id}">
+          <div class="agent-checkpoint-card p-2.5 rounded border border-[var(--border)] bg-[var(--bg-elevated)] flex flex-col gap-2" data-checkpoint-id="${cp.id}">
             <div class="flex items-center justify-between text-[11px]">
               <div class="flex items-center gap-1.5 min-w-0">
-                <span class="px-1.5 py-0.2 rounded text-[10px] font-medium shrink-0 ${catClass}">${escapeHtml(catLabel)}</span>
-                <span class="font-code font-bold text-primary truncate">${escapeHtml(m.fact_key)}</span>
-                <span class="text-[10px] px-1 rounded shrink-0 ${isManual ? 'bg-primary/10 text-primary border border-primary/30' : 'text-muted border border-outline-variant/30'}">${escapeHtml(sourceLabel)}</span>
+                <span class="px-1.5 py-0.2 rounded text-[10px] font-medium shrink-0 ${statusClass}">${escapeHtml(statusLabel)}</span>
+                <span class="font-bold text-primary truncate">${escapeHtml(cp.title)}</span>
               </div>
-              <button type="button" class="agent-memory-delete-btn text-muted hover:text-error transition-colors p-0.5 cursor-pointer shrink-0" data-id="${m.id}" title="${t('agent.memoryDelete')}">
+              <button type="button" class="agent-checkpoint-delete-btn text-muted hover:text-error transition-colors p-0.5 cursor-pointer shrink-0" data-id="${cp.id}" title="${t('agent.checkpointDelete')}">
                 <span class="material-symbols-outlined text-[15px]">delete</span>
               </button>
             </div>
-            <div class="text-[12px] font-code text-on-surface bg-[var(--bg)] px-2 py-1 rounded border border-[var(--border)]/50 break-all select-all">${escapeHtml(m.fact_value)}</div>
+            <div class="space-y-1 text-[11px]">
+              <div><span class="text-primary font-medium">${t('agent.checkpointDone')}: </span><span class="text-muted font-code">${escapeHtml(cp.done_summary)}</span></div>
+              <div><span class="text-primary font-medium">${t('agent.checkpointNext')}: </span><span class="text-muted font-code">${escapeHtml(cp.next_step)}</span></div>
+            </div>
+            ${
+              !isCompleted
+                ? `
+                <div class="flex items-center justify-end gap-1.5 pt-1 border-t border-[var(--border)]/40">
+                  <button type="button" class="agent-checkpoint-resolve-btn text-[11px] px-2 py-0.5 rounded border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 transition-colors flex items-center gap-1 cursor-pointer" data-id="${cp.id}">
+                    <span class="material-symbols-outlined text-[13px]">check_circle</span>
+                    <span>${t('agent.checkpointResolve')}</span>
+                  </button>
+                  <button type="button" class="agent-checkpoint-resume-btn text-[11px] px-2 py-0.5 rounded bg-[var(--accent)] text-white hover:opacity-90 transition-opacity flex items-center gap-1 cursor-pointer" data-id="${cp.id}">
+                    <span class="material-symbols-outlined text-[13px]">play_arrow</span>
+                    <span>${t('agent.checkpointResume')}</span>
+                  </button>
+                </div>
+              `
+                : ''
+            }
           </div>
         `;
       })
       .join('');
 
     // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
-    this.memoryListEl.innerHTML = cardsHtml;
+    this.checkpointListEl.innerHTML = cardsHtml;
 
-    this.memoryListEl.querySelectorAll<HTMLButtonElement>('.agent-memory-delete-btn').forEach((btn) => {
+    this.checkpointListEl.querySelectorAll<HTMLButtonElement>('.agent-checkpoint-delete-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        const memId = Number(btn.dataset.id);
-        if (!memId || !this.serverId) return;
+        const chkId = Number(btn.dataset.id);
+        if (!chkId || !this.serverId) return;
         const ok = await confirmAction({
-          title: t('agent.memoryDelete'),
-          message: t('agent.memoryDeleteConfirm'),
+          title: t('agent.checkpointDelete'),
+          message: t('agent.checkpointDeleteConfirm'),
           variant: 'danger',
         });
         if (!ok) return;
 
         try {
-          const res = await fetch(`/api/servers/${this.serverId}/memories/${memId}`, {
+          const res = await fetch(`/api/servers/${this.serverId}/checkpoints/${chkId}`, {
             method: 'DELETE',
           });
           if (res.ok) {
-            notify(t('agent.memoryDeleted'), { variant: 'success' });
-            void this.fetchMemories();
+            notify(t('agent.checkpointDeleted'), { variant: 'success' });
+            void this.fetchCheckpoints();
           } else {
-            notify(t('agent.memoryDeleteFailed'), { variant: 'danger' });
+            notify(t('agent.checkpointDelete'), { variant: 'danger' });
           }
         } catch {
-          notify(t('agent.memoryDeleteFailed'), { variant: 'danger' });
+          notify(t('agent.checkpointDelete'), { variant: 'danger' });
         }
       });
     });
-  }
 
-  private async handleSaveMemory(): Promise<void> {
-    if (!this.serverId || !this.memoryFormContainerEl) return;
-    const catSelect =
-      this.memoryFormContainerEl.querySelector<HTMLSelectElement>('#agent-memory-category');
-    const keyInput = this.memoryFormContainerEl.querySelector<HTMLInputElement>('#agent-memory-key');
-    const valInput =
-      this.memoryFormContainerEl.querySelector<HTMLTextAreaElement>('#agent-memory-value');
-
-    const category = catSelect?.value || 'custom';
-    const fact_key = keyInput?.value || '';
-    const fact_value = valInput?.value || '';
-
-    const normalized = normalizeMemoryInput({
-      category,
-      fact_key,
-      fact_value,
-      source: 'manual',
+    this.checkpointListEl.querySelectorAll<HTMLButtonElement>('.agent-checkpoint-resolve-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const chkId = Number(btn.dataset.id);
+        if (!chkId || !this.serverId) return;
+        try {
+          const res = await fetch(`/api/servers/${this.serverId}/checkpoints/${chkId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'completed' }),
+          });
+          if (res.ok) {
+            notify(t('agent.checkpointResolved'), { variant: 'success' });
+            void this.fetchCheckpoints();
+          }
+        } catch {
+          /* ignore */
+        }
+      });
     });
 
-    if (!normalized.ok) {
-      const msgMap = {
-        keyRequired: t('agent.memoryKey'),
-        valueRequired: t('agent.memoryValue'),
-        sensitiveDataDetected: t('feedback.danger'),
-      } as Record<string, string>;
-      notify(msgMap[normalized.error] || 'Invalid input', { variant: 'danger' });
-      return;
-    }
-
-    try {
-      const res = await fetch(`/api/servers/${this.serverId}/memories`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(normalized.value),
+    this.checkpointListEl.querySelectorAll<HTMLButtonElement>('.agent-checkpoint-resume-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const chkId = Number(btn.dataset.id);
+        const target = this.checkpoints.find((c) => c.id === chkId);
+        if (!target) return;
+        this.closeCheckpointDrawer();
+        this.resumeCheckpoint(target);
       });
-
-      if (res.ok) {
-        notify(t('agent.memorySaved'), { variant: 'success' });
-        this.closeMemoryForm();
-        void this.fetchMemories();
-      } else {
-        const err = ((await res.json()) as { error?: string }) ?? { error: 'Save failed' };
-        notify(err.error || t('agent.memorySaveFailed'), { variant: 'danger' });
-      }
-    } catch {
-      notify(t('agent.memorySaveFailed'), { variant: 'danger' });
-    }
+    });
   }
 }

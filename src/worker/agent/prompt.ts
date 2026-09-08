@@ -84,7 +84,7 @@ exec channel 会创建独立 SSH channel，返回 JSON：
 
 工具层的安全拦截作为最终兜底——即使你判断失误调用 execute_command 执行了危险命令，工具也会拦截。`;
 
-import type { AgentMemoryItem } from './types';
+import type { AgentCheckpointItem } from './types';
 
 export function getSystemPrompt(): string {
   return SYSTEM_PROMPT;
@@ -98,38 +98,56 @@ export function getResponseLanguageInstruction(locale: AgentLocale): string {
     : '## 首选响应语言\n使用简体中文回答，命令、路径、日志关键字和技术标识符保持原样。';
 }
 
-export const MAX_MEMORY_PROMPT_CHARS = 1500;
+export const MAX_CHECKPOINT_PROMPT_CHARS = 800;
 
-export function formatServerMemories(memories: AgentMemoryItem[]): string {
-  if (!memories || memories.length === 0) return '';
-  const categoryLabels = {
-    path: '路径',
-    service: '服务',
-    env: '环境',
-    rule: '运维规则',
-    custom: '常识',
+export function formatTaskCheckpoints(
+  checkpoints: AgentCheckpointItem[],
+  locale: AgentLocale = 'zh-CN'
+): string {
+  if (!checkpoints || checkpoints.length === 0) return '';
+  const isEn = locale === 'en-US';
+  const statusLabels = {
+    in_progress: isEn ? 'In Progress' : '进行中',
+    completed: isEn ? 'Completed' : '已完成',
+    interrupted: isEn ? 'Interrupted' : '已中断',
   } as const;
+
   const lines: string[] = [];
   let currentLength = 0;
-  for (const m of memories) {
-    const label = (categoryLabels as Record<string, string>)[m.category] || '常识';
-    const line = `- [${label}] ${m.fact_key}: ${m.fact_value}`;
-    if (currentLength + line.length > MAX_MEMORY_PROMPT_CHARS) {
+
+  for (const cp of checkpoints) {
+    const statusText = statusLabels[cp.status] || (isEn ? 'In Progress' : '进行中');
+    const block = isEn
+      ? `- [Task] ${cp.title} (${statusText})\n  * Completed: ${cp.done_summary}\n  * Breakpoint / Next step: ${cp.next_step}`
+      : `- [任务] ${cp.title} (${statusText})\n  * 已完成/进展: ${cp.done_summary}\n  * 当前断点/下一步: ${cp.next_step}`;
+
+    if (currentLength + block.length > MAX_CHECKPOINT_PROMPT_CHARS) {
       break;
     }
-    lines.push(line);
-    currentLength += line.length + 1;
+    lines.push(block);
+    currentLength += block.length + 1;
   }
+
   if (lines.length === 0) return '';
-  return `## 服务器已知资产与记忆 (Server Dossier)\n${lines.join('\n')}\n\n注意：上述记忆为历史运维沉淀事实，仅供参考。若在命令执行中发现路径或配置已发生变动，请以真实命令输出为准，不要死板依赖历史记忆。`;
+
+  const header = isEn
+    ? '## Recent Task Continuity & Checkpoints (Server Working Memory)'
+    : '## 近期运维断点与任务接续 (Server Task Checkpoints)';
+  const guidance = isEn
+    ? 'Note: If the user asks to "continue", "resume", or inquires about earlier progress, align with the checkpoint above and proceed from that step without repeating completed work.'
+    : '注意：若用户提问涉及“继续”、“恢复任务”或“刚才到哪了”，请直接承接上述断点状态继续推进，避免重复索取已知信息或重复执行已完成步骤。';
+
+  return `${header}\n${lines.join('\n')}\n\n${guidance}`;
 }
 
-export const DISTILLATION_PROMPT = `你是一个 Linux 运维知识提炼助手。请仔细阅读刚才这轮运维排查历史，提取 1-2 条关于该主机的长期客观事实（如配置路径、服务架构、特殊端口、特定避坑规则）。
+export const CHECKPOINT_DISTILLATION_PROMPT = `你是一个 Linux 运维任务总结助手。请阅读刚才这轮运维排查与交互历史，提炼当前正在进行的任务断点与最新工作状态。
 
-【提取标准】
-1. 只提取对后续运维有长期参考价值的确定性事实（如：Web 根目录、Nginx/MySQL 配置文件路径、使用的容器运行时、特殊的重启限制或环境变量）。
-2. 严禁提取：任何用户密码、密钥、Token、API Key、即时系统状态（如当前 CPU/内存占用率、临时进程 PID、短期报错日志）。
-3. 输出格式要求：必须输出严格的 JSON 数组，严禁任何 Markdown 标记或多余文字。
-示例格式：[{"category":"path","fact_key":"nginx_conf","fact_value":"/etc/nginx/nginx.conf"}]
-可用 category: "path" | "service" | "env" | "rule" | "custom"
-如果本轮排查没有发现任何值得长期记忆的确定性事实，请只返回空数组：[]`;
+【提炼要求】
+1. 准确归纳任务目标（title，15字内）、已完成的关键动作/排查结论（done_summary，80字内），以及当前停留在哪一步、下一步建议或待办事项（next_step，50字内）。
+2. status 字段：若任务已彻底解决并验证完成，设为 "completed"；若仍在排查处理中或待进一步验证，设为 "in_progress"。
+3. 严禁提取或包含任何用户密码、密钥、Token、API Key 等敏感凭据。
+4. 如果用户仅是打招呼/闲聊/问询通用语法概念且未发生任何实质性排查操作，请只返回空对象：{}。
+5. 输出格式要求：必须输出严格的单对象 JSON，严禁任何 Markdown 标记或多余文字。
+示例格式：
+{"title":"排查 502 错误","status":"in_progress","done_summary":"已定位为 3000 端口 Node 崩溃，修复了依赖并重启服务","next_step":"待执行 curl 探测本地端口与 Nginx 日志确认恢复"}
+如果无需记录任何任务断点，请只返回：{}`;

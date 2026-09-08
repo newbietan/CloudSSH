@@ -88,22 +88,23 @@ export interface AIConfig {
   api_key: string;
 }
 
-export interface AgentMemoryItem {
+export interface AgentCheckpointItem {
   id?: number;
-  category: 'path' | 'service' | 'env' | 'rule' | 'custom';
-  fact_key: string;
-  fact_value: string;
-  source: 'auto' | 'manual';
+  server_id?: number;
+  title: string;
+  status: 'in_progress' | 'completed' | 'interrupted';
+  done_summary: string;
+  next_step: string;
+  created_at?: number;
+  updated_at?: number;
 }
 
-export interface AgentMemoryProvider {
-  fetchMemories(): Promise<AgentMemoryItem[]>;
-  saveMemories(
-    memories: Array<{
-      category?: string;
-      fact_key: string;
-      fact_value: string;
-      source?: string;
-    }>
-  ): Promise<void>;
+export interface AgentCheckpointProvider {
+  fetchRecentCheckpoints(): Promise<AgentCheckpointItem[]>;
+  saveCheckpoint(checkpoint: {
+    title: string;
+    status: 'in_progress' | 'completed' | 'interrupted';
+    done_summary: string;
+    next_step: string;
+  }): Promise<void>;
 }

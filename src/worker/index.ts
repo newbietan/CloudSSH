@@ -500,15 +500,29 @@ async function handleServersRoute(request: Request, url: URL, env: Env): Promise
     return new Response('Method Not Allowed', { status: 405 });
   }
 
-  // /api/servers/:id/memories/:memId
-  const singleMemoryMatch = url.pathname.match(/^\/api\/servers\/(\d+)\/memories\/(\d+)$/);
-  if (singleMemoryMatch) {
-    const serverId = singleMemoryMatch[1];
-    const memId = singleMemoryMatch[2];
+  // /api/servers/:id/checkpoints/:chkId
+  const singleCheckpointMatch = url.pathname.match(/^\/api\/servers\/(\d+)\/checkpoints\/(\d+)$/);
+  if (singleCheckpointMatch) {
+    const serverId = singleCheckpointMatch[1];
+    const chkId = singleCheckpointMatch[2];
+    if (request.method === 'PUT') {
+      const body = await request.json<Record<string, unknown>>();
+      body.user_id = user.id;
+      return stub.fetch(
+        new Request(
+          `http://internal/internal/servers/${serverId}/checkpoints/${chkId}`,
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          }
+        )
+      );
+    }
     if (request.method === 'DELETE') {
       return stub.fetch(
         new Request(
-          `http://internal/internal/servers/${serverId}/memories/${memId}?user_id=${user.id}`,
+          `http://internal/internal/servers/${serverId}/checkpoints/${chkId}?user_id=${user.id}`,
           {
             method: 'DELETE',
           }
@@ -518,13 +532,13 @@ async function handleServersRoute(request: Request, url: URL, env: Env): Promise
     return new Response('Method Not Allowed', { status: 405 });
   }
 
-  // /api/servers/:id/memories
-  const memoriesMatch = url.pathname.match(/^\/api\/servers\/(\d+)\/memories$/);
-  if (memoriesMatch) {
-    const serverId = memoriesMatch[1];
+  // /api/servers/:id/checkpoints
+  const checkpointsMatch = url.pathname.match(/^\/api\/servers\/(\d+)\/checkpoints$/);
+  if (checkpointsMatch) {
+    const serverId = checkpointsMatch[1];
     if (request.method === 'GET') {
       return stub.fetch(
-        new Request(`http://internal/internal/servers/${serverId}/memories?user_id=${user.id}`, {
+        new Request(`http://internal/internal/servers/${serverId}/checkpoints?user_id=${user.id}`, {
           method: 'GET',
         })
       );
@@ -533,7 +547,7 @@ async function handleServersRoute(request: Request, url: URL, env: Env): Promise
       const body = await request.json<Record<string, unknown>>();
       body.user_id = user.id;
       return stub.fetch(
-        new Request(`http://internal/internal/servers/${serverId}/memories`, {
+        new Request(`http://internal/internal/servers/${serverId}/checkpoints`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),

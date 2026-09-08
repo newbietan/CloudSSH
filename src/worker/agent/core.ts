@@ -1,10 +1,10 @@
 // Agent Core — control loop that runs inside Durable Object
 
-import { normalizeMemoryInput } from '../../memory-schema';
+import { normalizeCheckpointInput } from '../../checkpoint-schema';
 import {
   type AgentLocale,
-  DISTILLATION_PROMPT,
-  formatServerMemories,
+  CHECKPOINT_DISTILLATION_PROMPT,
+  formatTaskCheckpoints,
   getResponseLanguageInstruction,
   getSystemPrompt,
 } from './prompt';
@@ -12,9 +12,9 @@ import type { TerminalContext } from './terminal-context';
 import { ToolExecutor } from './tool-executor';
 import { AGENT_TOOLS } from './tools';
 import type {
+  AgentCheckpointItem,
+  AgentCheckpointProvider,
   AgentConfig,
-  AgentMemoryItem,
-  AgentMemoryProvider,
   AgentState,
   AIConfig,
   ChatCompletionResponse,
@@ -60,7 +60,7 @@ export class AgentCore {
   private environmentContext: string = '';
   private terminalContextSnapshot: string = '';
   private preferredLocale: AgentLocale = 'zh-CN';
-  private memories: AgentMemoryItem[] = [];
+  private checkpoints: AgentCheckpointItem[] = [];
   private distillationInProgress: boolean = false;
 
   constructor(
@@ -78,7 +78,7 @@ export class AgentCore {
     }>,
     private askConfirmation: (command: string, reason: string) => Promise<boolean>,
     config?: Partial<AgentConfig>,
-    private memoryProvider?: AgentMemoryProvider
+    private checkpointProvider?: AgentCheckpointProvider
   ) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.toolExecutor = new ToolExecutor(
@@ -195,8 +195,8 @@ export class AgentCore {
     }
 
     if (isNewSession) {
-      if (this.memoryProvider) {
-        this.memories = await this.memoryProvider.fetchMemories().catch(() => []);
+      if (this.checkpointProvider) {
+        this.checkpoints = await this.checkpointProvider.fetchRecentCheckpoints().catch(() => []);
       }
       // 2. 首次启动：采集环境 + 终端上下文（注入 system prompt），用户消息保持干净
       this.terminalContextSnapshot = this.terminalContext.snapshot(200);
@@ -418,7 +418,7 @@ export class AgentCore {
         });
         this.state.status = 'idle';
         const snapshotMsgs = this.state.messages.slice(-10);
-        void this.triggerDistillationIfEligible(snapshotMsgs);
+        void this.triggerCheckpointDistillationIfEligible(snapshotMsgs);
         return;
       }
 
@@ -812,10 +812,10 @@ export class AgentCore {
     if (this.state.summary) {
       parts.push(`## 之前的对话摘要\n${this.state.summary}`);
     }
-    if (this.memories.length > 0) {
-      const memoryText = formatServerMemories(this.memories);
-      if (memoryText) {
-        parts.push(memoryText);
+    if (this.checkpoints.length > 0) {
+      const checkpointText = formatTaskCheckpoints(this.checkpoints, this.preferredLocale);
+      if (checkpointText) {
+        parts.push(checkpointText);
       }
     }
 
@@ -915,7 +915,7 @@ ${conversationText}${previousSection}`;
     return null;
   }
 
-  private hasPlausibleFactCommands(commands: Set<string>): boolean {
+  private hasPlausibleTaskActivity(commands: Set<string>, snapshotMsgs: ChatMessage[]): boolean {
     const TRIVIAL_EXACT_COMMANDS = new Set([
       'date',
       'whoami',
@@ -925,36 +925,34 @@ ${conversationText}${previousSection}`;
       'hostname',
       'clear',
     ]);
-    let hasMeaningful = false;
     for (const cmd of commands) {
       const trimmed = cmd.trim();
-      if (!trimmed || TRIVIAL_EXACT_COMMANDS.has(trimmed)) continue;
-      if (
-        trimmed.includes('/') ||
-        trimmed.includes('.') ||
-        /(?:conf|etc|var|opt|systemctl|service|docker|podman|nginx|caddy|port|listen|env|install|deploy)/i.test(
-          trimmed
-        )
-      ) {
+      if (trimmed && !TRIVIAL_EXACT_COMMANDS.has(trimmed)) {
         return true;
       }
-      hasMeaningful = true;
     }
-    return hasMeaningful;
+    const lastUserMsg = [...snapshotMsgs].reverse().find((m) => m.role === 'user')?.content || '';
+    if (
+      /(?:排查|部署|配置|重启|故障|报错|异常|修复|安装|启动|停止|优化|error|fail|fix|deploy|install|restart|config|debug)/i.test(
+        lastUserMsg
+      )
+    ) {
+      return true;
+    }
+    return false;
   }
 
-  private async triggerDistillationIfEligible(snapshotMsgs: ChatMessage[]): Promise<void> {
+  private async triggerCheckpointDistillationIfEligible(snapshotMsgs: ChatMessage[]): Promise<void> {
     if (
-      !this.memoryProvider ||
-      this.progress.uniqueCommands.size === 0 ||
-      !this.hasPlausibleFactCommands(this.progress.uniqueCommands) ||
+      !this.checkpointProvider ||
+      !this.hasPlausibleTaskActivity(this.progress.uniqueCommands, snapshotMsgs) ||
       this.distillationInProgress
     ) {
       return;
     }
     this.distillationInProgress = true;
     try {
-      await this.distillMemoriesWithLLM(snapshotMsgs);
+      await this.distillCheckpointWithLLM(snapshotMsgs);
     } catch {
       // 提炼失败不得影响正常交互
     } finally {
@@ -962,11 +960,11 @@ ${conversationText}${previousSection}`;
     }
   }
 
-  private async distillMemoriesWithLLM(snapshotMsgs: ChatMessage[]): Promise<void> {
+  private async distillCheckpointWithLLM(snapshotMsgs: ChatMessage[]): Promise<void> {
     const config = this.agentConfig;
-    if (!config || !this.memoryProvider) return;
+    if (!config || !this.checkpointProvider) return;
 
-    // 选取刚才同步快照的最后几条消息用于分析
+    // 选取刚才同步快照的消息用于分析
     const recentMsgs = snapshotMsgs
       .map((m) => {
         if (m.role === 'user') return `用户: ${m.content}`;
@@ -985,7 +983,7 @@ ${conversationText}${previousSection}`;
       .filter(Boolean)
       .join('\n');
 
-    if (!recentMsgs || recentMsgs.length < 50) return;
+    if (!recentMsgs || recentMsgs.length < 30) return;
 
     try {
       let cleanBaseUrl = config.base_url.replace(/\/$/, '');
@@ -1003,10 +1001,10 @@ ${conversationText}${previousSection}`;
         body: JSON.stringify({
           model: config.model,
           messages: [
-            { role: 'system', content: DISTILLATION_PROMPT },
+            { role: 'system', content: CHECKPOINT_DISTILLATION_PROMPT },
             { role: 'user', content: `排查记录如下：\n${recentMsgs}` },
           ],
-          max_tokens: 512,
+          max_tokens: 350,
           temperature: 0.1,
         }),
         signal: AbortSignal.timeout(10000),
@@ -1029,38 +1027,34 @@ ${conversationText}${previousSection}`;
         jsonStr = jsonMatch[1].trim();
       }
 
-      let parsed: any[] = [];
+      let parsed: any = null;
       try {
         parsed = JSON.parse(jsonStr);
       } catch {
         return;
       }
 
-      if (!Array.isArray(parsed) || parsed.length === 0) return;
-
-      const validMemories = [];
-      for (const item of parsed) {
-        const normalized = normalizeMemoryInput({
-          category: item.category,
-          fact_key: item.fact_key || item.key,
-          fact_value: item.fact_value || item.value,
-          source: 'auto',
-        });
-        if (normalized.ok) {
-          validMemories.push(normalized.value);
-        }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !parsed.title) {
+        return;
       }
 
-      if (validMemories.length > 0) {
-        await this.memoryProvider.saveMemories(validMemories);
-        this.memories = await this.memoryProvider.fetchMemories().catch(() => this.memories);
+      const normalized = normalizeCheckpointInput({
+        title: parsed.title,
+        status: parsed.status,
+        done_summary: parsed.done_summary,
+        next_step: parsed.next_step,
+      });
+
+      if (normalized.ok) {
+        await this.checkpointProvider.saveCheckpoint(normalized.value);
+        this.checkpoints = await this.checkpointProvider.fetchRecentCheckpoints().catch(() => this.checkpoints);
         this.sendToFrontend({
           type: 'agent_frame',
-          subType: 'memories_updated',
+          subType: 'checkpoints_updated',
         });
       }
     } catch {
-      // 蒸馏失败静默忽略
+      // 提炼失败静默忽略
     }
   }
 }

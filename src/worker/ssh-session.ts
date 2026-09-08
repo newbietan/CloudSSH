@@ -70,7 +70,7 @@ import {
 import { AgentCore } from './agent/core';
 import { AgentExecChannel } from './agent/exec-channel';
 import { TerminalContext } from './agent/terminal-context';
-import type { AgentMemoryItem, AgentMemoryProvider } from './agent/types';
+import type { AgentCheckpointItem, AgentCheckpointProvider } from './agent/types';
 import { DirectTcpipStream } from './direct-tcpip-stream';
 import { detectAndPersistRemoteOS } from './os-detect';
 import { SFTPHandler } from './sftp-handler';
@@ -2800,33 +2800,33 @@ export class SSHSession {
     }
 
     if (!this.agentCore) {
-      let memoryProvider: AgentMemoryProvider | undefined;
+      let checkpointProvider: AgentCheckpointProvider | undefined;
       const serverId = this.config.serverId;
       const uid = this.userId;
       const gid = this.githubId;
       const env = this.env;
       if (serverId && uid && gid && env) {
-        memoryProvider = {
-          fetchMemories: async () => {
+        checkpointProvider = {
+          fetchRecentCheckpoints: async () => {
             try {
               const stub = env.USER_DB.get(env.USER_DB.idFromName(gid));
               const res = await stub.fetch(
-                new Request(`http://internal/internal/servers/${serverId}/memories?user_id=${uid}`)
+                new Request(`http://internal/internal/servers/${serverId}/checkpoints?user_id=${uid}`)
               );
               if (!res.ok) return [];
-              return (await res.json()) as AgentMemoryItem[];
+              return (await res.json()) as AgentCheckpointItem[];
             } catch {
               return [];
             }
           },
-          saveMemories: async (memories) => {
+          saveCheckpoint: async (checkpoint) => {
             try {
               const stub = env.USER_DB.get(env.USER_DB.idFromName(gid));
               await stub.fetch(
-                new Request(`http://internal/internal/servers/${serverId}/memories/batch`, {
+                new Request(`http://internal/internal/servers/${serverId}/checkpoints`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ user_id: Number(uid), memories }),
+                  body: JSON.stringify({ user_id: Number(uid), ...checkpoint }),
                 })
               );
             } catch {
@@ -2844,7 +2844,7 @@ export class SSHSession {
           this.executeAgentCommand(command, timeout, signal),
         async (command: string, reason: string) => this.askAgentConfirmation(command, reason),
         undefined,
-        memoryProvider
+        checkpointProvider
       );
     }
 
