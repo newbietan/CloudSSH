@@ -110,6 +110,23 @@ class FakeSql {
       return { toArray: () => found as unknown[] };
     }
 
+    if (q.includes('SELECT id FROM server_work_logs') && q.includes('ORDER BY updated_at DESC LIMIT 1')) {
+      const [serverId, userId] = values as [number, number];
+      const sorted = this.workLogs
+        .filter((l) => l.server_id === serverId && l.user_id === userId)
+        .sort((a, b) => b.updated_at - a.updated_at);
+      return { toArray: () => (sorted.length > 0 ? [{ id: sorted[0].id }] : []) };
+    }
+
+    if (q.startsWith('UPDATE server_work_logs SET title = ?, summary = ?, updated_at = ? WHERE id = ?')) {
+      const [title, summary, updatedAt, id] = values as [string, string, number, number];
+      const idx = this.workLogs.findIndex((l) => l.id === id);
+      if (idx >= 0) {
+        this.workLogs[idx] = { ...this.workLogs[idx], title, summary, updated_at: updatedAt };
+      }
+      return { toArray: () => [] };
+    }
+
     if (q.startsWith('INSERT INTO server_work_logs')) {
       const [userId, serverId, title, summary, createdAt, updatedAt] = values as [
         number,
@@ -179,6 +196,14 @@ class FakeSql {
       const [id, serverId] = values as [number, number];
       const found = this.knowledge.filter((k) => k.id === id && k.server_id === serverId);
       return { toArray: () => found as unknown[] };
+    }
+
+    if (q.startsWith('DELETE FROM server_knowledge WHERE user_id = ? AND server_id = ? AND key = ?')) {
+      const [userId, serverId, key] = values as [number, number, string];
+      this.knowledge = this.knowledge.filter(
+        (k) => !(k.user_id === userId && k.server_id === serverId && k.key === key)
+      );
+      return { toArray: () => [] };
     }
 
     if (q.startsWith('INSERT INTO server_knowledge')) {
@@ -378,6 +403,64 @@ describe('UserDBDO unified server memory', () => {
     expect(resBatch.status).toBe(200);
     expect(fakeSql.workLogs).toHaveLength(1);
     expect(fakeSql.knowledge).toHaveLength(2);
+  });
+
+  it('supports update_latest mode for work log and delete action for knowledge in batch save', async () => {
+    // 1. 先有一条工作日志和一条知识项
+    fakeSql.workLogs = [
+      {
+        id: 101,
+        user_id: 10,
+        server_id: 1,
+        title: '初始排查',
+        summary: '正在检查端口',
+        created_at: 1000,
+        updated_at: 1000,
+      },
+    ];
+    fakeSql.knowledge = [
+      {
+        id: 201,
+        user_id: 10,
+        server_id: 1,
+        category: 'config',
+        key: 'app_port',
+        value: '3000',
+        created_at: 1000,
+        updated_at: 1000,
+      },
+    ];
+
+    // 2. 批量调用：以 update_latest 更新工作日志，以 delete 删除废弃的知识项
+    const resUpdate = await userDb.fetch(
+      new Request('http://internal/internal/servers/1/memory/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: 10,
+          workLog: {
+            mode: 'update_latest',
+            title: '排查并修复端口冲突',
+            summary: '已将冲突端口修改为 3001 并成功启动',
+          },
+          knowledge: [
+            { action: 'delete', key: 'app_port' },
+            { category: 'config', key: 'new_app_port', value: '3001' },
+          ],
+        }),
+      })
+    );
+    expect(resUpdate.status).toBe(200);
+
+    // 工作日志未增加，标题与内容已原子更新
+    expect(fakeSql.workLogs).toHaveLength(1);
+    expect(fakeSql.workLogs[0].title).toBe('排查并修复端口冲突');
+    expect(fakeSql.workLogs[0].summary).toBe('已将冲突端口修改为 3001 并成功启动');
+
+    // 旧知识项已删除，新知识项已添加
+    expect(fakeSql.knowledge).toHaveLength(1);
+    expect(fakeSql.knowledge[0].key).toBe('new_app_port');
+    expect(fakeSql.knowledge[0].value).toBe('3001');
   });
 
   it('drops legacy tables on init and cleans up on server delete without 500 error', async () => {

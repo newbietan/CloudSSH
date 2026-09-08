@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  extractDistillationJson,
   formatCurrentTimeAnchor,
   formatTimestampWithRelative,
   isSensitiveKeyOrValue,
@@ -80,6 +81,7 @@ describe('server-memory-schema', () => {
     expect(valid).toEqual({
       ok: true,
       value: {
+        mode: 'create',
         title: '查看服务器硬件信息',
         summary: 'CPU 占用正常，内存余量充足',
       },
@@ -110,6 +112,7 @@ describe('server-memory-schema', () => {
     expect(cred).toEqual({
       ok: true,
       value: {
+        action: 'set',
         category: 'credential',
         key: 'deploy_token',
         value: 'ghp_abcdef1234567890abcdef12345678901234',
@@ -125,6 +128,7 @@ describe('server-memory-schema', () => {
     expect(config).toEqual({
       ok: true,
       value: {
+        action: 'set',
         category: 'config',
         key: 'app_port',
         value: '8080',
@@ -137,5 +141,120 @@ describe('server-memory-schema', () => {
     expect(isSensitiveKeyOrValue('api_key', 'some-key')).toBe(true);
     expect(isSensitiveKeyOrValue('token', 'ghp_12345')).toBe(true);
     expect(isSensitiveKeyOrValue('normal_key', 'normal_val')).toBe(false);
+  });
+
+  it('extracts distillation JSON robustly across formats and thought wrappers', () => {
+    // 1. Pure JSON
+    const pure = extractDistillationJson('{"workLog": {"title": "T1", "summary": "S1"}}');
+    expect(pure).toEqual({ workLog: { title: 'T1', summary: 'S1' } });
+
+    // 2. Markdown codeblock
+    const md = extractDistillationJson('```json\n{"workLog": {"title": "T2", "summary": "S2"}}\n```');
+    expect(md).toEqual({ workLog: { title: 'T2', summary: 'S2' } });
+
+    // 3. With <think> tag and markdown block
+    const withThinkAndMd = extractDistillationJson(
+      '<think>用户进行了硬件查看</think>\n```json\n{"workLog": {"title": "T3", "summary": "S3"}}\n```'
+    );
+    expect(withThinkAndMd).toEqual({ workLog: { title: 'T3', summary: 'S3' } });
+
+    // 4. With <thought> tag and raw JSON without codeblock
+    const withThoughtNoBlock = extractDistillationJson(
+      '<thought>分析过程如下：完成</thought>\n{"workLog": {"title": "T4", "summary": "S4"}}'
+    );
+    expect(withThoughtNoBlock).toEqual({ workLog: { title: 'T4', summary: 'S4' } });
+
+    // 5. Natural language wrapper around JSON
+    const naturalLang = extractDistillationJson(
+      '经过分析，本次任务总结如下：\n{"workLog": {"title": "T5", "summary": "S5"}}\n请查阅。'
+    );
+    expect(naturalLang).toEqual({ workLog: { title: 'T5', summary: 'S5' } });
+
+    // 6. Invalid or empty content
+    expect(extractDistillationJson('')).toBeNull();
+    expect(extractDistillationJson('not a json string')).toBeNull();
+    expect(extractDistillationJson('<think>only thought</think>')).toBeNull();
+
+    // 7. With draft inside <think> and real final JSON in markdown block outside
+    const withDraftInThink = extractDistillationJson(
+      '<think>草稿如下：\n```json\n{"workLog": {"title": "Draft", "summary": "Draft summary"}}\n```\n最终结论如下：</think>\n```json\n{"workLog": {"title": "Final", "summary": "Final summary"}}\n```'
+    );
+    expect(withDraftInThink).toEqual({ workLog: { title: 'Final', summary: 'Final summary' } });
+  });
+
+  it('normalizes workLog input supporting create and update_latest modes', () => {
+    const createLog = normalizeWorkLogInput({
+      mode: 'create',
+      title: '新建任务',
+      summary: '新建任务摘要',
+    });
+    expect(createLog).toEqual({
+      ok: true,
+      value: {
+        mode: 'create',
+        title: '新建任务',
+        summary: '新建任务摘要',
+      },
+    });
+
+    const updateLog = normalizeWorkLogInput({
+      mode: 'update_latest',
+      title: '更新任务',
+      summary: '更新任务摘要',
+    });
+    expect(updateLog).toEqual({
+      ok: true,
+      value: {
+        mode: 'update_latest',
+        title: '更新任务',
+        summary: '更新任务摘要',
+      },
+    });
+
+    // 缺省 mode 默认降级为 create
+    const defaultLog = normalizeWorkLogInput({
+      title: '默认任务',
+      summary: '默认任务摘要',
+    });
+    expect(defaultLog).toEqual({
+      ok: true,
+      value: {
+        mode: 'create',
+        title: '默认任务',
+        summary: '默认任务摘要',
+      },
+    });
+  });
+
+  it('normalizes knowledge input supporting set and delete actions', () => {
+    const setAction = normalizeKnowledgeInput({
+      action: 'set',
+      category: 'config',
+      key: 'port',
+      value: '8080',
+    });
+    expect(setAction).toEqual({
+      ok: true,
+      value: {
+        action: 'set',
+        category: 'config',
+        key: 'port',
+        value: '8080',
+      },
+    });
+
+    const deleteAction = normalizeKnowledgeInput({
+      action: 'delete',
+      key: 'port',
+    });
+    expect(deleteAction).toEqual({
+      ok: true,
+      value: {
+        action: 'delete',
+        category: 'note',
+        key: 'port',
+        value: '',
+      },
+    });
   });
 });

@@ -87,8 +87,11 @@ exec channel 会创建独立 SSH channel，返回 JSON：
 import {
   formatCurrentTimeAnchor,
   formatTimestampWithRelative,
+  type ServerKnowledgeItem,
+  type ServerWorkLog,
   type UnifiedServerMemory,
 } from '../../server-memory-schema';
+import type { ChatMessage } from './types';
 
 export function getSystemPrompt(): string {
   return SYSTEM_PROMPT;
@@ -170,30 +173,249 @@ export function formatServerMemoryForPrompt(
   return fullText;
 }
 
-export const MEMORY_DISTILLATION_PROMPT = `你是一个服务器智能会话总结助手。请阅读刚才这轮人机交互记录，提炼以下两部分信息：
+export const MEMORY_DISTILLATION_PROMPT = `你是一个服务器智能会话总结助手。请阅读本轮人机交互记录，并结合当前服务器已有的工作历程与已存知识清单，提炼以下两部分信息：
 
 1. 本轮执行的工作概括 (workLog):
-   - title: 任务简述（如“检查硬件与系统资源”、“更新系统安装包”、“查看运行服务”、“排查 Nginx 故障”等，15字内）
-   - summary: 执行的主要操作与最终结论（如“查看了 CPU/内存/磁盘，资源正常；检查了 12 个可升级包”，60字内）
-   - 若用户仅打招呼（如单纯说“你好”）且未执行任何实质性查询或操作，workLog 设为 null。
+   - 结合【执行操作】与【最终结论】生成运维工作概括；
+   - mode 模式判定（合并优先原则）：
+     * 默认合并更新 ("update_latest")：只要服务器存在近期工作历程（特别是在同一会话、相近时间内的连续排查/修改/部署/验证流程），【必须输出 "mode": "update_latest"】！将上一条记录的要点与本轮新进展融合成一条承前启后的完整总结（title 15字内，summary 60字内），绝对避免把连续运维排障过程拆解成多条琐碎的碎片日志；
+     * 独立新建 ("create")：仅当服务器无任何历史记录、或者最近一条记录属于很久以前的历史日志（如数小时前或不同日期）、或者用户明确声明开启全新领域的独立任务时，才输出 "mode": "create"；
+   - title: 任务简述（15字内，合并时概括整个阶段的目标，如“排查端口并部署demo服务”）；
+   - summary: 执行的主要操作与最终结论（60字内，合并时融合前序要点与最终结果，如“检查系统资源正常，排查8080后改用8090成功启动demo服务”）；
+   - 若用户仅打招呼且未执行任何实质性查询或操作，workLog 设为 null。
 
 2. 用户在对话中主动提供或沉淀的上下文知识与凭据参数 (knowledge，数组，可为空 []):
-   - 提取用户主动告知的部署 Token、API Key、数据库或服务密码 (category: "credential")；
-   - 提取特定服务端口、自建仓库地址、特殊路径配置 (category: "config")；
-   - 提取用户指定的习惯偏好或命令约定 (category: "rule")；
-   - 提取重要的持久业务备忘 (category: "note")。
+   - 实体对齐与更新：如果本轮涉及修改或更新【当前已沉淀的知识与凭据项】中的参数（如更换端口、更新密码），必须复用完全相同的 key 名，以便系统原子覆盖旧值！
+   - 新增实体：若为全新凭据或配置，使用规范的蛇形 key（如 deploy_token, app_port, redis_path）；
+   - 废弃删除：若用户明确要求移除某项配置或服务（如“删除了测试库”），输出 { action: "delete", key: "xxx" }；
+   - 类别分类：
+     * "credential": 部署 Token、API Key、数据库或服务密码；
+     * "config": 服务端口、仓库地址、特殊路径配置、环境变量；
+     * "rule": 习惯偏好、命令约定；
+     * "note": 重要的持久业务备忘；
    - 【核心目的】：下次用户再次执行类似操作时，AI 可以直接复用这些参数与凭据，绝不再向用户重复索取！
 
 输出格式：必须输出严格的单对象 JSON，严禁任何 Markdown 代码块标记（如 \`\`\`json）或多余文字。
 示例格式：
 {
   "workLog": {
-    "title": "检查系统服务与安装包",
-    "summary": "检查了当前运行的 systemd 服务，并扫描了系统待更新软件包"
+    "mode": "update_latest",
+    "title": "排查端口并部署测试服务",
+    "summary": "检查系统资源正常，排查8080后改用8090成功启动demo服务，curl验证通过"
   },
   "knowledge": [
-    { "category": "credential", "key": "github_deploy_token", "value": "ghp_xxxxxx" },
-    { "category": "config", "key": "docker_registry", "value": "reg.internal:5000" }
+    { "category": "config", "key": "app_port", "value": "8090" },
+    { "action": "delete", "key": "old_backup_dir" }
   ]
 }
 若本轮无任何有效工作或知识产出，返回空对象：{}`;
+
+/**
+ * 从多轮交互消息历史中抽取用于记忆提炼的快照。
+ *
+ * 核心策略：
+ * 1. 过滤 system 消息；
+ * 2. 逆序寻找到本轮交互的起点 User 消息，保证提炼模型能看到用户最初的任务需求与参数；
+ * 3. 若本轮交互步骤过多（> 16 条），保留首条 User 消息与最近的 15 条消息，既防止超出提炼窗口，又绝不丢失核心目标；
+ * 4. 极端兜底时取最后 10 条非 system 消息。
+ */
+export function extractDistillationSnapshot(messages: ChatMessage[]): ChatMessage[] {
+  if (!Array.isArray(messages) || messages.length === 0) return [];
+
+  const nonSystem = messages.filter((m) => m.role !== 'system');
+  if (nonSystem.length === 0) return [];
+
+  // 从后往前查找最后一条 user 消息
+  let lastUserIdx = -1;
+  for (let i = nonSystem.length - 1; i >= 0; i--) {
+    if (nonSystem[i].role === 'user') {
+      lastUserIdx = i;
+      break;
+    }
+  }
+
+  if (lastUserIdx !== -1) {
+    const roundMsgs = nonSystem.slice(lastUserIdx);
+    // 若本轮步数较多（超过 16 条消息），保留首条 User 消息 + 尾部 15 条上下文
+    if (roundMsgs.length > 16) {
+      return [roundMsgs[0], ...roundMsgs.slice(-15)];
+    }
+    return roundMsgs;
+  }
+
+  return nonSystem.slice(-10);
+}
+
+function extractCommandSummary(toolCall: { function: { name: string; arguments: string } }): string {
+  const name = toolCall.function.name;
+  let args: any = {};
+  try {
+    args = JSON.parse(toolCall.function.arguments);
+  } catch {
+    args = { command: toolCall.function.arguments };
+  }
+
+  if (name === 'execute_command' && args.command) {
+    return String(args.command).trim();
+  }
+  if (name === 'service_manage' && args.service) {
+    return `systemctl ${args.action || ''} ${args.service}`.trim();
+  }
+  if (name === 'docker_manage') {
+    return `docker ${args.action || ''} ${args.target || ''}`.trim();
+  }
+  if (name === 'detect_environment') {
+    return 'detect_environment';
+  }
+  if (name === 'list_processes') {
+    return 'ps aux';
+  }
+  if (name === 'read_terminal_context') {
+    return 'read_terminal';
+  }
+  return name;
+}
+
+/**
+ * 将快照消息序列化为便于提炼模型理解的高信息密度紧凑文本。
+ *
+ * 核心优化：
+ * 1. 彻底剔除所有 tool 输出（绝不传递冗长原始 stdout/stderr/日志）；
+ * 2. 提取用户原始诉求（保留任务目标与显式提供的 Token/端口/配置参数）；
+ * 3. 提取执行的关键命令简写（便于模型理解实际做了什么，即使 AI 最终回复较简短也能准确提炼）；
+ * 4. 提取 AI 最终给出的结论；
+ * 5. 将 Token 消耗压缩 80%~90%，极大提升提炼响应速度并避免超长截断。
+ */
+export function formatDistillationMessages(snapshotMsgs: ChatMessage[]): string {
+  const userPrompts: string[] = [];
+  const executedCommands: string[] = [];
+  let finalConclusion = '';
+
+  for (const m of snapshotMsgs) {
+    if (m.role === 'user' && m.content && m.content.trim()) {
+      userPrompts.push(m.content.trim());
+    } else if (m.role === 'assistant') {
+      if (m.tool_calls && m.tool_calls.length > 0) {
+        for (const tc of m.tool_calls) {
+          const cmd = extractCommandSummary(tc);
+          if (cmd && !executedCommands.includes(cmd)) {
+            executedCommands.push(cmd);
+          }
+        }
+      }
+      if (m.content && m.content.trim()) {
+        finalConclusion = m.content.trim();
+      }
+    }
+  }
+
+  const parts: string[] = [];
+  if (userPrompts.length > 0) {
+    parts.push(`用户诉求: ${userPrompts.join('\n次要跟进: ')}`);
+  }
+  if (executedCommands.length > 0) {
+    const compactCmds = executedCommands
+      .slice(0, 10)
+      .map((c) => (c.length > 80 ? `${c.slice(0, 77)}...` : c));
+    parts.push(`执行操作: ${compactCmds.join(', ')}`);
+  }
+  if (finalConclusion) {
+    parts.push(`最终结论: ${finalConclusion}`);
+  }
+
+  return parts.join('\n');
+}
+
+/**
+ * 组装用于记忆提炼的输入上下文。
+ * 注入已存的最近 WorkLog 与现有 Knowledge 键值清单，
+ * 赋能提炼模型进行多轮任务合并（mode: 'update_latest'）与已有实体键对齐（Entity Alignment）。
+ */
+export function formatDistillationPromptInput(
+  snapshotMsgs: ChatMessage[],
+  recentLogs: ServerWorkLog[] = [],
+  existingKnowledge: ServerKnowledgeItem[] = [],
+  options?: {
+    now?: number;
+    locale?: AgentLocale;
+    timeZone?: string;
+  }
+): string {
+  const parts: string[] = [];
+  const now = options?.now || Date.now();
+  const locale = options?.locale || 'zh-CN';
+  const timeZone = options?.timeZone;
+
+  const latestLog = Array.isArray(recentLogs) && recentLogs.length > 0 ? recentLogs[0] : null;
+  const isRecentConsecutive =
+    latestLog && typeof latestLog.updated_at === 'number' && now - latestLog.updated_at < 30 * 60 * 1000;
+
+  if (latestLog) {
+    const timeStr = formatTimestampWithRelative(latestLog.updated_at, now, locale, timeZone);
+    const logLines = recentLogs.slice(0, 2).map((l) => {
+      const t = formatTimestampWithRelative(l.updated_at, now, locale, timeZone);
+      return `- [${l.title}] (${t}): ${l.summary}`;
+    });
+    parts.push(`【服务器最近的工作历程】\n${logLines.join('\n')}`);
+
+    if (isRecentConsecutive) {
+      parts.push(`【连续运维任务合并强指引（非常重要）】：
+检测到最新一条工作历程【${latestLog.title}】记录于不久前（${timeStr}）：
+- 原标题：${latestLog.title}
+- 原摘要：${latestLog.summary}
+当前本轮操作属于该运维任务的后续推进（如排障后续、配置修改、部署验证等连续工作流）。
+【必须遵循】：
+1. 必须输出 "mode": "update_latest"！
+2. 请将原记录的核心背景与本轮新完成的进展/结论融合成一条承前启后的完整工作日志（title 15字内，summary 60字内，例如：“检查资源并排查8080后，换用8090部署demo服务”）。
+3. 严禁输出 "create" 造成连续操作被拆成多条琐碎的碎片日志！`);
+    }
+  }
+
+  if (Array.isArray(existingKnowledge) && existingKnowledge.length > 0) {
+    const kLines = existingKnowledge
+      .slice(0, 30)
+      .map((k) => `- [${k.category}] ${k.key}: ${k.value}`);
+    parts.push(`【当前已沉淀的知识与凭据项（更新时请复用完全相同的 key 名）】\n${kLines.join('\n')}`);
+  }
+
+  const conversation = formatDistillationMessages(snapshotMsgs);
+  parts.push(`【本轮会话记录】\n${conversation}`);
+
+  return parts.join('\n\n');
+}
+
+const TRIVIAL_GREETING_PATTERN =
+  /^[\s\p{P}]*(?:你好|您好|hi|hello|hey|在吗|在么|哈喽|早上好|中午好|晚上好|test|ping)[\s\p{P}]*$/iu;
+
+const KNOWLEDGE_KEYWORD_PATTERN =
+  /(?:token|key|secret|password|passwd|pwd|credential|port|端口|http|\/|\b\d{2,5}\b|config|rule|偏好|记住)/i;
+
+/**
+ * 判断当前快照是否属于无命令执行的纯问候或无实质信息交互，从而在本地直接熔断跳过提炼。
+ * 避免无意义的后台 LLM API 请求与 Token 消耗。
+ */
+export function shouldBypassDistillation(snapshotMsgs: ChatMessage[]): boolean {
+  if (!Array.isArray(snapshotMsgs) || snapshotMsgs.length === 0) return true;
+
+  // 1. 检查是否存在实质工具调用
+  const hasToolCalls = snapshotMsgs.some(
+    (m) => m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length > 0
+  );
+  if (hasToolCalls) return false;
+
+  // 2. 无工具调用时，检查用户消息是否为纯寒暄且无任何知识/凭据特征
+  const userContents = snapshotMsgs
+    .filter((m) => m.role === 'user' && typeof m.content === 'string')
+    .map((m) => m.content!.trim())
+    .filter(Boolean);
+
+  if (userContents.length === 0) return true;
+
+  const isAllTrivial = userContents.every(
+    (text) => TRIVIAL_GREETING_PATTERN.test(text) && !KNOWLEDGE_KEYWORD_PATTERN.test(text)
+  );
+
+  return isAllTrivial;
+}
+
+

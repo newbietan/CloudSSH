@@ -63,13 +63,17 @@ export function isSensitiveKeyOrValue(key: string, value: string): boolean {
   return SENSITIVE_VALUE_PATTERNS.some((pattern) => pattern.test(value));
 }
 
+export type WorkLogMode = 'create' | 'update_latest';
+export type KnowledgeAction = 'set' | 'delete';
+
 /**
  * 校验并规范化工作记录输入
  */
 export function normalizeWorkLogInput(input: {
+  mode?: unknown;
   title?: unknown;
   summary?: unknown;
-}): { ok: true; value: { title: string; summary: string } } | { ok: false; error: string } {
+}): { ok: true; value: { mode: WorkLogMode; title: string; summary: string } } | { ok: false; error: string } {
   if (typeof input.title !== 'string') return { ok: false, error: 'titleRequired' };
   const trimmedTitle = input.title.trim();
   if (!trimmedTitle) return { ok: false, error: 'titleRequired' };
@@ -84,9 +88,12 @@ export function normalizeWorkLogInput(input: {
     return { ok: false, error: 'summaryTooLong' };
   }
 
+  const mode: WorkLogMode = input.mode === 'update_latest' ? 'update_latest' : 'create';
+
   return {
     ok: true,
     value: {
+      mode,
       title: trimmedTitle,
       summary: trimmedSummary,
     },
@@ -97,15 +104,32 @@ export function normalizeWorkLogInput(input: {
  * 校验并规范化知识与凭据输入
  */
 export function normalizeKnowledgeInput(input: {
+  action?: unknown;
   category?: unknown;
   key?: unknown;
   value?: unknown;
-}): { ok: true; value: { category: KnowledgeCategory; key: string; value: string } } | { ok: false; error: string } {
+}): {
+  ok: true;
+  value: { action: KnowledgeAction; category: KnowledgeCategory; key: string; value: string };
+} | { ok: false; error: string } {
   if (typeof input.key !== 'string') return { ok: false, error: 'keyRequired' };
   const trimmedKey = input.key.trim();
   if (!trimmedKey) return { ok: false, error: 'keyRequired' };
   if ([...trimmedKey].length > KNOWLEDGE_KEY_MAX_LENGTH) {
     return { ok: false, error: 'keyTooLong' };
+  }
+
+  const action: KnowledgeAction = input.action === 'delete' ? 'delete' : 'set';
+  if (action === 'delete') {
+    return {
+      ok: true,
+      value: {
+        action: 'delete',
+        category: 'note',
+        key: trimmedKey,
+        value: '',
+      },
+    };
   }
 
   if (typeof input.value !== 'string') return { ok: false, error: 'valueRequired' };
@@ -128,6 +152,7 @@ export function normalizeKnowledgeInput(input: {
   return {
     ok: true,
     value: {
+      action: 'set',
       category,
       key: trimmedKey,
       value: trimmedValue,
@@ -255,3 +280,61 @@ export function formatTimestampWithRelative(
 
   return `${y}-${m}-${d} ${hh}:${mm} (${relative})`;
 }
+
+/**
+ * 从 LLM 提炼返回的原始文本中健壮地提取 JSON 对象。
+ *
+ * 容错策略：
+ * 1. 优先清洗显式思考标签 (<think>...</think>, <thought>...</thought>, <scratchpad>...</scratchpad>)，防止模型在思考阶段写出的草稿代码块干扰最终提取；
+ * 2. 尝试从 Markdown 代码块提取 (```json ... ``` 或 ``` ... ```)；
+ * 3. 寻找最外层大括号边界 { ... }，防御自然语言前缀/后序客套话与无代码块包裹；
+ * 4. 原始解析兜底。
+ */
+export function extractDistillationJson(rawContent: string): any {
+  if (!rawContent || typeof rawContent !== 'string') return null;
+
+  const trimmed = rawContent.trim();
+  if (!trimmed) return null;
+
+  // 1. 优先清洗思考或中间过程标签，避免思考阶段输出的草稿代码块干扰最终提取
+  const cleaned = trimmed
+    .replace(/<(?:think|thought|scratchpad)>[\s\S]*?<\/(?:think|thought|scratchpad)>/gi, '')
+    .trim();
+
+  if (!cleaned) return null;
+
+  // 2. 优先尝试从 Markdown 代码块提取
+  const codeBlockMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (codeBlockMatch) {
+    try {
+      const parsed = JSON.parse(codeBlockMatch[1].trim());
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch {
+      /* 代码块解析失败则继续容错清洗 */
+    }
+  }
+
+  // 3. 寻找最外层大括号边界 { ... }，防御自然语言前后缀客套话
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const candidate = cleaned.slice(firstBrace, lastBrace + 1).trim();
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // 4. 兜底原始解析
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+

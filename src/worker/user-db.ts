@@ -2059,9 +2059,9 @@ export class UserDBDO {
   private async handleBatchSaveMemory(serverId: number, request: Request): Promise<Response> {
     const body = await request.json<{
       user_id: number;
-      workLog?: { title?: unknown; summary?: unknown };
-      workLogs?: Array<{ title?: unknown; summary?: unknown }>;
-      knowledge?: Array<{ category?: unknown; key?: unknown; value?: unknown }>;
+      workLog?: { mode?: unknown; title?: unknown; summary?: unknown };
+      workLogs?: Array<{ mode?: unknown; title?: unknown; summary?: unknown }>;
+      knowledge?: Array<{ action?: unknown; category?: unknown; key?: unknown; value?: unknown }>;
     }>();
 
     if (!body.user_id) return Response.json({ error: 'Missing user_id' }, { status: 400 });
@@ -2081,8 +2081,33 @@ export class UserDBDO {
 
     if (rawLogs.length > 0) {
       for (const log of rawLogs) {
-        const norm = normalizeWorkLogInput({ title: log.title, summary: log.summary });
+        const norm = normalizeWorkLogInput({ mode: log.mode, title: log.title, summary: log.summary });
         if (!norm.ok) continue;
+
+        if (norm.value.mode === 'update_latest') {
+          const latestRows = this.db
+            .exec(
+              `SELECT id FROM server_work_logs
+               WHERE server_id = ? AND user_id = ?
+               ORDER BY updated_at DESC LIMIT 1`,
+              serverId,
+              body.user_id
+            )
+            .toArray();
+
+          if (latestRows.length > 0) {
+            this.db.exec(
+              `UPDATE server_work_logs
+               SET title = ?, summary = ?, updated_at = ?
+               WHERE id = ?`,
+              norm.value.title,
+              norm.value.summary,
+              now,
+              latestRows[0].id
+            );
+            continue;
+          }
+        }
 
         this.db.exec(
           `INSERT INTO server_work_logs (user_id, server_id, title, summary, created_at, updated_at)
@@ -2114,8 +2139,24 @@ export class UserDBDO {
     // 2. 保存上下文知识或凭据
     if (Array.isArray(body.knowledge)) {
       for (const k of body.knowledge) {
-        const norm = normalizeKnowledgeInput({ category: k.category, key: k.key, value: k.value });
+        const norm = normalizeKnowledgeInput({
+          action: k.action,
+          category: k.category,
+          key: k.key,
+          value: k.value,
+        });
         if (!norm.ok) continue;
+
+        if (norm.value.action === 'delete') {
+          this.db.exec(
+            `DELETE FROM server_knowledge
+             WHERE user_id = ? AND server_id = ? AND key = ?`,
+            body.user_id,
+            serverId,
+            norm.value.key
+          );
+          continue;
+        }
 
         this.db.exec(
           `INSERT INTO server_knowledge (user_id, server_id, category, key, value, created_at, updated_at)
