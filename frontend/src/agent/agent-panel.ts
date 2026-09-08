@@ -105,10 +105,8 @@ export class AgentPanel {
   private memoryTabKnowledgeBtn: HTMLElement | null = null;
   private memoryContentEl: HTMLElement | null = null;
   private memoryCountEl: HTMLElement | null = null;
-  private memoryBannerEl: HTMLElement | null = null;
   private memoryAddBtn: HTMLElement | null = null;
   private memoryAddFormContainerEl: HTMLElement | null = null;
-  private dismissedBannerLogId: number | null = null;
   private revealedSecretIds: Set<number> = new Set();
 
   constructor(
@@ -119,7 +117,6 @@ export class AgentPanel {
 
   setServerId(serverId?: number): void {
     this.serverId = serverId;
-    this.dismissedBannerLogId = null;
     this.revealedSecretIds.clear();
     if (this.isMemoryDrawerOpen) {
       void this.fetchServerMemory();
@@ -196,7 +193,6 @@ export class AgentPanel {
         <div id="agent-memory-add-form" class="hidden p-3 border-b border-[var(--border)] bg-[var(--bg-elevated)] shrink-0"></div>
         <div id="agent-memory-content" class="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar text-[12px]"></div>
       </div>
-      <div id="agent-memory-banner" class="hidden shrink-0 border-b border-[var(--border)] bg-[var(--bg-elevated)] px-4 py-2 text-xs"></div>
       <div id="agent-messages" class="flex-1 overflow-y-auto px-4 py-3 space-y-3 custom-scrollbar text-[13px]"></div>
       <div class="agent-panel-composer px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-elevated)]">
         <div id="agent-quick-chips" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-2 select-none">
@@ -238,7 +234,6 @@ export class AgentPanel {
       if (this.isMemoryDrawerOpen) {
         this.renderMemoryContent();
       }
-      this.renderMemoryBanner();
     });
 
     this.parentEl.appendChild(this.panelEl);
@@ -251,7 +246,6 @@ export class AgentPanel {
     this.memoryTabKnowledgeBtn = this.panelEl.querySelector('#agent-tab-knowledge');
     this.memoryContentEl = this.panelEl.querySelector('#agent-memory-content');
     this.memoryCountEl = this.panelEl.querySelector('#agent-memory-count');
-    this.memoryBannerEl = this.panelEl.querySelector('#agent-memory-banner');
     this.memoryAddBtn = this.panelEl.querySelector('#agent-memory-add-btn');
     this.memoryAddFormContainerEl = this.panelEl.querySelector('#agent-memory-add-form');
     this.bindEvents();
@@ -1128,7 +1122,6 @@ export class AgentPanel {
     this.memoryTabKnowledgeBtn = null;
     this.memoryContentEl = null;
     this.memoryCountEl = null;
-    this.memoryBannerEl = null;
     this.memoryAddBtn = null;
     this.memoryAddFormContainerEl = null;
     this.isVisible = false;
@@ -1186,7 +1179,6 @@ export class AgentPanel {
     if (!this.serverId) {
       this.unifiedMemory = { workLogs: [], knowledge: [] };
       this.renderMemoryContent();
-      this.renderMemoryBanner();
       return;
     }
     try {
@@ -1200,77 +1192,6 @@ export class AgentPanel {
       this.unifiedMemory = { workLogs: [], knowledge: [] };
     }
     this.renderMemoryContent();
-    this.renderMemoryBanner();
-  }
-
-  private renderMemoryBanner(): void {
-    if (!this.memoryBannerEl) return;
-
-    if (!this.serverId || this.unifiedMemory.workLogs.length === 0) {
-      this.memoryBannerEl.classList.add('hidden');
-      this.memoryBannerEl.replaceChildren();
-      return;
-    }
-
-    const latest = this.unifiedMemory.workLogs[0];
-    if (latest.id === this.dismissedBannerLogId) {
-      this.memoryBannerEl.classList.add('hidden');
-      this.memoryBannerEl.replaceChildren();
-      return;
-    }
-
-    const locale = getLocale() === 'en-US' ? 'en-US' : 'zh-CN';
-    const timeStr = formatTimestampWithRelative(latest.created_at, Date.now(), locale);
-
-    this.memoryBannerEl.classList.remove('hidden');
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
-    this.memoryBannerEl.innerHTML = `
-      <div class="flex items-start gap-2.5">
-        <span class="material-symbols-outlined text-[var(--accent-secondary)] text-[16px] shrink-0 mt-0.5" aria-hidden="true">history_edu</span>
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2">
-            <span class="font-bold text-primary truncate">${escapeHtml(latest.title)}</span>
-            <span class="text-[10px] px-1.5 py-0.2 rounded bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/20 font-medium shrink-0">${t('agent.memoryBannerLabel')}</span>
-            <span class="text-[10px] text-muted font-code shrink-0">${escapeHtml(timeStr)}</span>
-          </div>
-          <div class="text-muted text-[11px] mt-0.5 truncate">${escapeHtml(latest.summary)}</div>
-          <div class="flex items-center gap-2 mt-1.5">
-            <button type="button" id="agent-banner-resume-btn" class="px-2 py-0.5 rounded bg-[var(--accent)] text-white hover:opacity-90 transition-opacity font-medium text-[11px] cursor-pointer flex items-center gap-1">
-              <span class="material-symbols-outlined text-[13px]">play_arrow</span>
-              <span>${t('agent.memoryBannerResume')}</span>
-            </button>
-            <button type="button" id="agent-banner-dismiss-btn" class="px-2 py-0.5 text-muted hover:text-primary transition-colors text-[11px] cursor-pointer">
-              ${t('agent.memoryBannerDismiss')}
-            </button>
-          </div>
-        </div>
-      </div>
-    `;
-
-    this.memoryBannerEl
-      .querySelector<HTMLButtonElement>('#agent-banner-resume-btn')
-      ?.addEventListener('click', () => {
-        const isEn = getLocale() === 'en-US';
-        const prompt = isEn
-          ? `Resume previous work: ${latest.title}.`
-          : `继续上一次的工作：${latest.title}。`;
-        if (this.inputEl) {
-          this.inputEl.value = prompt;
-          this.inputEl.focus();
-          this.inputEl.style.height = 'auto';
-          this.inputEl.style.height = `${Math.min(this.inputEl.scrollHeight, 140)}px`;
-          this.updateInputState();
-        }
-        this.dismissedBannerLogId = latest.id;
-        this.renderMemoryBanner();
-      });
-
-    this.memoryBannerEl
-      .querySelector<HTMLButtonElement>('#agent-banner-dismiss-btn')
-      ?.addEventListener('click', () => {
-        this.dismissedBannerLogId = latest.id;
-        this.renderMemoryBanner();
-      });
   }
 
   private renderMemoryContent(): void {
