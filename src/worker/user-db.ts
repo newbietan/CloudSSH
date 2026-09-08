@@ -1,9 +1,12 @@
 import {
-  MAX_SERVER_CHECKPOINTS,
-  normalizeCheckpointInput,
-  type CheckpointStatus,
-  type ServerTaskCheckpoint,
-} from '../checkpoint-schema';
+  MAX_SERVER_KNOWLEDGE,
+  MAX_SERVER_WORK_LOGS,
+  normalizeKnowledgeInput,
+  normalizeWorkLogInput,
+  type ServerKnowledgeItem,
+  type ServerWorkLog,
+  type UnifiedServerMemory,
+} from '../server-memory-schema';
 import { normalizeSnippetInput, SNIPPET_MAX_COUNT } from '../snippet-schema';
 import {
   ALLOWED_LOCATION_HINTS,
@@ -68,7 +71,8 @@ type ThemeRow = { theme_data: string };
 type FingerprintRow = { fingerprint: string };
 type AIConfigRow = { base_url: string; model: string; api_key_last4: string; updated_at: string };
 type AIConfigSecretRow = { base_url: string; model: string; api_key_enc: string };
-type CheckpointRow = ServerTaskCheckpoint;
+type WorkLogRow = ServerWorkLog;
+type KnowledgeRow = ServerKnowledgeItem;
 
 /**
  * UserDBDO — 按 GitHub 用户 ID 命名并隔离的用户数据库 Durable Object
@@ -208,20 +212,31 @@ export class UserDBDO {
       CREATE INDEX IF NOT EXISTS idx_ssh_shares_user_server
         ON ssh_shares(user_id, server_id, created_at DESC);
 
-      CREATE TABLE IF NOT EXISTS server_task_checkpoints (
+      CREATE TABLE IF NOT EXISTS server_work_logs (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id     INTEGER NOT NULL REFERENCES users(id),
-        -- 不与 servers 设强外键约束：对齐 ssh_shares 设计原则，服务器删除时由业务显式清理，避免偶发的外键级联锁定
         server_id   INTEGER NOT NULL,
         title       TEXT NOT NULL,
-        status      TEXT NOT NULL DEFAULT 'in_progress',
-        done_summary TEXT NOT NULL,
-        next_step   TEXT NOT NULL,
+        summary     TEXT NOT NULL,
         created_at  INTEGER NOT NULL,
         updated_at  INTEGER NOT NULL
       );
-      CREATE INDEX IF NOT EXISTS idx_server_checkpoints_user_server
-        ON server_task_checkpoints(user_id, server_id, updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_server_work_logs_user_server
+        ON server_work_logs(user_id, server_id, updated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS server_knowledge (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL REFERENCES users(id),
+        server_id   INTEGER NOT NULL,
+        category    TEXT NOT NULL,
+        key         TEXT NOT NULL,
+        value       TEXT NOT NULL,
+        created_at  INTEGER NOT NULL,
+        updated_at  INTEGER NOT NULL,
+        UNIQUE(user_id, server_id, key)
+      );
+      CREATE INDEX IF NOT EXISTS idx_server_knowledge_user_server
+        ON server_knowledge(user_id, server_id, updated_at DESC);
     `);
 
     // === Migration: 给既有 servers 表追加 region / inferred_hint 列（幂等） ===
@@ -260,8 +275,9 @@ export class UserDBDO {
       this.db.exec("ALTER TABLE command_snippets ADD COLUMN category TEXT NOT NULL DEFAULT ''");
     }
 
-    // === Migration: 彻底清理已废弃的旧版 server_memories 表（解除其对 servers 的外键阻碍） ===
+    // === Migration: 彻底清理已废弃的旧版数据表（解除对 servers 的外键阻碍） ===
     this.db.exec('DROP TABLE IF EXISTS server_memories');
+    this.db.exec('DROP TABLE IF EXISTS server_task_checkpoints');
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -349,33 +365,54 @@ export class UserDBDO {
         return this.handleUpdateServerOS(parseInt(osMatch[1], 10), request);
       }
 
-      // /internal/servers/:id/checkpoints/:chkId
-      const singleCheckpointMatch = path.match(/^\/internal\/servers\/(\d+)\/checkpoints\/(\d+)$/);
-      if (singleCheckpointMatch) {
-        const serverId = parseInt(singleCheckpointMatch[1], 10);
-        const chkId = parseInt(singleCheckpointMatch[2], 10);
-        if (request.method === 'PUT') {
-          return this.handleUpdateServerCheckpoint(serverId, chkId, request);
-        }
-        if (request.method === 'DELETE') {
-          const userIdStr = url.searchParams.get('user_id');
-          if (!userIdStr) return Response.json({ error: 'Missing user_id' }, { status: 400 });
-          return this.handleDeleteServerCheckpoint(serverId, chkId, parseInt(userIdStr, 10));
-        }
+      // /internal/servers/:id/memory/batch
+      const batchMemoryMatch = path.match(/^\/internal\/servers\/(\d+)\/memory\/batch$/);
+      if (batchMemoryMatch && request.method === 'POST') {
+        const serverId = parseInt(batchMemoryMatch[1], 10);
+        return this.handleBatchSaveMemory(serverId, request);
       }
 
-      // /internal/servers/:id/checkpoints
-      const checkpointsMatch = path.match(/^\/internal\/servers\/(\d+)\/checkpoints$/);
-      if (checkpointsMatch) {
-        const serverId = parseInt(checkpointsMatch[1], 10);
-        if (request.method === 'GET') {
-          const userIdStr = url.searchParams.get('user_id');
-          if (!userIdStr) return Response.json({ error: 'Missing user_id' }, { status: 400 });
-          return this.handleGetServerCheckpoints(serverId, parseInt(userIdStr, 10));
-        }
-        if (request.method === 'POST') {
-          return this.handleSaveServerCheckpoint(serverId, request);
-        }
+      // /internal/servers/:id/memory
+      const memoryMatch = path.match(/^\/internal\/servers\/(\d+)\/memory$/);
+      if (memoryMatch && request.method === 'GET') {
+        const serverId = parseInt(memoryMatch[1], 10);
+        const userIdStr = url.searchParams.get('user_id');
+        if (!userIdStr) return Response.json({ error: 'Missing user_id' }, { status: 400 });
+        return this.handleGetServerMemory(serverId, parseInt(userIdStr, 10));
+      }
+
+      // /internal/servers/:id/work-logs/:logId
+      const singleWorkLogMatch = path.match(/^\/internal\/servers\/(\d+)\/work-logs\/(\d+)$/);
+      if (singleWorkLogMatch && request.method === 'DELETE') {
+        const serverId = parseInt(singleWorkLogMatch[1], 10);
+        const logId = parseInt(singleWorkLogMatch[2], 10);
+        const userIdStr = url.searchParams.get('user_id');
+        if (!userIdStr) return Response.json({ error: 'Missing user_id' }, { status: 400 });
+        return this.handleDeleteWorkLog(serverId, logId, parseInt(userIdStr, 10));
+      }
+
+      // /internal/servers/:id/work-logs
+      const workLogsMatch = path.match(/^\/internal\/servers\/(\d+)\/work-logs$/);
+      if (workLogsMatch && request.method === 'POST') {
+        const serverId = parseInt(workLogsMatch[1], 10);
+        return this.handleSaveWorkLog(serverId, request);
+      }
+
+      // /internal/servers/:id/knowledge/:kId
+      const singleKnowledgeMatch = path.match(/^\/internal\/servers\/(\d+)\/knowledge\/(\d+)$/);
+      if (singleKnowledgeMatch && request.method === 'DELETE') {
+        const serverId = parseInt(singleKnowledgeMatch[1], 10);
+        const kId = parseInt(singleKnowledgeMatch[2], 10);
+        const userIdStr = url.searchParams.get('user_id');
+        if (!userIdStr) return Response.json({ error: 'Missing user_id' }, { status: 400 });
+        return this.handleDeleteKnowledge(serverId, kId, parseInt(userIdStr, 10));
+      }
+
+      // /internal/servers/:id/knowledge
+      const knowledgeMatch = path.match(/^\/internal\/servers\/(\d+)\/knowledge$/);
+      if (knowledgeMatch && request.method === 'POST') {
+        const serverId = parseInt(knowledgeMatch[1], 10);
+        return this.handleSaveKnowledge(serverId, request);
       }
 
       // --- 用户自定义主题 ---
@@ -808,14 +845,20 @@ export class UserDBDO {
       values.push(body.port);
     }
     if (hostChanged || portChanged) {
-      // 主机地址或端口可能指向另一台 SSH 服务，旧 OS 结果与任务断点不可继续复用。
+      // 主机地址或端口可能指向另一台 SSH 服务，旧 OS 结果与工作记忆不可继续复用。
       updates.push('os = NULL');
       try {
         this.db.exec('DELETE FROM server_memories WHERE server_id = ?', serverId);
       } catch {
-        /* ignore if legacy table was already dropped */
+        /* ignore */
       }
-      this.db.exec('DELETE FROM server_task_checkpoints WHERE server_id = ?', serverId);
+      try {
+        this.db.exec('DELETE FROM server_task_checkpoints WHERE server_id = ?', serverId);
+      } catch {
+        /* ignore */
+      }
+      this.db.exec('DELETE FROM server_work_logs WHERE server_id = ?', serverId);
+      this.db.exec('DELETE FROM server_knowledge WHERE server_id = ?', serverId);
     }
     if (body.username !== undefined) {
       updates.push('username = ?');
@@ -911,7 +954,13 @@ export class UserDBDO {
     } catch {
       /* ignore if legacy table was already dropped */
     }
-    this.db.exec('DELETE FROM server_task_checkpoints WHERE server_id = ?', serverId);
+    try {
+      this.db.exec('DELETE FROM server_task_checkpoints WHERE server_id = ?', serverId);
+    } catch {
+      /* ignore */
+    }
+    this.db.exec('DELETE FROM server_work_logs WHERE server_id = ?', serverId);
+    this.db.exec('DELETE FROM server_knowledge WHERE server_id = ?', serverId);
     this.db.exec('DELETE FROM servers WHERE id = ?', serverId);
     return Response.json({ success: true });
   }
@@ -1805,34 +1854,44 @@ export class UserDBDO {
     });
   }
 
-  // ==================== 服务器运维任务断点 (Task Checkpoint) ====================
+  // ==================== 服务器统一记忆 (Work Logs & Knowledge) ====================
 
-  private handleGetServerCheckpoints(serverId: number, userId: number): Response {
+  private handleGetServerMemory(serverId: number, userId: number): Response {
     const existing = this.query<UserIdRow>('SELECT user_id FROM servers WHERE id = ?', serverId);
     if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
     if (existing[0].user_id !== userId) return Response.json({ error: 'Forbidden' }, { status: 403 });
 
-    const rows = this.query<CheckpointRow>(
-      `SELECT id, user_id, server_id, title, status, done_summary, next_step, created_at, updated_at
-       FROM server_task_checkpoints
+    const workLogs = this.query<WorkLogRow>(
+      `SELECT id, user_id, server_id, title, summary, created_at, updated_at
+       FROM server_work_logs
        WHERE server_id = ? AND user_id = ?
        ORDER BY updated_at DESC
        LIMIT ?`,
       serverId,
       userId,
-      MAX_SERVER_CHECKPOINTS
+      MAX_SERVER_WORK_LOGS
     );
 
-    return Response.json(rows);
+    const knowledge = this.query<KnowledgeRow>(
+      `SELECT id, user_id, server_id, category, key, value, created_at, updated_at
+       FROM server_knowledge
+       WHERE server_id = ? AND user_id = ?
+       ORDER BY updated_at DESC
+       LIMIT ?`,
+      serverId,
+      userId,
+      MAX_SERVER_KNOWLEDGE
+    );
+
+    const payload: UnifiedServerMemory = { workLogs, knowledge };
+    return Response.json(payload);
   }
 
-  private async handleSaveServerCheckpoint(serverId: number, request: Request): Promise<Response> {
+  private async handleSaveWorkLog(serverId: number, request: Request): Promise<Response> {
     const body = await request.json<{
       user_id: number;
       title?: unknown;
-      status?: unknown;
-      done_summary?: unknown;
-      next_step?: unknown;
+      summary?: unknown;
     }>();
 
     if (!body.user_id) return Response.json({ error: 'Missing user_id' }, { status: 400 });
@@ -1841,91 +1900,47 @@ export class UserDBDO {
     if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
     if (existing[0].user_id !== body.user_id) return Response.json({ error: 'Forbidden' }, { status: 403 });
 
-    const normalized = normalizeCheckpointInput({
+    const normalized = normalizeWorkLogInput({
       title: body.title,
-      status: body.status,
-      done_summary: body.done_summary,
-      next_step: body.next_step,
+      summary: body.summary,
     });
 
     if (!normalized.ok) {
-      const errorMap = {
-        titleRequired: '任务标题不能为空',
-        titleTooLong: '任务标题不能超过 64 个字符',
-        doneRequired: '已完成总结不能为空',
-        doneTooLong: '已完成总结不能超过 300 个字符',
-        nextRequired: '下一步断点不能为空',
-        nextTooLong: '下一步断点不能超过 200 个字符',
-        sensitiveDataDetected: '检测到敏感凭据信息，拒绝记录',
-      } as Record<string, string>;
-      return Response.json({ error: errorMap[normalized.error] || '断点输入不合法' }, { status: 400 });
+      return Response.json({ error: normalized.error }, { status: 400 });
     }
 
-    const { title, status, done_summary, next_step } = normalized.value;
+    const { title, summary } = normalized.value;
     const now = Date.now();
 
-    // 检查最近一条断点是否同一任务且仍在进行中，若是则就地更新
-    const latest = this.query<CheckpointRow>(
-      `SELECT id, user_id, server_id, title, status, done_summary, next_step, created_at, updated_at
-       FROM server_task_checkpoints
-       WHERE server_id = ? AND user_id = ?
-       ORDER BY updated_at DESC LIMIT 1`,
+    this.db.exec(
+      `INSERT INTO server_work_logs (user_id, server_id, title, summary, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      body.user_id,
       serverId,
-      body.user_id
+      title,
+      summary,
+      now,
+      now
     );
 
-    let targetId: number | null = null;
-    if (latest.length > 0 && latest[0].status !== 'completed' && latest[0].title === title) {
-      targetId = latest[0].id;
-    }
+    // 保持最多 MAX_SERVER_WORK_LOGS 条记录
+    this.db.exec(
+      `DELETE FROM server_work_logs
+       WHERE server_id = ? AND user_id = ? AND id NOT IN (
+         SELECT id FROM server_work_logs
+         WHERE server_id = ? AND user_id = ?
+         ORDER BY updated_at DESC LIMIT ?
+       )`,
+      serverId,
+      body.user_id,
+      serverId,
+      body.user_id,
+      MAX_SERVER_WORK_LOGS
+    );
 
-    if (targetId !== null) {
-      this.db.exec(
-        `UPDATE server_task_checkpoints
-         SET title = ?, status = ?, done_summary = ?, next_step = ?, updated_at = ?
-         WHERE id = ? AND server_id = ? AND user_id = ?`,
-        title,
-        status,
-        done_summary,
-        next_step,
-        now,
-        targetId,
-        serverId,
-        body.user_id
-      );
-    } else {
-      this.db.exec(
-        `INSERT INTO server_task_checkpoints (user_id, server_id, title, status, done_summary, next_step, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        body.user_id,
-        serverId,
-        title,
-        status,
-        done_summary,
-        next_step,
-        now,
-        now
-      );
-
-      // 保持最多 MAX_SERVER_CHECKPOINTS 条记录，删除最旧多余记录
-      this.db.exec(
-        `DELETE FROM server_task_checkpoints
-         WHERE server_id = ? AND user_id = ? AND id NOT IN (
-           SELECT id FROM server_task_checkpoints
-           WHERE server_id = ? AND user_id = ?
-           ORDER BY updated_at DESC LIMIT ?
-         )`,
-        serverId,
-        body.user_id,
-        serverId,
-        body.user_id,
-        MAX_SERVER_CHECKPOINTS
-      );
-    }
-
-    const saved = this.query<CheckpointRow>(
-      `SELECT id, user_id, server_id, title, status, done_summary, next_step, created_at, updated_at
-       FROM server_task_checkpoints
+    const saved = this.query<WorkLogRow>(
+      `SELECT id, user_id, server_id, title, summary, created_at, updated_at
+       FROM server_work_logs
        WHERE server_id = ? AND user_id = ?
        ORDER BY updated_at DESC LIMIT 1`,
       serverId,
@@ -1935,57 +1950,205 @@ export class UserDBDO {
     return Response.json(saved[0] ?? { success: true }, { status: 201 });
   }
 
-  private async handleUpdateServerCheckpoint(
-    serverId: number,
-    chkId: number,
-    request: Request
-  ): Promise<Response> {
+  private handleDeleteWorkLog(serverId: number, logId: number, userId: number): Response {
+    const existing = this.query<UserIdRow>(
+      'SELECT user_id FROM server_work_logs WHERE id = ? AND server_id = ?',
+      logId,
+      serverId
+    );
+    if (existing.length === 0) return Response.json({ error: 'Work log not found' }, { status: 404 });
+    if (existing[0].user_id !== userId) return Response.json({ error: 'Forbidden' }, { status: 403 });
+
+    this.db.exec(
+      'DELETE FROM server_work_logs WHERE id = ? AND server_id = ? AND user_id = ?',
+      logId,
+      serverId,
+      userId
+    );
+    return Response.json({ success: true });
+  }
+
+  private async handleSaveKnowledge(serverId: number, request: Request): Promise<Response> {
     const body = await request.json<{
       user_id: number;
-      status?: unknown;
+      category?: unknown;
+      key?: unknown;
+      value?: unknown;
     }>();
 
     if (!body.user_id) return Response.json({ error: 'Missing user_id' }, { status: 400 });
 
-    const existing = this.query<CheckpointRow>(
-      'SELECT id, user_id FROM server_task_checkpoints WHERE id = ? AND server_id = ?',
-      chkId,
-      serverId
-    );
-    if (existing.length === 0) return Response.json({ error: 'Checkpoint not found' }, { status: 404 });
+    const existing = this.query<UserIdRow>('SELECT user_id FROM servers WHERE id = ?', serverId);
+    if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
     if (existing[0].user_id !== body.user_id) return Response.json({ error: 'Forbidden' }, { status: 403 });
 
-    const status: CheckpointStatus =
-      body.status === 'completed' || body.status === 'interrupted' || body.status === 'in_progress'
-        ? body.status
-        : 'completed';
+    const normalized = normalizeKnowledgeInput({
+      category: body.category,
+      key: body.key,
+      value: body.value,
+    });
 
+    if (!normalized.ok) {
+      return Response.json({ error: normalized.error }, { status: 400 });
+    }
+
+    const { category, key, value } = normalized.value;
     const now = Date.now();
+
     this.db.exec(
-      'UPDATE server_task_checkpoints SET status = ?, updated_at = ? WHERE id = ?',
-      status,
+      `INSERT INTO server_knowledge (user_id, server_id, category, key, value, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, server_id, key) DO UPDATE SET
+         category = excluded.category,
+         value = excluded.value,
+         updated_at = excluded.updated_at`,
+      body.user_id,
+      serverId,
+      category,
+      key,
+      value,
       now,
-      chkId
+      now
     );
 
-    return Response.json({ success: true, id: chkId, status });
+    // 保持最多 MAX_SERVER_KNOWLEDGE 条记录
+    this.db.exec(
+      `DELETE FROM server_knowledge
+       WHERE server_id = ? AND user_id = ? AND id NOT IN (
+         SELECT id FROM server_knowledge
+         WHERE server_id = ? AND user_id = ?
+         ORDER BY updated_at DESC LIMIT ?
+       )`,
+      serverId,
+      body.user_id,
+      serverId,
+      body.user_id,
+      MAX_SERVER_KNOWLEDGE
+    );
+
+    const saved = this.query<KnowledgeRow>(
+      `SELECT id, user_id, server_id, category, key, value, created_at, updated_at
+       FROM server_knowledge
+       WHERE server_id = ? AND user_id = ? AND key = ?`,
+      serverId,
+      body.user_id,
+      key
+    );
+
+    return Response.json(saved[0] ?? { success: true }, { status: 201 });
   }
 
-  private handleDeleteServerCheckpoint(serverId: number, chkId: number, userId: number): Response {
+  private handleDeleteKnowledge(serverId: number, kId: number, userId: number): Response {
     const existing = this.query<UserIdRow>(
-      'SELECT user_id FROM server_task_checkpoints WHERE id = ? AND server_id = ?',
-      chkId,
+      'SELECT user_id FROM server_knowledge WHERE id = ? AND server_id = ?',
+      kId,
       serverId
     );
-    if (existing.length === 0) return Response.json({ error: 'Checkpoint not found' }, { status: 404 });
+    if (existing.length === 0) return Response.json({ error: 'Knowledge item not found' }, { status: 404 });
     if (existing[0].user_id !== userId) return Response.json({ error: 'Forbidden' }, { status: 403 });
 
     this.db.exec(
-      'DELETE FROM server_task_checkpoints WHERE id = ? AND server_id = ? AND user_id = ?',
-      chkId,
+      'DELETE FROM server_knowledge WHERE id = ? AND server_id = ? AND user_id = ?',
+      kId,
       serverId,
       userId
     );
+    return Response.json({ success: true });
+  }
+
+  private async handleBatchSaveMemory(serverId: number, request: Request): Promise<Response> {
+    const body = await request.json<{
+      user_id: number;
+      workLog?: { title?: unknown; summary?: unknown };
+      workLogs?: Array<{ title?: unknown; summary?: unknown }>;
+      knowledge?: Array<{ category?: unknown; key?: unknown; value?: unknown }>;
+    }>();
+
+    if (!body.user_id) return Response.json({ error: 'Missing user_id' }, { status: 400 });
+
+    const existing = this.query<UserIdRow>('SELECT user_id FROM servers WHERE id = ?', serverId);
+    if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
+    if (existing[0].user_id !== body.user_id) return Response.json({ error: 'Forbidden' }, { status: 403 });
+
+    const now = Date.now();
+
+    // 1. 保存工作日志（支持单个对象或数组）
+    const rawLogs = Array.isArray(body.workLogs)
+      ? body.workLogs
+      : body.workLog
+        ? [body.workLog]
+        : [];
+
+    if (rawLogs.length > 0) {
+      for (const log of rawLogs) {
+        const norm = normalizeWorkLogInput({ title: log.title, summary: log.summary });
+        if (!norm.ok) continue;
+
+        this.db.exec(
+          `INSERT INTO server_work_logs (user_id, server_id, title, summary, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          body.user_id,
+          serverId,
+          norm.value.title,
+          norm.value.summary,
+          now,
+          now
+        );
+      }
+
+      this.db.exec(
+        `DELETE FROM server_work_logs
+         WHERE server_id = ? AND user_id = ? AND id NOT IN (
+           SELECT id FROM server_work_logs
+           WHERE server_id = ? AND user_id = ?
+           ORDER BY updated_at DESC LIMIT ?
+         )`,
+        serverId,
+        body.user_id,
+        serverId,
+        body.user_id,
+        MAX_SERVER_WORK_LOGS
+      );
+    }
+
+    // 2. 保存上下文知识或凭据
+    if (Array.isArray(body.knowledge)) {
+      for (const k of body.knowledge) {
+        const norm = normalizeKnowledgeInput({ category: k.category, key: k.key, value: k.value });
+        if (!norm.ok) continue;
+
+        this.db.exec(
+          `INSERT INTO server_knowledge (user_id, server_id, category, key, value, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(user_id, server_id, key) DO UPDATE SET
+             category = excluded.category,
+             value = excluded.value,
+             updated_at = excluded.updated_at`,
+          body.user_id,
+          serverId,
+          norm.value.category,
+          norm.value.key,
+          norm.value.value,
+          now,
+          now
+        );
+      }
+
+      this.db.exec(
+        `DELETE FROM server_knowledge
+         WHERE server_id = ? AND user_id = ? AND id NOT IN (
+           SELECT id FROM server_knowledge
+           WHERE server_id = ? AND user_id = ?
+           ORDER BY updated_at DESC LIMIT ?
+         )`,
+        serverId,
+        body.user_id,
+        serverId,
+        body.user_id,
+        MAX_SERVER_KNOWLEDGE
+      );
+    }
+
     return Response.json({ success: true });
   }
 }

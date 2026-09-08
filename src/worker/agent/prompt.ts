@@ -84,7 +84,11 @@ exec channel 会创建独立 SSH channel，返回 JSON：
 
 工具层的安全拦截作为最终兜底——即使你判断失误调用 execute_command 执行了危险命令，工具也会拦截。`;
 
-import type { AgentCheckpointItem } from './types';
+import {
+  formatCurrentTimeAnchor,
+  formatTimestampWithRelative,
+  type UnifiedServerMemory,
+} from '../../server-memory-schema';
 
 export function getSystemPrompt(): string {
   return SYSTEM_PROMPT;
@@ -98,56 +102,97 @@ export function getResponseLanguageInstruction(locale: AgentLocale): string {
     : '## 首选响应语言\n使用简体中文回答，命令、路径、日志关键字和技术标识符保持原样。';
 }
 
-export const MAX_CHECKPOINT_PROMPT_CHARS = 800;
+export const MAX_MEMORY_PROMPT_CHARS = 1200;
 
-export function formatTaskCheckpoints(
-  checkpoints: AgentCheckpointItem[],
-  locale: AgentLocale = 'zh-CN'
+export function formatServerMemoryForPrompt(
+  memory: UnifiedServerMemory,
+  locale: AgentLocale = 'zh-CN',
+  now: number = Date.now()
 ): string {
-  if (!checkpoints || checkpoints.length === 0) return '';
   const isEn = locale === 'en-US';
-  const statusLabels = {
-    in_progress: isEn ? 'In Progress' : '进行中',
-    completed: isEn ? 'Completed' : '已完成',
-    interrupted: isEn ? 'Interrupted' : '已中断',
-  } as const;
+  const parts: string[] = [];
 
-  const lines: string[] = [];
-  let currentLength = 0;
+  // 1. 始终注入当前系统时间基准（解决“昨天”、“今天”、“刚才”等时态理解）
+  const timeAnchor = formatCurrentTimeAnchor(now, locale);
+  parts.push(isEn ? `## Current System Time\n${timeAnchor}` : `## 当前系统时间基准\n${timeAnchor}`);
 
-  for (const cp of checkpoints) {
-    const statusText = statusLabels[cp.status] || (isEn ? 'In Progress' : '进行中');
-    const block = isEn
-      ? `- [Task] ${cp.title} (${statusText})\n  * Completed: ${cp.done_summary}\n  * Breakpoint / Next step: ${cp.next_step}`
-      : `- [任务] ${cp.title} (${statusText})\n  * 已完成/进展: ${cp.done_summary}\n  * 当前断点/下一步: ${cp.next_step}`;
+  const hasLogs = memory?.workLogs && memory.workLogs.length > 0;
+  const hasKnowledge = memory?.knowledge && memory.knowledge.length > 0;
 
-    if (currentLength + block.length > MAX_CHECKPOINT_PROMPT_CHARS) {
-      break;
-    }
-    lines.push(block);
-    currentLength += block.length + 1;
+  if (!hasLogs && !hasKnowledge) {
+    return parts.join('\n\n');
   }
 
-  if (lines.length === 0) return '';
+  // 2. 工作历程日志
+  if (hasLogs) {
+    const logHeader = isEn ? '## Recent Server Work Logs (Activity History)' : '## 服务器近期工作历程与操作备忘';
+    const logLines = memory.workLogs.slice(0, 6).map((log) => {
+      const timeStr = formatTimestampWithRelative(log.created_at, now, locale);
+      return `- [${timeStr}] ${log.title}: ${log.summary}`;
+    });
+    parts.push(`${logHeader}\n${logLines.join('\n')}`);
+  }
 
-  const header = isEn
-    ? '## Recent Task Continuity & Checkpoints (Server Working Memory)'
-    : '## 近期运维断点与任务接续 (Server Task Checkpoints)';
+  // 3. 上下文知识与凭据备忘
+  if (hasKnowledge) {
+    const kHeader = isEn ? '## Saved Context Knowledge, Parameters & Credentials' : '## 关键上下文知识、参数与凭据备忘';
+    const catNamesZh: Record<string, string> = {
+      credential: '凭据/密钥',
+      config: '环境参数',
+      rule: '偏好约定',
+      note: '备忘知识',
+    };
+    const catNamesEn: Record<string, string> = {
+      credential: 'Credential',
+      config: 'Config',
+      rule: 'Rule',
+      note: 'Note',
+    };
+    const kLines = memory.knowledge.slice(0, 15).map((k) => {
+      const catLabel = (isEn ? catNamesEn[k.category] : catNamesZh[k.category]) || k.category;
+      return `- [${catLabel}] ${k.key}: ${k.value}`;
+    });
+    parts.push(`${kHeader}\n${kLines.join('\n')}`);
+  }
+
+  // 4. 行动指引
   const guidance = isEn
-    ? 'Note: If the user asks to "continue", "resume", or inquires about earlier progress, align with the checkpoint above and proceed from that step without repeating completed work.'
-    : '注意：若用户提问涉及“继续”、“恢复任务”或“刚才到哪了”，请直接承接上述断点状态继续推进，避免重复索取已知信息或重复执行已完成步骤。';
+    ? '【Memory & Continuity Guidance】\n1. If the user asks what work was done (e.g., "What did I do yesterday?", "Show recent operations"), refer to the [Work Logs] above and answer directly with specific dates and tasks.\n2. If an operation requires a token, password, credential, URL, or rule that exists in [Saved Context Knowledge], REUSE IT DIRECTLY. DO NOT repeatedly ask the user for it!'
+    : '【记忆与连续性行为指引】\n1. 当用户询问历史工作（如“昨天干了什么”、“之前做过哪些操作”），请结合【当前系统时间基准】与【工作历程】中的时间戳直接清晰回答。\n2. 若当前任务需要用到【关键上下文知识、参数与凭据备忘】中已存在的 Token、密钥密码、路径或配置参数，**请直接带入使用，严禁再次向用户重复索取**！';
 
-  return `${header}\n${lines.join('\n')}\n\n${guidance}`;
+  parts.push(guidance);
+
+  let fullText = parts.join('\n\n');
+  if (fullText.length > MAX_MEMORY_PROMPT_CHARS + 600) {
+    fullText = fullText.slice(0, MAX_MEMORY_PROMPT_CHARS + 600) + '...';
+  }
+  return fullText;
 }
 
-export const CHECKPOINT_DISTILLATION_PROMPT = `你是一个 Linux 运维任务总结助手。请阅读刚才这轮运维排查与交互历史，提炼当前正在进行的任务断点与最新工作状态。
+export const MEMORY_DISTILLATION_PROMPT = `你是一个服务器智能会话总结助手。请阅读刚才这轮人机交互记录，提炼以下两部分信息：
 
-【提炼要求】
-1. 准确归纳任务目标（title，15字内）、已完成的关键动作/排查结论（done_summary，80字内），以及当前停留在哪一步、下一步建议或待办事项（next_step，50字内）。
-2. status 字段：若任务已彻底解决并验证完成，设为 "completed"；若仍在排查处理中或待进一步验证，设为 "in_progress"。
-3. 严禁提取或包含任何用户密码、密钥、Token、API Key 等敏感凭据。
-4. 如果用户仅是打招呼/闲聊/问询通用语法概念且未发生任何实质性排查操作，请只返回空对象：{}。
-5. 输出格式要求：必须输出严格的单对象 JSON，严禁任何 Markdown 标记或多余文字。
+1. 本轮执行的工作概括 (workLog):
+   - title: 任务简述（如“检查硬件与系统资源”、“更新系统安装包”、“查看运行服务”、“排查 Nginx 故障”等，15字内）
+   - summary: 执行的主要操作与最终结论（如“查看了 CPU/内存/磁盘，资源正常；检查了 12 个可升级包”，60字内）
+   - 若用户仅打招呼（如单纯说“你好”）且未执行任何实质性查询或操作，workLog 设为 null。
+
+2. 用户在对话中主动提供或沉淀的上下文知识与凭据参数 (knowledge，数组，可为空 []):
+   - 提取用户主动告知的部署 Token、API Key、数据库或服务密码 (category: "credential")；
+   - 提取特定服务端口、自建仓库地址、特殊路径配置 (category: "config")；
+   - 提取用户指定的习惯偏好或命令约定 (category: "rule")；
+   - 提取重要的持久业务备忘 (category: "note")。
+   - 【核心目的】：下次用户再次执行类似操作时，AI 可以直接复用这些参数与凭据，绝不再向用户重复索取！
+
+输出格式：必须输出严格的单对象 JSON，严禁任何 Markdown 代码块标记（如 \`\`\`json）或多余文字。
 示例格式：
-{"title":"排查 502 错误","status":"in_progress","done_summary":"已定位为 3000 端口 Node 崩溃，修复了依赖并重启服务","next_step":"待执行 curl 探测本地端口与 Nginx 日志确认恢复"}
-如果无需记录任何任务断点，请只返回：{}`;
+{
+  "workLog": {
+    "title": "检查系统服务与安装包",
+    "summary": "检查了当前运行的 systemd 服务，并扫描了系统待更新软件包"
+  },
+  "knowledge": [
+    { "category": "credential", "key": "github_deploy_token", "value": "ghp_xxxxxx" },
+    { "category": "config", "key": "docker_registry", "value": "reg.internal:5000" }
+  ]
+}
+若本轮无任何有效工作或知识产出，返回空对象：{}`;

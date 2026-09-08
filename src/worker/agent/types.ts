@@ -88,23 +88,19 @@ export interface AIConfig {
   api_key: string;
 }
 
-export interface AgentCheckpointItem {
-  id?: number;
-  server_id?: number;
-  title: string;
-  status: 'in_progress' | 'completed' | 'interrupted';
-  done_summary: string;
-  next_step: string;
-  created_at?: number;
-  updated_at?: number;
-}
+import type {
+  KnowledgeCategory,
+  ServerKnowledgeItem,
+  ServerWorkLog,
+  UnifiedServerMemory,
+} from '../../server-memory-schema';
 
-export interface AgentCheckpointProvider {
-  fetchRecentCheckpoints(): Promise<AgentCheckpointItem[]>;
-  saveCheckpoint(checkpoint: {
-    title: string;
-    status: 'in_progress' | 'completed' | 'interrupted';
-    done_summary: string;
-    next_step: string;
+export type { ServerWorkLog, ServerKnowledgeItem, UnifiedServerMemory, KnowledgeCategory };
+
+export interface AgentMemoryProvider {
+  fetchUnifiedMemory(): Promise<UnifiedServerMemory>;
+  saveBatchMemory(batch: {
+    workLog?: { title: string; summary: string };
+    knowledge?: Array<{ category: KnowledgeCategory; key: string; value: string }>;
   }): Promise<void>;
 }
