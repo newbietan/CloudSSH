@@ -10,6 +10,9 @@
 export const MAX_SERVER_WORK_LOGS = 10;
 export const MAX_SERVER_KNOWLEDGE = 50;
 
+/** 连续运维任务自动合并时间窗口（30分钟内视为连续排障/维护任务流） */
+export const CONSECUTIVE_TASK_WINDOW_MS = 30 * 60 * 1000;
+
 export const WORK_LOG_TITLE_MAX_LENGTH = 64;
 export const WORK_LOG_SUMMARY_MAX_LENGTH = 300;
 
@@ -66,26 +69,42 @@ export function isSensitiveKeyOrValue(key: string, value: string): boolean {
 export type WorkLogMode = 'create' | 'update_latest';
 export type KnowledgeAction = 'set' | 'delete';
 
+export interface NormalizeWorkLogOptions {
+  /** 超出长度上限时安全截断而非返回错误（用于 LLM 提炼输入容错） */
+  truncate?: boolean;
+}
+
 /**
  * 校验并规范化工作记录输入
  */
-export function normalizeWorkLogInput(input: {
-  mode?: unknown;
-  title?: unknown;
-  summary?: unknown;
-}): { ok: true; value: { mode: WorkLogMode; title: string; summary: string } } | { ok: false; error: string } {
+export function normalizeWorkLogInput(
+  input: {
+    mode?: unknown;
+    title?: unknown;
+    summary?: unknown;
+  },
+  options?: NormalizeWorkLogOptions
+): { ok: true; value: { mode: WorkLogMode; title: string; summary: string } } | { ok: false; error: string } {
   if (typeof input.title !== 'string') return { ok: false, error: 'titleRequired' };
-  const trimmedTitle = input.title.trim();
+  let trimmedTitle = input.title.trim();
   if (!trimmedTitle) return { ok: false, error: 'titleRequired' };
   if ([...trimmedTitle].length > WORK_LOG_TITLE_MAX_LENGTH) {
-    return { ok: false, error: 'titleTooLong' };
+    if (options?.truncate) {
+      trimmedTitle = [...trimmedTitle].slice(0, WORK_LOG_TITLE_MAX_LENGTH).join('');
+    } else {
+      return { ok: false, error: 'titleTooLong' };
+    }
   }
 
   if (typeof input.summary !== 'string') return { ok: false, error: 'summaryRequired' };
-  const trimmedSummary = input.summary.trim();
+  let trimmedSummary = input.summary.trim();
   if (!trimmedSummary) return { ok: false, error: 'summaryRequired' };
   if ([...trimmedSummary].length > WORK_LOG_SUMMARY_MAX_LENGTH) {
-    return { ok: false, error: 'summaryTooLong' };
+    if (options?.truncate) {
+      trimmedSummary = [...trimmedSummary].slice(0, WORK_LOG_SUMMARY_MAX_LENGTH).join('');
+    } else {
+      return { ok: false, error: 'summaryTooLong' };
+    }
   }
 
   const mode: WorkLogMode = input.mode === 'update_latest' ? 'update_latest' : 'create';
@@ -100,21 +119,31 @@ export function normalizeWorkLogInput(input: {
   };
 }
 
+export interface NormalizeKnowledgeOptions {
+  /** 超出长度上限时安全截断而非返回错误（用于 LLM 提炼输入容错） */
+  truncate?: boolean;
+}
+
 /**
  * 校验并规范化知识与凭据输入
  */
-export function normalizeKnowledgeInput(input: {
-  action?: unknown;
-  category?: unknown;
-  key?: unknown;
-  value?: unknown;
-}): {
+export function normalizeKnowledgeInput(
+  input: {
+    action?: unknown;
+    category?: unknown;
+    key?: unknown;
+    value?: unknown;
+  },
+  options?: NormalizeKnowledgeOptions
+): {
   ok: true;
   value: { action: KnowledgeAction; category: KnowledgeCategory; key: string; value: string };
 } | { ok: false; error: string } {
   if (typeof input.key !== 'string') return { ok: false, error: 'keyRequired' };
-  const trimmedKey = input.key.trim();
-  if (!trimmedKey) return { ok: false, error: 'keyRequired' };
+  const rawKey = input.key.trim();
+  if (!rawKey) return { ok: false, error: 'keyRequired' };
+  // Key 统一小写并将空白与连字符转为下划线，实现真正的实体对齐与去重
+  const trimmedKey = rawKey.toLowerCase().replace(/[\s-]+/g, '_');
   if ([...trimmedKey].length > KNOWLEDGE_KEY_MAX_LENGTH) {
     return { ok: false, error: 'keyTooLong' };
   }
@@ -133,10 +162,14 @@ export function normalizeKnowledgeInput(input: {
   }
 
   if (typeof input.value !== 'string') return { ok: false, error: 'valueRequired' };
-  const trimmedValue = input.value.trim();
+  let trimmedValue = input.value.trim();
   if (!trimmedValue) return { ok: false, error: 'valueRequired' };
   if ([...trimmedValue].length > KNOWLEDGE_VALUE_MAX_LENGTH) {
-    return { ok: false, error: 'valueTooLong' };
+    if (options?.truncate) {
+      trimmedValue = [...trimmedValue].slice(0, KNOWLEDGE_VALUE_MAX_LENGTH).join('');
+    } else {
+      return { ok: false, error: 'valueTooLong' };
+    }
   }
 
   let category: KnowledgeCategory = 'note';
@@ -274,11 +307,9 @@ export function formatTimestampWithRelative(
     relative = isEn ? '2 days ago' : '前天';
   } else if (dayDiff > 2 && dayDiff <= 30) {
     relative = isEn ? `${dayDiff} days ago` : `${dayDiff}天前`;
-  } else {
-    relative = `${y}-${m}-${d}`;
   }
 
-  return `${y}-${m}-${d} ${hh}:${mm} (${relative})`;
+  return relative ? `${y}-${m}-${d} ${hh}:${mm} (${relative})` : `${y}-${m}-${d} ${hh}:${mm}`;
 }
 
 /**

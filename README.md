@@ -99,7 +99,7 @@
 - **原生文件传输**：集成 [trzsz.js](https://github.com/trzsz/trzsz.js)，支持 `trz`（上传）/ `tsz`（下载）命令进行文件传输，兼容 tmux 会话。还支持拖拽文件到终端窗口直接上传、目录传输及断点续传等高级功能。（需远程服务器安装 [trzsz](https://trzsz.github.io/)）
 - **中英文界面**：内置简体中文与英文两套 UI 词条，自动跟随浏览器语言并提供手动切换，选择通过 URL 参数或本地存储（`cloudssh_locale`）持久化。
 - **GitHub OAuth 集成**：支持 GitHub 登录，用户可保存和管理常用 SSH 服务器，实现一键连接；支持服务器配置一键克隆（Duplicate Server，快速复制参数并清空凭据）；服务器支持最多 10 个规范化标签，列表可按名称、主机地址、用户名即时搜索并按标签筛选，分页随设备自适应（桌面每页 9 张、平板 6 张、移动端 3 张卡片）。
-- **自定义命令片段库**：登录用户可将常用命令按名称保存为片段并通过服务端搜索复用，支持 `{{var}}` 动态参数占位符模板，填入或执行时弹出参数录入框自动替换写入；片段列表支持实时不区分大小写的模糊搜索过滤，卡片支持一键复制命令纯文本至剪贴板；片段按 `user_id` 行级隔离存储于 `UserDBDO`（名称≤50、命令≤2000、每用户≤100 条），匿名用户自动降级到本地 `localStorage`；桌面与移动端均可在工具栏访问，一次性分享会话中自动隐藏。
+- **抽屉式命令片段库与分类管理**：彻底重构为右侧滑出抽屉面板（Slide-over Drawer Panel），对齐 SFTP 面板规范，展开时终端同屏保持可见无遮挡。新增横向**分类胶囊筛选栏（Category Chips）**与表单分类建议联想（`<datalist>`），支持全分类去重聚合与组合检索；内联折叠录入表单大幅优化垂直可视空间。支持 `{{var}}` 动态参数占位符模板，执行前自动拦截并弹出参数填入对话框；支持模糊搜索、一键复制纯文本、一键填入终端或直接回车执行。片段按 `user_id` 行级隔离存储于 `UserDBDO`（名称≤50、命令≤2000、分类≤30、每用户≤100 条），匿名用户自动降级到本地 `localStorage`；桌面与移动端均可在工具栏访问，一次性分享会话中自动隐藏。
 - **服务器系统自动识别**：登录用户首次连接尚未识别的已保存服务器时，CloudSSH 会在终端就绪后通过独立 SSH exec 通道读取 `/etc/os-release` 或 `uname`，并在服务器卡片显示对应系统图标。检测在后台执行，不阻塞终端；只有成功识别的结果才会保存，未识别结果会留待下次连接重新探测，修改主机地址或端口也会清除旧结果。匿名连接不执行该检测。该只读命令可能出现在目标服务器的 SSH 审计日志中。
 - **IP 隐私展示与快捷复制**：服务器列表和连接状态栏会对有效 IPv4/IPv6 地址进行视觉掩码，减少演示或截图时意外暴露完整地址的风险；可通过鼠标点击或键盘操作复制用于连接的完整 IP。域名保持原样显示，视觉掩码不等同于加密或访问控制。
 - **单页面多标签会话管理**：支持在单个页面内开启与切换多个独立的 SSH 终端与 SFTP 文件管理器，各会话环境和状态完全隔离，并在个性化主题编辑器中进行了联动适配。标签页支持双击内联重命名（回车保存、Esc 或空值取消复原，顶栏即时同步），并提供右键上下文菜单（重命名标签页、克隆会话开新 Tab、关闭其他标签页、关闭当前标签页）。进入服务器列表或匿名连接页后可随时通过工具栏/表单顶部按钮一键返回已建立的 SSH 会话，终端界面隐藏时也可直接按 `Esc` 快速返回；按钮随标签数量联动显隐。
@@ -108,7 +108,10 @@
 - **智能区域调度（locationHint）**：保存直连服务器时通过 IPinfo 查询主机地理信息并持久化 DO 部署区域，连接时直接读取数据库，不再执行外部地理查询；使用 SSH 跳板时仅对 Cloudflare 直接连接的最外层入口进行推断，下游内网服务器不会触发查询，其区域设置由入口统一决定。查询失败时自动退化为 Cloudflare 默认调度，也可为直连入口手动覆盖区域偏好。_注意：自动推断会把直连入口的主机信息发送给第三方 IPinfo；locationHint 是 Cloudflare 的 best-effort 特性，当目标区域 DO 容量不足时会 fallback 到最近可用区域。_
 - **终端文本检索与快捷键**：支持使用快捷键 `Ctrl+Shift+F`（或 macOS 下 `Cmd+F`）呼出搜索框，实时检索终端历史日志；支持使用 `Cmd+K` (macOS) / `Ctrl+Shift+K` (Win/Linux) 一键清空屏幕与滚动历史，保留纯 `Ctrl+K` 行编辑能力不冲突。
 - **终端日志一键导出**：支持通过顶栏的下载按钮，将当前活跃会话终端的完整屏幕历史 buffer 一键导出并下载为 `.txt` 文本文件，解决长日志在浏览器下鼠标选取容易卡顿的痛点。
-- **AI 智能助手**：内置 AI Agent 侧边栏，支持 BYOK（自带 API Key）接入 OpenAI 兼容接口（如 DeepSeek）。输入框上方提供快捷诊断 Prompt 气泡（Quick Prompt Chips：分析报错、系统负载、网络端口、Docker 状态），一键填充结构化排查提示词并自动聚焦输入框。提供 8 个专业运维工具：执行命令、读取终端上下文、探测服务器环境、进程列表、systemctl 服务管理、Docker 容器管理、用户确认、结构化报告输出。选择终端内容后可在选区末端点击“询问 AI 助手”，将完整选区作为当前标签独立的待发送上下文附件；附件支持来源和行数展示、展开预览、替换与移除，只有用户补充问题后才会发送。终端选区会被明确标记为非可信分析数据，不代表操作授权，也不能覆盖用户指令。Agent 代码块支持一键复制，安全的 Shell 单行命令可填入当前终端且不会自动执行。支持 LLM 流式输出（逐字显示），危险命令自动拦截或通过默认拒绝的安全对话框确认。**思考过程容器**：多步骤任务执行时，实时预览最近 1-2 条命令，完成后自动折叠显示总步骤数，支持展开查看完整执行历史。
+- **AI 智能助手与运维工作备忘系统**：内置 AI Agent 侧边栏，支持 BYOK（自带 API Key）接入 OpenAI 兼容接口（如 DeepSeek、GPT-4o、Qwen、Claude 等）。输入框上方提供快捷诊断 Prompt 气泡（Quick Prompt Chips：分析报错、系统负载、网络端口、Docker 状态），一键填充结构化排查提示词并自动聚焦输入框。内置 8 个专业运维工具（执行命令、读取终端上下文、探测环境、进程列表、systemctl 服务管理、Docker 容器管理、用户确认及结构化报告输出）。支持终端划词“询问 AI 助手”独立上下文附件、代码块一键复制及安全单行命令填入终端。支持 LLM 流式输出与思考过程容器折叠，危险操作多级安全拦截与用户确认。
+  - **双轨长期记忆系统**：具备精准时间感知与用户当地时区换算（今天、昨天、N天前）。分为**工作历程（Work Log）**（滚动记录最新运维轨迹，连续排障自动承前启后合并 `update_latest`，防止刷屏碎片化）与**关键知识与凭据备忘（Context Knowledge）**（自动沉淀 Token、密码、端口、路径配置等，后续执行直接带入复用，绝不重复向用户索取；支持键值规范化与原子覆盖更新）。
+  - **长短时记忆职责解耦**：会话内摘要专职跟踪当前未完结任务与决策待办，服务器长期记忆专职持久化运维轨迹与配置实体，杜绝冗余重复。
+  - **内敛抽屉式交互**：提供独立「工作备忘与记忆」抽屉面板，工作历程卡片支持两行文本截断、悬停完整 Tooltip 与点击展开；机密凭据默认掩码呈现，支持一键切换明文、快捷复制与删除。
 - **工程质量门禁**：GitHub Actions 在 `test` 与 `main` 分支部署前依次执行冻结锁文件安装、Worker/前端类型检查、单元与集成测试、可复现前端构建、Playwright 浏览器 E2E 和 axe 无障碍回归；任一环节失败都会阻止部署。
 
 <a id="architecture"></a>
@@ -129,9 +132,9 @@ flowchart TB
     subgraph "Cloudflare Edge Network"
         Worker["Worker<br/>路由 + API"]
         SSH_DO["SSHSessionDO<br/>SSH 会话管理"]
-        User_DO["UserDBDO<br/>用户数据管理"]
+        User_DO["UserDBDO<br/>用户数据 / 命令片段 / 长期记忆"]
         Share_DO["SSHShareDO<br/>分享凭证 + 会话审计"]
-        AgentCore["AgentCore<br/>AI 控制循环"]
+        AgentCore["AgentCore<br/>AI 控制循环 + 上下文管理"]
     end
 
     subgraph "目标服务器"
@@ -140,7 +143,7 @@ flowchart TB
 
     UI <-->|"WebSocket<br/>终端 I/O"| Worker
     SFTP <-->|"WebSocket<br/>SFTP 数据"| Worker
-    Agent <-->|"WebSocket<br/>Agent 消息"| Worker
+    Agent <-->|"WebSocket<br/>Agent 消息 / 记忆更新"| Worker
     Trzsz <-->|"trzsz 协议"| UI
     Worker <-->|"WebSocket"| SSH_DO
     Worker <-->|"Internal API"| User_DO
@@ -148,6 +151,7 @@ flowchart TB
     SSH_DO -->|"生命周期 / SFTP / 终端输出"| Share_DO
     SSH_DO <-->|"TCP Socket<br/>@cloudflare/sockets"| SSH
     SSH_DO <-->|"Exec Channel"| AgentCore
+    AgentCore <-->|"Work Logs & Knowledge"| User_DO
     AgentCore <-->|"LLM API"| External["外部 LLM 服务"]
 ```
 
@@ -420,10 +424,10 @@ test 分支（开发/测试）  ──合并──>  main 分支（生产）
 | **国际化**      | 自研轻量 i18n（`frontend/src/i18n`）                       | 简体中文 / English 双语言界面，浏览器语言自动识别与手动切换                                                          |
 | **UI 框架**    | Tailwind CSS（Vite/PostCSS 本地构建）+ Theme V3 系统         | 应用支持内置主题切换、自定义主题 JSON 导入及登录账号同步；主题编辑与导出由 GitHub Pages 提供                                     |
 | **文件传输**     | trzsz.js                                             | 支持 trz/tsz 命令、拖拽上传、断点续传                                                                      |
-| **AI 助手**    | BYOK + OpenAI 兼容接口                                   | 自带 API Key，支持 DeepSeek 等兼容模型                                                                 |
+| **AI 助手**    | BYOK + OpenAI 兼容接口                                   | 自带 API Key，支持 DeepSeek 等兼容模型；内置工作历程与凭据双轨记忆系统及长短时上下文解耦                          |
 | **后端**       | Cloudflare Workers                                   | Serverless 边缘计算                                                                              |
 | **会话管理**     | Durable Objects                                      | SSH 会话隔离；浏览器 WebSocket 使用 Hibernation API 接入，活动出站 TCP 期间不休眠                                  |
-| **数据存储**     | Durable Objects SQLite                               | 用户数据、服务器配置                                                                                   |
+| **数据存储**     | Durable Objects SQLite                               | 用户数据、服务器配置、分类命令片段库、服务器双轨记忆（工作历程与凭据备忘）                                            |
 | **包管理**      | pnpm (workspace)                                     | Monorepo 依赖管理                                                                                |
 
 <a id="contributors"></a>

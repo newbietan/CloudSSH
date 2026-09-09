@@ -99,7 +99,7 @@
 - **Native File Transfer**: Integrated with [trzsz.js](https://github.com/trzsz/trzsz.js), supporting `trz` (upload) / `tsz` (download) commands for file transfer, fully compatible with tmux sessions. Also supports drag-and-drop file upload to the terminal, directory transfer, and resumable transfers. (Requires [trzsz](https://trzsz.github.io/) installed on the remote server)
 - **Bilingual UI**: Ships built-in Simplified Chinese and English translations, automatically following the browser language with a manual override; the choice is persisted via a URL parameter or local storage (`cloudssh_locale`).
 - **GitHub OAuth Integration**: Supports GitHub login, allowing users to save and manage frequently used SSH servers for one-click connections; supports one-click server configuration cloning (Duplicate Server) with sanitized credentials. Each server can have up to 10 normalized tags; the list supports instant search by name, host, or username, tag filtering, and responsive pagination (9 cards per page on desktop, 6 on tablets, 3 on mobile).
-- **Custom Command Snippets**: Signed-in users can save frequently used commands under a name and reuse them via server-side search. Supports `{{var}}` dynamic parameter placeholders, automatically prompting a dialog to input and substitute parameters upon execution or filling. The snippet list supports real-time case-insensitive fuzzy filtering, and cards provide one-click copying of commands to the clipboard. Snippets are stored in `UserDBDO` with per-`user_id` row-level isolation (name ≤50, command ≤2000, ≤100 per user); anonymous users fall back to local `localStorage`. Reachable from the toolbar on desktop and mobile, and hidden inside one-time share sessions.
+- **Slide-Over Command Snippet Drawer & Category Management**: Completely redesigned into a slide-over drawer panel matching the SFTP layout, keeping the active terminal fully visible side-by-side. Features horizontal **Category Chips** for deduplicated count aggregation and filtering, `<datalist>` category autocompletion on the collapsible entry form, and real-time fuzzy search. Supports `{{var}}` dynamic parameter placeholders with parameter entry dialogs, one-click plain text copying, and filling into or executing directly on the active terminal. Snippets are stored with per-`user_id` row isolation in `UserDBDO` (name ≤50, command ≤2000, category ≤30, ≤100 per user); anonymous users fall back to local `localStorage`. Reachable from desktop and mobile toolbars, and hidden in one-time share sessions.
 - **Automatic Server OS Detection**: When a signed-in user first connects to a saved server without an OS record, CloudSSH uses a separate SSH exec channel after the terminal is ready to read `/etc/os-release` or `uname`, then shows the corresponding system icon on the server card. Detection runs in the background without blocking the terminal. Only recognized results are saved; unknown results are retried naturally on the next connection, and changing the host or port clears stale results. Anonymous connections do not run this check. The read-only command may appear in the target server's SSH audit logs.
 - **Private IP Display and Quick Copy**: Valid IPv4 and IPv6 addresses are visually masked in the saved-server list and connection status bar to reduce accidental disclosure in demos or screenshots. The complete connection address remains available through mouse or keyboard copy. Hostnames remain unchanged; visual masking is not encryption or access control.
 - **Single-Page Multi-Tab Session**: Switch between multiple independent SSH terminal and SFTP instances within a single browser tab, with isolated sandbox environments. Tabs support double-click inline renaming (Enter to save, Esc or empty input to cancel and restore original name, synchronized immediately to the header), plus a right-click context menu (rename tab, duplicate session to new tab, close other tabs, close tab). While on the server list or anonymous connection page, a toolbar/form button returns you to an established SSH session in one click, and pressing `Esc` does the same when the terminal is hidden; the button appears and hides along with the tab count.
@@ -108,7 +108,10 @@
 - **Smart Region Scheduling (locationHint)**: Queries IPinfo when a direct server is saved, persists the inferred Durable Object region, and reuses it on connection without another runtime geo lookup. With SSH jumps, only the outermost entry reached directly by Cloudflare is inferred; downstream private servers do not trigger a lookup and inherit placement from that entry. Failures fall back to Cloudflare's default placement, and users may manually override direct-entry regions. _Note: automatic inference sends the direct entry's host information to the third-party IPinfo service. locationHint is a Cloudflare best-effort feature and may fall back to a nearby region when capacity is unavailable._
 - **In-Terminal Text Search & Shortcuts**: Real-time log search support via `Ctrl+Shift+F` (or `Cmd+F` on macOS); clear terminal screen and scrollback buffer via `Cmd+K` (macOS) / `Ctrl+Shift+K` (Win/Linux) without conflicting with shell-native `Ctrl+K`.
 - **Terminal Log Export**: Download the entire screen buffer of the active terminal session as a `.txt` file with a single click on the header download button, avoiding browser freezes when selecting long logs.
-- **AI Agent Assistant**: Built-in AI Agent sidebar with BYOK (Bring Your Own Key) support for OpenAI-compatible APIs (e.g., DeepSeek). Above the input box, Quick Prompt Chips provide pre-built ops diagnostics (Analyze Error, System Load, Network Ports, Docker Status) to populate structured prompts with auto-focus. Provides 8 specialized operations tools: execute commands, read terminal context, detect server environment, list processes, manage systemctl services, manage Docker containers, user confirmation, and structured report output. Selecting terminal text exposes an “Ask AI assistant” action that attaches the complete selection to the current tab's composer instead of sending it immediately. The attachment shows its source and size, can be expanded, replaced, or removed, and is sent only after the user adds a question. Terminal selections are explicitly treated as untrusted analysis data—not action authorization—and cannot override user instructions. Agent code blocks support one-click copy, while safe single-line Shell commands can be filled into the active terminal without being executed automatically. Supports LLM streaming output (character-by-character display). Dangerous commands are automatically blocked or require confirmation in a safe, reject-by-default dialog. **Thinking Process Container**: During multi-step tasks, displays the latest 1-2 commands in real-time, auto-collapses with total step count after completion, expands to show full execution history.
+- **AI Agent Assistant & Server Memory System**: Built-in AI Agent sidebar with BYOK (Bring Your Own Key) support for OpenAI-compatible APIs (e.g., DeepSeek, GPT-4o, Qwen, Claude). Features Quick Prompt Chips (Analyze Error, System Load, Network Ports, Docker Status) for instant diagnostic prompt insertion with auto-focus. Provides 8 specialized operations tools (execute commands, read terminal context, detect environment, list processes, systemctl management, Docker management, user confirmation, and structured report output). Supports attaching terminal selections as untrusted context snapshots, one-click code block copying, safe single-line command filling, LLM streaming output, and collapsible thinking process containers with multi-level safety controls.
+  - **Dual-Track Long-Term Memory**: Features accurate time anchoring and user-local timezone conversion (Today, Yesterday, N days ago). Divided into **Work Logs** (rolling activity history that automatically fuses consecutive troubleshooting tasks via `update_latest` to prevent fragmented spam) and **Context Knowledge & Credentials** (automatically distills tokens, passwords, ports, and path configs so future tasks reuse them directly without repeated questioning; backed by key normalization and atomic upserts).
+  - **Decoupled Short/Long-Term Memory**: In-session summaries exclusively track active task goals and unresolved decisions, while persistent server memory archives ops history and configuration entities, eliminating redundant prompt bloat.
+  - **Unobtrusive Drawer UI**: Integrated into a dedicated "Work Logs & Knowledge" drawer panel. Work log cards feature two-line truncation, full-text hover tooltips, and click-to-expand; sensitive credentials are masked by default with one-click visibility toggling, quick copying, and deletion.
 - **Quality Gates**: Before deploying either `test` or `main`, GitHub Actions performs frozen-lockfile installation, Worker/frontend type checking, unit and integration tests, reproducible frontend builds, Playwright browser E2E, and axe accessibility regression. Any failure blocks deployment.
 
 <a id="architecture"></a>
@@ -129,9 +132,9 @@ flowchart TB
     subgraph "Cloudflare Edge Network"
         Worker["Worker<br/>Routing + API"]
         SSH_DO["SSHSessionDO<br/>SSH Session Management"]
-        User_DO["UserDBDO<br/>User Data Management"]
+        User_DO["UserDBDO<br/>User Data / Snippets / Long-Term Memory"]
         Share_DO["SSHShareDO<br/>Share Capability + Audit"]
-        AgentCore["AgentCore<br/>AI Control Loop"]
+        AgentCore["AgentCore<br/>AI Control Loop + Context Management"]
     end
 
     subgraph "Target Server"
@@ -140,7 +143,7 @@ flowchart TB
 
     UI <-->|"WebSocket<br/>Terminal I/O"| Worker
     SFTP <-->|"WebSocket<br/>SFTP Data"| Worker
-    Agent <-->|"WebSocket<br/>Agent Messages"| Worker
+    Agent <-->|"WebSocket<br/>Agent Messages / Memory Updates"| Worker
     Trzsz <-->|"trzsz Protocol"| UI
     Worker <-->|"WebSocket"| SSH_DO
     Worker <-->|"Internal API"| User_DO
@@ -148,6 +151,7 @@ flowchart TB
     SSH_DO -->|"Lifecycle / SFTP / Terminal Output"| Share_DO
     SSH_DO <-->|"TCP Socket<br/>@cloudflare/sockets"| SSH
     SSH_DO <-->|"Exec Channel"| AgentCore
+    AgentCore <-->|"Work Logs & Knowledge"| User_DO
     AgentCore <-->|"LLM API"| External["External LLM Service"]
 ```
 
@@ -420,10 +424,10 @@ test branch (dev/test)  ──merge──>  main branch (production)
 | **i18n**               | Lightweight custom i18n (`frontend/src/i18n`)      | Simplified Chinese / English dual-language UI with automatic browser detection and manual switching                                |
 | **UI Framework**       | Tailwind CSS (local Vite/PostCSS build) + Theme V3 | The app supports built-in theme switching, custom JSON import, and signed-in account sync; editing and export live on GitHub Pages |
 | **File Transfer**      | trzsz.js                                           | Supports trz/tsz commands, drag-and-drop upload, resumable transfers                                                               |
-| **AI Assistant**       | BYOK + OpenAI-compatible API                       | Bring your own API key, supports DeepSeek and other compatible models                                                              |
+| **AI Assistant**       | BYOK + OpenAI-compatible API                       | Bring your own API key, supports DeepSeek and other models; includes dual-track long-term memory and decoupled context management |
 | **Backend**            | Cloudflare Workers                                 | Serverless edge computing                                                                                                          |
 | **Session Management** | Durable Objects                                    | SSH session isolation; browser WebSockets use the Hibernation API entry pattern, while active outbound TCP prevents hibernation    |
-| **Data Storage**       | Durable Objects SQLite                             | User data, server configurations                                                                                                   |
+| **Data Storage**       | Durable Objects SQLite                             | User data, server configurations, categorized command snippets, server memory (work logs & credentials)                           |
 | **Package Manager**    | pnpm (workspace)                                   | Monorepo dependency management                                                                                                     |
 
 <a id="contributors"></a>

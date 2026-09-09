@@ -85,6 +85,7 @@ exec channel 会创建独立 SSH channel，返回 JSON：
 工具层的安全拦截作为最终兜底——即使你判断失误调用 execute_command 执行了危险命令，工具也会拦截。`;
 
 import {
+  CONSECUTIVE_TASK_WINDOW_MS,
   formatCurrentTimeAnchor,
   formatTimestampWithRelative,
   type ServerKnowledgeItem,
@@ -127,17 +128,31 @@ export function formatServerMemoryForPrompt(
     return parts.join('\n\n');
   }
 
-  // 2. 工作历程日志
+  // 2. 工作历程日志（分段预算：保留最新记录，超出预算按条省略，杜绝截断尾部指引）
   if (hasLogs) {
     const logHeader = isEn ? '## Recent Server Work Logs (Activity History)' : '## 服务器近期工作历程与操作备忘';
-    const logLines = memory.workLogs.slice(0, 6).map((log) => {
-      const timeStr = formatTimestampWithRelative(log.created_at, now, locale, timeZone);
-      return `- [${timeStr}] ${log.title}: ${log.summary}`;
-    });
+    const logLines: string[] = [];
+    let logChars = 0;
+    const MAX_LOGS_CHARS = 1000;
+    const candidateLogs = memory.workLogs.slice(0, 6);
+    for (let i = 0; i < candidateLogs.length; i++) {
+      const log = candidateLogs[i];
+      // 统一使用 updated_at（与数据库排序和合并逻辑一致）
+      const ts = typeof log.updated_at === 'number' ? log.updated_at : log.created_at;
+      const timeStr = formatTimestampWithRelative(ts, now, locale, timeZone);
+      const line = `- [${timeStr}] ${log.title}: ${log.summary}`;
+      if (logChars + line.length > MAX_LOGS_CHARS && logLines.length >= 2) {
+        const remaining = candidateLogs.length - i;
+        logLines.push(isEn ? `... (${remaining} earlier logs omitted)` : `... (其余 ${remaining} 条更早记录已省略)`);
+        break;
+      }
+      logLines.push(line);
+      logChars += line.length;
+    }
     parts.push(`${logHeader}\n${logLines.join('\n')}`);
   }
 
-  // 3. 上下文知识与凭据备忘
+  // 3. 上下文知识与凭据备忘（分段预算：单条值限长+按条控制，保证指引恒定保留）
   if (hasKnowledge) {
     const kHeader = isEn ? '## Saved Context Knowledge, Parameters & Credentials' : '## 关键上下文知识、参数与凭据备忘';
     const catNamesZh: Record<string, string> = {
@@ -152,25 +167,37 @@ export function formatServerMemoryForPrompt(
       rule: 'Rule',
       note: 'Note',
     };
-    const kLines = memory.knowledge.slice(0, 50).map((k) => {
+    const kLines: string[] = [];
+    let kChars = 0;
+    const MAX_KNOWLEDGE_CHARS = 1200;
+    const candidateKnowledge = memory.knowledge.slice(0, 50);
+    for (let i = 0; i < candidateKnowledge.length; i++) {
+      const k = candidateKnowledge[i];
       const catLabel = (isEn ? catNamesEn[k.category] : catNamesZh[k.category]) || k.category;
-      return `- [${catLabel}] ${k.key}: ${k.value}`;
-    });
+      let val = k.value;
+      if (val.length > 120) {
+        val = val.slice(0, 117) + '...';
+      }
+      const line = `- [${catLabel}] ${k.key}: ${val}`;
+      if (kChars + line.length > MAX_KNOWLEDGE_CHARS && kLines.length >= 3) {
+        const remaining = candidateKnowledge.length - i;
+        kLines.push(isEn ? `... (${remaining} more items omitted)` : `... (其余 ${remaining} 条条目已省略)`);
+        break;
+      }
+      kLines.push(line);
+      kChars += line.length;
+    }
     parts.push(`${kHeader}\n${kLines.join('\n')}`);
   }
 
-  // 4. 行动指引
+  // 4. 行动指引（核心行为约束：完整保留，绝不截断）
   const guidance = isEn
     ? `【Memory & Continuity Guidance】\n1. If the user asks what work was done (e.g., "What did I do today/yesterday?", "Show recent operations"), refer to [Recent Server Work Logs] above and answer strictly using the timestamps provided (${timeZone || 'local time'}). DO NOT convert or guess UTC times.\n2. If an operation requires a token, password, credential, URL, or rule that exists in [Saved Context Knowledge], REUSE IT DIRECTLY. DO NOT repeatedly ask the user for it!`
     : `【记忆与连续性行为指引】\n1. 当用户询问历史工作（如“今天做了哪些工作”、“昨天干了什么”、“之前做过哪些操作”），必须严格结合【当前系统时间基准】与【工作历程】中已转换为当地时区（${timeZone || '当地时区'}）的时间戳进行回答，切勿自行换算成 UTC 导致时间与用户记录不一致！\n2. 若当前任务需要用到【关键上下文知识、参数与凭据备忘】中已存在的 Token、密钥密码、路径或配置参数，**请直接带入使用，严禁再次向用户重复索取**！`;
 
   parts.push(guidance);
 
-  let fullText = parts.join('\n\n');
-  if (fullText.length > MAX_MEMORY_PROMPT_CHARS + 600) {
-    fullText = fullText.slice(0, MAX_MEMORY_PROMPT_CHARS + 600) + '...';
-  }
-  return fullText;
+  return parts.join('\n\n');
 }
 
 export const MEMORY_DISTILLATION_PROMPT = `你是一个服务器智能会话总结助手。请阅读本轮人机交互记录，并结合当前服务器已有的工作历程与已存知识清单，提炼以下两部分信息：
@@ -315,7 +342,7 @@ export function formatDistillationMessages(snapshotMsgs: ChatMessage[]): string 
   }
   if (executedCommands.length > 0) {
     const compactCmds = executedCommands
-      .slice(0, 10)
+      .slice(-10)
       .map((c) => (c.length > 80 ? `${c.slice(0, 77)}...` : c));
     parts.push(`执行操作: ${compactCmds.join(', ')}`);
   }
@@ -348,7 +375,9 @@ export function formatDistillationPromptInput(
 
   const latestLog = Array.isArray(recentLogs) && recentLogs.length > 0 ? recentLogs[0] : null;
   const isRecentConsecutive =
-    latestLog && typeof latestLog.updated_at === 'number' && now - latestLog.updated_at < 30 * 60 * 1000;
+    latestLog &&
+    typeof latestLog.updated_at === 'number' &&
+    now - latestLog.updated_at < CONSECUTIVE_TASK_WINDOW_MS;
 
   if (latestLog) {
     const timeStr = formatTimestampWithRelative(latestLog.updated_at, now, locale, timeZone);
@@ -365,9 +394,8 @@ export function formatDistillationPromptInput(
 - 原摘要：${latestLog.summary}
 当前本轮操作属于该运维任务的后续推进（如排障后续、配置修改、部署验证等连续工作流）。
 【必须遵循】：
-1. 必须输出 "mode": "update_latest"！
-2. 请将原记录的核心背景与本轮新完成的进展/结论融合成一条承前启后的完整工作日志（title 20字内，summary 100字内，在不超过限制的前提下尽可能详实具体，保留排查背景、修改参数、服务状态及验证结果等关键细节，避免草率简写）。
-3. 严禁输出 "create" 造成连续操作被拆成多条琐碎的碎片日志！`);
+1. 必须输出 "mode": "update_latest"！（除非本轮用户明确开启与前述运维完全无关的独立新任务）请将原记录的核心背景与本轮新完成的进展/结论融合成一条承前启后的完整工作日志（title 20字内，summary 100字内，在不超过限制的前提下尽可能详实具体，保留排查背景、修改参数、服务状态及验证结果等关键细节，避免草率简写）。
+2. 严禁输出 "create" 造成连续操作被拆成多条琐碎的碎片日志！`);
     }
   }
 

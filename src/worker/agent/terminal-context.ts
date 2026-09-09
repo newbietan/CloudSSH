@@ -11,10 +11,12 @@ export class TerminalContext {
     }
   }
 
-  snapshot(lastLines: number = 200): string {
+  snapshot(lastLines: number = 200, maxChars: number = 8000): string {
     const lines = this.outputBuffer.split('\n');
     const start = Math.max(0, lines.length - lastLines);
-    return lines.slice(start).join('\n').trimEnd();
+    const content = lines.slice(start).join('\n').trimEnd();
+    if (content.length <= maxChars) return content;
+    return '... [终端前序输出已省略] ...\n' + content.slice(-maxChars);
   }
 
   clear(): void {

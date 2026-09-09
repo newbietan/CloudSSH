@@ -96,7 +96,7 @@ describe('agent server memory prompt', () => {
     expect(MEMORY_DISTILLATION_PROMPT).toContain('下次用户再次执行类似操作时，AI 可以直接复用这些参数与凭据');
   });
 
-  it('bounds prompt length', () => {
+  it('bounds prompt length and strictly preserves guidance under full capacity', () => {
     const fixedNow = Date.now();
     const hugeMemory: UnifiedServerMemory = {
       workLogs: Array.from({ length: 10 }, (_, i) => ({
@@ -104,24 +104,31 @@ describe('agent server memory prompt', () => {
         user_id: 1,
         server_id: 1,
         title: `Work_${i}`,
-        summary: 'x'.repeat(200),
+        summary: 'x'.repeat(300),
         created_at: fixedNow,
         updated_at: fixedNow,
       })),
-      knowledge: Array.from({ length: 20 }, (_, i) => ({
+      knowledge: Array.from({ length: 50 }, (_, i) => ({
         id: i,
         user_id: 1,
         server_id: 1,
-        category: 'note',
+        category: 'credential',
         key: `key_${i}`,
-        value: 'y'.repeat(200),
+        value: 'y'.repeat(512),
         created_at: fixedNow,
         updated_at: fixedNow,
       })),
     };
 
-    const prompt = formatServerMemoryForPrompt(hugeMemory, 'zh-CN', fixedNow);
-    expect(prompt.length).toBeLessThan(MAX_MEMORY_PROMPT_CHARS + 800);
+    const promptZh = formatServerMemoryForPrompt(hugeMemory, 'zh-CN', fixedNow, 'Asia/Shanghai');
+    expect(promptZh.length).toBeLessThan(MAX_MEMORY_PROMPT_CHARS + 800);
+    expect(promptZh).toContain('【记忆与连续性行为指引】');
+    expect(promptZh).toContain('严禁再次向用户重复索取');
+
+    const promptEn = formatServerMemoryForPrompt(hugeMemory, 'en-US', fixedNow, 'UTC');
+    expect(promptEn.length).toBeLessThan(MAX_MEMORY_PROMPT_CHARS + 800);
+    expect(promptEn).toContain('【Memory & Continuity Guidance】');
+    expect(promptEn).toContain('DO NOT repeatedly ask the user for it!');
   });
 
   it('extracts distillation snapshot preserving the root user prompt in complex tasks', () => {

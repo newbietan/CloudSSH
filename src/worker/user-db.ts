@@ -2081,7 +2081,10 @@ export class UserDBDO {
 
     if (rawLogs.length > 0) {
       for (const log of rawLogs) {
-        const norm = normalizeWorkLogInput({ mode: log.mode, title: log.title, summary: log.summary });
+        const norm = normalizeWorkLogInput(
+          { mode: log.mode, title: log.title, summary: log.summary },
+          { truncate: true }
+        );
         if (!norm.ok) continue;
 
         if (norm.value.mode === 'update_latest') {
@@ -2139,12 +2142,15 @@ export class UserDBDO {
     // 2. 保存上下文知识或凭据
     if (Array.isArray(body.knowledge)) {
       for (const k of body.knowledge) {
-        const norm = normalizeKnowledgeInput({
-          action: k.action,
-          category: k.category,
-          key: k.key,
-          value: k.value,
-        });
+        const norm = normalizeKnowledgeInput(
+          {
+            action: k.action,
+            category: k.category,
+            key: k.key,
+            value: k.value,
+          },
+          { truncate: true }
+        );
         if (!norm.ok) continue;
 
         if (norm.value.action === 'delete') {

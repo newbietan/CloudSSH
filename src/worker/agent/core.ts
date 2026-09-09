@@ -1,6 +1,7 @@
 // Agent Core — control loop that runs inside Durable Object
 
 import {
+  CONSECUTIVE_TASK_WINDOW_MS,
   extractDistillationJson,
   type KnowledgeAction,
   normalizeKnowledgeInput,
@@ -732,8 +733,38 @@ export class AgentCore {
     return result;
   }
 
+  /**
+   * 对历史较早轮次的 tool 输出进行轻量压缩，保持单轮与多轮长任务的上下文有界。
+   * 保留最近 4 次工具交互的完整输出；更早的工具消息若超出 300 字符，保留头尾精简概要。
+   * 严格保留 tool_call_id 与消息配对结构，杜绝 API 400。
+   */
+  private compactHistoricalToolOutputs(): void {
+    const toolIndices: number[] = [];
+    for (let i = 1; i < this.state.messages.length; i++) {
+      if (this.state.messages[i].role === 'tool') {
+        toolIndices.push(i);
+      }
+    }
+
+    if (toolIndices.length <= 4) return;
+
+    const toCompactIndices = toolIndices.slice(0, -4);
+    for (const idx of toCompactIndices) {
+      const msg = this.state.messages[idx];
+      if (msg.content && msg.content.length > 300) {
+        const head = msg.content.slice(0, 200);
+        const tail = msg.content.slice(-80);
+        msg.content = `${head}\n[...更早历史执行输出已压缩...]\n${tail}`;
+      }
+    }
+  }
+
   private async trimMessages(): Promise<void> {
     const recentRoundsCount = 8; // 保留 8 轮上下文
+
+    // 1. 无论是多轮还是单轮长任务，对较早累积的 tool 消息进行轻量概要压缩，防爆上下文
+    this.compactHistoricalToolOutputs();
+
     if (this.state.messages.length <= 40) return; // 40 条以内不裁剪（工具结果已在序列化前单独截断）
 
     const conversationMsgs = this.state.messages.slice(1);
@@ -973,7 +1004,7 @@ ${conversationText}${previousSection}`;
       const isRecentConsecutive = Boolean(
         latestLog &&
           typeof latestLog.updated_at === 'number' &&
-          Date.now() - latestLog.updated_at < 30 * 60 * 1000
+          Date.now() - latestLog.updated_at < CONSECUTIVE_TASK_WINDOW_MS
       );
 
       // 选取刚才同步快照的消息，并融合已有的近期 WorkLog 与 Knowledge 键值清单
@@ -1018,7 +1049,10 @@ ${conversationText}${previousSection}`;
         return;
       }
 
-      if (!res.ok) return;
+      if (!res.ok) {
+        console.warn(`Memory distillation HTTP error: ${res.status}`);
+        return;
+      }
 
       const data = await res.json<{ choices: Array<{ message: { content: string } }> }>();
       const rawContent = data.choices?.[0]?.message?.content?.trim();
@@ -1026,6 +1060,7 @@ ${conversationText}${previousSection}`;
 
       const parsed = extractDistillationJson(rawContent);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        console.warn('Memory distillation JSON extraction returned non-object or null');
         return;
       }
 
@@ -1037,11 +1072,14 @@ ${conversationText}${previousSection}`;
           desiredMode = 'update_latest';
         }
 
-        const normLog = normalizeWorkLogInput({
-          mode: desiredMode,
-          title: parsed.workLog.title,
-          summary: parsed.workLog.summary,
-        });
+        const normLog = normalizeWorkLogInput(
+          {
+            mode: desiredMode,
+            title: parsed.workLog.title,
+            summary: parsed.workLog.summary,
+          },
+          { truncate: true }
+        );
         if (normLog.ok) {
           workLogToSave = normLog.value;
         }
@@ -1055,12 +1093,15 @@ ${conversationText}${previousSection}`;
       }> = [];
       if (Array.isArray(parsed.knowledge)) {
         for (const k of parsed.knowledge) {
-          const normK = normalizeKnowledgeInput({
-            action: k.action,
-            category: k.category,
-            key: k.key,
-            value: k.value,
-          });
+          const normK = normalizeKnowledgeInput(
+            {
+              action: k.action,
+              category: k.category,
+              key: k.key,
+              value: k.value,
+            },
+            { truncate: true }
+          );
           if (normK.ok) {
             knowledgeToSave.push(normK.value);
           }
@@ -1080,8 +1121,8 @@ ${conversationText}${previousSection}`;
           subType: 'memory_updated',
         });
       }
-    } catch {
-      // 提炼失败静默忽略
+    } catch (e) {
+      console.warn('Memory distillation failed:', e instanceof Error ? e.message : String(e));
     }
   }
 }

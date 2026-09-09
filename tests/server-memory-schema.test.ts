@@ -28,14 +28,22 @@ describe('server-memory-schema', () => {
     const today = new Date('2026-03-30T09:15:00').getTime();
     const yesterday = new Date('2026-03-29T16:20:00').getTime();
     const twoDaysAgo = new Date('2026-03-28T10:00:00').getTime();
+    const fortyDaysAgo = new Date('2026-02-18T10:00:00').getTime();
 
     expect(formatTimestampWithRelative(today, base, 'zh-CN')).toContain('今天');
     expect(formatTimestampWithRelative(yesterday, base, 'zh-CN')).toContain('昨天');
     expect(formatTimestampWithRelative(twoDaysAgo, base, 'zh-CN')).toContain('前天');
+    // >30 天前直接格式化日期时间，不带冗余的重复括号 (2026-02-18)
+    const longAgoZh = formatTimestampWithRelative(fortyDaysAgo, base, 'zh-CN');
+    expect(longAgoZh).toContain('2026-02-18');
+    expect(longAgoZh).not.toContain('(2026-02-18)');
 
     expect(formatTimestampWithRelative(today, base, 'en-US')).toContain('Today');
     expect(formatTimestampWithRelative(yesterday, base, 'en-US')).toContain('Yesterday');
     expect(formatTimestampWithRelative(twoDaysAgo, base, 'en-US')).toContain('2 days ago');
+    const longAgoEn = formatTimestampWithRelative(fortyDaysAgo, base, 'en-US');
+    expect(longAgoEn).toContain('2026-02-18');
+    expect(longAgoEn).not.toContain('(2026-02-18)');
   });
 
   it('formats current time anchor and relative timestamps with custom user timezone', () => {
@@ -256,5 +264,42 @@ describe('server-memory-schema', () => {
         value: '',
       },
     });
+  });
+
+  it('supports truncate option for workLog and knowledge inputs', () => {
+    const longTitle = 'T'.repeat(WORK_LOG_TITLE_MAX_LENGTH + 20);
+    const longSummary = 'S'.repeat(WORK_LOG_SUMMARY_MAX_LENGTH + 50);
+
+    const truncatedLog = normalizeWorkLogInput(
+      { mode: 'create', title: longTitle, summary: longSummary },
+      { truncate: true }
+    );
+    expect(truncatedLog.ok).toBe(true);
+    if (truncatedLog.ok) {
+      expect([...truncatedLog.value.title].length).toBe(WORK_LOG_TITLE_MAX_LENGTH);
+      expect([...truncatedLog.value.summary].length).toBe(WORK_LOG_SUMMARY_MAX_LENGTH);
+    }
+
+    const longValue = 'V'.repeat(KNOWLEDGE_VALUE_MAX_LENGTH + 30);
+    const truncatedKnowledge = normalizeKnowledgeInput(
+      { key: 'App_Port', value: longValue },
+      { truncate: true }
+    );
+    expect(truncatedKnowledge.ok).toBe(true);
+    if (truncatedKnowledge.ok) {
+      // Key 统一转换为小写下划线
+      expect(truncatedKnowledge.value.key).toBe('app_port');
+      expect([...truncatedKnowledge.value.value].length).toBe(KNOWLEDGE_VALUE_MAX_LENGTH);
+    }
+  });
+
+  it('normalizes knowledge keys by lowercasing and replacing whitespace/hyphens with underscores', () => {
+    const k1 = normalizeKnowledgeInput({ key: '  Deploy-Token  ', value: 'token123' });
+    expect(k1.ok).toBe(true);
+    if (k1.ok) expect(k1.value.key).toBe('deploy_token');
+
+    const k2 = normalizeKnowledgeInput({ key: 'API Key V2', value: 'key123' });
+    expect(k2.ok).toBe(true);
+    if (k2.ok) expect(k2.value.key).toBe('api_key_v2');
   });
 });

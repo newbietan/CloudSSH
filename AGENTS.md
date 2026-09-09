@@ -229,6 +229,11 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 | `/api/servers` | GET/POST | Yes | List or create saved servers（含 `tags` 与可选 `jump_server_id`） |
 | `/api/servers/:id` | PUT/DELETE | Yes | Update or delete a server（含标签和跳板关系校验） |
 | `/api/servers/:id/connect` | POST | Yes | Generate one-time-token, return WebSocket URL |
+| `/api/servers/:id/memory` | GET | Yes | Read unified server memory (work logs & context knowledge) |
+| `/api/servers/:id/work-logs` | POST | Yes | Create a server work log entry |
+| `/api/servers/:id/work-logs/:logId` | DELETE | Yes | Delete a server work log entry |
+| `/api/servers/:id/knowledge` | POST | Yes | Create or update a server knowledge/credential entry |
+| `/api/servers/:id/knowledge/:kId` | DELETE | Yes | Delete a server knowledge/credential entry |
 | `/api/servers/:id/shares` | GET/POST | Yes | List or create one-time SSH shares for a saved server |
 | `/api/shares/:id` | DELETE | Yes | Revoke a share owned by the current user |
 | `/api/shares/:id/audit` | GET | Yes | Read the paginated audit log for an owned share |
