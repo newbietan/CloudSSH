@@ -106,7 +106,7 @@ export function getResponseLanguageInstruction(locale: AgentLocale): string {
     : '## 首选响应语言\n使用简体中文回答，命令、路径、日志关键字和技术标识符保持原样。';
 }
 
-export const MAX_MEMORY_PROMPT_CHARS = 2000;
+export const MAX_MEMORY_PROMPT_CHARS = 5500;
 
 export function formatServerMemoryForPrompt(
   memory: UnifiedServerMemory,
@@ -133,7 +133,7 @@ export function formatServerMemoryForPrompt(
     const logHeader = isEn ? '## Recent Server Work Logs (Activity History)' : '## 服务器近期工作历程与操作备忘';
     const logLines: string[] = [];
     let logChars = 0;
-    const MAX_LOGS_CHARS = 1000;
+    const MAX_LOGS_CHARS = 2000;
     const candidateLogs = memory.workLogs.slice(0, 6);
     for (let i = 0; i < candidateLogs.length; i++) {
       const log = candidateLogs[i];
@@ -169,14 +169,14 @@ export function formatServerMemoryForPrompt(
     };
     const kLines: string[] = [];
     let kChars = 0;
-    const MAX_KNOWLEDGE_CHARS = 1200;
+    const MAX_KNOWLEDGE_CHARS = 3000;
     const candidateKnowledge = memory.knowledge.slice(0, 50);
     for (let i = 0; i < candidateKnowledge.length; i++) {
       const k = candidateKnowledge[i];
       const catLabel = (isEn ? catNamesEn[k.category] : catNamesZh[k.category]) || k.category;
       let val = k.value;
-      if (val.length > 120) {
-        val = val.slice(0, 117) + '...';
+      if (val.length > 256) {
+        val = val.slice(0, 253) + '...';
       }
       const line = `- [${catLabel}] ${k.key}: ${val}`;
       if (kChars + line.length > MAX_KNOWLEDGE_CHARS && kLines.length >= 3) {

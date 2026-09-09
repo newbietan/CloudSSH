@@ -230,6 +230,12 @@ describe('AgentCore 响应交付与循环终止机制', () => {
     expect(snap.length).toBeLessThan(1100);
     expect(snap).toContain('终端前序输出已省略');
     expect(snap.endsWith('end')).toBe(true);
+
+    ctx.clear();
+    ctx.appendOutput('y'.repeat(25_000));
+    const defaultSnap = ctx.snapshot(200);
+    expect(defaultSnap.length).toBeLessThan(16_100);
+    expect(defaultSnap).toContain('终端前序输出已省略');
   });
 
   it('单轮长任务在工具消息累积时对更早的 tool 输出执行轻量压缩并保留配对', async () => {
@@ -257,14 +263,14 @@ describe('AgentCore 响应交付与循环终止机制', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => {
       if (String(url).includes('chat/completions')) {
         step++;
-        if (step <= 6) {
-          // 前 6 步持续调用工具
+        if (step <= 8) {
+          // 前 8 步持续调用工具
           return createMockSSEResponse([
             `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_${step}","type":"function","function":{"name":"execute_command","arguments":"{\\"command\\":\\"ls -l ${step}\\"}"}}]}}]}\n\n`,
             'data: [DONE]\n\n',
           ]);
         } else {
-          // 第 7 步直接返回总结
+          // 第 9 步直接返回总结
           return createMockSSEResponse([
             'data: {"choices":[{"delta":{"content":"多步长任务已全部排查完毕。"}}]}\n\n',
             'data: [DONE]\n\n',
@@ -281,19 +287,19 @@ describe('AgentCore 响应交付与循环终止机制', () => {
       // 检查内部消息历史（通过私有属性断言）
       const messages = (agent as any).state.messages;
       const toolMsgs = messages.filter((m: any) => m.role === 'tool');
-      expect(toolMsgs.length).toBe(6);
+      expect(toolMsgs.length).toBe(8);
 
       // 最早的 2 次工具消息（call_1, call_2）应被压缩
       expect(toolMsgs[0].content).toContain('更早历史执行输出已压缩');
       expect(toolMsgs[1].content).toContain('更早历史执行输出已压缩');
 
-      // 最近 4 次工具消息（call_3, call_4, call_5, call_6）应保持完整未压缩
+      // 最近 6 次工具消息（call_3 ~ call_8）应保持完整未压缩
       expect(toolMsgs[2].content).not.toContain('更早历史执行输出已压缩');
-      expect(toolMsgs[5].content).not.toContain('更早历史执行输出已压缩');
-      expect(toolMsgs[5].content).toContain('_LogOutputEnd');
+      expect(toolMsgs[7].content).not.toContain('更早历史执行输出已压缩');
+      expect(toolMsgs[7].content).toContain('_LogOutputEnd');
 
       // 确保所有 tool_call_id 与前面 assistant 依然严格配对
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 8; i++) {
         expect(toolMsgs[i].tool_call_id).toBe(`call_${i + 1}`);
       }
     } finally {

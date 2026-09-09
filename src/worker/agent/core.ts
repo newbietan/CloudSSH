@@ -735,7 +735,7 @@ export class AgentCore {
 
   /**
    * 对历史较早轮次的 tool 输出进行轻量压缩，保持单轮与多轮长任务的上下文有界。
-   * 保留最近 4 次工具交互的完整输出；更早的工具消息若超出 300 字符，保留头尾精简概要。
+   * 保留最近 6 次工具交互的完整输出；更早的工具消息若超出 300 字符，保留头尾精简概要。
    * 严格保留 tool_call_id 与消息配对结构，杜绝 API 400。
    */
   private compactHistoricalToolOutputs(): void {
@@ -746,9 +746,9 @@ export class AgentCore {
       }
     }
 
-    if (toolIndices.length <= 4) return;
+    if (toolIndices.length <= 6) return;
 
-    const toCompactIndices = toolIndices.slice(0, -4);
+    const toCompactIndices = toolIndices.slice(0, -6);
     for (const idx of toCompactIndices) {
       const msg = this.state.messages[idx];
       if (msg.content && msg.content.length > 300) {
