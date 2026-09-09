@@ -205,10 +205,10 @@ export const MEMORY_DISTILLATION_PROMPT = `你是一个服务器智能会话总�
 1. 本轮执行的工作概括 (workLog):
    - 结合【执行操作】与【最终结论】生成运维工作概括；
    - mode 模式判定（合并优先原则）：
-     * 默认合并更新 ("update_latest")：只要服务器存在近期工作历程（特别是在同一会话、相近时间内的连续排查/修改/部署/验证流程），【必须输出 "mode": "update_latest"】！将上一条记录的要点与本轮新进展融合成一条承前启后的完整总结（title 20字内，summary 100字内），绝对避免把连续运维排障过程拆解成多条琐碎的碎片日志；
+     * 默认合并更新 ("update_latest")：只要服务器存在近期工作历程（特别是在同一会话、相近时间内的连续排查/修改/部署/验证流程），【必须输出 "mode": "update_latest"】！将上一条记录的要点与本轮新进展融合成一条承前启后的完整总结（title 20字内，summary 100~150字内），绝对避免把连续运维排障过程拆解成多条琐碎的碎片日志；
      * 独立新建 ("create")：仅当服务器无任何历史记录、或者最近一条记录属于很久以前的历史日志（如数小时前或不同日期）、或者用户明确声明开启全新领域的独立任务时，才输出 "mode": "create"；
    - title: 任务简述（20字内，概括本阶段或合并任务的核心目标，如“排查端口冲突并部署测试服务”）；
-   - summary: 执行的主要操作与最终结论（100字内，在不超过限制的前提下尽量详实具体，完整保留排查到的异常、具体修改的端口/配置/服务状态、执行的测试与最终验证结论；合并任务时，承前启后地融合前序排查背景与最新成果，避免过于简略草率）；
+   - summary: 执行的主要操作与最终结论（100~150字内，在不超过限制的前提下尽量详实具体，完整保留排查到的异常、具体修改的端口/配置/服务状态、执行的测试与最终验证结论；合并任务时，承前启后地融合前序排查背景与最新成果，避免过于简略草率）；
    - 若用户仅打招呼且未执行任何实质性查询或操作，workLog 设为 null。
 
 2. 用户在对话中主动提供或沉淀的上下文知识与凭据参数 (knowledge，数组，可为空 []):
@@ -342,7 +342,7 @@ export function formatDistillationMessages(snapshotMsgs: ChatMessage[]): string 
   }
   if (executedCommands.length > 0) {
     const compactCmds = executedCommands
-      .slice(-10)
+      .slice(-15)
       .map((c) => (c.length > 80 ? `${c.slice(0, 77)}...` : c));
     parts.push(`执行操作: ${compactCmds.join(', ')}`);
   }
@@ -394,14 +394,14 @@ export function formatDistillationPromptInput(
 - 原摘要：${latestLog.summary}
 当前本轮操作属于该运维任务的后续推进（如排障后续、配置修改、部署验证等连续工作流）。
 【必须遵循】：
-1. 必须输出 "mode": "update_latest"！（除非本轮用户明确开启与前述运维完全无关的独立新任务）请将原记录的核心背景与本轮新完成的进展/结论融合成一条承前启后的完整工作日志（title 20字内，summary 100字内，在不超过限制的前提下尽可能详实具体，保留排查背景、修改参数、服务状态及验证结果等关键细节，避免草率简写）。
+1. 必须输出 "mode": "update_latest"！（除非本轮用户明确开启与前述运维完全无关的独立新任务）请将原记录的核心背景与本轮新完成的进展/结论融合成一条承前启后的完整工作日志（title 20字内，summary 100~150字内，在不超过限制的前提下尽可能详实具体，保留排查背景、修改参数、服务状态及验证结果等关键细节，避免草率简写）。
 2. 严禁输出 "create" 造成连续操作被拆成多条琐碎的碎片日志！`);
     }
   }
 
   if (Array.isArray(existingKnowledge) && existingKnowledge.length > 0) {
     const kLines = existingKnowledge
-      .slice(0, 30)
+      .slice(0, 50)
       .map((k) => `- [${k.category}] ${k.key}: ${k.value}`);
     parts.push(`【当前已沉淀的知识与凭据项（更新时请复用完全相同的 key 名）】\n${kLines.join('\n')}`);
   }
