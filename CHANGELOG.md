@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.2] - 2026-09-09
+
+### Fixed
+
+- **提示词分段预算控制（根除满载记忆截断指引缺陷）**：
+  - 彻底废除尾部暴力字符级 `slice` 截断，改用分段独立预算管理机制。
+  - 系统时间基准与行为行动指引（“严禁再次向用户重复索取凭据”）作为最高约束恒定 100% 完整保留，彻底消除知识库与工作历程较多时凭据复用核心指引被截断失效的隐患。
+  - 工作日志展示时间戳统一采用 `updated_at`，与数据库查询排序和合并逻辑完全对齐。
+- **单轮多步长任务上下文收敛与防爆（杜绝 API 400 崩溃）**：
+  - 解决原有单轮任务 `rounds.length === 1` 导致 40 步截断闸门失效的死代码问题，在 `trimMessages` 中引入历史工具输出轻量概要压缩机制。
+  - 当累计工具消息较多时，无损保留最近 6 次工具完整输出，更早的工具消息（超出 300 字符）自动收敛为头尾概要，严格保留 `tool_call_id` 与消息配对，消除 50~175 步长任务触发 LLM `context_length_exceeded` 崩溃的风险。
+  - 终端快照 `TerminalContext.snapshot` 增加硬上限防护（默认 16,000 字符），防止宽屏或长日志输出撑爆 System Prompt。
+- **提炼超长容错与实体对齐防冲突**：
+  - `normalizeWorkLogInput` 与 `normalizeKnowledgeInput` 增加 `truncate: true` 选项，模型提炼超长时自动安全截断至字段上限（64/300/512 字），防止整条有效工作记录因细微溢出被静默丢弃。
+  - 知识与凭据 key 统一采用小写与下划线归一化（`toLowerCase()` + 空格与连字符转 `_`），确保 SQLite 原生 `UNIQUE(user_id, server_id, key)` 准确对齐，杜绝大小写差异产生冲突脏数据。
+- **相对时间格式化与异常日志**：
+  - 修复 `formatTimestampWithRelative` 在 >30 天前渲染出重复括号 `2026-07-01 10:00 (2026-07-01)` 的显示问题。
+  - 记忆提炼失败与异常状态补充 `console.warn` 日志留痕，便于调试与排查。
+
+### Changed
+
+- **高价值上下文配额针对性放宽与提示词口径对齐**：
+  - 知识与凭据预算 (`MAX_KNOWLEDGE_CHARS`) 从 1,200 字符放宽至 3,000 字符，单条 value 截断上限由 120 提升至 256 字符，完整注入复杂私钥路径、长 Token 与 URL 配置。
+  - 工作历程注入预算 (`MAX_LOGS_CHARS`) 从 1,000 字符放宽至 2,000 字符，提炼摘要字数指引对齐放宽至 100~150 字，给多步运维记录留足表述空间，消除草率简写。
+  - 提炼模型注入的已知知识切片由前 30 条对齐放宽至全量 50 条，消除长知识库下跨会话实体对齐盲区；会话历史操作回溯采样由最近 10 条提升至 15 条。
+
+### Documentation
+
+- **文档与规范全面更新**：
+  - `AGENTS.md`：补齐 `/api/servers/:id/memory`、`/work-logs`、`/knowledge` 等 5 条内存管理路由说明。
+  - `README.md` 与 `README_en.md`：同步更新双轨长期记忆系统、抽屉式命令片段库重构及系统架构图说明。
+
 ## [2.2.1] - 2026-09-08
 
 ### Changed
