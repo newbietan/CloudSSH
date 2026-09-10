@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.3] - 2026-09-10
+
+### Added
+
+- **知识库批量管理模式与原子删除 API**：
+  - 后端新增 `DELETE /api/servers/:id/knowledge/batch` 路由与 `UserDBDO.handleBatchDeleteKnowledge`，采用单次参数化 SQL 事务批量删除知识条目，维持所有权隔离，杜绝频繁发起并发单删网络请求。
+  - 前端知识与凭据抽屉新增「批量管理」模式，支持单项复选框勾选、按日期分组「全选此组」，底部提供实时选中统计与一键批量删除浮动栏。
+- **日期智能手风琴折叠面板**：
+  - 前端知识面板根据条目 `updated_at` 自动聚合为「📅 今天」、「📅 昨天」、「📅 更早以前」手风琴组，历史数据默认收起，首屏渲染 DOM 节点降低 80% 以上，彻底根治条目积累时的长列表卡顿。
+- **单行高密度紧凑清单**：
+  - 弃用臃肿的 4 行大 Card 布局，重构为高信息密度的单行紧凑视图（分类徽章 + 键名 + 截断内容 + 悬停完整预览 + 独立操作按钮），信息密度提升 60%。
+- **异常中断现场保护与一键断点续接**：
+  - 引入前端 LocalStorage 断点续接缓存（`cloudssh_agent_draft_${serverId}`），严格限定 30 分钟生命周期并与服务端连续运维合并窗口（`CONSECUTIVE_TASK_WINDOW_MS`）对齐。
+  - 30 分钟内异常掉线重连时，前端自动恢复中断对话，并在顶部高亮呈现 `[⚡ 继续上次未完成的任务]` 快捷芯片，一键无缝唤醒 AI 接着断点推进。
+
+### Fixed
+
+- **连接断开跳过提炼根因修复与中断留痕**：
+  - 彻底清理后端无意义的 `user_stop` 假想分支，准确捕获会话断开（`connection_closed`）或单步超时（`timeout`）。
+  - 发生非正常退出且已有实质性工具执行（`hasExecuted`）时，强制触发保护性记忆提炼，自动在 WorkLog 标题前注入 `[已中断]`（或英文 `[Interrupted]`）标签，并详实记录中断时的最后执行状态。
+- **Cloudflare DO 生命周期后台保活**：
+  - 将记忆提炼任务沿 `AgentCore` → `SSHSession` 注入并挂载到 Durable Object 的 `state.waitUntil` 机制中，即使用户在任务刚结束或中断瞬间关闭网页，Cloudflare 依然保活 Worker 完成后台提炼与云端数据库写入，彻底根除记忆入库被宿主强杀的问题。
+- **本地草稿与云端记忆重复堆叠消除（“阅后即焚”）**：
+  - 严格限定本地仅在任务执行中/中断时暂存；任务正常完成或收到云端 `memory_updated` 记忆入库帧后，即刻彻底销毁本地草稿，由云端权威长期记忆全权接管，杜绝下次连接重复加载历史对话。
+
+### Changed
+
+- **知识库配额大幅放宽与容量分母移除**：
+  - 数据库 `server_knowledge` 硬编码截断上限从 50 条放宽至 500 条宽松上限，充分满足复杂运维项目知识积累需求，提示词 3,000 字符独立预算继续守护安全边界。
+  - 前端工作历程与知识备忘计数彻底移除原先容易引发焦虑的 `(x/10)` 与 `(x/50)` 容量分母，统一采用清爽的纯条目数 `(N)` 呈现。
+
 ## [2.2.2] - 2026-09-09
 
 ### Fixed
