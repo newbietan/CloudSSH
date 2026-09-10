@@ -306,4 +306,109 @@ describe('AgentCore 响应交付与循环终止机制', () => {
       fetchSpy.mockRestore();
     }
   });
+
+  it('当会话因断网/关闭连接中止且已执行实质性命令时，触发中断保护性提炼并通过 waitUntil 挂载', async () => {
+    const frontendFrames: any[] = [];
+    const terminalContext = new TerminalContext();
+    const sendToFrontend = (msg: any) => frontendFrames.push(msg);
+    const fetchAIConfig = async () => dummyAIConfig;
+    const execCommand = vi.fn(async (cmd: string) => {
+      if (cmd.includes('PWD:$(pwd)')) {
+        return { stdout: 'Linux', stderr: '', exitCode: 0 };
+      }
+      // 模拟工具执行期间遭遇网络断开 / 会话关闭
+      agent.agentAbort('connection_closed');
+      return {
+        stdout: 'Listening on port 8080',
+        stderr: '',
+        exitCode: 0,
+      };
+    });
+    const askConfirmation = vi.fn(async () => true);
+
+    const savedBatches: any[] = [];
+    const memoryProvider = {
+      fetchUnifiedMemory: async () => ({ workLogs: [], knowledge: [] }),
+      saveBatchMemory: async (batch: any) => {
+        savedBatches.push(batch);
+      },
+    };
+
+    const waitUntilPromises: Promise<unknown>[] = [];
+    const waitUntil = vi.fn((p: Promise<unknown>) => {
+      waitUntilPromises.push(p);
+    });
+
+    const agent = new AgentCore(
+      terminalContext,
+      sendToFrontend,
+      fetchAIConfig,
+      execCommand,
+      askConfirmation,
+      undefined,
+      memoryProvider,
+      waitUntil
+    );
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any, init: any) => {
+      const u = String(url);
+      if (u.includes('chat/completions')) {
+        const bodyStr = init?.body ? JSON.parse(init.body) : {};
+        // 判断是否为提炼请求（system prompt 包含 MEMORY_DISTILLATION_PROMPT 关键字）
+        const isDistill =
+          bodyStr.messages?.[0]?.content?.includes('服务器智能会话总结助手') ||
+          bodyStr.messages?.[0]?.content?.includes('Server Memory Distillation');
+        if (isDistill) {
+          return new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      workLog: {
+                        mode: 'create',
+                        title: '检查服务监听端口',
+                        summary: '服务在 8080 端口正常监听',
+                      },
+                      knowledge: [
+                        { category: 'config', key: 'service_port', value: '8080' },
+                      ],
+                    }),
+                  },
+                },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+
+        return createMockSSEResponse([
+          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"execute_command","arguments":"{\\"command\\":\\"netstat -tlpn\\"}"}}]}}]}\n\n',
+          'data: [DONE]\n\n',
+        ]);
+      }
+      return new Response('{}', { status: 200 });
+    });
+
+    try {
+      await agent.handleAgentStart('user-1', '请排查端口', 'zh-CN');
+
+      expect(agent.getStatus()).toBe('idle');
+      // 必须调用了 waitUntil 注册提炼 Promise
+      expect(waitUntil).toHaveBeenCalled();
+      await Promise.all(waitUntilPromises);
+
+      // 验证保存的批次中包含 [已中断] 标签与知识
+      expect(savedBatches.length).toBeGreaterThan(0);
+      const saved = savedBatches[0];
+      expect(saved.workLog.title).toContain('[已中断]');
+      expect(saved.knowledge).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ key: 'service_port', value: '8080' }),
+        ])
+      );
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
 });

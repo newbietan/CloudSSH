@@ -8,7 +8,8 @@
  */
 
 export const MAX_SERVER_WORK_LOGS = 10;
-export const MAX_SERVER_KNOWLEDGE = 50;
+export const MAX_SERVER_KNOWLEDGE = 500;
+export const MAX_BATCH_DELETE_KNOWLEDGE_IDS = 100;
 
 /** 连续运维任务自动合并时间窗口（30分钟内视为连续排障/维护任务流） */
 export const CONSECUTIVE_TASK_WINDOW_MS = 30 * 60 * 1000;
@@ -191,6 +192,35 @@ export function normalizeKnowledgeInput(
       value: trimmedValue,
     },
   };
+}
+
+/**
+ * 校验并规范化批量删除知识输入
+ */
+export function normalizeBatchDeleteKnowledgeInput(input: unknown): {
+  ok: true;
+  value: { ids: number[] };
+} | { ok: false; error: string } {
+  if (!input || typeof input !== 'object') return { ok: false, error: 'invalidBody' };
+  const { ids } = input as { ids?: unknown };
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return { ok: false, error: 'idsRequired' };
+  }
+  if (ids.length > MAX_BATCH_DELETE_KNOWLEDGE_IDS) {
+    return { ok: false, error: 'tooManyIds' };
+  }
+  const validIds: number[] = [];
+  for (const id of ids) {
+    if (typeof id === 'number' && Number.isInteger(id) && id > 0) {
+      validIds.push(id);
+    } else {
+      return { ok: false, error: 'invalidId' };
+    }
+  }
+  if (validIds.length === 0) {
+    return { ok: false, error: 'idsRequired' };
+  }
+  return { ok: true, value: { ids: Array.from(new Set(validIds)) } };
 }
 
 function getTimeParts(timestamp: number, timeZone?: string) {

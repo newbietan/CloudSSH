@@ -1,6 +1,7 @@
 import {
   MAX_SERVER_KNOWLEDGE,
   MAX_SERVER_WORK_LOGS,
+  normalizeBatchDeleteKnowledgeInput,
   normalizeKnowledgeInput,
   normalizeWorkLogInput,
   type ServerKnowledgeItem,
@@ -396,6 +397,13 @@ export class UserDBDO {
       if (workLogsMatch && request.method === 'POST') {
         const serverId = parseInt(workLogsMatch[1], 10);
         return this.handleSaveWorkLog(serverId, request);
+      }
+
+      // /internal/servers/:id/knowledge/batch
+      const batchKnowledgeMatch = path.match(/^\/internal\/servers\/(\d+)\/knowledge\/batch$/);
+      if (batchKnowledgeMatch && request.method === 'DELETE') {
+        const serverId = parseInt(batchKnowledgeMatch[1], 10);
+        return this.handleBatchDeleteKnowledge(serverId, request);
       }
 
       // /internal/servers/:id/knowledge/:kId
@@ -2054,6 +2062,32 @@ export class UserDBDO {
       userId
     );
     return Response.json({ success: true });
+  }
+
+  private async handleBatchDeleteKnowledge(serverId: number, request: Request): Promise<Response> {
+    const body = await request.json<{ user_id?: number; ids?: unknown }>();
+    if (!body.user_id) return Response.json({ error: 'Missing user_id' }, { status: 400 });
+
+    const norm = normalizeBatchDeleteKnowledgeInput(body);
+    if (!norm.ok) {
+      return Response.json({ error: norm.error }, { status: 400 });
+    }
+
+    const existing = this.query<UserIdRow>('SELECT user_id FROM servers WHERE id = ?', serverId);
+    if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
+    if (existing[0].user_id !== body.user_id) return Response.json({ error: 'Forbidden' }, { status: 403 });
+
+    const { ids } = norm.value;
+    for (const id of ids) {
+      this.db.exec(
+        'DELETE FROM server_knowledge WHERE id = ? AND server_id = ? AND user_id = ?',
+        id,
+        serverId,
+        body.user_id
+      );
+    }
+
+    return Response.json({ success: true, count: ids.length });
   }
 
   private async handleBatchSaveMemory(serverId: number, request: Request): Promise<Response> {

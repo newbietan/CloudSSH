@@ -234,6 +234,7 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 | `/api/servers/:id/work-logs/:logId` | DELETE | Yes | Delete a server work log entry |
 | `/api/servers/:id/knowledge` | POST | Yes | Create or update a server knowledge/credential entry |
 | `/api/servers/:id/knowledge/:kId` | DELETE | Yes | Delete a server knowledge/credential entry |
+| `/api/servers/:id/knowledge/batch` | DELETE | Yes | Batch delete server knowledge/credential entries |
 | `/api/servers/:id/shares` | GET/POST | Yes | List or create one-time SSH shares for a saved server |
 | `/api/shares/:id` | DELETE | Yes | Revoke a share owned by the current user |
 | `/api/shares/:id/audit` | GET | Yes | Read the paginated audit log for an owned share |

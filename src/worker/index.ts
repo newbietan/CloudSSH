@@ -550,6 +550,24 @@ async function handleServersRoute(request: Request, url: URL, env: Env): Promise
     return new Response('Method Not Allowed', { status: 405 });
   }
 
+  // /api/servers/:id/knowledge/batch
+  const batchKnowledgeMatch = url.pathname.match(/^\/api\/servers\/(\d+)\/knowledge\/batch$/);
+  if (batchKnowledgeMatch) {
+    const serverId = batchKnowledgeMatch[1];
+    if (request.method === 'DELETE') {
+      const body = await request.json<Record<string, unknown>>();
+      body.user_id = user.id;
+      return stub.fetch(
+        new Request(`http://internal/internal/servers/${serverId}/knowledge/batch`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+      );
+    }
+    return new Response('Method Not Allowed', { status: 405 });
+  }
+
   // /api/servers/:id/knowledge/:kId
   const singleKnowledgeMatch = url.pathname.match(/^\/api\/servers\/(\d+)\/knowledge\/(\d+)$/);
   if (singleKnowledgeMatch) {

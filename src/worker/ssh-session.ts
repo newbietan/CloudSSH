@@ -2850,7 +2850,8 @@ export class SSHSession {
           this.executeAgentCommand(command, timeout, signal),
         async (command: string, reason: string) => this.askAgentConfirmation(command, reason),
         undefined,
-        memoryProvider
+        memoryProvider,
+        this.waitUntil
       );
     }
 
@@ -2877,7 +2878,7 @@ export class SSHSession {
       return;
     }
     if (type === 'agent_stop') {
-      this.agentCore?.agentAbort();
+      this.agentCore?.agentAbort('connection_closed');
       return;
     }
   }
@@ -3218,7 +3219,7 @@ export class SSHSession {
       this.sftpHandler = null;
     }
     // Cleanup agent
-    this.agentCore?.agentAbort();
+    this.agentCore?.agentAbort('connection_closed');
     this.agentCore = null;
     for (const [, execCh] of this.activeExecChannels) {
       execCh.onClose();

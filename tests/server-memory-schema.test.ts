@@ -6,6 +6,7 @@ import {
   isSensitiveKeyOrValue,
   KNOWLEDGE_KEY_MAX_LENGTH,
   KNOWLEDGE_VALUE_MAX_LENGTH,
+  normalizeBatchDeleteKnowledgeInput,
   normalizeKnowledgeInput,
   normalizeWorkLogInput,
   WORK_LOG_SUMMARY_MAX_LENGTH,
@@ -301,5 +302,25 @@ describe('server-memory-schema', () => {
     const k2 = normalizeKnowledgeInput({ key: 'API Key V2', value: 'key123' });
     expect(k2.ok).toBe(true);
     if (k2.ok) expect(k2.value.key).toBe('api_key_v2');
+  });
+
+  it('validates batch delete knowledge input and removes duplicates', () => {
+    expect(normalizeBatchDeleteKnowledgeInput(null)).toEqual({ ok: false, error: 'invalidBody' });
+    expect(normalizeBatchDeleteKnowledgeInput({})).toEqual({ ok: false, error: 'idsRequired' });
+    expect(normalizeBatchDeleteKnowledgeInput({ ids: [] })).toEqual({ ok: false, error: 'idsRequired' });
+    expect(normalizeBatchDeleteKnowledgeInput({ ids: ['abc'] })).toEqual({ ok: false, error: 'invalidId' });
+    expect(normalizeBatchDeleteKnowledgeInput({ ids: [0, -1] })).toEqual({ ok: false, error: 'invalidId' });
+
+    const tooMany = Array.from({ length: 101 }, (_, i) => i + 1);
+    expect(normalizeBatchDeleteKnowledgeInput({ ids: tooMany })).toEqual({
+      ok: false,
+      error: 'tooManyIds',
+    });
+
+    const valid = normalizeBatchDeleteKnowledgeInput({ ids: [1, 2, 3, 2, 1] });
+    expect(valid).toEqual({
+      ok: true,
+      value: { ids: [1, 2, 3] },
+    });
   });
 });

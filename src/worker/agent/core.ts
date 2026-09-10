@@ -7,6 +7,8 @@ import {
   normalizeKnowledgeInput,
   normalizeWorkLogInput,
   type UnifiedServerMemory,
+  WORK_LOG_SUMMARY_MAX_LENGTH,
+  WORK_LOG_TITLE_MAX_LENGTH,
   type WorkLogMode,
 } from '../../server-memory-schema';
 import {
@@ -90,7 +92,8 @@ export class AgentCore {
     }>,
     private askConfirmation: (command: string, reason: string) => Promise<boolean>,
     config?: Partial<AgentConfig>,
-    private memoryProvider?: AgentMemoryProvider
+    private memoryProvider?: AgentMemoryProvider,
+    private waitUntil?: (promise: Promise<unknown>) => void
   ) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.toolExecutor = new ToolExecutor(
@@ -271,15 +274,10 @@ export class AgentCore {
     }
   }
 
-  agentAbort(): void {
+  agentAbort(reason: string = 'connection_closed'): void {
     this.pendingDistillationSnapshot = null;
     if (this.state.status === 'running') {
-      this.abortController.abort('user_stop');
-      this.sendToFrontend({
-        type: 'agent_frame',
-        subType: 'response',
-        content: 'Agent 已停止。',
-      });
+      this.abortController.abort(reason);
       this.state.status = 'idle';
     }
   }
@@ -433,14 +431,18 @@ export class AgentCore {
         });
         this.state.status = 'idle';
         const snapshotMsgs = extractDistillationSnapshot(this.state.messages);
-        void this.triggerMemoryDistillationIfEligible(snapshotMsgs);
+        const distillPromise = this.triggerMemoryDistillationIfEligible(snapshotMsgs);
+        if (this.waitUntil) {
+          this.waitUntil(distillPromise);
+        }
         return;
       }
 
       // Loop exited — notify frontend of the reason
       if (signal.aborted) {
-        // 超时退出（排除用户手动停止，agentAbort 已自行通知）
-        if (!String(signal.reason || '').includes('user_stop')) {
+        // 超时退出时通知前端；会话连接断开时前端已断开无需发送
+        const reasonStr = String(signal.reason || '');
+        if (!reasonStr.includes('connection_closed')) {
           this.sendToFrontend({
             type: 'agent_frame',
             subType: 'response',
@@ -449,10 +451,16 @@ export class AgentCore {
         }
       }
 
-      // 迭代上限或非用户主动停止的退出：若已有实质性命令执行，触发阶段性记忆提炼
-      if (this.state.iteration > 0 && !String(signal.reason || '').includes('user_stop')) {
+      // 迭代上限、超时或连接关闭导致的退出：若已有实质性命令执行，触发阶段性中断记忆提炼
+      const hasExecuted = this.state.iteration > 0 || this.progress.recentToolCalls.length > 0;
+      if (hasExecuted) {
         const snapshotMsgs = extractDistillationSnapshot(this.state.messages);
-        void this.triggerMemoryDistillationIfEligible(snapshotMsgs);
+        const distillPromise = this.triggerMemoryDistillationIfEligible(snapshotMsgs, {
+          interrupted: signal.aborted,
+        });
+        if (this.waitUntil) {
+          this.waitUntil(distillPromise);
+        }
       }
     } catch (e) {
       // 仅处理非 abort 异常（abort 路径已在 while 退出后处理）
@@ -971,7 +979,10 @@ ${conversationText}${previousSection}`;
     return null;
   }
 
-  private async triggerMemoryDistillationIfEligible(snapshotMsgs: ChatMessage[]): Promise<void> {
+  private async triggerMemoryDistillationIfEligible(
+    snapshotMsgs: ChatMessage[],
+    options?: { interrupted?: boolean }
+  ): Promise<void> {
     if (!this.memoryProvider || snapshotMsgs.length < 2 || shouldBypassDistillation(snapshotMsgs)) {
       return;
     }
@@ -982,7 +993,7 @@ ${conversationText}${previousSection}`;
     }
     this.distillationInProgress = true;
     try {
-      await this.distillMemoryWithLLM(snapshotMsgs);
+      await this.distillMemoryWithLLM(snapshotMsgs, options);
     } catch {
       // 提炼失败不得影响正常交互
     } finally {
@@ -990,12 +1001,18 @@ ${conversationText}${previousSection}`;
       if (this.pendingDistillationSnapshot) {
         const nextSnapshot = this.pendingDistillationSnapshot;
         this.pendingDistillationSnapshot = null;
-        void this.triggerMemoryDistillationIfEligible(nextSnapshot);
+        const nextPromise = this.triggerMemoryDistillationIfEligible(nextSnapshot, options);
+        if (this.waitUntil) {
+          this.waitUntil(nextPromise);
+        }
       }
     }
   }
 
-  private async distillMemoryWithLLM(snapshotMsgs: ChatMessage[]): Promise<void> {
+  private async distillMemoryWithLLM(
+    snapshotMsgs: ChatMessage[],
+    options?: { interrupted?: boolean }
+  ): Promise<void> {
     try {
       const config = this.agentConfig;
       if (!config || !this.memoryProvider) return;
@@ -1082,7 +1099,34 @@ ${conversationText}${previousSection}`;
         );
         if (normLog.ok) {
           workLogToSave = normLog.value;
+          if (options?.interrupted && workLogToSave) {
+            const prefix = this.preferredLocale === 'en-US' ? '[Interrupted] ' : '[已中断] ';
+            if (
+              !workLogToSave.title.startsWith(prefix) &&
+              !workLogToSave.title.startsWith('[已中断]') &&
+              !workLogToSave.title.startsWith('[Interrupted]')
+            ) {
+              workLogToSave.title = `${prefix}${workLogToSave.title}`.slice(
+                0,
+                WORK_LOG_TITLE_MAX_LENGTH
+              );
+            }
+          }
         }
+      } else if (options?.interrupted && snapshotMsgs.length >= 2) {
+        // 模型未返回 workLog 时，针对中断会话合成基础留痕，确保断线不丢失上下文
+        const userMsg = snapshotMsgs.find((m) => m.role === 'user')?.content || '运维任务';
+        const truncatedUserMsg = userMsg.slice(0, 30);
+        const prefix = this.preferredLocale === 'en-US' ? '[Interrupted] ' : '[已中断] ';
+        const summary =
+          this.preferredLocale === 'en-US'
+            ? `Task was interrupted after step ${this.state.iteration}.`
+            : `任务在执行第 ${this.state.iteration} 步时被中断或网络断开。`;
+        workLogToSave = {
+          mode: 'create',
+          title: `${prefix}${truncatedUserMsg}`.slice(0, WORK_LOG_TITLE_MAX_LENGTH),
+          summary: summary.slice(0, WORK_LOG_SUMMARY_MAX_LENGTH),
+        };
       }
 
       const knowledgeToSave: Array<{

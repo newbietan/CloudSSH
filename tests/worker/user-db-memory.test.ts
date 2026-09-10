@@ -382,6 +382,51 @@ describe('UserDBDO unified server memory', () => {
     expect(fakeSql.knowledge).toHaveLength(0);
   });
 
+  it('supports batch delete of knowledge items', async () => {
+    // 注入 3 条知识
+    fakeSql.knowledge = [
+      { id: 10, user_id: 10, server_id: 1, category: 'config', key: 'k1', value: 'v1', created_at: 1, updated_at: 1 },
+      { id: 11, user_id: 10, server_id: 1, category: 'config', key: 'k2', value: 'v2', created_at: 1, updated_at: 1 },
+      { id: 12, user_id: 10, server_id: 1, category: 'config', key: 'k3', value: 'v3', created_at: 1, updated_at: 1 },
+    ];
+
+    // 校验无效输入 -> 400
+    const resInvalid = await userDb.fetch(
+      new Request('http://internal/internal/servers/1/knowledge/batch', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: 10, ids: [] }),
+      })
+    );
+    expect(resInvalid.status).toBe(400);
+
+    // 越权删除 -> 403
+    const resForbidden = await userDb.fetch(
+      new Request('http://internal/internal/servers/1/knowledge/batch', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: 999, ids: [10, 11] }),
+      })
+    );
+    expect(resForbidden.status).toBe(403);
+
+    // 批量删除 id=10, 11 -> 200
+    const resBatch = await userDb.fetch(
+      new Request('http://internal/internal/servers/1/knowledge/batch', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: 10, ids: [10, 11] }),
+      })
+    );
+    expect(resBatch.status).toBe(200);
+    const data = await resBatch.json() as { success: boolean; count: number };
+    expect(data.success).toBe(true);
+    expect(data.count).toBe(2);
+
+    expect(fakeSql.knowledge).toHaveLength(1);
+    expect(fakeSql.knowledge[0].id).toBe(12);
+  });
+
   it('handles batch save of memory from AI session', async () => {
     const resBatch = await userDb.fetch(
       new Request('http://internal/internal/servers/1/memory/batch', {
