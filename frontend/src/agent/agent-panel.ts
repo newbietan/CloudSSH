@@ -65,6 +65,9 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/** 30 分钟断点续接窗口（与服务端 CONSECUTIVE_TASK_WINDOW_MS 连续任务合并窗口严格对齐） */
+const SESSION_DRAFT_TTL_MS = 30 * 60 * 1000;
+
 export class AgentPanel {
   private panelEl: HTMLElement | null = null;
   private messagesEl: HTMLElement | null = null;
@@ -432,6 +435,7 @@ export class AgentPanel {
         this.showProgressExtend(msg.message, msg.currentIteration, msg.newMax, msg.reason);
         break;
       case 'memory_updated':
+        this.clearSessionDraft();
         if (this.serverId) {
           void this.fetchServerMemory();
         }
@@ -1195,7 +1199,11 @@ export class AgentPanel {
       if (!raw) return;
       const draft = JSON.parse(raw);
       if (!draft || !Array.isArray(draft.messages) || draft.messages.length === 0) return;
-      if (Date.now() - Number(draft.updatedAt || 0) > 24 * 60 * 60 * 1000) {
+      // 仅恢复 30 分钟内的中断会话；已完成或过期会话立即清理，避免与云端提炼记忆重复
+      if (
+        !draft.wasInterrupted ||
+        Date.now() - Number(draft.updatedAt || 0) > SESSION_DRAFT_TTL_MS
+      ) {
         localStorage.removeItem(`cloudssh_agent_draft_${this.serverId}`);
         return;
       }
@@ -1204,9 +1212,7 @@ export class AgentPanel {
       for (const m of this.sessionMessages) {
         this.appendMessage(m.role, m.content, { hasTerminalSelection: m.hasTerminalSelection });
       }
-      if (draft.wasInterrupted) {
-        this.renderResumeChip();
-      }
+      this.renderResumeChip();
     } catch {
       /* ignore corrupted draft */
     }
@@ -1214,7 +1220,8 @@ export class AgentPanel {
 
   private saveSessionDraft(isInterrupted: boolean): void {
     if (!this.serverId) return;
-    if (this.sessionMessages.length === 0) {
+    // 任务正常完成或无消息时，立即删除本地暂存草稿，由云端记忆（WorkLog & Knowledge）全权接管
+    if (!isInterrupted || this.sessionMessages.length === 0) {
       localStorage.removeItem(`cloudssh_agent_draft_${this.serverId}`);
       return;
     }
@@ -1223,12 +1230,19 @@ export class AgentPanel {
         serverId: this.serverId,
         updatedAt: Date.now(),
         messages: this.sessionMessages.slice(-20),
-        wasInterrupted: isInterrupted,
+        wasInterrupted: true,
       };
       localStorage.setItem(`cloudssh_agent_draft_${this.serverId}`, JSON.stringify(draft));
     } catch {
       /* ignore */
     }
+  }
+
+  private clearSessionDraft(): void {
+    if (this.serverId) {
+      localStorage.removeItem(`cloudssh_agent_draft_${this.serverId}`);
+    }
+    this.removeResumeChip();
   }
 
   dispose(): void {
