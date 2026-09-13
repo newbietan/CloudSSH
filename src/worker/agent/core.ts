@@ -299,6 +299,9 @@ export class AgentCore {
       extensionUsed: 0,
     };
 
+    let truncationContinuations = 0;
+    const MAX_TRUNCATION_CONTINUATIONS = 2;
+
     try {
       while (true) {
         if (signal.aborted) break;
@@ -362,6 +365,7 @@ export class AgentCore {
 
         // If LLM has tool_calls -> execute tools
         if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
+          truncationContinuations = 0; // 重置截断自动接续计数器
           // Add assistant message with tool_calls to history
           this.state.messages.push({
             role: 'assistant',
@@ -406,6 +410,43 @@ export class AgentCore {
           continue;
         }
 
+        // 检查是否因达到单次 max_tokens 截断且未产生工具调用 (finish_reason === 'length')
+        if (choice.finish_reason === 'length' && truncationContinuations < MAX_TRUNCATION_CONTINUATIONS) {
+          truncationContinuations++;
+
+          // 严格保持角色交替（适配 Claude/OpenAI 兼容代理）
+          const assistantPlaceholder =
+            choice.message.content?.trim() ||
+            (this.preferredLocale === 'en-US'
+              ? '[Reasoning reached single-turn token limit, proceeding to action]'
+              : '[推导达到单次 Token 限制，继续执行下一步]');
+
+          this.state.messages.push({
+            role: 'assistant',
+            content: assistantPlaceholder,
+          });
+
+          // 通知前端：大模型推理达到单次上限，正在内部自动续跑推进任务
+          this.sendToFrontend({
+            type: 'agent_frame',
+            subType: 'thinking',
+            iteration: this.state.iteration,
+          });
+
+          const continuePrompt =
+            this.preferredLocale === 'en-US'
+              ? 'The previous step reached the single-turn token limit. Please directly invoke the necessary tool(s) (e.g. execute_command) to execute the next action or provide the concise final conclusion now, without lengthy internal monologue.'
+              : '上一步推导达到单次 Token 上限。请直接调用相应的运维工具（如 execute_command）执行操作或简明给出最终结论，避免冗长思考。';
+
+          this.state.messages.push({
+            role: 'user',
+            content: continuePrompt,
+          });
+
+          this.resetTimeout();
+          continue;
+        }
+
         // No tool_calls -> 模型直接以文本形式回复，保存 assistant 响应到历史，并确保前端收到最终回复
         const finalContent = choice.message.content?.trim();
         if (finalContent) {
@@ -417,17 +458,30 @@ export class AgentCore {
             });
           }
         } else {
-          // 极端异常兜底：模型返回空内容时给出明确提示，防止前端悬空或静默无输出
+          // 兜底提示：若因多次达到 Token 上限截断且未生成内容，明确提示拆分任务，避免误报“任务已完成”
+          const fallbackText =
+            choice.finish_reason === 'length'
+              ? (this.preferredLocale === 'en-US'
+                  ? 'Task reasoning repeatedly reached the token limit. Please consider breaking down the task into smaller steps.'
+                  : '任务分析连续超出单次 Token 上限。建议将复杂任务拆解为小步骤逐步执行。')
+              : (this.preferredLocale === 'en-US' ? 'Task completed.' : '任务已执行完成。');
+
           this.sendToFrontend({
             type: 'agent_frame',
             subType: 'response',
-            content: this.preferredLocale === 'en-US' ? 'Task completed.' : '任务已执行完成。',
+            content: fallbackText,
           });
         }
 
         this.state.messages.push({
           role: 'assistant',
-          content: choice.message.content || (this.preferredLocale === 'en-US' ? 'Task completed.' : '任务已执行完成。'),
+          content:
+            choice.message.content ||
+            (choice.finish_reason === 'length'
+              ? (this.preferredLocale === 'en-US'
+                  ? 'Task reasoning repeatedly reached the token limit. Please consider breaking down the task into smaller steps.'
+                  : '任务分析连续超出单次 Token 上限。建议将复杂任务拆解为小步骤逐步执行。')
+              : (this.preferredLocale === 'en-US' ? 'Task completed.' : '任务已执行完成。')),
         });
         this.state.status = 'idle';
         const snapshotMsgs = extractDistillationSnapshot(this.state.messages);
@@ -581,6 +635,7 @@ export class AgentCore {
     let reasoningText = '';
     const toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map();
     let hasToolCalls = false;
+    let upstreamFinishReason: string | null = null;
 
     try {
       while (true) {
@@ -600,7 +655,11 @@ export class AgentCore {
 
           try {
             const parsed = JSON.parse(data);
-            const delta = parsed.choices?.[0]?.delta;
+            const choice = parsed.choices?.[0];
+            if (choice?.finish_reason) {
+              upstreamFinishReason = choice.finish_reason;
+            }
+            const delta = choice?.delta;
             if (!delta) continue;
 
             const reasoning = delta.reasoning_content || delta.reasoning;
@@ -655,11 +714,14 @@ export class AgentCore {
       }));
 
     const actualHasToolCalls = assembledToolCalls.length > 0;
+    const isTruncated = upstreamFinishReason === 'length';
     let streamed = false;
 
-    // 若无工具调用，且 content 为空但有 reasoning_content（如部分推理模型），回退到 reasoning
+    // 若无工具调用，且 content 为空但有 reasoning_content（如部分非标准模型），
+    // 仅在非截断 (finish_reason !== 'length') 时才允许回退到 reasoning；
+    // 若因达到 max_tokens 被截断，reasoning 仅为未完成推导草稿，严禁当作正文发送给前端，避免泄露内部思考并中断流程。
     if (!actualHasToolCalls) {
-      if (!contentText.trim() && reasoningText.trim()) {
+      if (!isTruncated && !contentText.trim() && reasoningText.trim()) {
         contentText = reasoningText;
       }
       if (contentText.trim()) {
@@ -672,6 +734,10 @@ export class AgentCore {
       }
     }
 
+    const resolvedFinishReason = actualHasToolCalls
+      ? 'tool_calls'
+      : (upstreamFinishReason || 'stop');
+
     return {
       id: '',
       choices: [
@@ -682,7 +748,7 @@ export class AgentCore {
             tool_calls: actualHasToolCalls ? assembledToolCalls : undefined,
             streamed,
           },
-          finish_reason: actualHasToolCalls ? 'tool_calls' : 'stop',
+          finish_reason: resolvedFinishReason,
         },
       ],
     };

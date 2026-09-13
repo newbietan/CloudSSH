@@ -411,4 +411,128 @@ describe('AgentCore 响应交付与循环终止机制', () => {
       fetchSpy.mockRestore();
     }
   });
+
+  it('当大模型因单次 Token 达到上限截断（finish_reason="length"）且仅有 reasoning 时，严禁泄露内部思考，并实现内部自动接续执行', async () => {
+    const frontendFrames: any[] = [];
+    const terminalContext = new TerminalContext();
+    const sendToFrontend = (msg: any) => frontendFrames.push(msg);
+    const fetchAIConfig = async () => dummyAIConfig;
+    const execCommand = vi.fn(async () => ({ stdout: 'active (running)', stderr: '', exitCode: 0 }));
+    const askConfirmation = vi.fn(async () => true);
+
+    const agent = new AgentCore(
+      terminalContext,
+      sendToFrontend,
+      fetchAIConfig,
+      execCommand,
+      askConfirmation
+    );
+
+    let round = 0;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => {
+      if (String(url).includes('chat/completions')) {
+        round++;
+        if (round === 1) {
+          // 第 1 轮：大模型内部深思导致 length 截断，只有 reasoning_content，无 content，无 tool_calls
+          return createMockSSEResponse([
+            'data: {"choices":[{"delta":{"reasoning_content":"Let me think in English about checking nginx status... We should use systemctl."}}]}\n\n',
+            'data: {"choices":[{"finish_reason":"length"}]}\n\n',
+            'data: [DONE]\n\n',
+          ]);
+        } else if (round === 2) {
+          // 第 2 轮：内部自动接续后，模型成功输出工具调用
+          return createMockSSEResponse([
+            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_cont","type":"function","function":{"name":"execute_command","arguments":"{\\"command\\":\\"systemctl status nginx\\"}"}}]}}]}\n\n',
+            'data: [DONE]\n\n',
+          ]);
+        } else {
+          // 第 3 轮：执行工具后给出最终总结
+          return createMockSSEResponse([
+            'data: {"choices":[{"delta":{"content":"Nginx 服务运行正常。"}},{"finish_reason":"stop"}]}\n\n',
+            'data: [DONE]\n\n',
+          ]);
+        }
+      }
+      return new Response('{}', { status: 200 });
+    });
+
+    try {
+      await agent.handleAgentStart('user-1', '排查 Nginx 状态', 'zh-CN');
+
+      expect(agent.getStatus()).toBe('idle');
+      // 1. 验证工具成功被调用
+      expect(execCommand).toHaveBeenCalledWith('systemctl status nginx', 10000, expect.any(Object));
+
+      // 2. 验证前端绝对没有收到未完成的英文思考过程作为正文
+      const leakedThinking = frontendFrames.some(
+        (f) =>
+          (f.subType === 'stream_end' && f.content?.includes('Let me think in English')) ||
+          (f.subType === 'response' && f.content?.includes('Let me think in English'))
+      );
+      expect(leakedThinking).toBe(false);
+
+      // 3. 验证最终成功交付了中文结论
+      const hasFinalSummary = frontendFrames.some(
+        (f) =>
+          (f.subType === 'stream_end' && f.content?.includes('Nginx 服务运行正常')) ||
+          (f.subType === 'response' && f.content?.includes('Nginx 服务运行正常'))
+      );
+      expect(hasFinalSummary).toBe(true);
+
+      // 4. 验证在第 1 轮截断后触发了自动接续（发生了第 2 轮请求，无需人工点击“继续”）
+      expect(round).toBe(3);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('当大模型连续超出 Token 上限且始终未产生工具调用时，安全终止并提示拆解任务，不泄漏未完成思考', async () => {
+    const frontendFrames: any[] = [];
+    const terminalContext = new TerminalContext();
+    const sendToFrontend = (msg: any) => frontendFrames.push(msg);
+    const fetchAIConfig = async () => dummyAIConfig;
+    const execCommand = vi.fn(async () => ({ stdout: 'ok', stderr: '', exitCode: 0 }));
+    const askConfirmation = vi.fn(async () => true);
+
+    const agent = new AgentCore(
+      terminalContext,
+      sendToFrontend,
+      fetchAIConfig,
+      execCommand,
+      askConfirmation
+    );
+
+    // 持续返回 length 截断
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => {
+      if (String(url).includes('chat/completions')) {
+        return createMockSSEResponse([
+          'data: {"choices":[{"delta":{"reasoning_content":"Thinking endlessly..."}}]}\n\n',
+          'data: {"choices":[{"finish_reason":"length"}]}\n\n',
+          'data: [DONE]\n\n',
+        ]);
+      }
+      return new Response('{}', { status: 200 });
+    });
+
+    try {
+      await agent.handleAgentStart('user-1', '极度复杂任务', 'zh-CN');
+
+      expect(agent.getStatus()).toBe('idle');
+      // 绝对不泄露 thinking
+      const leakedThinking = frontendFrames.some(
+        (f) =>
+          (f.subType === 'stream_end' && f.content?.includes('Thinking endlessly')) ||
+          (f.subType === 'response' && f.content?.includes('Thinking endlessly'))
+      );
+      expect(leakedThinking).toBe(false);
+
+      // 提示任务拆解而非误报“任务已执行完成”
+      const responseFrame = frontendFrames.find((f) => f.subType === 'response');
+      expect(responseFrame).toBeDefined();
+      expect(responseFrame.content).toContain('任务分析连续超出单次 Token 上限');
+      expect(responseFrame.content).not.toContain('任务已执行完成');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
 });
