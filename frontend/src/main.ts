@@ -444,6 +444,10 @@ document.getElementById('sftp-toggle-btn')?.addEventListener('click', () => {
     // 如果还没有初始化，说明 SSH 还没就绪
     return;
   }
+  // 打开 SFTP 时互斥收起 Agent 面板
+  if (!tab.sftpPanel.isVisible()) {
+    tab.agentPanel?.hide();
+  }
   tab.sftpPanel.toggle();
 });
 
@@ -458,6 +462,10 @@ document.getElementById('ai-config-btn')?.addEventListener('click', () => {
 document.getElementById('agent-toggle-btn')?.addEventListener('click', () => {
   const tab = tabManager?.getActiveTab();
   if (!tab?.agentPanel) return;
+  // 打开 Agent 时互斥收起 SFTP 面板
+  if (!tab.agentPanel.isOpen) {
+    tab.sftpPanel?.hide();
+  }
   tab.agentPanel.toggle();
 });
 

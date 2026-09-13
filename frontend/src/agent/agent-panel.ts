@@ -75,6 +75,7 @@ export class AgentPanel {
   private inputEl: HTMLTextAreaElement | null = null;
   private sendBtn: HTMLElement | null = null;
   private isVisible: boolean = false;
+  private beforeShowHandler: (() => void) | null = null;
   private isAgentRunning: boolean = false;
   private isWaitingConfirmation: boolean = false;
   private wsSend: ((data: string) => void) | null = null;
@@ -127,8 +128,8 @@ export class AgentPanel {
   }> = [];
 
   constructor(
-    private parentEl: HTMLElement,
-    private isLoggedIn: boolean,
+    private parentEl: HTMLElement = document.body,
+    private isLoggedIn: boolean = false,
     private serverId?: number
   ) {}
 
@@ -145,6 +146,10 @@ export class AgentPanel {
     } else if (this.isVisible && this.serverId) {
       void this.fetchServerMemory();
     }
+  }
+
+  setBeforeShowHandler(handler: () => void): void {
+    this.beforeShowHandler = handler;
   }
 
   setLayoutChangeHandler(handler: () => void): void {
@@ -169,98 +174,101 @@ export class AgentPanel {
     this.panelEl = document.createElement('div');
     this.panelEl.id = 'agent-panel';
     this.panelEl.className =
-      'shrink-0 border-l border-[var(--border)] flex flex-col bg-[var(--bg)] overflow-hidden h-full relative';
-    this.panelEl.style.width = 'min(clamp(420px, 40vw, 600px), 100%)';
+      'fixed top-0 right-0 h-full z-[85] flex flex-col transition-transform duration-300 ease-in-out shadow-2xl';
+    this.panelEl.style.width = 'min(clamp(420px, 40vw, 600px), 100vw)';
+    this.panelEl.style.transform = 'translateX(100%)';
     this.panelEl.style.display = 'none';
 
     // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     this.panelEl.innerHTML = `
-      <div class="agent-panel-header flex items-center justify-between px-4 h-12 border-b border-[var(--border)] bg-[var(--bg-elevated)] shrink-0">
-        <div class="flex items-center gap-2 min-w-0">
-          <span class="material-symbols-outlined text-[var(--accent-secondary)]" style="font-size: 18px; font-variation-settings: 'FILL' 1;">smart_toy</span>
-          <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)] truncate" data-i18n="agent.title">AI Agent 助手</span>
-        </div>
-        <div class="flex items-center gap-1">
-          <button id="agent-memory-btn" class="agent-header-btn text-muted hover:text-primary transition-colors cursor-pointer p-1 rounded hover:bg-[var(--bg-hover)] flex items-center justify-center" data-i18n-title="agent.memoryTitle" title="工作备忘与记忆" aria-label="工作备忘与记忆">
-            <span class="material-symbols-outlined" style="font-size:18px;" aria-hidden="true">history_edu</span>
-          </button>
-          <button id="agent-close-btn" class="agent-close-button text-muted hover:text-primary transition-colors cursor-pointer p-1" data-i18n-title="agent.backToTerminal" data-i18n-aria-label="agent.backToTerminal" title="返回终端" aria-label="返回终端">
-            <span class="agent-mobile-back material-symbols-outlined" style="font-size:18px;" aria-hidden="true">arrow_back</span>
-            <span class="agent-mobile-back agent-back-label" data-i18n="agent.backToTerminal">返回终端</span>
-            <span class="agent-desktop-close material-symbols-outlined" style="font-size:18px;" aria-hidden="true">close</span>
-          </button>
-        </div>
-      </div>
-      <div id="agent-memory-drawer" class="agent-memory-drawer hidden flex flex-col bg-[var(--bg)] absolute inset-x-0 top-12 bottom-0 z-20 overflow-hidden">
-        <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] bg-[var(--bg-elevated)] shrink-0">
-          <div class="flex items-center gap-1.5 min-w-0">
-            <span class="material-symbols-outlined text-[var(--accent-secondary)]" style="font-size: 16px;">history_edu</span>
-            <span class="text-xs font-bold text-primary truncate" data-i18n="agent.memoryHeader">工作备忘与记忆</span>
-            <span id="agent-memory-count" class="text-[11px] text-muted font-code shrink-0"></span>
+      <div class="flex flex-col w-full h-full bg-[var(--bg)] border-l border-[var(--border)] text-on-surface overflow-hidden relative">
+        <div class="agent-panel-header flex items-center justify-between px-4 h-12 border-b border-[var(--border)] bg-[var(--bg-elevated)] shrink-0">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="material-symbols-outlined text-[var(--accent-secondary)]" style="font-size: 18px; font-variation-settings: 'FILL' 1;">smart_toy</span>
+            <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)] truncate" data-i18n="agent.title">AI Agent 助手</span>
           </div>
-          <div class="flex items-center gap-1 shrink-0">
-            <button id="agent-memory-batch-btn" type="button" class="hidden text-[11px] px-2 py-0.5 rounded border border-outline-variant/60 text-muted hover:text-primary hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-1 cursor-pointer">
-              <span class="material-symbols-outlined text-[13px]">checklist</span>
-              <span id="agent-memory-batch-btn-text" data-i18n="agent.batchManage">批量管理</span>
+          <div class="flex items-center gap-1">
+            <button id="agent-memory-btn" class="agent-header-btn text-muted hover:text-primary transition-colors cursor-pointer p-1 rounded hover:bg-[var(--bg-hover)] flex items-center justify-center" data-i18n-title="agent.memoryTitle" title="工作备忘与记忆" aria-label="工作备忘与记忆">
+              <span class="material-symbols-outlined" style="font-size:18px;" aria-hidden="true">history_edu</span>
             </button>
-            <button id="agent-memory-add-btn" type="button" class="hidden text-[11px] px-2 py-0.5 rounded border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors flex items-center gap-1 cursor-pointer">
-              <span class="material-symbols-outlined text-[13px]">add</span>
-              <span data-i18n="agent.addKnowledge">添加备忘</span>
-            </button>
-            <button id="agent-memory-close-btn" type="button" class="text-muted hover:text-primary p-1 cursor-pointer" data-i18n-title="agent.close" title="关闭">
-              <span class="material-symbols-outlined text-[16px]">close</span>
+            <button id="agent-close-btn" class="agent-close-button text-muted hover:text-primary transition-colors cursor-pointer p-1" data-i18n-title="agent.backToTerminal" data-i18n-aria-label="agent.backToTerminal" title="返回终端" aria-label="返回终端">
+              <span class="agent-mobile-back material-symbols-outlined" style="font-size:18px;" aria-hidden="true">arrow_back</span>
+              <span class="agent-mobile-back agent-back-label" data-i18n="agent.backToTerminal">返回终端</span>
+              <span class="agent-desktop-close material-symbols-outlined" style="font-size:18px;" aria-hidden="true">close</span>
             </button>
           </div>
         </div>
-        <div class="flex border-b border-[var(--border)] bg-[var(--bg-elevated)]/50 shrink-0 text-xs">
-          <button id="agent-tab-work-log" type="button" class="flex-1 py-1.5 text-center font-medium border-b-2 border-[var(--accent)] text-[var(--accent)] transition-colors cursor-pointer" data-i18n="agent.tabWorkLog">工作历程</button>
-          <button id="agent-tab-knowledge" type="button" class="flex-1 py-1.5 text-center font-medium border-b-2 border-transparent text-muted hover:text-primary transition-colors cursor-pointer" data-i18n="agent.tabKnowledge">知识与凭据</button>
-        </div>
-        <div id="agent-memory-add-form" class="hidden p-3 border-b border-[var(--border)] bg-[var(--bg-elevated)] shrink-0"></div>
-        <div id="agent-memory-content" class="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar text-[12px]"></div>
-        <div id="agent-memory-batch-bar" class="hidden flex items-center justify-between px-3 py-1.5 bg-[var(--bg-elevated)] border-t border-[var(--border)] text-xs shrink-0">
-          <div class="flex items-center gap-2">
-            <span id="agent-memory-selected-count" class="text-primary font-medium text-[11px]">已选择 0 项</span>
+        <div id="agent-memory-drawer" class="agent-memory-drawer hidden flex flex-col bg-[var(--bg)] absolute inset-x-0 top-12 bottom-0 z-20 overflow-hidden">
+          <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] bg-[var(--bg-elevated)] shrink-0">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <span class="material-symbols-outlined text-[var(--accent-secondary)]" style="font-size: 16px;">history_edu</span>
+              <span class="text-xs font-bold text-primary truncate" data-i18n="agent.memoryHeader">工作备忘与记忆</span>
+              <span id="agent-memory-count" class="text-[11px] text-muted font-code shrink-0"></span>
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+              <button id="agent-memory-batch-btn" type="button" class="hidden text-[11px] px-2 py-0.5 rounded border border-outline-variant/60 text-muted hover:text-primary hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-1 cursor-pointer">
+                <span class="material-symbols-outlined text-[13px]">checklist</span>
+                <span id="agent-memory-batch-btn-text" data-i18n="agent.batchManage">批量管理</span>
+              </button>
+              <button id="agent-memory-add-btn" type="button" class="hidden text-[11px] px-2 py-0.5 rounded border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors flex items-center gap-1 cursor-pointer">
+                <span class="material-symbols-outlined text-[13px]">add</span>
+                <span data-i18n="agent.addKnowledge">添加备忘</span>
+              </button>
+              <button id="agent-memory-close-btn" type="button" class="text-muted hover:text-primary p-1 cursor-pointer" data-i18n-title="agent.close" title="关闭">
+                <span class="material-symbols-outlined text-[16px]">close</span>
+              </button>
+            </div>
           </div>
-          <div class="flex items-center gap-1.5">
-            <button id="agent-memory-batch-cancel" type="button" class="px-2 py-0.5 rounded text-muted hover:text-primary hover:bg-[var(--bg-hover)] cursor-pointer text-[11px]" data-i18n="agent.batchCancel">退出管理</button>
-            <button id="agent-memory-batch-delete" type="button" class="px-2.5 py-0.5 rounded bg-error/15 text-error hover:bg-error/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium flex items-center gap-1 cursor-pointer text-[11px]" disabled>
-              <span class="material-symbols-outlined text-[13px]">delete</span>
-              <span data-i18n="agent.batchDelete">批量删除</span>
+          <div class="flex border-b border-[var(--border)] bg-[var(--bg-elevated)]/50 shrink-0 text-xs">
+            <button id="agent-tab-work-log" type="button" class="flex-1 py-1.5 text-center font-medium border-b-2 border-[var(--accent)] text-[var(--accent)] transition-colors cursor-pointer" data-i18n="agent.tabWorkLog">工作历程</button>
+            <button id="agent-tab-knowledge" type="button" class="flex-1 py-1.5 text-center font-medium border-b-2 border-transparent text-muted hover:text-primary transition-colors cursor-pointer" data-i18n="agent.tabKnowledge">知识与凭据</button>
+          </div>
+          <div id="agent-memory-add-form" class="hidden p-3 border-b border-[var(--border)] bg-[var(--bg-elevated)] shrink-0"></div>
+          <div id="agent-memory-content" class="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar text-[12px]"></div>
+          <div id="agent-memory-batch-bar" class="hidden flex items-center justify-between px-3 py-1.5 bg-[var(--bg-elevated)] border-t border-[var(--border)] text-xs shrink-0">
+            <div class="flex items-center gap-2">
+              <span id="agent-memory-selected-count" class="text-primary font-medium text-[11px]">已选择 0 项</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <button id="agent-memory-batch-cancel" type="button" class="px-2 py-0.5 rounded text-muted hover:text-primary hover:bg-[var(--bg-hover)] cursor-pointer text-[11px]" data-i18n="agent.batchCancel">退出管理</button>
+              <button id="agent-memory-batch-delete" type="button" class="px-2.5 py-0.5 rounded bg-error/15 text-error hover:bg-error/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium flex items-center gap-1 cursor-pointer text-[11px]" disabled>
+                <span class="material-symbols-outlined text-[13px]">delete</span>
+                <span data-i18n="agent.batchDelete">批量删除</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div id="agent-messages" class="flex-1 overflow-y-auto px-4 py-3 space-y-3 custom-scrollbar text-[13px]"></div>
+        <div class="agent-panel-composer px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-elevated)] shrink-0">
+          <div id="agent-quick-chips" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-2 select-none">
+            <button type="button" class="agent-quick-chip shrink-0 text-[11px] px-2 py-0.5 rounded border border-outline-variant/60 hover:border-[var(--accent)] text-muted hover:text-primary transition-colors cursor-pointer flex items-center gap-1 bg-[var(--bg)]" data-prompt-key="promptError">
+              <span class="material-symbols-outlined text-[13px] text-error">error_outline</span>
+              <span data-i18n="agent.chipError">分析报错</span>
+            </button>
+            <button type="button" class="agent-quick-chip shrink-0 text-[11px] px-2 py-0.5 rounded border border-outline-variant/60 hover:border-[var(--accent)] text-muted hover:text-primary transition-colors cursor-pointer flex items-center gap-1 bg-[var(--bg)]" data-prompt-key="promptSystem">
+              <span class="material-symbols-outlined text-[13px] text-primary">monitoring</span>
+              <span data-i18n="agent.chipSystem">系统负载</span>
+            </button>
+            <button type="button" class="agent-quick-chip shrink-0 text-[11px] px-2 py-0.5 rounded border border-outline-variant/60 hover:border-[var(--accent)] text-muted hover:text-primary transition-colors cursor-pointer flex items-center gap-1 bg-[var(--bg)]" data-prompt-key="promptNetwork">
+              <span class="material-symbols-outlined text-[13px] text-secondary">lan</span>
+              <span data-i18n="agent.chipNetwork">端口网络</span>
+            </button>
+            <button type="button" class="agent-quick-chip shrink-0 text-[11px] px-2 py-0.5 rounded border border-outline-variant/60 hover:border-[var(--accent)] text-muted hover:text-primary transition-colors cursor-pointer flex items-center gap-1 bg-[var(--bg)]" data-prompt-key="promptDocker">
+              <span class="material-symbols-outlined text-[13px]">deployed_code</span>
+              <span data-i18n="agent.chipDocker">Docker 状态</span>
             </button>
           </div>
-        </div>
-      </div>
-      <div id="agent-messages" class="flex-1 overflow-y-auto px-4 py-3 space-y-3 custom-scrollbar text-[13px]"></div>
-      <div class="agent-panel-composer px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-elevated)]">
-        <div id="agent-quick-chips" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-2 select-none">
-          <button type="button" class="agent-quick-chip shrink-0 text-[11px] px-2 py-0.5 rounded border border-outline-variant/60 hover:border-[var(--accent)] text-muted hover:text-primary transition-colors cursor-pointer flex items-center gap-1 bg-[var(--bg)]" data-prompt-key="promptError">
-            <span class="material-symbols-outlined text-[13px] text-error">error_outline</span>
-            <span data-i18n="agent.chipError">分析报错</span>
-          </button>
-          <button type="button" class="agent-quick-chip shrink-0 text-[11px] px-2 py-0.5 rounded border border-outline-variant/60 hover:border-[var(--accent)] text-muted hover:text-primary transition-colors cursor-pointer flex items-center gap-1 bg-[var(--bg)]" data-prompt-key="promptSystem">
-            <span class="material-symbols-outlined text-[13px] text-primary">monitoring</span>
-            <span data-i18n="agent.chipSystem">系统负载</span>
-          </button>
-          <button type="button" class="agent-quick-chip shrink-0 text-[11px] px-2 py-0.5 rounded border border-outline-variant/60 hover:border-[var(--accent)] text-muted hover:text-primary transition-colors cursor-pointer flex items-center gap-1 bg-[var(--bg)]" data-prompt-key="promptNetwork">
-            <span class="material-symbols-outlined text-[13px] text-secondary">lan</span>
-            <span data-i18n="agent.chipNetwork">端口网络</span>
-          </button>
-          <button type="button" class="agent-quick-chip shrink-0 text-[11px] px-2 py-0.5 rounded border border-outline-variant/60 hover:border-[var(--accent)] text-muted hover:text-primary transition-colors cursor-pointer flex items-center gap-1 bg-[var(--bg)]" data-prompt-key="promptDocker">
-            <span class="material-symbols-outlined text-[13px]">deployed_code</span>
-            <span data-i18n="agent.chipDocker">Docker 状态</span>
-          </button>
-        </div>
-        <div id="agent-context" class="agent-context-container hidden"></div>
-        <div class="flex gap-2.5 items-end">
-          <textarea id="agent-input" data-i18n-placeholder="agent.placeholder" placeholder="描述你希望 Agent 完成的任务…"
-            rows="1"
-            class="terminal-input flex-1 text-[13px] resize-none overflow-y-auto"
-            style="max-height: 140px; line-height: 1.5; padding: 8px 12px; border-radius: 8px;"
-            autocomplete="off"></textarea>
-          <button id="agent-send-btn" class="agent-send-btn shrink-0" data-i18n-title="agent.send" title="发送">
-            <span class="material-symbols-outlined" style="font-size:20px;">arrow_upward</span>
-          </button>
+          <div id="agent-context" class="agent-context-container hidden"></div>
+          <div class="flex gap-2.5 items-end">
+            <textarea id="agent-input" data-i18n-placeholder="agent.placeholder" placeholder="描述你希望 Agent 完成的任务…"
+              rows="1"
+              class="terminal-input flex-1 text-[13px] resize-none overflow-y-auto"
+              style="max-height: 140px; line-height: 1.5; padding: 8px 12px; border-radius: 8px;"
+              autocomplete="off"></textarea>
+            <button id="agent-send-btn" class="agent-send-btn shrink-0" data-i18n-title="agent.send" title="发送">
+              <span class="material-symbols-outlined" style="font-size:20px;">arrow_upward</span>
+            </button>
+          </div>
         </div>
       </div>
     `;
@@ -360,21 +368,39 @@ export class AgentPanel {
 
   show(): void {
     if (!this.isLoggedIn) return;
+    this.beforeShowHandler?.();
+    this.render();
+    if (!this.panelEl) return;
     this.isVisible = true;
-    if (this.panelEl) this.panelEl.style.display = 'flex';
+    this.panelEl.style.display = 'flex';
+    // 强制触发 reflow 确保 CSS 平滑滑入过渡生效
+    void this.panelEl.offsetWidth;
+    this.panelEl.style.transform = 'translateX(0)';
     document.body.classList.add('agent-panel-open');
     this.inputEl?.focus();
     if (this.serverId) void this.fetchServerMemory();
-    // 触发终端重新适配（面板展开后终端区域缩小，需要 refit）
     requestAnimationFrame(() => this.onLayoutChange?.());
   }
 
   hide(): void {
     this.rejectPendingConfirmation(false);
     this.isVisible = false;
-    if (this.panelEl) this.panelEl.style.display = 'none';
+    if (this.panelEl) {
+      this.panelEl.style.transform = 'translateX(100%)';
+      const handleTransitionEnd = () => {
+        if (!this.isVisible && this.panelEl) {
+          this.panelEl.style.display = 'none';
+        }
+        this.panelEl?.removeEventListener('transitionend', handleTransitionEnd);
+      };
+      this.panelEl.addEventListener('transitionend', handleTransitionEnd, { once: true });
+      setTimeout(() => {
+        if (!this.isVisible && this.panelEl) {
+          this.panelEl.style.display = 'none';
+        }
+      }, 320);
+    }
     document.body.classList.remove('agent-panel-open');
-    // 触发终端重新适配（面板收起后终端区域恢复，需要 refit）
     requestAnimationFrame(() => this.onLayoutChange?.());
   }
 

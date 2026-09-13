@@ -1854,9 +1854,9 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 /* ========== Agent Panel ========== */
 
 #agent-panel {
-  min-width: 280px;
-  width: min(clamp(420px, 40vw, 600px), 100%);
-  max-width: 100%;
+  min-width: 320px;
+  width: min(clamp(420px, 40vw, 600px), 100vw);
+  max-width: 100vw;
   height: 100%;
 }
 

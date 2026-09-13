@@ -149,7 +149,7 @@ export class TabManager {
 
         // 初始化 Agent 面板（仅登录用户）
         if (this._isLoggedIn && !tab.agentPanel) {
-          tab.agentPanel = new AgentPanel(tab.containerEl, true, tab.hostInfo?.serverId);
+          tab.agentPanel = new AgentPanel(document.body, true, tab.hostInfo?.serverId);
           tab.agentPanel.render();
           tab.agentPanel.setWebSocketSend((data: string) =>
             tab.terminal.sendWebSocketMessage(data)
@@ -167,6 +167,10 @@ export class TabManager {
           );
           tab.terminal.setAgentFrameHandler((msg: any) => {
             tab.agentPanel?.handleAgentFrame(msg);
+          });
+          // 互斥联动：Agent 打开前自动收起 SFTP 面板
+          tab.agentPanel.setBeforeShowHandler(() => {
+            tab.sftpPanel?.hide();
           });
           // AgentPanel 展开/收起时触发终端重新适配尺寸
           tab.agentPanel.setLayoutChangeHandler(() => tab.terminal.fit());
@@ -230,11 +234,12 @@ export class TabManager {
     if (!tab) return;
     if (this.activeTabId === tabId) return;
 
-    // 隐藏当前活跃标签的 SFTP 面板
+    // 隐藏当前活跃标签的 SFTP 面板与 Agent 面板
     if (this.activeTabId && this.activeTabId !== tabId) {
       const prevTab = this.tabs.get(this.activeTabId);
       if (prevTab) {
         prevTab.agentPanel?.rejectPendingConfirmation(false);
+        prevTab.agentPanel?.hide();
         prevTab.containerEl.style.display = 'none';
         prevTab.sftpPanel?.hide();
       }
@@ -378,6 +383,7 @@ export class TabManager {
     const selection = tab?.selectedText || '';
     if (!tab?.agentPanel || !selection.trim()) return false;
 
+    tab.sftpPanel?.hide();
     const attached = tab.agentPanel.attachTerminalSelection(
       selection,
       this.getTerminalTargetLabel(tab)
