@@ -110,7 +110,7 @@ frontend/
 │   ├── snippet-manager.ts # 命令片段库面板（云端/本地双后端、参数占位符录入、搜索/复制、填入/填入并执行、编辑/删除）
 │   ├── snippet-variables.ts # 命令片段 {{var}} 参数占位符提取与安全替换纯函数
 │   ├── snippet-store.ts   # 片段存储层（RemoteSnippetStore + LocalSnippetStore + 错误映射）
-│   ├── ai-config.ts       # AI model configuration modal
+│   ├── ai-config.ts       # AI model configuration modal (Combobox 下拉、免密安全拉取与主题自适应)
 │   ├── i18n/
 │   │   ├── index.ts        # 语言解析、词条查询（t）与 locale 变更通知
 │   │   └── locales/        # zh-CN.ts / en-US.ts 词条字典
@@ -355,6 +355,8 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 33. **标签页管理与右键上下文菜单** - 标签页支持双击内联重命名与右键上下文菜单操作（重命名、克隆会话、关闭其他标签页、关闭当前标签页）。重命名提交空字符串或空白字符时，必须重新调用 `renderTabBar()` 恢复原标签文本展示并销毁内联 `<input>`，避免输入框卡死在标签栏；右键菜单的全局 document click 监听器必须以 `capture: true` 模式挂载并在 `hideTabContextMenu()` 中统一步骤式注销，防止菜单项内部的 `stopPropagation` 阻断清理导致监听器在多轮右键操作后泄漏累积，避免失效闭包误关新菜单。已保存服务器克隆会话必须通过 `/api/servers/:id/connect` 申请独立连接令牌开新 Tab，禁止跨 Tab 复用未授权连接。
 
 34. **命令片段占位符与 SFTP 面包屑/新建文件** - 命令片段支持 `{{var}}` 动态参数占位符（由 `snippet-variables.ts` 纯函数解析），仅在检测到有效占位符时拦截执行流并弹出参数录入对话框，输入完成后安全替换并填入终端；无占位符片段保持直填/执行的原生路径。SFTP 面包屑（`parsePathBreadcrumbs`）点击空白处平滑切换为绝对路径文本输入；表头多维排序（`sortSFTPEntries`）采用稳定排序算法，目录严格置顶，大小与时间初次点击默认降序。新建空白文件必须经过既有上传队列原子写入 0 字节内容并执行重名冲突检测，成功后自动唤起 CodeMirror 在线编辑。
+
+35. **AI 模型配置与代理安全（免密拉取与防凭据外带）** - AI 配置弹窗（`frontend/src/ai-config.ts`）使用自定义 Combobox 替代原生 HTML `<datalist>`，彻底根除浏览器默认粗黑倒三角（`::-webkit-calendar-picker-indicator`）及原值前缀过滤导致下拉只显示 1 项的缺陷；支持全量下拉、即时模糊过滤、一键清空重选，文字使用 `text-on-surface`，悬停使用 `hover:bg-surface-variant hover:text-primary`，浮层增加 `!p-0`，完美自适应项目 7 套内置主题与外层圆角规范。后端 `POST /api/ai/models` 在未传入 `api_key` 时，仅当请求的 `base_url` 与数据库中已确认绑定的 `base_url` 一致时才允许自动注入已存密钥；若接口地址变更且未提供对应密钥，后端强制拒绝并返回 400（严禁将已存凭证发送至未绑定的第三方地址，杜绝凭据外带 Credential Exfiltration）；入口执行同源 Origin 校验防止 CSRF，异常返回经 `sanitizeAIErrorMessage` 进行敏感 Token/Bearer 脱敏；前端保存成功后立即清空密码输入框，避免明文长期驻留。
 
 ## Deployment Notes
 
