@@ -96,7 +96,7 @@ export class AIConfigPanel {
                 </div>
                 <div
                   id="ai-model-menu"
-                  class="hidden absolute left-0 right-0 top-full mt-1.5 z-50 cyber-box bg-[var(--bg-elevated)] border border-[var(--border-strong)] rounded shadow-2xl max-h-52 overflow-y-auto custom-scrollbar py-1 text-xs select-none"
+                  class="hidden absolute left-0 right-0 top-full mt-1.5 z-50 cyber-box !p-0 bg-[var(--bg-elevated)] border border-outline-variant shadow-2xl max-h-52 overflow-y-auto custom-scrollbar text-xs select-none"
                 >
                   <div id="ai-model-options" class="flex flex-col"></div>
                 </div>
@@ -220,7 +220,7 @@ export class AIConfigPanel {
     if (this.hasConfiguredKey && this.savedBaseUrl && !hasApiKeyInput) {
       if (!this.isSameBaseUrl(currentBaseUrl, this.savedBaseUrl)) {
         hintEl.textContent = t('aiConfig.urlChangedKeyRequired');
-        hintEl.className = 'text-[10px] text-[var(--warning)] mt-1';
+        hintEl.className = 'text-[10px] text-[var(--accent-secondary)] mt-1';
         return;
       }
     }
@@ -336,8 +336,8 @@ export class AIConfigPanel {
     const itemEl = document.createElement('div');
     itemEl.className = `flex items-center justify-between px-3 py-2 cursor-pointer transition-colors text-[12px] font-mono select-none ${
       isSelected
-        ? 'bg-[var(--accent-bg)] text-[var(--accent)] font-semibold'
-        : 'text-[var(--text)] hover:bg-[var(--bg-surface)] hover:text-[var(--accent)]'
+        ? 'bg-[var(--accent-bg)] text-primary font-semibold'
+        : 'text-on-surface hover:bg-surface-variant hover:text-primary'
     }`;
 
     const nameSpan = document.createElement('span');
@@ -349,7 +349,7 @@ export class AIConfigPanel {
     if (isSelected) {
       const checkIcon = document.createElement('span');
       checkIcon.className =
-        'material-symbols-outlined text-[16px] text-[var(--accent)] ml-2 shrink-0';
+        'material-symbols-outlined text-[16px] text-primary ml-2 shrink-0';
       checkIcon.textContent = 'check';
       itemEl.appendChild(checkIcon);
     }

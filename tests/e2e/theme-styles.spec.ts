@@ -273,3 +273,67 @@ test('Pages 编辑器拒绝超大文件和危险颜色，并在修正后恢复�
   });
   await expect(page.locator('.editor-toast')).toContainText('64 KiB');
 });
+
+test('AI 模型选择下拉面板在浅色与暗色内置主题下无缝自适应', async ({ page }) => {
+  await page.route('**/api/ai/config', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        configured: true,
+        base_url: 'https://api.example.com/v1',
+        model: 'gpt-4o',
+        api_key_last4: '8888',
+      }),
+    })
+  );
+  await page.route('**/api/ai/models', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        models: [{ id: 'gpt-4o' }, { id: 'claude-3-5-sonnet' }],
+        fallback: false,
+      }),
+    })
+  );
+
+  await page.goto('/');
+
+  const userThemeSelector = page.locator('#user-theme-selector');
+
+  // 1. 测试浅色主题 Apple
+  await userThemeSelector.selectOption('apple');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'apple');
+
+  await page.locator('#ai-config-btn').click();
+  const modal = page.locator('#ai-config-modal');
+  await expect(modal).toBeVisible();
+
+  // 获取模型列表并展开下拉
+  await page.locator('#ai-fetch-models-btn').click();
+  const menu = page.locator('#ai-model-menu');
+  await expect(menu).toBeVisible();
+
+  // 验证选项使用主题自适应的类，第一项为选中项（text-primary），第二项为未选中项（text-on-surface）
+  const selectedOption = menu.locator('#ai-model-options > div').nth(0);
+  const unselectedOption = menu.locator('#ai-model-options > div').nth(1);
+  await expect(selectedOption).toBeVisible();
+  await expect(selectedOption).toHaveClass(/text-primary/);
+  await expect(unselectedOption).toBeVisible();
+  await expect(unselectedOption).toHaveClass(/text-on-surface/);
+
+  // 2. 切换暗色主题 CRT
+  await page.locator('#ai-modal-close-btn').click();
+  await expect(modal).toBeHidden();
+
+  await userThemeSelector.selectOption('crt');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'crt');
+
+  await page.locator('#ai-config-btn').click();
+  await expect(modal).toBeVisible();
+  await page.locator('#ai-model-dropdown-btn').click();
+  await expect(menu).toBeVisible();
+  await expect(selectedOption).toBeVisible();
+  await expect(unselectedOption).toBeVisible();
+});
