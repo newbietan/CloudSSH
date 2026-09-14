@@ -478,6 +478,12 @@ html:not([data-fx-flicker='on']) .flicker {
   color: var(--text-dim);
 }
 
+/* 隐藏浏览器在 input 上的原生指示器（如 WebKit datalist 粗黑下三角） */
+#ai-model::-webkit-calendar-picker-indicator {
+  display: none;
+  opacity: 0;
+}
+
 /* Windows Chromium 的原生下拉面板不会可靠继承 select 背景，需要显式适配主题。 */
 select option,
 select optgroup {

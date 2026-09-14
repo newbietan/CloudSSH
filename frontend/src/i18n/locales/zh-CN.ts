@@ -517,6 +517,10 @@ export const zhCN = {
   'aiConfig.modelsLoaded': '已获取 {count} 个模型。',
   'aiConfig.manualModel': '服务商不支持自动获取模型{reason}，请手动输入模型名称。',
   'aiConfig.networkError': '网络错误',
+  'aiConfig.urlChangedKeyRequired': '接口地址已更改，请填写对应的 API 密钥。',
+  'aiConfig.noMatchingModels': '未找到匹配的模型',
+  'aiConfig.noModelsLoaded': '暂无模型列表，点击右侧按钮获取',
+  'aiConfig.clearModel': '清空模型',
 
   'os.ubuntu': 'Ubuntu',
   'os.debian': 'Debian',

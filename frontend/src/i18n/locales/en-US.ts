@@ -561,6 +561,10 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'aiConfig.manualModel':
     'This provider does not support model discovery{reason}. Enter a model name manually.',
   'aiConfig.networkError': 'Network error',
+  'aiConfig.urlChangedKeyRequired': 'Base URL has changed. Please enter the corresponding API key.',
+  'aiConfig.noMatchingModels': 'No matching models found',
+  'aiConfig.noModelsLoaded': 'No models loaded. Click "Load models" to fetch.',
+  'aiConfig.clearModel': 'Clear model',
   'os.ubuntu': 'Ubuntu',
   'os.debian': 'Debian',
   'os.centos': 'CentOS',

@@ -824,10 +824,42 @@ async function handleSnippetsRoute(request: Request, url: URL, env: Env): Promis
 
 // ==================== AI config routes ====================
 
+function isSameBaseUrl(urlA: string, urlB: string): boolean {
+  const normalize = (u: string) => {
+    let s = u.trim().replace(/\/+$/, '');
+    if (s.endsWith('/chat/completions')) {
+      s = s.slice(0, -'/chat/completions'.length).replace(/\/+$/, '');
+    }
+    if (s.endsWith('/models')) {
+      s = s.slice(0, -'/models'.length).replace(/\/+$/, '');
+    }
+    return s.toLowerCase();
+  };
+  return normalize(urlA) === normalize(urlB);
+}
+
+function sanitizeAIErrorMessage(msg: string, secret?: string): string {
+  let sanitized = msg;
+  if (secret && secret.length >= 4) {
+    sanitized = sanitized.replaceAll(secret, '***');
+  }
+  // 脱敏潜在的 Bearer token 格式
+  sanitized = sanitized.replace(/Bearer\s+[a-zA-Z0-9_\-.]{8,}/gi, 'Bearer ***');
+  return sanitized;
+}
+
 async function handleAIRoute(request: Request, url: URL, env: Env): Promise<Response> {
   const user = await getAuthenticatedUser(request, env);
   if (!user) {
     return Response.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
+  // 同源安全校验（CSRF 防护）
+  if (request.method === 'POST' || request.method === 'PUT') {
+    const origin = request.headers.get('Origin');
+    if (origin && origin !== url.origin) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    }
   }
 
   const stub = getUserDBStub(env, user.github_id);
@@ -866,85 +898,129 @@ async function handleAIRoute(request: Request, url: URL, env: Env): Promise<Resp
 
   // POST /api/ai/models — proxy model list from user's LLM provider
   if (url.pathname === '/api/ai/models' && request.method === 'POST') {
-    const { base_url, api_key } = await request.json<{ base_url: string; api_key: string }>();
-
-    if (!base_url || !api_key) {
-      return Response.json({ error: 'Missing base_url or api_key' }, { status: 400 });
-    }
-
-    // SSRF validation
-    const { validateBaseUrlWithDNS } = await import('./agent/ssrf');
-    const check = await validateBaseUrlWithDNS(base_url);
-    if (!check.valid) {
-      return Response.json({ error: check.reason }, { status: 400 });
-    }
-
-    try {
-      let cleanBaseUrl = base_url.replace(/\/$/, '');
-      if (cleanBaseUrl.endsWith('/chat/completions')) {
-        cleanBaseUrl = cleanBaseUrl.slice(0, -'/chat/completions'.length);
-      }
-      const modelsUrl = `${cleanBaseUrl}/models`;
-
-      const res = await fetch(modelsUrl, {
-        redirect: 'manual', // Cloudflare Workers only supports 'follow' or 'manual'
-        headers: {
-          Authorization: `Bearer ${api_key}`,
-        },
-        signal: AbortSignal.timeout(10000),
-      });
-
-      if (res.status >= 300 && res.status < 400) {
-        return Response.json(
-          { error: 'SSRF Protection: Redirects are not allowed' },
-          { status: 403 }
-        );
-      }
-
-      if (!res.ok) {
-        if (res.status === 404) {
-          return Response.json({
-            models: [],
-            fallback: true,
-            reason: 'Provider does not support /models endpoint',
-          });
-        }
-        if (res.status === 401 || res.status === 403) {
-          return Response.json(
-            { error: 'API Key invalid or insufficient permissions' },
-            { status: res.status }
-          );
-        }
-        return Response.json({ error: `Provider returned ${res.status}` }, { status: 502 });
-      }
-
-      const data = (await res.json()) as any;
-
-      let rawModels: any[] = [];
-      if (Array.isArray(data)) {
-        rawModels = data;
-      } else if (data && Array.isArray(data.data)) {
-        rawModels = data.data;
-      } else if (data && Array.isArray(data.models)) {
-        rawModels = data.models;
-      }
-
-      const models: Array<{ id: string }> = rawModels
-        .filter((m: any) => {
-          const id = m.id || '';
-          return !/embedding|whisper|tts|dall-e|moderation|rerank/i.test(id);
-        })
-        .map((m: any) => ({ id: m.id }))
-        .sort((a: any, b: any) => a.id.localeCompare(b.id));
-
-      return Response.json({ models, fallback: false });
-    } catch (e) {
-      const errMsg = e instanceof Error ? e.message : String(e);
-      return Response.json({ models: [], fallback: true, reason: errMsg });
-    }
+    return handleAIModelsProxy(request, user.id, stub);
   }
 
   return Response.json({ error: 'Method not allowed' }, { status: 405 });
+}
+
+async function handleAIModelsProxy(
+  request: Request,
+  userId: number,
+  stub: DurableObjectStub
+): Promise<Response> {
+  const { base_url, api_key } = await request.json<{ base_url?: string; api_key?: string }>();
+
+  let effectiveBaseUrl = base_url?.trim() || '';
+  let effectiveApiKey = api_key?.trim() || '';
+
+  // 若未显式传入 api_key，尝试从已保存配置中安全读取
+  if (!effectiveApiKey) {
+    const savedRes = await stub.fetch(
+      new Request(`http://internal/internal/ai-config/decrypt?user_id=${userId}`)
+    );
+    if (savedRes.ok) {
+      const saved = (await savedRes.json()) as { base_url?: string; api_key?: string };
+      const savedBaseUrl = saved.base_url?.trim() || '';
+      const savedApiKey = saved.api_key?.trim() || '';
+
+      // 若请求未传 base_url，则采用已保存的 base_url
+      if (!effectiveBaseUrl && savedBaseUrl) {
+        effectiveBaseUrl = savedBaseUrl;
+      }
+
+      // 核心安全防护（防凭据外带 Credential Exfiltration）：
+      // 使用已存凭证时，请求的 base_url 必须与已保存并绑定的 base_url 一致。
+      // 严禁将用户针对某一服务商的密钥发送至未经授权的第三方新地址！
+      if (effectiveBaseUrl && savedBaseUrl && isSameBaseUrl(effectiveBaseUrl, savedBaseUrl)) {
+        effectiveApiKey = savedApiKey;
+      } else if (effectiveBaseUrl && savedBaseUrl && !isSameBaseUrl(effectiveBaseUrl, savedBaseUrl)) {
+        return Response.json(
+          { error: '接口地址与已保存配置不一致，请提供对应的 API 密钥' },
+          { status: 400 }
+        );
+      }
+    }
+  }
+
+  if (!effectiveBaseUrl || !effectiveApiKey) {
+    return Response.json({ error: 'Missing base_url or api_key' }, { status: 400 });
+  }
+
+  // SSRF validation
+  const { validateBaseUrlWithDNS } = await import('./agent/ssrf');
+  const check = await validateBaseUrlWithDNS(effectiveBaseUrl);
+  if (!check.valid) {
+    return Response.json({ error: check.reason }, { status: 400 });
+  }
+
+  try {
+    let cleanBaseUrl = effectiveBaseUrl.replace(/\/$/, '');
+    if (cleanBaseUrl.endsWith('/chat/completions')) {
+      cleanBaseUrl = cleanBaseUrl.slice(0, -'/chat/completions'.length);
+    }
+    const modelsUrl = `${cleanBaseUrl}/models`;
+
+    const res = await fetch(modelsUrl, {
+      redirect: 'manual', // Cloudflare Workers only supports 'follow' or 'manual'
+      headers: {
+        Authorization: `Bearer ${effectiveApiKey}`,
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (res.status >= 300 && res.status < 400) {
+      return Response.json(
+        { error: 'SSRF Protection: Redirects are not allowed' },
+        { status: 403 }
+      );
+    }
+
+    if (!res.ok) {
+      if (res.status === 404) {
+        return Response.json({
+          models: [],
+          fallback: true,
+          reason: 'Provider does not support /models endpoint',
+        });
+      }
+      if (res.status === 401 || res.status === 403) {
+        return Response.json(
+          { error: 'API Key invalid or insufficient permissions' },
+          { status: res.status }
+        );
+      }
+      return Response.json({ error: `Provider returned ${res.status}` }, { status: 502 });
+    }
+
+    const data = (await res.json()) as any;
+
+    let rawModels: any[] = [];
+    if (Array.isArray(data)) {
+      rawModels = data;
+    } else if (data && Array.isArray(data.data)) {
+      rawModels = data.data;
+    } else if (data && Array.isArray(data.models)) {
+      rawModels = data.models;
+    }
+
+    const models: Array<{ id: string }> = rawModels
+      .filter((m: any) => {
+        const id = m.id || '';
+        return !/embedding|whisper|tts|dall-e|moderation|rerank/i.test(id);
+      })
+      .map((m: any) => ({ id: m.id }))
+      .sort((a: any, b: any) => a.id.localeCompare(b.id));
+
+    return Response.json({ models, fallback: false });
+  } catch (e) {
+    const errMsg = e instanceof Error ? e.message : String(e);
+    return Response.json({
+      models: [],
+      fallback: true,
+      reason: sanitizeAIErrorMessage(errMsg, effectiveApiKey),
+    });
+  }
 }
 
 // ==================== SSH connection handlers ====================

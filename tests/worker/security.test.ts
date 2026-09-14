@@ -678,6 +678,192 @@ describe('安全 — SSRF 接缝（AI base_url）', () => {
       expect.objectContaining({ redirect: 'manual' })
     );
   });
+
+  it('POST /api/ai/models 未传 api_key 时回退到已保存的 API 密钥', async () => {
+    const worker = await loadWorker();
+    const env = makeEnv({
+      userDbStub: makeDOStub((req) => {
+        if (req.url.includes('/internal/session/verify')) {
+          return new Response(
+            JSON.stringify({ id: 1, github_id: 42, username: 'alice', avatar_url: '' }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
+        }
+        if (req.url.includes('/internal/ai-config/decrypt')) {
+          return new Response(
+            JSON.stringify({
+              base_url: 'https://api.example.com/v1',
+              model: 'gpt-4o',
+              api_key: 'saved-secret-key',
+            }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
+        }
+        return new Response('{}', { status: 500 });
+      }),
+    });
+
+    // Mock DoH and /models endpoint
+    fetchMock.mockImplementation(async (input) => {
+      const urlStr =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : (input as Request).url;
+      if (urlStr.includes('cloudflare-dns.com')) {
+        return new Response(JSON.stringify({ Answer: [{ type: 1, data: '93.184.216.34' }] }), {
+          headers: { 'Content-Type': 'application/dns-json' },
+        });
+      }
+      if (urlStr.includes('/models')) {
+        return new Response(
+          JSON.stringify({
+            data: [{ id: 'model-a' }, { id: 'model-b' }],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+      return new Response('{}', { status: 200 });
+    });
+
+    const req = makeRequest('/api/ai/models', {
+      method: 'POST',
+      cookies: { session: '42:legit_session' },
+      body: { base_url: 'https://api.example.com/v1' },
+    });
+    const res = await worker.fetch(req, env);
+
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as { models: Array<{ id: string }> };
+    expect(data.models).toEqual([{ id: 'model-a' }, { id: 'model-b' }]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.example.com/v1/models',
+      expect.objectContaining({
+        headers: {
+          Authorization: 'Bearer saved-secret-key',
+        },
+      })
+    );
+  });
+
+  it('POST /api/ai/models 未传 api_key 且无已保存密钥 → 400', async () => {
+    const worker = await loadWorker();
+    const env = makeEnv({
+      userDbStub: makeDOStub((req) => {
+        if (req.url.includes('/internal/session/verify')) {
+          return new Response(
+            JSON.stringify({ id: 1, github_id: 42, username: 'alice', avatar_url: '' }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
+        }
+        if (req.url.includes('/internal/ai-config/decrypt')) {
+          return new Response(JSON.stringify({ error: 'No AI config found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response('{}', { status: 500 });
+      }),
+    });
+
+    const req = makeRequest('/api/ai/models', {
+      method: 'POST',
+      cookies: { session: '42:legit_session' },
+      body: { base_url: 'https://api.example.com/v1' },
+    });
+    const res = await worker.fetch(req, env);
+
+    expect(res.status).toBe(400);
+    const data = (await res.json()) as { error: string };
+    expect(data.error).toBe('Missing base_url or api_key');
+  });
+
+  it('POST /api/ai/models 请求与已存 base_url 不一致且未传 key → 拒绝使用旧密钥并返回 400（防凭据外带）', async () => {
+    const worker = await loadWorker();
+    const env = makeEnv({
+      userDbStub: makeDOStub((req) => {
+        if (req.url.includes('/internal/session/verify')) {
+          return new Response(
+            JSON.stringify({ id: 1, github_id: 42, username: 'alice', avatar_url: '' }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
+        }
+        if (req.url.includes('/internal/ai-config/decrypt')) {
+          return new Response(
+            JSON.stringify({
+              base_url: 'https://api.openai.com/v1',
+              model: 'gpt-4o',
+              api_key: 'super-secret-openai-key',
+            }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
+        }
+        return new Response('{}', { status: 500 });
+      }),
+    });
+
+    // 攻击者或更换服务商的请求试图将请求定向到另一个地址，但不带 api_key
+    const req = makeRequest('/api/ai/models', {
+      method: 'POST',
+      cookies: { session: '42:legit_session' },
+      body: { base_url: 'https://attacker-logger.com/v1' },
+    });
+    const res = await worker.fetch(req, env);
+
+    expect(res.status).toBe(400);
+    const data = (await res.json()) as { error: string };
+    expect(data.error).toContain('接口地址与已保存配置不一致');
+    // 绝不能向该恶意或不同地址发出带有用户旧密钥的请求
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('attacker-logger.com'),
+      expect.anything()
+    );
+  });
+
+  it('POST /api/ai/models 跨站 Origin 访问 → 403 Forbidden（CSRF 防护）', async () => {
+    const worker = await loadWorker();
+    const env = makeEnv({
+      userDbStub: makeDOStub((req) => {
+        if (req.url.includes('/internal/session/verify')) {
+          return new Response(
+            JSON.stringify({ id: 1, github_id: 42, username: 'alice', avatar_url: '' }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
+        }
+        return new Response('{}', { status: 500 });
+      }),
+    });
+
+    const req = makeRequest('/api/ai/models', {
+      method: 'POST',
+      headers: {
+        Origin: 'https://malicious-site.example',
+      },
+      cookies: { session: '42:legit_session' },
+      body: { base_url: 'https://api.example.com/v1', api_key: 'test-key' },
+    });
+    const res = await worker.fetch(req, env);
+
+    expect(res.status).toBe(403);
+    const data = (await res.json()) as { error: string };
+    expect(data.error).toBe('Forbidden');
+  });
 });
 
 // =====================================================================

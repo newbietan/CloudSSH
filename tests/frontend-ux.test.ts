@@ -290,3 +290,37 @@ describe('终端选区询问 Agent', () => {
     expect(agentSource).toContain('if (selection) this.clearTerminalSelectionContext()');
   });
 });
+
+describe('AI 模型选择下拉框与交互体验', () => {
+  const aiConfigSource = readFileSync(
+    new URL('../frontend/src/ai-config.ts', import.meta.url),
+    'utf-8'
+  );
+
+  it('使用自定义 Combobox 替代原生 datalist，杜绝原生丑陋黑三角与选项被旧值过滤的问题', () => {
+    expect(aiConfigSource).not.toContain('<datalist');
+    expect(aiConfigSource).not.toContain('list="ai-model-list"');
+    expect(aiConfigSource).toContain('id="ai-model-combobox"');
+    expect(aiConfigSource).toContain('id="ai-model-menu"');
+    expect(aiConfigSource).toContain('id="ai-model-dropdown-btn"');
+    expect(aiConfigSource).toContain('id="ai-model-clear-btn"');
+    expect(aiConfigSource).toContain('expand_more');
+  });
+
+  it('已配置密钥时无需重新输入 API Key 即可获取模型列表', () => {
+    expect(aiConfigSource).toContain('this.hasConfiguredKey');
+    expect(aiConfigSource).toContain('!apiKey && !this.hasConfiguredKey');
+  });
+
+  it('获取模型列表后能够展示全部拉取到的模型并支持展开与清空', () => {
+    expect(aiConfigSource).toContain('this.openDropdown(true)');
+    expect(aiConfigSource).toContain('updateClearButtonVisibility');
+    expect(aiConfigSource).toContain('renderDropdownOptions');
+  });
+
+  it('防密钥外带：Base URL 变动时必须提供对应密钥，且保存后清空输入框明文', () => {
+    expect(aiConfigSource).toContain('this.savedBaseUrl');
+    expect(aiConfigSource).toContain('this.isSameBaseUrl(baseUrl, this.savedBaseUrl)');
+    expect(aiConfigSource).toContain("if (apiKeyEl) apiKeyEl.value = ''");
+  });
+});
