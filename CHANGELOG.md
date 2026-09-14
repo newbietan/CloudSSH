@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.6] - 2026-09-14
+
+### Added
+
+- **AI 模型自定义 Combobox 下拉组件**：
+  - 彻底移除原生 HTML `<datalist>`，消灭浏览器自带的生硬粗黑倒三角（`::-webkit-calendar-picker-indicator`）及原模型前缀匹配导致下拉仅显示 1 项的问题。
+  - 替换为 Google Material Symbols 的 `expand_more` 矢量图标并附带平滑旋转动效；展开时完整展示所有拉取到的模型列表，并自动将当前选中的模型高亮并滚入可视区域。
+  - 支持在输入框打字进行即时模糊过滤搜索，右侧新增一键清空按钮（`close` 图标），支持一键清空并重置展开完整模型列表；拉取模型成功后自适应展开并聚焦。
+- **已存密钥免重复输入安全拉取模型**：
+  - 用户第二次修改模型时，若此前已配置有效密钥，无需翻找并重复输入 Token，直接点击「获取模型列表」即可完成拉取；若输入新密钥则优先使用新密钥。
+- **内置主题自适应与视觉无缝适配**：
+  - 全面适配 7 套内置主题（包括浅色系 Standard Light、Apple、Glass，暗色/个性系 Standard Dark、Cyberpunk、Gruvbox、CRT），选项采用 `text-on-surface` 文本色与 `hover:bg-surface-variant`（`var(--surface-dot)`）悬停底色，消除 Apple 等浅色主题下背景 hover 无反差的问题；
+  - 清除外层多余内边距并继承主题卡片圆角规范，状态提示颜色严格使用系统级 `var(--accent-secondary)`，保证各主题对比度达到最佳。
+
+### Security
+
+- **同 Base URL 强绑定防凭据外带（Credential Exfiltration）防护**：
+  - 后端 `POST /api/ai/models` 在未传入 `api_key` 时，严格校验请求的 `base_url` 是否与数据库中已绑定的地址一致；若接口地址发生变更且未提供对应密钥，后端直接拒绝并返回 400，绝对杜绝旧服务商私密凭证被发送至恶意或未绑定的第三方地址；前端同步增加 Base URL 变更感知与防外带安全提示。
+- **CSRF 同源 Origin 防护**：
+  - 在 AI 配置路由入口处严格比对请求头 `Origin`，拦截跨站脚本伪造请求（403 Forbidden）。
+- **敏感 Token 异常脱敏过滤**：
+  - 实现 `sanitizeAIErrorMessage`，对服务商或网关返回的异常信息进行敏感 Token 与 Bearer 格式脱敏，杜绝接口错误回显外泄。
+- **前端明文敏感凭据即时清理**：
+  - 配置保存成功后前端立即清空密码输入框明文，恢复为掩码状态，防止凭证在 DOM 与内存堆栈中长期驻留。
+
 ## [2.2.5] - 2026-09-13
 
 ### Added
