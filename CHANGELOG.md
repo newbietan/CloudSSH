@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.7] - 2026-09-16
+
+### Added
+
+- **GitHub Pages 部署工作流支持手动触发**：
+  - 在 `.github/workflows/github-pages.yml` 的触发事件中新增 `workflow_dispatch`，支持在 GitHub Actions 控制台手动触发构建和发布，便于在不变更 `docs/**` 文档的情况下按需部署 GitHub Pages 主题编辑器。
+
 ## [2.2.6] - 2026-09-14
 
 ### Added
