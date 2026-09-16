@@ -42,6 +42,9 @@
 
 ## Table of Contents
 
+<details>
+<summary><b>Click to expand Table of Contents</b></summary>
+
 - [Highlights](#highlights)
 - [Features](#features)
 - [Architecture](#architecture)
@@ -56,6 +59,8 @@
   - [Tech Stack](#tech-stack)
 - [Contributors](#contributors)
 - [License](#license)
+
+</details>
 
 <a id="highlights"></a>
 
@@ -82,6 +87,9 @@
 <a id="features"></a>
 
 ## Features
+
+<details>
+<summary><b>Click to expand full feature list (Custom SSH Stack, Jump Chains, One-Time Sharing, SFTP, AI Agent, etc.)</b></summary>
 
 - **Pure TypeScript SSH-2.0 Implementation**: Fully self-developed SSH protocol stack, with no dependency on any third-party SSH libraries, implementing all cryptographic operations based on Web Crypto API.
 - **Multi-Algorithm Key Exchange**: Supports Curve25519-SHA256 (preferred) and ECDH-NISTP256 KEX algorithms, compatible with various SSH servers (including Dropbear).
@@ -113,6 +121,8 @@
   - **Decoupled Short/Long-Term Memory**: In-session summaries exclusively track active task goals and unresolved decisions, while persistent server memory archives ops history and configuration entities, eliminating redundant prompt bloat.
   - **Unobtrusive Drawer UI**: Integrated into a dedicated "Work Logs & Knowledge" drawer panel. Work log cards feature two-line truncation, full-text hover tooltips, and click-to-expand; sensitive credentials are masked by default with one-click visibility toggling, quick copying, and deletion.
 - **Quality Gates**: Before deploying either `test` or `main`, GitHub Actions performs frozen-lockfile installation, Worker/frontend type checking, unit and integration tests, reproducible frontend builds, Playwright browser E2E, and axe accessibility regression. Any failure blocks deployment.
+
+</details>
 
 <a id="architecture"></a>
 

@@ -42,6 +42,9 @@
 
 ## 目录
 
+<details>
+<summary><b>点击展开完整目录</b></summary>
+
 - [核心优势](#highlights)
 - [核心特性](#features)
 - [架构说明](#architecture)
@@ -56,6 +59,8 @@
   - [技术栈](#技术栈)
 - [贡献者](#contributors)
 - [开源协议](#license)
+
+</details>
 
 <a id="highlights"></a>
 
@@ -82,6 +87,9 @@
 <a id="features"></a>
 
 ## 核心特性
+
+<details>
+<summary><b>点击展开查看完整功能特性列表（自研 SSH 协议栈、跳板链、一次性分享、在线 SFTP、AI 运维助手等）</b></summary>
 
 - **纯 TypeScript SSH-2.0 实现**：完全自研的 SSH 协议栈，不依赖任何第三方 SSH 库，基于 Web Crypto API 实现全部加密操作。
 - **多算法密钥交换**：支持 Curve25519-SHA256（优先）和 ECDH-NISTP256 两种 KEX 算法，适配各类 SSH 服务器（包括 Dropbear）。
@@ -113,6 +121,8 @@
   - **长短时记忆职责解耦**：会话内摘要专职跟踪当前未完结任务与决策待办，服务器长期记忆专职持久化运维轨迹与配置实体，杜绝冗余重复。
   - **内敛抽屉式交互**：提供独立「工作备忘与记忆」抽屉面板，工作历程卡片支持两行文本截断、悬停完整 Tooltip 与点击展开；机密凭据默认掩码呈现，支持一键切换明文、快捷复制与删除。
 - **工程质量门禁**：GitHub Actions 在 `test` 与 `main` 分支部署前依次执行冻结锁文件安装、Worker/前端类型检查、单元与集成测试、可复现前端构建、Playwright 浏览器 E2E 和 axe 无障碍回归；任一环节失败都会阻止部署。
+
+</details>
 
 <a id="architecture"></a>
 
