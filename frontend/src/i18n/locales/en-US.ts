@@ -303,6 +303,8 @@ export const enUS: Record<keyof typeof zhCN, string> = {
     'SSH connection unresponsive, disconnected automatically (idle timeout)',
   'terminal.status.sessionIdleTimeout':
     'Session closed automatically due to inactivity (idle timeout)',
+  'terminal.status.sessionIdleWarning':
+    'Session idle, will disconnect soon to save resources (press any key to continue)',
   'terminal.status.inputBacklogClosed': 'Terminal input backlog exceeded, connection closed',
   'terminal.status.packetError': 'Packet processing error: {message}',
   'terminal.status.algorithmError': 'Algorithm negotiation failed: {message}',

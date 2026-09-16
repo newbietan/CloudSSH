@@ -199,6 +199,7 @@ export class SSHSession {
   private keepaliveTimeout: ReturnType<typeof setTimeout> | null = null;
   private lastPacketAt: number = Date.now();
   private lastUserActivityAt: number = Date.now();
+  private idleWarningEmitted: boolean = false;
   private readonly idleTimeoutMs: number;
   private idleWatchdogInterval: ReturnType<typeof setInterval> | null = null;
   private shellReadyTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -831,7 +832,7 @@ export class SSHSession {
     this.lastPacketAt = Date.now();
     const checkInterval =
       this.idleTimeoutMs > 0
-        ? Math.min(IDLE_WATCHDOG_CHECK_MS, Math.max(50, Math.floor(this.idleTimeoutMs / 2)))
+        ? Math.min(IDLE_WATCHDOG_CHECK_MS, Math.max(20, Math.floor(this.idleTimeoutMs / 4)))
         : IDLE_WATCHDOG_CHECK_MS;
     this.idleWatchdogInterval = setInterval(() => {
       if (Date.now() - this.lastPacketAt > IDLE_WATCHDOG_GRACE_MS) {
@@ -843,11 +844,35 @@ export class SSHSession {
         this.idleTimeoutMs > 0 &&
         this.isReady() &&
         this.ownsWebSocket &&
-        !this.isDetached() &&
-        Date.now() - this.lastUserActivityAt >= this.idleTimeoutMs
+        !this.isDetached()
       ) {
-        this.sendError('会话因长时间未活动已自动断开（空闲超时）', 'session_idle_timeout');
-        this.close(true);
+        // AI Agent 执行保护：只要 Agent 仍处于运行状态，视作用户委托任务进行中，自动维持连接
+        if (this.agentCore?.getStatus() === 'running') {
+          this.recordUserActivity();
+          return;
+        }
+
+        const idleElapsed = Date.now() - this.lastUserActivityAt;
+
+        // 空闲超时前预警：当距超时还剩 60 秒时（短超时测试下取 idleTimeoutMs 的 1/3）且未曾发出预警，
+        // 向前端发送状态事件。正在盯盘（如实时查看 top 或 tail -f）的用户可在终端看到提示并敲击任意键续期。
+        const warningLeadMs = Math.min(60_000, Math.max(30, Math.floor(this.idleTimeoutMs / 3)));
+        if (
+          !this.idleWarningEmitted &&
+          this.idleTimeoutMs > warningLeadMs &&
+          idleElapsed >= this.idleTimeoutMs - warningLeadMs
+        ) {
+          this.idleWarningEmitted = true;
+          this.sendStatus(
+            '会话长时间无操作，即将自动断开以节省资源（敲击任意键继续）',
+            'session_idle_warning'
+          );
+        }
+
+        if (idleElapsed >= this.idleTimeoutMs) {
+          this.sendError('会话因长时间未活动已自动断开（空闲超时）', 'session_idle_timeout');
+          this.close(true);
+        }
       }
     }, checkInterval);
   }
@@ -3133,6 +3158,11 @@ export class SSHSession {
   /** 刷新最后一次用户交互活动时间戳（仅由键盘输入、窗口调整、SFTP、Agent 等主动操作触发） */
   public recordUserActivity(): void {
     this.lastUserActivityAt = Date.now();
+    this.idleWarningEmitted = false;
+  }
+
+  public isIdleWarningEmitted(): boolean {
+    return this.idleWarningEmitted;
   }
 
   public getLastUserActivityAt(): number {

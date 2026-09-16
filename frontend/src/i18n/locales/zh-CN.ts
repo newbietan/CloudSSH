@@ -266,6 +266,7 @@ export const zhCN = {
   'terminal.status.keepaliveTimeout': '连接保活超时',
   'terminal.status.idleTimeout': 'SSH 连接无响应，已自动断开（空闲超时）',
   'terminal.status.sessionIdleTimeout': '会话因长时间未活动已自动断开（空闲超时）',
+  'terminal.status.sessionIdleWarning': '会话长时间无操作，即将自动断开以节省资源（敲击任意键继续）',
   'terminal.status.inputBacklogClosed': '终端输入积压过多，连接已关闭',
   'terminal.status.packetError': '数据包处理异常：{message}',
   'terminal.status.algorithmError': '算法协商失败：{message}',

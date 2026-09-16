@@ -161,4 +161,51 @@ describe('SSHSession 空闲超时机制', () => {
 
     session.close(true);
   });
+
+  it('超时前预警：触发 session_idle_warning 并在用户输入后解除预警状态', async () => {
+    // 设 idleTimeoutMs = 120ms，warningLeadMs = 40ms (120/3)
+    const { session, sent } = createTestSession({ idleTimeoutMs: 120 });
+    (session as any).state = 'ready';
+    (session as any).startIdleWatchdog();
+
+    // 等待 95ms (超过 120 - 40 = 80ms，触发预警)
+    await new Promise((resolve) => setTimeout(resolve, 95));
+    expect(session.isIdleWarningEmitted()).toBe(true);
+
+    const parsedMessages = sent.map((s) => {
+      try {
+        return JSON.parse(s);
+      } catch {
+        return null;
+      }
+    });
+    const warning = parsedMessages.find(
+      (m) => m?.type === 'status' && m?.event === 'session_idle_warning'
+    );
+    expect(warning).toBeDefined();
+
+    // 用户在预警后输入，刷新活跃时间并清除预警标记
+    await session.handleWebSocketMessage('echo keepalive\n');
+    expect(session.isIdleWarningEmitted()).toBe(false);
+
+    session.close(true);
+  });
+
+  it('AI Agent 运行态保护：Agent 工作期间自动维持连接不被超时断开', async () => {
+    const { session, ws } = createTestSession({ idleTimeoutMs: 60 });
+    (session as any).state = 'ready';
+
+    // Mock agentCore 处于 running 状态
+    (session as any).agentCore = {
+      getStatus: () => 'running',
+      agentAbort: vi.fn(),
+    };
+    (session as any).startIdleWatchdog();
+
+    // 等待 120ms（超过 60ms 超时）
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    expect(ws.close).not.toHaveBeenCalled();
+    session.close(true);
+  });
 });
