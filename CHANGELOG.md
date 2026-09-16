@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.8] - 2026-09-16
+
+### Added
+
+- **用户无操作空闲会话超时机制（Inactivity Timeout，关联 #135）**：
+  - 激活并支持通过 `IDLE_TIMEOUT` 环境变量配置空闲超时时长，默认启用 30 分钟（`30m`）；
+  - 支持多单位时间解析（如 `30m`、`1h`、`1800s`、`1800` 纯数字按秒解析），支持设为 `0`/`false` 禁用，并内置 10 秒最小正数值保护；
+  - `SSHSession` 引入 `lastUserActivityAt` 精准交互时间戳：仅真实用户交互（键盘输入、窗口 `resize`、SFTP 传输/操作、AI 助手执行、会话恢复）会刷新活跃时间；前端 WebSocket ping 心跳、底层 SSH keepalive 以及远端服务器被动输出（如后台挂着 `top` 刷屏）绝不重置计时器，彻底杜绝挂机会话长时间消耗 Cloudflare Durable Object 每日免费额度（13,000 GB-s）；
+  - 超时到达时后端向前端发送 `session_idle_timeout` 结构化事件，并以标准正常状态码（code 1000）优雅断开连接，释放 DO 内存与底层 TCP Socket；前端终端输出醒目提示并禁止自动重连。
+- **AI Agent 运行态保护**：
+  - 空闲看门狗判断中加入 Agent 运行态守卫（`agentCore.getStatus() === 'running'`），只要 AI 助手在执行长任务或诊断命令，会话自动维持活跃，防止执行多步自动化运维时被误判超时。
+- **空闲超时前预警提示（session_idle_warning）**：
+  - 在空闲时间到达距超时前 60 秒时，向终端输出状态提示事件 `session_idle_warning`（中英双语对齐），正在盯盘（如实时查看 `top` 或 `tail -f`）的用户可在终端看到黄色预警提示，只需敲击任意键即可一秒续期 30 分钟。
+- **全量环境变量速查表**：
+  - 在 `README.md` 与 `README_en.md` 的快速部署模块扩展为 5 列表格，详尽覆盖全部 11 项环境变量及预留变量的必填性、默认值、功能说明与配置建议，消除查阅环境变量的成本。
+
+### Changed
+
+- **文档结构折叠与精简**：
+  - 将 `README.md` 与 `README_en.md` 中的「目录」、「核心特性」及「本地开发」模块包装为可折叠区块（`<details>`/`<summary>`），默认保持折叠，大幅降低首屏篇幅与滚动负担；
+  - 移除已冗余的「技术栈」表格与目录链接，精简并对齐中英文部署步骤与开源协议署名声明。
+
 ## [2.2.7] - 2026-09-16
 
 ### Added
