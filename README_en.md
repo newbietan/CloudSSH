@@ -49,14 +49,13 @@
 - [Features](#features)
 - [Architecture](#architecture)
 - [Quick Deployment](#quick-start)
-  - [GitHub Integration](#method-1-deploy-via-github-integration-recommended)
+  - [GitHub Integration](#recommended-deploy-via-github-integration)
     - [Automatically Sync Upstream](#optional-automatically-sync-upstream-releases)
   - [Configurable Environment Variables](#configurable-environment-variables)
   - [Configure Turnstile](#optional-configure-turnstile-human-verification)
   - [Configure GitHub OAuth](#optional-configure-github-oauth-login--server-management)
 - [Development](#development)
   - [Local Development](#local-development)
-  - [Tech Stack](#tech-stack)
 - [Contributors](#contributors)
 - [License](#license)
 
@@ -176,13 +175,13 @@ flowchart TB
 
 ### Steps
 
-#### Method 1: Deploy via GitHub Integration (Recommended)
+#### Recommended: Deploy via GitHub Integration
 
 <div align="center">
   <a href="https://dash.cloudflare.com/?url=https://github.com/newbietan/CloudSSH">
     <img src="https://img.shields.io/badge/Deploy_to_Cloudflare-FF6633?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Deploy to Cloudflare">
   </a>
-  <p>Click the button to jump to the Cloudflare console — authorize your GitHub account and deploy automatically, no local environment required</p>
+  <p>Click the button to jump to the Cloudflare console, authorize your GitHub account, and deploy automatically</p>
 </div>
 
 1. **Fork this repository** to your GitHub account.
@@ -204,7 +203,7 @@ A fork can use the built-in `Sync upstream` GitHub Actions workflow to periodica
    - Value: `true`
 4. To sync immediately, open **Actions → Sync upstream → Run workflow**. Manual runs do not require the variable above.
 
-> **Sync behavior**: The workflow uses GitHub's fork synchronization API, requires no PAT, and never force-overwrites the branch. If your `main` branch cannot be merged with upstream automatically, the job fails while preserving the existing code and the conflict must be resolved manually. Avoid editing the deployment `main` branch directly, and keep domains, secrets, and environment variables in the Cloudflare Dashboard.
+> **Sync behavior**: If upstream workflows change, automatic synchronization may fail. In that case, simply synchronize the repository manually once.
 
 #### Configurable Environment Variables
 
@@ -240,10 +239,6 @@ To prevent malicious bot abuse, it is recommended to enable Cloudflare Turnstile
    - `TURNSTILE_SECRET` = your Secret Key
    - `TURNSTILE_SITEKEY` = your Site Key
 4. **Redeploy**: Run the deployment command to apply the configuration.
-
-> **Environment Variable Type Recommendation**: It is recommended to set all environment variables as **Secret** type. Secrets are stored in Cloudflare's encrypted storage, separate from code deployments, and will not be overwritten or lost during redeployments. When adding variables in the Dashboard, simply select the "Secret" type.
-
-> **Note**: Turnstile verification is session-level. After verification, all features are available for the current session. Closing the browser will require re-verification.
 
 #### Optional: Configure GitHub OAuth Login & Server Management
 
@@ -287,8 +282,6 @@ With GitHub OAuth enabled, users can log in with their GitHub account and save/m
 
 1. **Redeploy**: Save the variables and redeploy the existing Worker. The Durable Object migration in the repository initializes the required classes and database; deleting the existing Worker is not required.
 
-> **Environment Variable Type Recommendation**: `GITHUB_CLIENT_SECRET` must use the **Secret** type. `GITHUB_ALLOWED_USER_IDS` and `REQUIRE_GITHUB_AUTH` contain no credentials and may use plain-text variables. Secrets are stored in Cloudflare's encrypted storage, separate from code deployments, and will not be overwritten or lost during redeployments.
-
 > **Access Policy Note**: After `GITHUB_ALLOWED_USER_IDS` changes, existing sessions are checked again and become invalid on their next request; already established SSH WebSockets are not terminated. `REQUIRE_GITHUB_AUTH=true` depends on GitHub OAuth, so configure the Client ID, Client Secret, and `BASE_URL` together.
 
 ##### Using One-Time SSH Sharing
@@ -302,8 +295,6 @@ With GitHub OAuth enabled, users can log in with their GitHub account and save/m
 
 > [!WARNING]
 > Although the capability contains no SSH metadata, possession grants a full Shell and SFTP session using the owner's saved credential, so protect it like a temporary password. Sharing requires trusted fingerprints for the complete route and stops on fingerprint changes or `keyboard-interactive`/MFA challenges. Audit stores server PTY output rather than raw keyboard input: it usually shows shell-echoed commands but cannot prove every command executed with echo disabled, inside scripts, or through encoded input. Do not treat it as host-level enhanced auditing. A session is closed if its 5 MiB recording limit is reached or audit writes fail.
-
-> **Note**: Server credentials (passwords/private keys) are encrypted with AES-256-GCM in each user's UserDBDO SQLite database. The current encryption key is generated on first use and stored in the same Durable Object database as the ciphertext. For a saved-server connection, the browser never receives the plaintext credential; the server side transfers it internally through a one-time connection token.
 
 ##### Using SSH Jump Hosts
 
@@ -354,6 +345,9 @@ CloudSSH/
 ```
 
 ### Local Development
+
+<details>
+<summary><b>Click to expand Local Development Guide (prerequisites, dev server, commands, git workflow)</b></summary>
 
 #### Environment Setup
 
@@ -433,19 +427,7 @@ test branch (dev/test)  ──merge──>  main branch (production)
 
 > **Note**: The `main` branch has protection rules that prevent direct pushes. All changes must be committed to the `test` branch first. Do NOT create `feat/xxx`, `fix/xxx` or any other feature branches — commit directly to `test`.
 
-### Tech Stack
-
-| Layer                  | Technology                                         | Description                                                                                                                        |
-| -------                | ------------                                       | -------------                                                                                                                      |
-| **Frontend**           | TypeScript + Vite + xterm.js                       | Web terminal emulator, WebGL hardware acceleration                                                                                 |
-| **i18n**               | Lightweight custom i18n (`frontend/src/i18n`)      | Simplified Chinese / English dual-language UI with automatic browser detection and manual switching                                |
-| **UI Framework**       | Tailwind CSS (local Vite/PostCSS build) + Theme V3 | The app supports built-in theme switching, custom JSON import, and signed-in account sync; editing and export live on GitHub Pages |
-| **File Transfer**      | trzsz.js                                           | Supports trz/tsz commands, drag-and-drop upload, resumable transfers                                                               |
-| **AI Assistant**       | BYOK + OpenAI-compatible API                       | Bring your own API key, supports DeepSeek and other models; includes dual-track long-term memory and decoupled context management |
-| **Backend**            | Cloudflare Workers                                 | Serverless edge computing                                                                                                          |
-| **Session Management** | Durable Objects                                    | SSH session isolation; browser WebSockets use the Hibernation API entry pattern, while active outbound TCP prevents hibernation    |
-| **Data Storage**       | Durable Objects SQLite                             | User data, server configurations, categorized command snippets, server memory (work logs & credentials)                           |
-| **Package Manager**    | pnpm (workspace)                                   | Monorepo dependency management                                                                                                     |
+</details>
 
 <a id="contributors"></a>
 
@@ -468,7 +450,7 @@ The list and contribution summaries are based on Git history and accepted Pull R
 
 This project is open-sourced under the [Apache License 2.0](LICENSE).
 
-**Original Author and Attribution Requirement**: CloudSSH was initiated and architected by [TanXin (@newbietan)](https://github.com/newbietan), who continues to maintain the project. Any modified, derivative, or redistributed version based on this project must retain the license, copyright, and attribution notices in [LICENSE](LICENSE) and [NOTICE](NOTICE), and clearly state in its documentation or other accompanying notices: “This project is based on CloudSSH, originally created by TanXin (@newbietan),” together with a link to the original project.
+**Original Author and Attribution Requirement**: CloudSSH was initiated and architected by [TanXin (@newbietan)](https://github.com/newbietan), who continues to maintain the project. Any modified, derivative, or redistributed version based on this project must retain the license, copyright, and attribution notices in [LICENSE](LICENSE) and [NOTICE](NOTICE), and clearly state and credit the original author and original project link.
 
 Commercial use, modification, and redistribution remain governed by the [Apache License 2.0](LICENSE). The attribution requirement above preserves the source and authorship of the original project without restricting other rights granted by the license.
 
