@@ -32,6 +32,7 @@ import {
   KeyboardInteractiveAuthHandler,
   type PendingAuthChallenge,
 } from './ssh-interactive-auth';
+import { parseIdleTimeout } from './idle-timeout';
 import { ShareAuditWriter } from './share-audit-writer';
 import {
   normalizeTerminalSize,
@@ -100,6 +101,11 @@ export interface SSHSessionOptions {
   allowKeyboardInteractive?: boolean;
   /** Keeps final audit writes alive after a WebSocket/SSH close event returns. */
   waitUntil?: (promise: Promise<unknown>) => void;
+  /**
+   * 可选用户无操作空闲超时（毫秒）。
+   * 未传入时从 env.IDLE_TIMEOUT 解析，默认 30 分钟；0 表示禁用。
+   */
+  idleTimeoutMs?: number;
 }
 
 export class SSHSession {
@@ -192,6 +198,8 @@ export class SSHSession {
   private keepalivePending: boolean = false;
   private keepaliveTimeout: ReturnType<typeof setTimeout> | null = null;
   private lastPacketAt: number = Date.now();
+  private lastUserActivityAt: number = Date.now();
+  private readonly idleTimeoutMs: number;
   private idleWatchdogInterval: ReturnType<typeof setInterval> | null = null;
   private shellReadyTimeout: ReturnType<typeof setTimeout> | null = null;
   private terminalSize: TerminalSize = { cols: 120, rows: 40 };
@@ -281,6 +289,10 @@ export class SSHSession {
     this.ownsWebSocket = options.ownsWebSocket !== false;
     this.allowKeyboardInteractive = options.allowKeyboardInteractive !== false;
     this.waitUntil = options.waitUntil;
+    this.idleTimeoutMs =
+      options.idleTimeoutMs !== undefined
+        ? options.idleTimeoutMs
+        : parseIdleTimeout(this.env?.IDLE_TIMEOUT);
     this.authenticatedPromise = new Promise<void>((resolve, reject) => {
       this.authenticatedResolve = resolve;
       this.authenticatedReject = reject;
@@ -806,19 +818,38 @@ export class SSHSession {
   }
 
   /**
-   * 被动存活看门狗：只依赖 startReading 维护的 lastPacketAt，完全不经过写路径 ——
-   * 主动 keepalive 会因 sendMutex 卡死而先于会话失效，此计时器独立工作，
-   * 在宽限期后可靠地终结僵尸会话，避免其耗尽 DO 资源。
+   * 被动存活看门狗与用户无操作空闲检测：
+   * 1. 链路存活看门狗：只依赖 startReading 维护的 lastPacketAt，完全不经过写路径 ——
+   *    主动 keepalive 会因 sendMutex 卡死而先于会话失效，此计时器独立工作，
+   *    在宽限期后可靠地终结僵尸会话，避免其耗尽 DO 资源。
+   * 2. 用户无操作空闲超时：仅在会话就绪且持有 WebSocket 时检测，当超过 idleTimeoutMs
+   *    没有任何有效用户交互（键盘输入/resize/SFTP/Agent）时主动断开会话并关闭 DO，
+   *    避免挂机会话无休止消耗 Cloudflare Duration 额度。
    */
   private startIdleWatchdog(): void {
     if (this.idleWatchdogInterval) return;
     this.lastPacketAt = Date.now();
+    const checkInterval =
+      this.idleTimeoutMs > 0
+        ? Math.min(IDLE_WATCHDOG_CHECK_MS, Math.max(50, Math.floor(this.idleTimeoutMs / 2)))
+        : IDLE_WATCHDOG_CHECK_MS;
     this.idleWatchdogInterval = setInterval(() => {
       if (Date.now() - this.lastPacketAt > IDLE_WATCHDOG_GRACE_MS) {
         this.sendError('SSH 连接无响应，已自动断开（空闲超时）', 'idle_timeout');
         this.close();
+        return;
       }
-    }, IDLE_WATCHDOG_CHECK_MS);
+      if (
+        this.idleTimeoutMs > 0 &&
+        this.isReady() &&
+        this.ownsWebSocket &&
+        !this.isDetached() &&
+        Date.now() - this.lastUserActivityAt >= this.idleTimeoutMs
+      ) {
+        this.sendError('会话因长时间未活动已自动断开（空闲超时）', 'session_idle_timeout');
+        this.close(true);
+      }
+    }, checkInterval);
   }
 
   private async handleKEXPacket(msgType: number, payload: Uint8Array): Promise<void> {
@@ -2078,6 +2109,7 @@ export class SSHSession {
           return;
         }
         if (parsed.type === 'resize') {
+          this.recordUserActivity();
           await this.handleResize(parsed.cols, parsed.rows);
           return;
         }
@@ -2086,6 +2118,7 @@ export class SSHSession {
         // agent_stop / agent_confirm 已由 durable-object.ts 在 webSocketMessage 入口
         // 提前拦截并通过 handleAgentControl 同步处理，不再到达此处。
         if (parsed.type === 'agent_start') {
+          this.recordUserActivity();
           await this.handleAgentStart(
             parsed.message,
             parsed.user_id,
@@ -2101,11 +2134,13 @@ export class SSHSession {
       if (this.state !== 'ready') return;
       if (this.config.sessionPolicy?.source === 'share' && !this.shareAuditStarted) return;
 
+      this.recordUserActivity();
       this.enqueueChannelData(this.textEncoder.encode(data));
     } else {
       if (this.state !== 'ready') return;
       if (this.config.sessionPolicy?.source === 'share' && !this.shareAuditStarted) return;
 
+      this.recordUserActivity();
       this.enqueueChannelData(new Uint8Array(data));
     }
   }
@@ -2124,6 +2159,8 @@ export class SSHSession {
         this.sendSFTPJSON({ type: 'pong' });
         return;
       }
+
+      this.recordUserActivity();
 
       if (!parsed?.type || !parsed.type.startsWith('sftp_')) {
         this.sendSFTPError('protocol', 'Invalid SFTP message type');
@@ -2153,6 +2190,7 @@ export class SSHSession {
       return;
     }
 
+    this.recordUserActivity();
     const chunk = new Uint8Array(data);
     void this.sftpHandler.onUploadChunk(chunk).catch((error) => {
       const errMsg = error instanceof Error ? error.message : String(error);
@@ -2648,6 +2686,7 @@ export class SSHSession {
 
   /** Shell 就绪统一入口。分享会话必须先建立审计，再允许浏览器输入。 */
   private async onShellReady(): Promise<void> {
+    this.recordUserActivity();
     if (this.config.sessionPolicy?.source === 'share') {
       if (this.shareAuditStarted) return;
       const recorded = await this.writeShareAudit('session.started', {
@@ -2870,6 +2909,7 @@ export class SSHSession {
    * 这些消息由 durable-object.ts 在调用 handleWebSocketMessage 之前提前路由。
    */
   handleAgentControl(type: string, msg: any): void {
+    this.recordUserActivity();
     if (type === 'agent_confirm') {
       if (this.confirmationResolve) {
         this.confirmationResolve(msg.approved === true);
@@ -2928,6 +2968,7 @@ export class SSHSession {
     timeout: number,
     signal?: AbortSignal
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    this.recordUserActivity();
     const channelID = this.nextChannelID++;
     const channel = new SSHChannel();
     this.channels.set(channelID, channel);
@@ -3089,6 +3130,19 @@ export class SSHSession {
     return this.state === 'ready' && !this.closed;
   }
 
+  /** 刷新最后一次用户交互活动时间戳（仅由键盘输入、窗口调整、SFTP、Agent 等主动操作触发） */
+  public recordUserActivity(): void {
+    this.lastUserActivityAt = Date.now();
+  }
+
+  public getLastUserActivityAt(): number {
+    return this.lastUserActivityAt;
+  }
+
+  public getIdleTimeoutMs(): number {
+    return this.idleTimeoutMs;
+  }
+
   /** 分享会话策略（非分享会话返回 null）；供 DO 层在恢复时做过期与绑定校验。 */
   public getSessionPolicy(): SSHSessionPolicy | null {
     return this.config.sessionPolicy ?? null;
@@ -3108,6 +3162,7 @@ export class SSHSession {
       baseline?: { latencyMs: number; colo: string };
     }
   ): Promise<void> {
+    this.recordUserActivity();
     this.ws = newWs;
     this.detachedBuffer.setDetached(false);
 

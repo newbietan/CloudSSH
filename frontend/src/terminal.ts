@@ -41,6 +41,7 @@ const NON_RETRIABLE_AUTH_EVENTS = new Set([
   'auth_interactive_failed',
   'auth_password_change_required',
   'auth_protocol_error',
+  'session_idle_timeout',
 ]);
 const RTT_HEARTBEAT_INTERVAL_MS = 5000;
 const HEARTBEAT_RESPONSE_TIMEOUT_MS = 10_000;

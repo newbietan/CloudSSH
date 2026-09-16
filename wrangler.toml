@@ -17,6 +17,7 @@ watch_dir = "."
 # - ENABLE_SSH_SHARING（可选，true 时允许登录用户创建一次性 SSH 分享）
 # - TURNSTILE_SECRET / TURNSTILE_SITEKEY（Bot 验证）
 # - BASE_URL（OAuth 回调地址，需与实际域名一致）
+# - IDLE_TIMEOUT（可选，用户无操作空闲超时，如 30m / 1h，设为 0 禁用，默认 30m）
 
 [[durable_objects.bindings]]
 name = "SSH_SESSION"
