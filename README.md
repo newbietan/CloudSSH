@@ -198,18 +198,25 @@ Fork 仓库可以通过内置的 `Sync upstream` GitHub Actions 工作流，定�
 
 #### 可配置环境变量
 
-所有可选功能均由 Worker 环境变量控制，可在 Cloudflare Dashboard 的 Settings → Variables and Secrets 中添加（敏感项建议选择 **Secret** 类型），保存后重新部署生效：
+所有功能与安全策略均由 Worker 环境变量控制，可在 Cloudflare Dashboard 的 **Settings → Variables and Secrets** 中按需添加（敏感凭据建议选择 **Secret** 加密类型），保存后重新部署即可生效：
 
-| 环境变量 | 必填 | 说明 |
-| --- | --- | --- |
-| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | 启用 GitHub 登录时必填 | GitHub OAuth 应用凭据 |
-| `BASE_URL` | 启用 GitHub 登录时必填 | OAuth 回调地址，需与实际部署域名一致 |
-| `GITHUB_ALLOWED_USER_IDS` | 可选 | 允许登录的 GitHub 数字用户 ID 白名单（逗号分隔）；未配置不限制，配置为空或非正整数时 fail-closed |
-| `REQUIRE_GITHUB_AUTH` | 可选 | 设为 `true` 时禁用匿名 SSH，所有连接均要求有效 GitHub 登录 |
-| `ENABLE_SSH_SHARING` | 可选 | 设为 `true` 时启用一次性 SSH 分享（默认关闭） |
-| `TURNSTILE_SECRET` / `TURNSTILE_SITEKEY` | 可选 | Cloudflare Turnstile 人机验证密钥 |
-| `STRICT_HOST_KEY_VERIFY` | 可选 | 主机密钥签名验证：设为 `false` 跳过验证失败（默认 `true`，fail-closed） |
-| `DEBUG_MODE` | 可选 | 设为 `true` 时输出调试信息（`wrangler.toml` 默认 `false`） |
+| 环境变量 | 是否必填 | 默认值 | 作用说明 | 配置建议与注意事项 |
+| --- | --- | --- | --- | --- |
+| `IDLE_TIMEOUT` | 可选 | `30m` | 用户无操作空闲超时时长。会话超过该时间无键盘输入、SFTP 操作或 AI 任务将自动断开并释放 Durable Object。 | **强烈建议保留默认或按需配置**。防止离开电脑或忘记关闭标签页无休止消耗 Cloudflare 每日 13,000 GB-s 免费额度。支持 `30m`、`1h`、`1800s`、`1800`（纯数字按秒解析）；设为 `0` 可禁用；超时前 60s 会在终端输出预警，敲击任意键可一秒续期。 |
+| `GITHUB_CLIENT_ID` | 启用登录时必填 | 无 | GitHub OAuth 应用的 Client ID，用于开启多用户登录与已保存服务器/命令片段云端管理。 | 公开 ID。需与 `GITHUB_CLIENT_SECRET` 和 `BASE_URL` 配合使用。未配置时整个登录入口自动隐藏，不影响匿名 SSH 连接。 |
+| `GITHUB_CLIENT_SECRET` | 启用登录时必填 | 无 | GitHub OAuth 应用的 Client Secret，用于服务端向 GitHub 安全换取用户访问令牌。 | **敏感凭据，务必在 Cloudflare Dashboard 中设为 Secret 类型**。严禁泄露或直接提交到公共代码仓库。 |
+| `BASE_URL` | 启用登录时必填 | 无 | 部署站点的完整公网访问根地址（如 `https://ssh.example.com`），用于生成 OAuth 授权回调跳转。 | 域名必须与 GitHub OAuth App 中的 Authorization callback URL 完全一致，末尾**不要**加斜杠 `/`。未配置时降级使用请求上下文 Host。 |
+| `GITHUB_ALLOWED_USER_IDS` | 可选 | 无（不限制） | 允许登录系统的 GitHub **数字用户 ID** 白名单列表，多个 ID 以英文逗号分隔（如 `83105156,6236783`）。 | **私有化部署核心防线**。未配置时任何 GitHub 用户均可登录；一旦配置，仅白名单用户允许登录（fail-closed 机制）。数字 ID 可访问 `https://api.github.com/users/<username>` 查看 `id` 字段获取。 |
+| `REQUIRE_GITHUB_AUTH` | 可选 | `false` | 是否强制 GitHub 登录后才可使用 SSH 终端。设为 `true` 时彻底禁用匿名直连入口。 | **公网部署防被蹭推荐开启**。若不希望未授权访客将你的 Worker 用作公开 SSH 代理节点，建议配置为 `true` 并配合白名单使用。 |
+| `TURNSTILE_SITEKEY` | 可选 | 无 | Cloudflare Turnstile 人机验证的前端公开 Site Key。 | 公开密钥。与 `TURNSTILE_SECRET` 配合使用，在未配置或配置任一为空时人机验证功能自动禁用。 |
+| `TURNSTILE_SECRET` | 可选 | 无 | Cloudflare Turnstile 人机验证的服务端 Secret Key，用于校验前端回传的人机验证 Token。 | **敏感密钥，建议保存为 Secret 类型**。开启后可有效拦截自动化扫描脚本、批量机器人和恶意滥用。 |
+| `ENABLE_SSH_SHARING` | 可选 | `false` | 是否开启一次性受控 SSH 分享功能。设为 `true` 时登录用户可为已保存服务器生成临时受控分享链接。 | 生产环境按需开启。分享链路仅支持受限终端与可选 SFTP，受完整操作审计记录监督，禁止使用 AI Agent、修改服务器元数据或跨网络重连。 |
+| `STRICT_HOST_KEY_VERIFY` | 可选 | `true` | SSH 远端主机公钥签名严格校验开关。默认 `true`（fail-closed，签名不合法或算法不支持时立即终止握手）。 | **生产环境务必保持默认 `true`**。仅在本地调试、测试自签或老旧不兼容服务器且明确知晓安全风险时才允许设为 `false`。 |
+| `DEBUG_MODE` | 可选 | `false` | 详细调试模式开关。设为 `true` 时在 API 响应和前端终端中输出底层协议握手与诊断日志。 | `wrangler.toml` 默认声明为 `false`。仅在排查连接握手故障时临时开启，生产环境日常运行建议保持 `false`。 |
+
+> **配置建议与补充说明**：
+> 1. **Secret 安全存储**：在 Cloudflare Dashboard 的 *Settings → Variables and Secrets* 中，强烈建议将所有包含密码、Secret、Key 等敏感凭据的变量统一选择为 **Secret** 类型。Secrets 存储在 Cloudflare 独立加密存储层中，重新构建和部署 Worker 时不会被代码覆盖。
+> 2. **预留变量说明**：代码中保留了 `MAX_CONNECTIONS` 环境变量接口定义，当前版本暂未读取生效，请勿依赖。
 
 > **说明**：如需本地命令行部署或调试 Worker，请参考 [开发说明](#development) 中的本地开发部分。
 
