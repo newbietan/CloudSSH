@@ -1870,6 +1870,37 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   display: none;
 }
 
+.agent-header-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.agent-header-btn:hover {
+  color: var(--primary);
+  background: var(--bg-hover);
+}
+
+.agent-header-btn .material-symbols-outlined {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  display: block;
+}
+
 /* ========== Agent Markdown Content (themed) ==========
    Style the DOM output from marked.js. All colors come from CSS variables so
    theme switching only touches :root variables — the markup is untouched. */
@@ -1879,6 +1910,17 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   line-height: 1.6;
   color: var(--agent-agent-color);
   font-size: 13px;
+}
+
+/* Agent message role icon wrapper - aligns icon with the first line of text */
+.agent-role-icon-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 21px;
+  flex-shrink: 0;
+  line-height: 1;
 }
 
 /* Headings */
@@ -1893,8 +1935,11 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   line-height: 1.3;
   margin: 12px 0 6px;
 }
-.agent-md-content > :is(h1, h2, h3, h4, h5, h6):first-child {
+.agent-md-content > :first-child {
   margin-top: 0;
+}
+.agent-md-content > :last-child {
+  margin-bottom: 0;
 }
 .agent-md-content h1 {
   font-size: 18px;
@@ -3037,6 +3082,14 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
     align-items: center;
     gap: 6px;
     padding: 0 8px;
+  }
+
+  .agent-header-btn.agent-close-button {
+    width: auto;
+    height: auto;
+    min-height: 40px;
+    padding: 0 8px;
+    gap: 6px;
   }
 
   .agent-mobile-back {

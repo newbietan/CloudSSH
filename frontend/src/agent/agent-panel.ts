@@ -188,16 +188,16 @@ export class AgentPanel {
             <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)] truncate" data-i18n="agent.title">AI Agent 助手</span>
           </div>
           <div class="flex items-center gap-1">
-            <button id="agent-new-chat-btn" class="agent-header-btn text-muted hover:text-primary transition-colors cursor-pointer p-1 rounded hover:bg-[var(--bg-hover)] flex items-center justify-center" data-i18n-title="agent.newChat" title="${t('agent.newChat')}" aria-label="${t('agent.newChat')}">
-              <span class="material-symbols-outlined" style="font-size:18px;" aria-hidden="true">cleaning_services</span>
+            <button id="agent-new-chat-btn" class="agent-header-btn" data-i18n-title="agent.newChat" title="${t('agent.newChat')}" aria-label="${t('agent.newChat')}">
+              <span class="material-symbols-outlined" aria-hidden="true">add</span>
             </button>
-            <button id="agent-memory-btn" class="agent-header-btn text-muted hover:text-primary transition-colors cursor-pointer p-1 rounded hover:bg-[var(--bg-hover)] flex items-center justify-center" data-i18n-title="agent.memoryTitle" title="工作备忘与记忆" aria-label="工作备忘与记忆">
-              <span class="material-symbols-outlined" style="font-size:18px;" aria-hidden="true">history_edu</span>
+            <button id="agent-memory-btn" class="agent-header-btn" data-i18n-title="agent.memoryTitle" title="工作备忘与记忆" aria-label="工作备忘与记忆">
+              <span class="material-symbols-outlined" aria-hidden="true">history_edu</span>
             </button>
-            <button id="agent-close-btn" class="agent-close-button text-muted hover:text-primary transition-colors cursor-pointer p-1" data-i18n-title="agent.backToTerminal" data-i18n-aria-label="agent.backToTerminal" title="返回终端" aria-label="返回终端">
-              <span class="agent-mobile-back material-symbols-outlined" style="font-size:18px;" aria-hidden="true">arrow_back</span>
+            <button id="agent-close-btn" class="agent-header-btn agent-close-button" data-i18n-title="agent.backToTerminal" data-i18n-aria-label="agent.backToTerminal" title="返回终端" aria-label="返回终端">
+              <span class="agent-mobile-back material-symbols-outlined" aria-hidden="true">arrow_back</span>
               <span class="agent-mobile-back agent-back-label" data-i18n="agent.backToTerminal">返回终端</span>
-              <span class="agent-desktop-close material-symbols-outlined" style="font-size:18px;" aria-hidden="true">close</span>
+              <span class="agent-desktop-close material-symbols-outlined" aria-hidden="true">close</span>
             </button>
           </div>
         </div>
@@ -888,12 +888,12 @@ export class AgentPanel {
       el.className = 'agent-message agent-response';
 
       const themeColor = 'var(--agent-agent-color)';
-      const roleIcon = `<span class="material-symbols-outlined text-[14px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">smart_toy</span>`;
+      const roleIcon = `<span class="material-symbols-outlined text-[15px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">smart_toy</span>`;
 
     // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
       el.innerHTML = `
         <div class="flex gap-2 items-start">
-          <div class="shrink-0 mt-0.5">${roleIcon}</div>
+          <div class="agent-role-icon-wrapper">${roleIcon}</div>
           <div class="flex-1 min-w-0 text-[13px] whitespace-pre-wrap agent-md-content"></div>
         </div>
       `;
@@ -1120,12 +1120,12 @@ export class AgentPanel {
           : 'var(--on-surface-variant)';
 
     const roleIcon = isUser
-      ? `<span class="material-symbols-outlined text-[14px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">person</span>`
+      ? `<span class="material-symbols-outlined text-[15px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">person</span>`
       : isAgent
-        ? `<span class="material-symbols-outlined text-[14px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">smart_toy</span>`
+        ? `<span class="material-symbols-outlined text-[15px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">smart_toy</span>`
         : isExecuting
-          ? `<span class="material-symbols-outlined text-[14px]" style="color:${themeColor};font-variation-settings:'FILL' 0;">terminal</span>`
-          : `<span class="material-symbols-outlined text-[14px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">error</span>`;
+          ? `<span class="material-symbols-outlined text-[15px]" style="color:${themeColor};font-variation-settings:'FILL' 0;">terminal</span>`
+          : `<span class="material-symbols-outlined text-[15px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">error</span>`;
 
     let renderedContent: string;
     if (isAgent) {
@@ -1146,7 +1146,7 @@ export class AgentPanel {
     // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
       el.innerHTML = `
         <div class="flex gap-2 items-start">
-          <div class="shrink-0 mt-0.5">${roleIcon}</div>
+          <div class="agent-role-icon-wrapper">${roleIcon}</div>
           <div class="flex-1 min-w-0 text-[13px]">${renderedContent}</div>
         </div>
       `;
@@ -1165,8 +1165,8 @@ export class AgentPanel {
     options: { hasTerminalSelection?: boolean; userIndex?: number }
   ): void {
     const themeColor = 'var(--agent-user-color)';
-    const roleIcon = `<span class="material-symbols-outlined text-[14px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">person</span>`;
-    const renderedContent = `<div style="color:${themeColor};white-space:pre-wrap;word-break:break-word;">${escapeHtml(content)}</div>`;
+    const roleIcon = `<span class="material-symbols-outlined text-[15px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">person</span>`;
+    const renderedContent = `<div style="color:${themeColor};white-space:pre-wrap;word-break:break-word;line-height:1.6;">${escapeHtml(content)}</div>`;
     const terminalSelectionBadge =
       options.hasTerminalSelection
         ? `<div class="agent-message-context">
@@ -1181,8 +1181,8 @@ export class AgentPanel {
         <div class="max-w-[calc(100%-64px)] px-3 py-2 rounded-lg agent-user-bubble relative" style="background: color-mix(in srgb, ${themeColor} 12%, transparent); border: 1px solid color-mix(in srgb, ${themeColor} 30%, transparent);">
           ${terminalSelectionBadge}
           <div class="flex gap-2 items-start">
-            <div class="flex-1 min-w-0 text-[13px]">${renderedContent}</div>
-            <div class="shrink-0 mt-0.5">${roleIcon}</div>
+            <div class="flex-1 min-w-0 text-[13px] leading-relaxed">${renderedContent}</div>
+            <div class="agent-role-icon-wrapper">${roleIcon}</div>
           </div>
           <div class="agent-user-actions">
             <button type="button" class="agent-user-action-btn agent-user-copy-btn" data-i18n-title="agent.copyPrompt" title="${t('agent.copyPrompt')}">

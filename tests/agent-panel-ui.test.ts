@@ -12,7 +12,7 @@ describe('Agent 面板控制与交互增强 (静态与词条校验)', () => {
   it('顶部操作栏包含新建会话按钮，并具有正确的多语言属性与图标', () => {
     expect(panelSource).toContain('id="agent-new-chat-btn"');
     expect(panelSource).toContain('data-i18n-title="agent.newChat"');
-    expect(panelSource).toContain('cleaning_services');
+    expect(panelSource).toContain('add');
     expect(panelSource).toContain('handleNewChat');
   });
 
