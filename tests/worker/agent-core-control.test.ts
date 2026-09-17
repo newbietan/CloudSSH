@@ -228,4 +228,62 @@ describe('AgentCore 任务停止、抢占与会话重置控制机制', () => {
       fetchSpy.mockRestore();
     }
   });
+
+  it('handleAgentStart 携带 userIndex 支持原地编辑重发并截断其后所有历史轮次', async () => {
+    const frontendFrames: any[] = [];
+    const terminalContext = new TerminalContext();
+    const sendToFrontend = (msg: any) => frontendFrames.push(msg);
+    const fetchAIConfig = async () => dummyAIConfig;
+    const execCommand = vi.fn(async () => ({ stdout: 'ok', stderr: '', exitCode: 0 }));
+    const askConfirmation = vi.fn(async () => true);
+
+    const agent = new AgentCore(
+      terminalContext,
+      sendToFrontend,
+      fetchAIConfig,
+      execCommand,
+      askConfirmation
+    );
+
+    let roundCount = 0;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => {
+      if (String(url).includes('chat/completions')) {
+        roundCount++;
+        return createMockSSEResponse([
+          `data: {"choices":[{"delta":{"content":"回复轮次 ${roundCount}。"}},{"finish_reason":"stop"}]}\n\n`,
+          'data: [DONE]\n\n',
+        ]);
+      }
+      return new Response('{}', { status: 200 });
+    });
+
+    try {
+      // 轮次 1：第 0 条用户消息
+      await agent.handleAgentStart('user-1', '第一条消息：查内存', 'zh-CN');
+      expect((agent as any).state.messages).toHaveLength(3); // system + user1 + assistant1
+
+      // 轮次 2：第 1 条用户消息
+      await agent.handleAgentStart('user-1', '第二条消息：查网络', 'zh-CN');
+      expect((agent as any).state.messages).toHaveLength(5); // system + user1 + assistant1 + user2 + assistant2
+      const messagesBeforeEdit = (agent as any).state.messages;
+      expect(messagesBeforeEdit.some((m: any) => m.content === '第二条消息：查网络')).toBe(true);
+
+      // 轮次 3：用户原地编辑第 0 条消息为 "第一条消息修改：查CPU"，并传入 userIndex: 0
+      await agent.handleAgentStart(
+        'user-1',
+        '第一条消息修改：查CPU',
+        'zh-CN',
+        undefined,
+        0 // userIndex: 0
+      );
+
+      const messagesAfterEdit = (agent as any).state.messages;
+      // 验证第 1 条及其之后的消息已被截断丢弃，仅保留 system + user1_new + assistant3
+      expect(messagesAfterEdit).toHaveLength(3);
+      expect(messagesAfterEdit.some((m: any) => m.content === '第二条消息：查网络')).toBe(false);
+      expect(messagesAfterEdit.some((m: any) => m.content === '第一条消息修改：查CPU')).toBe(true);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
 });

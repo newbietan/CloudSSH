@@ -2274,6 +2274,80 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   border: 1px solid color-mix(in srgb, var(--error) 25%, transparent);
 }
 
+/* Agent inline edit card (ChatGPT style) */
+.agent-inline-edit-card {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.agent-inline-edit-card:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.agent-inline-edit-textarea {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--on-surface);
+  font-family: inherit;
+  min-height: 44px;
+  max-height: 240px;
+}
+
+.agent-inline-cancel-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.agent-inline-cancel-btn:hover {
+  color: var(--on-surface);
+  background: var(--bg-hover);
+}
+
+.agent-inline-send-btn {
+  padding: 4px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 9999px;
+  border: none;
+  background: var(--accent);
+  color: var(--on-accent);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.agent-inline-send-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.agent-inline-send-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.agent-inline-send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* Streaming cursor — blinking block appended to streamed text */
 @keyframes agent-blink {
   0%,

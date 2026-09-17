@@ -47,6 +47,16 @@ describe('Agent 面板控制与交互增强 (静态与词条校验)', () => {
     expect(panelSource).toContain('this.clearSessionDraft()');
   });
 
+  it('支持 Claude 风格气泡原地编辑重发与后续轮次清理', () => {
+    expect(panelSource).toContain('enterInlineEditMode');
+    expect(panelSource).toContain('agent-user-edit-bubble');
+    expect(panelSource).toContain('agent-user-edit-textarea');
+    expect(panelSource).toContain('agent-user-edit-cancel');
+    expect(panelSource).toContain('agent-user-edit-save');
+    expect(panelSource).toContain('submitInlineEdit');
+    expect(panelSource).toContain('el.nextElementSibling.remove()');
+  });
+
   it('所有相关国际化词条在中英文语言包中均完整对齐', () => {
     const requiredKeys = [
       'agent.stop',

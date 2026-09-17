@@ -178,7 +178,8 @@ export class AgentCore {
     userId: string,
     userMessage: string,
     locale: AgentLocale = 'zh-CN',
-    timezone?: string
+    timezone?: string,
+    userIndex?: number
   ): Promise<void> {
     this.preferredLocale = locale;
     if (timezone && typeof timezone === 'string' && timezone.length <= 64) {
@@ -193,6 +194,24 @@ export class AgentCore {
     // 若已有运行中的任务，抢占式中止旧任务，防止并发通道竞争与 Token 浪费
     if (this.state.status === 'running') {
       this.agentAbort('superseded');
+    }
+
+    if (typeof userIndex === 'number' && userIndex >= 0) {
+      // 截断目标用户消息及其后续所有消息（原地编辑重写）
+      let currentUserCount = 0;
+      let targetIndex = -1;
+      for (let i = 0; i < this.state.messages.length; i++) {
+        if (this.state.messages[i].role === 'user') {
+          if (currentUserCount === userIndex) {
+            targetIndex = i;
+            break;
+          }
+          currentUserCount++;
+        }
+      }
+      if (targetIndex !== -1) {
+        this.state.messages = this.state.messages.slice(0, targetIndex);
+      }
     }
 
     // 判断是否为新会话（首次启动或状态已重置）

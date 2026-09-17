@@ -635,11 +635,15 @@ export class AgentPanel {
     this.updateInputState();
   }
 
-  private addUserMessage(text: string, hasTerminalSelection = false): void {
+  private addUserMessage(text: string, hasTerminalSelection = false, userIndex?: number): void {
     this.removeResumeChip();
+    const resolvedUserIndex =
+      typeof userIndex === 'number'
+        ? userIndex
+        : this.sessionMessages.filter((m) => m.role === 'user').length;
     this.sessionMessages.push({ role: 'user', content: text, hasTerminalSelection });
     this.saveSessionDraft(true);
-    this.appendMessage('user', text, { hasTerminalSelection });
+    this.appendMessage('user', text, { hasTerminalSelection, userIndex: resolvedUserIndex });
   }
 
   private renderTerminalSelectionContext(): void {
@@ -1097,7 +1101,7 @@ export class AgentPanel {
   private appendMessage(
     role: string,
     content: string,
-    options: { hasTerminalSelection?: boolean } = {}
+    options: { hasTerminalSelection?: boolean; userIndex?: number } = {}
   ): void {
     const el = document.createElement('div');
     el.className = `agent-message agent-${role}`;
@@ -1126,64 +1130,18 @@ export class AgentPanel {
     let renderedContent: string;
     if (isAgent) {
       renderedContent = this.renderMarkdown(content || '');
-    } else if (isUser) {
-      renderedContent = `<div style="color:${themeColor};white-space:pre-wrap;word-break:break-word;">${escapeHtml(content)}</div>`;
     } else if (isExecuting) {
       renderedContent = `<div class="font-code text-[11px]" style="color:${themeColor};white-space:pre-wrap;word-break:break-all;">${escapeHtml(content)}</div>`;
     } else {
       renderedContent = `<div style="color:${themeColor};word-break:break-word;">${escapeHtml(content)}</div>`;
     }
-    const terminalSelectionBadge =
-      isUser && options.hasTerminalSelection
-        ? `<div class="agent-message-context">
-          <span class="material-symbols-outlined" aria-hidden="true">terminal</span>
-          <span>${t('agent.selectionAttachedMessage')}</span>
-        </div>`
-        : '';
 
     // User messages: bubble on right. Agent/others: full width on left.
     if (isUser) {
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
-      el.innerHTML = `
-        <div class="flex justify-end agent-user-container group relative">
-          <div class="max-w-[calc(100%-64px)] px-3 py-2 rounded-lg agent-user-bubble relative" style="background: color-mix(in srgb, ${themeColor} 12%, transparent); border: 1px solid color-mix(in srgb, ${themeColor} 30%, transparent);">
-            ${terminalSelectionBadge}
-            <div class="flex gap-2 items-start">
-              <div class="flex-1 min-w-0 text-[13px]">${renderedContent}</div>
-              <div class="shrink-0 mt-0.5">${roleIcon}</div>
-            </div>
-            <div class="agent-user-actions">
-              <button type="button" class="agent-user-action-btn agent-user-copy-btn" data-i18n-title="agent.copyPrompt" title="${t('agent.copyPrompt')}">
-                <span class="material-symbols-outlined text-[13px]">content_copy</span>
-              </button>
-              <button type="button" class="agent-user-action-btn agent-user-edit-btn" data-i18n-title="agent.editPrompt" title="${t('agent.editPrompt')}">
-                <span class="material-symbols-outlined text-[13px]">edit</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      `;
-
-      const copyBtn = el.querySelector<HTMLButtonElement>('.agent-user-copy-btn');
-      const editBtn = el.querySelector<HTMLButtonElement>('.agent-user-edit-btn');
-      copyBtn?.addEventListener('click', async () => {
-        const copied = await copyTextToClipboard(content);
-        const icon = copyBtn.querySelector('.material-symbols-outlined');
-        if (icon) {
-          icon.textContent = copied ? 'check' : 'close';
-          setTimeout(() => {
-            if (icon) icon.textContent = 'content_copy';
-          }, 1500);
-        }
-      });
-      editBtn?.addEventListener('click', () => {
-        if (!this.inputEl) return;
-        this.inputEl.value = content;
-        this.inputEl.focus();
-        this.inputEl.style.height = 'auto';
-        this.inputEl.style.height = `${Math.min(this.inputEl.scrollHeight, 140)}px`;
-        this.updateInputState();
-      });
+      if (typeof options.userIndex === 'number') {
+        el.dataset.userIndex = String(options.userIndex);
+      }
+      this.renderUserMessageContent(el, content, options);
     } else {
     // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
       el.innerHTML = `
@@ -1199,6 +1157,201 @@ export class AgentPanel {
       this.enhanceCodeBlocks(el);
     }
     this.scrollToBottom();
+  }
+
+  private renderUserMessageContent(
+    el: HTMLElement,
+    content: string,
+    options: { hasTerminalSelection?: boolean; userIndex?: number }
+  ): void {
+    const themeColor = 'var(--agent-user-color)';
+    const roleIcon = `<span class="material-symbols-outlined text-[14px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">person</span>`;
+    const renderedContent = `<div style="color:${themeColor};white-space:pre-wrap;word-break:break-word;">${escapeHtml(content)}</div>`;
+    const terminalSelectionBadge =
+      options.hasTerminalSelection
+        ? `<div class="agent-message-context">
+          <span class="material-symbols-outlined" aria-hidden="true">terminal</span>
+          <span>${t('agent.selectionAttachedMessage')}</span>
+        </div>`
+        : '';
+
+    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
+    el.innerHTML = `
+      <div class="flex justify-end agent-user-container group relative">
+        <div class="max-w-[calc(100%-64px)] px-3 py-2 rounded-lg agent-user-bubble relative" style="background: color-mix(in srgb, ${themeColor} 12%, transparent); border: 1px solid color-mix(in srgb, ${themeColor} 30%, transparent);">
+          ${terminalSelectionBadge}
+          <div class="flex gap-2 items-start">
+            <div class="flex-1 min-w-0 text-[13px]">${renderedContent}</div>
+            <div class="shrink-0 mt-0.5">${roleIcon}</div>
+          </div>
+          <div class="agent-user-actions">
+            <button type="button" class="agent-user-action-btn agent-user-copy-btn" data-i18n-title="agent.copyPrompt" title="${t('agent.copyPrompt')}">
+              <span class="material-symbols-outlined text-[13px]">content_copy</span>
+            </button>
+            <button type="button" class="agent-user-action-btn agent-user-edit-btn" data-i18n-title="agent.editPrompt" title="${t('agent.editPrompt')}">
+              <span class="material-symbols-outlined text-[13px]">edit</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    this.bindUserMessageActions(el, content, options);
+  }
+
+  private bindUserMessageActions(
+    el: HTMLElement,
+    content: string,
+    options: { hasTerminalSelection?: boolean; userIndex?: number }
+  ): void {
+    const copyBtn = el.querySelector<HTMLButtonElement>('.agent-user-copy-btn');
+    const editBtn = el.querySelector<HTMLButtonElement>('.agent-user-edit-btn');
+    copyBtn?.addEventListener('click', async () => {
+      const copied = await copyTextToClipboard(content);
+      const icon = copyBtn.querySelector('.material-symbols-outlined');
+      if (icon) {
+        icon.textContent = copied ? 'check' : 'close';
+        setTimeout(() => {
+          if (icon) icon.textContent = 'content_copy';
+        }, 1500);
+      }
+    });
+    editBtn?.addEventListener('click', () => {
+      this.enterInlineEditMode(el, content, options);
+    });
+  }
+
+  private enterInlineEditMode(
+    el: HTMLElement,
+    originalContent: string,
+    options: { hasTerminalSelection?: boolean; userIndex?: number }
+  ): void {
+    if (this.isAgentRunning) {
+      this.handleStop();
+    }
+
+    const themeColor = 'var(--agent-user-color)';
+
+    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
+    el.innerHTML = `
+      <div class="flex flex-col items-end agent-user-edit-container w-full">
+        <div class="agent-user-edit-bubble max-w-[85%] min-w-[160px] rounded-xl px-3 py-2 relative transition-all"
+             style="background: color-mix(in srgb, ${themeColor} 14%, var(--bg-elevated)); border: 1.5px solid var(--accent);">
+          <textarea class="agent-user-edit-textarea w-full bg-transparent border-none outline-none resize-none text-[13px] leading-relaxed custom-scrollbar"
+                    style="color: var(--on-surface); min-height: 24px; max-height: 200px;">${escapeHtml(originalContent)}</textarea>
+        </div>
+        <div class="flex items-center justify-end gap-2 mt-1.5 mr-0.5 select-none">
+          <button type="button" class="agent-user-edit-cancel text-xs text-muted hover:text-on-surface px-2 py-1 rounded cursor-pointer transition-colors">
+            ${t('common.cancel')}
+          </button>
+          <button type="button" class="agent-user-edit-save text-xs px-3.5 py-1 rounded-md font-medium cursor-pointer transition-opacity bg-[var(--accent)] text-[var(--on-accent)] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">
+            ${t('common.save')}
+          </button>
+        </div>
+      </div>
+    `;
+
+    const textarea = el.querySelector<HTMLTextAreaElement>('.agent-user-edit-textarea')!;
+    const cancelBtn = el.querySelector<HTMLButtonElement>('.agent-user-edit-cancel')!;
+    const saveBtn = el.querySelector<HTMLButtonElement>('.agent-user-edit-save')!;
+
+    const autoResize = () => {
+      textarea.style.height = 'auto';
+      textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 24), 200)}px`;
+      saveBtn.disabled = !textarea.value.trim();
+    };
+
+    autoResize();
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    });
+
+    textarea.addEventListener('input', autoResize);
+
+    const cancel = () => {
+      this.renderUserMessageContent(el, originalContent, options);
+    };
+
+    cancelBtn.addEventListener('click', cancel);
+
+    const saveAndSubmit = () => {
+      const newText = textarea.value.trim();
+      if (!newText) return;
+      this.submitInlineEdit(el, newText, options);
+    };
+
+    saveBtn.addEventListener('click', saveAndSubmit);
+
+    textarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cancel();
+      } else if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        saveAndSubmit();
+      }
+    });
+  }
+
+  private submitInlineEdit(
+    el: HTMLElement,
+    newText: string,
+    options: { hasTerminalSelection?: boolean; userIndex?: number }
+  ): void {
+    if (!newText.trim()) return;
+
+    if (this.isAgentRunning) {
+      this.handleStop();
+    }
+
+    const targetUserIndex = options.userIndex ?? 0;
+
+    // 1. 删除当前消息之后的所有后续节点（思考、执行、回复等全部清除，无需保留留痕）
+    while (el.nextElementSibling) {
+      el.nextElementSibling.remove();
+    }
+
+    // 2. 截断 sessionMessages 至当前用户消息轮次
+    let currentUserCount = 0;
+    let targetSessionIndex = -1;
+    for (let i = 0; i < this.sessionMessages.length; i++) {
+      if (this.sessionMessages[i].role === 'user') {
+        if (currentUserCount === targetUserIndex) {
+          targetSessionIndex = i;
+          break;
+        }
+        currentUserCount++;
+      }
+    }
+    if (targetSessionIndex !== -1) {
+      this.sessionMessages = this.sessionMessages.slice(0, targetSessionIndex);
+    }
+
+    // 3. 移除当前编辑态 DOM，通过 addUserMessage 重建该用户消息气泡并更新草稿
+    el.remove();
+    this.addUserMessage(newText, !!options.hasTerminalSelection, targetUserIndex);
+
+    // 4. 重置流式与思考状态
+    this.streamingEl = null;
+    this.streamingText = '';
+    this.removeThinkingProcess();
+    this.thinkingStepCount = 0;
+    this.livePreviewCache = [];
+
+    this.isAgentRunning = true;
+    this.updateInputState();
+
+    // 5. 向后端下发带 userIndex 的 agent_start，指示后端截断 state.messages 至目标轮次并重新执行
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const payload = {
+      type: 'agent_start',
+      message: newText,
+      locale: getLocale(),
+      timezone,
+      userIndex: targetUserIndex,
+    };
+    this.wsSend?.(JSON.stringify(payload));
   }
 
   private renderMarkdown(text: string): string {
@@ -1372,8 +1525,13 @@ export class AgentPanel {
       }
       this.sessionMessages = [...draft.messages];
       this.messagesEl.innerHTML = '';
+      let userCounter = 0;
       for (const m of this.sessionMessages) {
-        this.appendMessage(m.role, m.content, { hasTerminalSelection: m.hasTerminalSelection });
+        const uIdx = m.role === 'user' ? userCounter++ : undefined;
+        this.appendMessage(m.role, m.content, {
+          hasTerminalSelection: m.hasTerminalSelection,
+          userIndex: uIdx,
+        });
       }
       this.renderResumeChip();
     } catch {
