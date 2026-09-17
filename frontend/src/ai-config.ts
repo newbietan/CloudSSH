@@ -33,8 +33,8 @@ export class AIConfigPanel {
         <div class="theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent-secondary)] to-transparent opacity-50"></div>
         <div class="flex items-center justify-between mb-6 pb-4 border-b border-dim">
           <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]" data-i18n="aiConfig.title">AI Agent 设置</span>
-          <button id="ai-modal-close-btn" class="text-muted hover:text-primary transition-colors cursor-pointer" type="button">
-            <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+          <button id="ai-modal-close-btn" class="panel-close-btn" data-i18n-aria-label="common.close" aria-label="关闭" type="button">
+            <span class="material-symbols-outlined">close</span>
           </button>
         </div>
         <form id="ai-config-form" class="space-y-4">

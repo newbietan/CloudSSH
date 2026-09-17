@@ -147,8 +147,8 @@ export class SFTPPanel {
             <span class="material-symbols-outlined text-primary-container" style="font-size: 18px; font-variation-settings: 'FILL' 1;">folder_open</span>
             <span class="text-xs font-bold tracking-[0.1em] text-primary-container" data-i18n="sftp.title">SFTP 文件管理器</span>
           </div>
-          <button id="sftp-close-btn" class="hover:opacity-80 transition-opacity cursor-pointer p-1 text-on-surface-variant" data-i18n-title="sftp.close" title="关闭 SFTP 面板">
-            <span class="material-symbols-outlined" style="font-size: 18px;">close</span>
+          <button id="sftp-close-btn" class="panel-close-btn" data-i18n-title="sftp.close" title="关闭 SFTP 面板">
+            <span class="material-symbols-outlined">close</span>
           </button>
         </div>
 

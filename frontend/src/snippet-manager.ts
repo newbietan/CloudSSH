@@ -290,7 +290,7 @@ export class SnippetManager {
 
     const closeBtn = createElement(
       'button',
-      'hover:opacity-80 transition-opacity cursor-pointer p-1 text-on-surface-variant'
+      'panel-close-btn'
     );
     closeBtn.id = 'snippet-close-btn';
     closeBtn.type = 'button';

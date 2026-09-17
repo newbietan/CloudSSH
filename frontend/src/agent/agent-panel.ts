@@ -217,8 +217,8 @@ export class AgentPanel {
                 <span class="material-symbols-outlined text-[13px]">add</span>
                 <span data-i18n="agent.addKnowledge">添加备忘</span>
               </button>
-              <button id="agent-memory-close-btn" type="button" class="text-muted hover:text-primary p-1 cursor-pointer" data-i18n-title="agent.close" title="关闭">
-                <span class="material-symbols-outlined text-[16px]">close</span>
+              <button id="agent-memory-close-btn" type="button" class="panel-close-btn" data-i18n-title="agent.close" title="关闭">
+                <span class="material-symbols-outlined">close</span>
               </button>
             </div>
           </div>

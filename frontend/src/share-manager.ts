@@ -100,7 +100,7 @@ export class ShareManager {
             <h2 class="text-sm font-bold text-primary">${t('share.manageTitle')}</h2>
             <p id="share-manager-server" class="text-xs text-muted mt-1"></p>
           </div>
-          <button type="button" data-share-close class="text-muted hover:text-primary" aria-label="${t('common.close')}"><span class="material-symbols-outlined">close</span></button>
+          <button type="button" data-share-close class="panel-close-btn" aria-label="${t('common.close')}"><span class="material-symbols-outlined">close</span></button>
         </div>
         <div id="share-list-view">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
