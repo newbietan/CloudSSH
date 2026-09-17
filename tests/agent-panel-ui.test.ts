@@ -57,6 +57,10 @@ describe('Agent 面板控制与交互增强 (静态与词条校验)', () => {
     expect(panelSource).toContain('el.nextElementSibling.remove()');
   });
 
+  it('中止或响应时彻底移除流式半成品元素，仅保留停止响应', () => {
+    expect(panelSource).toContain('this.streamingEl.remove()');
+  });
+
   it('所有相关国际化词条在中英文语言包中均完整对齐', () => {
     const requiredKeys = [
       'agent.stop',

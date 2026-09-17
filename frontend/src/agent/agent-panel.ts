@@ -590,9 +590,7 @@ export class AgentPanel {
     }
 
     if (this.streamingEl) {
-      this.streamingEl.classList.remove('streaming');
-      const cursor = this.streamingEl.querySelector('.streaming-cursor');
-      cursor?.remove();
+      this.streamingEl.remove();
       this.streamingEl = null;
       this.streamingText = '';
     }
@@ -871,6 +869,11 @@ export class AgentPanel {
   }
 
   private addAgentResponse(content: string): void {
+    if (this.streamingEl) {
+      this.streamingEl.remove();
+      this.streamingEl = null;
+      this.streamingText = '';
+    }
     this.collapseThinkingProcess();
     this.sessionMessages.push({ role: 'response', content: content || '' });
     this.saveSessionDraft(false);
