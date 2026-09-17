@@ -1304,7 +1304,8 @@ export class AgentPanel {
   ): void {
     if (!newText.trim()) return;
 
-    if (this.isAgentRunning) {
+    const wasRunning = this.isAgentRunning;
+    if (wasRunning) {
       this.handleStop();
     }
 
@@ -1353,6 +1354,7 @@ export class AgentPanel {
       locale: getLocale(),
       timezone,
       userIndex: targetUserIndex,
+      supersede: wasRunning ? true : undefined,
     };
     this.wsSend?.(JSON.stringify(payload));
   }

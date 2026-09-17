@@ -168,8 +168,10 @@ describe('SSHSession 空闲超时机制', () => {
     (session as any).state = 'ready';
     (session as any).startIdleWatchdog();
 
-    // 等待 95ms (超过 120 - 40 = 80ms，触发预警)
-    await new Promise((resolve) => setTimeout(resolve, 95));
+    // 等待预警触发 (阈值为 120 - 40 = 80ms，轮询等待确保不因定时器调度抖动误报)
+    for (let i = 0; i < 15 && !session.isIdleWarningEmitted(); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
     expect(session.isIdleWarningEmitted()).toBe(true);
 
     const parsedMessages = sent.map((s) => {

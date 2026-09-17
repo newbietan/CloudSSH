@@ -55,6 +55,7 @@ describe('Agent 面板控制与交互增强 (静态与词条校验)', () => {
     expect(panelSource).toContain('agent-user-edit-save');
     expect(panelSource).toContain('submitInlineEdit');
     expect(panelSource).toContain('el.nextElementSibling.remove()');
+    expect(panelSource).toContain('supersede: wasRunning ? true : undefined');
   });
 
   it('中止或响应时彻底移除流式半成品元素，仅保留停止响应', () => {
