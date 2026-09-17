@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.9] - 2026-09-17
+
+### Added
+
+- **AI Agent 任务手动停止（Stop / Abort）**：
+  - 底部发送按钮在任务运行中动态切换为停止形态，附带醒目强调色与停止图标；
+  - 点击停止通过 WebSocket 下发优先控制帧 `agent_stop`，即时中止大模型流式推理与远端 SSH 命令执行通道；若处于 `agent_confirm` 等待期立即安全驳回确认；
+  - 后端精准区分用户手动停止与执行超时，下发友好中英文提示并更新气泡状态。
+- **未完成任务抢占式重发（In-Progress Supersede）**：
+  - 支持在任务进行中直接编辑输入框并提交，前端自动将上一条标记为已中止（`[已中止]` 徽标与取消图标）；
+  - 前端下发 `supersede: true` 标记，后端抢占式中止旧任务，避免并发通道竞争与 Token 浪费；
+  - 基于最新 200 行终端输出快照，新任务无缝继承当前服务器真实状态。
+- **Claude 风格气泡原地编辑与后续轮次物理清理**：
+  - 用户提问气泡悬浮操作栏提供编辑按钮，点击直接在原气泡位置就地展开内联输入框，主题色高亮边框，支持自适应高度（24–200px）、`Enter` 快捷提交与 `Esc` 取消；
+  - 原地编辑提交时，前端物理清除当前消息之后的所有后续节点（思考、执行、回复），后端接收 `userIndex` 精准切片截断历史对话上下文，消除无效多余留痕；
+  - 原地编辑重发与普通发送共享 `supersede` 抢占保护机制，杜绝极端时序下的并发冲突。
+- **会话重置与新建对话（New Chat / Reset）**：
+  - 面板顶栏新增新建会话按钮（`+` 图标），支持二次确认后彻底清空 DOM、消息历史与本地草稿；
+  - 后端下发 `agent_reset` 重置会话与迭代轮次，重置时不触发多余的记忆提炼，下一轮提问作为崭新会话重新触发环境感知。
+- **用户提问气泡悬浮操作栏（Floating Actions）**：
+  - 气泡外部左侧悬浮展示复制提问与编辑按钮，彻底移除原本气泡底部的操作预留空间，消除气泡底部空白；
+  - 触屏设备（`pointer: coarse`）保持常驻可用。
+
+### Fixed / Changed
+
+- **流式半成品残影物理清理**：
+  - 修复任务在流式生成途中被中止时，前端残留未闭合半截 Markdown 内容与后续提示上下并存的问题，统一执行流式节点物理移除。
+- **全站侧边抽屉与弹窗关闭按钮统一度量**：
+  - 为 SFTP 面板、自定义命令片段抽屉、Agent 备忘录及各设置弹窗关闭按钮统一定义 `.panel-close-btn`，规整为 28×28px 弹性居中方块，统一 hover 微交互。
+- **Agent 顶栏图标对齐与助手头像首行垂直居中**：
+  - 统一定义 `.agent-header-btn` 规格，消除顶栏按钮因内边距与行高导致的高低错位；
+  - 新增 `.agent-role-icon-wrapper` 规范助手角色图标为 21px 容器居中并重置首行子元素外边距，彻底解决机器人图标与文本第一行的漂高错位。
+- **CSS 级联选择器特异性修复**：
+  - 修复因 CSS“后者胜出”原则导致 `.agent-mobile-back` 覆盖 `display: none`、使桌面端误显移动端返回箭头的缺陷，通过 `:not(.agent-mobile-back)` 严格隔离桌面与移动端视图。
+
 ## [2.2.8] - 2026-09-16
 
 ### Added
