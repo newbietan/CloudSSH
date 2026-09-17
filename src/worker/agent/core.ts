@@ -190,6 +190,11 @@ export class AgentCore {
       this.loopTimeout = null;
     }
 
+    // 若已有运行中的任务，抢占式中止旧任务，防止并发通道竞争与 Token 浪费
+    if (this.state.status === 'running') {
+      this.agentAbort('superseded');
+    }
+
     // 判断是否为新会话（首次启动或状态已重置）
     const isNewSession = this.state.messages.length === 0;
     this.state.status = 'running';
@@ -280,6 +285,18 @@ export class AgentCore {
       this.abortController.abort(reason);
       this.state.status = 'idle';
     }
+  }
+
+  resetSession(): void {
+    this.agentAbort('reset');
+    this.state = { status: 'idle', messages: [], iteration: 0 };
+    this.terminalContextSnapshot = '';
+    this.environmentContext = '';
+    this.progress = {
+      uniqueCommands: new Set(),
+      recentToolCalls: [],
+      extensionUsed: 0,
+    };
   }
 
   private async runLoop(): Promise<void> {
@@ -494,20 +511,39 @@ export class AgentCore {
 
       // Loop exited — notify frontend of the reason
       if (signal.aborted) {
-        // 超时退出时通知前端；会话连接断开时前端已断开无需发送
         const reasonStr = String(signal.reason || '');
-        if (!reasonStr.includes('connection_closed')) {
+        if (reasonStr === 'user_stopped') {
+          const stopMsg =
+            this.preferredLocale === 'en-US'
+              ? 'Agent task stopped by user.'
+              : 'Agent 任务已由用户手动停止。';
           this.sendToFrontend({
             type: 'agent_frame',
             subType: 'response',
-            content: `Agent 执行超时（已运行 ${this.state.iteration} 步），已自动停止。请检查终端状态，或发送新消息继续操作。`,
+            content: stopMsg,
+          });
+        } else if (
+          reasonStr === 'superseded' ||
+          reasonStr.includes('connection_closed') ||
+          reasonStr === 'reset'
+        ) {
+          // 新任务抢占、连接断开或会话重置：无需发送超时通知
+        } else {
+          const timeoutMsg =
+            this.preferredLocale === 'en-US'
+              ? `Agent execution timed out (ran ${this.state.iteration} steps) and was automatically stopped. Please check the terminal state or send a new message.`
+              : `Agent 执行超时（已运行 ${this.state.iteration} 步），已自动停止。请检查终端状态，或发送新消息继续操作。`;
+          this.sendToFrontend({
+            type: 'agent_frame',
+            subType: 'response',
+            content: timeoutMsg,
           });
         }
       }
 
       // 迭代上限、超时或连接关闭导致的退出：若已有实质性命令执行，触发阶段性中断记忆提炼
       const hasExecuted = this.state.iteration > 0 || this.progress.recentToolCalls.length > 0;
-      if (hasExecuted) {
+      if (hasExecuted && signal.reason !== 'reset') {
         const snapshotMsgs = extractDistillationSnapshot(this.state.messages);
         const distillPromise = this.triggerMemoryDistillationIfEligible(snapshotMsgs, {
           interrupted: signal.aborted,

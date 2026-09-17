@@ -78,7 +78,17 @@ export interface AgentState {
 
 export interface AgentFrame {
   type: 'agent_frame';
-  subType: 'thinking' | 'executing' | 'response' | 'error' | 'confirm_required';
+  subType:
+    | 'thinking'
+    | 'executing'
+    | 'response'
+    | 'error'
+    | 'confirm_required'
+    | 'stream_chunk'
+    | 'stream_end'
+    | 'progress_extend'
+    | 'memory_updated'
+    | 'reset_done';
   [key: string]: unknown;
 }
 

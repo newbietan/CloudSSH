@@ -230,7 +230,7 @@ export class SSHSessionDO {
     try {
       const session = this.sessions.get(ws);
       if (session) {
-        // agent_confirm / agent_stop 需要绕过阻塞的 handleAgentStart 处理
+        // agent_confirm / agent_stop / agent_reset 需要绕过阻塞的 handleAgentStart 处理
         if (typeof message === 'string') {
           let msg: any;
           try {
@@ -238,7 +238,10 @@ export class SSHSessionDO {
           } catch {
             /* not JSON */
           }
-          if (msg && (msg.type === 'agent_confirm' || msg.type === 'agent_stop')) {
+          if (
+            msg &&
+            (msg.type === 'agent_confirm' || msg.type === 'agent_stop' || msg.type === 'agent_reset')
+          ) {
             session.handleAgentControl(msg.type, msg);
             return;
           }

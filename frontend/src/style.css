@@ -2190,6 +2190,72 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   box-shadow: none;
 }
 
+/* Agent stop button modifier */
+.agent-send-btn.is-stopping {
+  background: var(--error);
+  color: #fff;
+}
+
+.agent-send-btn.is-stopping:hover {
+  background: color-mix(in srgb, var(--error) 85%, white);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--error) 40%, transparent);
+}
+
+/* Agent user message actions bar */
+.agent-user-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.agent-user-bubble:hover .agent-user-actions,
+.agent-user-bubble:focus-within .agent-user-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Touch devices (coarse pointer) keep actions visible */
+@media (pointer: coarse) {
+  .agent-user-actions {
+    opacity: 0.85;
+    pointer-events: auto;
+  }
+}
+
+.agent-user-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.agent-user-action-btn:hover {
+  color: var(--on-surface);
+  background: color-mix(in srgb, var(--on-surface) 12%, transparent);
+}
+
+.agent-aborted-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  color: var(--error);
+  border: 1px solid color-mix(in srgb, var(--error) 25%, transparent);
+}
+
 /* Streaming cursor — blinking block appended to streamed text */
 @keyframes agent-blink {
   0%,

@@ -2148,7 +2148,8 @@ export class SSHSession {
             parsed.message,
             parsed.user_id,
             parsed.locale,
-            parsed.timezone
+            parsed.timezone,
+            parsed.supersede === true
           );
           return;
         }
@@ -2824,7 +2825,8 @@ export class SSHSession {
     userMessage: string,
     userId?: string,
     requestedLocale?: string,
-    requestedTimezone?: string
+    requestedTimezone?: string,
+    supersede = false
   ): Promise<void> {
     if (this.config.sessionPolicy?.source === 'share') {
       this.sendAgentFrame({
@@ -2861,12 +2863,20 @@ export class SSHSession {
     }
 
     if (this.agentCore?.getStatus() === 'running') {
-      this.sendAgentFrame({
-        type: 'agent_frame',
-        subType: 'error',
-        message: 'Agent 正在运行中，请先停止当前任务',
-      });
-      return;
+      if (supersede) {
+        if (this.confirmationResolve) {
+          this.confirmationResolve(false);
+          this.confirmationResolve = null;
+        }
+        this.agentCore.agentAbort('superseded');
+      } else {
+        this.sendAgentFrame({
+          type: 'agent_frame',
+          subType: 'error',
+          message: 'Agent 正在运行中，请先停止当前任务',
+        });
+        return;
+      }
     }
 
     if (!this.agentCore) {
@@ -2930,7 +2940,7 @@ export class SSHSession {
   }
 
   /**
-   * 处理 Agent 控制消息（confirm/stop），绕过被 handleAgentStart 阻塞的 WebSocket handler。
+   * 处理 Agent 控制消息（confirm/stop/reset），绕过被 handleAgentStart 阻塞的 WebSocket handler。
    * 这些消息由 durable-object.ts 在调用 handleWebSocketMessage 之前提前路由。
    */
   handleAgentControl(type: string, msg: any): void {
@@ -2943,7 +2953,23 @@ export class SSHSession {
       return;
     }
     if (type === 'agent_stop') {
-      this.agentCore?.agentAbort('connection_closed');
+      if (this.confirmationResolve) {
+        this.confirmationResolve(false);
+        this.confirmationResolve = null;
+      }
+      this.agentCore?.agentAbort('user_stopped');
+      return;
+    }
+    if (type === 'agent_reset') {
+      if (this.confirmationResolve) {
+        this.confirmationResolve(false);
+        this.confirmationResolve = null;
+      }
+      this.agentCore?.resetSession();
+      this.sendAgentFrame({
+        type: 'agent_frame',
+        subType: 'reset_done',
+      });
       return;
     }
   }

@@ -188,6 +188,9 @@ export class AgentPanel {
             <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)] truncate" data-i18n="agent.title">AI Agent 助手</span>
           </div>
           <div class="flex items-center gap-1">
+            <button id="agent-new-chat-btn" class="agent-header-btn text-muted hover:text-primary transition-colors cursor-pointer p-1 rounded hover:bg-[var(--bg-hover)] flex items-center justify-center" data-i18n-title="agent.newChat" title="${t('agent.newChat')}" aria-label="${t('agent.newChat')}">
+              <span class="material-symbols-outlined" style="font-size:18px;" aria-hidden="true">cleaning_services</span>
+            </button>
             <button id="agent-memory-btn" class="agent-header-btn text-muted hover:text-primary transition-colors cursor-pointer p-1 rounded hover:bg-[var(--bg-hover)] flex items-center justify-center" data-i18n-title="agent.memoryTitle" title="工作备忘与记忆" aria-label="工作备忘与记忆">
               <span class="material-symbols-outlined" style="font-size:18px;" aria-hidden="true">history_edu</span>
             </button>
@@ -308,6 +311,7 @@ export class AgentPanel {
 
   private bindEvents(): void {
     this.panelEl?.querySelector('#agent-close-btn')?.addEventListener('click', () => this.hide());
+    this.panelEl?.querySelector('#agent-new-chat-btn')?.addEventListener('click', () => void this.handleNewChat());
     this.panelEl?.querySelector('#agent-memory-btn')?.addEventListener('click', () => this.toggleMemoryDrawer());
     this.panelEl?.querySelector('#agent-memory-close-btn')?.addEventListener('click', () => this.closeMemoryDrawer());
     this.memoryTabWorkLogBtn?.addEventListener('click', () => this.switchMemoryTab('workLog'));
@@ -330,7 +334,13 @@ export class AgentPanel {
       });
     });
 
-    this.sendBtn?.addEventListener('click', () => this.handleSend());
+    this.sendBtn?.addEventListener('click', () => {
+      if (this.isAgentRunning) {
+        this.handleStop();
+      } else {
+        this.handleSend();
+      }
+    });
 
     this.inputEl?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -460,6 +470,10 @@ export class AgentPanel {
       case 'progress_extend':
         this.showProgressExtend(msg.message, msg.currentIteration, msg.newMax, msg.reason);
         break;
+      case 'reset_done':
+        this.isAgentRunning = false;
+        this.updateInputState();
+        break;
       case 'memory_updated':
         this.clearSessionDraft();
         if (this.serverId) {
@@ -487,8 +501,14 @@ export class AgentPanel {
   sendMessage(text: string, terminalSelection: TerminalSelectionContext | null = null): boolean {
     const message = text.trim();
     if (!message) return false;
-    if (this.isAgentRunning) return false;
     if (this.isWaitingConfirmation) return false;
+
+    const isSupersede = this.isAgentRunning;
+    if (isSupersede) {
+      this.markLastActiveMessageAborted();
+      this.wsSend?.(JSON.stringify({ type: 'agent_stop' }));
+    }
+
     const outboundMessage = terminalSelection
       ? buildTerminalSelectionMessage(message, terminalSelection)
       : message;
@@ -505,26 +525,114 @@ export class AgentPanel {
     this.updateInputState();
 
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-    this.wsSend?.(
-      JSON.stringify({
-        type: 'agent_start',
-        message: outboundMessage,
-        locale: getLocale(),
-        timezone,
-      })
-    );
+    const payload = {
+      type: 'agent_start',
+      message: outboundMessage,
+      locale: getLocale(),
+      timezone,
+      supersede: isSupersede ? true : undefined,
+    };
+    this.wsSend?.(JSON.stringify(payload));
     return true;
   }
 
   private updateInputState(): void {
-    const blocked = this.isAgentRunning || this.isWaitingConfirmation;
+    const isRunning = this.isAgentRunning;
+    const isWaiting = this.isWaitingConfirmation;
+
     if (this.inputEl) {
-      this.inputEl.disabled = blocked;
-      this.inputEl.placeholder = blocked ? t('agent.thinking') : t('agent.placeholder');
+      this.inputEl.disabled = isWaiting;
+      this.inputEl.placeholder = isRunning ? t('agent.stopAndResend') : t('agent.placeholder');
     }
+
     if (this.sendBtn) {
-      (this.sendBtn as HTMLButtonElement).disabled = blocked || !this.inputEl?.value.trim();
+      const btn = this.sendBtn as HTMLButtonElement;
+      if (isRunning) {
+        btn.disabled = false;
+        btn.classList.add('is-stopping');
+        btn.title = t('agent.stop');
+        btn.setAttribute('data-i18n-title', 'agent.stop');
+        // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
+        btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:18px;">stop</span>';
+      } else {
+        btn.classList.remove('is-stopping');
+        btn.title = t('agent.send');
+        btn.setAttribute('data-i18n-title', 'agent.send');
+        btn.disabled = isWaiting || !this.inputEl?.value.trim();
+        // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
+        btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:20px;">arrow_upward</span>';
+      }
     }
+  }
+
+  handleStop(): void {
+    if (!this.isAgentRunning && !this.isWaitingConfirmation) return;
+    this.wsSend?.(JSON.stringify({ type: 'agent_stop' }));
+    if (this.isWaitingConfirmation) {
+      this.rejectPendingConfirmation(false);
+    }
+    this.isAgentRunning = false;
+    this.markLastActiveMessageAborted();
+    this.updateInputState();
+  }
+
+  private markLastActiveMessageAborted(): void {
+    if (this.thinkingProcessEl) {
+      this.collapseThinkingProcess();
+      if (this.thinkingStatusEl) {
+        this.thinkingStatusEl.textContent = `${t('agent.abortedBadge')} (${this.thinkingStepCount})`;
+      }
+      const mainIcon = this.thinkingProcessEl.querySelector('.tp-icon') as HTMLElement | null;
+      if (mainIcon) {
+        mainIcon.textContent = 'cancel';
+        mainIcon.style.color = 'var(--error)';
+      }
+    }
+
+    if (this.streamingEl) {
+      this.streamingEl.classList.remove('streaming');
+      const cursor = this.streamingEl.querySelector('.streaming-cursor');
+      cursor?.remove();
+      this.streamingEl = null;
+      this.streamingText = '';
+    }
+  }
+
+  private async handleNewChat(): Promise<void> {
+    if (this.sessionMessages.length > 0 || this.isAgentRunning) {
+      const ok = await confirmAction({
+        title: t('agent.newChat'),
+        message: t('agent.newChatConfirm'),
+        variant: 'danger',
+      });
+      if (!ok) return;
+    }
+
+    if (this.isAgentRunning) {
+      this.handleStop();
+    }
+    this.wsSend?.(JSON.stringify({ type: 'agent_reset' }));
+    this.resetPanelState();
+  }
+
+  private resetPanelState(): void {
+    this.sessionMessages = [];
+    this.clearSessionDraft();
+    if (this.messagesEl) {
+      this.messagesEl.innerHTML = '';
+    }
+    this.streamingEl = null;
+    this.streamingText = '';
+    this.removeThinkingProcess();
+    this.removeResumeChip();
+    this.thinkingStepCount = 0;
+    this.livePreviewCache = [];
+    if (this.pendingConfirmation) {
+      this.rejectPendingConfirmation(false);
+    }
+    this.clearTerminalSelectionContext();
+    this.isAgentRunning = false;
+    this.updateInputState();
   }
 
   private addUserMessage(text: string, hasTerminalSelection = false): void {
@@ -1037,16 +1145,45 @@ export class AgentPanel {
     if (isUser) {
     // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
       el.innerHTML = `
-        <div class="flex justify-end">
-          <div class="max-w-[85%] px-3 py-2 rounded-lg" style="background: color-mix(in srgb, ${themeColor} 12%, transparent); border: 1px solid color-mix(in srgb, ${themeColor} 30%, transparent);">
+        <div class="flex justify-end agent-user-container group relative">
+          <div class="max-w-[85%] px-3 py-2 rounded-lg agent-user-bubble relative" style="background: color-mix(in srgb, ${themeColor} 12%, transparent); border: 1px solid color-mix(in srgb, ${themeColor} 30%, transparent);">
             ${terminalSelectionBadge}
             <div class="flex gap-2 items-start">
               <div class="flex-1 min-w-0 text-[13px]">${renderedContent}</div>
               <div class="shrink-0 mt-0.5">${roleIcon}</div>
             </div>
+            <div class="agent-user-actions flex justify-end gap-1 mt-1 pt-1 border-t border-white/10">
+              <button type="button" class="agent-user-action-btn agent-user-copy-btn" data-i18n-title="agent.copyPrompt" title="${t('agent.copyPrompt')}">
+                <span class="material-symbols-outlined text-[13px]">content_copy</span>
+              </button>
+              <button type="button" class="agent-user-action-btn agent-user-edit-btn" data-i18n-title="agent.editPrompt" title="${t('agent.editPrompt')}">
+                <span class="material-symbols-outlined text-[13px]">edit</span>
+              </button>
+            </div>
           </div>
         </div>
       `;
+
+      const copyBtn = el.querySelector<HTMLButtonElement>('.agent-user-copy-btn');
+      const editBtn = el.querySelector<HTMLButtonElement>('.agent-user-edit-btn');
+      copyBtn?.addEventListener('click', async () => {
+        const copied = await copyTextToClipboard(content);
+        const icon = copyBtn.querySelector('.material-symbols-outlined');
+        if (icon) {
+          icon.textContent = copied ? 'check' : 'close';
+          setTimeout(() => {
+            if (icon) icon.textContent = 'content_copy';
+          }, 1500);
+        }
+      });
+      editBtn?.addEventListener('click', () => {
+        if (!this.inputEl) return;
+        this.inputEl.value = content;
+        this.inputEl.focus();
+        this.inputEl.style.height = 'auto';
+        this.inputEl.style.height = `${Math.min(this.inputEl.scrollHeight, 140)}px`;
+        this.updateInputState();
+      });
     } else {
     // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
       el.innerHTML = `
