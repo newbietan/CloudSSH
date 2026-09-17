@@ -2201,26 +2201,44 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   box-shadow: 0 2px 8px color-mix(in srgb, var(--error) 40%, transparent);
 }
 
-/* Agent user message actions bar */
+/* Agent user message actions bar - floating toolbar outside bubble */
 .agent-user-actions {
+  position: absolute;
+  right: 100%;
+  bottom: 4px;
+  margin-right: 6px;
   display: flex;
   align-items: center;
   gap: 2px;
+  padding: 2px 3px;
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transform: translateX(4px);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
   pointer-events: none;
+  z-index: 5;
+  white-space: nowrap;
 }
 
+.agent-user-container:hover .agent-user-actions,
+.agent-user-container:focus-within .agent-user-actions,
 .agent-user-bubble:hover .agent-user-actions,
 .agent-user-bubble:focus-within .agent-user-actions {
   opacity: 1;
+  transform: translateX(0);
   pointer-events: auto;
 }
 
-/* Touch devices (coarse pointer) keep actions visible */
+/* Touch devices (coarse pointer) keep actions accessible */
 @media (pointer: coarse) {
   .agent-user-actions {
-    opacity: 0.85;
+    opacity: 0.75;
+    transform: translateX(0);
     pointer-events: auto;
   }
 }

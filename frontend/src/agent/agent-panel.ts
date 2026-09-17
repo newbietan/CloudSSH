@@ -1146,13 +1146,13 @@ export class AgentPanel {
     // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
       el.innerHTML = `
         <div class="flex justify-end agent-user-container group relative">
-          <div class="max-w-[85%] px-3 py-2 rounded-lg agent-user-bubble relative" style="background: color-mix(in srgb, ${themeColor} 12%, transparent); border: 1px solid color-mix(in srgb, ${themeColor} 30%, transparent);">
+          <div class="max-w-[calc(100%-64px)] px-3 py-2 rounded-lg agent-user-bubble relative" style="background: color-mix(in srgb, ${themeColor} 12%, transparent); border: 1px solid color-mix(in srgb, ${themeColor} 30%, transparent);">
             ${terminalSelectionBadge}
             <div class="flex gap-2 items-start">
               <div class="flex-1 min-w-0 text-[13px]">${renderedContent}</div>
               <div class="shrink-0 mt-0.5">${roleIcon}</div>
             </div>
-            <div class="agent-user-actions flex justify-end gap-1 mt-1 pt-1 border-t border-white/10">
+            <div class="agent-user-actions">
               <button type="button" class="agent-user-action-btn agent-user-copy-btn" data-i18n-title="agent.copyPrompt" title="${t('agent.copyPrompt')}">
                 <span class="material-symbols-outlined text-[13px]">content_copy</span>
               </button>
