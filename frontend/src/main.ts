@@ -143,6 +143,9 @@ function activateTerminalView(): void {
   document.getElementById('terminal-section')!.classList.remove('hidden');
   document.getElementById('terminal-section')!.classList.add('flex');
   document.body.classList.add('terminal-active');
+  requestAnimationFrame(() => {
+    terminalDrawerControl?.refresh();
+  });
 }
 
 function showTerminalSection(): void {
@@ -434,6 +437,8 @@ document.getElementById('disconnect-btn')?.addEventListener('click', () => {
   tm.closeActiveTab();
 });
 
+// ==================== 抽屉分段控制条与互斥联动 ====================
+
 let terminalDrawerControl: LiquidSegmentedDrawerControl | null = null;
 
 function syncDrawerSegmentedControl(): void {
@@ -449,8 +454,51 @@ function syncDrawerSegmentedControl(): void {
   }
 }
 
-// ==================== 命令片段库 ====================
+function initTerminalDrawerControl(): void {
+  const drawerBar = document.getElementById('terminal-drawer-segmented-bar');
+  if (!drawerBar) return;
 
+  terminalDrawerControl = new LiquidSegmentedDrawerControl(drawerBar, (drawer, open) => {
+    const tab = tabManager?.getActiveTab();
+    if (drawer === 'sftp') {
+      if (open) {
+        if (!tab?.sftpPanel) {
+          // SSH 尚未就绪
+          terminalDrawerControl?.setActive(null);
+          return;
+        }
+        snippetManager.close();
+        tab.agentPanel?.hide();
+        tab.sftpPanel.show();
+      } else {
+        tab?.sftpPanel?.hide();
+      }
+    } else if (drawer === 'snippet') {
+      if (open) {
+        tab?.sftpPanel?.hide();
+        tab?.agentPanel?.hide();
+        void snippetManager.open();
+      } else {
+        snippetManager.close();
+      }
+    } else if (drawer === 'agent') {
+      if (open) {
+        if (!tab?.agentPanel) {
+          terminalDrawerControl?.setActive(null);
+          return;
+        }
+        tab.sftpPanel?.hide();
+        snippetManager.close();
+        tab.agentPanel.show();
+      } else {
+        tab?.agentPanel?.hide();
+      }
+    }
+    syncDrawerSegmentedControl();
+  });
+}
+
+// 移动端命令片段按钮
 function toggleSnippetManager(): void {
   const tab = tabManager?.getActiveTab();
   if (!snippetManager.isOpen()) {
@@ -461,47 +509,14 @@ function toggleSnippetManager(): void {
   syncDrawerSegmentedControl();
 }
 
-document.getElementById('snippet-toggle-btn')?.addEventListener('click', toggleSnippetManager);
 document.getElementById('mobile-snippets-btn')?.addEventListener('click', toggleSnippetManager);
 
-// ==================== SFTP 面板 ====================
-
-document.getElementById('sftp-toggle-btn')?.addEventListener('click', () => {
-  const tab = tabManager?.getActiveTab();
-  if (!tab) return;
-
-  if (!tab.sftpPanel) {
-    // SFTP 面板由 TabManager 的 sessionReady 回调初始化
-    // 如果还没有初始化，说明 SSH 还没就绪
-    return;
-  }
-  // 打开 SFTP 时互斥收起 Agent 与 Snippet 面板
-  if (!tab.sftpPanel.isVisible()) {
-    tab.agentPanel?.hide();
-    snippetManager.close();
-  }
-  tab.sftpPanel.toggle();
-  syncDrawerSegmentedControl();
-});
-
-// ==================== AI Agent 面板 ====================
+// ==================== AI Agent 面板设置 ====================
 
 const aiConfigPanel = new AIConfigPanel();
 
 document.getElementById('ai-config-btn')?.addEventListener('click', () => {
   aiConfigPanel.show();
-});
-
-document.getElementById('agent-toggle-btn')?.addEventListener('click', () => {
-  const tab = tabManager?.getActiveTab();
-  if (!tab?.agentPanel) return;
-  // 打开 Agent 时互斥收起 SFTP 与 Snippet 面板
-  if (!tab.agentPanel.isOpen) {
-    tab.sftpPanel?.hide();
-    snippetManager.close();
-  }
-  tab.agentPanel.toggle();
-  syncDrawerSegmentedControl();
 });
 
 const askAISelectionButton = document.getElementById('ask-ai-selection-btn');
@@ -796,7 +811,7 @@ async function init(): Promise<void> {
 
   const drawerBar = document.getElementById('terminal-drawer-segmented-bar');
   if (drawerBar) {
-    terminalDrawerControl = new LiquidSegmentedDrawerControl(drawerBar);
+    initTerminalDrawerControl();
   }
 
   document.addEventListener('cloudssh:active-terminal-change', () => {

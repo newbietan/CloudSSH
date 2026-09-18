@@ -38,6 +38,7 @@ export class LiquidSegmentedDrawerControl {
   private readonly lens: HTMLElement;
   private readonly buttons: Map<string, HTMLButtonElement> = new Map();
   private activeDrawer: string | null = null;
+  private onToggleCallback?: (drawer: string, open: boolean) => void;
 
   // 双边异步物理弹簧引擎
   private leftSpring = new Spring(0, 210, 24);
@@ -47,15 +48,23 @@ export class LiquidSegmentedDrawerControl {
   private lastTimestamp: number | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
-  constructor(container: HTMLElement) {
+  constructor(
+    container: HTMLElement,
+    onToggle?: (drawer: string, open: boolean) => void
+  ) {
     this.container = container;
     this.lens = container.querySelector('.drawer-segmented-lens') as HTMLElement;
+    this.onToggleCallback = onToggle;
 
     const btnElements = container.querySelectorAll<HTMLButtonElement>('.drawer-segmented-btn');
     for (const btn of btnElements) {
       const drawer = btn.getAttribute('data-drawer');
       if (drawer) {
         this.buttons.set(drawer, btn);
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.handleButtonClick(drawer);
+        });
       }
     }
 
@@ -69,7 +78,20 @@ export class LiquidSegmentedDrawerControl {
     }
   }
 
+  private handleButtonClick(drawer: string): void {
+    if (this.activeDrawer === drawer) {
+      // 再次点击同一个激活按钮：收起抽屉
+      this.setActive(null, true);
+      this.onToggleCallback?.(drawer, false);
+    } else {
+      // 切换到新抽屉：透镜丝滑滑移过去
+      this.setActive(drawer, true);
+      this.onToggleCallback?.(drawer, true);
+    }
+  }
+
   public setActive(drawer: string | null, animate = true): void {
+    const prevDrawer = this.activeDrawer;
     this.activeDrawer = drawer;
 
     for (const [id, btn] of this.buttons.entries()) {
@@ -79,12 +101,13 @@ export class LiquidSegmentedDrawerControl {
     }
 
     if (!drawer) {
-      this.lens.style.opacity = '0';
       this.stopAnimationLoop();
+      this.lens.style.opacity = '0';
+      this.lastCenter = null;
       return;
     }
 
-    this.updateLensPosition(animate);
+    this.updateLensPosition(animate && prevDrawer !== null);
   }
 
   public getActive(): string | null {
@@ -92,18 +115,20 @@ export class LiquidSegmentedDrawerControl {
   }
 
   private updateLensPosition(animate = true): void {
-    if (!this.activeDrawer) {
-      this.lens.style.opacity = '0';
-      return;
-    }
+    if (!this.activeDrawer) return;
 
     const activeBtn = this.buttons.get(this.activeDrawer);
-    if (!activeBtn || activeBtn.offsetWidth === 0 || this.container.offsetWidth === 0) {
+    if (!activeBtn) return;
+
+    const segRect = this.container.getBoundingClientRect();
+    const btnRect = activeBtn.getBoundingClientRect();
+
+    if (btnRect.width === 0 || segRect.width === 0) {
       return;
     }
 
-    const left = activeBtn.offsetLeft;
-    const right = left + activeBtn.offsetWidth;
+    const left = btnRect.left - segRect.left;
+    const right = btnRect.right - segRect.left;
     const center = (left + right) / 2;
     const movingRight = this.lastCenter === null ? true : center > this.lastCenter;
     this.lastCenter = center;
@@ -112,7 +137,7 @@ export class LiquidSegmentedDrawerControl {
       typeof window !== 'undefined' &&
       (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
 
-    if (!animate || reduceMotion || this.leftSpring.value === 0 || this.lens.style.opacity === '0') {
+    if (!animate || reduceMotion || this.lastCenter === null) {
       this.leftSpring.value = left;
       this.leftSpring.target = left;
       this.leftSpring.velocity = 0;
