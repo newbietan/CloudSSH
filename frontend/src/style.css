@@ -1842,11 +1842,21 @@ html[data-ui-style="liquid"] {
   --shadow-floating: 0 18px 40px -8px rgba(0, 102, 218, 0.2), inset 0 1px 1px rgba(255, 255, 255, 0.85);
 }
 
-html[data-ui-style="liquid"] #user-space-section {
+/* 用户空间（服务器列表）全域无界流体画布：消除顶栏与底栏的实体底色与硬分割线，使全屏流体壁纸浑然一体 */
+html[data-ui-style="liquid"] div#user-space-section {
   background: transparent;
 }
 
-html[data-ui-style="liquid"] :is(.user-space-header, .terminal-app-header, header) {
+html[data-ui-style="liquid"] #user-space-section :is(.user-space-header, .user-space-footer) {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border: none;
+  box-shadow: none;
+}
+
+/* 终端会话页顶栏与底栏（保留轻量高光磨砂与分隔） */
+html[data-ui-style="liquid"] .terminal-app-header {
   background: color-mix(in srgb, var(--bg-surface) 40%, rgba(255, 255, 255, 0.18));
   -webkit-backdrop-filter: blur(24px) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
   backdrop-filter: blur(24px) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
@@ -1854,11 +1864,51 @@ html[data-ui-style="liquid"] :is(.user-space-header, .terminal-app-header, heade
   box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.03);
 }
 
-html[data-ui-style="liquid"] :is(.user-space-footer, .terminal-footer, footer) {
+html[data-ui-style="liquid"] .terminal-footer {
   background: color-mix(in srgb, var(--bg-surface) 40%, rgba(255, 255, 255, 0.18));
   -webkit-backdrop-filter: blur(24px) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
   backdrop-filter: blur(24px) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
   border-top: 1px solid rgba(255, 255, 255, 0.45);
+}
+
+/* 用户空间顶栏微透镜胶囊操作项 */
+html[data-ui-style="liquid"] .user-space-header .theme-selector {
+  background: rgba(255, 255, 255, 0.55);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 
+    0 2px 8px -2px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.9);
+  border-radius: calc(8px * var(--radius-scale, 1));
+}
+
+html[data-ui-style="liquid"] .user-space-header .theme-selector:hover,
+html[data-ui-style="liquid"] .user-space-header .theme-selector:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 
+    0 0 0 3px rgba(0, 102, 218, 0.22),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.95);
+}
+
+html[data-ui-style="liquid"] .user-space-header :is(.theme-toolbar-button, .user-space-menu-action) {
+  border-radius: calc(8px * var(--radius-scale, 1));
+  transition: all var(--motion-fast) ease;
+}
+
+html[data-ui-style="liquid"] .user-space-header :is(.theme-toolbar-button, .user-space-menu-action):hover {
+  background: rgba(255, 255, 255, 0.5);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+html[data-ui-style="liquid"] .user-space-header-actions {
+  background: color-mix(in srgb, var(--bg-surface) 75%, rgba(255, 255, 255, 0.45));
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 16px 36px -8px rgba(0, 0, 0, 0.15);
 }
 
 html[data-ui-style="liquid"] :is(.server-card, .cyber-box) {
