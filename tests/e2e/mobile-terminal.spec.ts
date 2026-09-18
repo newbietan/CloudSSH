@@ -29,6 +29,10 @@ test('窄屏匿名连接表单不横向溢出且输入框避免 iOS 自动缩放
 test('移动端终端使用紧凑布局并提供完整快捷键入口', async ({ page }) => {
   await mockAnonymousSession(page);
   await page.goto('/?lang=zh-CN');
+  // 必须等匿名会话真实渲染完成再做手工 DOM 提示：init() 在 /api/auth/me 返回后
+  // 会调用 showAuthSection() → deactivateTerminalView() 重新隐藏 #terminal-section，
+  // 若早于该时机提升就会偶发被覆盖（并行执行时表现为 #mobile-terminal-toolbar 隐藏）。
+  await expect(page.locator('#connection-form')).toBeVisible();
 
   await page.evaluate(() => {
     document.getElementById('auth-section')?.classList.add('hidden');
@@ -114,6 +118,7 @@ test('软键盘动画使用可视视口并只在尺寸稳定后适配终端', as
   });
   await mockAnonymousSession(page);
   await page.goto('/?lang=zh-CN');
+  await expect(page.locator('#connection-form')).toBeVisible();
 
   const result = await page.evaluate(async () => {
     document.getElementById('auth-section')?.classList.add('hidden');
@@ -307,6 +312,7 @@ test('终端字号随手机、触屏平板和桌面宽度调整且不受文本�
 test('移动端 Agent 可返回终端且 SFTP 面板占满可用区域', async ({ page }) => {
   await mockAnonymousSession(page);
   await page.goto('/?lang=zh-CN');
+  await expect(page.locator('#connection-form')).toBeVisible();
 
   const dimensions = await page.evaluate(async () => {
     document.getElementById('auth-section')?.classList.add('hidden');
