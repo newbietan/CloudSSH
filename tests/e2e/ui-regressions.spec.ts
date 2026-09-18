@@ -317,3 +317,91 @@ test('Liquid Glass 主题下 AI 模型下拉与设置面板保持可滚动、可
   await expect(menu).toBeHidden();
   await expect(page.locator('#ai-model')).toHaveValue('model-40');
 });
+
+/**
+ * 窄视口弹窗不得出现横向滚动条（v2.3.0 后续缺陷）：
+ *
+ * 模型行里的「获取模型列表」按钮是 shrink-0 + whitespace-nowrap，而
+ * #ai-model-combobox 未声明 min-width: 0，因此 flex 行无法收缩，整行比面板宽出
+ * 约 80px；而 overflow-y: auto 会使 overflow-x 计算为 auto，于是弹窗底部冒出
+ * 原生横向滚动条，并把左侧标签挤出可视区（用户上报的「不美观」）。
+ *
+ * 修复：面板 overflow-x: hidden + 面板内 .terminal-input { min-width: 0 }
+ *   + 模型组合框 min-w-0；滚动条另经全局主题化，不再使用系统原生外观。
+ * 同时守护 .no-scrollbar 确实有定义（此前该 class 被引用但从未实现，
+ * 导致面包屑/胶囊条等本应隐藏的横向滚动条一直以原生样式出现）。
+ */
+test('窄视口 AI 设置弹窗不出现横向滚动条，且 .no-scrollbar 已实现', async ({ page }) => {
+  await blockOptionalThirdPartyAssets(page);
+  await page.route('**/api/auth/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 1, github_id: 42, username: 'testuser', avatar_url: '' }),
+    })
+  );
+  await page.route('**/api/servers', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+  );
+  await page.route('**/api/ai/config', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        configured: true,
+        base_url: 'https://openrouter.ai/api/v1',
+        model: 'gpt-4o-mini',
+        api_key_last4: '26b8',
+      }),
+    })
+  );
+  await page.route('**/api/ai/models', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        // 长模型名曾把面板撑出横向滚动条
+        models: Array.from({ length: 12 }, (_, i) => ({
+          id: `deepseek/deepseek-r1-distill-llama-70b-${i}`,
+        })),
+        fallback: false,
+      }),
+    })
+  );
+
+  await page.addInitScript(() => localStorage.setItem('cloudssh_theme_selection', 'liquid-glass'));
+  await page.goto('/?lang=zh-CN');
+  await expect(page.locator('html')).toHaveAttribute('data-ui-style', 'liquid');
+
+  const moreBtn = page.locator('#user-space-more-btn');
+  if (await moreBtn.isVisible()) await moreBtn.click();
+  await page.locator('#ai-config-btn').click();
+  await expect(page.locator('#ai-config-modal')).toBeVisible();
+  await page.locator('#ai-fetch-models-btn').click();
+  await expect(page.locator('#ai-model-menu')).toBeVisible();
+
+  const layout = await page.evaluate(() => {
+    const panel = document.querySelector(
+      '#ai-config-modal .responsive-modal-panel'
+    ) as HTMLElement;
+    const menu = document.getElementById('ai-model-menu') as HTMLElement;
+    const btn = document.getElementById('ai-fetch-models-btn') as HTMLElement;
+    const panelRect = panel.getBoundingClientRect();
+    const probe = document.createElement('div');
+    probe.className = 'no-scrollbar';
+    document.body.appendChild(probe);
+    const noScrollbarWidth = getComputedStyle(probe).scrollbarWidth;
+    probe.remove();
+    return {
+      panelHasHScroll: panel.scrollWidth > panel.clientWidth,
+      menuHasHScroll: menu.scrollWidth > menu.clientWidth,
+      btnInsidePaddingBox: btn.getBoundingClientRect().right <= panelRect.right,
+      noScrollbarWidth,
+    };
+  });
+
+  expect(layout.panelHasHScroll).toBe(false);
+  expect(layout.menuHasHScroll).toBe(false);
+  expect(layout.btnInsidePaddingBox).toBe(true);
+  expect(layout.noScrollbarWidth).toBe('none');
+});

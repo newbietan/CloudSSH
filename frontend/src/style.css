@@ -57,6 +57,8 @@
   --control-min-height: 32px;
   --card-padding: 1.25rem;
   --panel-gap: 0.75rem;
+  /* 滚动条尺寸（不随主题变化） */
+  --scrollbar-size: 8px;
   --terminal-frame-gap: 6px;
   /* 侧边抽屉（SFTP / 自定义命令 / AI Agent）顶部让位高度。
      桌面端顶栏为 h-16 = 4rem，抽屉必须从其下方展开，
@@ -594,8 +596,51 @@ select optgroup {
   background-size: 100% 4px;
 }
 
+/* ==================== 滚动条 ====================
+   目标：避免各主题下出现系统原生滚动条外观，并让滚动条跟随主题着色
+   （4 套内置主题都定义了 --scrollbar-* 变量）。
+   - 全局兜底使用伪元素级 / 通配级特异性，因此 .custom-scrollbar、.no-scrollbar
+     以及组件自身的滚动条规则都仍可按类优先级覆盖；
+   - 尺寸固定不随主题变化，避免切换主题时滚动条宽度变化导致终端列数需重算；
+   - 需要隐藏滚动条但仍可滚动的横向容器（胶囊、面包屑等）使用 .no-scrollbar。 */
+::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Firefox：scrollbar-color 可继承、scrollbar-width 不可继承，故用通配级兜底 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+/* 隐藏滚动条但保留滚动能力 */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* 显式声明主题化滚动条（语义标记，数值与全局兜底一致） */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 8px;
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
@@ -798,8 +843,19 @@ select optgroup {
 
 .responsive-modal-panel {
   max-height: calc(var(--visual-viewport-height) - 32px);
+  /* 绝不能出现横向滚动条：overflow-y 非 visible 会使 overflow-x 计算为 auto，
+     一旦内部有无法收缩的宽内容（如模型行里 shrink-0 的按钮），弹窗就会冒出
+     原生横向滚动条并把内容挤到可视区外。横向溢出必须靠让内容真正收缩
+     （flex 子项 min-width: 0）消除，而不是滚动。纵向滚动条已在上方主题化。 */
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* 表单控件在 flex 行内必须允许收缩：.terminal-input 的 width:100% 叠加
+   自动最小尺寸（约等于 size 属性宽度）会在窄弹窗中把同级控件顶出面板。 */
+.responsive-modal-panel .terminal-input {
+  min-width: 0;
 }
 
 #server-grid {
