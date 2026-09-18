@@ -133,7 +133,7 @@ describe('Theme V2 界面风格', () => {
   afterEach(() => applyBuiltInTheme('cyberpunk'));
 
   it('提供版本化外观结构，并让内置主题覆盖四种风格', () => {
-    expect(THEME_SCHEMA_VERSION).toBe(3);
+    expect(THEME_SCHEMA_VERSION).toBe(4);
     expect(BUILT_IN_APPEARANCE).toEqual({
       'standard-dark': { style: 'standard' },
       'standard-light': { style: 'standard' },
@@ -254,7 +254,7 @@ describe('Theme V2 界面风格', () => {
         },
       })
     ).toEqual({
-      schemaVersion: 3,
+      schemaVersion: 4,
       name: 'My Theme',
       baseTheme: 'cyberpunk',
       colorScheme: 'dark',
@@ -276,7 +276,7 @@ describe('Theme V2 界面风格', () => {
         ui: { '--accent': '#b8bb26' },
       })
     ).toEqual({
-      schemaVersion: 3,
+      schemaVersion: 4,
       name: 'Legacy Gruvbox Custom',
       baseTheme: 'standard-dark',
       colorScheme: 'dark',
@@ -295,7 +295,7 @@ describe('Theme V2 界面风格', () => {
         appearance: { style: 'soft' },
       })
     ).toEqual({
-      schemaVersion: 3,
+      schemaVersion: 4,
       name: 'Legacy Glacier Custom',
       colorScheme: 'dark',
       ui: { '--accent': '#67e8f9' },
@@ -432,7 +432,7 @@ describe('Standard 主题入口和编辑器', () => {
     for (const field of ['button', 'input', 'card', 'tabs']) {
       expect(editorHtml).toContain(`key: '${field}'`);
     }
-    expect(editorHtml).toContain('schemaVersion: 3');
+    expect(editorHtml).toContain('schemaVersion: 4');
     expect(editorHtml).toContain('baseTheme: activePreset');
     expect(editorHtml).toContain('sanitizeAppearance(data.appearance)');
     expect(editorHtml).toContain('file.size > THEME_MAX_BYTES');

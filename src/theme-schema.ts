@@ -1,4 +1,4 @@
-export const THEME_SCHEMA_VERSION = 3;
+export const THEME_SCHEMA_VERSION = 4;
 export const THEME_MAX_BYTES = 64 * 1024;
 
 export const BUILT_IN_THEME_NAMES = [

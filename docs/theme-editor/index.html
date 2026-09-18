@@ -2816,7 +2816,7 @@ const TRANSLATIONS = {
     'option.standard': '标准',
     'option.cyberpunk': '赛博朋克',
     'option.soft': '柔和',
-    'option.dense': '紧凑',
+    'option.liquid': '液态玻璃',
     'option.square': '方正',
     'option.rounded': '圆角',
     'option.compact': '紧凑',
@@ -2995,7 +2995,7 @@ const TRANSLATIONS = {
     'option.standard': 'Standard',
     'option.cyberpunk': 'Cyberpunk',
     'option.soft': 'Soft',
-    'option.dense': 'Dense',
+    'option.liquid': 'Liquid Glass',
     'option.square': 'Square',
     'option.rounded': 'Rounded',
     'option.compact': 'Compact',
@@ -3496,7 +3496,7 @@ const THEME_MAX_BYTES = 64 * 1024;
 const invalidColorProperties = new Set();
 
 const APPEARANCE_FIELDS = [
-  { key: 'style', labelKey: 'appearance.style', values: ['standard', 'cyberpunk', 'soft', 'dense'] },
+  { key: 'style', labelKey: 'appearance.style', values: ['standard', 'cyberpunk', 'soft', 'dense', 'liquid'] },
   { key: 'shape', labelKey: 'appearance.shape', values: ['square', 'rounded', 'soft'] },
   { key: 'density', labelKey: 'appearance.density', values: ['compact', 'comfortable', 'spacious'] },
   { key: 'font', labelKey: 'appearance.font', values: ['mono', 'system'] },
@@ -3922,7 +3922,7 @@ document.getElementById('btn-export').addEventListener('click', () => {
     Object.keys(PRESETS['standard-dark'].terminal),
   );
   const output = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     name: themeName.trim() || 'Custom',
     baseTheme: activePreset || (colorScheme === 'light' ? 'standard-light' : 'cyberpunk'),
     colorScheme,
