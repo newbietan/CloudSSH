@@ -144,6 +144,18 @@ test('终端四周留白按形状收窄并为圆角保留安全间距', async ({
   await selector.selectOption('liquid-glass');
   await expect(terminalMain).toHaveCSS('padding', '10px');
   await expect(terminalWrapper).toHaveCSS('border-radius', '21px');
+
+  // 打开命令片段抽屉，验证搜索框在 Liquid Glass 下无嵌套边框且搜索图标置顶可见
+  await page.locator('#snippet-toggle-btn').click();
+  const snippetPanel = page.locator('#snippet-panel');
+  await expect(snippetPanel).toBeVisible();
+  const searchInput = page.locator('#snippet-search-input');
+  await expect(searchInput).toBeVisible();
+  await expect(searchInput).toHaveClass(/terminal-input/);
+  await expect(searchInput).toHaveCSS('min-height', '34px');
+  const searchIcon = snippetPanel.locator('span.material-symbols-outlined:has-text("search")');
+  await expect(searchIcon).toBeVisible();
+  await expect(searchIcon).toHaveClass(/z-10/);
 });
 
 test('应用导入 Theme V2 JSON 后覆盖本地主题并同步账号', async ({ page }) => {
