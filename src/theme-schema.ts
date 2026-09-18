@@ -5,11 +5,20 @@ export const BUILT_IN_THEME_NAMES = [
   'standard-dark',
   'standard-light',
   'cyberpunk',
-  'apple',
-  'gruvbox',
-  'crt',
-  'glass',
+  'liquid-glass',
 ] as const;
+
+/**
+ * 已下线的内置主题到当前有效内置主题的平滑映射。
+ * 保证历史自定义主题导入或加载时，仍能继承最契合的调色板基底。
+ * 未在此映射表中的未知主题名（如更早期的 glacier）则按规范丢弃 baseTheme，由明暗方案兜底。
+ */
+export const LEGACY_BASE_THEME_MAP: Record<string, BuiltInThemeName> = {
+  apple: 'liquid-glass',
+  gruvbox: 'standard-dark',
+  crt: 'cyberpunk',
+  glass: 'liquid-glass',
+};
 
 export const SAFE_UI_THEME_PROPERTIES = [
   '--bg',
@@ -67,7 +76,7 @@ export const SAFE_TERMINAL_THEME_PROPERTIES = [
   'brightWhite',
 ] as const;
 
-const UI_STYLE_NAMES = ['standard', 'cyberpunk', 'soft', 'dense'] as const;
+const UI_STYLE_NAMES = ['standard', 'cyberpunk', 'soft', 'dense', 'liquid'] as const;
 const THEME_SHAPES = ['square', 'rounded', 'soft'] as const;
 const THEME_DENSITIES = ['compact', 'comfortable', 'spacious'] as const;
 const THEME_FONTS = ['mono', 'system'] as const;
@@ -189,8 +198,10 @@ export function normalizeThemeData(data: unknown): NormalizedThemeData | null {
   }
 
   const baseTheme =
-    typeof input.baseTheme === 'string' && BUILT_IN_THEME_SET.has(input.baseTheme)
-      ? (input.baseTheme as BuiltInThemeName)
+    typeof input.baseTheme === 'string'
+      ? BUILT_IN_THEME_SET.has(input.baseTheme)
+        ? (input.baseTheme as BuiltInThemeName)
+        : LEGACY_BASE_THEME_MAP[input.baseTheme]
       : undefined;
   const name = typeof input.name === 'string' ? input.name.trim().slice(0, 80) : '';
 

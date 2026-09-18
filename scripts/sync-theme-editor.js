@@ -20,10 +20,7 @@ const labels = {
   'standard-dark': 'Standard Dark',
   'standard-light': 'Standard Light',
   cyberpunk: 'Cyberpunk',
-  apple: 'Apple',
-  gruvbox: 'Gruvbox',
-  crt: 'CRT Amber',
-  glass: 'Glass',
+  'liquid-glass': 'Liquid Glass',
 };
 
 const presets = Object.fromEntries(

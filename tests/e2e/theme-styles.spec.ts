@@ -51,18 +51,6 @@ test('内置主题切换 UI 风格但保持服务器列表结构稳定', async (
   await expect(card).toHaveCount(1);
   await expect(grid).toHaveClass(/grid-cols-1/);
 
-  await selector.selectOption('apple');
-  await expect(page.locator('html')).toHaveAttribute('data-ui-style', 'soft');
-  await expect(page.locator('html')).toHaveAttribute('data-component-card', 'elevated');
-  await expect(card).toHaveCSS('border-radius', '15px');
-  await expect(terminalSelector).toHaveValue('apple');
-
-  await selector.selectOption('gruvbox');
-  await expect(page.locator('html')).toHaveAttribute('data-ui-style', 'dense');
-  await expect(page.locator('html')).toHaveAttribute('data-ui-density', 'compact');
-  await expect(card).toHaveCSS('border-radius', '9px');
-  await expect(card).toHaveCSS('box-shadow', 'none');
-
   await selector.selectOption('cyberpunk');
   await expect(page.locator('html')).toHaveAttribute('data-ui-style', 'cyberpunk');
   await expect(card).toHaveCSS('border-radius', '0px');
@@ -78,20 +66,15 @@ test('内置主题切换 UI 风格但保持服务器列表结构稳定', async (
     'rgb(74, 246, 38)'
   );
 
-  // V3：CRT 与 Glass 内置主题携带背景/效果/模糊配置
-  await selector.selectOption('crt');
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'crt');
-  await expect(page.locator('html')).toHaveAttribute('data-ui-style', 'cyberpunk');
-  await expect(page.locator('html')).toHaveAttribute('data-fx-scanline', 'on');
-  await expect(page.locator('html')).toHaveAttribute('data-fx-glow', 'on');
-  await expect(terminalSelector).toHaveValue('crt');
-
-  await selector.selectOption('glass');
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'glass');
+  // V3：Liquid Glass 内置主题携带背景/效果/模糊与 liquid 风格专属配置
+  await selector.selectOption('liquid-glass');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'liquid-glass');
+  await expect(page.locator('html')).toHaveAttribute('data-ui-style', 'liquid');
   await expect(page.locator('html')).toHaveAttribute('data-ui-blur', 'strong');
   await expect(page.locator('html')).toHaveAttribute('data-bg-animation', 'drift');
   await expect(page.locator('html')).toHaveAttribute('data-fx-glow', 'on');
   await expect(card).toHaveCSS('border-radius', '21px');
+  await expect(terminalSelector).toHaveValue('liquid-glass');
   expect(
     await page.evaluate(() => getComputedStyle(document.body, '::before').backgroundImage)
   ).toContain('radial-gradient');
@@ -158,9 +141,9 @@ test('终端四周留白按形状收窄并为圆角保留安全间距', async ({
   await expect(terminalMain).toHaveCSS('padding', '7px');
   await expect(terminalWrapper).toHaveCSS('border-radius', '9px');
 
-  await selector.selectOption('apple');
+  await selector.selectOption('liquid-glass');
   await expect(terminalMain).toHaveCSS('padding', '10px');
-  await expect(terminalWrapper).toHaveCSS('border-radius', '15px');
+  await expect(terminalWrapper).toHaveCSS('border-radius', '21px');
 });
 
 test('应用导入 Theme V2 JSON 后覆盖本地主题并同步账号', async ({ page }) => {
@@ -302,9 +285,9 @@ test('AI 模型选择下拉面板在浅色与暗色内置主题下无缝自适�
 
   const userThemeSelector = page.locator('#user-theme-selector');
 
-  // 1. 测试浅色主题 Apple
-  await userThemeSelector.selectOption('apple');
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'apple');
+  // 1. 测试浅色主题 Liquid Glass
+  await userThemeSelector.selectOption('liquid-glass');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'liquid-glass');
 
   await page.locator('#ai-config-btn').click();
   const modal = page.locator('#ai-config-modal');
@@ -323,12 +306,12 @@ test('AI 模型选择下拉面板在浅色与暗色内置主题下无缝自适�
   await expect(unselectedOption).toBeVisible();
   await expect(unselectedOption).toHaveClass(/text-on-surface/);
 
-  // 2. 切换暗色主题 CRT
+  // 2. 切换暗色主题 Cyberpunk
   await page.locator('#ai-modal-close-btn').click();
   await expect(modal).toBeHidden();
 
-  await userThemeSelector.selectOption('crt');
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'crt');
+  await userThemeSelector.selectOption('cyberpunk');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'cyberpunk');
 
   await page.locator('#ai-config-btn').click();
   await expect(modal).toBeVisible();

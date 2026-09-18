@@ -15,6 +15,7 @@ import type { SSHHostInfo, SSHTerminal } from './terminal';
 import {
   applyBuiltInTheme,
   applyImportedTheme,
+  type BuiltInThemeName,
   isBuiltInTheme,
   normalizeImportedTheme,
   THEME_MAX_BYTES,
@@ -586,16 +587,25 @@ importThemeInput?.addEventListener('change', (e) => {
 
 // ==================== 主题恢复 ====================
 
+const LEGACY_THEME_MIGRATION: Record<string, BuiltInThemeName> = {
+  glacier: 'standard-dark',
+  apple: 'liquid-glass',
+  gruvbox: 'standard-dark',
+  crt: 'cyberpunk',
+  glass: 'liquid-glass',
+};
+
 /** 恢复主题（在 init 时调用，此时还没有终端实例，只设置 UI 变量） */
 function restoreTheme(): void {
   const selection = localStorage.getItem('cloudssh_theme_selection');
   localStorage.removeItem('cloudssh_theme');
 
-  // glacier 内置主题已被 Apple 主题取代：旧选择一次性迁移到同为深色的 Standard Dark
-  if (selection === 'glacier') {
-    localStorage.setItem('cloudssh_theme_selection', 'standard-dark');
-    applyBuiltInTheme('standard-dark');
-    syncThemeSelectors('standard-dark');
+  // 旧版内置主题平滑迁移到当前最契合的内置主题
+  if (selection && selection in LEGACY_THEME_MIGRATION) {
+    const migrated = LEGACY_THEME_MIGRATION[selection];
+    localStorage.setItem('cloudssh_theme_selection', migrated);
+    applyBuiltInTheme(migrated);
+    syncThemeSelectors(migrated);
     return;
   }
 

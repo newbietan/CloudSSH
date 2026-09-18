@@ -73,7 +73,7 @@ describe('Standard 内置主题', () => {
       'brightWhite',
     ] as const;
 
-    for (const themeName of ['standard-dark', 'standard-light', 'apple', 'crt', 'glass'] as const) {
+    for (const themeName of ['standard-dark', 'standard-light', 'liquid-glass'] as const) {
       for (const key of ansiKeys) {
         expect(THEMES[themeName][key]).toMatch(/^#[0-9a-f]{6}$/i);
       }
@@ -81,7 +81,7 @@ describe('Standard 内置主题', () => {
   });
 
   it('主要文本、次要文本和强调色达到普通文字 4.5:1 对比度', () => {
-    for (const themeName of ['standard-dark', 'standard-light', 'apple', 'crt', 'glass'] as const) {
+    for (const themeName of ['standard-dark', 'standard-light', 'liquid-glass'] as const) {
       const ui = UI_THEMES[themeName];
       for (const foreground of ['--text', '--text-muted', '--text-dim', '--accent', '--error']) {
         expect(contrastRatio(ui[foreground], ui['--bg'])).toBeGreaterThanOrEqual(4.5);
@@ -138,28 +138,26 @@ describe('Theme V2 界面风格', () => {
       'standard-dark': { style: 'standard' },
       'standard-light': { style: 'standard' },
       cyberpunk: { style: 'cyberpunk' },
-      apple: { style: 'soft' },
-      gruvbox: { style: 'dense' },
-      crt: { style: 'cyberpunk' },
-      glass: { style: 'soft', blur: 'strong' },
+      'liquid-glass': { style: 'liquid', shape: 'soft', blur: 'strong' },
     });
     expect(Object.keys(UI_STYLE_PRESETS).sort()).toEqual([
       'cyberpunk',
       'dense',
+      'liquid',
       'soft',
       'standard',
     ]);
   });
 
   it('切换内置主题会同步形状、密度、字体、阴影、动效和组件风格', () => {
-    applyBuiltInTheme('apple');
+    applyBuiltInTheme('liquid-glass');
     expect(getActiveThemeAppearance()).toEqual({
-      style: 'soft',
+      style: 'liquid',
       shape: 'soft',
       density: 'comfortable',
       font: 'system',
       shadow: 'elevated',
-      motion: 'reduced',
+      motion: 'full',
       blur: 'strong',
       components: {
         button: 'soft',
@@ -169,10 +167,10 @@ describe('Theme V2 界面风格', () => {
       },
     });
 
-    applyBuiltInTheme('gruvbox');
-    expect(getActiveThemeAppearance().style).toBe('dense');
+    applyBuiltInTheme('cyberpunk');
+    expect(getActiveThemeAppearance().style).toBe('cyberpunk');
     expect(getActiveThemeAppearance().density).toBe('compact');
-    expect(getActiveThemeAppearance().components.card).toBe('flat');
+    expect(getActiveThemeAppearance().components.button).toBe('outline');
   });
 
   it('自定义主题可以在预设之上安全覆盖外观枚举', () => {
@@ -243,7 +241,7 @@ describe('Theme V2 界面风格', () => {
       normalizeImportedTheme({
         schemaVersion: 999,
         name: ' My Theme ',
-        baseTheme: 'gruvbox',
+        baseTheme: 'cyberpunk',
         colorScheme: 'dark',
         ui: {
           '--accent': '#abcdef',
@@ -258,13 +256,31 @@ describe('Theme V2 界面风格', () => {
     ).toEqual({
       schemaVersion: 3,
       name: 'My Theme',
-      baseTheme: 'gruvbox',
+      baseTheme: 'cyberpunk',
       colorScheme: 'dark',
       ui: { '--accent': '#abcdef' },
       appearance: {
         shape: 'soft',
         components: { button: 'solid' },
       },
+    });
+  });
+
+  it('旧版内置基础主题（gruvbox/apple 等）平滑映射到继任内置主题', () => {
+    expect(
+      normalizeImportedTheme({
+        schemaVersion: 2,
+        name: 'Legacy Gruvbox Custom',
+        baseTheme: 'gruvbox',
+        colorScheme: 'dark',
+        ui: { '--accent': '#b8bb26' },
+      })
+    ).toEqual({
+      schemaVersion: 3,
+      name: 'Legacy Gruvbox Custom',
+      baseTheme: 'standard-dark',
+      colorScheme: 'dark',
+      ui: { '--accent': '#b8bb26' },
     });
   });
 
@@ -343,10 +359,7 @@ describe('Standard 主题入口和编辑器', () => {
     expect(appHtml.match(/data-theme-import/g)).toHaveLength(3);
     expect(appHtml).not.toContain('data-theme-export');
     expect(appHtml).not.toContain('data-theme-delete');
-    expect(appHtml).toContain('Apple · Soft');
-    expect(appHtml).toContain('Gruvbox · Dense');
-    expect(appHtml).toContain('CRT Amber');
-    expect(appHtml).toContain('Glass · Soft');
+    expect(appHtml).toContain('Liquid Glass');
   });
 
   it('Pages 保持独立，应用为登录用户同步单个自定义主题', () => {
@@ -358,8 +371,9 @@ describe('Standard 主题入口和编辑器', () => {
     expect(mainSource).toContain(
       'void restoreCloudTheme(initialThemeSelection, themeSelectionRevision)'
     );
-    // glacier 已被 Apple 取代：旧选择在恢复时迁移到 Standard Dark，避免静默回退到默认主题
-    expect(mainSource).toContain("selection === 'glacier'");
+    // 旧版内置主题在恢复时平滑迁移到当前内置主题，避免静默回退到默认主题
+    expect(mainSource).toContain('LEGACY_THEME_MIGRATION');
+    expect(mainSource).toContain("glacier: 'standard-dark'");
     expect(mainSource).toContain("'standard-dark'");
     expect(workerSource).toContain("url.pathname === '/api/user/theme'");
     expect(userDbSource).toContain('CREATE TABLE IF NOT EXISTS user_themes');
@@ -392,10 +406,7 @@ describe('Standard 主题入口和编辑器', () => {
       'standard-dark',
       'standard-light',
       'cyberpunk',
-      'apple',
-      'gruvbox',
-      'crt',
-      'glass',
+      'liquid-glass',
     ]) {
       expect(editorHtml).toContain(`<option value="${themeName}"`);
     }
@@ -431,14 +442,13 @@ describe('Standard 主题入口和编辑器', () => {
     expect(editorHtml).toContain('ui: safeUiTheme');
     expect(editorHtml).not.toContain('transition: all');
     expect(THEME_MAX_BYTES).toBe(64 * 1024);
-    expect(editorPresets.apple.appearance).toMatchObject({
-      style: 'soft',
+    expect(editorPresets['liquid-glass'].appearance).toMatchObject({
+      style: 'liquid',
       shape: 'soft',
       density: 'comfortable',
     });
-    expect(editorPresets.crt.background).toMatchObject({ type: 'radial' });
-    expect(editorPresets.glass.background).toMatchObject({ type: 'mesh', animation: 'drift' });
-    expect(editorPresets.glass.appearance).toMatchObject({ blur: 'strong' });
+    expect(editorPresets['liquid-glass'].background).toMatchObject({ type: 'mesh', animation: 'drift' });
+    expect(editorPresets['liquid-glass'].appearance).toMatchObject({ blur: 'strong' });
   });
 
   it('终端订阅全局主题并在销毁时解除订阅', () => {
@@ -528,12 +538,11 @@ describe('Theme V3 背景层、效果与版式', () => {
   });
 
   it('内置主题携带差异化的背景、效果与版式配置', () => {
-    expect(BUILT_IN_BACKGROUND.crt?.type).toBe('radial');
-    expect(BUILT_IN_BACKGROUND.glass?.type).toBe('mesh');
-    expect(BUILT_IN_BACKGROUND.glass?.animation).toBe('drift');
+    expect(BUILT_IN_BACKGROUND['liquid-glass']?.type).toBe('mesh');
+    expect(BUILT_IN_BACKGROUND['liquid-glass']?.animation).toBe('drift');
     expect(BUILT_IN_EFFECTS.cyberpunk).toEqual({ scanline: 1, flicker: 1 });
-    expect(BUILT_IN_EFFECTS.crt?.glow).toBeGreaterThan(0);
-    expect(BUILT_IN_TYPOGRAPHY.glass?.radiusScale).toBeGreaterThan(1);
+    expect(BUILT_IN_EFFECTS['liquid-glass']?.glow).toBeGreaterThan(0);
+    expect(BUILT_IN_TYPOGRAPHY['liquid-glass']?.radiusScale).toBeGreaterThan(1);
     expect(BUILT_IN_BACKGROUND['standard-dark']).toBeUndefined();
   });
 });
