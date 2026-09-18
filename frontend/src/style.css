@@ -1830,85 +1830,140 @@ html[data-ui-style="soft"] :is(header, footer) {
   backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate, 100%));
 }
 
-/* ==================== Liquid Glass (macOS 26 风格) ==================== */
+/* ==================== Liquid Glass (macOS 26 风格 - 参考 shuding/liquid-glass 光学建模) ==================== */
 html[data-ui-style="liquid"] {
-  --surface-blur: 24px;
-  --surface-saturate: 180%;
+  --surface-blur: 20px;
+  --surface-saturate: 190%;
+  --surface-contrast: 112%;
+  --surface-brightness: 106%;
   --hover-lift: -3px;
-  --shadow-card: 0 10px 30px -5px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(255, 255, 255, 0.6) inset;
-  --shadow-modal: 0 25px 60px -12px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.8) inset;
-  --shadow-floating: 0 16px 36px -8px rgba(0, 113, 227, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.7) inset;
+  --shadow-card: 0 16px 36px -10px rgba(31, 38, 135, 0.08), inset 0 1px 1px rgba(255, 255, 255, 0.95);
+  --shadow-modal: 0 32px 72px -16px rgba(0, 0, 0, 0.25), inset 0 1px 1px rgba(255, 255, 255, 1);
+  --shadow-floating: 0 18px 40px -8px rgba(0, 102, 218, 0.2), inset 0 1px 1px rgba(255, 255, 255, 0.85);
 }
 
 html[data-ui-style="liquid"] :is(header, footer) {
-  background: color-mix(in srgb, var(--bg-surface) 80%, transparent);
-  -webkit-backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate, 180%));
-  backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate, 180%));
-  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-surface) 60%, rgba(255, 255, 255, 0.25));
+  -webkit-backdrop-filter: blur(20px) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
+  backdrop-filter: blur(20px) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.04), inset 0 -1px 0 0 rgba(255, 255, 255, 0.4);
 }
 
-html[data-ui-style="liquid"] :is(.server-card, .cyber-box, .app-dialog__panel) {
+html[data-ui-style="liquid"] :is(.server-card, .cyber-box) {
   background: var(--bg-surface);
-  -webkit-backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate, 180%));
-  backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate, 180%));
-  border: 1px solid rgba(255, 255, 255, 0.65);
-  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07), inset 0 1px 1px 0 rgba(255, 255, 255, 0.85);
+  -webkit-backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
+  backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-top-color: rgba(255, 255, 255, 0.85);
+  border-bottom-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 
+    0 16px 36px -10px rgba(31, 38, 135, 0.08),
+    0 2px 6px -1px rgba(0, 0, 0, 0.04),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -10px 20px -5px rgba(0, 0, 0, 0.03),
+    inset 0 0 16px 0 rgba(255, 255, 255, 0.12);
 }
 
 html[data-ui-style="liquid"] .server-card:hover {
   transform: translateY(-3px) scale(1.008);
-  box-shadow: 0 16px 40px 0 rgba(0, 113, 227, 0.14), inset 0 1px 1px 0 rgba(255, 255, 255, 0.95);
-  border-color: rgba(0, 113, 227, 0.35);
+  border-color: rgba(0, 102, 218, 0.35);
+  border-top-color: rgba(255, 255, 255, 0.95);
+  box-shadow: 
+    0 24px 48px -12px rgba(0, 102, 218, 0.18),
+    0 4px 12px -2px rgba(0, 0, 0, 0.05),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 1),
+    inset 0 -10px 20px -5px rgba(0, 102, 218, 0.04),
+    inset 0 0 20px 0 rgba(255, 255, 255, 0.2);
   transition: transform var(--motion-normal) cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow var(--motion-normal) ease, border-color var(--motion-normal) ease;
 }
 
+html[data-ui-style="liquid"] :is(.app-dialog__panel, .remote-editor__panel, .auth-challenge-dialog__panel) {
+  background: color-mix(in srgb, var(--bg-surface) 60%, rgba(255, 255, 255, 0.35));
+  -webkit-backdrop-filter: blur(30px) saturate(200%) contrast(115%) brightness(108%);
+  backdrop-filter: blur(30px) saturate(200%) contrast(115%) brightness(108%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-top-color: rgba(255, 255, 255, 0.95);
+  border-bottom-color: rgba(255, 255, 255, 0.25);
+  box-shadow: 
+    0 32px 72px -16px rgba(0, 0, 0, 0.25),
+    0 10px 24px -4px rgba(0, 0, 0, 0.1),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 1),
+    inset 0 -12px 28px -6px rgba(0, 0, 0, 0.04),
+    inset 0 0 24px 0 rgba(255, 255, 255, 0.15);
+}
+
 html[data-ui-style="liquid"] :is(#agent-panel, #sftp-panel, #snippet-panel) {
-  background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
-  -webkit-backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate, 180%));
-  backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate, 180%));
-  box-shadow: -10px 0 40px rgba(0, 0, 0, 0.08), inset 1px 0 0 rgba(255, 255, 255, 0.7);
+  background: color-mix(in srgb, var(--bg-surface) 65%, rgba(255, 255, 255, 0.28));
+  -webkit-backdrop-filter: blur(28px) saturate(200%) contrast(115%) brightness(108%);
+  backdrop-filter: blur(28px) saturate(200%) contrast(115%) brightness(108%);
+  border-left: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 
+    -16px 0 48px -8px rgba(0, 0, 0, 0.12),
+    inset 1px 0 0 0 rgba(255, 255, 255, 0.95),
+    inset 0 0 24px 0 rgba(255, 255, 255, 0.15);
 }
 
 html[data-ui-style="liquid"] .cyber-button:not(.text-error) {
-  background: color-mix(in srgb, var(--bg-surface) 85%, transparent);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  background: color-mix(in srgb, var(--bg-surface) 60%, rgba(255, 255, 255, 0.45));
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  backdrop-filter: blur(12px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-top-color: rgba(255, 255, 255, 0.9);
+  border-bottom-color: rgba(255, 255, 255, 0.25);
+  box-shadow: 
+    0 2px 8px -2px rgba(0, 0, 0, 0.06),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -4px 8px -3px rgba(0, 0, 0, 0.03);
   transition: all var(--motion-fast) cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 html[data-ui-style="liquid"] .cyber-button:not(.text-error):hover {
-  background: color-mix(in srgb, var(--accent) 15%, var(--bg-surface));
-  border-color: var(--accent);
-  box-shadow: 0 4px 14px var(--accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  background: color-mix(in srgb, var(--accent) 18%, rgba(255, 255, 255, 0.65));
+  border-color: rgba(0, 102, 218, 0.4);
+  border-top-color: rgba(255, 255, 255, 1);
+  box-shadow: 
+    0 4px 16px var(--accent-glow),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 1);
   transform: translateY(-1px);
 }
 
 html[data-ui-style="liquid"] .connect-btn {
-  background: linear-gradient(180deg, #0077ed 0%, #0066da 100%);
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  box-shadow: 0 4px 16px rgba(0, 113, 227, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  background: linear-gradient(180deg, #0a84ff 0%, #0066da 100%);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-top-color: rgba(255, 255, 255, 0.85);
+  box-shadow: 
+    0 6px 20px -3px rgba(0, 102, 218, 0.45),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.75),
+    inset 0 -8px 12px -4px rgba(0, 0, 0, 0.2);
   transition: all var(--motion-normal) cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 html[data-ui-style="liquid"] .connect-btn:hover {
-  box-shadow: 0 6px 22px rgba(0, 113, 227, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  box-shadow: 
+    0 8px 26px -3px rgba(0, 102, 218, 0.6),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.9);
   transform: translateY(-2px) scale(1.02);
 }
 
 html[data-ui-style="liquid"] .terminal-input {
-  background: color-mix(in srgb, var(--bg-surface) 90%, transparent);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+  background: color-mix(in srgb, var(--bg-surface) 75%, rgba(255, 255, 255, 0.4));
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-top-color: rgba(0, 0, 0, 0.06);
+  box-shadow: 
+    inset 0 1px 2px rgba(0, 0, 0, 0.06),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.7);
   transition: all var(--motion-fast) ease;
 }
 
 html[data-ui-style="liquid"] .terminal-input:focus {
+  background: rgba(255, 255, 255, 0.75);
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.22), inset 0 1px 1px rgba(0, 0, 0, 0.02);
+  box-shadow: 
+    0 0 0 3.5px rgba(0, 102, 218, 0.24),
+    inset 0 1px 1px rgba(0, 0, 0, 0.03);
 }
 
 html[data-ui-style="liquid"] .tab-item {
@@ -1916,18 +1971,56 @@ html[data-ui-style="liquid"] .tab-item {
   transition: all var(--motion-fast) cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+html[data-ui-style="liquid"] .tab-item:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.35);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
 html[data-ui-style="liquid"] .tab-item.active {
-  background: rgba(255, 255, 255, 0.85);
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.65);
+  -webkit-backdrop-filter: blur(16px) saturate(180%) contrast(110%);
+  backdrop-filter: blur(16px) saturate(180%) contrast(110%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-top-color: rgba(255, 255, 255, 0.95);
+  box-shadow: 
+    0 4px 14px -2px rgba(0, 0, 0, 0.06),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 1),
+    inset 0 -4px 8px -3px rgba(0, 0, 0, 0.03);
 }
 
 html[data-ui-style="liquid"] #terminal-frame {
-  -webkit-backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate, 180%));
-  backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate, 180%));
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08), inset 0 1px 1px rgba(255, 255, 255, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.7);
+  -webkit-backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
+  backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
+  box-shadow: 
+    0 20px 50px -15px rgba(0, 0, 0, 0.1),
+    0 4px 12px -2px rgba(0, 0, 0, 0.04),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -10px 24px -6px rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-top-color: rgba(255, 255, 255, 0.9);
+}
+
+html[data-ui-style="liquid"] #snippet-list > div {
+  background: rgba(255, 255, 255, 0.4);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-top-color: rgba(255, 255, 255, 0.9);
+  box-shadow: 
+    0 4px 16px -3px rgba(0, 0, 0, 0.04),
+    inset 0 1px 1px rgba(255, 255, 255, 0.9);
+  border-radius: calc(10px * var(--radius-scale, 1));
+}
+
+html[data-ui-style="liquid"] #snippet-list > div:hover {
+  background: rgba(255, 255, 255, 0.6);
+  border-color: rgba(0, 102, 218, 0.35);
+  border-top-color: rgba(255, 255, 255, 1);
+  box-shadow: 
+    0 8px 24px -4px rgba(0, 102, 218, 0.12),
+    inset 0 1px 1px rgba(255, 255, 255, 1);
+  transform: translateY(-1.5px);
 }
 
 html[data-ui-style="dense"] .server-card:hover {
