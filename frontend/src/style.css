@@ -2377,7 +2377,6 @@ html[data-theme="standard-light"] .drawer-segmented-lens {
 
 html[data-ui-style="liquid"] :is(.server-card, .cyber-box) {
   position: relative;
-  overflow: hidden;
   background: var(--bg-surface);
   -webkit-backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
   backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
@@ -2387,6 +2386,19 @@ html[data-ui-style="liquid"] :is(.server-card, .cyber-box) {
   border-radius: var(--card-radius);
   box-shadow: var(--shadow-card);
   transition: transform 0.42s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+/* 裁剪只对卡片生效（指针天光 ::before 用 inset:0 + border-radius:inherit 自会
+   贴合圆角，此处仅为防御性双保险）。
+   ⚠️ 绝不可把 overflow 简写写进上面的 :is(.server-card, .cyber-box) 规则：
+   `overflow: hidden` 会同时把 overflow-x/overflow-y 置为 hidden，且本选择器
+   特异性高于 Tailwind 的 .overflow-y-auto。而 #ai-model-menu（AI 模型下拉）与
+   分享管理列表都带有 .cyber-box 并依赖 overflow-y-auto 滚动，一旦被改成 hidden，
+   long 列表即无法滚动 / 无法选择（v2.3.0 回归缺陷）。
+   另：唯一需要裁剪的 .theme-accent-line 在非 cyberpunk 风格下为 opacity:0，
+   故 Liquid Glass 下对 .cyber-box 本就不需要任何裁剪。 */
+html[data-ui-style="liquid"] .server-card {
+  overflow: hidden;
 }
 
 /* 隐藏赛博朋克风格的硬渐变顶线，保持液态透镜纯净质感 */

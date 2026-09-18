@@ -231,3 +231,89 @@ test('Turnstile 跟随 Standard Light 和后续主题切换', async ({ page }) =
       removals: ['widget-1'],
     });
 });
+
+/**
+ * Liquid Glass 下 .cyber-box 的 overflow 简写回归（v2.3.0 缺陷）：
+ *
+ * 主题规则 `html[data-ui-style="liquid"] :is(.server-card, .cyber-box)` 曾使用
+ * `overflow: hidden` 简写。它会同时把 overflow-x / overflow-y 置为 hidden，
+ * 且特异性高于 Tailwind 的 `.overflow-y-auto`。而 #ai-model-menu（AI 模型下拉）
+ * 与 .responsive-modal-panel（AI 设置面板本身）都带 .cyber-box 并依赖滚动，
+ * 于是模型列表与面板全部失去滚动能力 —— 445 个模型只能看到前 6 个且无法选择。
+ *
+ * 本用例以「用户级」方式断言：滚轮悬停在列表上必须真的产生滚动，且滚动后
+ * 靠后的模型必须能被点选并写回输入框（仅在断言 overflow-y 计算值之外多一层保障）。
+ */
+test('Liquid Glass 主题下 AI 模型下拉与设置面板保持可滚动、可选（overflow 简写回归）', async ({
+  page,
+}) => {
+  await blockOptionalThirdPartyAssets(page);
+  await page.route('**/api/auth/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 1, github_id: 42, username: 'testuser', avatar_url: '' }),
+    })
+  );
+  await page.route('**/api/servers', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+  );
+  await page.route('**/api/ai/config', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        configured: true,
+        base_url: 'https://api.example.com/v1',
+        model: 'model-0',
+        api_key_last4: '9999',
+      }),
+    })
+  );
+  // 模型数量必须足以超出 max-h-52（208px）才会暴露不可滚动的问题
+  await page.route('**/api/ai/models', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        models: Array.from({ length: 60 }, (_, i) => ({ id: `model-${i}` })),
+        fallback: false,
+      }),
+    })
+  );
+
+  await page.addInitScript(() => localStorage.setItem('cloudssh_theme_selection', 'liquid-glass'));
+  await page.goto('/?lang=zh-CN');
+  await expect(page.locator('html')).toHaveAttribute('data-ui-style', 'liquid');
+
+  await page.locator('#ai-config-btn').click();
+  await expect(page.locator('#ai-config-modal')).toBeVisible();
+  await page.locator('#ai-fetch-models-btn').click();
+
+  const menu = page.locator('#ai-model-menu');
+  await expect(menu).toBeVisible();
+  const options = menu.locator('#ai-model-options > div');
+  await expect(options).toHaveCount(60);
+
+  // 意图锁定：必须保留 Tailwind 的 overflow-y-auto（曾被简写改成 hidden）
+  expect(await menu.evaluate((el) => getComputedStyle(el).overflowY)).toBe('auto');
+  // 面板本身同样依赖 overflow-y-auto 在矮视口下滚动
+  expect(
+    await page
+      .locator('#ai-config-modal .responsive-modal-panel')
+      .evaluate((el) => getComputedStyle(el).overflowY)
+  ).toBe('auto');
+
+  // 用户级验证：滚轮悬停在列表上必须真的滚动
+  const menuBox = (await menu.boundingBox())!;
+  await page.mouse.move(menuBox.x + menuBox.width / 2, menuBox.y + menuBox.height / 2);
+  await page.mouse.wheel(0, 600);
+  await expect.poll(async () => menu.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+
+  // 滚动到靠后位置后，必须能真正点选并写回输入框
+  const target = options.nth(40);
+  await target.scrollIntoViewIfNeeded();
+  await target.click();
+  await expect(menu).toBeHidden();
+  await expect(page.locator('#ai-model')).toHaveValue('model-40');
+});
