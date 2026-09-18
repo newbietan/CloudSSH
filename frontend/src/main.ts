@@ -266,6 +266,9 @@ function showUserSpace(user: {
   document.getElementById('auth-section')!.classList.add('hidden');
   document.getElementById('user-space-section')!.classList.remove('hidden');
   document.getElementById('user-space-section')!.classList.add('flex');
+  requestAnimationFrame(() => {
+    userThemeSegmentedControl?.refresh();
+  });
 
   // Show agent toggle button for logged-in users
   document.getElementById('agent-toggle-btn')?.classList.remove('hidden');
@@ -298,6 +301,9 @@ function showConnectionPage(): void {
     deactivateTerminalView();
     document.getElementById('user-space-section')!.classList.remove('hidden');
     document.getElementById('user-space-section')!.classList.add('flex');
+    requestAnimationFrame(() => {
+      userThemeSegmentedControl?.refresh();
+    });
   } else {
     showAuthSection();
   }
