@@ -1871,20 +1871,29 @@ html[data-ui-style="liquid"] #user-space-section :is(.user-space-header, .user-s
   box-shadow: none;
 }
 
-/* 终端会话页顶栏与底栏（保留轻量高光磨砂与分隔） */
+/* 终端会话页顶栏与标签栏（高透微晶磨砂） */
 html[data-ui-style="liquid"] .terminal-app-header {
-  background: color-mix(in srgb, var(--bg-surface) 40%, rgba(255, 255, 255, 0.18));
+  background: color-mix(in srgb, var(--bg-surface) 25%, rgba(255, 255, 255, 0.22));
   -webkit-backdrop-filter: blur(24px) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
   backdrop-filter: blur(24px) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
   border-bottom: 1px solid rgba(255, 255, 255, 0.45);
   box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.03);
 }
 
+html[data-ui-style="liquid"] #tab-bar {
+  background: color-mix(in srgb, var(--bg-surface) 25%, rgba(255, 255, 255, 0.22));
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.45);
+}
+
+/* 终端会话页底栏（极轻透明度悬浮，消除沉重白底） */
 html[data-ui-style="liquid"] .terminal-footer {
-  background: color-mix(in srgb, var(--bg-surface) 40%, rgba(255, 255, 255, 0.18));
-  -webkit-backdrop-filter: blur(24px) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
-  backdrop-filter: blur(24px) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
-  border-top: 1px solid rgba(255, 255, 255, 0.45);
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-top: none;
+  height: 32px;
 }
 
 /* 用户空间顶栏微透镜胶囊操作项 */
@@ -2373,16 +2382,26 @@ html[data-ui-style="liquid"] .tab-item.active {
     inset 0 -4px 8px -3px rgba(0, 0, 0, 0.03);
 }
 
-html[data-ui-style="liquid"] #terminal-frame {
+html[data-ui-style="liquid"] #terminal-wrapper {
+  background: var(--bg-terminal);
   -webkit-backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
   backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
   box-shadow: 
-    0 20px 50px -15px rgba(0, 0, 0, 0.1),
-    0 4px 12px -2px rgba(0, 0, 0, 0.04),
-    inset 0 1px 1px 0 rgba(255, 255, 255, 0.95),
-    inset 0 -10px 24px -6px rgba(0, 0, 0, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.55);
-  border-top-color: rgba(255, 255, 255, 0.9);
+    0 18px 44px -12px rgba(31, 38, 135, 0.12),
+    0 2px 6px -1px rgba(0, 0, 0, 0.03),
+    inset 0 1px 0 0 rgba(255, 255, 255, 1),
+    inset 0 -8px 20px -4px rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  border-top-color: rgba(255, 255, 255, 1);
+  border-bottom-color: rgba(255, 255, 255, 0.35);
+  padding: 6px 12px; /* 适当收窄内边距，大幅减少四周多余留白 */
+}
+
+html[data-ui-style="liquid"] .terminal-status-bar {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  padding-bottom: 4px;
+  margin-bottom: 6px;
+  opacity: 0.75;
 }
 
 html[data-ui-style="liquid"] #snippet-list > div {

@@ -5,6 +5,7 @@ test.describe('终端标签页重命名与多标签操作', () => {
   test('双击标签页标题可内联重命名', async ({ page }) => {
     await mockAnonymousSession(page);
     await page.goto('/?lang=zh-CN');
+    await expect(page.locator('#connection-form')).toBeVisible();
 
     // 建立一个测试标签页
     await page.evaluate(async () => {
@@ -36,6 +37,7 @@ test.describe('终端标签页重命名与多标签操作', () => {
   test('右键标签页弹出上下文菜单', async ({ page }) => {
     await mockAnonymousSession(page);
     await page.goto('/?lang=zh-CN');
+    await expect(page.locator('#connection-form')).toBeVisible();
 
     await page.evaluate(async () => {
       document.getElementById('terminal-section')?.classList.remove('hidden');
@@ -66,6 +68,7 @@ test.describe('终端标签页重命名与多标签操作', () => {
   test('提交空字符串或纯空白时恢复原标签名并不卡死输入框', async ({ page }) => {
     await mockAnonymousSession(page);
     await page.goto('/?lang=zh-CN');
+    await expect(page.locator('#connection-form')).toBeVisible();
 
     await page.evaluate(async () => {
       document.getElementById('terminal-section')?.classList.remove('hidden');
@@ -107,6 +110,7 @@ test.describe('终端标签页重命名与多标签操作', () => {
   test('右键菜单外部点击与连续右键不残留或误关', async ({ page }) => {
     await mockAnonymousSession(page);
     await page.goto('/?lang=zh-CN');
+    await expect(page.locator('#connection-form')).toBeVisible();
 
     await page.evaluate(async () => {
       document.getElementById('terminal-section')?.classList.remove('hidden');
