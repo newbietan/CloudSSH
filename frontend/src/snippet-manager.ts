@@ -223,7 +223,6 @@ export class SnippetManager {
       'fixed top-0 right-0 h-full z-[96] flex flex-col bg-surface border-l border-outline-variant shadow-2xl transition-transform duration-300 ease-in-out text-on-surface'
     );
     panel.id = PANEL_ID;
-    panel.style.width = 'min(clamp(440px, 45vw, 680px), 100vw)';
     panel.style.transform = 'translateX(100%)';
     this.panelContainer = panel;
 

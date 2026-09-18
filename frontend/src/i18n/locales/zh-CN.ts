@@ -162,7 +162,7 @@ export const zhCN = {
   'terminal.pasteFailed': '无法读取剪贴板，请检查浏览器权限。',
   'terminal.sftp': 'SFTP 文件管理器',
   'terminal.drawer.sftp': 'SFTP',
-  'terminal.drawer.snippets': '片段',
+  'terminal.drawer.snippets': '自定义命令',
   'terminal.drawer.agent': 'Agent',
   'terminal.search': '搜索（Ctrl+Shift+F）',
   'terminal.export': '导出终端日志',

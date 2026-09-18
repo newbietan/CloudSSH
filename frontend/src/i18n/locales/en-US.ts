@@ -206,7 +206,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'terminal.importTheme': 'Import theme',
   'terminal.sftp': 'SFTP file manager',
   'terminal.drawer.sftp': 'SFTP',
-  'terminal.drawer.snippets': 'Snippets',
+  'terminal.drawer.snippets': 'Commands',
   'terminal.drawer.agent': 'Agent',
   'terminal.search': 'Search (Ctrl+Shift+F)',
   'terminal.export': 'Export terminal log',

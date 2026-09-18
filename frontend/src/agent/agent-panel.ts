@@ -175,7 +175,6 @@ export class AgentPanel {
     this.panelEl.id = 'agent-panel';
     this.panelEl.className =
       'fixed top-0 right-0 h-full z-[85] flex flex-col transition-transform duration-300 ease-in-out shadow-2xl';
-    this.panelEl.style.width = 'min(clamp(420px, 40vw, 600px), 100vw)';
     this.panelEl.style.transform = 'translateX(100%)';
     this.panelEl.style.display = 'none';
 
