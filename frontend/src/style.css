@@ -1907,24 +1907,196 @@ html[data-ui-style="liquid"] .user-space-header .theme-selector:focus-visible {
     inset 0 1px 0 0 rgba(255, 255, 255, 0.95);
 }
 
-html[data-ui-style="liquid"] .user-space-header :is(.theme-toolbar-button, .user-space-menu-action) {
-  border-radius: calc(8px * var(--radius-scale, 1));
-  transition: all var(--motion-fast) ease;
+/* ==================== 液态分段主题切换器（Liquid Segmented Theme Control） ==================== */
+.theme-segmented-wrapper {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
 }
 
-html[data-ui-style="liquid"] .user-space-header :is(.theme-toolbar-button, .user-space-menu-action):hover {
-  background: rgba(255, 255, 255, 0.5);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+.theme-segmented-bar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  background: color-mix(in srgb, var(--bg-surface) 60%, rgba(255, 255, 255, 0.45));
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 9999px;
+  padding: 3px;
+  box-shadow: 
+    inset 0 1px 2px rgba(0, 0, 0, 0.04),
+    0 2px 6px -1px rgba(0, 0, 0, 0.03);
 }
 
-html[data-ui-style="liquid"] .user-space-header-actions {
-  background: color-mix(in srgb, var(--bg-surface) 75%, rgba(255, 255, 255, 0.45));
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.55);
-  box-shadow: 0 16px 36px -8px rgba(0, 0, 0, 0.15);
+.theme-segmented-btn {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: color 0.25s ease;
+  user-select: none;
+  white-space: nowrap;
+  outline: none;
+}
+
+.theme-segmented-btn:hover {
+  color: var(--text);
+}
+
+.theme-segmented-btn.active {
+  color: var(--accent);
+}
+
+.theme-segmented-btn .theme-segmented-icon {
+  font-size: 14px;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.theme-segmented-btn:hover .theme-segmented-icon {
+  transform: scale(1.15);
+}
+
+/* 3D 动态液态透镜滑块（还原苹果分段条的丝滑流动与微拉伸） */
+.theme-segmented-lens {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  width: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--bg-surface) 35%, rgba(255, 255, 255, 0.88));
+  -webkit-backdrop-filter: blur(20px) saturate(190%) contrast(115%) brightness(108%);
+  backdrop-filter: blur(20px) saturate(190%) contrast(115%) brightness(108%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-top-color: rgba(255, 255, 255, 1);
+  border-bottom-color: rgba(255, 255, 255, 0.45);
+  box-shadow: 
+    0 4px 14px -2px rgba(0, 102, 218, 0.22),
+    0 1px 3px 0 rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 0 rgba(255, 255, 255, 1),
+    inset 0 -3px 6px -1px rgba(255, 255, 255, 0.4),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+  transition: 
+    left 0.45s cubic-bezier(0.34, 1.56, 0.64, 1),
+    width 0.38s cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+  opacity: 0;
+}
+
+/* 滑动途中的液态微拉伸（还原 GIF 动图中的水滴凝胶质感） */
+.theme-segmented-lens.is-sliding {
+  transform: scaleX(1.08) scaleY(0.94);
+}
+
+/* 赛博朋克与暗色风格适配 */
+html[data-theme="cyberpunk"] .theme-segmented-bar {
+  background: rgba(18, 18, 18, 0.85);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 0 8px rgba(74, 246, 38, 0.1);
+}
+
+html[data-theme="cyberpunk"] .theme-segmented-lens {
+  background: rgba(74, 246, 38, 0.15);
+  border: 1px solid var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+html[data-theme="standard-dark"] .theme-segmented-bar {
+  background: rgba(30, 35, 45, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+html[data-theme="standard-dark"] .theme-segmented-lens {
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+html[data-theme="standard-light"] .theme-segmented-bar {
+  background: rgba(240, 243, 246, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+html[data-theme="standard-light"] .theme-segmented-lens {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* 桌面端隐藏原生 select 视觉但保留可访问性与测试可测性 */
+@media (min-width: 768px) {
+  .user-space-header-actions #user-theme-selector {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: 0;
+    opacity: 0.001;
+    pointer-events: none;
+  }
+
+  /* 悬浮灵动玻璃岛（Capsule Dock） */
+  html[data-ui-style="liquid"] .user-space-header-actions {
+    background: color-mix(in srgb, var(--bg-surface) 45%, rgba(255, 255, 255, 0.28));
+    -webkit-backdrop-filter: blur(24px) saturate(180%) contrast(108%);
+    backdrop-filter: blur(24px) saturate(180%) contrast(108%);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    border-top-color: rgba(255, 255, 255, 0.95);
+    border-bottom-color: rgba(255, 255, 255, 0.25);
+    border-radius: 9999px;
+    padding: 4px 8px;
+    box-shadow: 
+      0 16px 40px -10px rgba(31, 38, 135, 0.1),
+      0 2px 6px -1px rgba(0, 0, 0, 0.03),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.9),
+      inset 0 -4px 12px -2px rgba(255, 255, 255, 0.08);
+    gap: 6px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  html[data-ui-style="liquid"] .user-space-header-actions .theme-toolbar-button,
+  html[data-ui-style="liquid"] .user-space-header-actions .user-space-menu-action {
+    border-radius: 9999px;
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  html[data-ui-style="liquid"] .user-space-header-actions .theme-toolbar-button:hover,
+  html[data-ui-style="liquid"] .user-space-header-actions .user-space-menu-action:hover {
+    background: rgba(255, 255, 255, 0.55);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    border-color: rgba(255, 255, 255, 0.7);
+    box-shadow: 
+      0 2px 8px -2px rgba(0, 0, 0, 0.05),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.9);
+    transform: translateY(-1px) scale(1.05);
+  }
+
+  html[data-ui-style="liquid"] .user-space-header-actions .user-space-action-label {
+    display: none;
+  }
 }
 
 html[data-ui-style="liquid"] :is(.server-card, .cyber-box) {
@@ -3064,6 +3236,10 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 
   .user-space-header-actions.is-open {
     display: flex;
+  }
+
+  .theme-segmented-wrapper {
+    display: none;
   }
 
   .user-space-header-actions .theme-selector,

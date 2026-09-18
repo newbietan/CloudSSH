@@ -20,6 +20,7 @@ import {
   normalizeImportedTheme,
   THEME_MAX_BYTES,
 } from './theme';
+import { LiquidSegmentedThemeControl } from './theme-segmented';
 import { notify } from './ui-feedback';
 
 // ==================== 全局状态 ====================
@@ -495,6 +496,7 @@ document.getElementById('export-btn')?.addEventListener('click', () => {
 
 const CUSTOM_THEME_VALUE = '__custom__';
 let themeSelectionRevision = 0;
+let userThemeSegmentedControl: LiquidSegmentedThemeControl | null = null;
 const themeSelectors = Array.from(
   document.querySelectorAll<HTMLSelectElement>('[data-theme-selector]')
 );
@@ -531,12 +533,14 @@ function ensureCustomOption(): void {
     }
     option.textContent = t('theme.custom');
   }
+  userThemeSegmentedControl?.ensureCustomButton();
 }
 
 function syncThemeSelectors(value: string): void {
   for (const selector of themeSelectors) {
     selector.value = value;
   }
+  userThemeSegmentedControl?.syncFromSelect(value, true);
 }
 
 // ==================== 主题导入 ====================
@@ -751,6 +755,11 @@ async function init(): Promise<void> {
   initServerPaginationBreakpoints();
   bindBackToTerminalButtons();
   initPointerSpecularTracking();
+  const userSegmentedContainer = document.getElementById('user-theme-segmented-container');
+  const userSelect = document.getElementById('user-theme-selector') as HTMLSelectElement | null;
+  if (userSegmentedContainer && userSelect) {
+    userThemeSegmentedControl = new LiquidSegmentedThemeControl(userSegmentedContainer, userSelect);
+  }
   mobileTerminalController.start();
   onLocaleChange(() => {
     if (localStorage.getItem('cloudssh_imported_theme')) ensureCustomOption();
