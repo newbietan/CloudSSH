@@ -354,6 +354,14 @@ body.terminal-active {
   padding: var(--terminal-frame-gap);
 }
 
+.terminal-footer,
+.user-space-footer {
+  height: 32px;
+  min-height: 32px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
 #terminal-wrapper {
   border-radius: var(--card-radius);
   box-shadow: var(--shadow-card);
@@ -2038,6 +2046,115 @@ html[data-theme="standard-light"] .theme-segmented-lens {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
+/* ==================== 终端抽屉功能分段切换器（Drawer Segmented Control） ==================== */
+.drawer-segmented-bar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  background: color-mix(in srgb, var(--bg-surface) 60%, rgba(255, 255, 255, 0.45));
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 9999px;
+  padding: 2px 3px;
+  box-shadow: 
+    inset 0 1px 2px rgba(0, 0, 0, 0.04),
+    0 2px 6px -1px rgba(0, 0, 0, 0.03);
+}
+
+.drawer-segmented-btn {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: color 0.25s ease;
+  user-select: none;
+  white-space: nowrap;
+  outline: none;
+}
+
+.drawer-segmented-btn:hover {
+  color: var(--text);
+}
+
+.drawer-segmented-btn.active {
+  color: var(--accent);
+}
+
+.drawer-segmented-btn .drawer-btn-icon {
+  font-size: 14px;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.drawer-segmented-btn:hover .drawer-btn-icon {
+  transform: scale(1.15);
+}
+
+/* 3D 动态抽屉透镜滑块（双边异步物理弹簧驱动） */
+.drawer-segmented-lens {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  width: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--bg-surface) 35%, rgba(255, 255, 255, 0.88));
+  -webkit-backdrop-filter: blur(20px) saturate(190%) contrast(115%) brightness(108%);
+  backdrop-filter: blur(20px) saturate(190%) contrast(115%) brightness(108%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-top-color: rgba(255, 255, 255, 1);
+  border-bottom-color: rgba(255, 255, 255, 0.45);
+  box-shadow: 
+    0 4px 14px -2px rgba(0, 102, 218, 0.22),
+    0 1px 3px 0 rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 0 rgba(255, 255, 255, 1),
+    inset 0 -3px 6px -1px rgba(255, 255, 255, 0.4),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+  will-change: transform, width;
+  opacity: 0;
+}
+
+/* 赛博朋克与暗色模式适配 */
+html[data-theme="cyberpunk"] .drawer-segmented-bar {
+  background: rgba(18, 18, 18, 0.85);
+  border: 1px solid var(--border-strong);
+}
+html[data-theme="cyberpunk"] .drawer-segmented-lens {
+  background: rgba(74, 246, 38, 0.15);
+  border: 1px solid var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+html[data-theme="standard-dark"] .drawer-segmented-bar {
+  background: rgba(30, 35, 45, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+html[data-theme="standard-dark"] .drawer-segmented-lens {
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+html[data-theme="standard-light"] .drawer-segmented-bar {
+  background: rgba(240, 243, 246, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+html[data-theme="standard-light"] .drawer-segmented-lens {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
 /* 桌面端悬浮玻璃灵动岛（Glass Dynamic Island） */
 @media (min-width: 768px) {
   .user-space-header-actions #user-theme-selector {
@@ -2048,6 +2165,69 @@ html[data-theme="standard-light"] .theme-segmented-lens {
     margin: 0;
     opacity: 0.001;
     pointer-events: none;
+  }
+
+  /* 终端会话顶栏操作灵动岛 */
+  html[data-ui-style="liquid"] .terminal-header-actions {
+    background: color-mix(in srgb, var(--bg-surface) 20%, rgba(255, 255, 255, 0.7));
+    -webkit-backdrop-filter: blur(28px) saturate(200%) contrast(112%) brightness(106%);
+    backdrop-filter: blur(28px) saturate(200%) contrast(112%) brightness(106%);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    border-top: 1.5px solid rgba(255, 255, 255, 1);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 9999px;
+    padding: 3px 8px;
+    box-shadow: 
+      0 14px 36px -6px rgba(31, 38, 135, 0.14),
+      0 2px 8px -1px rgba(0, 0, 0, 0.04),
+      inset 0 1px 0 0 rgba(255, 255, 255, 1),
+      inset 0 -4px 12px -2px rgba(255, 255, 255, 0.35);
+    gap: 6px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  html[data-ui-style="liquid"] .terminal-header-actions .theme-selector {
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--bg-surface) 35%, rgba(255, 255, 255, 0.75));
+    -webkit-backdrop-filter: blur(16px) saturate(170%);
+    backdrop-filter: blur(16px) saturate(170%);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    border-top-color: rgba(255, 255, 255, 1);
+    border-bottom-color: rgba(255, 255, 255, 0.4);
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--on-surface);
+  }
+
+  html[data-ui-style="liquid"] .terminal-header-actions > button {
+    border-radius: 9999px;
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-muted);
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  html[data-ui-style="liquid"] .terminal-header-actions > button:hover {
+    background: rgba(255, 255, 255, 0.7);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    border-color: rgba(255, 255, 255, 0.9);
+    color: var(--on-surface);
+    box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.05), inset 0 1px 0 0 rgba(255, 255, 255, 1);
+    transform: translateY(-1px) scale(1.06);
+  }
+
+  html[data-ui-style="liquid"] .terminal-header-actions #disconnect-btn:hover {
+    color: var(--error);
+    background: rgba(255, 235, 233, 0.75);
+    border-color: rgba(255, 180, 171, 0.8);
   }
 
   /* 悬浮灵动玻璃岛（Glass Dynamic Island）全圆角胶囊外壳 */
@@ -2257,14 +2437,67 @@ html[data-ui-style="liquid"] :is(.app-dialog__panel, .remote-editor__panel, .aut
 }
 
 html[data-ui-style="liquid"] :is(#agent-panel, #sftp-panel, #snippet-panel) {
-  background: color-mix(in srgb, var(--bg-surface) 65%, rgba(255, 255, 255, 0.28));
-  -webkit-backdrop-filter: blur(28px) saturate(200%) contrast(115%) brightness(108%);
-  backdrop-filter: blur(28px) saturate(200%) contrast(115%) brightness(108%);
-  border-left: 1px solid rgba(255, 255, 255, 0.6);
+  background: color-mix(in srgb, var(--bg-surface) 15%, rgba(255, 255, 255, 0.78));
+  -webkit-backdrop-filter: blur(32px) saturate(200%) contrast(115%) brightness(106%);
+  backdrop-filter: blur(32px) saturate(200%) contrast(115%) brightness(106%);
+  border-left: 1.5px solid rgba(255, 255, 255, 0.85);
   box-shadow: 
-    -16px 0 48px -8px rgba(0, 0, 0, 0.12),
-    inset 1px 0 0 0 rgba(255, 255, 255, 0.95),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+    -20px 0 60px -10px rgba(31, 38, 135, 0.16),
+    inset 1px 0 0 0 rgba(255, 255, 255, 1);
+}
+
+/* 三大抽屉面板统一高光微透明 Header */
+html[data-ui-style="liquid"] :is(#agent-panel, #sftp-panel, #snippet-panel) :is(.agent-panel-header, .sftp-panel-header) {
+  background: color-mix(in srgb, var(--bg-surface) 25%, rgba(255, 255, 255, 0.5));
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+/* 自定义命令模块专项统一：去除生硬色块 */
+html[data-ui-style="liquid"] #snippet-category-chips {
+  background: transparent;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+html[data-ui-style="liquid"] #snippet-form-container {
+  background: rgba(255, 255, 255, 0.45);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+html[data-ui-style="liquid"] #snippet-list > div {
+  background: rgba(255, 255, 255, 0.72);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-top-color: rgba(255, 255, 255, 1);
+  box-shadow: 
+    0 4px 16px -3px rgba(31, 38, 135, 0.08),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.95);
+  border-radius: calc(12px * var(--radius-scale, 1));
+}
+
+html[data-ui-style="liquid"] #snippet-list pre {
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: calc(6px * var(--radius-scale, 1));
+}
+
+html[data-ui-style="liquid"] .snippet-category-chip {
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+html[data-ui-style="liquid"] .snippet-category-chip.active {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px -1px rgba(0, 102, 218, 0.3);
+}
+
+html[data-ui-style="liquid"] #snippet-panel > div:last-child {
+  background: color-mix(in srgb, var(--bg-surface) 25%, rgba(255, 255, 255, 0.5));
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 html[data-ui-style="liquid"] .cyber-button:not(.text-error) {
@@ -2404,25 +2637,13 @@ html[data-ui-style="liquid"] .terminal-status-bar {
   opacity: 0.75;
 }
 
-html[data-ui-style="liquid"] #snippet-list > div {
-  background: rgba(255, 255, 255, 0.4);
-  -webkit-backdrop-filter: blur(14px) saturate(160%);
-  backdrop-filter: blur(14px) saturate(160%);
-  border: 1px solid rgba(255, 255, 255, 0.55);
-  border-top-color: rgba(255, 255, 255, 0.9);
-  box-shadow: 
-    0 4px 16px -3px rgba(0, 0, 0, 0.04),
-    inset 0 1px 1px rgba(255, 255, 255, 0.9);
-  border-radius: calc(10px * var(--radius-scale, 1));
-}
-
 html[data-ui-style="liquid"] #snippet-list > div:hover {
-  background: rgba(255, 255, 255, 0.6);
-  border-color: rgba(0, 102, 218, 0.35);
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(0, 102, 218, 0.4);
   border-top-color: rgba(255, 255, 255, 1);
   box-shadow: 
-    0 8px 24px -4px rgba(0, 102, 218, 0.12),
-    inset 0 1px 1px rgba(255, 255, 255, 1);
+    0 8px 24px -4px rgba(0, 102, 218, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
   transform: translateY(-1.5px);
 }
 

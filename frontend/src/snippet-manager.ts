@@ -35,6 +35,8 @@ export interface SnippetManagerDeps {
   getTerminal: () => SSHTerminal | null;
   /** 是否已登录（决定云端/本地存储后端）。 */
   isAuthenticated: () => boolean;
+  /** 抽屉展开/收起状态变更通知 */
+  onStateChange?: () => void;
 }
 
 export const PANEL_ID = 'snippet-panel';
@@ -133,6 +135,7 @@ export class SnippetManager {
     this.visible = true;
     this.backdropElement.classList.remove('opacity-0', 'pointer-events-none');
     this.panelContainer.style.transform = 'translateX(0)';
+    this.deps.onStateChange?.();
 
     this.updateStorageBadge();
     await this.reload();
@@ -151,6 +154,7 @@ export class SnippetManager {
     this.visible = false;
     this.backdropElement.classList.add('opacity-0', 'pointer-events-none');
     this.panelContainer.style.transform = 'translateX(100%)';
+    this.deps.onStateChange?.();
 
     this.searchQuery = '';
     const searchInput = document.getElementById('snippet-search-input') as HTMLInputElement | null;
@@ -159,6 +163,10 @@ export class SnippetManager {
     if (clearBtn) clearBtn.classList.add('hidden');
 
     this.collapseForm();
+  }
+
+  isOpen(): boolean {
+    return this.visible;
   }
 
   toggle(): void {

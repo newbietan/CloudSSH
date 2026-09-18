@@ -21,6 +21,7 @@ import {
   THEME_MAX_BYTES,
 } from './theme';
 import { LiquidSegmentedThemeControl } from './theme-segmented';
+import { LiquidSegmentedDrawerControl } from './drawer-segmented';
 import { notify } from './ui-feedback';
 
 // ==================== 全局状态 ====================
@@ -36,6 +37,7 @@ const mobileTerminalController = new MobileTerminalController(
 const snippetManager = new SnippetManager({
   getTerminal: () => tabManager?.getActiveTab()?.terminal ?? null,
   isAuthenticated: () => isLoggedIn && !sharedSessionMode,
+  onStateChange: () => syncDrawerSegmentedControl(),
 });
 
 function setUserSpaceMenuOpen(open: boolean): void {
@@ -432,10 +434,31 @@ document.getElementById('disconnect-btn')?.addEventListener('click', () => {
   tm.closeActiveTab();
 });
 
+let terminalDrawerControl: LiquidSegmentedDrawerControl | null = null;
+
+function syncDrawerSegmentedControl(): void {
+  const tab = tabManager?.getActiveTab();
+  if (snippetManager.isOpen()) {
+    terminalDrawerControl?.setActive('snippet');
+  } else if (tab?.sftpPanel?.isVisible()) {
+    terminalDrawerControl?.setActive('sftp');
+  } else if (tab?.agentPanel?.isOpen) {
+    terminalDrawerControl?.setActive('agent');
+  } else {
+    terminalDrawerControl?.setActive(null);
+  }
+}
+
 // ==================== 命令片段库 ====================
 
 function toggleSnippetManager(): void {
+  const tab = tabManager?.getActiveTab();
+  if (!snippetManager.isOpen()) {
+    tab?.sftpPanel?.hide();
+    tab?.agentPanel?.hide();
+  }
   snippetManager.toggle();
+  syncDrawerSegmentedControl();
 }
 
 document.getElementById('snippet-toggle-btn')?.addEventListener('click', toggleSnippetManager);
@@ -452,11 +475,13 @@ document.getElementById('sftp-toggle-btn')?.addEventListener('click', () => {
     // 如果还没有初始化，说明 SSH 还没就绪
     return;
   }
-  // 打开 SFTP 时互斥收起 Agent 面板
+  // 打开 SFTP 时互斥收起 Agent 与 Snippet 面板
   if (!tab.sftpPanel.isVisible()) {
     tab.agentPanel?.hide();
+    snippetManager.close();
   }
   tab.sftpPanel.toggle();
+  syncDrawerSegmentedControl();
 });
 
 // ==================== AI Agent 面板 ====================
@@ -470,11 +495,13 @@ document.getElementById('ai-config-btn')?.addEventListener('click', () => {
 document.getElementById('agent-toggle-btn')?.addEventListener('click', () => {
   const tab = tabManager?.getActiveTab();
   if (!tab?.agentPanel) return;
-  // 打开 Agent 时互斥收起 SFTP 面板
+  // 打开 Agent 时互斥收起 SFTP 与 Snippet 面板
   if (!tab.agentPanel.isOpen) {
     tab.sftpPanel?.hide();
+    snippetManager.close();
   }
   tab.agentPanel.toggle();
+  syncDrawerSegmentedControl();
 });
 
 const askAISelectionButton = document.getElementById('ask-ai-selection-btn');
@@ -766,6 +793,28 @@ async function init(): Promise<void> {
   if (userSegmentedContainer && userSelect) {
     userThemeSegmentedControl = new LiquidSegmentedThemeControl(userSegmentedContainer, userSelect);
   }
+
+  const drawerBar = document.getElementById('terminal-drawer-segmented-bar');
+  if (drawerBar) {
+    terminalDrawerControl = new LiquidSegmentedDrawerControl(drawerBar);
+  }
+
+  document.addEventListener('cloudssh:active-terminal-change', () => {
+    syncDrawerSegmentedControl();
+  });
+
+  document.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('#agent-close-btn, #sftp-close-btn, #snippet-close-btn')) {
+      setTimeout(() => syncDrawerSegmentedControl(), 50);
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      setTimeout(() => syncDrawerSegmentedControl(), 50);
+    }
+  });
   mobileTerminalController.start();
   onLocaleChange(() => {
     if (localStorage.getItem('cloudssh_imported_theme')) ensureCustomOption();

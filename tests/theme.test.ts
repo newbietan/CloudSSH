@@ -354,9 +354,9 @@ describe('Standard 主题入口和编辑器', () => {
     expect(editorHtml).toContain('colorScheme,');
   });
 
-  it('用户空间和终端页都可以直接切换主题风格', () => {
+  it('用户空间和终端页都可以直接切换主题风格，仅用户空间支持导入自定义主题', () => {
     expect(appHtml.match(/data-theme-selector/g)).toHaveLength(3);
-    expect(appHtml.match(/data-theme-import/g)).toHaveLength(3);
+    expect(appHtml.match(/data-theme-import/g)).toHaveLength(1);
     expect(appHtml).not.toContain('data-theme-export');
     expect(appHtml).not.toContain('data-theme-delete');
     expect(appHtml).toContain('Liquid Glass');
