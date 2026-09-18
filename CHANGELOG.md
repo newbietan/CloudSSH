@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.1] - 2026-09-18
+
+本版为 v2.3.0 的回归修复版本：三个缺陷均由 v2.3.0 的主题与终端改造引入，其中移动端入口缺失会直接阻断移动端用户使用 AI 助手。
+
+### Fixed / Changed
+
+- **移动端丢失 SFTP 与 AI Agent 入口（功能性阻断）**：
+  - v2.3.0 将 SFTP / 自定义命令 / AI Agent 三个抽屉按钮收进 `#terminal-drawer-segmented-bar`，并给该容器加上 `.desktop-terminal-action`；移动端媒体查询会整块隐藏它，而 `#mobile-more-menu` 当时只保留了「自定义命令」入口，于是移动端同时失去 SFTP 与 AI Agent 的打开方式（剩余路径仅“询问 AI 助手”浮动按钮，需先选中文本，不构成可用入口）；
+  - 现补回 `#mobile-sftp-btn` 与 `#mobile-agent-btn`，并把抽屉互斥开关抽成单一入口 `applyDrawerToggle()` 供桌面分段条与移动端菜单共用（不可用时回退透镜激活态）；移动端 AI Agent 入口的解锁状态与桌面按钮同步（登录解锁、一次性分享会话隐藏）。
+- **菜单按钮 `hidden` 失效（被掩盖的既有缺陷）**：
+  - `.mobile-more-menu > button` 的 `display: flex` 特异性高于 Tailwind 的 `.hidden`，因此往菜单按钮上加 `hidden` 完全无效——一次性分享会话一直尝试隐藏「自定义命令」入口却从未生效（违反 AGENTS.md #24），新增的 AI Agent 入口也会在匿名模式下泄露；
+  - 已补 `.mobile-more-menu > button.hidden { display: none }` 使其真正生效。
+- **Liquid Glass 下 AI 模型下拉与设置面板失去滚动能力**：
+  - 主题规则对 `:is(.server-card, .cyber-box)` 使用了 `overflow: hidden` 简写，会同时把 `overflow-x/overflow-y` 置为 hidden，且特异性高于 Tailwind 的 `.overflow-y-auto`；而 `#ai-model-menu` 与 `.responsive-modal-panel` 都带 `.cyber-box`，滚动能力被整体剥夺（大列表只能看到前几项且无法选择）；
+  - 现移除该简写，裁剪需求单独收敛到 `html[data-ui-style="liquid"] .server-card`。`.theme-accent-line` 在非 cyberpunk 风格下本就为 `opacity: 0`，故 Liquid Glass 下 `.cyber-box` 无需任何裁剪。
+- **AI 设置弹窗出现原生横向滚动条**：
+  - 「获取模型列表」按钮为 `shrink-0` 且 `#ai-model-combobox` 未声明 `min-width: 0`，flex 行无法收缩，整行比面板宽出约 80px；`overflow-y: auto` 使 `overflow-x` 计算为 `auto`，底部随即出现横向滚动条并把左侧标签挤出可视区；
+  - 现改为 `.responsive-modal-panel { overflow-x: hidden }` + 面板内 `.terminal-input { min-width: 0 }` + 组合框 `min-w-0`；并按内容适当放宽弹窗宽度（`sm:max-w-lg`），长模型 ID 在桌面端可完整展示。
+- **滚动条收敛到主题体系**：
+  - 新增全局主题化滚动条兜底（伪元素级 / 通配级特异性，`.custom-scrollbar`、`.no-scrollbar` 与组件自身规则仍按类优先级覆盖），4 套内置主题的 `--scrollbar-*` 变量自动生效；尺寸固定为 `--scrollbar-size: 8px`，避免切换主题时宽度变化引发终端列数需重算；
+  - 补齐从未实现的 `.no-scrollbar`（此前被 SFTP 面包屑、片段分类胶囊、Agent 快捷指令条引用但无定义，导致这些“本应隐藏滚动条”的容器一直显示原生滚动条）。
+
 ## [2.3.0] - 2026-09-18
 
 ### Added
