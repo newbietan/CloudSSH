@@ -692,11 +692,65 @@ async function restoreCloudTheme(
 
 // ==================== 初始化 ====================
 
+/**
+ * macOS 26 液态玻璃动态指针天光追踪：
+ * 仅在 liquid 风格下监听 pointermove 并通过 requestAnimationFrame 节流更新 --mx 和 --my，
+ * 纯变量传导，零 DOM 重排，GPU 仅更新 radial-gradient 聚光位置。
+ */
+function initPointerSpecularTracking(): void {
+  let rafId: number | null = null;
+  let targetCard: HTMLElement | null = null;
+  let px = 50;
+  let py = 0;
+
+  document.addEventListener(
+    'pointermove',
+    (e: PointerEvent) => {
+      if (document.documentElement.dataset.uiStyle !== 'liquid') return;
+      const card = (e.target as HTMLElement | null)?.closest?.(
+        '.server-card, .cyber-box'
+      ) as HTMLElement | null;
+      if (!card) {
+        targetCard = null;
+        return;
+      }
+      const rect = card.getBoundingClientRect();
+      targetCard = card;
+      px = Math.round(((e.clientX - rect.left) / rect.width) * 100);
+      py = Math.round(((e.clientY - rect.top) / rect.height) * 100);
+
+      if (rafId === null) {
+        rafId = requestAnimationFrame(() => {
+          if (targetCard) {
+            targetCard.style.setProperty('--mx', `${px}%`);
+            targetCard.style.setProperty('--my', `${py}%`);
+          }
+          rafId = null;
+        });
+      }
+    },
+    { passive: true }
+  );
+
+  document.addEventListener(
+    'pointerleave',
+    () => {
+      if (targetCard) {
+        targetCard.style.setProperty('--mx', '50%');
+        targetCard.style.setProperty('--my', '0%');
+        targetCard = null;
+      }
+    },
+    { passive: true }
+  );
+}
+
 async function init(): Promise<void> {
   initI18n();
   initUserSpaceMobileMenu();
   initServerPaginationBreakpoints();
   bindBackToTerminalButtons();
+  initPointerSpecularTracking();
   mobileTerminalController.start();
   onLocaleChange(() => {
     if (localStorage.getItem('cloudssh_imported_theme')) ensureCustomOption();
