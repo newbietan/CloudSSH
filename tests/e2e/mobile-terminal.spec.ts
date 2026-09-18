@@ -369,3 +369,52 @@ test('移动端 Agent 可返回终端且 SFTP 面板占满可用区域', async (
   // 返回终端后，终端快捷键工具栏应重新显示
   await expect(page.locator('#mobile-terminal-toolbar')).toBeVisible();
 });
+
+/**
+ * 移动端抽屉入口回归：
+ *
+ * e406aa4 把 SFTP / 自定义命令 / AI Agent 三个抽屉按钮收进
+ * #terminal-drawer-segmented-bar，并给该容器加了 .desktop-terminal-action
+ * （移动端 display: none !important）。但当时没有在 #mobile-more-menu 里补平行入口，
+ * 于是移动端用户彻底失去了 SFTP 与 AI Agent 的打开方式（分段条整体被隐藏）。
+ *
+ * 本用例锁定两条不变式：
+ * 1. 移动端分段条隐藏时，菜单里必须存在 SFTP 与 AI Agent 的平行入口；
+ * 2. 登录后 #mobile-agent-btn 的解锁状态必须与桌面 #agent-toggle-btn 同步。
+ */
+test('移动端保留 SFTP 与 AI Agent 抽屉入口，分段条为桌面专属', async ({ page }) => {
+  await mockAnonymousSession(page);
+  await page.goto(
+    `/?wsUrl=${encodeURIComponent('ws://127.0.0.1:4173/fake')}&name=Drawer&host=127.0.0.1&port=22&lang=zh-CN`
+  );
+  await expect(page.locator('.terminal-app-header')).toBeVisible();
+
+  // 分段切换器在移动端整体隐藏，因此入口必须来自移动端菜单
+  await expect(page.locator('#terminal-drawer-segmented-bar')).toBeHidden();
+
+  await page.locator('#mobile-more-btn').click();
+  await expect(page.locator('#mobile-more-menu')).toBeVisible();
+  await expect(page.locator('#mobile-sftp-btn')).toBeVisible();
+  await expect(page.locator('#mobile-snippets-btn')).toBeVisible();
+  // 匿名模式不提供 AI Agent（与桌面 #agent-toggle-btn 初始 hidden 一致）
+  await expect(page.locator('#mobile-agent-btn')).toBeHidden();
+  await expect(page.locator('#agent-toggle-btn')).toHaveClass(/hidden/);
+});
+
+test('登录后移动端 AI Agent 入口与桌面按钮同步解锁', async ({ page }) => {
+  await page.route('**/api/auth/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 1, github_id: 42, username: 'tester', avatar_url: '' }),
+    })
+  );
+  await page.route('**/api/servers', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+  );
+  await page.goto('/?lang=zh-CN');
+  await expect(page.locator('#user-space-more-btn')).toBeVisible();
+
+  await expect(page.locator('#agent-toggle-btn')).not.toHaveClass(/hidden/);
+  await expect(page.locator('#mobile-agent-btn')).not.toHaveClass(/hidden/);
+});

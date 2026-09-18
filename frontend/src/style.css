@@ -3863,6 +3863,15 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
     background: var(--accent-bg);
   }
 
+  /* .hidden 必须能盖住上面 .mobile-more-menu > button 的 display: flex：
+     该规则特异性为 (0,1,1)，而 Tailwind 的 .hidden 仅为 (0,1,0)，
+     因此过去在菜单按钮上加 hidden 完全无效 —— 曾导致一次性分享会话仍显示
+     「自定义命令」入口（违反 AGENTS.md #24），以及移动端 AI Agent 入口在
+     匿名模式下泄露。 */
+  .mobile-more-menu > button.hidden {
+    display: none;
+  }
+
   .mobile-more-theme-row {
     flex-direction: column;
     align-items: stretch;

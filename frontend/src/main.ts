@@ -277,6 +277,7 @@ function showUserSpace(user: {
 
   // Show agent toggle button for logged-in users
   document.getElementById('agent-toggle-btn')?.classList.remove('hidden');
+  document.getElementById('mobile-agent-btn')?.classList.remove('hidden');
 
   serverList = new ServerList(
     user,
@@ -391,6 +392,7 @@ function showSharedTerminal(claim: ClaimedShare): void {
   sharedSessionMode = true;
   isLoggedIn = false;
   document.getElementById('agent-toggle-btn')?.classList.add('hidden');
+  document.getElementById('mobile-agent-btn')?.classList.add('hidden');
   document.getElementById('snippet-toggle-btn')?.classList.add('hidden');
   document.getElementById('mobile-snippets-btn')?.classList.add('hidden');
   const tabBar = document.getElementById('tab-bar');
@@ -454,47 +456,74 @@ function syncDrawerSegmentedControl(): void {
   }
 }
 
+/**
+ * 抽屉互斥开关的唯一入口（桌面分段条与移动端菜单按钮共用）。
+ * 返回是否真的发生了状态变化（SFTP 未就绪 / Agent 不可用时为 false）。
+ */
+function applyDrawerToggle(drawer: 'sftp' | 'snippet' | 'agent', open: boolean): boolean {
+  const tab = tabManager?.getActiveTab();
+  if (drawer === 'sftp') {
+    if (open) {
+      // SFTP 面板由 TabManager 的 sessionReady 回调初始化，未就绪时不可打开
+      if (!tab?.sftpPanel) return false;
+      snippetManager.close();
+      tab.agentPanel?.hide();
+      tab.sftpPanel.show();
+    } else {
+      tab?.sftpPanel?.hide();
+    }
+  } else if (drawer === 'snippet') {
+    if (open) {
+      tab?.sftpPanel?.hide();
+      tab?.agentPanel?.hide();
+      void snippetManager.open();
+    } else {
+      snippetManager.close();
+    }
+  } else {
+    if (open) {
+      if (!tab?.agentPanel) return false;
+      tab.sftpPanel?.hide();
+      snippetManager.close();
+      tab.agentPanel.show();
+    } else {
+      tab?.agentPanel?.hide();
+    }
+  }
+  syncDrawerSegmentedControl();
+  return true;
+}
+
 function initTerminalDrawerControl(): void {
   const drawerBar = document.getElementById('terminal-drawer-segmented-bar');
   if (!drawerBar) return;
 
   terminalDrawerControl = new LiquidSegmentedDrawerControl(drawerBar, (drawer, open) => {
-    const tab = tabManager?.getActiveTab();
-    if (drawer === 'sftp') {
-      if (open) {
-        if (!tab?.sftpPanel) {
-          // SSH 尚未就绪
-          terminalDrawerControl?.setActive(null);
-          return;
-        }
-        snippetManager.close();
-        tab.agentPanel?.hide();
-        tab.sftpPanel.show();
-      } else {
-        tab?.sftpPanel?.hide();
-      }
-    } else if (drawer === 'snippet') {
-      if (open) {
-        tab?.sftpPanel?.hide();
-        tab?.agentPanel?.hide();
-        void snippetManager.open();
-      } else {
-        snippetManager.close();
-      }
-    } else if (drawer === 'agent') {
-      if (open) {
-        if (!tab?.agentPanel) {
-          terminalDrawerControl?.setActive(null);
-          return;
-        }
-        tab.sftpPanel?.hide();
-        snippetManager.close();
-        tab.agentPanel.show();
-      } else {
-        tab?.agentPanel?.hide();
-      }
+    if (!applyDrawerToggle(drawer as 'sftp' | 'snippet' | 'agent', open)) {
+      // 抽屉不可用：回退透镜的激活态
+      terminalDrawerControl?.setActive(null);
     }
-    syncDrawerSegmentedControl();
+  });
+}
+
+/**
+ * 移动端抽屉入口（#mobile-more-menu 内的 SFTP / AI Agent）。
+ * 分段切换器在移动端整体隐藏（.desktop-terminal-action），因此这两个抽屉
+ * 必须在移动端菜单里保留平行入口，否则移动端用户将无法使用 SFTP 与 AI 助手。
+ */
+function initMobileDrawerButtons(): void {
+  const closeMenu = () => mobileTerminalController.hideMoreMenu();
+
+  document.getElementById('mobile-sftp-btn')?.addEventListener('click', () => {
+    const tab = tabManager?.getActiveTab();
+    applyDrawerToggle('sftp', !(tab?.sftpPanel?.isVisible() ?? false));
+    closeMenu();
+  });
+
+  document.getElementById('mobile-agent-btn')?.addEventListener('click', () => {
+    const tab = tabManager?.getActiveTab();
+    applyDrawerToggle('agent', !(tab?.agentPanel?.isOpen ?? false));
+    closeMenu();
   });
 }
 
@@ -813,6 +842,7 @@ async function init(): Promise<void> {
   if (drawerBar) {
     initTerminalDrawerControl();
   }
+  initMobileDrawerButtons();
 
   document.addEventListener('cloudssh:active-terminal-change', () => {
     syncDrawerSegmentedControl();

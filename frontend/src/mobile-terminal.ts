@@ -155,7 +155,8 @@ export class MobileTerminalController {
     document.getElementById('mobile-more-btn')?.setAttribute('aria-expanded', String(hidden));
   }
 
-  private hideMoreMenu(): void {
+  /** 需要由外部（如 main.ts 的抽屉入口）关闭菜单时调用 */
+  hideMoreMenu(): void {
     this.moreMenu?.classList.add('hidden');
     document.getElementById('mobile-more-btn')?.setAttribute('aria-expanded', 'false');
   }
