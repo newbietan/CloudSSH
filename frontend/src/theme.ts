@@ -363,7 +363,7 @@ export const BUILT_IN_BACKGROUND: Partial<Record<BuiltInThemeName, ThemeBackgrou
   },
   'liquid-glass': {
     type: 'mesh',
-    stops: ['#bfe3ff', '#edd5ff', '#ffe3d1'],
+    stops: ['#a2d2ff', '#d8b4fe', '#ffc8dd', '#bde0fe', '#ffdfba'],
     angle: 135,
     scrim: 0.35,
     animation: 'drift',
@@ -543,11 +543,19 @@ export function resolveBackgroundCss(background: ThemeBackground | undefined): s
     case 'radial':
       return `radial-gradient(ellipse at 50% 25%, ${background.stops.join(', ')})`;
     case 'mesh': {
-      const [first, second, third] = background.stops;
+      const [first, second, third, fourth, fifth] = background.stops;
+      const c1 = first;
+      const c2 = second ?? first;
+      const c3 = third ?? c2;
+      const c4 = fourth ?? c1;
+      const c5 = fifth ?? c2;
       return [
-        `radial-gradient(at 18% 22%, ${first} 0px, transparent 55%)`,
-        `radial-gradient(at 82% 28%, ${second ?? first} 0px, transparent 50%)`,
-        `radial-gradient(at 50% 88%, ${third ?? second ?? first} 0px, transparent 60%)`,
+        `radial-gradient(at 18% 22%, ${c1} 0px, transparent 55%)`,
+        `radial-gradient(at 82% 28%, ${c2} 0px, transparent 50%)`,
+        `radial-gradient(at 50% 88%, ${c3} 0px, transparent 60%)`,
+        `radial-gradient(at 15% 90%, ${c4} 0px, transparent 55%)`,
+        `radial-gradient(at 85% 90%, ${c5} 0px, transparent 55%)`,
+        `linear-gradient(${background.angle}deg, ${c1} 0%, ${c2} 50%, ${c3} 100%)`,
       ].join(', ');
     }
   }

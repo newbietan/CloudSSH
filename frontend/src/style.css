@@ -212,8 +212,8 @@ body::before {
 
 /* 环境背景漂移：主题显式声明 drift 时启用；motion=none 与系统级减少动态时停止 */
 html[data-bg-animation='drift'] body::before {
-  background-size: 200% 200%;
-  animation: theme-bg-drift 40s ease-in-out infinite alternate;
+  background-size: 130% 130%;
+  animation: theme-bg-drift 35s ease-in-out infinite alternate;
 }
 
 html[data-ui-motion='none'] body::before {
@@ -1842,12 +1842,23 @@ html[data-ui-style="liquid"] {
   --shadow-floating: 0 18px 40px -8px rgba(0, 102, 218, 0.2), inset 0 1px 1px rgba(255, 255, 255, 0.85);
 }
 
-html[data-ui-style="liquid"] :is(header, footer) {
-  background: color-mix(in srgb, var(--bg-surface) 60%, rgba(255, 255, 255, 0.25));
-  -webkit-backdrop-filter: blur(20px) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
-  backdrop-filter: blur(20px) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
-  border-bottom: 1px solid rgba(255, 255, 255, 0.35);
-  box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.04), inset 0 -1px 0 0 rgba(255, 255, 255, 0.4);
+html[data-ui-style="liquid"] #user-space-section {
+  background: transparent;
+}
+
+html[data-ui-style="liquid"] :is(.user-space-header, .terminal-app-header, header) {
+  background: color-mix(in srgb, var(--bg-surface) 40%, rgba(255, 255, 255, 0.18));
+  -webkit-backdrop-filter: blur(24px) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
+  backdrop-filter: blur(24px) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.45);
+  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.03);
+}
+
+html[data-ui-style="liquid"] :is(.user-space-footer, .terminal-footer, footer) {
+  background: color-mix(in srgb, var(--bg-surface) 40%, rgba(255, 255, 255, 0.18));
+  -webkit-backdrop-filter: blur(24px) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
+  backdrop-filter: blur(24px) saturate(var(--surface-saturate)) contrast(var(--surface-contrast, 100%)) brightness(var(--surface-brightness, 100%));
+  border-top: 1px solid rgba(255, 255, 255, 0.45);
 }
 
 html[data-ui-style="liquid"] :is(.server-card, .cyber-box) {
@@ -1905,45 +1916,50 @@ html[data-ui-style="liquid"] :is(#agent-panel, #sftp-panel, #snippet-panel) {
 }
 
 html[data-ui-style="liquid"] .cyber-button:not(.text-error) {
-  background: color-mix(in srgb, var(--bg-surface) 60%, rgba(255, 255, 255, 0.45));
+  background: color-mix(in srgb, var(--bg-surface) 60%, rgba(255, 255, 255, 0.5));
   -webkit-backdrop-filter: blur(12px) saturate(160%);
   backdrop-filter: blur(12px) saturate(160%);
-  border: 1px solid rgba(255, 255, 255, 0.55);
-  border-top-color: rgba(255, 255, 255, 0.9);
-  border-bottom-color: rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.65);
   box-shadow: 
-    0 2px 8px -2px rgba(0, 0, 0, 0.06),
-    inset 0 1px 1px 0 rgba(255, 255, 255, 0.95),
-    inset 0 -4px 8px -3px rgba(0, 0, 0, 0.03);
+    0 2px 6px -1px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.85);
   transition: all var(--motion-fast) cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 html[data-ui-style="liquid"] .cyber-button:not(.text-error):hover {
-  background: color-mix(in srgb, var(--accent) 18%, rgba(255, 255, 255, 0.65));
-  border-color: rgba(0, 102, 218, 0.4);
-  border-top-color: rgba(255, 255, 255, 1);
+  background: color-mix(in srgb, var(--accent) 12%, rgba(255, 255, 255, 0.85));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, rgba(255, 255, 255, 0.6));
   box-shadow: 
-    0 4px 16px var(--accent-glow),
-    inset 0 1px 1px 0 rgba(255, 255, 255, 1);
+    0 4px 14px -2px rgba(0, 102, 218, 0.22),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.85);
   transform: translateY(-1px);
+}
+
+html[data-ui-style="liquid"] .cyber-button:not(.text-error):active {
+  background: color-mix(in srgb, var(--accent) 20%, rgba(255, 255, 255, 0.75));
+  border-color: var(--accent);
+  box-shadow: 
+    0 1px 4px -1px rgba(0, 102, 218, 0.2),
+    inset 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  transform: translateY(0) scale(0.99);
 }
 
 html[data-ui-style="liquid"] .connect-btn {
   background: linear-gradient(180deg, #0a84ff 0%, #0066da 100%);
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  border-top-color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.35);
   box-shadow: 
-    0 6px 20px -3px rgba(0, 102, 218, 0.45),
-    inset 0 1px 1px 0 rgba(255, 255, 255, 0.75),
-    inset 0 -8px 12px -4px rgba(0, 0, 0, 0.2);
+    0 4px 14px -2px rgba(0, 102, 218, 0.4),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.4);
   transition: all var(--motion-normal) cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 html[data-ui-style="liquid"] .connect-btn:hover {
+  background: linear-gradient(180deg, #1f8fff 0%, #0071e3 100%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   box-shadow: 
-    0 8px 26px -3px rgba(0, 102, 218, 0.6),
-    inset 0 1px 1px 0 rgba(255, 255, 255, 0.9);
-  transform: translateY(-2px) scale(1.02);
+    0 6px 20px -2px rgba(0, 102, 218, 0.5),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.6);
+  transform: translateY(-1px);
 }
 
 html[data-ui-style="liquid"] .terminal-input {
