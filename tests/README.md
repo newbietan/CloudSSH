@@ -11,6 +11,7 @@ tests/
 ├── ssh/                           # SSH 算法、认证、加密、KEX、Packet 与测试密钥夹具
 ├── worker/                        # Worker 路由、安全、DNS、UserDB 与标签测试
 ├── agent-code-actions.test.ts # Agent 代码块复制/填入规则
+├── agent-panel-ui.test.ts     # Agent 面板交互、执行状态与手动停止按钮
 ├── agent-terminal-selection.test.ts # 终端选区附件和非授权安全边界
 ├── api-errors.test.ts          # API 错误信息边界与状态码
 ├── auth-challenge-dialog.test.ts # RFC 4256 认证挑战对话框交互
@@ -21,6 +22,7 @@ tests/
 ├── i18n.test.ts                   # 中英文词条和语言解析
 ├── known-hosts.test.ts            # 已知主机指纹 TOFU 信任与变更流程
 ├── mobile-input.test.ts           # iOS IME diff 与一次性修饰键帮助函数
+├── server-memory-schema.test.ts   # 统一服务器记忆（工作历程/知识实体）校验与持久化格式
 ├── sftp-dialogs.test.ts           # SFTP 新建/重命名/删除弹窗与名称校验
 ├── sftp-helpers.test.ts           # SFTP 面包屑解析、多维排序与格式化
 ├── sftp-panel.test.ts             # SFTP 面包屑与路径状态回归
@@ -101,7 +103,8 @@ pnpm run verify
 - SFTP 单选、Cmd/Ctrl 多选、Shift 连选和全选
 - Agent 终端选区附件、问题组合、快捷诊断 Prompt 气泡（Chips）和非授权安全边界
 - 终端选区自动复制、指针取消和旧版复制回退
-- i18n、Theme V3 主题（背景/效果/版式钳制、对比度与 schema）、终端状态/文本、已知主机与片段本地存储
+- i18n、Theme V4 主题（Liquid Glass 液态玻璃外观预设、背景/效果/版式、对比度与 schema）、终端状态/文本、已知主机与片段本地存储
+- 终端与用户空间液态分段切换器（Liquid Segmented Controls）：双边异步物理弹簧引擎、液态透镜滑块拉伸与泊位、桌面专属分段条与移动端菜单平行入口互斥联动
 - AI 配置与模型选择：自定义 Combobox 下拉组件（全量展开、即时过滤、一键清空、多主题自适应）、免密拉取联动与敏感凭证即时清理
 - 构建可复现性、xterm 生产构建兼容和原生弹窗禁用
 
@@ -115,6 +118,9 @@ pnpm run verify
 - 终端选区复制与焦点恢复
 - 认证挑战对话框、iOS 输入法、移动端后台连接恢复与分享会话领取
 - SFTP 覆盖确认、路径面包屑、表头排序、新建文件、主题样式与 UI 回归
+- 终端抽屉分段切换器：桌面端胶囊轮廓与可辨识边缘、双边异步物理弹簧滑块位移、PC 隐藏移动端更多操作按钮、三大抽屉宽度统一、匿名模式隐藏 AI Agent（display: none）与登录同步解锁
+- 移动端终端交互与用户空间：紧凑顶栏与菜单入口、视口与软键盘动态适配、单指滑动历史、字号响应式断点、移动端抽屉平行入口与 AI 设置弹窗无横向溢出
+- UI 与样式回归：Liquid Glass 下 AI 模型下拉面板与设置面板滚动能力（overflow 简写防回归）、窄视口弹窗横向溢出消除、主题化滚动条兜底与 .no-scrollbar 样式
 - AI 模型下拉选择（Combobox 展开、选项切换、清空、免密拉取与浅色/暗色主题自适应切换）
 
 ## 当前限制

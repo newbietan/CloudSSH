@@ -68,6 +68,8 @@ src/
 │   ├── utils.ts      # Binary utilities
 │   ├── sftp.ts       # SFTP v3 client implementation
 │   └── sftp-types.ts # SFTP protocol constants and types
+├── server-memory-schema.ts # Unified server memory schema for work logs and knowledge entries
+├── share-resume-schema.ts  # One-time share session re-attach challenge and resume token schema
 ├── theme-schema.ts   # Theme V4 shared validation（外观/背景/效果/版式模块、白名单与读性遮罩下限）
 ├── snippet-schema.ts # Command snippet shared validation, limits, and normalization (UserDBDO + localStorage)
 └── types.ts          # Shared TypeScript type definitions
@@ -87,10 +89,13 @@ frontend/
 │   ├── port.ts            # 端口解析与 1-65535 校验
 │   ├── regions.ts         # DO locationHint 区域选项共享数据（Auto + 白名单）
 │   ├── theme.ts           # Theme V4 内置主题、UI CSS 变量、外观预设、背景/效果合成与版式缩放
+│   ├── theme-segmented.ts # Apple macOS 26 / iOS 26 液态分段主题切换器（双边异步物理弹簧滑块）
+│   ├── drawer-segmented.ts # Apple macOS 26 液态抽屉分段切换器（SFTP/自定义命令/Agent 药丸胶囊与双边异步物理弹簧滑块）
 │   ├── auth-challenge-dialog.ts # RFC 4256 multi-round authentication prompt UI
 │   ├── mobile-terminal.ts # Mobile viewport, shortcut toolbar, clipboard and landscape controller
 │   ├── mobile-input.ts    # Pure iOS IME diff and one-shot modifier helpers
 │   ├── known-hosts.ts     # 已验证主机指纹消息校验、本地/云端 TOFU 持久化
+│   ├── device-identity.ts # 分享会话秒级恢复设备非可导出 ECDSA P-256 身份密钥生成与持久化校验
 │   ├── tab-manager.ts     # Tab manager (多会话协调、双击重命名、右键上下文菜单、返回终端联动)
 │   ├── sftp-panel.ts      # SFTP file manager UI (多选/批量/面包屑导航/多维排序/新建文件)
 │   ├── sftp-editor-session.ts # SFTP 在线编辑协调器（挂载、只读呈现、冲突比对与覆盖上传）
@@ -101,6 +106,7 @@ frontend/
 │   ├── editor-content.ts  # Online editing pure helpers (binary sniff, UTF-8/GB18030 decode, BOM/EOL round-trip)
 │   ├── sftp-selection.ts  # Pure multi-selection state model
 │   ├── auth-form.ts       # Auth form & encrypted anonymous credentials storage/autofill
+│   ├── api-errors.ts      # 统一 API 错误解析与脱敏展示纯函数
 │   ├── server-list.ts     # Server UI (tags, search, responsive 9/6/3-card pagination, CRUD/connect/duplicate)
 │   ├── share-manager.ts   # Owner UI for creating, revoking, and auditing one-time shares
 │   ├── share-session.ts   # Public one-time share landing and claim flow
@@ -361,6 +367,8 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 35. **AI 模型配置与代理安全（免密拉取与防凭据外带）** - AI 配置弹窗（`frontend/src/ai-config.ts`）使用自定义 Combobox 替代原生 HTML `<datalist>`，彻底根除浏览器默认粗黑倒三角（`::-webkit-calendar-picker-indicator`）及原值前缀过滤导致下拉只显示 1 项的缺陷；支持全量下拉、即时模糊过滤、一键清空重选，文字使用 `text-on-surface`，悬停使用 `hover:bg-surface-variant hover:text-primary`，浮层增加 `!p-0`，完美自适应项目内置主题与外层圆角规范。后端 `POST /api/ai/models` 在未传入 `api_key` 时，仅当请求的 `base_url` 与数据库中已确认绑定的 `base_url` 一致时才允许自动注入已存密钥；若接口地址变更且未提供对应密钥，后端强制拒绝并返回 400（严禁将已存凭证发送至未绑定的第三方地址，杜绝凭据外带 Credential Exfiltration）；入口执行同源 Origin 校验防止 CSRF，异常返回经 `sanitizeAIErrorMessage` 进行敏感 Token/Bearer 脱敏；前端保存成功后立即清空密码输入框，避免明文长期驻留。
 
 36. **用户无操作空闲超时（Inactivity Timeout）** - 为避免挂机会话长时间消耗 Cloudflare Durable Object 的 Duration 每日配额（Free 套餐 13,000 GB-s），`SSHSession` 实现了用户级空闲超时机制，由 `env.IDLE_TIMEOUT` 配置（支持如 `30m`/`1h`，默认 30 分钟，`0` 禁用）。仅真实用户交互（终端键盘输入、窗口 resize、SFTP 文件传输、AI 任务等）会刷新活动时间戳；前端 WebSocket ping 心跳、底层 SSH keepalive 以及远端服务器被动输出（如 `top` 刷屏）绝不重置该计时器。超时后服务端主动以 `session_idle_timeout` 关闭连接（code 1000），前端识别该事件并阻止自动重连。
+
+37. **液态分段切换器与抽屉互斥（Liquid Segmented Controls & CSS Hidden 特异性）** - 桌面端终端抽屉（SFTP、自定义命令、AI Agent）整合为液态分段药丸胶囊（`LiquidSegmentedDrawerControl`，`frontend/src/drawer-segmented.ts`），由双边异步物理弹簧引擎驱动；移动端分段条整体隐藏（`.desktop-terminal-action`），由 `#mobile-more-menu` 提供平行的 SFTP / AI Agent 入口，统一通过 `applyDrawerToggle()` 驱动互斥展开与关闭。样式层级规范：由于 `.drawer-segmented-btn` 在 `style.css` 中声明了 `display: inline-flex` 且位于 `@tailwind utilities` 之后，同等特异性 `(0, 1, 0)` 下会覆盖 Tailwind 的 `.hidden`。因此必须保留 `.drawer-segmented-btn.hidden { display: none }`，保证匿名模式下 AI Agent 按钮及一次性分享会话下的自定义命令按钮在视觉上被严格隐藏。控制器层防御：`LiquidSegmentedDrawerControl` 必须检查目标按钮的 `hidden` 状态，对隐藏按钮阻断点击并抑制透镜滑块位移；`main.ts` 中的 `showAuthSection()` 和 `initTerminalTab()` 必须显式维护 `hidden` 状态。
 
 ## Deployment Notes
 
