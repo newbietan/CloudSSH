@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.2] - 2026-09-19
+
+### Fixed / Changed
+
+- **桌面抽屉分段条在匿名模式下泄露展示 AI Agent 按钮（UI 状态缺陷）**：
+  - `.drawer-segmented-btn` 在 `style.css` 中声明的 `display: inline-flex` 位于 `@tailwind utilities` 之后，同等特异性 `(0, 1, 0)` 下覆盖了 Tailwind 的 `.hidden { display: none }`，导致匿名模式下尽管 `#agent-toggle-btn` 带有 `hidden` 类，在桌面端依然被计算为 `inline-flex` 并可见；
+  - 修复：在 `style.css` 中增加 `.drawer-segmented-btn.hidden { display: none }`，以 `(0, 2, 0)` 特异性确保带 `hidden` 类时彻底隐藏（同时对一次性分享会话下的自定义命令按钮隐藏提供双重保证）；
+  - 控制器与状态健全：在 `drawer-segmented.ts` 中增强 `handleButtonClick` 与 `setActive` 防御，阻止隐藏抽屉按钮的触发与透镜滑块位移；在 `main.ts` 的 `showAuthSection()` 与 `initTerminalTab()` 中显式添加 `hidden` 状态；
+  - 完善 E2E 真实可见性守护（`toBeHidden()` / `toBeVisible()`），防止样式级联问题回归。
+- **文档与测试架构结构同步**：
+  - `AGENTS.md`：补齐核心目录树中的 `server-memory-schema.ts`、`share-resume-schema.ts`、`drawer-segmented.ts`、`theme-segmented.ts`、`device-identity.ts`、`api-errors.ts`，并新增 Common Pitfalls 37（液态分段切换器与 CSS Hidden 特异性规范）；
+  - `tests/README.md`：补齐目录树中的测试文件，将主题测试范围升级为 Theme V4，补充抽屉分段条及相关 E2E 回归说明；
+  - `README.md` 与 `README_en.md`：在特性介绍中同步补充 macOS 26 液态分段切换器与悬浮玻璃灵动岛架构描述。
+
 ## [2.3.1] - 2026-09-18
 
 本版为 v2.3.0 的回归修复版本：三个缺陷均由 v2.3.0 的主题与终端改造引入，其中移动端入口缺失会直接阻断移动端用户使用 AI 助手。
