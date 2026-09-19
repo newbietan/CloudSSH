@@ -67,6 +67,42 @@ test.describe('桌面视口', () => {
     await expect(snippetLabel).toHaveText('自定义命令');
     await expect(page.locator('#sftp-toggle-btn .drawer-btn-label')).toHaveText('SFTP');
     await expect(page.locator('#agent-toggle-btn .drawer-btn-label')).toHaveText('Agent');
+
+    // 匿名终端模式下：AI Agent 功能不可用，按钮必须在视觉上完全隐藏（display: none）
+    await expect(page.locator('#agent-toggle-btn')).toBeHidden();
+    await expect(page.locator('#sftp-toggle-btn')).toBeVisible();
+    await expect(page.locator('#snippet-toggle-btn')).toBeVisible();
+  });
+
+  test('登录状态下抽屉分段条显示 AI Agent 按钮', async ({ page }) => {
+    await blockOptionalThirdPartyAssets(page);
+    await page.route('**/api/auth/me', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: 1, github_id: 42, username: 'tester', avatar_url: '' }),
+      })
+    );
+    await page.route('**/api/servers', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    );
+    await page.goto('/?lang=zh-CN');
+    await expect(page.locator('#user-space-section')).toBeVisible();
+
+    // 登录后解除 hidden
+    await expect(page.locator('#agent-toggle-btn')).not.toHaveClass(/hidden/);
+
+    // 切到终端视图后，分段条内 AI Agent 按钮真实可见
+    await page.evaluate(async () => {
+      const main = await (window as any).eval("import('/src/main.ts')");
+      main.showTerminalWithNewTab('TestServer');
+    });
+
+    const bar = page.locator('#terminal-drawer-segmented-bar');
+    await expect(bar).toBeVisible();
+    await expect(page.locator('#sftp-toggle-btn')).toBeVisible();
+    await expect(page.locator('#snippet-toggle-btn')).toBeVisible();
+    await expect(page.locator('#agent-toggle-btn')).toBeVisible();
   });
 
   test('三个侧边抽屉共用同一宽度来源', async ({ page }) => {

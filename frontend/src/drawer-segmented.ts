@@ -79,6 +79,11 @@ export class LiquidSegmentedDrawerControl {
   }
 
   private handleButtonClick(drawer: string): void {
+    const btn = this.buttons.get(drawer);
+    if (btn?.classList.contains('hidden')) {
+      return;
+    }
+
     if (this.activeDrawer === drawer) {
       // 再次点击同一个激活按钮：收起抽屉
       this.setActive(null, true);
@@ -91,16 +96,19 @@ export class LiquidSegmentedDrawerControl {
   }
 
   public setActive(drawer: string | null, animate = true): void {
+    const targetBtn = drawer ? this.buttons.get(drawer) : null;
+    const resolvedDrawer = targetBtn?.classList.contains('hidden') ? null : drawer;
+
     const prevDrawer = this.activeDrawer;
-    this.activeDrawer = drawer;
+    this.activeDrawer = resolvedDrawer;
 
     for (const [id, btn] of this.buttons.entries()) {
-      const isSelected = id === drawer;
+      const isSelected = id === resolvedDrawer;
       btn.setAttribute('aria-selected', isSelected ? 'true' : 'false');
       btn.classList.toggle('active', isSelected);
     }
 
-    if (!drawer) {
+    if (!resolvedDrawer) {
       this.stopAnimationLoop();
       this.lens.style.opacity = '0';
       this.lastCenter = null;

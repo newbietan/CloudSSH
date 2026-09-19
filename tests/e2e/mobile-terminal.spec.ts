@@ -399,6 +399,7 @@ test('移动端保留 SFTP 与 AI Agent 抽屉入口，分段条为桌面专属'
   // 匿名模式不提供 AI Agent（与桌面 #agent-toggle-btn 初始 hidden 一致）
   await expect(page.locator('#mobile-agent-btn')).toBeHidden();
   await expect(page.locator('#agent-toggle-btn')).toHaveClass(/hidden/);
+  await expect(page.locator('#agent-toggle-btn')).toBeHidden();
 });
 
 test('登录后移动端 AI Agent 入口与桌面按钮同步解锁', async ({ page }) => {

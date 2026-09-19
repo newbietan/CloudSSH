@@ -2168,6 +2168,13 @@ html[data-theme="standard-light"] .theme-segmented-lens {
   transform: scale(1.15);
 }
 
+/* .hidden 必须能盖住上面 .drawer-segmented-btn 的 display: inline-flex：
+   当元素同时带 .hidden 时（如未登录隐藏 AI Agent、分享会话隐藏自定义命令），
+   类选择器特异性 (0,2,0) 高于 .drawer-segmented-btn (0,1,0)。 */
+.drawer-segmented-btn.hidden {
+  display: none;
+}
+
 /* 3D 动态抽屉透镜滑块（双边异步物理弹簧驱动） */
 .drawer-segmented-lens {
   position: absolute;

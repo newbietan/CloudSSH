@@ -222,6 +222,10 @@ function initTerminalTab(): void {
   document.getElementById('terminal-section')!.classList.add('flex');
   document.body.classList.add('terminal-active');
 
+  // 匿名模式直连：确保 AI Agent 入口隐藏
+  document.getElementById('agent-toggle-btn')?.classList.add('hidden');
+  document.getElementById('mobile-agent-btn')?.classList.add('hidden');
+
   // 隐藏标签栏（URL 直连模式只有一个标签，不需要标签栏）
   const tabBar = document.getElementById('tab-bar');
   if (tabBar) tabBar.style.display = 'none';
@@ -251,6 +255,10 @@ function showAuthSection(): void {
   document.getElementById('user-space-section')!.classList.remove('flex');
   document.getElementById('server-modal')!.classList.add('hidden');
   document.getElementById('server-modal')!.classList.remove('flex');
+
+  // 匿名模式/退出登录：隐藏 AI Agent 按钮（桌面分段条与移动端菜单）
+  document.getElementById('agent-toggle-btn')?.classList.add('hidden');
+  document.getElementById('mobile-agent-btn')?.classList.add('hidden');
 
   if (!connectionForm) {
     connectionForm = new ConnectionForm({
