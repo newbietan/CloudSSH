@@ -96,6 +96,7 @@
 - **IPv4/IPv6 双栈**：完整支持 IPv4 和 IPv6 地址连接，包括 IPv6 方括号格式自动处理。
 - **多种认证方式**：支持标准 SSH 密码认证、RFC 4256 `keyboard-interactive` 多轮交互认证，以及 OpenSSH 格式的 Ed25519、ECDSA P-256/P-384/P-521 和 RSA 私钥认证。交互认证支持密码、OTP、多字段提示与公钥后的二次验证；服务器提示会在绑定当前连接的安全对话框中展示，已保存密码仅在用户明确选择后代填。RSA 默认使用 RSA-SHA2-256/512，只有显式兼容配置才允许旧 `ssh-rsa` SHA-1。
 - **SSH 跳板机/堡垒机**：登录用户可以为已保存服务器选择另一台已保存服务器作为跳板。CloudSSH 使用标准 RFC 4254 `direct-tcpip` 通道逐层建立 SSH，不依赖远端安装 `ssh`、`nc` 或 `socat`；支持最多 3 级跳转，最终目标的终端、SFTP 与 AI Agent 均复用完整加密链路。每一跳独立认证和验证路径隔离的主机指纹。
+- **Cloudflare 隧道（Zero Trust Tunnel）**：支持通过 Cloudflare Tunnel（cloudflared）直连无公网 IP、无开放端口的内网服务器（HomeLab、局域网主机等），无需设置或租用跳板机。底层采用官方标准 WebSocket Carrier 架构将 SSH 二进制帧直接穿透传输，支持可选的 Cloudflare Zero Trust Service Token（Client ID / Client Secret）鉴权保护。上层自研 SSH 协议栈、TOFU 指纹、SFTP 文件系统及 AI Agent 全量无缝复用。
 - **一次性 SSH 授权分享**：可选启用登录用户的服务器分享。链接只包含 256 位随机能力凭证，不携带主机、用户名、密码、私钥或跳板信息；凭证仅保存哈希、只能领取一次且具有独立的领取有效期与会话最长时间。分享会话允许终端和 SFTP，服务端强制禁用 AI Agent、OS 检测、主机指纹修改与自动重连；所有者可以实时撤销，并查看仅针对分享会话生成的生命周期、SFTP 操作与终端输出记录。
 - **防范中间人攻击 (TOFU)**：首次连接自动提取服务器 Host Key（SHA-256 指纹）并显示，支持 Ed25519/ECDSA/RSA 签名验证，并在本地及 API 持久化缓存已知主机指纹以防范二次连接的欺骗风险。
 - **全功能极客终端**：基于 `@xterm/xterm` 与 `@xterm/addon-webgl` 硬件加速渲染引擎，保证海量日志输出顺滑不卡顿。

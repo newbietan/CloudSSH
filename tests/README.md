@@ -9,7 +9,7 @@ tests/
 ├── build/                         # 生产构建、可复现性和原生弹窗回归
 ├── e2e/                           # Chromium 浏览器交互与 axe 无障碍检查
 ├── ssh/                           # SSH 算法、认证、加密、KEX、Packet 与测试密钥夹具
-├── worker/                        # Worker 路由、安全、DNS、UserDB 与标签测试
+├── worker/                        # Worker 路由、安全、DNS、UserDB、标签与 Cloudflare 隧道测试
 ├── agent-code-actions.test.ts # Agent 代码块复制/填入规则
 ├── agent-panel-ui.test.ts     # Agent 面板交互、执行状态与手动停止按钮
 ├── agent-terminal-selection.test.ts # 终端选区附件和非授权安全边界

@@ -71,6 +71,23 @@ export interface SSHConnectionConfig {
   jumpHosts?: SSHJumpHostConfig[];
   /** 仅可由 Worker 内部的一次性分享兑换流程写入，客户端输入必须剥离。 */
   sessionPolicy?: SSHSessionPolicy;
+  /**
+   * 传输协议类型：'direct'（直连 TCP / 跳板机）或 'cf_tunnel'（Cloudflare 隧道 WSS）
+   */
+  transportType?: 'direct' | 'cf_tunnel';
+  /**
+   * Cloudflare 隧道公共主机名（例如 ssh.example.com）。
+   * 仅在 transportType === 'cf_tunnel' 时生效。
+   */
+  cfTunnelHost?: string;
+  /**
+   * Cloudflare Zero Trust Access Service Token Client ID（可选）
+   */
+  cfAccessClientId?: string;
+  /**
+   * Cloudflare Zero Trust Access Service Token Client Secret（可选）
+   */
+  cfAccessClientSecret?: string;
 }
 
 export interface SSHSessionPolicy {
@@ -195,6 +212,14 @@ export interface ServerConfig {
   os?: string | null;
   /** Optional saved server used as the immediate SSH jump host. */
   jump_server_id?: number | null;
+  /** 传输协议类型：直连 TCP ('direct') 或 Cloudflare 隧道 ('cf_tunnel')，默认为 'direct' */
+  transport_type?: 'direct' | 'cf_tunnel';
+  /** Cloudflare 隧道公共主机名（如 ssh.example.com） */
+  cf_tunnel_host?: string | null;
+  /** Cloudflare Zero Trust Access Service Token Client ID（可选） */
+  cf_access_client_id?: string | null;
+  /** 是否已保存 Cloudflare Zero Trust Access Service Token Secret */
+  has_cf_access_client_secret?: boolean;
   created_at: string;
   updated_at: string;
 }

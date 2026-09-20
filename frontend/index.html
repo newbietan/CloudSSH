@@ -505,10 +505,36 @@
                 使用逗号分隔，最多 10 个标签
               </div>
             </div>
+            <div>
+              <label
+                class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                data-i18n="server.transportMode"
+                >网络连接</label
+              >
+              <div class="flex gap-2 mb-1">
+                <button
+                  type="button"
+                  id="modal-transport-tab-direct"
+                  class="auth-tab auth-tab-active px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all"
+                  data-i18n="server.transportDirect"
+                >
+                  直连 / 跳板机
+                </button>
+                <button
+                  type="button"
+                  id="modal-transport-tab-tunnel"
+                  class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all"
+                  data-i18n="server.transportTunnel"
+                >
+                  Cloudflare 隧道
+                </button>
+              </div>
+            </div>
             <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
               <div class="sm:col-span-3">
                 <label
                   for="server-host"
+                  id="server-host-label"
                   class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
                   data-i18n="auth.host"
                   >主机地址</label
@@ -570,7 +596,7 @@
                 />
               </div>
             </div>
-            <div>
+            <div id="server-jump-host-section">
               <label
                 for="server-jump-host"
                 class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
@@ -595,6 +621,57 @@
                 data-i18n="server.jumpHostHint"
               >
                 可选择已保存服务器；最多递归跳转 3 级
+              </div>
+            </div>
+            <div
+              id="server-cf-access-section"
+              class="hidden space-y-4 pt-2 pb-2 border-t border-b border-dim"
+            >
+              <div
+                class="text-[11px] font-bold tracking-[0.05em] text-[var(--accent-secondary)] flex items-center gap-1.5"
+              >
+                <span class="material-symbols-outlined" style="font-size: 16px"
+                  >security</span
+                >
+                <span data-i18n="server.cfAccessTitle"
+                  >Cloudflare Zero Trust 访问凭据 (可选)</span
+                >
+              </div>
+              <div>
+                <label
+                  for="server-cf-client-id"
+                  class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                  data-i18n="server.cfClientId"
+                  >Service Token Client ID</label
+                >
+                <input
+                  id="server-cf-client-id"
+                  class="terminal-input text-[13px] w-full"
+                  type="text"
+                  placeholder="xxxxxxxxxxxx.access"
+                  autocomplete="off"
+                />
+              </div>
+              <div>
+                <label
+                  for="server-cf-client-secret"
+                  class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                  data-i18n="server.cfClientSecret"
+                  >Service Token Client Secret</label
+                >
+                <input
+                  id="server-cf-client-secret"
+                  class="terminal-input text-[13px] w-full"
+                  type="password"
+                  placeholder="••••••••"
+                  autocomplete="off"
+                />
+              </div>
+              <div
+                class="text-[10px] text-muted"
+                data-i18n="server.cfAccessHint"
+              >
+                若在 Cloudflare Zero Trust 中为该域名开启了 Access 策略，需填入 Service Token
               </div>
             </div>
             <div>
@@ -655,7 +732,7 @@
                 ></textarea>
               </div>
             </div>
-            <div>
+            <div id="server-region-section">
               <label
                 for="server-region"
                 class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"

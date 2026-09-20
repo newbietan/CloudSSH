@@ -36,6 +36,7 @@ src/
 │   ├── ssh-detached-buffer.ts   # 弱网断线保持 128KB 有界缓冲队列与重连补偿
 │   ├── share-audit-writer.ts    # 分享审计事件投递、防抖刷新与关闭留痕
 │   ├── direct-tcpip-stream.ts # RFC 4254 direct-tcpip 背压字节流，用于嵌套 SSH 跳板链
+│   ├── tunnel-stream.ts       # 出站 Cloudflare 隧道 WebSocket 全双工流适配器
 │   ├── sftp-handler.ts    # SFTP protocol ops, task queue, concurrent download, upload tracking
 │   ├── user-db.ts    # UserDBDO - user/server/命令片段存储（含标签、OS、跳板关系与片段持久化）
 │   ├── server-tags.ts # 服务器标签规范化与 SQLite JSON 序列化
@@ -369,6 +370,8 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 36. **用户无操作空闲超时（Inactivity Timeout）** - 为避免挂机会话长时间消耗 Cloudflare Durable Object 的 Duration 每日配额（Free 套餐 13,000 GB-s），`SSHSession` 实现了用户级空闲超时机制，由 `env.IDLE_TIMEOUT` 配置（支持如 `30m`/`1h`，默认 30 分钟，`0` 禁用）。仅真实用户交互（终端键盘输入、窗口 resize、SFTP 文件传输、AI 任务等）会刷新活动时间戳；前端 WebSocket ping 心跳、底层 SSH keepalive 以及远端服务器被动输出（如 `top` 刷屏）绝不重置该计时器。超时后服务端主动以 `session_idle_timeout` 关闭连接（code 1000），前端识别该事件并阻止自动重连。
 
 37. **液态分段切换器与抽屉互斥（Liquid Segmented Controls & CSS Hidden 特异性）** - 桌面端终端抽屉（SFTP、自定义命令、AI Agent）整合为液态分段药丸胶囊（`LiquidSegmentedDrawerControl`，`frontend/src/drawer-segmented.ts`），由双边异步物理弹簧引擎驱动；移动端分段条整体隐藏（`.desktop-terminal-action`），由 `#mobile-more-menu` 提供平行的 SFTP / AI Agent 入口，统一通过 `applyDrawerToggle()` 驱动互斥展开与关闭。样式层级规范：由于 `.drawer-segmented-btn` 在 `style.css` 中声明了 `display: inline-flex` 且位于 `@tailwind utilities` 之后，同等特异性 `(0, 1, 0)` 下会覆盖 Tailwind 的 `.hidden`。因此必须保留 `.drawer-segmented-btn.hidden { display: none }`，保证匿名模式下 AI Agent 按钮及一次性分享会话下的自定义命令按钮在视觉上被严格隐藏。控制器层防御：`LiquidSegmentedDrawerControl` 必须检查目标按钮的 `hidden` 状态，对隐藏按钮阻断点击并抑制透镜滑块位移；`main.ts` 中的 `showAuthSection()` 和 `initTerminalTab()` 必须显式维护 `hidden` 状态。
+
+38. **Cloudflare 隧道连接（Cloudflare Tunnel WebSocket Carrier & Zero Trust Access）** - 为无公网 IP、无跳板机的内网服务器提供直连能力。底层通过 Cloudflare Tunnel 的 WebSocket Carrier 机制传输原始 SSH 二进制字节流；`src/worker/tunnel-stream.ts`（`TunnelWebSocketStream`）将出站 WebSocket 桥接为 WHATWG Streams，上层 SSH 协议栈完全复用。安全守卫：隧道域名经 DoH（`dns-check.ts`）严格检验非内网保留 IP；隧道连接不支持跳板机（`jump_server_id` 必须为 null）；隧道连接免除直连 TCP 443 端口拦截；支持 Cloudflare Zero Trust 的 Service Token（`cf_access_client_id` 与经过 AES-GCM 行级加密的 `cf_access_client_secret`）；隧道模式下跳过 IPinfo 区域推断以保护域名隐私；卡片显示 CF 隧道标识与域名快捷复制。
 
 ## Deployment Notes
 

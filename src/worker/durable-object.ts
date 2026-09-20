@@ -11,6 +11,7 @@ import {
 } from '../share-resume-schema';
 import { checkHostResolved } from './dns-check';
 import { SSHSession } from './ssh-session';
+import { TunnelWebSocketStream } from './tunnel-stream';
 
 /**
  * SSRF 防护：检测目标主机是否为内网、保留或特殊地址。
@@ -292,6 +293,12 @@ export class SSHSessionDO {
       delete config.jumpHosts;
       delete config.knownHostIdentity;
       delete config.sessionPolicy;
+
+      if (config.transportType === 'cf_tunnel') {
+        if (!config.host && config.cfTunnelHost) {
+          config.host = config.cfTunnelHost;
+        }
+      }
 
       if (!config.host || !config.username || (!config.password && !config.privateKey)) {
         ws.send(JSON.stringify({ type: 'error', message: 'Missing credentials' }));
@@ -608,40 +615,109 @@ export class SSHSessionDO {
   ): Promise<void> {
     const chainSessions: SSHSession[] = [];
     try {
+      const isTunnel = config.transportType === 'cf_tunnel';
       const jumpHosts = config.jumpHosts || [];
       if (jumpHosts.length > 3) throw new Error('最多允许 3 级 SSH 跳转');
-      const outer = jumpHosts[0] || config;
-      if (!Number.isInteger(outer.port) || outer.port < 1 || outer.port > 65535) {
-        throw new Error('端口必须是 1-65535 之间的整数');
+      if (isTunnel && jumpHosts.length > 0) {
+        throw new Error('Cloudflare 隧道连接不支持跳板机');
       }
-      // SSRF checks apply to the only address reached directly from Cloudflare.
-      // Private destinations are allowed only inside a trusted saved-server chain.
-      if (isBlockedHost(outer.host)) {
-        throw new Error('禁止连接内网或保留地址 (SSRF 防护)');
-      }
-      const dnsCheck = await checkHostResolved(outer.host);
-      if (dnsCheck.blocked) {
-        throw new Error(dnsCheck.reason!);
-      }
+
       const BLOCKED_PORTS = [
         23, 80, 443, 25, 465, 587, 110, 143, 993, 995, 3306, 5432, 6379, 9200, 11211, 27017, 5060,
       ];
-      for (const node of [...jumpHosts, config]) {
-        if (!Number.isInteger(node.port) || node.port < 1 || node.port > 65535) {
+
+      let transport: any;
+      let latency = 0;
+
+      if (isTunnel) {
+        const tunnelHost = (config.cfTunnelHost || config.host || '')
+          .trim()
+          .replace(/^(https?|wss?):\/\//i, '')
+          .replace(/\/.*$/, '')
+          .replace(/:\d+$/, '');
+
+        if (!tunnelHost) {
+          throw new Error('Cloudflare 隧道域名不能为空');
+        }
+        if (isBlockedHost(tunnelHost)) {
+          throw new Error('禁止连接内网或保留地址 (SSRF 防护)');
+        }
+        const dnsCheck = await checkHostResolved(tunnelHost);
+        if (dnsCheck.blocked) {
+          throw new Error(dnsCheck.reason!);
+        }
+
+        const tunnelUrl = `https://${tunnelHost}/`;
+        const headers: Record<string, string> = {
+          Upgrade: 'websocket',
+        };
+        if (config.cfAccessClientId && config.cfAccessClientSecret) {
+          headers['CF-Access-Client-Id'] = config.cfAccessClientId;
+          headers['CF-Access-Client-Secret'] = config.cfAccessClientSecret;
+        }
+
+        const startTime = Date.now();
+        let resp: Response;
+        try {
+          resp = await fetch(tunnelUrl, { headers });
+        } catch (fetchErr) {
+          const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+          throw new Error(`Cloudflare 隧道连接失败 (${tunnelHost}): ${msg}`);
+        }
+
+        if (resp.status === 401 || resp.status === 403) {
+          throw new Error(
+            `Cloudflare Zero Trust 访问被拒绝 (${resp.status})：请检查是否需要配置 Service Token (Client ID / Client Secret)`
+          );
+        }
+        if (resp.status === 301 || resp.status === 302) {
+          throw new Error(
+            'Cloudflare 隧道被重定向到认证页面：若启用了 Zero Trust 访问控制，请在 Cloudflare 配置 Service Token 并在服务器设置中填入'
+          );
+        }
+
+        const tunnelWs = resp.webSocket;
+        if (!tunnelWs) {
+          throw new Error(
+            `Cloudflare 隧道未能升级为 WebSocket (HTTP ${resp.status} ${resp.statusText})`
+          );
+        }
+
+        tunnelWs.accept();
+        transport = new TunnelWebSocketStream(tunnelWs);
+        await transport.opened;
+        latency = Date.now() - startTime;
+      } else {
+        const outer = jumpHosts[0] || config;
+        if (!Number.isInteger(outer.port) || outer.port < 1 || outer.port > 65535) {
           throw new Error('端口必须是 1-65535 之间的整数');
         }
-        if (BLOCKED_PORTS.includes(node.port)) {
-          throw new Error(`端口 ${node.port} 存在安全风险，已被禁止连接`);
+        // SSRF checks apply to the only address reached directly from Cloudflare.
+        // Private destinations are allowed only inside a trusted saved-server chain.
+        if (isBlockedHost(outer.host)) {
+          throw new Error('禁止连接内网或保留地址 (SSRF 防护)');
         }
+        const dnsCheck = await checkHostResolved(outer.host);
+        if (dnsCheck.blocked) {
+          throw new Error(dnsCheck.reason!);
+        }
+        for (const node of [...jumpHosts, config]) {
+          if (!Number.isInteger(node.port) || node.port < 1 || node.port > 65535) {
+            throw new Error('端口必须是 1-65535 之间的整数');
+          }
+          if (BLOCKED_PORTS.includes(node.port)) {
+            throw new Error(`端口 ${node.port} 存在安全风险，已被禁止连接`);
+          }
+        }
+
+        const { connect } = await import('cloudflare:sockets');
+        const hostname = outer.host.includes(':') ? `[${outer.host}]` : outer.host;
+
+        const startTime = Date.now();
+        transport = connect({ hostname, port: outer.port });
+        await transport.opened;
+        latency = Date.now() - startTime;
       }
-
-      const { connect } = await import('cloudflare:sockets');
-      const hostname = outer.host.includes(':') ? `[${outer.host}]` : outer.host;
-
-      const startTime = Date.now();
-      let transport: any = connect({ hostname, port: outer.port });
-      await transport.opened;
-      const latency = Date.now() - startTime;
 
       const colo = this.websocketColos.get(ws) || 'UNKNOWN';
       this.websocketColos.delete(ws);
