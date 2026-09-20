@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TunnelWebSocketStream } from '../../src/worker/tunnel-stream';
+import { isValidTunnelHostname, TunnelWebSocketStream } from '../../src/worker/tunnel-stream';
 
 class FakeWebSocket {
   listeners: Record<string, ((event: any) => void)[]> = {};
@@ -99,12 +99,54 @@ describe('TunnelWebSocketStream', () => {
     await expect(reader.read()).rejects.toThrow('Tunnel WebSocket connection error');
   });
 
-  it('主动调用 close 会正常关闭 WebSocket', () => {
+  it('主动调用 close 会正常关闭 WebSocket 并解绑所有事件监听器', () => {
     const ws = new FakeWebSocket();
     const stream = new TunnelWebSocketStream(ws as unknown as WebSocket);
+
+    expect(ws.listeners['message']?.length).toBe(1);
+    expect(ws.listeners['close']?.length).toBe(1);
+    expect(ws.listeners['error']?.length).toBe(1);
 
     stream.close();
     expect(ws.closeCalls).toHaveLength(1);
     expect(ws.closeCalls[0].code).toBe(1000);
+
+    expect(ws.listeners['message']?.length).toBe(0);
+    expect(ws.listeners['close']?.length).toBe(0);
+    expect(ws.listeners['error']?.length).toBe(0);
+  });
+});
+
+describe('isValidTunnelHostname', () => {
+  it('合法的多级域名返回 true', () => {
+    expect(isValidTunnelHostname('ssh.example.com')).toBe(true);
+    expect(isValidTunnelHostname('tunnel-1.sub.my-domain.org')).toBe(true);
+    expect(isValidTunnelHostname('a.b.co')).toBe(true);
+    expect(isValidTunnelHostname('dev.internal.corp.net')).toBe(true);
+  });
+
+  it('IPv4 / IPv6 字面量返回 false', () => {
+    expect(isValidTunnelHostname('192.168.1.1')).toBe(false);
+    expect(isValidTunnelHostname('1.1.1.1')).toBe(false);
+    expect(isValidTunnelHostname('10.0.0.1')).toBe(false);
+    expect(isValidTunnelHostname('::1')).toBe(false);
+    expect(isValidTunnelHostname('2001:db8::1')).toBe(false);
+  });
+
+  it('无点单级主机名返回 false', () => {
+    expect(isValidTunnelHostname('localhost')).toBe(false);
+    expect(isValidTunnelHostname('myserver')).toBe(false);
+    expect(isValidTunnelHostname('')).toBe(false);
+  });
+
+  it('包含非法字符、空格或格式错误的域名返回 false', () => {
+    expect(isValidTunnelHostname('ssh.example.com:22')).toBe(false);
+    expect(isValidTunnelHostname('ssh example.com')).toBe(false);
+    expect(isValidTunnelHostname('ssh/example.com')).toBe(false);
+    expect(isValidTunnelHostname('.ssh.example.com')).toBe(false);
+    expect(isValidTunnelHostname('ssh.example.com.')).toBe(false);
+    expect(isValidTunnelHostname('-ssh.example.com')).toBe(false);
+    expect(isValidTunnelHostname('ssh-.example.com')).toBe(false);
+    expect(isValidTunnelHostname('ssh..example.com')).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 import { copyTextToClipboard } from './clipboard';
-import { maskIPAddress } from './host-display';
+import { isValidTunnelHostname, maskIPAddress } from './host-display';
 import { onLocaleChange, t } from './i18n';
 import { osDisplayName, osIconSvg } from './os-icons';
 import { parsePort } from './port';
@@ -135,6 +135,7 @@ export class ServerList {
   private editingOriginalAuthMethod: ServerConfig['auth_method'] | null = null;
   private modalAuthMode: 'password' | 'key' = 'password';
   private modalTransportMode: 'direct' | 'cf_tunnel' = 'direct';
+  private clearCfAccessClientSecret = false;
   private searchQuery = '';
   private selectedTag = '';
   private currentPage = 1;
@@ -279,6 +280,17 @@ export class ServerList {
     document
       .getElementById('server-jump-host')
       ?.addEventListener('change', () => this.updateRegionControls());
+    document
+      .getElementById('server-cf-clear-secret-btn')
+      ?.addEventListener('click', () => this.handleClearCfSecret());
+    document.getElementById('server-cf-client-secret')?.addEventListener('input', () => {
+      this.clearCfAccessClientSecret = false;
+      const statusEl = document.getElementById('server-cf-secret-status');
+      if (statusEl) {
+        statusEl.textContent = '';
+        statusEl.classList.add('hidden');
+      }
+    });
   }
 
   // ==================== 数据获取 ====================
@@ -449,18 +461,22 @@ export class ServerList {
       : '';
 
     // 下游节点自身的区域不参与调度；连接区域始终由跳板链入口决定。
-    const usesJumpHost = server.jump_server_id !== null && server.jump_server_id !== undefined;
+    const usesJumpHost = !isTunnel && server.jump_server_id !== null && server.jump_server_id !== undefined;
     const effectiveHint = usesJumpHost ? '' : server.region || server.inferred_hint || '';
     const isManual = !!server.region;
-    const regionLabelText = isTunnel
-      ? t('server.regionTunnel')
-      : usesJumpHost
-        ? t('server.regionViaJump')
-        : regionLabel(effectiveHint);
-    const regionTag = isTunnel
-      ? t('server.tunnelBadge')
-      : usesJumpHost
-        ? t('server.regionInherited')
+    const regionLabelText = usesJumpHost
+      ? t('server.regionViaJump')
+      : effectiveHint
+        ? regionLabel(effectiveHint)
+        : isTunnel
+          ? t('region.autoShort')
+          : regionLabel('');
+    const regionTag = usesJumpHost
+      ? t('server.regionInherited')
+      : isTunnel
+        ? isManual
+          ? t('server.regionManual')
+          : t('server.regionAuto')
         : effectiveHint
           ? isManual
             ? t('server.regionManual')
@@ -693,6 +709,17 @@ export class ServerList {
       const transport = server.transport_type === 'cf_tunnel' ? 'cf_tunnel' : 'direct';
       this.setModalTransportMode(transport);
 
+      this.clearCfAccessClientSecret = false;
+      const secretStatusEl = document.getElementById('server-cf-secret-status');
+      if (secretStatusEl) {
+        secretStatusEl.textContent = '';
+        secretStatusEl.classList.add('hidden');
+      }
+      const clearBtn = document.getElementById('server-cf-clear-secret-btn');
+      if (clearBtn) {
+        clearBtn.classList.toggle('hidden', !server.has_cf_access_client_secret);
+      }
+
       const clientIdInput = document.getElementById('server-cf-client-id') as HTMLInputElement | null;
       const clientSecretInput = document.getElementById(
         'server-cf-client-secret'
@@ -724,6 +751,14 @@ export class ServerList {
       (document.getElementById('server-tags') as HTMLInputElement).value = '';
       this.setModalAuthMode('password');
       this.setModalTransportMode('direct');
+
+      this.clearCfAccessClientSecret = false;
+      const secretStatusEl = document.getElementById('server-cf-secret-status');
+      if (secretStatusEl) {
+        secretStatusEl.textContent = '';
+        secretStatusEl.classList.add('hidden');
+      }
+      document.getElementById('server-cf-clear-secret-btn')?.classList.add('hidden');
 
       const clientIdInput = document.getElementById('server-cf-client-id') as HTMLInputElement | null;
       const clientSecretInput = document.getElementById(
@@ -772,22 +807,47 @@ export class ServerList {
     const cfAccessSection = document.getElementById('server-cf-access-section');
     const hostLabel = document.getElementById('server-host-label');
     const hostInput = document.getElementById('server-host') as HTMLInputElement | null;
+    const portHint = document.getElementById('server-port-hint');
 
     directTab?.classList.toggle('auth-tab-active', mode === 'direct');
     tunnelTab?.classList.toggle('auth-tab-active', mode === 'cf_tunnel');
 
     if (mode === 'cf_tunnel') {
       if (jumpSection) jumpSection.style.display = 'none';
-      if (regionSection) regionSection.style.display = 'none';
+      if (regionSection) regionSection.style.display = '';
       if (cfAccessSection) cfAccessSection.classList.remove('hidden');
       if (hostLabel) hostLabel.textContent = t('server.tunnelHost');
       if (hostInput) hostInput.placeholder = t('server.tunnelHostPlaceholder');
+      portHint?.classList.remove('hidden');
     } else {
       if (jumpSection) jumpSection.style.display = '';
       if (regionSection) regionSection.style.display = '';
       if (cfAccessSection) cfAccessSection.classList.add('hidden');
       if (hostLabel) hostLabel.textContent = t('auth.host');
       if (hostInput) hostInput.placeholder = '192.168.1.1';
+      portHint?.classList.add('hidden');
+    }
+
+    this.updateRegionControls();
+  }
+
+  private handleClearCfSecret(): void {
+    this.clearCfAccessClientSecret = true;
+    const secretInput = document.getElementById(
+      'server-cf-client-secret'
+    ) as HTMLInputElement | null;
+    const statusEl = document.getElementById('server-cf-secret-status');
+    const clearBtn = document.getElementById('server-cf-clear-secret-btn');
+    if (secretInput) {
+      secretInput.value = '';
+      secretInput.placeholder = '';
+    }
+    if (statusEl) {
+      statusEl.textContent = t('server.secretCleared');
+      statusEl.classList.remove('hidden');
+    }
+    if (clearBtn) {
+      clearBtn.classList.add('hidden');
     }
   }
 
@@ -862,7 +922,21 @@ export class ServerList {
     const jumpSelect = document.getElementById('server-jump-host') as HTMLSelectElement | null;
     const regionSelect = document.getElementById('server-region') as HTMLSelectElement | null;
     const inferredInfo = document.getElementById('server-region-inferred');
+    const tunnelHint = document.getElementById('server-region-tunnel-hint');
     if (!jumpSelect || !regionSelect || !inferredInfo) return;
+
+    const isTunnel = this.modalTransportMode === 'cf_tunnel';
+    if (isTunnel) {
+      regionSelect.disabled = false;
+      regionSelect.classList.remove('cursor-not-allowed', 'opacity-60');
+      inferredInfo.textContent = '';
+      inferredInfo.classList.add('hidden');
+      tunnelHint?.classList.remove('hidden');
+      return;
+    }
+
+    tunnelHint?.classList.add('hidden');
+    inferredInfo.classList.remove('hidden');
 
     const usesJumpHost = jumpSelect.value !== '';
     regionSelect.disabled = usesJumpHost;
@@ -938,6 +1012,23 @@ export class ServerList {
       return;
     }
 
+    const isTunnel = this.modalTransportMode === 'cf_tunnel';
+    let cleanTunnelHost: string | null = null;
+    if (isTunnel) {
+      cleanTunnelHost = host
+        .replace(/^(https?|wss?):\/\//i, '')
+        .replace(/\/.*$/, '')
+        .replace(/:\d+$/, '');
+      if (!isValidTunnelHostname(cleanTunnelHost)) {
+        notify(t('server.invalidTunnelHost'), {
+          title: t('server.detailsTitle'),
+          variant: 'warning',
+        });
+        document.getElementById('server-host')?.focus();
+        return;
+      }
+    }
+
     const submitBtn = document.getElementById('server-submit-btn') as HTMLButtonElement;
     submitBtn.disabled = true;
     // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
@@ -947,7 +1038,6 @@ export class ServerList {
     `;
 
     try {
-      const isTunnel = this.modalTransportMode === 'cf_tunnel';
       const body: ServerSavePayload = {
         name,
         host,
@@ -960,8 +1050,8 @@ export class ServerList {
       };
       if (credential) body.credential = credential;
 
-      if (isTunnel) {
-        body.cf_tunnel_host = host;
+      if (isTunnel && cleanTunnelHost) {
+        body.cf_tunnel_host = cleanTunnelHost;
         const clientId = (
           document.getElementById('server-cf-client-id') as HTMLInputElement | null
         )?.value.trim();
@@ -969,13 +1059,17 @@ export class ServerList {
           document.getElementById('server-cf-client-secret') as HTMLInputElement | null
         )?.value;
         if (clientId !== undefined) body.cf_access_client_id = clientId;
-        if (clientSecret) body.cf_access_client_secret = clientSecret;
-      } else {
-        // 只有 Cloudflare 直连入口才提交区域偏好；下游节点由跳板链入口决定。
-        const regionSelect = document.getElementById('server-region') as HTMLSelectElement | null;
-        if (regionSelect && jumpServerId === null) {
-          body.region = regionSelect.value || '';
+        if (clientSecret) {
+          body.cf_access_client_secret = clientSecret;
+        } else if (this.clearCfAccessClientSecret) {
+          body.cf_access_client_secret = '';
         }
+      }
+
+      // 直连入口或 Cloudflare 隧道入口均可提交手动区域偏好以优化调度
+      const regionSelect = document.getElementById('server-region') as HTMLSelectElement | null;
+      if (regionSelect && (isTunnel || jumpServerId === null)) {
+        body.region = regionSelect.value || '';
       }
 
       // 保存请求（后端在保存时会同步推断 locationHint，故时间可能略长）
@@ -1015,7 +1109,14 @@ export class ServerList {
       // POST 与 PUT 路径后端均会返回最新记录（含 inferred_hint 字段）
       if (!debugLines) {
         if (isTunnel) {
-          notify(t('server.savedTunnel'), { variant: 'success' });
+          const userRegion = body.region || null;
+          if (userRegion) {
+            notify(t('server.savedRegion', { region: regionLabel(userRegion) }), {
+              variant: 'success',
+            });
+          } else {
+            notify(t('server.savedTunnel'), { variant: 'success' });
+          }
         } else if (jumpServerId === null) {
           const inferred = responseData.inferred_hint || null;
           const userRegion = body.region || null;

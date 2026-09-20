@@ -319,4 +319,97 @@ describe('UserDBDO - Cloudflare 隧道支持', () => {
     const updated = (await updateRes.json()) as Record<string, any>;
     expect(updated.transport_type).toBe('direct');
   });
+
+  it('创建或更新时拒绝格式非法的隧道域名', async () => {
+    const sql = new FakeSql();
+    const userDB = createUserDB(sql);
+
+    // 1. IP 地址作为隧道域名被拦截
+    const res1 = await userDB.fetch(
+      new Request('http://internal/internal/servers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: 7,
+          name: 'Bad IP Tunnel',
+          host: '192.168.1.1',
+          port: 22,
+          username: 'root',
+          credential: 'password123',
+          auth_method: 'password',
+          transport_type: 'cf_tunnel',
+        }),
+      })
+    );
+    expect(res1.status).toBe(400);
+    const err1 = (await res1.json()) as Record<string, any>;
+    expect(err1.error).toContain('域名格式不正确');
+
+    // 2. 单级无点主机名作为隧道域名被拦截
+    const res2 = await userDB.fetch(
+      new Request('http://internal/internal/servers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: 7,
+          name: 'Bad Hostname Tunnel',
+          host: 'localhost',
+          port: 22,
+          username: 'root',
+          credential: 'password123',
+          auth_method: 'password',
+          transport_type: 'cf_tunnel',
+        }),
+      })
+    );
+    expect(res2.status).toBe(400);
+    const err2 = (await res2.json()) as Record<string, any>;
+    expect(err2.error).toContain('域名格式不正确');
+  });
+
+  it('隧道模式支持保存手动选择的 region 并用于连接调度', async () => {
+    const sql = new FakeSql();
+    const userDB = createUserDB(sql);
+
+    const createRes = await userDB.fetch(
+      new Request('http://internal/internal/servers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: 7,
+          name: 'APAC Tunnel',
+          host: 'ssh.apac.example.com',
+          port: 22,
+          username: 'root',
+          credential: 'my-password',
+          auth_method: 'password',
+          transport_type: 'cf_tunnel',
+          region: 'apac',
+        }),
+      })
+    );
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as Record<string, any>;
+    expect(created.region).toBe('apac');
+    expect(inferLocationHintMock).not.toHaveBeenCalled();
+
+    // 兑换 token 验证 locationHint 被正确设置为 apac
+    const tokenRes = await userDB.fetch(
+      new Request('http://internal/internal/servers/1/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: 7 }),
+      })
+    );
+    const { token } = (await tokenRes.json()) as { token: string };
+    const consumeRes = await userDB.fetch(
+      new Request('http://internal/internal/connect-token/consume', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      })
+    );
+    const config = (await consumeRes.json()) as Record<string, any>;
+    expect(config.locationHint).toBe('apac');
+  });
 });

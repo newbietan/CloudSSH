@@ -18,6 +18,7 @@ import {
 import { inferLocationHint } from './ip-geo';
 import { isDetectedOS } from './os-detect';
 import { deserializeServerRow, serializeServerTags } from './server-tags';
+import { isValidTunnelHostname } from './tunnel-stream';
 
 const AUTH_METHODS = new Set(['password', 'publickey']);
 const MAX_JUMP_HOSTS = 3;
@@ -751,6 +752,12 @@ export class UserDBDO {
       if (!cleanTunnelHost) {
         return Response.json({ error: 'Cloudflare 隧道域名不能为空' }, { status: 400 });
       }
+      if (!isValidTunnelHostname(cleanTunnelHost)) {
+        return Response.json(
+          { error: 'Cloudflare 隧道域名格式不正确，必须为有效的公开域名（例如 ssh.example.com）' },
+          { status: 400 }
+        );
+      }
       if (!body.host || body.host.trim() === '') {
         body.host = cleanTunnelHost;
       }
@@ -919,8 +926,7 @@ export class UserDBDO {
     } else if (current.jump_server_id === null) {
       requestedRegion = current.region;
     }
-    const normalizedRegion =
-      nextJumpServerId === null && nextTransportType !== 'cf_tunnel' ? requestedRegion : null;
+    const normalizedRegion = nextJumpServerId === null ? requestedRegion : null;
     const isDirect = nextJumpServerId === null && nextTransportType !== 'cf_tunnel';
     const becameDirect = current.jump_server_id !== null && isDirect;
     const hostChanged = body.host !== undefined && body.host !== current.host;
@@ -999,7 +1005,7 @@ export class UserDBDO {
       updates.push('auth_method = ?');
       values.push(body.auth_method);
     }
-    if (!isDirect && current.region !== null) {
+    if (nextJumpServerId !== null && current.region !== null) {
       updates.push('region = ?');
       values.push(null);
     } else if (body.region !== undefined || becameDirect) {
@@ -1030,6 +1036,12 @@ export class UserDBDO {
           .replace(/:\d+$/, '');
         if (!cleanTunnelHost) {
           return Response.json({ error: 'Cloudflare 隧道域名不能为空' }, { status: 400 });
+        }
+        if (!isValidTunnelHostname(cleanTunnelHost)) {
+          return Response.json(
+            { error: 'Cloudflare 隧道域名格式不正确，必须为有效的公开域名（例如 ssh.example.com）' },
+            { status: 400 }
+          );
         }
         updates.push('cf_tunnel_host = ?');
         values.push(cleanTunnelHost);

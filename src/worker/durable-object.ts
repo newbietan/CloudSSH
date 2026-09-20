@@ -11,7 +11,7 @@ import {
 } from '../share-resume-schema';
 import { checkHostResolved } from './dns-check';
 import { SSHSession } from './ssh-session';
-import { TunnelWebSocketStream } from './tunnel-stream';
+import { isValidTunnelHostname, TunnelWebSocketStream } from './tunnel-stream';
 
 /**
  * SSRF 防护：检测目标主机是否为内网、保留或特殊地址。
@@ -638,6 +638,11 @@ export class SSHSessionDO {
 
         if (!tunnelHost) {
           throw new Error('Cloudflare 隧道域名不能为空');
+        }
+        if (!isValidTunnelHostname(tunnelHost)) {
+          throw new Error(
+            'Cloudflare 隧道域名格式不正确，必须为有效的公开域名（例如 ssh.example.com）'
+          );
         }
         if (isBlockedHost(tunnelHost)) {
           throw new Error('禁止连接内网或保留地址 (SSRF 防护)');

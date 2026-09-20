@@ -174,6 +174,13 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'server.tunnelBadge': 'CF Tunnel',
   'server.regionTunnel': 'Cloudflare Tunnel',
   'server.savedTunnel': 'Saved. Will connect via Cloudflare Tunnel.',
+  'server.invalidTunnelHost':
+    'Invalid Cloudflare tunnel hostname. Must be a valid public domain (e.g. ssh.example.com)',
+  'server.tunnelPortHint': 'Default 22 (actual port is configured in internal cloudflared)',
+  'server.clearSecret': 'Clear saved secret',
+  'server.secretCleared': 'Marked for removal (takes effect on save)',
+  'server.tunnelRegionHint':
+    'Selecting the region nearest to your internal server is recommended to reduce latency; Auto uses the connection entrypoint',
   'region.auto': 'Auto (detected when saved)',
   'region.autoShort': 'Auto',
   'region.wnam': 'North America — West',

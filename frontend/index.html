@@ -572,6 +572,13 @@
                     required
                   />
                 </div>
+                <div
+                  id="server-port-hint"
+                  class="hidden text-[10px] text-muted mt-1 leading-tight"
+                  data-i18n="server.tunnelPortHint"
+                >
+                  默认 22（实际端口由内网 cloudflared 配置决定）
+                </div>
               </div>
             </div>
             <div>
@@ -653,12 +660,22 @@
                 />
               </div>
               <div>
-                <label
-                  for="server-cf-client-secret"
-                  class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
-                  data-i18n="server.cfClientSecret"
-                  >Service Token Client Secret</label
-                >
+                <div class="flex items-center justify-between mb-2">
+                  <label
+                    for="server-cf-client-secret"
+                    class="block text-xs font-bold tracking-[0.1em] text-muted"
+                    data-i18n="server.cfClientSecret"
+                    >Service Token Client Secret</label
+                  >
+                  <button
+                    type="button"
+                    id="server-cf-clear-secret-btn"
+                    class="hidden text-[10px] text-[var(--accent)] hover:underline cursor-pointer flex items-center gap-0.5"
+                  >
+                    <span class="material-symbols-outlined" style="font-size: 12px">delete</span>
+                    <span data-i18n="server.clearSecret">清除已存密钥</span>
+                  </button>
+                </div>
                 <input
                   id="server-cf-client-secret"
                   class="terminal-input text-[13px] w-full"
@@ -666,6 +683,10 @@
                   placeholder="••••••••"
                   autocomplete="off"
                 />
+                <div
+                  id="server-cf-secret-status"
+                  class="hidden text-[10px] text-[var(--accent-secondary)] mt-1"
+                ></div>
               </div>
               <div
                 class="text-[10px] text-muted"
@@ -757,6 +778,13 @@
                 id="server-region-inferred"
                 class="text-[10px] text-muted mt-1"
               ></div>
+              <div
+                id="server-region-tunnel-hint"
+                class="hidden text-[10px] text-muted mt-1"
+                data-i18n="server.tunnelRegionHint"
+              >
+                建议手动选择离内网主机物理位置最近的区域以降低隧道延迟；选择自动将由连接时的接入点决定
+              </div>
             </div>
             <div class="pt-2">
               <button

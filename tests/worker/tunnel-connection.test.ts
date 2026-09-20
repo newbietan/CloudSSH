@@ -90,6 +90,25 @@ describe('SSHSessionDO - Cloudflare 隧道连接', () => {
     expect(lastMsg.message).toContain('Cloudflare 隧道连接不支持跳板机');
   });
 
+  it('隧道域名格式不合法时拒绝连接', async () => {
+    const doInstance = createSSHSessionDO();
+    const ws = new MockBrowserWs();
+
+    const config: SSHConnectionConfig = {
+      host: '192.168.1.1',
+      port: 22,
+      username: 'root',
+      password: 'pwd',
+      transportType: 'cf_tunnel',
+    };
+
+    await (doInstance as any).initSSHSession(ws, config);
+
+    expect(ws.closedWith?.code).toBe(1011);
+    const lastMsg = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]);
+    expect(lastMsg.message).toContain('域名格式不正确');
+  });
+
   it('隧道域名解析命中内网/保留地址时触发 SSRF 拦截', async () => {
     const doInstance = createSSHSessionDO();
     const ws = new MockBrowserWs();

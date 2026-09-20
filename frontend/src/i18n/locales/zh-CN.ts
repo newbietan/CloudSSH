@@ -141,6 +141,13 @@ export const zhCN = {
   'server.tunnelBadge': 'CF 隧道',
   'server.regionTunnel': 'Cloudflare 隧道',
   'server.savedTunnel': '已保存，将通过 Cloudflare 隧道连接。',
+  'server.invalidTunnelHost':
+    'Cloudflare 隧道域名格式不正确，必须为有效的公开域名（例如 ssh.example.com）',
+  'server.tunnelPortHint': '默认 22（实际端口由内网 cloudflared 配置决定）',
+  'server.clearSecret': '清除已存密钥',
+  'server.secretCleared': '已标记清除（保存后生效）',
+  'server.tunnelRegionHint':
+    '建议手动选择离内网主机物理位置最近的区域以降低隧道延迟；选择自动将由连接时的接入点决定',
   'region.auto': '自动（保存时由系统推断）',
   'region.autoShort': '自动',
   'region.wnam': '北美洲 — 西部',
