@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-09-20
+
+### Added
+
+- **Cloudflare 隧道（Zero Trust Tunnel）原生直连支持**：
+  - 支持通过 Cloudflare Tunnel（`cloudflared`）穿透内网直接连接无公网 IP、无开放端口的私有服务器（HomeLab、内网主机等），无需设置端口映射或跳板机；
+  - 底层基于 Cloudflare Tunnel 官方标准 WebSocket Carrier 机制传输原始 SSH 二进制字节流；新增 `src/worker/tunnel-stream.ts`（`TunnelWebSocketStream`）将出站 WebSocket 连接封装为标准 WHATWG 可读与可写双工流，与 CloudSSH 自研纯 TypeScript SSH-2.0 协议栈（TOFU 主机密钥校验、密码/私钥认证、Shell 交互、SFTP 图形化管理、在线编辑、AI Agent 控制循环）全量无感知复用；
+  - 支持可选的 Cloudflare Zero Trust Access Service Token（Client ID / Client Secret）鉴权，并通过 AES-GCM 行级加密持久化，API 响应严格脱敏（仅暴露 `has_cf_access_client_secret` 状态），连接令牌签发时安全解密流转；
+  - 针对 Zero Trust 访问拦截（401 / 403 / 302 重定向）提供精准的 Service Token 配置引导与错误提示。
+- **开放隧道模式手动指定 DO 区域偏好（Location Hint）**：
+  - 隧道模式下支持手动选择连接区域（Region），用户可显式指定与内网主机物理位置最近的 Cloudflare 数据中心区域（如 `apac`），促使 Durable Object 就近实例化，彻底消除因客户端接入点跨洋分流引发的三角路由延迟（实测端到端延迟降低 60% 以上）；
+  - 隧道服务器在卡片上展示专属 `CF 隧道` 徽标、域名快速复制与区域调度状态标签（`[cloud] 亚太地区 [手动]` / `[cloud] 自动 [自动]`）。
+- **Zero Trust 凭据生命周期与清除交互**：
+  - 编辑已存服务器时，针对已配置的 Service Token Secret 提供「清除已存密钥」一键交互，支持用户在 Zero Trust 移除访问策略后一键将后端密文重置清空，杜绝残留脏数据。
+
+### Fixed / Changed
+
+- **隧道域名轻量格式校验与输入防御**：
+  - 双端封装并复用 `isValidTunnelHostname` 纯函数，确保输入的隧道主机名为合法的标准公开域名（FQDN），在保存与连接阶段前置拦截纯 IP 字面量、单级主机名（如 `localhost`）及非法格式字符；
+  - 完善 `TunnelWebSocketStream` 资源释放生命周期，在流关闭时显式解绑底层全部 WebSocket 事件监听器；
+  - 修复 `toSSHMPInt` 随机测试在首字节恰为 `0x00` 时长度断言偶发抖动的 CI 缺陷。
+- **用户体验与端口引导优化**：
+  - 在添加/编辑服务器对话框中，隧道模式下为端口输入框增加清晰的内网映射辅助提示，避免用户对 22 与 443 端口产生理解歧义。
+
 ## [2.3.2] - 2026-09-19
 
 ### Fixed / Changed

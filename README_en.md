@@ -308,6 +308,18 @@ Jump hosts require no additional environment variables, but GitHub OAuth and sav
 
 Every server in a jump relation must belong to the same GitHub user. Self-references and cycles are rejected, and a jump host cannot be deleted while another server references it. Public-address SSRF checks and Durable Object region placement use the outermost address reached directly by Cloudflare. Only that entry runs automatic region inference; selecting a jump host disables the downstream server's region option and does not send its private host information to IPinfo. Private targets are accepted only inside a server-resolved saved chain, and anonymous clients cannot submit jump configuration. TOFU host-key verification runs at every hop, with private target records scoped by the complete jump path.
 
+##### Connecting via Cloudflare Tunnel
+
+When adding or editing a server, choose the **"Cloudflare Tunnel"** transport mode to directly connect to private intranet servers (homelab NAS, private LAN hosts, internal dev machines) without public IPs or port forwarding:
+
+1. **Configure cloudflared on the internal server**: Run Cloudflare Tunnel on your internal machine and map a public hostname to your local SSH service (e.g., `service: ssh://localhost:22`).
+2. **Add the server in CloudSSH**:
+   - **Network Connection**: Switch to the "Cloudflare Tunnel" tab;
+   - **Tunnel Hostname**: Enter the configured public hostname (e.g., `ssh.example.com`);
+   - **Connection Region**: Selecting the region nearest to your internal server is recommended (e.g., `Asia-Pacific` for Asian hosts) to instantiate the Durable Object nearby and eliminate cross-ocean triangular routing;
+   - **Zero Trust Credentials (Optional)**: If Access policy is enabled for this hostname in Cloudflare Zero Trust, provide the Service Token's Client ID and Client Secret; one-click clearing is supported when the secret is no longer needed.
+3. **Connection & Experience**: Upon connection, the status bar displays dual-segment latency (`CF-XXX` for Cloudflare to tunnel handshake, `RTT` for browser to Cloudflare edge), with full terminal, SFTP online editing, and AI Agent features available.
+
 <a id="development"></a>
 
 ## Development

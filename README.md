@@ -307,6 +307,18 @@ SSH 跳转不需要额外环境变量，但必须启用 GitHub OAuth 并使用�
 
 跳板关系必须位于同一 GitHub 用户空间，不能形成自引用或循环。正在被其他服务器引用的跳板不能直接删除。SSRF 公网检查与 Durable Object 区域调度均以 Cloudflare 直接连接的最外层入口为准；只有该入口会执行自动区域推断，选择跳板后下游服务器的区域选项会停用，也不会向 IPinfo 发送其内网主机信息。内网地址只能出现在由服务端解析的已保存跳板链中，匿名连接不能提交跳板配置。每一跳都会独立执行 TOFU 主机指纹验证，内网目标的记录按完整跳转路径隔离。
 
+##### 通过 Cloudflare 隧道连接内网服务器
+
+在添加/编辑服务器时，选择**“Cloudflare 隧道”**连接模式，可直接穿透连接无公网 IP、无开放端口的私有内网服务器（如家庭宽带 NAS、局域网机器、私有开发机），免除端口映射或跳板机配置：
+
+1. **内网服务器配置 cloudflared**：在内网服务器运行 Cloudflare Tunnel，将配置好的公开主机名指向本地 SSH 端口（例如 `service: ssh://localhost:22`）。
+2. **在 CloudSSH 添加服务器**：
+   - **网络连接**：切换到「Cloudflare 隧道」分段；
+   - **隧道域名**：填入在 Cloudflare Zero Trust 中配置的公开主机名（例如 `ssh.example.com`）；
+   - **连接区域**：建议根据内网主机的实际物理位置手动选择最近的区域（如亚洲内网选 `亚太地区`），促使 Durable Object 就近实例化，避免跨洋三角路由延迟；
+   - **Zero Trust 访问凭据 (可选)**：若在 Zero Trust 中为该域名开启了 Access 策略，需填入 Service Token 的 Client ID 与 Client Secret；若后续不再需要，支持一键清除已存密钥。
+3. **连接与体验**：连接成功后状态栏会呈现 `CF-XXX`（Cloudflare 到内网隧道握手耗时）与 `RTT`（浏览器到 Cloudflare 边缘耗时）双段延迟，SSH 终端、SFTP 在线编辑与 AI Agent 全量无缝复用。
+
 <a id="development"></a>
 
 ## 开发说明
