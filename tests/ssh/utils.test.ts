@@ -333,9 +333,10 @@ describe('SSH Utils — toSSHMPInt', () => {
 
   describe('大整数（模拟 ECDH 共享密钥）', () => {
     it('32-byte Curve25519 共享密钥：结果 length 字段应为 32 或 33（取决最高位）', () => {
-      // 随机 32 字节模拟 shared secret
+      // 随机 32 字节模拟 shared secret（首字节确保非 0，代表 32 字节有效大整数）
       const secret = new Uint8Array(32);
       crypto.getRandomValues(secret);
+      if (secret[0] === 0) secret[0] = 0x01;
       const result = toSSHMPInt(secret);
       const lengthField = readUint32(result, 0);
       const needsLeadingZero = (secret[0] & 0x80) !== 0;
