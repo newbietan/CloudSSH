@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.1] - 2026-09-21
+
+### Fixed
+
+- **新建连接与多标签切换时主动收起 AI Agent 与侧边抽屉**：
+  - 修复用户在使用 AI Agent 过程中点击标签栏「+」（新建连接）切换到服务器列表或连接页时，AI Agent 窗口未主动收起并覆盖在服务器列表上方的 UI 缺陷；
+  - `TabManager` 新增 `closeAllDrawers()` 方法，统一收起所有标签页的 AI Agent 抽屉与 SFTP 文件管理面板，并同步清理 `document.body` 上的 `agent-panel-open` 类名；
+  - `main.ts` 实现全局抽屉收起函数 `closeAllDrawers()`，在进入连接页（`showConnectionPage`）、退出终端视图（`deactivateTerminalView`）以及新开标签页（`showTerminalWithNewTab`）时主动收起全部抽屉，并将顶栏液态分段抽屉切换器（`LiquidSegmentedDrawerControl`）复位为未激活状态；
+  - 切换终端标签页时联动关闭全局命令片段（Snippet）抽屉，消除跨会话残留；
+  - 补充源码级断言与端到端回归用例，确保页面导航与抽屉状态机收敛。
+
 ## [2.4.0] - 2026-09-20
 
 ### Added
