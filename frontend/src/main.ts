@@ -242,6 +242,7 @@ function initTerminalTab(): void {
 // ==================== 页面切换 ====================
 
 function deactivateTerminalView(): void {
+  closeAllDrawers();
   mobileTerminalController.leaveTerminal();
   document.getElementById('terminal-section')!.classList.add('hidden');
   document.getElementById('terminal-section')!.classList.remove('flex');
@@ -307,7 +308,7 @@ function showUserSpace(user: {
 
 /** 显示连接页面（匿名 → auth-form，登录 → 服务器列表） */
 function showConnectionPage(): void {
-  tabManager?.getActiveTab()?.agentPanel?.rejectPendingConfirmation(false);
+  closeAllDrawers();
 
   // 如果还有活跃标签，不需要隐藏终端区域；只需要覆盖显示连接页面
   // 但为了简单起见，我们先切回对应的入口页面
@@ -363,6 +364,7 @@ function showTerminalWithNewTab(
   displayLabel: string,
   hostInfo?: SSHHostInfo
 ): { tab: ReturnType<TabManager['createTab']>; terminal: SSHTerminal } {
+  closeAllDrawers();
   activateTerminalView();
 
   const tm = getTabManager();
@@ -450,6 +452,13 @@ document.getElementById('disconnect-btn')?.addEventListener('click', () => {
 // ==================== 抽屉分段控制条与互斥联动 ====================
 
 let terminalDrawerControl: LiquidSegmentedDrawerControl | null = null;
+
+/** 收起所有标签页与全局抽屉（SFTP、Agent、命令片段）并重置顶栏抽屉分段条状态 */
+function closeAllDrawers(): void {
+  tabManager?.closeAllDrawers();
+  snippetManager.close();
+  syncDrawerSegmentedControl();
+}
 
 function syncDrawerSegmentedControl(): void {
   const tab = tabManager?.getActiveTab();
@@ -853,6 +862,7 @@ async function init(): Promise<void> {
   initMobileDrawerButtons();
 
   document.addEventListener('cloudssh:active-terminal-change', () => {
+    snippetManager.close();
     syncDrawerSegmentedControl();
   });
 
@@ -910,7 +920,7 @@ async function init(): Promise<void> {
   showAuthSection();
 }
 
-// 导出供 auth-form 和 server-list 使用
-export { getTabManager, showTerminalWithNewTab, validateWsUrl };
+// 导出供 auth-form、server-list 和测试套件使用
+export { getTabManager, showTerminalWithNewTab, validateWsUrl, closeAllDrawers, showConnectionPage };
 
 init();

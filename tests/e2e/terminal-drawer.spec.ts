@@ -168,6 +168,59 @@ test.describe('桌面视口', () => {
     await expect(snippetBtn).toHaveAttribute('aria-selected', 'false');
     await expect.poll(async () => lens.evaluate((el) => getComputedStyle(el).opacity)).toBe('0');
   });
+
+  test('使用 AI Agent 时点击标签新建连接按钮，AI Agent 窗口主动收起', async ({ page }) => {
+    await blockOptionalThirdPartyAssets(page);
+    await page.route('**/api/auth/me', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: 1, github_id: 42, username: 'tester', avatar_url: '' }),
+      })
+    );
+    await page.route('**/api/servers', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    );
+    await page.goto('/?lang=zh-CN');
+    await expect(page.locator('#user-space-section')).toBeVisible();
+
+    // 在终端视图中创建一个标签页并挂载
+    await page.evaluate(async () => {
+      const main = await (window as any).eval("import('/src/main.ts')");
+      const { terminal } = main.showTerminalWithNewTab('Server-1', {
+        host: '127.0.0.1',
+        port: 22,
+        serverId: 101,
+      });
+      terminal.mount();
+      const tm = main.getTabManager();
+      // 模拟 SSH 就绪，初始化 Agent 面板并展开
+      const activeTab = tm.getActiveTab();
+      if (activeTab) {
+        const agentModule = await (window as any).eval("import('/src/agent/agent-panel.ts')");
+        activeTab.agentPanel = new agentModule.AgentPanel(document.body, true, 101);
+        activeTab.agentPanel.render();
+        activeTab.agentPanel.show();
+      }
+    });
+
+    const agentPanel = page.locator('#agent-panel');
+    await expect(agentPanel).toBeVisible();
+    await expect(page.locator('body')).toHaveClass(/agent-panel-open/);
+
+    // 点击标签栏上的“新建连接”按钮 (+)
+    const newTabBtn = page.locator('#new-tab-btn');
+    await expect(newTabBtn).toBeVisible();
+    await newTabBtn.click();
+
+    // 页面应切换至服务器列表区域
+    await expect(page.locator('#user-space-section')).toBeVisible();
+    await expect(page.locator('#terminal-section')).toBeHidden();
+
+    // AI Agent 窗口必须主动收起，body 移除 agent-panel-open 类
+    await expect(agentPanel).toBeHidden();
+    await expect(page.locator('body')).not.toHaveClass(/agent-panel-open/);
+  });
 });
 
 test.describe('移动端视口', () => {

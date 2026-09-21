@@ -82,3 +82,48 @@ describe('Agent 面板控制与交互增强 (静态与词条校验)', () => {
     }
   });
 });
+
+describe('页面切换与多会话抽屉自动收起', () => {
+  const mainSource = readFileSync(new URL('../frontend/src/main.ts', import.meta.url), 'utf8');
+  const tabManagerSource = readFileSync(
+    new URL('../frontend/src/tab-manager.ts', import.meta.url),
+    'utf8'
+  );
+
+  it('TabManager 提供 closeAllDrawers 方法收起所有标签的 Agent 与 SFTP 面板', () => {
+    expect(tabManagerSource).toContain('closeAllDrawers(): void');
+    expect(tabManagerSource).toContain('tab.agentPanel?.hide()');
+    expect(tabManagerSource).toContain('tab.sftpPanel?.hide()');
+    expect(tabManagerSource).toContain("document.body.classList.remove('agent-panel-open')");
+  });
+
+  it('切换到连接页面或退出终端视图时主动收起全部抽屉并重置分段条', () => {
+    expect(mainSource).toContain('function closeAllDrawers(): void');
+    expect(mainSource).toContain('tabManager?.closeAllDrawers()');
+    expect(mainSource).toContain('snippetManager.close()');
+    expect(mainSource).toContain('syncDrawerSegmentedControl()');
+
+    // showConnectionPage / deactivateTerminalView 必须调用 closeAllDrawers
+    const showConnectionPageCode = mainSource.slice(
+      mainSource.indexOf('function showConnectionPage()'),
+      mainSource.indexOf('function showOfflineUI()')
+    );
+    expect(showConnectionPageCode).toContain('closeAllDrawers()');
+
+    const deactivateTerminalViewCode = mainSource.slice(
+      mainSource.indexOf('function deactivateTerminalView()'),
+      mainSource.indexOf('function showAuthSection()')
+    );
+    expect(deactivateTerminalViewCode).toContain('closeAllDrawers()');
+  });
+
+  it('新开标签页与活动标签切换时也确保抽屉状态重置与收起', () => {
+    const showTerminalWithNewTabCode = mainSource.slice(
+      mainSource.indexOf('function showTerminalWithNewTab('),
+      mainSource.indexOf('function showTerminalFromServer(')
+    );
+    expect(showTerminalWithNewTabCode).toContain('closeAllDrawers()');
+
+    expect(mainSource).toContain("document.addEventListener('cloudssh:active-terminal-change'");
+  });
+});

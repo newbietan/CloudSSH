@@ -338,6 +338,16 @@ export class TabManager {
     return this.tabs.size > 0;
   }
 
+  /** 收起所有标签页的侧边抽屉（SFTP 面板与 AI Agent 面板） */
+  closeAllDrawers(): void {
+    for (const tab of this.tabs.values()) {
+      tab.agentPanel?.rejectPendingConfirmation(false);
+      tab.agentPanel?.hide();
+      tab.sftpPanel?.hide();
+    }
+    document.body.classList.remove('agent-panel-open');
+  }
+
   private getTerminalTargetLabel(tab: TabInfo): string {
     if (!tab.hostInfo) return tab.label;
     const userPrefix = tab.hostInfo.username ? `${tab.hostInfo.username}@` : '';
