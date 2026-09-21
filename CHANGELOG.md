@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.2] - 2026-09-21
+
+### Fixed
+
+- **Cloudflare 隧道出站握手协议头补齐与 Zero Trust 诊断增强 (#143)**：
+  - 补齐 RFC 6455 规范出站 WebSocket 必须携带的 `Connection: Upgrade` 与 `Sec-WebSocket-Version: 13` 请求头，修复穿越 Cloudflare Zero Trust 边缘网关时因缺少 `Connection` 头被判定为普通 HTTP GET 请求而导致 403 拦截的缺陷；
+  - 细化 Zero Trust 401/403/302 拦截时的错误提示，自动提取响应头中的 `CF-RAY` 追踪 ID，并在错误信息中精准区分“未配置或缺少 Service Token”与“已携带 Service Token 但鉴权被拒”场景，指引用户检查 Access 策略并对齐审计日志；
+  - 前端 Service Token Secret 读取追加首尾空格清理（`.trim()`），防止控制台复制引入不可见换行符；
+  - 优化克隆服务器体验，针对 Service Token Secret 提供重新录入提示与占位说明，避免因未显式继承导致凭据缺失；
+  - 补充隧道协议头出站断言与 CF-RAY 错误回显测试用例。
+
 ## [2.4.1] - 2026-09-21
 
 ### Fixed
