@@ -138,7 +138,11 @@ describe('SSHSessionDO - Cloudflare 隧道连接', () => {
     const ws = new MockBrowserWs();
 
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response('Forbidden', { status: 403, statusText: 'Forbidden' })
+      new Response('Forbidden', {
+        status: 403,
+        statusText: 'Forbidden',
+        headers: { 'cf-ray': 'ray-123456-LAX' },
+      })
     );
 
     const config: SSHConnectionConfig = {
@@ -153,7 +157,40 @@ describe('SSHSessionDO - Cloudflare 隧道连接', () => {
 
     expect(ws.closedWith?.code).toBe(1011);
     const lastMsg = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]);
-    expect(lastMsg.message).toContain('Service Token');
+    expect(lastMsg.message).toContain('未配置完整的 Service Token 凭据');
+    expect(lastMsg.message).toContain('[CF-RAY: ray-123456-LAX]');
+
+    fetchSpy.mockRestore();
+  });
+
+  it('已配置 Service Token 但被 Zero Trust 拦截 403 时回显 Token ID 与 CF-RAY', async () => {
+    const doInstance = createSSHSessionDO();
+    const ws = new MockBrowserWs();
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('Forbidden', {
+        status: 403,
+        statusText: 'Forbidden',
+        headers: { 'cf-ray': 'ray-abcdef-NRT' },
+      })
+    );
+
+    const config: SSHConnectionConfig = {
+      host: 'ssh.zero-trust.example.com',
+      port: 22,
+      username: 'root',
+      password: 'pwd',
+      transportType: 'cf_tunnel',
+      cfAccessClientId: 'my-token.access',
+      cfAccessClientSecret: 'my-secret',
+    };
+
+    await (doInstance as any).initSSHSession(ws, config);
+
+    expect(ws.closedWith?.code).toBe(1011);
+    const lastMsg = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]);
+    expect(lastMsg.message).toContain('已携带 Service Token (Client ID: my-token.access)');
+    expect(lastMsg.message).toContain('[CF-RAY: ray-abcdef-NRT]');
 
     fetchSpy.mockRestore();
   });
@@ -217,6 +254,8 @@ describe('SSHSessionDO - Cloudflare 隧道连接', () => {
 
     expect(fetchSpy).toHaveBeenCalled();
     expect(capturedHeaders?.get('Upgrade')).toBe('websocket');
+    expect(capturedHeaders?.get('Connection')).toBe('Upgrade');
+    expect(capturedHeaders?.get('Sec-WebSocket-Version')).toBe('13');
     expect(capturedHeaders?.get('CF-Access-Client-Id')).toBe('test-id.access');
     expect(capturedHeaders?.get('CF-Access-Client-Secret')).toBe('test-secret-12345');
     expect(mockTunnelWs.accepted).toBe(true);

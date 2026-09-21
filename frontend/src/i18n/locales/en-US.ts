@@ -179,6 +179,9 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'server.tunnelPortHint': 'Default 22 (actual port is configured in internal cloudflared)',
   'server.clearSecret': 'Clear saved secret',
   'server.secretCleared': 'Marked for removal (takes effect on save)',
+  'server.reenterSecretOnClone': 'Re-enter Client Secret for clone',
+  'server.cloneSecretHint':
+    'For security, the existing Service Token Secret is not exported. Please re-enter it for the cloned server.',
   'server.tunnelRegionHint':
     'Selecting the region nearest to your internal server is recommended to reduce latency; Auto uses the connection entrypoint',
   'region.auto': 'Auto (detected when saved)',

@@ -653,12 +653,17 @@ export class SSHSessionDO {
         }
 
         const tunnelUrl = `https://${tunnelHost}/`;
-        const headers: Record<string, string> = {
-          Upgrade: 'websocket',
-        };
-        if (config.cfAccessClientId && config.cfAccessClientSecret) {
-          headers['CF-Access-Client-Id'] = config.cfAccessClientId;
-          headers['CF-Access-Client-Secret'] = config.cfAccessClientSecret;
+        const headers: Record<string, string> = {};
+        headers.Upgrade = 'websocket';
+        headers.Connection = 'Upgrade';
+        headers['Sec-WebSocket-Version'] = '13';
+        const clientId = (config.cfAccessClientId || '').trim();
+        const clientSecret = (config.cfAccessClientSecret || '').trim();
+        if (clientId) {
+          headers['CF-Access-Client-Id'] = clientId;
+        }
+        if (clientSecret) {
+          headers['CF-Access-Client-Secret'] = clientSecret;
         }
 
         const startTime = Date.now();
@@ -671,20 +676,30 @@ export class SSHSessionDO {
         }
 
         if (resp.status === 401 || resp.status === 403) {
+          const cfRay = resp.headers.get('cf-ray');
+          const hasCredentials = Boolean(clientId && clientSecret);
+          const detail = hasCredentials
+            ? `已携带 Service Token (Client ID: ${clientId})，但访问被拒绝 (${resp.status})`
+            : `未配置完整的 Service Token 凭据 (Client ID: ${clientId ? '已配置' : '未配置'}, Client Secret: ${clientSecret ? '已配置' : '未配置'})`;
+          const rayInfo = cfRay ? ` [CF-RAY: ${cfRay}]` : '';
           throw new Error(
-            `Cloudflare Zero Trust 访问被拒绝 (${resp.status})：请检查是否需要配置 Service Token (Client ID / Client Secret)`
+            `Cloudflare Zero Trust 访问被拒绝 (${resp.status})：${detail}${rayInfo}。若启用了 Access 保护，请在 Cloudflare Zero Trust 中确保包含该 Service Token 策略 (Action: Service Auth) 并在服务器设置中正确填入。`
           );
         }
         if (resp.status === 301 || resp.status === 302) {
+          const cfRay = resp.headers.get('cf-ray');
+          const rayInfo = cfRay ? ` [CF-RAY: ${cfRay}]` : '';
           throw new Error(
-            'Cloudflare 隧道被重定向到认证页面：若启用了 Zero Trust 访问控制，请在 Cloudflare 配置 Service Token 并在服务器设置中填入'
+            `Cloudflare 隧道被重定向到认证页面 (${resp.status})${rayInfo}：若启用了 Zero Trust 访问控制，请在 Cloudflare 配置 Service Token (Policy Action: Service Auth) 并在服务器设置中填入`
           );
         }
 
         const tunnelWs = resp.webSocket;
         if (!tunnelWs) {
+          const cfRay = resp.headers.get('cf-ray');
+          const rayInfo = cfRay ? ` [CF-RAY: ${cfRay}]` : '';
           throw new Error(
-            `Cloudflare 隧道未能升级为 WebSocket (HTTP ${resp.status} ${resp.statusText})`
+            `Cloudflare 隧道未能升级为 WebSocket (HTTP ${resp.status} ${resp.statusText})${rayInfo}`
           );
         }
 

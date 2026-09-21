@@ -727,7 +727,15 @@ export class ServerList {
       if (clientIdInput) clientIdInput.value = server.cf_access_client_id || '';
       if (clientSecretInput) {
         clientSecretInput.value = '';
-        clientSecretInput.placeholder = server.has_cf_access_client_secret ? '••••••••' : '';
+        if (mode === 'clone' && server.has_cf_access_client_secret) {
+          clientSecretInput.placeholder = t('server.reenterSecretOnClone');
+        } else {
+          clientSecretInput.placeholder = server.has_cf_access_client_secret ? '••••••••' : '';
+        }
+      }
+      if (mode === 'clone' && server.has_cf_access_client_secret && secretStatusEl) {
+        secretStatusEl.textContent = t('server.cloneSecretHint');
+        secretStatusEl.classList.remove('hidden');
       }
 
       // 区域下拉：回显用户保存的 region（"" = Auto）
@@ -1057,7 +1065,7 @@ export class ServerList {
         )?.value.trim();
         const clientSecret = (
           document.getElementById('server-cf-client-secret') as HTMLInputElement | null
-        )?.value;
+        )?.value.trim();
         if (clientId !== undefined) body.cf_access_client_id = clientId;
         if (clientSecret) {
           body.cf_access_client_secret = clientSecret;

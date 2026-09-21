@@ -146,6 +146,9 @@ export const zhCN = {
   'server.tunnelPortHint': '默认 22（实际端口由内网 cloudflared 配置决定）',
   'server.clearSecret': '清除已存密钥',
   'server.secretCleared': '已标记清除（保存后生效）',
+  'server.reenterSecretOnClone': '克隆需重新输入 Client Secret',
+  'server.cloneSecretHint':
+    '出于安全考虑，已存的 Service Token Secret 不会被导出，克隆时请重新填入',
   'server.tunnelRegionHint':
     '建议手动选择离内网主机物理位置最近的区域以降低隧道延迟；选择自动将由连接时的接入点决定',
   'region.auto': '自动（保存时由系统推断）',
