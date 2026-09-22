@@ -999,10 +999,12 @@
           </div>
         </header>
 
-        <!-- Tab Bar（标签栏） -->
+        <!-- Tab Bar（标签栏）：仅允许横向滚动。overflow-x-auto 会把 overflow-y 隐式变为 auto，
+             而标签项上下各 3px margin 的 margin-box 比 36px 高度减去 1px 下边框后多出 1px，
+             会在右侧绘制一条无效纵向滚动条，必须显式 overflow-y-hidden 禁止。 -->
         <div
           id="tab-bar"
-          class="flex items-center bg-background border-b border-outline-variant px-2 h-9 overflow-x-auto custom-scrollbar gap-0.5"
+          class="flex items-center bg-background border-b border-outline-variant px-2 h-9 overflow-x-auto overflow-y-hidden custom-scrollbar gap-0.5"
           style="scrollbar-width: thin"
         >
           <!-- 由 TabManager 动态渲染标签 -->

@@ -405,3 +405,46 @@ test('窄视口 AI 设置弹窗不出现横向滚动条，且 .no-scrollbar 已�
   expect(layout.btnInsidePaddingBox).toBe(true);
   expect(layout.noScrollbarWidth).toBe('none');
 });
+
+test('标签栏不绘制无效纵向滚动条（单行横向容器必须禁止纵向溢出）', async ({ page }) => {
+  await blockOptionalThirdPartyAssets(page);
+  await page.route('**/api/auth/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 1, github_id: 42, username: 'tester', avatar_url: '' }),
+    })
+  );
+  await page.route('**/api/servers', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+  );
+  await page.goto('/?lang=zh-CN');
+  await expect(page.locator('#user-space-section')).toBeVisible();
+
+  // 需要一个真实标签项才能复现溢出（「+」按钮本身不满高）
+  await page.evaluate(async () => {
+    const main = await (window as any).eval("import('/src/main.ts')");
+    const { terminal } = main.showTerminalWithNewTab('Server-1', {
+      host: '127.0.0.1',
+      port: 22,
+      serverId: 101,
+    });
+    terminal.mount();
+  });
+  await expect(page.locator('#tab-bar .tab-item')).toHaveCount(1);
+
+  const metrics = await page.locator('#tab-bar').evaluate((el) => ({
+    overflowX: getComputedStyle(el).overflowX,
+    overflowY: getComputedStyle(el).overflowY,
+    clientHeight: el.clientHeight,
+    scrollHeight: el.scrollHeight,
+  }));
+
+  // 修复前：overflow-x-auto 把 overflow-y 隐式提升为 auto，而标签项上下各 3px margin
+  // 的 margin-box（36px）比 36px 高度减 1px 下边框后的可用高度多 1px，于是右侧被绘制一条
+  // 无效纵向滚动条；显式 overflow-y-hidden 后纵向不再产生可滚动溢出。
+  expect(metrics.overflowY).toBe('hidden');
+  expect(metrics.scrollHeight).toBeLessThanOrEqual(metrics.clientHeight);
+  // 多标签时仍需横向滚动，不得因禁止纵向滚动而一并关闭
+  expect(metrics.overflowX).toBe('auto');
+});
