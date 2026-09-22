@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { enUS } from '../frontend/src/i18n/locales/en-US';
 import { zhCN } from '../frontend/src/i18n/locales/zh-CN';
+import { zhTW } from '../frontend/src/i18n/locales/zh-TW';
 
 describe('Agent 面板控制与交互增强 (静态与词条校验)', () => {
   const panelSource = readFileSync(
@@ -62,7 +63,7 @@ describe('Agent 面板控制与交互增强 (静态与词条校验)', () => {
     expect(panelSource).toContain('this.streamingEl.remove()');
   });
 
-  it('所有相关国际化词条在中英文语言包中均完整对齐', () => {
+  it('所有相关国际化词条在各语言包中均完整对齐', () => {
     const requiredKeys = [
       'agent.stop',
       'agent.stopped',
@@ -78,6 +79,7 @@ describe('Agent 面板控制与交互增强 (静态与词条校验)', () => {
 
     for (const key of requiredKeys) {
       expect(zhCN[key as keyof typeof zhCN], `Missing zh-CN key: ${key}`).toBeDefined();
+      expect(zhTW[key as keyof typeof zhTW], `Missing zh-TW key: ${key}`).toBeDefined();
       expect(enUS[key as keyof typeof enUS], `Missing en-US key: ${key}`).toBeDefined();
     }
   });

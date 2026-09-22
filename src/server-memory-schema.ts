@@ -315,7 +315,7 @@ export function formatCurrentTimeAnchor(
     ? locale === 'en-US'
       ? `, Timezone: ${timeZone}`
       : locale === 'zh-TW'
-        ? `，時區：${timeZone}`
+        ? `, 時區: ${timeZone}`
         : `, 时区: ${timeZone}`
     : '';
 

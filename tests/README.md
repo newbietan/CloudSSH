@@ -19,7 +19,7 @@ tests/
 ├── editor-content.test.ts         # 在线编辑内容解码、BOM/换行符与嗅探
 ├── frontend-ux.test.ts            # 前端关键交互源码回归（标签栏/状态栏渲染等）
 ├── host-display.test.ts           # IPv4/IPv6 掩码与完整地址复制
-├── i18n.test.ts                   # 中英文词条和语言解析
+├── i18n.test.ts                   # 多语言词条和语言解析（zh-CN / zh-TW / en-US）
 ├── known-hosts.test.ts            # 已知主机指纹 TOFU 信任与变更流程
 ├── mobile-input.test.ts           # iOS IME diff 与一次性修饰键帮助函数
 ├── server-memory-schema.test.ts   # 统一服务器记忆（工作历程/知识实体）校验与持久化格式

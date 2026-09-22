@@ -17,10 +17,14 @@ let currentLocale: Locale = 'zh-CN';
 
 export function normalizeLocale(value: string | null | undefined): Locale | null {
   if (!value) return null;
-  const normalized = value.replace('_', '-').toLowerCase();
+  const normalized = value.replaceAll('_', '-').toLowerCase();
   if (
     normalized === 'zh-tw' ||
     normalized.startsWith('zh-tw-') ||
+    normalized === 'zh-hk' ||
+    normalized.startsWith('zh-hk-') ||
+    normalized === 'zh-mo' ||
+    normalized.startsWith('zh-mo-') ||
     normalized === 'zh-hant' ||
     normalized.startsWith('zh-hant-')
   )

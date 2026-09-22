@@ -20,6 +20,8 @@ describe('国际化核心', () => {
     })).toBe('en-US');
     expect(resolveLocale({ storedLocale: 'en_US', browserLocales: ['zh-CN'] })).toBe('en-US');
     expect(resolveLocale({ urlLocale: 'zh-TW', browserLocales: ['en-US'] })).toBe('zh-TW');
+    expect(resolveLocale({ browserLocales: ['zh-HK'] })).toBe('zh-TW');
+    expect(resolveLocale({ browserLocales: ['zh-MO'] })).toBe('zh-TW');
     expect(resolveLocale({ browserLocales: ['fr-FR', 'en-GB'] })).toBe('en-US');
     expect(resolveLocale({ browserLocales: ['fr-FR'] })).toBe('zh-CN');
   });
@@ -27,6 +29,11 @@ describe('国际化核心', () => {
   it('归一化受支持的语言并拒绝未知语言', () => {
     expect(normalizeLocale('zh-Hans-CN')).toBe('zh-CN');
     expect(normalizeLocale('zh-Hant-TW')).toBe('zh-TW');
+    expect(normalizeLocale('zh-TW')).toBe('zh-TW');
+    expect(normalizeLocale('zh-HK')).toBe('zh-TW');
+    expect(normalizeLocale('zh-MO')).toBe('zh-TW');
+    expect(normalizeLocale('zh_HK')).toBe('zh-TW');
+    expect(normalizeLocale('zh_Hant_TW')).toBe('zh-TW');
     expect(normalizeLocale('en-GB')).toBe('en-US');
     expect(normalizeLocale('ja-JP')).toBeNull();
   });
@@ -64,7 +71,10 @@ describe('国际化核心', () => {
     expect(zhTW['authChallenge.respond']).toBe('提交回應');
     expect(zhTW['snippets.hasVariables']).toBe('含動態參數');
     expect(zhTW['snippets.variableTitle']).toBe('輸入參數');
-    expect(Object.values(zhTW).join('\n')).not.toMatch(/引數|賬號|退出登入|例項/);
+    expect(zhTW['sftp.permissions']).toBe('權限');
+    expect(zhTW['sftp.deleteTitle']).toBe('刪除項目');
+    expect(zhTW['terminal.resumeStale']).toContain('重新建立');
+    expect(Object.values(zhTW).join('\n')).not.toMatch(/引數|賬號|退出登入|例項|許可權|重新增立/);
   });
 
   it('SFTP 右键菜单提供完整的中英文翻译', () => {
@@ -174,6 +184,7 @@ describe('主题在线编辑器国际化', () => {
     expect(html).toContain("'zh-TW': {");
     expect(html).toContain("'en-US': {");
     expect(html).toContain("'language.switchTo': '切换到{language}'");
+    expect(html).toContain("'language.switchTo': '切換到{language}'");
     expect(html).toContain("'language.switchTo': 'Switch to {language}'");
     expect(html).toContain('data-language-preview-label');
   });

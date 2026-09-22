@@ -1783,7 +1783,7 @@ export class AgentPanel {
 
   private renderMemoryContent(): void {
     if (!this.memoryContentEl) return;
-    const locale = getLocale() === 'en-US' ? 'en-US' : 'zh-CN';
+    const locale = getLocale();
 
     if (this.memoryCountEl) {
       if (this.activeMemoryTab === 'workLog') {

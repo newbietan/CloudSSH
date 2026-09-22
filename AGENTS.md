@@ -274,7 +274,7 @@ pnpm run verify      # typecheck + test + build:frontend + test:e2e 完整门禁
 - 测试文件位于 `tests/` 目录，`.test.ts` 后缀（详见 Key Directories 中的 `tests/` 结构）。
 - `tests/ssh/fixtures/` 中的私钥只用于公开协议测试，绝不可用于真实服务器。
 - E2E 首次运行需安装浏览器：`pnpm exec playwright install chromium`。
-- 新增前端文案必须同时提供 zh-CN/en-US 词条，`i18n.test.ts` 会校验两端词条对齐。
+- 新增前端文案必须同时提供 zh-CN/zh-TW/en-US 词条，`i18n.test.ts` 会校验多端词条对齐。
 
 ## Git 工作流规范
 
@@ -351,7 +351,7 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
 27. **Biome formatting convention** - `biome.json`（single 引号、`lineWidth: 100`）自 v1.10.0 起是代码格式基准，相关 lint 规则（`noUnusedVariables`/`useConst` 等）应保持通过；CI 质量门禁不执行 Biome，以 `typecheck` + `test` + 可复现构建 + E2E 为准。
 
-28. **Frontend i18n** - 所有面向用户的文案走 `frontend/src/i18n` 的 `t()` / `data-i18n` / `data-i18n-title` / `data-i18n-placeholder` 管线并同步 `locales/zh-CN.ts` 与 `en-US.ts`；语言解析支持 URL 参数、localStorage（`cloudssh_locale`）与浏览器语言回退。新增文案时保持两端词条对齐，勿硬编码中文到模板字符串。
+28. **Frontend i18n** - 所有面向用户的文案走 `frontend/src/i18n` 的 `t()` / `data-i18n` / `data-i18n-title` / `data-i18n-placeholder` 管线并同步 `locales/zh-CN.ts`、`zh-TW.ts` 与 `en-US.ts`；语言解析支持 URL 参数、localStorage（`cloudssh_locale`）与浏览器语言回退。新增文案时保持多端词条对齐，勿硬编码中文到模板字符串。
 
 29. **CI paths-ignore 作用域** - `deploy.yml` 的 `paths-ignore` 使用标准 glob：`*` 不匹配 `/`，因此 `*.md` 只覆盖仓库根目录的 Markdown，`tests/` 等子目录下的文档变更（如 `tests/README.md`）会照常触发部署流水线。忽略目录内文件必须用 `**/*.md` / `**/*.png` 等跨目录模式；修改 `deploy.yml` 本身会触发一次校验运行（属于预期行为，且能验证新过滤规则）。
 

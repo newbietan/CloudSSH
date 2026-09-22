@@ -3124,7 +3124,7 @@ const TRANSLATIONS = {
     'agent.sampleRequest': '幫我檢查伺服器的設定資訊',
     'agent.completedSteps': '已完成 5 個步驟',
     'agent.sampleTitle': '伺服器設定資訊彙總',
-    'agent.item': '專案',
+    'agent.item': '項目',
     'agent.value': '值',
     'agent.os': '作業系統',
     'agent.kernel': '核心版本',
@@ -3245,8 +3245,17 @@ let locale = 'zh-CN';
 
 function normalizeLocale(value) {
   if (!value) return null;
-  const normalized = String(value).replace('_', '-').toLowerCase();
-  if (normalized === 'zh-tw' || normalized.startsWith('zh-tw-') || normalized === 'zh-hant' || normalized.startsWith('zh-hant-')) return 'zh-TW';
+  const normalized = String(value).replace(/_/g, '-').toLowerCase();
+  if (
+    normalized === 'zh-tw' ||
+    normalized.startsWith('zh-tw-') ||
+    normalized === 'zh-hk' ||
+    normalized.startsWith('zh-hk-') ||
+    normalized === 'zh-mo' ||
+    normalized.startsWith('zh-mo-') ||
+    normalized === 'zh-hant' ||
+    normalized.startsWith('zh-hant-')
+  ) return 'zh-TW';
   if (normalized === 'zh' || normalized.startsWith('zh-')) return 'zh-CN';
   if (normalized === 'en' || normalized.startsWith('en-')) return 'en-US';
   return null;

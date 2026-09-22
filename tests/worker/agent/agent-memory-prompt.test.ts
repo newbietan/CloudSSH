@@ -14,9 +14,11 @@ describe('agent server memory prompt', () => {
   it('injects current system time even when memory is empty', () => {
     const fixedNow = new Date('2026-03-30T14:30:00Z').getTime();
     const promptZh = formatServerMemoryForPrompt({ workLogs: [], knowledge: [] }, 'zh-CN', fixedNow);
+    const promptTW = formatServerMemoryForPrompt({ workLogs: [], knowledge: [] }, 'zh-TW', fixedNow);
     const promptEn = formatServerMemoryForPrompt({ workLogs: [], knowledge: [] }, 'en-US', fixedNow);
 
     expect(promptZh).toContain('## 当前系统时间基准');
+    expect(promptTW).toContain('## 當前系統時間基準');
     expect(promptEn).toContain('## Current System Time');
   });
 
@@ -86,6 +88,15 @@ describe('agent server memory prompt', () => {
     expect(promptEn).toContain('(Today');
     expect(promptEn).toContain('- [Credential] deploy_token: ghp_secret1234567890');
     expect(promptEn).toContain('REUSE IT DIRECTLY. DO NOT repeatedly ask the user for it');
+
+    const promptTW = formatServerMemoryForPrompt(memory, 'zh-TW', fixedNow);
+    expect(promptTW).toContain('## 當前系統時間基準');
+    expect(promptTW).toContain('## 伺服器近期工作歷程與操作備忘');
+    expect(promptTW).toContain('(昨天');
+    expect(promptTW).toContain('## 關鍵上下文知識、參數與憑據備忘');
+    expect(promptTW).toContain('- [憑據／金鑰] deploy_token: ghp_secret1234567890');
+    expect(promptTW).toContain('- [環境參數] docker_registry: reg.internal:5000');
+    expect(promptTW).toContain('請直接帶入使用，嚴禁再次向使用者重複索取');
   });
 
   it('provides a distillation prompt covering both work logs and user-supplied credentials/knowledge', () => {
@@ -210,6 +221,12 @@ describe('agent server memory prompt', () => {
     ];
     expect(shouldBypassDistillation(hiSnapshot)).toBe(true);
 
+    const twGreetingSnapshot: ChatMessage[] = [
+      { role: 'user', content: '早安，在嗎？' },
+      { role: 'assistant', content: '您好！有什麼我可以幫忙的？' },
+    ];
+    expect(shouldBypassDistillation(twGreetingSnapshot)).toBe(true);
+
     // 包含工具调用 -> 不跳过
     const toolSnapshot: ChatMessage[] = [
       { role: 'user', content: '你好' },
@@ -233,6 +250,12 @@ describe('agent server memory prompt', () => {
       { role: 'assistant', content: '收到您的 Token。' },
     ];
     expect(shouldBypassDistillation(credentialSnapshot)).toBe(false);
+
+    const twCredentialSnapshot: ChatMessage[] = [
+      { role: 'user', content: '請記住資料庫連接埠是 5432' },
+      { role: 'assistant', content: '好的，已記錄。' },
+    ];
+    expect(shouldBypassDistillation(twCredentialSnapshot)).toBe(false);
   });
 
   it('formats distillation prompt input with existing work logs and knowledge schema', () => {

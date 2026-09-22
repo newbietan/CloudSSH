@@ -110,6 +110,14 @@ describe('AgentCore 任务停止、抢占与会话重置控制机制', () => {
         (f) => f.subType === 'response' && f.content === 'Agent task stopped by user.'
       );
       expect(responseFrame).toBeDefined();
+
+      frontendFrames.length = 0;
+      await agent.handleAgentStart('user-1', '查看日誌', 'zh-TW');
+      expect(agent.getStatus()).toBe('idle');
+      const responseFrameTW = frontendFrames.find(
+        (f) => f.subType === 'response' && f.content === 'Agent 任務已由使用者手動停止。'
+      );
+      expect(responseFrameTW).toBeDefined();
     } finally {
       fetchSpy.mockRestore();
     }

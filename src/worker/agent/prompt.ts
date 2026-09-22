@@ -436,10 +436,26 @@ export function formatDistillationPromptInput(
       const t = formatTimestampWithRelative(l.updated_at, now, locale, timeZone);
       return `- [${l.title}] (${t}): ${l.summary}`;
     });
-    parts.push(`【服务器最近的工作历程】\n${logLines.join('\n')}`);
+    const logHeader =
+      locale === 'en-US'
+        ? '【Recent Server Work Logs】'
+        : locale === 'zh-TW'
+          ? '【伺服器最近的工作歷程】'
+          : '【服务器最近的工作历程】';
+    parts.push(`${logHeader}\n${logLines.join('\n')}`);
 
     if (isRecentConsecutive) {
-      parts.push(`【连续运维任务合并强指引（非常重要）】：
+      if (locale === 'zh-TW') {
+        parts.push(`【連續維運任務合併強指引（非常重要）】：
+檢測到最新一筆工作歷程【${latestLog.title}】記錄於不久前（${timeStr}）：
+- 原標題：${latestLog.title}
+- 原摘要：${latestLog.summary}
+目前本輪操作屬於該維運任務的後續推進（如排障後續、設定修改、部署驗證等連續工作流程）。
+【必須遵循】：
+1. 必須輸出 "mode": "update_latest"！（除非本輪使用者明確開啟與前述維運完全無關的獨立新任務）請將原記錄的核心背景與本輪新完成的進展/結論融合成一筆承前啟後的完整工作記錄（title 20字內，summary 100~150字內，在不超過限制的前提下盡可能詳實具體，保留排查背景、修改參數、服務狀態及驗證結果等關鍵細節，避免草率簡寫）。
+2. 嚴禁輸出 "create" 造成連續操作被拆成多筆瑣碎的碎片記錄！`);
+      } else {
+        parts.push(`【连续运维任务合并强指引（非常重要）】：
 检测到最新一条工作历程【${latestLog.title}】记录于不久前（${timeStr}）：
 - 原标题：${latestLog.title}
 - 原摘要：${latestLog.summary}
@@ -447,6 +463,7 @@ export function formatDistillationPromptInput(
 【必须遵循】：
 1. 必须输出 "mode": "update_latest"！（除非本轮用户明确开启与前述运维完全无关的独立新任务）请将原记录的核心背景与本轮新完成的进展/结论融合成一条承前启后的完整工作日志（title 20字内，summary 100~150字内，在不超过限制的前提下尽可能详实具体，保留排查背景、修改参数、服务状态及验证结果等关键细节，避免草率简写）。
 2. 严禁输出 "create" 造成连续操作被拆成多条琐碎的碎片日志！`);
+      }
     }
   }
 
@@ -454,22 +471,27 @@ export function formatDistillationPromptInput(
     const kLines = existingKnowledge
       .slice(0, 50)
       .map((k) => `- [${k.category}] ${k.key}: ${k.value}`);
+    const kHeader =
+      locale === 'zh-TW'
+        ? '【目前已沉澱的知識與憑據項（更新時請複用完全相同的 key 名稱）】'
+        : '【当前已沉淀的知识与凭据项（更新时请复用完全相同的 key 名）】';
     parts.push(
-      `【当前已沉淀的知识与凭据项（更新时请复用完全相同的 key 名）】\n${kLines.join('\n')}`
+      `${kHeader}\n${kLines.join('\n')}`
     );
   }
 
   const conversation = formatDistillationMessages(snapshotMsgs);
-  parts.push(`【本轮会话记录】\n${conversation}`);
+  const convHeader = locale === 'zh-TW' ? '【本輪會話記錄】' : '【本轮会话记录】';
+  parts.push(`${convHeader}\n${conversation}`);
 
   return parts.join('\n\n');
 }
 
 const TRIVIAL_GREETING_PATTERN =
-  /^[\s\p{P}]*(?:你好|您好|hi|hello|hey|在吗|在么|哈喽|早上好|中午好|晚上好|test|ping)[\s\p{P}]*$/iu;
+  /^[\s\p{P}]*(?:你好|您好|hi|hello|hey|在吗|在么|在嗎|哈喽|哈囉|早上好|早安|中午好|午安|晚上好|晚安|test|ping)(?:[\s\p{P}]+(?:你好|您好|hi|hello|hey|在吗|在么|在嗎|哈喽|哈囉|早上好|早安|中午好|午安|晚上好|晚安|test|ping))*[\s\p{P}]*$/iu;
 
 const KNOWLEDGE_KEYWORD_PATTERN =
-  /(?:token|key|secret|password|passwd|pwd|credential|port|端口|http|\/|\b\d{2,5}\b|config|rule|偏好|记住)/i;
+  /(?:token|key|secret|password|passwd|pwd|credential|port|端口|連接埠|http|\/|\b\d{2,5}\b|config|rule|偏好|记住|記住|金鑰|憑據)/i;
 
 /**
  * 判断当前快照是否属于无命令执行的纯问候或无实质信息交互，从而在本地直接熔断跳过提炼。
