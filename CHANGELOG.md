@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.3] - 2026-09-22
+
+### Fixed
+
+- **Cloudflare 隧道出站重定向跟随缺陷（凭据外带风险 + 诊断失效）**：
+  - 隧道出站握手 `fetch` 显式声明 `redirect: 'manual'`：默认的 `follow` 会把 Zero Trust 的 302 重定向跟随到登录页，使已实现的 3xx 诊断分支永不生效（用户只能看到“未能升级为 WebSocket (HTTP 200 OK)”），同时会把 `CF-Access-Client-Secret` 原样转发到重定向目标；现与 `src/worker/index.ts`、`agent/core.ts` 等出站请求的既有口径对齐；
+  - 克隆服务器表单在克隆模式隐藏「清除已存密钥」按钮，避免与「克隆需重新输入 Client Secret」占位提示互相冲突（克隆体本无已存密钥可清除）；
+  - 补充「仅配置 Client ID」用例锁定凭据头各自独立发送的行为，并在既有出站用例中锁定 `redirect: 'manual'`。
+- **标签栏右侧无效纵向滚动条**：
+  - `#tab-bar` 使用 `overflow-x-auto` 时 CSS 会把 `overflow-y` 隐式提升为 `auto`，而标签项上下各 3px margin 的 margin-box（36px）比 36px 高度减去 1px 下边框后的可用高度多出 1px，Chrome 因此在标签栏右端绘制一条无意义的纵向滚动条；
+  - 修复：标签栏显式声明 `overflow-y-hidden`，仅保留横向滚动能力；实测 `scrollHeight` 由 36 收敛回 35，标签项与 active 强调线均不被裁切；
+  - 新增回归用例锁定 `overflow-y: hidden`、纵向无可滚动溢出且横向滚动未被一并关闭。
+
+### Changed
+
+- `AGENTS.md` #37 / #38 补充两条约束文档：抽屉收起（`closeAllDrawers()`）会按既有语义中断在途 SFTP 传输；隧道出站握手必须保持 `redirect: 'manual'`。
+
 ## [2.4.2] - 2026-09-21
 
 ### Fixed
