@@ -229,8 +229,10 @@ describe('SSHSessionDO - Cloudflare 隧道连接', () => {
 
     const mockTunnelWs = new MockTunnelWs();
     let capturedHeaders: Headers | undefined;
+    let capturedRedirect: RequestInit['redirect'];
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       capturedHeaders = new Headers(init?.headers as any);
+      capturedRedirect = init?.redirect;
       const res = new Response(null, { status: 200 });
       Object.defineProperty(res, 'webSocket', { value: mockTunnelWs, configurable: true });
       return res;
@@ -258,7 +260,40 @@ describe('SSHSessionDO - Cloudflare 隧道连接', () => {
     expect(capturedHeaders?.get('Sec-WebSocket-Version')).toBe('13');
     expect(capturedHeaders?.get('CF-Access-Client-Id')).toBe('test-id.access');
     expect(capturedHeaders?.get('CF-Access-Client-Secret')).toBe('test-secret-12345');
+    // 3xx 必须显式拦截，否则诊断分支失效且 Service Token 会被转发到重定向目标
+    expect(capturedRedirect).toBe('manual');
     expect(mockTunnelWs.accepted).toBe(true);
+
+    fetchSpy.mockRestore();
+  });
+
+  it('仅配置 Client ID 时仍发送该请求头（凭据头各自独立判定）', async () => {
+    const doInstance = createSSHSessionDO();
+    const ws = new MockBrowserWs();
+
+    const mockTunnelWs = new MockTunnelWs();
+    let capturedHeaders: Headers | undefined;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      capturedHeaders = new Headers(init?.headers as any);
+      const res = new Response(null, { status: 200 });
+      Object.defineProperty(res, 'webSocket', { value: mockTunnelWs, configurable: true });
+      return res;
+    });
+
+    const config: SSHConnectionConfig = {
+      host: 'ssh.tunnel.com',
+      port: 22,
+      username: 'root',
+      password: 'pwd',
+      transportType: 'cf_tunnel',
+      cfAccessClientId: 'only-id.access',
+    };
+
+    void (doInstance as any).initSSHSession(ws, config);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(capturedHeaders?.get('CF-Access-Client-Id')).toBe('only-id.access');
+    expect(capturedHeaders?.get('CF-Access-Client-Secret')).toBeNull();
 
     fetchSpy.mockRestore();
   });

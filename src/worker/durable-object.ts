@@ -669,7 +669,9 @@ export class SSHSessionDO {
         const startTime = Date.now();
         let resp: Response;
         try {
-          resp = await fetch(tunnelUrl, { headers });
+          // redirect: 'manual' 是必需项：默认 follow 会把 Zero Trust 的 302 跟随到
+          // 登录页（使下方 3xx 诊断分支失效），并把 Service Token 转发给重定向目标。
+          resp = await fetch(tunnelUrl, { headers, redirect: 'manual' });
         } catch (fetchErr) {
           const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
           throw new Error(`Cloudflare 隧道连接失败 (${tunnelHost}): ${msg}`);

@@ -717,7 +717,11 @@ export class ServerList {
       }
       const clearBtn = document.getElementById('server-cf-clear-secret-btn');
       if (clearBtn) {
-        clearBtn.classList.toggle('hidden', !server.has_cf_access_client_secret);
+        // 克隆体没有已存密钥可清除，显示该按钮会与「重新输入」提示互相冲突
+        clearBtn.classList.toggle(
+          'hidden',
+          mode === 'clone' || !server.has_cf_access_client_secret
+        );
       }
 
       const clientIdInput = document.getElementById('server-cf-client-id') as HTMLInputElement | null;
