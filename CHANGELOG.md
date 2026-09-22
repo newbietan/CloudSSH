@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.4] - 2026-09-22
+
+### Added
+
+- **繁体中文（台灣 / Traditional Chinese）全链路支持 (#147)**：
+  - 前端新增完整 `zh-TW` 本地化词典，全面覆盖认证、服务器列表、标签页管理、终端交互、状态栏、快捷键、SFTP 文件管理器、在线编辑、命令片段库、AI Agent 面板与分享会话；
+  - 顶栏语言切换器升级为三语循环切换（`zh-CN` -> `zh-TW` -> `en-US` -> `zh-CN`），支持通过 URL 参数（`?lang=zh-TW`）或本地存储（`cloudssh_locale`）持久化偏好；
+  - [GitHub Pages 主题在线编辑器](https://newbietan.github.io/CloudSSH/)同步补齐完整的 `zh-TW` 词典与三语切换支持；
+  - 统一服务器记忆模块（`server-memory-schema`）支持 `MemoryLocale`（`zh-TW`），日期与星期使用台湾惯用格式（如 `週一`、`3 天前`）；
+  - 感谢 @tbdavid2019 对繁体中文界面及词典的贡献。
+
+### Fixed
+
+- **港澳繁中语系解析兼容（`zh-HK` / `zh-MO`）**：
+  - 完善 `normalizeLocale` 逻辑，支持自动将 `zh-HK`（香港繁中）、`zh-MO`（澳门繁中）及其衍生变体规范化映射至 `zh-TW`，避免港澳浏览器环境误回退为简体中文；
+  - 增强下划线容错处理（`replaceAll('_', '-')`），支持 `zh_Hant_TW` 等多段标签。
+- **台湾 IT 惯用词校正与机翻痕迹消除**：
+  - 修复 `terminal.resumeStale` 错词，由「正在重新增立」校正为「正在重新建立」；
+  - 修复 SFTP 文件删除确认标题与消息中的生硬表述（「刪除專案」校正为「刪除項目」）；
+  - 统一剪贴板读取/写入与 SFTP 权限列中的「許可權」为标准「權限」；
+  - 优化 Agent 错误排查词条，将「報錯」调整为更地道的「錯誤訊息」；
+  - 修复主题编辑器预览表格表头中的「專案」为「項目」。
+- **AI Agent 核心循环繁中状态同步与前端记忆面板直通**：
+  - 修复前端 `agent-panel.ts` 渲染记忆面板时将 `zh-TW` 错误截断降级为 `zh-CN` 的缺陷，确保繁体相对日期与时间基准原样生效；
+  - 补全 `AgentCore` 内部循环对 `zh-TW` 语言环境的状态提示语、Token 限制续跑占位符、用户手动停止通知、执行超时提示与任务完成兜底文本；
+  - 完善中断运维会话的日志合成逻辑，确保繁体环境自动打上 `[已中斷]` 前缀与繁中摘要，且防重叠检查同时覆盖 `[已中斷]` 与 `[已中断]`；
+  - 扩充 Agent 记忆提炼熔断正则 `TRIVIAL_GREETING_PATTERN`，支持复合问候及繁体常用词（`早安`、`在嗎`、`哈囉` 等），并补充 `KNOWLEDGE_KEYWORD_PATTERN` 对 `連接埠`、`金鑰`、`記住`、`憑據` 的识别，提炼上下文标题全面支持繁中本地化。
+
 ## [2.4.3] - 2026-09-22
 
 ### Fixed
