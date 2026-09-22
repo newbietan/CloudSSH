@@ -22,6 +22,7 @@ export const KNOWLEDGE_VALUE_MAX_LENGTH = 512;
 
 export const VALID_KNOWLEDGE_CATEGORIES = ['credential', 'config', 'rule', 'note'] as const;
 export type KnowledgeCategory = (typeof VALID_KNOWLEDGE_CATEGORIES)[number];
+export type MemoryLocale = 'zh-CN' | 'zh-TW' | 'en-US';
 
 export interface ServerWorkLog {
   id: number;
@@ -85,7 +86,9 @@ export function normalizeWorkLogInput(
     summary?: unknown;
   },
   options?: NormalizeWorkLogOptions
-): { ok: true; value: { mode: WorkLogMode; title: string; summary: string } } | { ok: false; error: string } {
+):
+  | { ok: true; value: { mode: WorkLogMode; title: string; summary: string } }
+  | { ok: false; error: string } {
   if (typeof input.title !== 'string') return { ok: false, error: 'titleRequired' };
   let trimmedTitle = input.title.trim();
   if (!trimmedTitle) return { ok: false, error: 'titleRequired' };
@@ -136,10 +139,12 @@ export function normalizeKnowledgeInput(
     value?: unknown;
   },
   options?: NormalizeKnowledgeOptions
-): {
-  ok: true;
-  value: { action: KnowledgeAction; category: KnowledgeCategory; key: string; value: string };
-} | { ok: false; error: string } {
+):
+  | {
+      ok: true;
+      value: { action: KnowledgeAction; category: KnowledgeCategory; key: string; value: string };
+    }
+  | { ok: false; error: string } {
   if (typeof input.key !== 'string') return { ok: false, error: 'keyRequired' };
   const rawKey = input.key.trim();
   if (!rawKey) return { ok: false, error: 'keyRequired' };
@@ -197,10 +202,12 @@ export function normalizeKnowledgeInput(
 /**
  * 校验并规范化批量删除知识输入
  */
-export function normalizeBatchDeleteKnowledgeInput(input: unknown): {
-  ok: true;
-  value: { ids: number[] };
-} | { ok: false; error: string } {
+export function normalizeBatchDeleteKnowledgeInput(input: unknown):
+  | {
+      ok: true;
+      value: { ids: number[] };
+    }
+  | { ok: false; error: string } {
   if (!input || typeof input !== 'object') return { ok: false, error: 'invalidBody' };
   const { ids } = input as { ids?: unknown };
   if (!Array.isArray(ids) || ids.length === 0) {
@@ -254,8 +261,9 @@ function getTimeParts(timestamp: number, timeZone?: string) {
       map[p.type] = p.value;
     }
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const dayOfWeek =
-      days.includes(map.weekday) ? days.indexOf(map.weekday) : new Date(timestamp).getDay();
+    const dayOfWeek = days.includes(map.weekday)
+      ? days.indexOf(map.weekday)
+      : new Date(timestamp).getDay();
     return {
       year: parseInt(map.year, 10),
       month: parseInt(map.month, 10),
@@ -284,7 +292,7 @@ function getTimeParts(timestamp: number, timeZone?: string) {
  */
 export function formatCurrentTimeAnchor(
   timestamp: number = Date.now(),
-  locale: 'zh-CN' | 'en-US' = 'zh-CN',
+  locale: MemoryLocale = 'zh-CN',
   timeZone?: string
 ): string {
   const parts = getTimeParts(timestamp, timeZone);
@@ -296,10 +304,20 @@ export function formatCurrentTimeAnchor(
   const mm = pad(parts.minutes);
   const ss = pad(parts.seconds);
 
-  const daysZh = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  const daysZhCN = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  const daysZhTW = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
   const daysEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const dayStr = locale === 'en-US' ? daysEn[parts.dayOfWeek] : daysZh[parts.dayOfWeek];
-  const tzSuffix = timeZone ? (locale === 'en-US' ? `, Timezone: ${timeZone}` : `, 时区: ${timeZone}`) : '';
+  const dayStr =
+    locale === 'en-US'
+      ? daysEn[parts.dayOfWeek]
+      : (locale === 'zh-TW' ? daysZhTW : daysZhCN)[parts.dayOfWeek];
+  const tzSuffix = timeZone
+    ? locale === 'en-US'
+      ? `, Timezone: ${timeZone}`
+      : locale === 'zh-TW'
+        ? `，時區：${timeZone}`
+        : `, 时区: ${timeZone}`
+    : '';
 
   return `${y}-${m}-${d} ${hh}:${mm}:${ss} (${dayStr}${tzSuffix})`;
 }
@@ -310,10 +328,24 @@ export function formatCurrentTimeAnchor(
 export function formatTimestampWithRelative(
   timestamp: number,
   baseTimestamp: number = Date.now(),
-  locale: 'zh-CN' | 'en-US' = 'zh-CN',
+  locale: MemoryLocale = 'zh-CN',
   timeZone?: string
 ): string {
   const isEn = locale === 'en-US';
+  const relativeZh =
+    locale === 'zh-TW'
+      ? {
+          today: '今天',
+          yesterday: '昨天',
+          twoDaysAgo: '前天',
+          daysAgo: (days: number) => `${days} 天前`,
+        }
+      : {
+          today: '今天',
+          yesterday: '昨天',
+          twoDaysAgo: '前天',
+          daysAgo: (days: number) => `${days}天前`,
+        };
   const targetParts = getTimeParts(timestamp, timeZone);
   const baseParts = getTimeParts(baseTimestamp, timeZone);
 
@@ -324,19 +356,23 @@ export function formatTimestampWithRelative(
   const hh = pad(targetParts.hours);
   const mm = pad(targetParts.minutes);
 
-  const startOfTarget = new Date(Date.UTC(targetParts.year, targetParts.month - 1, targetParts.day)).getTime();
-  const startOfBase = new Date(Date.UTC(baseParts.year, baseParts.month - 1, baseParts.day)).getTime();
+  const startOfTarget = new Date(
+    Date.UTC(targetParts.year, targetParts.month - 1, targetParts.day)
+  ).getTime();
+  const startOfBase = new Date(
+    Date.UTC(baseParts.year, baseParts.month - 1, baseParts.day)
+  ).getTime();
   const dayDiff = Math.round((startOfBase - startOfTarget) / 86_400_000);
 
   let relative = '';
   if (dayDiff === 0) {
-    relative = isEn ? 'Today' : '今天';
+    relative = isEn ? 'Today' : relativeZh.today;
   } else if (dayDiff === 1) {
-    relative = isEn ? 'Yesterday' : '昨天';
+    relative = isEn ? 'Yesterday' : relativeZh.yesterday;
   } else if (dayDiff === 2) {
-    relative = isEn ? '2 days ago' : '前天';
+    relative = isEn ? '2 days ago' : relativeZh.twoDaysAgo;
   } else if (dayDiff > 2 && dayDiff <= 30) {
-    relative = isEn ? `${dayDiff} days ago` : `${dayDiff}天前`;
+    relative = isEn ? `${dayDiff} days ago` : relativeZh.daysAgo(dayDiff);
   }
 
   return relative ? `${y}-${m}-${d} ${hh}:${mm} (${relative})` : `${y}-${m}-${d} ${hh}:${mm}`;
@@ -398,4 +434,3 @@ export function extractDistillationJson(rawContent: string): any {
 
   return null;
 }
-

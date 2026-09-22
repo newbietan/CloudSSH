@@ -28,10 +28,7 @@ import { nextSequenceNumber, SSHPacketBuilder, SSHPacketParser } from '../ssh/pa
 import { SSHTransport } from '../ssh/transport';
 import type { Env } from '../types';
 import { DetachedSessionBuffer } from './ssh-detached-buffer';
-import {
-  KeyboardInteractiveAuthHandler,
-  type PendingAuthChallenge,
-} from './ssh-interactive-auth';
+import { KeyboardInteractiveAuthHandler, type PendingAuthChallenge } from './ssh-interactive-auth';
 import { parseIdleTimeout } from './idle-timeout';
 import { ShareAuditWriter } from './share-audit-writer';
 import {
@@ -840,12 +837,7 @@ export class SSHSession {
         this.close();
         return;
       }
-      if (
-        this.idleTimeoutMs > 0 &&
-        this.isReady() &&
-        this.ownsWebSocket &&
-        !this.isDetached()
-      ) {
+      if (this.idleTimeoutMs > 0 && this.isReady() && this.ownsWebSocket && !this.isDetached()) {
         // AI Agent 执行保护：只要 Agent 仍处于运行状态，视作用户委托任务进行中，自动维持连接
         if (this.agentCore?.getStatus() === 'running') {
           this.recordUserActivity();
@@ -2931,20 +2923,15 @@ export class SSHSession {
       );
     }
 
-    const locale = requestedLocale === 'en-US' ? 'en-US' : 'zh-CN';
+    const locale =
+      requestedLocale === 'en-US' || requestedLocale === 'zh-TW' ? requestedLocale : 'zh-CN';
     const timezone =
       typeof requestedTimezone === 'string' &&
       requestedTimezone.length > 0 &&
       requestedTimezone.length <= 64
         ? requestedTimezone
         : undefined;
-    void this.agentCore.handleAgentStart(
-      effectiveUserId,
-      userMessage,
-      locale,
-      timezone,
-      userIndex
-    );
+    void this.agentCore.handleAgentStart(effectiveUserId, userMessage, locale, timezone, userIndex);
   }
 
   /**

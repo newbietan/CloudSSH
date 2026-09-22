@@ -1,6 +1,7 @@
 export const zhCN = {
   'language.label': '语言',
   'language.zhCN': '简体中文',
+  'language.zhTW': '繁體中文',
   'language.enUS': 'English',
   'language.switchTo': '切换为{language}',
   'common.confirm': '确定',
@@ -137,7 +138,8 @@ export const zhCN = {
   'server.cfAccessTitle': 'Cloudflare Zero Trust 访问凭据 (可选)',
   'server.cfClientId': 'Service Token Client ID',
   'server.cfClientSecret': 'Service Token Client Secret',
-  'server.cfAccessHint': '若在 Cloudflare Zero Trust 中为该域名开启了 Access 策略，需填入 Service Token',
+  'server.cfAccessHint':
+    '若在 Cloudflare Zero Trust 中为该域名开启了 Access 策略，需填入 Service Token',
   'server.tunnelBadge': 'CF 隧道',
   'server.regionTunnel': 'Cloudflare 隧道',
   'server.savedTunnel': '已保存，将通过 Cloudflare 隧道连接。',
@@ -291,7 +293,8 @@ export const zhCN = {
   'terminal.status.keepaliveTimeout': '连接保活超时',
   'terminal.status.idleTimeout': 'SSH 连接无响应，已自动断开（空闲超时）',
   'terminal.status.sessionIdleTimeout': '会话因长时间未活动已自动断开（空闲超时）',
-  'terminal.status.sessionIdleWarning': '会话长时间无操作，即将自动断开以节省资源（敲击任意键继续）',
+  'terminal.status.sessionIdleWarning':
+    '会话长时间无操作，即将自动断开以节省资源（敲击任意键继续）',
   'terminal.status.inputBacklogClosed': '终端输入积压过多，连接已关闭',
   'terminal.status.packetError': '数据包处理异常：{message}',
   'terminal.status.algorithmError': '算法协商失败：{message}',
@@ -502,7 +505,8 @@ export const zhCN = {
   'agent.tabWorkLog': '工作历程',
   'agent.tabKnowledge': '知识与凭据',
   'agent.workLogEmpty': '暂无工作记录。你在本服务器上的操作与巡检会被自动记录。',
-  'agent.knowledgeEmpty': '暂无知识与凭据。用户提供的 Token、密钥、环境参数或业务规则会被自动记住，也可手动添加。',
+  'agent.knowledgeEmpty':
+    '暂无知识与凭据。用户提供的 Token、密钥、环境参数或业务规则会被自动记住，也可手动添加。',
   'agent.memoryDirectNotice': '当前为未保存的直连会话。保存服务器后即可启用工作备忘与知识记忆。',
   'agent.addKnowledge': '添加备忘',
   'agent.categoryCredential': '凭据/密钥',

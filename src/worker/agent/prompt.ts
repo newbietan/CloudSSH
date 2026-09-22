@@ -93,6 +93,7 @@ import {
   CONSECUTIVE_TASK_WINDOW_MS,
   formatCurrentTimeAnchor,
   formatTimestampWithRelative,
+  type MemoryLocale,
   type ServerKnowledgeItem,
   type ServerWorkLog,
   type UnifiedServerMemory,
@@ -103,11 +104,14 @@ export function getSystemPrompt(): string {
   return SYSTEM_PROMPT;
 }
 
-export type AgentLocale = 'zh-CN' | 'en-US';
+export type AgentLocale = MemoryLocale;
 
 export function getResponseLanguageInstruction(locale: AgentLocale): string {
-  return locale === 'en-US'
-    ? '## Preferred response language\nRespond in English. Keep commands, paths, log keywords, and technical identifiers unchanged.'
+  if (locale === 'en-US') {
+    return '## Preferred response language\nRespond in English. Keep commands, paths, log keywords, and technical identifiers unchanged.';
+  }
+  return locale === 'zh-TW'
+    ? '## 首選回覆語言\n使用繁體中文回答，命令、路徑、日誌關鍵字和技術識別符保持原樣。'
     : '## 首选响应语言\n使用简体中文回答，命令、路径、日志关键字和技术标识符保持原样。';
 }
 
@@ -120,11 +124,18 @@ export function formatServerMemoryForPrompt(
   timeZone?: string
 ): string {
   const isEn = locale === 'en-US';
+  const isTraditional = locale === 'zh-TW';
   const parts: string[] = [];
 
   // 1. 始终注入当前系统时间基准（解决“昨天”、“今天”、“刚才”等时态理解）
   const timeAnchor = formatCurrentTimeAnchor(now, locale, timeZone);
-  parts.push(isEn ? `## Current System Time\n${timeAnchor}` : `## 当前系统时间基准\n${timeAnchor}`);
+  parts.push(
+    isEn
+      ? `## Current System Time\n${timeAnchor}`
+      : isTraditional
+        ? `## 當前系統時間基準\n${timeAnchor}`
+        : `## 当前系统时间基准\n${timeAnchor}`
+  );
 
   const hasLogs = memory?.workLogs && memory.workLogs.length > 0;
   const hasKnowledge = memory?.knowledge && memory.knowledge.length > 0;
@@ -135,7 +146,11 @@ export function formatServerMemoryForPrompt(
 
   // 2. 工作历程日志（分段预算：保留最新记录，超出预算按条省略，杜绝截断尾部指引）
   if (hasLogs) {
-    const logHeader = isEn ? '## Recent Server Work Logs (Activity History)' : '## 服务器近期工作历程与操作备忘';
+    const logHeader = isEn
+      ? '## Recent Server Work Logs (Activity History)'
+      : isTraditional
+        ? '## 伺服器近期工作歷程與操作備忘'
+        : '## 服务器近期工作历程与操作备忘';
     const logLines: string[] = [];
     let logChars = 0;
     const MAX_LOGS_CHARS = 2000;
@@ -148,7 +163,13 @@ export function formatServerMemoryForPrompt(
       const line = `- [${timeStr}] ${log.title}: ${log.summary}`;
       if (logChars + line.length > MAX_LOGS_CHARS && logLines.length >= 2) {
         const remaining = candidateLogs.length - i;
-        logLines.push(isEn ? `... (${remaining} earlier logs omitted)` : `... (其余 ${remaining} 条更早记录已省略)`);
+        logLines.push(
+          isEn
+            ? `... (${remaining} earlier logs omitted)`
+            : isTraditional
+              ? `...（其餘 ${remaining} 筆較早記錄已省略）`
+              : `... (其余 ${remaining} 条更早记录已省略)`
+        );
         break;
       }
       logLines.push(line);
@@ -159,12 +180,22 @@ export function formatServerMemoryForPrompt(
 
   // 3. 上下文知识与凭据备忘（分段预算：单条值限长+按条控制，保证指引恒定保留）
   if (hasKnowledge) {
-    const kHeader = isEn ? '## Saved Context Knowledge, Parameters & Credentials' : '## 关键上下文知识、参数与凭据备忘';
+    const kHeader = isEn
+      ? '## Saved Context Knowledge, Parameters & Credentials'
+      : isTraditional
+        ? '## 關鍵上下文知識、參數與憑據備忘'
+        : '## 关键上下文知识、参数与凭据备忘';
     const catNamesZh: Record<string, string> = {
       credential: '凭据/密钥',
       config: '环境参数',
       rule: '偏好约定',
       note: '备忘知识',
+    };
+    const catNamesZhTW: Record<string, string> = {
+      credential: '憑據／金鑰',
+      config: '環境參數',
+      rule: '偏好約定',
+      note: '備忘知識',
     };
     const catNamesEn: Record<string, string> = {
       credential: 'Credential',
@@ -178,7 +209,12 @@ export function formatServerMemoryForPrompt(
     const candidateKnowledge = memory.knowledge.slice(0, 50);
     for (let i = 0; i < candidateKnowledge.length; i++) {
       const k = candidateKnowledge[i];
-      const catLabel = (isEn ? catNamesEn[k.category] : catNamesZh[k.category]) || k.category;
+      const catLabel =
+        (isEn
+          ? catNamesEn[k.category]
+          : isTraditional
+            ? catNamesZhTW[k.category]
+            : catNamesZh[k.category]) || k.category;
       let val = k.value;
       if (val.length > 256) {
         val = val.slice(0, 253) + '...';
@@ -186,7 +222,13 @@ export function formatServerMemoryForPrompt(
       const line = `- [${catLabel}] ${k.key}: ${val}`;
       if (kChars + line.length > MAX_KNOWLEDGE_CHARS && kLines.length >= 3) {
         const remaining = candidateKnowledge.length - i;
-        kLines.push(isEn ? `... (${remaining} more items omitted)` : `... (其余 ${remaining} 条条目已省略)`);
+        kLines.push(
+          isEn
+            ? `... (${remaining} more items omitted)`
+            : isTraditional
+              ? `...（其餘 ${remaining} 筆條目已省略）`
+              : `... (其余 ${remaining} 条条目已省略)`
+        );
         break;
       }
       kLines.push(line);
@@ -198,7 +240,9 @@ export function formatServerMemoryForPrompt(
   // 4. 行动指引（核心行为约束：完整保留，绝不截断）
   const guidance = isEn
     ? `【Memory & Continuity Guidance】\n1. If the user asks what work was done (e.g., "What did I do today/yesterday?", "Show recent operations"), refer to [Recent Server Work Logs] above and answer strictly using the timestamps provided (${timeZone || 'local time'}). DO NOT convert or guess UTC times.\n2. If an operation requires a token, password, credential, URL, or rule that exists in [Saved Context Knowledge], REUSE IT DIRECTLY. DO NOT repeatedly ask the user for it!`
-    : `【记忆与连续性行为指引】\n1. 当用户询问历史工作（如“今天做了哪些工作”、“昨天干了什么”、“之前做过哪些操作”），必须严格结合【当前系统时间基准】与【工作历程】中已转换为当地时区（${timeZone || '当地时区'}）的时间戳进行回答，切勿自行换算成 UTC 导致时间与用户记录不一致！\n2. 若当前任务需要用到【关键上下文知识、参数与凭据备忘】中已存在的 Token、密钥密码、路径或配置参数，**请直接带入使用，严禁再次向用户重复索取**！`;
+    : isTraditional
+      ? `【記憶與連續性行為指引】\n1. 當使用者詢問歷史工作（如「今天做了哪些工作」、「昨天做了什麼」、「之前做過哪些操作」），必須嚴格結合【當前系統時間基準】與【工作歷程】中已轉換為當地時區（${timeZone || '當地時區'}）的時間戳進行回答，切勿自行換算成 UTC，避免時間與使用者記錄不一致！\n2. 若目前任務需要用到【關鍵上下文知識、參數與憑據備忘】中已存在的 Token、金鑰密碼、路徑或設定參數，**請直接帶入使用，嚴禁再次向使用者重複索取**！`
+      : `【记忆与连续性行为指引】\n1. 当用户询问历史工作（如“今天做了哪些工作”、“昨天干了什么”、“之前做过哪些操作”），必须严格结合【当前系统时间基准】与【工作历程】中已转换为当地时区（${timeZone || '当地时区'}）的时间戳进行回答，切勿自行换算成 UTC 导致时间与用户记录不一致！\n2. 若当前任务需要用到【关键上下文知识、参数与凭据备忘】中已存在的 Token、密钥密码、路径或配置参数，**请直接带入使用，严禁再次向用户重复索取**！`;
 
   parts.push(guidance);
 
@@ -278,7 +322,9 @@ export function extractDistillationSnapshot(messages: ChatMessage[]): ChatMessag
   return nonSystem.slice(-10);
 }
 
-function extractCommandSummary(toolCall: { function: { name: string; arguments: string } }): string {
+function extractCommandSummary(toolCall: {
+  function: { name: string; arguments: string };
+}): string {
   const name = toolCall.function.name;
   let args: any = {};
   try {
@@ -408,7 +454,9 @@ export function formatDistillationPromptInput(
     const kLines = existingKnowledge
       .slice(0, 50)
       .map((k) => `- [${k.category}] ${k.key}: ${k.value}`);
-    parts.push(`【当前已沉淀的知识与凭据项（更新时请复用完全相同的 key 名）】\n${kLines.join('\n')}`);
+    parts.push(
+      `【当前已沉淀的知识与凭据项（更新时请复用完全相同的 key 名）】\n${kLines.join('\n')}`
+    );
   }
 
   const conversation = formatDistillationMessages(snapshotMsgs);
@@ -450,5 +498,3 @@ export function shouldBypassDistillation(snapshotMsgs: ChatMessage[]): boolean {
 
   return isAllTrivial;
 }
-
-

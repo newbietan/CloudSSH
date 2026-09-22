@@ -29,11 +29,13 @@ describe('server-memory-schema', () => {
     const today = new Date('2026-03-30T09:15:00').getTime();
     const yesterday = new Date('2026-03-29T16:20:00').getTime();
     const twoDaysAgo = new Date('2026-03-28T10:00:00').getTime();
+    const threeDaysAgo = new Date('2026-03-27T10:00:00').getTime();
     const fortyDaysAgo = new Date('2026-02-18T10:00:00').getTime();
 
     expect(formatTimestampWithRelative(today, base, 'zh-CN')).toContain('今天');
     expect(formatTimestampWithRelative(yesterday, base, 'zh-CN')).toContain('昨天');
     expect(formatTimestampWithRelative(twoDaysAgo, base, 'zh-CN')).toContain('前天');
+    expect(formatTimestampWithRelative(threeDaysAgo, base, 'zh-TW')).toContain('3 天前');
     // >30 天前直接格式化日期时间，不带冗余的重复括号 (2026-02-18)
     const longAgoZh = formatTimestampWithRelative(fortyDaysAgo, base, 'zh-CN');
     expect(longAgoZh).toContain('2026-02-18');
@@ -61,6 +63,9 @@ describe('server-memory-schema', () => {
 
     const relativeShanghai = formatTimestampWithRelative(ts, ts + 3600_000, 'zh-CN', 'Asia/Shanghai');
     expect(relativeShanghai).toContain('20:00 (今天)');
+
+    const relativeTaiwan = formatTimestampWithRelative(ts, ts + 3600_000, 'zh-TW', 'Asia/Taipei');
+    expect(relativeTaiwan).toContain('20:00 (今天)');
 
     const relativeNY = formatTimestampWithRelative(ts, ts + 3600_000, 'en-US', 'America/New_York');
     expect(relativeNY).toContain('08:00 (Today)');

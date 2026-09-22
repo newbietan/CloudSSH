@@ -1,13 +1,15 @@
 import { enUS } from './locales/en-US';
 import { zhCN } from './locales/zh-CN';
+import { zhTW } from './locales/zh-TW';
 
-export type Locale = 'zh-CN' | 'en-US';
+export type Locale = 'zh-CN' | 'zh-TW' | 'en-US';
 export type TranslationKey = keyof typeof zhCN;
 export type TranslationParams = Record<string, string | number>;
 
 const STORAGE_KEY = 'cloudssh_locale';
 const dictionaries: Record<Locale, Record<TranslationKey, string>> = {
   'zh-CN': zhCN,
+  'zh-TW': zhTW,
   'en-US': enUS,
 };
 const listeners = new Set<(locale: Locale) => void>();
@@ -16,6 +18,13 @@ let currentLocale: Locale = 'zh-CN';
 export function normalizeLocale(value: string | null | undefined): Locale | null {
   if (!value) return null;
   const normalized = value.replace('_', '-').toLowerCase();
+  if (
+    normalized === 'zh-tw' ||
+    normalized.startsWith('zh-tw-') ||
+    normalized === 'zh-hant' ||
+    normalized.startsWith('zh-hant-')
+  )
+    return 'zh-TW';
   if (normalized === 'zh' || normalized.startsWith('zh-')) return 'zh-CN';
   if (normalized === 'en' || normalized.startsWith('en-')) return 'en-US';
   return null;
@@ -65,11 +74,15 @@ export function translateDocument(root: ParentNode = document): void {
 }
 
 export function getAlternateLocale(locale: Locale): Locale {
-  return locale === 'zh-CN' ? 'en-US' : 'zh-CN';
+  if (locale === 'zh-CN') return 'zh-TW';
+  if (locale === 'zh-TW') return 'en-US';
+  return 'zh-CN';
 }
 
 function localeSelfName(locale: Locale): string {
-  return locale === 'zh-CN' ? zhCN['language.zhCN'] : enUS['language.enUS'];
+  if (locale === 'zh-CN') return zhCN['language.zhCN'];
+  if (locale === 'zh-TW') return zhTW['language.zhTW'];
+  return enUS['language.enUS'];
 }
 
 function syncLanguageSwitchers(): void {

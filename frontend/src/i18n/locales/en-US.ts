@@ -30,6 +30,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'terminal.pasteFailed': 'Could not read the clipboard. Check browser permissions.',
   'language.label': 'Language',
   'language.zhCN': '简体中文',
+  'language.zhTW': '繁體中文',
   'language.enUS': 'English',
   'language.switchTo': 'Switch to {language}',
   'common.confirm': 'Confirm',
@@ -494,10 +495,14 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'agent.chipSystem': 'System load',
   'agent.chipNetwork': 'Ports & network',
   'agent.chipDocker': 'Docker status',
-  'agent.promptError': 'Please read the terminal context, analyze the recent error output, and suggest fixes.',
-  'agent.promptSystem': 'Please check current CPU, memory, and disk usage, and identify causes of high load.',
-  'agent.promptNetwork': 'Please check listening ports and connection status to diagnose network issues.',
-  'agent.promptDocker': 'Please check Docker container status and logs of recently exited containers.',
+  'agent.promptError':
+    'Please read the terminal context, analyze the recent error output, and suggest fixes.',
+  'agent.promptSystem':
+    'Please check current CPU, memory, and disk usage, and identify causes of high load.',
+  'agent.promptNetwork':
+    'Please check listening ports and connection status to diagnose network issues.',
+  'agent.promptDocker':
+    'Please check Docker container status and logs of recently exited containers.',
   'agent.send': 'Send',
   'agent.stop': 'Stop',
   'agent.stopped': 'Agent task stopped by user.',

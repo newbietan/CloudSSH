@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { enUS } from '../frontend/src/i18n/locales/en-US';
 import { zhCN } from '../frontend/src/i18n/locales/zh-CN';
+import { zhTW } from '../frontend/src/i18n/locales/zh-TW';
 import { getAlternateLocale, normalizeLocale, resolveLocale, setLocale, t } from '../frontend/src/i18n';
 import { getResponseLanguageInstruction } from '../src/worker/agent/prompt';
 
 describe('国际化核心', () => {
-  it('中英文语言包的键完全一致', () => {
+  it('所有语言包的键完全一致', () => {
     expect(Object.keys(enUS).sort()).toEqual(Object.keys(zhCN).sort());
+    expect(Object.keys(zhTW).sort()).toEqual(Object.keys(zhCN).sort());
   });
 
   it('按 URL、持久化设置、浏览器语言的优先级解析语言', () => {
@@ -17,18 +19,21 @@ describe('国际化核心', () => {
       browserLocales: ['zh-CN'],
     })).toBe('en-US');
     expect(resolveLocale({ storedLocale: 'en_US', browserLocales: ['zh-CN'] })).toBe('en-US');
+    expect(resolveLocale({ urlLocale: 'zh-TW', browserLocales: ['en-US'] })).toBe('zh-TW');
     expect(resolveLocale({ browserLocales: ['fr-FR', 'en-GB'] })).toBe('en-US');
     expect(resolveLocale({ browserLocales: ['fr-FR'] })).toBe('zh-CN');
   });
 
   it('归一化受支持的语言并拒绝未知语言', () => {
     expect(normalizeLocale('zh-Hans-CN')).toBe('zh-CN');
+    expect(normalizeLocale('zh-Hant-TW')).toBe('zh-TW');
     expect(normalizeLocale('en-GB')).toBe('en-US');
     expect(normalizeLocale('ja-JP')).toBeNull();
   });
 
-  it('语言按钮始终指向另一种语言', () => {
-    expect(getAlternateLocale('zh-CN')).toBe('en-US');
+  it('语言按钮按固定顺序循环三种语言', () => {
+    expect(getAlternateLocale('zh-CN')).toBe('zh-TW');
+    expect(getAlternateLocale('zh-TW')).toBe('en-US');
     expect(getAlternateLocale('en-US')).toBe('zh-CN');
   });
 
@@ -37,6 +42,8 @@ describe('国际化核心', () => {
     expect(t('terminal.connectionClosed', { code: 1000 })).toBe('Connection closed (code=1000)');
     setLocale('zh-CN', { persist: false });
     expect(t('terminal.connectionClosed', { code: 1000 })).toBe('连接已关闭（代码=1000）');
+    setLocale('zh-TW', { persist: false });
+    expect(t('terminal.connectionClosed', { code: 1000 })).toBe('連線已關閉（程式碼=1000）');
   });
 
   it('英文 SFTP 工具栏使用紧凑操作标签', () => {
@@ -47,6 +54,17 @@ describe('国际化核心', () => {
     expect(enUS['sftp.renameAction']).toBe('RENAME');
     expect(enUS['sftp.upload']).toBe('Upload file');
     expect(enUS['sftp.newFolder']).toBe('New folder');
+  });
+
+  it('繁體中文使用台灣 IT 慣用詞', () => {
+    expect(zhTW['auth.connectionParameters']).toBe('連線參數');
+    expect(zhTW['auth.host']).toBe('主機位址');
+    expect(zhTW['auth.port']).toBe('連接埠');
+    expect(zhTW['auth.logout']).toBe('登出');
+    expect(zhTW['authChallenge.respond']).toBe('提交回應');
+    expect(zhTW['snippets.hasVariables']).toBe('含動態參數');
+    expect(zhTW['snippets.variableTitle']).toBe('輸入參數');
+    expect(Object.values(zhTW).join('\n')).not.toMatch(/引數|賬號|退出登入|例項/);
   });
 
   it('SFTP 右键菜单提供完整的中英文翻译', () => {
@@ -117,6 +135,7 @@ describe('Agent 响应语言', () => {
   it('根据界面语言生成明确且不改变命令内容的语言指令', () => {
     expect(getResponseLanguageInstruction('en-US')).toContain('Respond in English');
     expect(getResponseLanguageInstruction('zh-CN')).toContain('使用简体中文回答');
+    expect(getResponseLanguageInstruction('zh-TW')).toContain('使用繁體中文回答');
     expect(getResponseLanguageInstruction('en-US')).toContain('commands');
   });
 });
@@ -150,8 +169,9 @@ describe('主题在线编辑器国际化', () => {
     expect(html).toContain('id="language-toggle"');
   });
 
-  it('提供完整的中英文词典和目标语言按钮', () => {
+  it('提供完整的三语词典和目标语言按钮', () => {
     expect(html).toContain("'zh-CN': {");
+    expect(html).toContain("'zh-TW': {");
     expect(html).toContain("'en-US': {");
     expect(html).toContain("'language.switchTo': '切换到{language}'");
     expect(html).toContain("'language.switchTo': 'Switch to {language}'");
