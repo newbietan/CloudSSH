@@ -219,7 +219,7 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` - GitHub OAuth
 - `GITHUB_ALLOWED_USER_IDS` - Optional comma-separated numeric GitHub user ID allowlist; omitted means unrestricted GitHub login
-- `REQUIRE_GITHUB_AUTH` - Optional; `true` disables anonymous SSH and requires a valid GitHub session（语义已泛化为要求登录：单管理员密码会话同样满足）。wrangler.toml `[vars]` 默认下发 `"false"`，自定义请改配置文件
+- `REQUIRE_GITHUB_AUTH` - Optional; `true` disables anonymous SSH and requires a valid GitHub session（语义已泛化为要求登录：单管理员密码会话同样满足）。wrangler.toml `[vars]` 默认下发 `"false"`（`[env.test.vars]` 默认 `"true"`：测试环境部署即要求登录），自定义请改配置文件
 - `ENABLE_SSH_SHARING` - Optional; `true` enables one-time audited SSH sharing for signed-in owners. wrangler.toml `[vars]` 默认置 `true`：Git 集成/CLI 部署开箱即用，关闭改为 `false`（Dashboard 手动上传部署不受 `[vars]` 影响，需自行配置）
 - `TURNSTILE_SECRET` / `TURNSTILE_SITEKEY` - Bot verification（默认不部署，用户自行选择加入；经 Git/CLI 部署的实例建议 SECRET 用 Dashboard Secret 类型——Secret 不受 wrangler 部署覆盖）
 - `BASE_URL` - OAuth callback URL
@@ -432,7 +432,7 @@ pnpm run deploy:test     # 部署 test 环境
 
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` - GitHub OAuth
 - `GITHUB_ALLOWED_USER_IDS` - 可选，逗号分隔的 GitHub 数字用户 ID 白名单
-- `REQUIRE_GITHUB_AUTH` - 可选，设为 `true` 时禁用匿名 SSH 并要求有效登录（GitHub 或单管理员密码会话均可）；wrangler.toml `[vars]` 已默认下发 `"false"`
+- `REQUIRE_GITHUB_AUTH` - 可选，设为 `true` 时禁用匿名 SSH 并要求有效登录（GitHub 或单管理员密码会话均可）；wrangler.toml `[vars]` 已默认下发 `"false"`（`[env.test.vars]` 默认 `"true"`）
 - `ENABLE_SSH_SHARING` - 可选，允许登录用户创建一次性、受审计的 SSH 分享（wrangler.toml `[vars]` 已随部署默认置 true，关闭改为 false）
 - `ADMIN_PASSWORD_HASH` - 可选，单管理员密码登录凭据（务必设为 Secret 类型，用 `pnpm run hash-password` 生成）
 - `TURNSTILE_SECRET` / `TURNSTILE_SITEKEY` - Bot 验证（默认不部署，自行选择加入；建议 SECRET 用 Dashboard Secret 类型，不受 wrangler 部署覆盖）

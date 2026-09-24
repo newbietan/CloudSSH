@@ -60,7 +60,8 @@ name = "cloudssh-test"
 DEBUG_MODE = "true"
 ENABLE_SSH_SHARING = "true"
 IDLE_TIMEOUT = "30m"
-REQUIRE_GITHUB_AUTH = "false"
+# test 环境默认要求登录（验证强制登录链路）；生产 [vars] 保持 "false" 匿名可用
+REQUIRE_GITHUB_AUTH = "true"
 STRICT_HOST_KEY_VERIFY = "true"
 
 [[env.test.durable_objects.bindings]]
