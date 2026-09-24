@@ -512,7 +512,8 @@ export class ServerList {
 
     const maskedHost = isTunnel ? null : maskIPAddress(server.host);
     const copyIPLabel = this.escapeAttr(t('server.clickToCopyIP'));
-    const hostDisplay = `<button type="button" class="host-ip-badge server-host-badge min-w-0 truncate" id="host-badge-${server.id}" title="${copyIPLabel}" aria-label="${copyIPLabel}">${this.escapeHtml(maskedHost ?? server.host)}:${server.port}</button>`;
+    // 隧道连接只看域名（实际端口由内网 cloudflared 配置决定）：卡片不展示端口
+    const hostDisplay = `<button type="button" class="host-ip-badge server-host-badge min-w-0 truncate" id="host-badge-${server.id}" title="${copyIPLabel}" aria-label="${copyIPLabel}">${this.escapeHtml(maskedHost ?? server.host)}${isTunnel ? '' : `:${server.port}`}</button>`;
     const shareButton = this.sharingEnabled
       ? `<button id="share-${server.id}" class="cyber-button text-primary py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] flex items-center justify-center" title="${t('share.create')}">
           <span class="material-symbols-outlined" style="font-size:14px">share</span>
@@ -829,26 +830,34 @@ export class ServerList {
     const cfAccessSection = document.getElementById('server-cf-access-section');
     const hostLabel = document.getElementById('server-host-label');
     const hostInput = document.getElementById('server-host') as HTMLInputElement | null;
-    const portHint = document.getElementById('server-port-hint');
+    const hostField = document.getElementById('server-host-field');
+    const portField = document.getElementById('server-port-field');
+    const portInput = document.getElementById('server-port') as HTMLInputElement | null;
 
     directTab?.classList.toggle('auth-tab-active', mode === 'direct');
     tunnelTab?.classList.toggle('auth-tab-active', mode === 'cf_tunnel');
 
-    if (mode === 'cf_tunnel') {
+    const isTunnel = mode === 'cf_tunnel';
+    if (isTunnel) {
       if (jumpSection) jumpSection.style.display = 'none';
       if (regionSection) regionSection.style.display = '';
       if (cfAccessSection) cfAccessSection.classList.remove('hidden');
       if (hostLabel) hostLabel.textContent = t('server.tunnelHost');
       if (hostInput) hostInput.placeholder = t('server.tunnelHostPlaceholder');
-      portHint?.classList.remove('hidden');
     } else {
       if (jumpSection) jumpSection.style.display = '';
       if (regionSection) regionSection.style.display = '';
       if (cfAccessSection) cfAccessSection.classList.add('hidden');
       if (hostLabel) hostLabel.textContent = t('auth.host');
       if (hostInput) hostInput.placeholder = '192.168.1.1';
-      portHint?.classList.add('hidden');
     }
+
+    // 隧道连接只看域名（实际端口由内网 cloudflared 配置决定）：隐藏端口字段，域名输入占满整行；
+    // 隐藏时同步移除 required，避免空值阻断表单校验（保存时端口回落 22，仅作存储记录）
+    if (portField) portField.style.display = isTunnel ? 'none' : '';
+    if (portInput) portInput.required = !isTunnel;
+    hostField?.classList.toggle('sm:col-span-4', isTunnel);
+    hostField?.classList.toggle('sm:col-span-3', !isTunnel);
 
     this.updateRegionControls();
   }
@@ -981,7 +990,10 @@ export class ServerList {
     const name = (document.getElementById('server-name') as HTMLInputElement).value.trim();
     const host = (document.getElementById('server-host') as HTMLInputElement).value.trim();
     const portInput = document.getElementById('server-port') as HTMLInputElement;
-    const port = parsePort(portInput.value);
+    const isTunnel = this.modalTransportMode === 'cf_tunnel';
+    // 隧道连接只看域名：端口仅为存储记录，隐藏字段缺省（如先在直连模式清空再切隧道）时回落 22
+    let port = parsePort(portInput.value);
+    if (isTunnel && port === null) port = 22;
     const username = (document.getElementById('server-username') as HTMLInputElement).value.trim();
     const password = (document.getElementById('server-password') as HTMLInputElement).value;
     const privateKey = (document.getElementById('server-private-key') as HTMLTextAreaElement).value;
@@ -1034,7 +1046,6 @@ export class ServerList {
       return;
     }
 
-    const isTunnel = this.modalTransportMode === 'cf_tunnel';
     let cleanTunnelHost: string | null = null;
     if (isTunnel) {
       cleanTunnelHost = host

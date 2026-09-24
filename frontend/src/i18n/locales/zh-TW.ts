@@ -177,7 +177,6 @@ export const zhTW = {
   'server.savedTunnel': '已儲存，將通過 Cloudflare 隧道連線。',
   'server.invalidTunnelHost':
     'Cloudflare 隧道域名格式不正確，必須為有效的公開域名（例如 ssh.example.com）',
-  'server.tunnelPortHint': '預設 22（實際連接埠由內網 cloudflared 設定決定）',
   'server.clearSecret': '清除已存金鑰',
   'server.secretCleared': '已標記清除（儲存後生效）',
   'server.reenterSecretOnClone': '克隆需重新輸入 Client Secret',

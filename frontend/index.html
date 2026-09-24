@@ -531,7 +531,7 @@
               </div>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <div class="sm:col-span-3">
+              <div class="sm:col-span-3" id="server-host-field">
                 <label
                   for="server-host"
                   id="server-host-label"
@@ -550,7 +550,7 @@
                   />
                 </div>
               </div>
-              <div class="sm:col-span-1">
+              <div class="sm:col-span-1" id="server-port-field">
                 <label
                   for="server-port"
                   class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
@@ -571,13 +571,6 @@
                     value="22"
                     required
                   />
-                </div>
-                <div
-                  id="server-port-hint"
-                  class="hidden text-[10px] text-muted mt-1 leading-tight"
-                  data-i18n="server.tunnelPortHint"
-                >
-                  默认 22（实际端口由内网 cloudflared 配置决定）
                 </div>
               </div>
             </div>

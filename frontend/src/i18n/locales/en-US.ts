@@ -211,7 +211,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'server.savedTunnel': 'Saved. Will connect via Cloudflare Tunnel.',
   'server.invalidTunnelHost':
     'Invalid Cloudflare tunnel hostname. Must be a valid public domain (e.g. ssh.example.com)',
-  'server.tunnelPortHint': 'Default 22 (actual port is configured in internal cloudflared)',
   'server.clearSecret': 'Clear saved secret',
   'server.secretCleared': 'Marked for removal (takes effect on save)',
   'server.reenterSecretOnClone': 'Re-enter Client Secret for clone',
