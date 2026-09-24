@@ -599,7 +599,7 @@ export class ConnectionForm {
             <span data-i18n="auth.execute">建立连接</span>
           </button>
         </div>
-        <div class="flex justify-between items-center mt-4">
+        <div class="flex flex-wrap justify-between items-center gap-x-2 gap-y-1 mt-4">
           <span id="status-text" class="text-[13px] text-muted flex items-center gap-1">
             <span class="w-2 h-2 bg-surface-dot inline-block"></span> <span data-i18n="auth.statusOffline">状态：离线</span>
           </span>

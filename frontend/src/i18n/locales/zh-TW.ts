@@ -76,7 +76,9 @@ export const zhTW = {
   // --- 管理員密碼雜湊產生器（瀏覽器內本地產生 ADMIN_PASSWORD_HASH） ---
   'auth.adminHashGenTitle': '管理員密碼登入設定',
   'auth.adminHashGenHint':
-    '在瀏覽器本地產生 ADMIN_PASSWORD_HASH：密碼不離開本機。產生後複製結果，貼到 Cloudflare Dashboard 的 ADMIN_PASSWORD_HASH 變數（建議 Secret 類型）並儲存，即可啟用單管理員密碼模式。',
+    '在瀏覽器本地產生管理員密碼憑證：密碼不離開本機，且不綁定目前裝置——之後可在任意裝置用此密碼登入。',
+  'auth.adminHashGenSteps':
+    '1. 複製上方雜湊串\n2. Cloudflare Dashboard → Workers → 變數 → 新增 ADMIN_PASSWORD_HASH（Secret 類型）貼上並儲存\n3. 回到本頁重新整理，用此密碼登入',
   'auth.adminHashGenPassword': '設定管理員密碼',
   'auth.adminHashGenConfirm': '確認密碼',
   'auth.adminHashGenResultLabel': 'ADMIN_PASSWORD_HASH（複製後貼到 Cloudflare Dashboard）',

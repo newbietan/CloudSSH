@@ -112,7 +112,9 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   // --- Admin password hash generator (in-browser local ADMIN_PASSWORD_HASH generation) ---
   'auth.adminHashGenTitle': 'Admin Password Sign-In Setup',
   'auth.adminHashGenHint':
-    'Generate ADMIN_PASSWORD_HASH locally in your browser — the password never leaves this device. Copy the result, paste it into the ADMIN_PASSWORD_HASH variable in the Cloudflare Dashboard (Secret type recommended), and save to enable single-admin password mode.',
+    'Generate the admin password credential locally in your browser: the password never leaves this device and is not bound to it — you can sign in with it from any device.',
+  'auth.adminHashGenSteps':
+    '1. Copy the hash above\n2. Cloudflare Dashboard → Workers → Variables → add ADMIN_PASSWORD_HASH (Secret type), paste and save\n3. Return to this page, reload, and sign in with the password',
   'auth.adminHashGenPassword': 'Set admin password',
   'auth.adminHashGenConfirm': 'Confirm password',
   'auth.adminHashGenResultLabel': 'ADMIN_PASSWORD_HASH (copy and paste into the Cloudflare Dashboard)',

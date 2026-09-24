@@ -76,7 +76,9 @@ export const zhCN = {
   // --- 管理员密码哈希生成器（浏览器内本地生成 ADMIN_PASSWORD_HASH） ---
   'auth.adminHashGenTitle': '管理员密码登录设置',
   'auth.adminHashGenHint':
-    '在浏览器本地生成 ADMIN_PASSWORD_HASH：密码不离开本机。生成后复制结果，粘贴到 Cloudflare Dashboard 的 ADMIN_PASSWORD_HASH 变量（建议 Secret 类型）并保存，即可启用单管理员密码模式。',
+    '在浏览器本地生成管理员密码凭据：密码不离开本机，且不绑定当前设备——之后可在任意设备用此密码登录。',
+  'auth.adminHashGenSteps':
+    '1. 复制上方哈希串\n2. Cloudflare Dashboard → Workers → 变量 → 新建 ADMIN_PASSWORD_HASH（Secret 类型）粘贴并保存\n3. 回到本页刷新，用此密码登录',
   'auth.adminHashGenPassword': '设置管理员密码',
   'auth.adminHashGenConfirm': '确认密码',
   'auth.adminHashGenResultLabel': 'ADMIN_PASSWORD_HASH（复制后粘贴到 Cloudflare Dashboard）',

@@ -89,6 +89,13 @@ export function openAdminHashGeneratorDialog(): void {
   resultInput.style.display = 'none';
   resultInput.addEventListener('focus', () => resultInput.select());
 
+  const steps = document.createElement('div');
+  steps.className = 'admin-hash-gen-steps';
+  steps.setAttribute('data-i18n', 'auth.adminHashGenSteps');
+  steps.setAttribute('role', 'note');
+  steps.textContent = t('auth.adminHashGenSteps');
+  steps.style.display = 'none';
+
   const copyButton = document.createElement('button');
   copyButton.type = 'button';
   copyButton.className = 'auth-challenge-dialog__button auth-challenge-dialog__button--submit';
@@ -114,6 +121,7 @@ export function openAdminHashGeneratorDialog(): void {
     errorText,
     resultLabel,
     resultInput,
+    steps,
     copyButton,
     actions
   );
@@ -154,6 +162,7 @@ export function openAdminHashGeneratorDialog(): void {
       resultInput.value = hash;
       resultLabel.style.display = '';
       resultInput.style.display = '';
+      steps.style.display = '';
       copyButton.style.display = '';
     } catch {
       showError(t('auth.adminHashGenNetwork'));

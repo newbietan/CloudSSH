@@ -1399,6 +1399,37 @@ select optgroup {
   filter: brightness(1.12);
 }
 
+/* ==================== 单管理员密码登录（复用 auth-challenge-dialog 样式体系） ==================== */
+
+/*
+ * 生成器结果串：等宽小字号，窄屏可横向滚动；完整值以复制按钮为准。
+ * 必须带 !important + ID 选择器压过全局移动端输入规则
+ * input:not(...){font-size:16px!important}（≤767px / 触屏 iPad≤1180px，
+ * 同为 !important 时按特异性决胜：ID (1,0,0) > :not 链 (0,3,1)）。
+ * 密码等交互输入仍按全局规则吃 16px 防 iOS 聚焦缩放，只读展示串豁免。
+ */
+#admin-hash-result {
+  font-family: var(--font-code);
+  font-size: 11px !important;
+  letter-spacing: 0;
+  line-height: 1.5;
+}
+
+/* 生成后分步指引：保留换行 */
+.admin-hash-gen-steps {
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--text-muted);
+  white-space: pre-line;
+}
+
+/* 认证页页脚入口：窄屏独占整行，避免与状态文本/登录按钮挤在一行 */
+#admin-hash-gen-entry {
+  flex-shrink: 0;
+}
+
+
 @keyframes app-dialog-in {
   from {
     opacity: 0;
@@ -1454,6 +1485,20 @@ select optgroup {
   }
   .auth-challenge-dialog__button {
     width: 100%;
+    /* 加大触摸目标（对齐 remote-editor 移动端先例） */
+    min-height: 44px;
+  }
+  /* 注：对话框输入的 iOS 防缩放（16px）由全局规则 input:not(...) 在 ≤767px 统一处理，
+     此处无需重复声明；仅对只读结果串降字号（ID 选择器胜过全局规则） */
+  #admin-hash-result {
+    /* 只读展示串豁免防缩放字号：窄屏进一步降字号换可视宽度 */
+    font-size: 10px !important;
+  }
+  #admin-hash-gen-entry {
+    flex-basis: 100%;
+    justify-content: flex-start;
+    text-align: left;
+    padding-left: 2px;
   }
 }
 
