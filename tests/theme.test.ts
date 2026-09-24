@@ -362,7 +362,7 @@ describe('Standard 主题入口和编辑器', () => {
     expect(appHtml).toContain('Liquid Glass');
   });
 
-  it('Pages 保持独立，应用为登录用户同步单个自定义主题', () => {
+  it('Pages 保持独立，应用为登录用户同步单个自定义主题（含回归内置清槽）', () => {
     expect(mainSource).toContain("localStorage.setItem('cloudssh_imported_theme'");
     expect(mainSource).not.toContain('[data-theme-export]');
     expect(mainSource).not.toContain('[data-theme-delete]');
@@ -375,9 +375,17 @@ describe('Standard 主题入口和编辑器', () => {
     expect(mainSource).toContain('LEGACY_THEME_MIGRATION');
     expect(mainSource).toContain("glacier: 'standard-dark'");
     expect(mainSource).toContain("'standard-dark'");
+    // 回填契约：仅当本地选择停留在自定义主题时才同步到账号（防陈旧导入污染全新账号的云端槽）
+    expect(mainSource).toContain("if (selection !== CUSTOM_THEME_VALUE) return;");
+    // 回归内置 = 清槽：本地缓存与选择器自定义项移除 + DELETE 云端槽（幂等）
+    expect(mainSource).toContain('function removeCustomThemeLocally');
+    expect(mainSource).toContain("fetch('/api/user/theme', { method: 'DELETE' })");
     expect(workerSource).toContain("url.pathname === '/api/user/theme'");
+    expect(workerSource).toContain("request.method === 'DELETE'");
     expect(userDbSource).toContain('CREATE TABLE IF NOT EXISTS user_themes');
-    expect(userDbSource).not.toContain('handleDeleteTheme');
+    // 槽位删除处理器存在且按 user_id 幂等删除（导入仍是唯一写入路径）
+    expect(userDbSource).toContain('handleDeleteTheme');
+    expect(userDbSource).toContain('DELETE FROM user_themes WHERE user_id = ?');
     expect(editorHtml).not.toContain('/api/user/theme');
   });
 

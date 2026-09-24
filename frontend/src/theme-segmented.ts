@@ -259,6 +259,19 @@ export class LiquidSegmentedThemeControl {
     this.updateLensPosition(false);
   }
 
+  /** 移除自定义主题项（登录态回归内置并清除云端主题槽时，与 select option 同步移除） */
+  public removeCustomButton(): void {
+    const btn = this.buttons.get('__custom__');
+    if (!btn) return;
+    btn.remove();
+    this.buttons.delete('__custom__');
+    if (this.currentTheme === '__custom__') {
+      // 选中项被移除时透镜退化为不可见，由调用方随后 syncFromSelect 修正
+      this.currentTheme = '';
+    }
+    this.updateLensPosition(false);
+  }
+
   public destroy(): void {
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();

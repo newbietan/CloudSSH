@@ -709,6 +709,15 @@ async function handleThemeRoute(request: Request, env: Env): Promise<Response> {
     );
   }
 
+  if (request.method === 'DELETE') {
+    // 登录态下回归内置主题时清除云端自定义主题槽（幂等：无行也返回成功）
+    return stub.fetch(
+      new Request(`http://internal/internal/theme?user_id=${user.id}`, {
+        method: 'DELETE',
+      })
+    );
+  }
+
   return Response.json({ error: 'Method not allowed' }, { status: 405 });
 }
 

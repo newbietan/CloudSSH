@@ -501,6 +501,13 @@ export class UserDBDO {
       if (path === '/internal/theme' && request.method === 'PUT') {
         return this.handlePutTheme(request);
       }
+      if (path === '/internal/theme' && request.method === 'DELETE') {
+        const userIdStr = url.searchParams.get('user_id');
+        if (!userIdStr) return Response.json({ error: 'Missing user_id' }, { status: 400 });
+        const userId = parseInt(userIdStr, 10);
+        if (isNaN(userId)) return Response.json({ error: 'Invalid user_id' }, { status: 400 });
+        return this.handleDeleteTheme(userId);
+      }
       // --- One-time-token 消费 ---
       if (path === '/internal/connect-token/consume' && request.method === 'POST') {
         return this.handleConsumeToken(request);
@@ -1672,6 +1679,15 @@ export class UserDBDO {
       theme_data
     );
 
+    return Response.json({ success: true });
+  }
+
+  /**
+   * 删除用户云端主题槽（登录态下回归内置主题时调用）。
+   * 幂等：无行时同样返回成功，DELETE 语义不区分是否存在。
+   */
+  private handleDeleteTheme(userId: number): Response {
+    this.db.exec('DELETE FROM user_themes WHERE user_id = ?', userId);
     return Response.json({ success: true });
   }
 
