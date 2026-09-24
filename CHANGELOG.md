@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-09-24
+
+### Added
+
+- **单管理员密码登录模式（与 GitHub OAuth 互斥，密码优先）**：
+  - 新增单一环境变量 `ADMIN_PASSWORD_HASH`（非空即启用密码模式）：全实例仅本地管理员一个账号，服务器管理、SFTP、AI Agent、一次性分享、主题/片段/AI 配置等功能与 GitHub 登录完全对等；置空或删除即刻退回 GitHub 模式，两侧配置与数据零影响；
+  - 浏览器内哈希生成器（密码不出浏览器、不绑定设备，任意设备可登录）：匿名实例认证页脚入口、全模式 `#password-setup` 直路由与坏哈希面板重新生成三处入口；另提供 `pnpm run hash-password` 本地 CLI 生成脚本；
+  - 登录链路采用客户端 PBKDF2 预拉伸（server relief），Worker 侧仅做 SHA-256 恒时比对，兼容 Workers Free 套餐 10ms CPU 限制；
+  - 防爆破三道防线：同源 Origin 校验（防跨站登录 CSRF）、Turnstile（已配置时必验）、哨兵 DO 持久化指数退避节流（5 次连败起步、封顶 15 分钟、跨 isolate 权威）；
+  - 会话令牌内嵌密码代际指纹（`-1:<fp8>:<random>`）：更换哈希即刻吊销全部旧会话；双向模式门拒绝跨模式残留会话与一次性令牌；
+  - 哈希非空但格式损坏时 fail closed（登录 500 + 前端错误面板），绝不静默回退；
+  - 密码登录与哈希生成器 UI 完成移动端适配（对话框近全屏 + 安全区、44px 触摸目标、页脚入口独占整行、iOS 聚焦防缩放）。
+- **一次性 SSH 分享随部署默认启用**：`wrangler.toml` `[vars]` 置 `ENABLE_SSH_SHARING = "true"`，Git 集成/CLI 部署开箱即用（关闭改为 `false`；Dashboard 手动上传部署不受影响）。
+
+### Changed
+
+- **部署默认变量完善**：`IDLE_TIMEOUT`（`"30m"`）、`REQUIRE_GITHUB_AUTH`（`"false"`）、`STRICT_HOST_KEY_VERIFY`（`"true"`）随 `wrangler.toml` `[vars]` 默认下发，与代码默认完全一致（配置权威归位配置文件）；test 环境 `REQUIRE_GITHUB_AUTH` 默认 `"true"`，用于端到端验证强制登录链路；
+- `REQUIRE_GITHUB_AUTH` 语义泛化为「要求登录」：GitHub 或单管理员密码会话均满足，变量名保留兼容；
+- **CF 隧道连接表单移除端口字段**：隧道模式隐藏端口输入（域名输入占满整行）、服务器卡片仅展示域名——连接只看域名，实际 SSH 端口由内网 cloudflared 配置决定，端口仅作存储记录（缺省回落 22）；
+- 密码生成器入口改为模式感知：仅匿名模式显示页脚入口（GitHub/密码模式隐藏，既有实例升级后界面零变化），切换与轮换经 `#password-setup` 直路由（消费后清地址栏，兼容同页 hash 导航）。
+
+### Fixed
+
+- **云端自定义主题槽被陈旧导入污染且无法清除**：
+  - `restoreCloudTheme` 回填收紧：仅当本地选择停留在自定义主题（`__custom__`）时才向账号同步，杜绝浏览器残留导入污染全新账号（如密码模式新建管理员）的云端主题槽；
+  - 新增 `DELETE /api/user/theme` 幂等端点：登录态切换到内置主题 = 明确放弃自定义槽，同步清除本地缓存、选择器自定义项（含液态分段控制条）与云端记录，杜绝跨设备复现；导入文件仍为自定义主题唯一写入路径；
+  - 契约测试同步演进并新增主题槽生命周期用例（7 项）。
+
 ## [2.4.4] - 2026-09-22
 
 ### Added
