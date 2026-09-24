@@ -8,6 +8,12 @@ DEBUG_MODE = "false"
 # 一次性受控 SSH 分享：随部署默认启用（Git 集成/CLI 部署即生效，生产与 test 环境均置 true）。
 # 关闭改为 "false" 或删除本行；Dashboard 手动上传部署不受 [vars] 影响，如需启用需自行添加该变量。
 ENABLE_SSH_SHARING = "true"
+# 用户无操作空闲超时：默认 30 分钟（支持 30m / 1h / 1800s / 纯数字按秒）；设为 "0" 禁用
+IDLE_TIMEOUT = "30m"
+# 是否强制登录后才能使用 SSH（GitHub 或单管理员密码会话均满足）；"false" 保持匿名直连可用
+REQUIRE_GITHUB_AUTH = "false"
+# SSH 远端主机公钥签名严格校验：默认 fail-closed；仅本地调试老旧服务器时才允许 "false"
+STRICT_HOST_KEY_VERIFY = "true"
 
 # 构建监视路径：仅源代码变动时触发重新构建
 [build]
@@ -16,10 +22,9 @@ watch_dir = "."
 # 下述注释的配置推荐采用环境变量的形式在 Cloudflare Dashboard 中直接添加：
 # - GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET（GitHub OAuth）
 # - GITHUB_ALLOWED_USER_IDS（可选，逗号分隔的 GitHub 数字用户 ID 白名单）
-# - REQUIRE_GITHUB_AUTH（可选，true 时禁用匿名 SSH，要求 GitHub 登录）
-# - TURNSTILE_SECRET / TURNSTILE_SITEKEY（Bot 验证）
+# - TURNSTILE_SECRET / TURNSTILE_SITEKEY（Bot 验证；默认不部署，用户自行选择加入。
+#   经 Git/CLI 部署的实例建议 SECRET 用 Dashboard Secret 类型——Secret 不受部署覆盖）
 # - BASE_URL（OAuth 回调地址，需与实际域名一致）
-# - IDLE_TIMEOUT（可选，用户无操作空闲超时，如 30m / 1h，设为 0 禁用，默认 30m）
 # - ADMIN_PASSWORD_HASH（单管理员密码登录；`pnpm run hash-password` 生成，非空即启用密码模式，
 #   与 GitHub OAuth 互斥且优先级更高；置空/删除即刻退回 GitHub 模式；务必设为 Secret 类型）
 
@@ -54,6 +59,9 @@ name = "cloudssh-test"
 [env.test.vars]
 DEBUG_MODE = "true"
 ENABLE_SSH_SHARING = "true"
+IDLE_TIMEOUT = "30m"
+REQUIRE_GITHUB_AUTH = "false"
+STRICT_HOST_KEY_VERIFY = "true"
 
 [[env.test.durable_objects.bindings]]
 name = "SSH_SESSION"

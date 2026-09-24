@@ -219,16 +219,16 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` - GitHub OAuth
 - `GITHUB_ALLOWED_USER_IDS` - Optional comma-separated numeric GitHub user ID allowlist; omitted means unrestricted GitHub login
-- `REQUIRE_GITHUB_AUTH` - Optional; `true` disables anonymous SSH and requires a valid GitHub session
+- `REQUIRE_GITHUB_AUTH` - Optional; `true` disables anonymous SSH and requires a valid GitHub session（语义已泛化为要求登录：单管理员密码会话同样满足）。wrangler.toml `[vars]` 默认下发 `"false"`，自定义请改配置文件
 - `ENABLE_SSH_SHARING` - Optional; `true` enables one-time audited SSH sharing for signed-in owners. wrangler.toml `[vars]` 默认置 `true`：Git 集成/CLI 部署开箱即用，关闭改为 `false`（Dashboard 手动上传部署不受 `[vars]` 影响，需自行配置）
-- `TURNSTILE_SECRET` / `TURNSTILE_SITEKEY` - Bot verification
+- `TURNSTILE_SECRET` / `TURNSTILE_SITEKEY` - Bot verification（默认不部署，用户自行选择加入；经 Git/CLI 部署的实例建议 SECRET 用 Dashboard Secret 类型——Secret 不受 wrangler 部署覆盖）
 - `BASE_URL` - OAuth callback URL
-- `STRICT_HOST_KEY_VERIFY` - Optional; `false` skips host-key signature verification failures (default true, fails closed)
+- `STRICT_HOST_KEY_VERIFY` - Optional; `false` skips host-key signature verification failures (default true, fails closed)。wrangler.toml `[vars]` 默认下发 `"true"`，自定义请改配置文件
 - `DEBUG_MODE` - Optional; `true` appends debug info to API responses（wrangler.toml `[vars]` 已声明 `DEBUG_MODE`）
-- `IDLE_TIMEOUT` - Optional; user inactivity idle timeout duration (e.g. `30m`, `1h`, `1800`; defaults to `30m`; `0` disables idle timeout)
+- `IDLE_TIMEOUT` - Optional; user inactivity idle timeout duration (e.g. `30m`, `1h`, `1800`; defaults to `30m`; `0` disables idle timeout)。wrangler.toml `[vars]` 默认下发 `"30m"`，自定义请改配置文件
 - `ADMIN_PASSWORD_HASH` - Optional; 单管理员密码登录（`pbkdf2$sha256$<iterations>$<salt>$<verifier>`）。生成方式：部署后站点页脚「管理员密码登录设置」浏览器内生成（主路径，无需本地工具）或 `pnpm run hash-password`。非空即启用密码模式：与 GitHub OAuth 互斥且优先级更高，全实例仅本地管理员一个账号；置空/删除即刻退回 GitHub 模式
 
-> 注意：`Env` 中声明的 `MAX_CONNECTIONS` 属预留变量，当前代码未读取，切勿依赖；`IDLE_TIMEOUT` 现已生效，默认 30 分钟。
+> 注意：`Env` 中声明的 `MAX_CONNECTIONS` 属预留变量，当前代码未读取，切勿依赖；`IDLE_TIMEOUT` 现已生效，默认 30 分钟。wrangler 部署以 wrangler.toml 为配置权威：Dashboard 同名普通变量会在部署时被覆盖，Secret 类型不受影响（`keep_vars` 可改变该行为但项目未启用）；`IDLE_TIMEOUT` / `REQUIRE_GITHUB_AUTH` / `ENABLE_SSH_SHARING` / `STRICT_HOST_KEY_VERIFY` 已随 `[vars]` 默认下发。
 
 ## API Routes
 
@@ -432,10 +432,10 @@ pnpm run deploy:test     # 部署 test 环境
 
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` - GitHub OAuth
 - `GITHUB_ALLOWED_USER_IDS` - 可选，逗号分隔的 GitHub 数字用户 ID 白名单
-- `REQUIRE_GITHUB_AUTH` - 可选，设为 `true` 时禁用匿名 SSH 并要求有效 GitHub session
+- `REQUIRE_GITHUB_AUTH` - 可选，设为 `true` 时禁用匿名 SSH 并要求有效登录（GitHub 或单管理员密码会话均可）；wrangler.toml `[vars]` 已默认下发 `"false"`
 - `ENABLE_SSH_SHARING` - 可选，允许登录用户创建一次性、受审计的 SSH 分享（wrangler.toml `[vars]` 已随部署默认置 true，关闭改为 false）
 - `ADMIN_PASSWORD_HASH` - 可选，单管理员密码登录凭据（务必设为 Secret 类型，用 `pnpm run hash-password` 生成）
-- `TURNSTILE_SECRET` / `TURNSTILE_SITEKEY` - Bot 验证
+- `TURNSTILE_SECRET` / `TURNSTILE_SITEKEY` - Bot 验证（默认不部署，自行选择加入；建议 SECRET 用 Dashboard Secret 类型，不受 wrangler 部署覆盖）
 - `BASE_URL` - OAuth 回调地址（需与实际域名一致）
 
 Dashboard: Workers → 你的 Worker → Settings → Variables → Environment Variables
