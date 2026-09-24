@@ -15,6 +15,7 @@ import {
   type SSHConnectionConfig,
   type SSHJumpHostConfig,
 } from '../types';
+import { LOCAL_ADMIN_GITHUB_ID } from './auth';
 import { inferLocationHint } from './ip-geo';
 import { isDetectedOS } from './os-detect';
 import { deserializeServerRow, serializeServerTags } from './server-tags';
@@ -22,6 +23,11 @@ import { isValidTunnelHostname } from './tunnel-stream';
 
 const AUTH_METHODS = new Set(['password', 'publickey']);
 const MAX_JUMP_HOSTS = 3;
+
+// 单管理员密码登录节流（DO 持久化，跨 isolate 权威；指数退避封顶 15 分钟）
+const LOGIN_LOCKOUT_THRESHOLD = 5;
+const LOGIN_LOCKOUT_BASE_SEC = 60;
+const LOGIN_LOCKOUT_MAX_SEC = 15 * 60;
 
 interface StoredServerRow {
   id: number;
@@ -65,6 +71,7 @@ type ServerRow = {
   updated_at: string;
 };
 type UserIdRow = { user_id: number };
+type LoginThrottleRow = { fail_count: number; locked_until: number; last_fail_at: number };
 type JumpRow = { user_id: number; jump_server_id: number | null };
 type ServerEditRow = {
   user_id: number;
@@ -271,6 +278,13 @@ export class UserDBDO {
       );
       CREATE INDEX IF NOT EXISTS idx_server_knowledge_user_server
         ON server_knowledge(user_id, server_id, updated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS login_throttle (
+        id            INTEGER PRIMARY KEY CHECK (id = 1),
+        fail_count    INTEGER NOT NULL DEFAULT 0,
+        locked_until  INTEGER NOT NULL DEFAULT 0,
+        last_fail_at  INTEGER NOT NULL DEFAULT 0
+      );
     `);
 
     // === Migration: 给既有 servers 表追加 region / inferred_hint 列（幂等） ===
@@ -334,6 +348,14 @@ export class UserDBDO {
       // --- 用户管理 ---
       if (path === '/internal/oauth-user' && request.method === 'POST') {
         return this.handleOAuthUser(request);
+      }
+
+      // --- 单管理员密码认证（本地管理员 upsert + 登录节流，仅 Worker 内部链路可达） ---
+      if (path === '/internal/local-admin-user' && request.method === 'POST') {
+        return this.handleLocalAdminUser();
+      }
+      if (path === '/internal/login-throttle' && request.method === 'POST') {
+        return this.handleLoginThrottle(request);
       }
 
       // --- Session 管理 ---
@@ -593,10 +615,107 @@ export class UserDBDO {
     return Response.json(newUser);
   }
 
+  // ==================== 本地管理员（单管理员密码模式） ====================
+
+  /**
+   * 幂等 upsert 哨兵用户行（github_id = -1，GitHub ID 恒为正数无碰撞；username 固定 admin）。
+   * 与 handleOAuthUser 同构；首次密码登录时由 Worker 调用，是密码模式下唯一的建用户入口。
+   */
+  private handleLocalAdminUser(): Response {
+    const existing = this.query<UserRow>(
+      'SELECT id, github_id, username, avatar_url FROM users WHERE github_id = ?',
+      LOCAL_ADMIN_GITHUB_ID
+    );
+    if (existing.length > 0) {
+      return Response.json(existing[0]);
+    }
+
+    this.db.exec(
+      'INSERT INTO users (github_id, username, avatar_url) VALUES (?, ?, NULL)',
+      LOCAL_ADMIN_GITHUB_ID,
+      'admin'
+    );
+
+    const newUser = this.query<UserRow>(
+      'SELECT id, github_id, username, avatar_url FROM users WHERE github_id = ?',
+      LOCAL_ADMIN_GITHUB_ID
+    )[0];
+
+    return Response.json(newUser);
+  }
+
+  /**
+   * 登录节流状态机（单行表，id = 1）。
+   * - check：返回当前是否锁定与剩余秒数
+   * - fail：连败计数 +1，达到阈值后指数退避锁定（60s * 2^n，封顶 15 分钟）；
+   *   距上次失败超过锁定封顶时长则视为新一轮（连败衰减）
+   * - reset：登录成功后清零
+   */
+  private async handleLoginThrottle(request: Request): Promise<Response> {
+    const { action } = await request.json<{ action: string }>();
+
+    this.db.exec(
+      'INSERT OR IGNORE INTO login_throttle (id, fail_count, locked_until, last_fail_at) VALUES (1, 0, 0, 0)'
+    );
+
+    if (action === 'check') {
+      const row = this.query<LoginThrottleRow>(
+        'SELECT fail_count, locked_until, last_fail_at FROM login_throttle WHERE id = 1'
+      )[0];
+      const now = Date.now();
+      const lockedUntil = row?.locked_until ?? 0;
+      const locked = lockedUntil > now;
+      return Response.json({
+        locked,
+        retryAfterSec: locked ? Math.ceil((lockedUntil - now) / 1000) : 0,
+      });
+    }
+
+    if (action === 'fail') {
+      const now = Date.now();
+      const row = this.query<LoginThrottleRow>(
+        'SELECT fail_count, locked_until, last_fail_at FROM login_throttle WHERE id = 1'
+      )[0];
+      // 连败衰减：距上次失败超过锁定封顶时长则重新计数
+      const streakExpired = !row || now - row.last_fail_at > LOGIN_LOCKOUT_MAX_SEC * 1000;
+      const failCount = streakExpired ? 1 : row.fail_count + 1;
+
+      let lockedUntil = 0;
+      if (failCount >= LOGIN_LOCKOUT_THRESHOLD) {
+        const backoffSec = Math.min(
+          LOGIN_LOCKOUT_BASE_SEC * 2 ** (failCount - LOGIN_LOCKOUT_THRESHOLD),
+          LOGIN_LOCKOUT_MAX_SEC
+        );
+        lockedUntil = now + backoffSec * 1000;
+      }
+      this.db.exec(
+        'UPDATE login_throttle SET fail_count = ?, locked_until = ?, last_fail_at = ? WHERE id = 1',
+        failCount,
+        lockedUntil,
+        now
+      );
+      const locked = lockedUntil > now;
+      return Response.json({
+        locked,
+        retryAfterSec: locked ? Math.ceil((lockedUntil - now) / 1000) : 0,
+      });
+    }
+
+    if (action === 'reset') {
+      this.db.exec(
+        'UPDATE login_throttle SET fail_count = 0, locked_until = 0, last_fail_at = 0 WHERE id = 1'
+      );
+      return Response.json({ locked: false, retryAfterSec: 0 });
+    }
+
+    return Response.json({ error: 'Invalid action' }, { status: 400 });
+  }
+
   // ==================== Session 管理 ====================
 
   private async handleSessionCreate(request: Request): Promise<Response> {
-    const { user_id } = await request.json<{ user_id: number }>();
+    const body = await request.json<{ user_id: number; token?: string }>();
+    const { user_id } = body;
 
     // 获取 github_id
     const userRows = this.db.exec('SELECT github_id FROM users WHERE id = ?', user_id).toArray();
@@ -605,13 +724,20 @@ export class UserDBDO {
     }
     const github_id = (userRows[0] as any).github_id;
 
-    // 生成 token (github_id:randomHex)
-    const tokenBytes = new Uint8Array(32);
-    crypto.getRandomValues(tokenBytes);
-    const randomHex = Array.from(tokenBytes)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-    const token = `${github_id}:${randomHex}`;
+    // 可信 Worker 预生成的完整令牌（本地管理员路径：-1:<指纹>:<随机>，内嵌密码代际指纹）；
+    // 未提供时沿用 github_id:randomHex 生成（GitHub OAuth 路径）
+    let token: string;
+    if (typeof body.token === 'string' && /^[^:\s]+:[A-Za-z0-9_-]+(?::[A-Za-z0-9_-]+)?$/.test(body.token)) {
+      token = body.token;
+    } else {
+      // 生成 token (github_id:randomHex)
+      const tokenBytes = new Uint8Array(32);
+      crypto.getRandomValues(tokenBytes);
+      const randomHex = Array.from(tokenBytes)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+      token = `${github_id}:${randomHex}`;
+    }
 
     // 7 天过期
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();

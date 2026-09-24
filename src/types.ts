@@ -185,13 +185,27 @@ export interface Env {
   DEBUG_MODE?: string;
   // 一次性 SSH 分享（默认关闭；true 时登录用户可创建分享链接）
   ENABLE_SSH_SHARING?: string;
+  // 单管理员密码认证（可选）。
+  // 格式：pbkdf2$sha256$<iterations>$<salt-b64url>$<verifier-b64url>，由 `pnpm run hash-password` 生成。
+  // 非空且格式合法即启用密码模式：GitHub OAuth 路由禁用，全实例仅本地管理员一个账号。
+  // 置空/删除即刻退回 GitHub 模式；verifier = SHA-256(PBKDF2(password, salt, iterations))。
+  // 浏览器端执行 PBKDF2 预拉伸（server relief），Worker 侧仅做一次 SHA-256 比对（Free 套餐 CPU 安全）。
+  ADMIN_PASSWORD_HASH?: string;
+}
+
+/** /api/config 下发的密码认证公开参数（盐与迭代数非机密，供浏览器预拉伸） */
+export interface PasswordAuthParams {
+  kdf: 'pbkdf2-sha256';
+  iterations: number;
+  salt: string; // base64url
 }
 
 export interface UserInfo {
   id: number;
   github_id: number;
   username: string;
-  avatar_url: string;
+  /** 本地管理员（密码模式）无头像，恒为 null；GitHub 用户为头像 URL */
+  avatar_url: string | null;
 }
 
 export interface ServerConfig {

@@ -12,7 +12,7 @@ interface UserInfo {
   id: number;
   github_id: number;
   username: string;
-  avatar_url: string;
+  avatar_url: string | null;
 }
 
 export interface ServerConfig {
@@ -189,11 +189,21 @@ export class ServerList {
     if (!container) return;
 
     container.innerHTML = '';
-    const img = document.createElement('img');
-    img.src = this.user.avatar_url;
-    img.alt = this.user.username;
-    img.className = 'user-avatar w-8 h-8';
-    container.appendChild(img);
+    if (this.user.avatar_url) {
+      const img = document.createElement('img');
+      img.src = this.user.avatar_url;
+      img.alt = this.user.username;
+      img.className = 'user-avatar w-8 h-8';
+      container.appendChild(img);
+    } else {
+      // 本地管理员（密码模式）无头像：首字母回退块，复用同款描边样式
+      const fallback = document.createElement('span');
+      fallback.className =
+        'user-avatar w-8 h-8 flex items-center justify-center text-[11px] font-bold text-muted select-none';
+      fallback.textContent = (this.user.username || 'A').slice(0, 1).toUpperCase();
+      fallback.setAttribute('aria-hidden', 'true');
+      container.appendChild(fallback);
+    }
     const span = document.createElement('span');
     span.className = 'text-xs font-bold tracking-[0.1em] text-muted';
     span.textContent = this.user.username;

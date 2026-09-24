@@ -273,7 +273,7 @@ function showUserSpace(user: {
   id: number;
   github_id: number;
   username: string;
-  avatar_url: string;
+  avatar_url: string | null;
 }): void {
   deactivateTerminalView();
   isLoggedIn = true;

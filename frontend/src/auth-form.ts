@@ -2,8 +2,10 @@
 // 动态值均经 escapeHtml 转义或来自可信 i18n 词条，无用户输入直插；
 // GitHub Actions 质量门禁不含该规则（AGENTS.md #27）。
 import { onLocaleChange, t, translateDocument } from './i18n';
+import { openAdminHashGeneratorDialog } from './admin-hash-generator';
 import { loadKnownFingerprint } from './known-hosts';
 import { parsePort } from './port';
+import { stretchAdminPassword } from './password-stretch';
 import { populateRegionSelect } from './regions';
 import type { TabManager } from './tab-manager';
 import { type ColorScheme, getActiveColorScheme, onColorSchemeChange } from './theme';
@@ -74,6 +76,9 @@ export class ConnectionForm {
   private turnstileWidgetId: string | null = null;
   private turnstileSitekey = '';
   private turnstileTheme: ColorScheme | null = null;
+  /** 密码模式下的浏览器预拉伸参数（/api/config 公开下发）；null = 非密码模式 */
+  private passwordAuthParams: { iterations: number; salt: string } | null = null;
+  private adminDialogTurnstileId: string | null = null;
 
   constructor(options: ConnectionFormOptions) {
     this.options = options;
@@ -105,9 +110,35 @@ export class ConnectionForm {
         sitekey: string;
         githubAuthEnabled: boolean;
         githubAuthRequired: boolean;
+        authMode?: 'password' | 'github' | 'anonymous';
+        passwordAuth?: { kdf: string; iterations: number; salt: string } | null;
+        passwordHashInvalid?: boolean;
       };
       this.turnstileEnabled = config.turnstileEnabled;
       this.turnstileSitekey = config.sitekey;
+
+      // 单管理员密码模式：登录入口整体替换（与 GitHub 入口互斥，不并列展示）。
+      // 哈希损坏 → fail closed 错误面板（与后端坏哈希拒绝登录的语义对齐）
+      if (config.authMode === 'password') {
+        if (config.passwordHashInvalid || !config.passwordAuth) {
+          this.renderAdminHashInvalid();
+          return;
+        }
+        this.passwordAuthParams = {
+          iterations: config.passwordAuth.iterations,
+          salt: config.passwordAuth.salt,
+        };
+        if (config.githubAuthRequired) {
+          this.renderAdminAuthRequired();
+          return;
+        }
+        if (this.turnstileEnabled && this.turnstileSitekey) {
+          this.renderTurnstile();
+        }
+        this.renderAdminLoginButton();
+        return;
+      }
+
       if (config.githubAuthRequired) {
         this.renderGitHubAuthRequired(config.githubAuthEnabled);
         return;
@@ -119,6 +150,8 @@ export class ConnectionForm {
       if (config.githubAuthEnabled) {
         this.renderGitHubLoginButton();
       }
+      // 匿名/GitHub 模式：页脚离散入口，供 Dashboard-only 用户在浏览器内设置/切换密码模式
+      this.renderAdminHashGenEntry();
     } catch {
       // Config endpoint not available, skip Turnstile
     }
@@ -141,10 +174,18 @@ export class ConnectionForm {
             ? '<span id="github-login-placeholder"></span>'
             : '<p class="text-xs text-error" data-i18n="auth.githubNotConfigured">管理员尚未完整配置 GitHub OAuth，当前无法登录。</p>'
         }
+        <button type="button" id="admin-hash-gen-entry-btn" class="github-login-btn text-[11px] font-bold tracking-[0.1em] text-muted/70 hover:text-muted transition-all cursor-pointer flex items-center gap-1.5 bg-transparent border border-dim px-3 py-1 hover:border-[var(--accent)]" title="${t('auth.adminHashGenHint')}">
+          <span class="material-symbols-outlined" style="font-size: 14px;" aria-hidden="true">password</span>
+          <span data-i18n="auth.adminHashGenEntry">管理员密码登录设置</span>
+        </button>
       </div>
     `;
     translateDocument(container);
     if (githubAuthEnabled) this.renderGitHubLoginButton();
+    // 强制登录面板也暴露生成器入口：Dashboard-only 运维者可在不动任何既有变量的前提下切换/体验密码模式
+    document.getElementById('admin-hash-gen-entry-btn')?.addEventListener('click', () => {
+      openAdminHashGeneratorDialog();
+    });
   }
 
   private renderGitHubLoginButton(): void {
@@ -162,6 +203,283 @@ export class ConnectionForm {
     document.getElementById('github-login-btn')?.addEventListener('click', () => {
       window.location.href = '/api/auth/github';
     });
+  }
+
+  // ==================== 单管理员密码登录 UI ====================
+
+  /** 密码模式下 GitHub 入口的位置整体替换为管理员登录按钮（同一挂载点） */
+  private renderAdminLoginButton(): void {
+    const placeholder = document.getElementById('github-login-placeholder');
+    if (!placeholder) return;
+
+    placeholder.innerHTML = `
+      <button type="button" id="admin-login-btn" class="github-login-btn text-[11px] font-bold tracking-[0.1em] text-muted hover:text-primary transition-all cursor-pointer flex items-center gap-1.5 bg-transparent border border-dim px-3 py-1 hover:border-[var(--accent)]">
+        <span class="material-symbols-outlined" style="font-size: 14px;" aria-hidden="true">admin_panel_settings</span>
+        <span data-i18n="auth.adminLogin">管理员登录</span>
+      </button>
+    `;
+    translateDocument(placeholder);
+
+    document.getElementById('admin-login-btn')?.addEventListener('click', () => {
+      this.openAdminLoginDialog();
+    });
+  }
+
+  /** REQUIRE_GITHUB_AUTH=true 且密码模式：强制登录面板（文案替换为管理员语义） */
+  private renderAdminAuthRequired(): void {
+    const container = document.getElementById('connection-form-container');
+    if (!container) return;
+
+    // pi-lens-ignore: no-inner-html
+    container.innerHTML = `
+      <div class="flex min-h-[320px] flex-col items-center justify-center gap-5 px-4 text-center" id="admin-auth-required-panel">
+        <span class="material-symbols-outlined text-[var(--accent)]" style="font-size: 42px;" aria-hidden="true">lock</span>
+        <div class="space-y-2">
+          <h2 class="text-sm font-bold tracking-[0.1em] text-on-surface" data-i18n="auth.adminRequired">此 CloudSSH 实例需要管理员登录</h2>
+          <p class="mx-auto max-w-md text-xs leading-6 text-muted" data-i18n="auth.adminRequiredHint">请使用管理员密码登录后使用 SSH 和账号功能。</p>
+        </div>
+        <span id="github-login-placeholder"></span>
+      </div>
+    `;
+    translateDocument(container);
+    this.renderAdminLoginButton();
+  }
+
+  /** 坏哈希 fail closed 错误面板（后端同样拒绝登录，前端同步呈现原因） */
+  private renderAdminHashInvalid(): void {
+    const container = document.getElementById('connection-form-container');
+    if (!container) return;
+
+    // pi-lens-ignore: no-inner-html
+    container.innerHTML = `
+      <div class="flex min-h-[320px] flex-col items-center justify-center gap-5 px-4 text-center">
+        <span class="material-symbols-outlined text-error" style="font-size: 42px;" aria-hidden="true">report</span>
+        <div class="space-y-2">
+          <h2 class="text-sm font-bold tracking-[0.1em] text-on-surface" data-i18n="auth.adminHashInvalidTitle">管理员密码配置无效</h2>
+          <p class="mx-auto max-w-md text-xs leading-6 text-muted" data-i18n="auth.adminHashInvalid">ADMIN_PASSWORD_HASH 格式损坏，登录已停止，请联系管理员修复。</p>
+        </div>
+        <button type="button" id="admin-hash-regen-btn" class="github-login-btn text-[11px] font-bold tracking-[0.1em] text-muted hover:text-primary transition-all cursor-pointer flex items-center gap-1.5 bg-transparent border border-dim px-3 py-1 hover:border-[var(--accent)]">
+          <span class="material-symbols-outlined" style="font-size: 14px;" aria-hidden="true">refresh</span>
+          <span data-i18n="auth.adminHashGenRegenerate">在浏览器中重新生成</span>
+        </button>
+      </div>
+    `;
+    translateDocument(container);
+    document.getElementById('admin-hash-regen-btn')?.addEventListener('click', () => {
+      openAdminHashGeneratorDialog();
+    });
+  }
+
+  /** 匿名/GitHub 模式页脚离散入口：浏览器内生成 ADMIN_PASSWORD_HASH（无需本地 Node 工具） */
+  private renderAdminHashGenEntry(): void {
+    const placeholder = document.getElementById('github-login-placeholder');
+    const row = placeholder?.parentElement;
+    if (!row || document.getElementById('admin-hash-gen-entry')) return;
+
+    const entry = document.createElement('button');
+    entry.type = 'button';
+    entry.id = 'admin-hash-gen-entry';
+    entry.className =
+      'text-[10px] text-muted/70 hover:text-muted transition-all bg-transparent border-none cursor-pointer tracking-[0.05em] px-1';
+    entry.textContent = t('auth.adminHashGenEntry');
+    entry.title = t('auth.adminHashGenHint');
+    entry.addEventListener('click', () => {
+      openAdminHashGeneratorDialog();
+    });
+    row.appendChild(entry);
+  }
+
+  /** 管理员登录对话框：密码输入 + 可选 Turnstile，本地 PBKDF2 预拉伸后提交 */
+  private openAdminLoginDialog(): void {
+    if (!this.passwordAuthParams) return;
+
+    this.closeAdminLoginDialog();
+
+    const sequence = Date.now();
+    const titleId = `admin-login-title-${sequence}`;
+    const dialog = document.createElement('dialog');
+    dialog.id = 'admin-login-dialog';
+    dialog.className = 'auth-challenge-dialog';
+    dialog.setAttribute('aria-labelledby', titleId);
+    dialog.setAttribute('aria-modal', 'true');
+
+    const form = document.createElement('form');
+    form.className = 'auth-challenge-dialog__panel';
+    form.method = 'dialog';
+    form.noValidate = true;
+
+    const accent = document.createElement('div');
+    accent.className = 'auth-challenge-dialog__accent';
+    accent.setAttribute('aria-hidden', 'true');
+
+    const header = document.createElement('div');
+    header.className = 'auth-challenge-dialog__header';
+    const icon = document.createElement('span');
+    icon.className = 'auth-challenge-dialog__icon material-symbols-outlined';
+    icon.textContent = 'admin_panel_settings';
+    icon.setAttribute('aria-hidden', 'true');
+    const title = document.createElement('h2');
+    title.className = 'auth-challenge-dialog__title';
+    title.textContent = t('auth.adminLoginTitle');
+    title.id = titleId;
+    header.append(icon, title);
+
+    const label = document.createElement('label');
+    label.className = 'auth-challenge-dialog__label';
+    label.textContent = t('auth.adminPasswordLabel');
+    const passwordInput = document.createElement('input');
+    passwordInput.type = 'password';
+    passwordInput.className = 'auth-challenge-dialog__input';
+    passwordInput.autocomplete = 'current-password';
+    passwordInput.setAttribute('data-i18n-aria-label', 'auth.adminPasswordLabel');
+    passwordInput.setAttribute('aria-label', t('auth.adminPasswordLabel'));
+
+    const turnstileContainer = document.createElement('div');
+    turnstileContainer.className = 'flex justify-center';
+    let turnstileToken = '';
+    if (this.turnstileEnabled && this.turnstileSitekey && window.turnstile) {
+      const widget = document.createElement('div');
+      turnstileContainer.appendChild(widget);
+      this.adminDialogTurnstileId = window.turnstile.render(widget, {
+        sitekey: this.turnstileSitekey,
+        theme: getActiveColorScheme(),
+        callback: (token: string) => {
+          turnstileToken = token;
+        },
+        'expired-callback': () => {
+          turnstileToken = '';
+        },
+        'error-callback': () => {
+          turnstileToken = '';
+        },
+      });
+    }
+
+    const errorText = document.createElement('div');
+    errorText.className = 'auth-challenge-dialog__warning';
+    errorText.setAttribute('role', 'alert');
+    errorText.style.display = 'none';
+
+    const actions = document.createElement('div');
+    actions.className = 'auth-challenge-dialog__actions';
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'auth-challenge-dialog__button auth-challenge-dialog__button--cancel';
+    cancelButton.textContent = t('auth.adminLoginCancel');
+    const submitButton = document.createElement('button');
+    submitButton.type = 'button';
+    submitButton.className = 'auth-challenge-dialog__button auth-challenge-dialog__button--submit';
+    submitButton.textContent = t('auth.adminLoginSubmit');
+    actions.append(cancelButton, submitButton);
+
+    form.append(accent, header, label, passwordInput, turnstileContainer, errorText, actions);
+    dialog.appendChild(form);
+    document.body.appendChild(dialog);
+
+    const closeDialog = (): void => this.closeAdminLoginDialog();
+
+    const showError = (message: string): void => {
+      errorText.textContent = message;
+      errorText.style.display = '';
+    };
+
+    let pending = false;
+    const submit = async (): Promise<void> => {
+      if (pending) return;
+      const password = passwordInput.value;
+      if (!password) {
+        showError(t('auth.validationPassword'));
+        passwordInput.focus();
+        return;
+      }
+      // 密码模式下登录必验 Turnstile（与后端 handlePasswordLogin 的必验分支对齐）
+      if (this.turnstileEnabled && this.turnstileSitekey && !turnstileToken) {
+        showError(t('auth.turnstileRequired'));
+        return;
+      }
+      if (!this.passwordAuthParams) return;
+
+      pending = true;
+      submitButton.disabled = true;
+      errorText.style.display = 'none';
+      try {
+        // 浏览器本地 PBKDF2 预拉伸（server relief），原始密码不出浏览器
+        const key = await stretchAdminPassword(
+          password,
+          this.passwordAuthParams.salt,
+          this.passwordAuthParams.iterations
+        );
+        const response = await fetch('/api/auth/password/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key, turnstileToken }),
+        });
+
+        if (response.ok) {
+          // 登录成功：重载进入用户空间（init → /api/auth/me → showUserSpace）
+          closeDialog();
+          window.location.reload();
+          return;
+        }
+
+        // 错误按状态码映射 i18n，不回显后端原文
+        if (response.status === 401) {
+          showError(t('auth.adminLoginFailed'));
+          passwordInput.select();
+        } else if (response.status === 429) {
+          const data = (await response.json().catch(() => ({}))) as { retryAfterSec?: number };
+          showError(t('auth.adminLoginLocked', { seconds: data.retryAfterSec ?? 60 }));
+        } else if (response.status === 403) {
+          showError(t('auth.adminLoginTurnstileFailed'));
+          turnstileToken = '';
+        } else if (response.status === 500) {
+          showError(t('auth.adminHashInvalid'));
+        } else if (response.status === 501) {
+          showError(t('auth.adminLoginUnavailable'));
+        } else {
+          showError(t('auth.adminLoginNetwork'));
+        }
+      } catch {
+        showError(t('auth.adminLoginNetwork'));
+      } finally {
+        pending = false;
+        submitButton.disabled = false;
+      }
+    };
+
+    cancelButton.addEventListener('click', closeDialog);
+    dialog.addEventListener('cancel', (e) => {
+      e.preventDefault();
+      closeDialog();
+    });
+    form.addEventListener('submit', (e) => {
+      // method=dialog 的原生提交会绕过清理逻辑，统一走自定义提交闭包
+      e.preventDefault();
+      void submit();
+    });
+    passwordInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        void submit();
+      }
+    });
+    submitButton.addEventListener('click', () => void submit());
+
+    dialog.showModal();
+    passwordInput.focus();
+  }
+
+  /** 关闭并销毁管理员登录对话框（含 Turnstile 组件与密码字段残留清理） */
+  private closeAdminLoginDialog(): void {
+    if (this.adminDialogTurnstileId) {
+      try {
+        window.turnstile?.remove(this.adminDialogTurnstileId);
+      } catch {
+        /* 组件已随 DOM 移除时静默容忍 */
+      }
+      this.adminDialogTurnstileId = null;
+    }
+    document.getElementById('admin-login-dialog')?.remove();
   }
 
   private renderTurnstile(): void {

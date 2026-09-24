@@ -41,7 +41,7 @@ src/
 │   ├── user-db.ts    # UserDBDO - user/server/命令片段存储（含标签、OS、跳板关系与片段持久化）
 │   ├── server-tags.ts # 服务器标签规范化与 SQLite JSON 序列化
 │   ├── os-detect.ts  # 远端操作系统输出解析、规范 key 与持久化白名单
-│   ├── auth.ts       # GitHub OAuth handling
+│   ├── auth.ts       # 认证模式解析（单管理员密码/GitHub 互斥）+ OAuth 流程 + Session 中间件 + 密码登录
 │   ├── dns-check.ts  # DNS-over-HTTPS 解析 + 统一 IP 块检查（DNS rebinding 防重绑定 SSRF 防护）
 │   ├── ip-geo.ts     # 保存直连服务器时 IPinfo 区域推断，映射为 DO locationHint
 │   ├── agent/        # AI Agent system
@@ -106,7 +106,9 @@ frontend/
 │   ├── code-editor.ts     # CodeMirror 6 modal wrapper for SFTP online editing (theme-variable highlighting)
 │   ├── editor-content.ts  # Online editing pure helpers (binary sniff, UTF-8/GB18030 decode, BOM/EOL round-trip)
 │   ├── sftp-selection.ts  # Pure multi-selection state model
-│   ├── auth-form.ts       # Auth form & encrypted anonymous credentials storage/autofill
+│   ├── auth-form.ts       # Auth form & encrypted anonymous credentials storage/autofill + 单管理员密码登录对话框
+│   ├── password-stretch.ts # 单管理员密码登录浏览器端 PBKDF2 预拉伸（server relief，原始密码不出浏览器）+ 哈希生成纯函数
+│   ├── admin-hash-generator.ts # 管理员密码哈希浏览器内生成器对话框（Dashboard-only 部署无需本地 Node 工具）
 │   ├── api-errors.ts      # 统一 API 错误解析与脱敏展示纯函数
 │   ├── server-list.ts     # Server UI (tags, search, responsive 9/6/3-card pagination, CRUD/connect/duplicate)
 │   ├── share-manager.ts   # Owner UI for creating, revoking, and auditing one-time shares
@@ -224,6 +226,7 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 - `STRICT_HOST_KEY_VERIFY` - Optional; `false` skips host-key signature verification failures (default true, fails closed)
 - `DEBUG_MODE` - Optional; `true` appends debug info to API responses（wrangler.toml `[vars]` 已声明 `DEBUG_MODE`）
 - `IDLE_TIMEOUT` - Optional; user inactivity idle timeout duration (e.g. `30m`, `1h`, `1800`; defaults to `30m`; `0` disables idle timeout)
+- `ADMIN_PASSWORD_HASH` - Optional; 单管理员密码登录（`pbkdf2$sha256$<iterations>$<salt>$<verifier>`）。生成方式：部署后站点页脚「管理员密码登录设置」浏览器内生成（主路径，无需本地工具）或 `pnpm run hash-password`。非空即启用密码模式：与 GitHub OAuth 互斥且优先级更高，全实例仅本地管理员一个账号；置空/删除即刻退回 GitHub 模式
 
 > 注意：`Env` 中声明的 `MAX_CONNECTIONS` 属预留变量，当前代码未读取，切勿依赖；`IDLE_TIMEOUT` 现已生效，默认 30 分钟。
 
@@ -235,6 +238,7 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 | `/api/auth/callback` | GET | No | OAuth callback, creates user + session |
 | `/api/auth/logout` | POST | No | Logout, clears session |
 | `/api/auth/me` | GET | Yes | Returns current user info |
+| `/api/auth/password/login` | POST | No | 单管理员密码登录（密码模式专用；同源 Origin 校验 + Turnstile 可选 + DO 持久化节流 + 恒时比对） |
 | `/api/servers` | GET/POST | Yes | List or create saved servers（含 `tags` 与可选 `jump_server_id`） |
 | `/api/servers/:id` | PUT/DELETE | Yes | Update or delete a server（含标签和跳板关系校验） |
 | `/api/servers/:id/connect` | POST | Yes | Generate one-time-token, return WebSocket URL |
@@ -373,6 +377,8 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
 38. **Cloudflare 隧道连接（Cloudflare Tunnel WebSocket Carrier & Zero Trust Access）** - 为无公网 IP、无跳板机的内网服务器提供直连能力。底层通过 Cloudflare Tunnel 的 WebSocket Carrier 机制传输原始 SSH 二进制字节流；`src/worker/tunnel-stream.ts`（`TunnelWebSocketStream`）将出站 WebSocket 桥接为 WHATWG Streams，上层 SSH 协议栈完全复用。安全守卫与生命周期：隧道域名必须为合法的标准公开域名（`isValidTunnelHostname`，排除内网 IP 与单级主机名），经 DoH（`dns-check.ts`）严格检验非保留地址；出站握手 `fetch` 必须显式 `redirect: 'manual'`（默认 follow 会跟随 Zero Trust 的 302 到登录页而使 3xx 诊断分支失效，并把 Service Token 转发给重定向目标）；隧道连接不支持跳板机（`jump_server_id` 必须为 null）；隧道连接免除直连 TCP 443 端口拦截；流关闭时显式解绑事件监听器；支持 Cloudflare Zero Trust 的 Service Token（`cf_access_client_id` 与经过 AES-GCM 行级加密的 `cf_access_client_secret`，前端支持一键清除已存密钥）；隧道模式跳过自动 IPinfo 推断以保护私有域名隐私，但允许用户手动指定 DO 区域（Location Hint）以就近调度并消除跨洋三角路由；卡片显示 CF 隧道标识与域名快捷复制。
 
+39. **单管理员密码登录（与 GitHub OAuth 互斥，密码优先）** - 认证模式由环境变量在部署时决定，运行时单一激活：`ADMIN_PASSWORD_HASH` 非空即密码模式（优先级最高，GitHub 配置原地保留但路由 501 禁用，前端入口整体替换为管理员登录）；置空/删除即刻退回 GitHub 模式（GitHub 侧配置与数据零影响）；哈希非空但格式损坏 → fail closed（登录 500、`/api/config` 暴露 `passwordHashInvalid`、前端错误面板），**绝不静默回退**。本地管理员使用哨兵 `github_id = -1`（GitHub ID 恒为正数无碰撞）路由到专属 UserDBDO 实例 `idFromName('-1')`，零数据迁移；首次登录幂等 upsert 唯一用户行，密码模式下 GitHub OAuth 回调被 501 堵死（唯一的建用户入口），单用户排他性由“不存在注册路径”天然保证。会话令牌格式 `-1:<fp8>:<randomHex>`（fp8 = 哈希串 SHA-256 前 8 hex，内嵌密码代际指纹）：换 `ADMIN_PASSWORD_HASH` 即全灭旧会话，`getAuthenticatedUser` 在 Worker 侧校验指纹，无需 DO 清理。**双向模式门**：密码模式拒绝 GitHub 会话/一次性令牌，GitHub/匿名模式拒绝哨兵会话/令牌（`getAuthenticatedUser` + `/api/ssh` token 路径两处，防止模式切换后旧凭据残活）。登录验证采用客户端预拉伸（server relief）：浏览器按 `/api/config` 公开参数（盐/迭代数非机密）在本地跑 PBKDF2（Free 套餐 10ms CPU 上限使服务端高强度 KDF 不可行），Worker 仅做一次 SHA-256 + 恒时比对（`timingSafeEqualBytes` 手写恒时比较，勿改回非常时比较），原始密码永不离开浏览器；哈希生成有双路径：站点页脚「管理员密码登录设置」入口（`admin-hash-generator.ts`，匿名/GitHub 模式页脚、强制 GitHub 登录面板与坏哈希面板三处入口，供 Dashboard-only 部署用户在浏览器内用自定义密码生成，密码同样不出浏览器）与 `scripts/hash-password.mjs`（本地 CLI）；生成器（`buildAdminPasswordHash`）、登录预拉伸（`stretchAdminPassword`）、服务端 `parseAdminPasswordHash` 与脚本四方口径必须一致（`tests/worker/password-auth.test.ts` 守护，格式 `pbkdf2$sha256$<iterations>$<salt-b64url>$<verifier-b64url>`）。防爆破三道防线：同源 Origin 校验（防跨站登录 CSRF）→ Turnstile（已配置时必验）→ 哨兵 DO 持久化登录节流（5 次连败后指数退避 60s×2^n 封顶 15 分钟，跨 isolate 权威，连败超 15 分钟衰减重置；公网部署建议开启 Turnstile，否则攻击者可持频造成持续锁定骚扰）。`REQUIRE_GITHUB_AUTH` 语义泛化为“要求登录”（密码会话同样满足，变量名保留兼容）；密码模式**不改变匿名 SSH 行为**，需强制登录请配合 `REQUIRE_GITHUB_AUTH=true`。模式切换为平行数据宇宙：密码模式期间新建数据留在哨兵 DO，切回 GitHub 不合并（旧 GitHub 数据即刻恢复）。前端：`auth-form.ts` 按 `authMode` 整体替换登录入口（按钮/强制登录面板/坏哈希错误面板三处文案同步），登录对话框复用 `auth-challenge-dialog` 样式类，错误按状态码映射 i18n 不回显后端原文；`server-list.ts` 对本地管理员 `avatar_url` 为 null 渲染首字母回退块，勿直接 `img.src = null`。
+
 ## Deployment Notes
 
 ### 双环境部署
@@ -428,6 +434,7 @@ pnpm run deploy:test     # 部署 test 环境
 - `GITHUB_ALLOWED_USER_IDS` - 可选，逗号分隔的 GitHub 数字用户 ID 白名单
 - `REQUIRE_GITHUB_AUTH` - 可选，设为 `true` 时禁用匿名 SSH 并要求有效 GitHub session
 - `ENABLE_SSH_SHARING` - 可选，设为 `true` 时允许登录用户创建一次性、受审计的 SSH 分享（默认关闭）
+- `ADMIN_PASSWORD_HASH` - 可选，单管理员密码登录凭据（务必设为 Secret 类型，用 `pnpm run hash-password` 生成）
 - `TURNSTILE_SECRET` / `TURNSTILE_SITEKEY` - Bot 验证
 - `BASE_URL` - OAuth 回调地址（需与实际域名一致）
 

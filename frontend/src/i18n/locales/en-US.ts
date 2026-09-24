@@ -92,6 +92,38 @@ export const enUS: Record<keyof typeof zhCN, string> = {
     'Sign in with an administrator-approved account before using SSH and account features.',
   'auth.githubNotConfigured':
     'GitHub OAuth is not fully configured, so sign-in is currently unavailable.',
+  // --- Single-admin password sign-in (alternative auth mode, mutually exclusive with GitHub) ---
+  'auth.adminLogin': 'Admin Login',
+  'auth.adminLoginTitle': 'Admin Sign In',
+  'auth.adminPasswordLabel': 'Admin Password',
+  'auth.adminLoginSubmit': 'Sign In',
+  'auth.adminLoginCancel': 'Cancel',
+  'auth.adminRequired': 'This CloudSSH instance requires admin sign-in',
+  'auth.adminRequiredHint': 'Sign in with the admin password to use SSH and account features.',
+  'auth.adminHashInvalidTitle': 'Admin password configuration is invalid',
+  'auth.adminHashInvalid':
+    'ADMIN_PASSWORD_HASH is malformed; sign-in is disabled. Ask the administrator to fix it.',
+  'auth.adminLoginFailed': 'Incorrect password',
+  'auth.adminLoginLocked': 'Too many attempts. Try again in {seconds} seconds.',
+  'auth.adminLoginTurnstileFailed': 'Human verification failed. Please try again.',
+  'auth.adminLoginUnavailable':
+    'Password sign-in is unavailable (auth mode may have changed). Refresh the page.',
+  'auth.adminLoginNetwork': 'Network error. Please try again later.',
+  // --- Admin password hash generator (in-browser local ADMIN_PASSWORD_HASH generation) ---
+  'auth.adminHashGenTitle': 'Admin Password Sign-In Setup',
+  'auth.adminHashGenHint':
+    'Generate ADMIN_PASSWORD_HASH locally in your browser — the password never leaves this device. Copy the result, paste it into the ADMIN_PASSWORD_HASH variable in the Cloudflare Dashboard (Secret type recommended), and save to enable single-admin password mode.',
+  'auth.adminHashGenPassword': 'Set admin password',
+  'auth.adminHashGenConfirm': 'Confirm password',
+  'auth.adminHashGenResultLabel': 'ADMIN_PASSWORD_HASH (copy and paste into the Cloudflare Dashboard)',
+  'auth.adminHashGenCopy': 'Copy',
+  'auth.adminHashGenGenerate': 'Generate hash',
+  'auth.adminHashGenTooShort': 'Password must be at least 10 characters.',
+  'auth.adminHashGenMismatch': 'Passwords do not match.',
+  'auth.adminHashGenCopied': 'Copied to clipboard',
+  'auth.adminHashGenNetwork': 'Generation failed. Please try again.',
+  'auth.adminHashGenEntry': 'Admin password sign-in setup',
+  'auth.adminHashGenRegenerate': 'Regenerate in browser',
   'auth.validationHostUser': 'Enter a host address and username.',
   'auth.validationPort': 'Port must be an integer from 1 to 65535.',
   'auth.validationPassword': 'Enter a password.',

@@ -6,8 +6,14 @@ import {
   handleGitHubAuth,
   handleGitHubCallback,
   handleLogout,
+  handlePasswordLogin,
   isGitHubAuthRequired,
   isGitHubUserAllowed,
+  getPasswordAuthParams,
+  parseAdminPasswordHash,
+  resolveAuthMode,
+  verifyTurnstile,
+  LOCAL_ADMIN_GITHUB_ID,
 } from './auth';
 import { HTML } from './html';
 
@@ -59,20 +65,6 @@ function getRateLimitRetryAfter(ip: string | null): number | null {
 
   record.count++;
   return null;
-}
-
-async function verifyTurnstile(token: string, secret: string, ip: string): Promise<boolean> {
-  try {
-    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `secret=${secret}&response=${token}&remoteip=${ip}`,
-    });
-    const result = await response.json<{ success: boolean }>();
-    return result.success === true;
-  } catch {
-    return false;
-  }
 }
 
 // --- Simple token-based verification for session-level ---
@@ -187,6 +179,12 @@ export default {
 
       if (url.pathname === '/api/auth/logout' && request.method === 'POST') {
         return handleLogout(request, env);
+      }
+
+      // ==================== 单管理员密码登录 ====================
+
+      if (url.pathname === '/api/auth/password/login' && request.method === 'POST') {
+        return handlePasswordLogin(request, env);
       }
 
       if (url.pathname === '/api/auth/me') {
@@ -339,12 +337,19 @@ export default {
 
       // Return config info (includes GitHub auth availability)
       if (url.pathname === '/api/config') {
+        const authMode = resolveAuthMode(env);
         return Response.json({
           turnstileEnabled: !!env.TURNSTILE_SECRET,
           sitekey: env.TURNSTILE_SITEKEY || '',
-          githubAuthEnabled: !!(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
+          // 密码模式下 GitHub 入口被权威禁用（即使凭据仍留在变量里，功能确实是关闭的）
+          githubAuthEnabled: authMode === 'github',
           githubAuthRequired: isGitHubAuthRequired(env),
           sshSharingEnabled: isSSHSharingEnabled(env),
+          authMode,
+          // 浏览器预拉伸公开参数（盐非机密）；坏哈希时为 null
+          passwordAuth: authMode === 'password' ? getPasswordAuthParams(env) : null,
+          passwordHashInvalid:
+            authMode === 'password' && parseAdminPasswordHash(env.ADMIN_PASSWORD_HASH) === 'invalid',
         });
       }
 
@@ -1244,7 +1249,8 @@ async function handleShareSSHConnection(
   if (!config.sessionPolicy || config.sessionPolicy.shareRef !== shareRef) {
     return Response.json({ error: 'Invalid share session policy' }, { status: 500 });
   }
-  if (!isGitHubUserAllowed(env, config.githubId ?? '')) {
+  // 本地管理员（密码模式）拥有的分享不受 GitHub 白名单约束
+  if (String(config.githubId ?? '') !== String(LOCAL_ADMIN_GITHUB_ID) && !isGitHubUserAllowed(env, config.githubId ?? '')) {
     return Response.json({ error: 'Share owner is no longer allowed' }, { status: 403 });
   }
 
@@ -1298,11 +1304,16 @@ async function handleTokenSSHConnection(
   }
 
   // 从 UserDBDO 消费 token，获取连接配置
-  const [githubId] = token.split(':');
-  if (!githubId) {
+  const [routeKey] = token.split(':');
+  if (!routeKey) {
     return Response.json({ error: 'Invalid token format' }, { status: 400 });
   }
-  const stub = getUserDBStub(env, githubId);
+  // 双向模式门：密码模式仅放行本地管理员令牌；GitHub/匿名模式拒绝哨兵令牌
+  // （防止模式切换前签发的一次性令牌在切换后仍可消费）
+  if (resolveAuthMode(env) === 'password' ? routeKey !== String(LOCAL_ADMIN_GITHUB_ID) : routeKey === String(LOCAL_ADMIN_GITHUB_ID)) {
+    return Response.json({ error: 'Connection token was issued under a different auth mode' }, { status: 403 });
+  }
+  const stub = getUserDBStub(env, routeKey);
   const tokenRes = await stub.fetch(
     new Request('http://internal/internal/connect-token/consume', {
       method: 'POST',
@@ -1316,7 +1327,8 @@ async function handleTokenSSHConnection(
   }
 
   const config = await tokenRes.json<SSHConnectionConfig>();
-  if (!isGitHubUserAllowed(env, config.githubId ?? '')) {
+  // 本地管理员不适用 GitHub 白名单；GitHub 用户照常校验
+  if (String(config.githubId ?? '') !== String(LOCAL_ADMIN_GITHUB_ID) && !isGitHubUserAllowed(env, config.githubId ?? '')) {
     return Response.json({ error: 'GitHub account is not allowed' }, { status: 403 });
   }
   if (authenticatedUser && String(authenticatedUser.github_id) !== String(config.githubId)) {

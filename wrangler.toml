@@ -18,6 +18,8 @@ watch_dir = "."
 # - TURNSTILE_SECRET / TURNSTILE_SITEKEY（Bot 验证）
 # - BASE_URL（OAuth 回调地址，需与实际域名一致）
 # - IDLE_TIMEOUT（可选，用户无操作空闲超时，如 30m / 1h，设为 0 禁用，默认 30m）
+# - ADMIN_PASSWORD_HASH（单管理员密码登录；`pnpm run hash-password` 生成，非空即启用密码模式，
+#   与 GitHub OAuth 互斥且优先级更高；置空/删除即刻退回 GitHub 模式；务必设为 Secret 类型）
 
 [[durable_objects.bindings]]
 name = "SSH_SESSION"
