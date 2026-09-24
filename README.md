@@ -217,7 +217,7 @@ Fork 仓库可以通过内置的 `Sync upstream` GitHub Actions 工作流，定�
 | `GITHUB_CLIENT_SECRET`    | 启用登录时必填 | 无           | GitHub OAuth 应用的 Client Secret，用于服务端向 GitHub 安全换取用户访问令牌。                          | **敏感凭据，务必在 Cloudflare Dashboard 中设为 Secret 类型**。严禁泄露或直接提交到公共代码仓库。                                                                                                                                       |
 | `BASE_URL`                | 启用登录时必填 | 无           | 部署站点的完整公网访问根地址（如 `https://ssh.example.com`），用于生成 OAuth 授权回调跳转。            | 域名必须与 GitHub OAuth App 中的 Authorization callback URL 完全一致，末尾**不要**加斜杠 `/`。未配置时降级使用请求上下文 Host。                                                                                                        |
 | `GITHUB_ALLOWED_USER_IDS` | 可选           | 无（不限制） | 允许登录系统的 GitHub **数字用户 ID** 白名单列表，多个 ID 以英文逗号分隔（如 `83105156,6236783`）。    | **私有化部署核心防线**。未配置时任何 GitHub 用户均可登录；一旦配置，仅白名单用户允许登录（fail-closed 机制）。数字 ID 可访问 `https://api.github.com/users/<username>` 查看 `id` 字段获取。                                            |
-| `ADMIN_PASSWORD_HASH`    | 启用密码登录时必填 | 无           | 单管理员密码登录凭据（格式：`pbkdf2$sha256$<迭代数>$<盐>$<校验值>`，在站点页尾用「管理员密码登录设置」以自定义密码浏览器内生成，或本地 `pnpm run hash-password` 生成）。非空即启用密码模式：与 GitHub 登录互斥且优先级更高，全实例仅本地管理员一个账号，功能与 GitHub 登录完全一致。 | **敏感凭据，务必设为 Secret 类型**。置空/删除即刻退回 GitHub 登录模式（GitHub 配置与数据零影响）；换新值 = 修改密码（所有已登录会话立即失效）。密码模式不改变匿名 SSH 行为，需强制登录请配合 `REQUIRE_GITHUB_AUTH=true`；公网部署建议同时开启 Turnstile 防爆破。 |
+| `ADMIN_PASSWORD_HASH`    | 启用密码登录时必填 | 无           | 单管理员密码登录凭据（格式：`pbkdf2$sha256$<迭代数>$<盐>$<校验值>`，用自定义密码在浏览器内生成——匿名实例页尾入口或任意实例 `#password-setup` 路由——或本地 `pnpm run hash-password`）。非空即启用密码模式：与 GitHub 登录互斥且优先级更高，全实例仅本地管理员一个账号，功能与 GitHub 登录完全一致。 | **敏感凭据，务必设为 Secret 类型**。置空/删除即刻退回 GitHub 登录模式（GitHub 配置与数据零影响）；换新值 = 修改密码（所有已登录会话立即失效）。密码模式不改变匿名 SSH 行为，需强制登录请配合 `REQUIRE_GITHUB_AUTH=true`；公网部署建议同时开启 Turnstile 防爆破。 |
 | `REQUIRE_GITHUB_AUTH`     | 可选           | `false`      | 是否强制 GitHub 登录后才可使用 SSH 终端。设为 `true` 时彻底禁用匿名直连入口。                          | **公网部署防被蹭推荐开启**。若不希望未授权访客将你的 Worker 用作公开 SSH 代理节点，建议配置为 `true` 并配合白名单使用。                                                                                                                |
 | `TURNSTILE_SITEKEY`       | 可选           | 无           | Cloudflare Turnstile 人机验证的前端公开 Site Key。                                                     | 公开密钥。与 `TURNSTILE_SECRET` 配合使用，在未配置或配置任一为空时人机验证功能自动禁用。                                                                                                                                               |
 | `TURNSTILE_SECRET`        | 可选           | 无           | Cloudflare Turnstile 人机验证的服务端 Secret Key，用于校验前端回传的人机验证 Token。                   | **敏感密钥，建议保存为 Secret 类型**。开启后可有效拦截自动化扫描脚本、批量机器人和恶意滥用。                                                                                                                                           |
@@ -234,7 +234,10 @@ Fork 仓库可以通过内置的 `Sync upstream` GitHub Actions 工作流，定�
 
 不想配置 GitHub OAuth？可以用你自定义的密码登录，且全实例仅你一个账号：
 
-1. **生成哈希**：部署后打开你的 CloudSSH 站点，在认证表单底部点击「**管理员密码登录设置**」，输入自定义密码（≥10 位）并确认 → 点击「生成哈希」→ 复制结果。**密码全程不离开浏览器**，无需本地安装任何工具（有 Node 环境也可用 `pnpm run hash-password`）。已开启强制 GitHub 登录（`REQUIRE_GITHUB_AUTH=true`）的实例：入口在强制登录面板底部，无需改动任何既有变量即可切换。
+1. **生成哈希**：输入自定义密码（≥10 位）并确认 → 点击「生成哈希」→ 复制结果。**密码全程不离开浏览器**，无需本地安装任何工具（有 Node 环境也可用 `pnpm run hash-password`）。进入生成器的方式：
+   - 全新部署（未配置任何登录方式）：打开站点，在认证表单底部点击「**管理员密码登录设置**」；
+   - 已配置 GitHub 登录的实例（含 `REQUIRE_GITHUB_AUTH=true` 强制登录）：浏览器直接打开 `https://你的域名/#password-setup`，无需改动任何既有变量；
+   - 修改密码（轮换）：同样打开 `#password-setup` 重新生成，替换 Dashboard 变量即可。
 2. **配置变量**：在 Cloudflare Dashboard → Workers → Settings → Variables and Secrets 中添加 `ADMIN_PASSWORD_HASH`（**Secret** 类型），粘贴生成的哈希串并保存。
 3. **刷新页面**：GitHub 登录入口自动替换为「管理员登录」，用你设置的密码登录即可，功能与 GitHub 登录完全一致。
 

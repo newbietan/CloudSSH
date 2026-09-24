@@ -1,4 +1,5 @@
 import { AIConfigPanel } from './ai-config';
+import { openAdminHashGeneratorDialog } from './admin-hash-generator';
 import { ConnectionForm } from './auth-form';
 import { initI18n, onLocaleChange, t } from './i18n';
 import { MobileTerminalController } from './mobile-terminal';
@@ -878,6 +879,13 @@ function initPointerSpecularTracking(): void {
   );
 }
 
+/** #password-setup 路由消费：命中则打开生成器并清地址栏（init 与 hashchange 共用） */
+function consumeAdminSetupRoute(): void {
+  if (window.location.hash !== '#password-setup') return;
+  history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+  openAdminHashGeneratorDialog();
+}
+
 async function init(): Promise<void> {
   initI18n();
   initUserSpaceMobileMenu();
@@ -937,6 +945,13 @@ async function init(): Promise<void> {
     initTerminalTab();
     return;
   }
+
+  // #password-setup：单管理员密码登录生成器直路由（全模式可用）。GitHub 模式
+  // 页脚不展示生成器入口（升级零感知），切换密码模式/轮换密码均经此 URL
+  // 进入（README 引导）。同时监听 hashchange：同页 hash 导航不触发重载，
+  // 用户在地址栏粘贴带 hash 的同页 URL 也能打开。
+  consumeAdminSetupRoute();
+  window.addEventListener('hashchange', consumeAdminSetupRoute);
 
   try {
     // 检查是否已登录

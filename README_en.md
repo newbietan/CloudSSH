@@ -233,7 +233,10 @@ All feature flags and security controls are managed through Worker environment v
 
 Prefer signing in with your own custom password instead of GitHub OAuth? The instance then admits a single account — yours:
 
-1. **Generate the hash**: Open your deployed CloudSSH site and click "**Admin password sign-in setup**" at the bottom of the auth form. Enter your custom password (≥ 10 characters), confirm it, click "Generate hash", and copy the result. **The password never leaves your browser** — no local tooling required (with a Node environment you can also use `pnpm run hash-password`). Instances with forced GitHub login (`REQUIRE_GITHUB_AUTH=true`): the entry is at the bottom of the required-login panel — switch without touching any existing variables.
+1. **Generate the hash**: Enter your custom password (≥ 10 characters), confirm it, click "Generate hash", and copy the result. **The password never leaves your browser** — no local tooling required (with a Node environment you can also use `pnpm run hash-password`). Ways to open the generator:
+   - Fresh deployment (no sign-in configured): open your site and click "**Admin password sign-in setup**" at the bottom of the auth form;
+   - Instances already using GitHub sign-in (including `REQUIRE_GITHUB_AUTH=true` forced login): open `https://your-domain/#password-setup` directly — no existing variables need touching;
+   - Password rotation: open `#password-setup`, regenerate, and replace the Dashboard variable.
 2. **Configure the variable**: In the Cloudflare Dashboard → Workers → Settings → Variables and Secrets, add `ADMIN_PASSWORD_HASH` (**Secret** type), paste the generated hash, and save.
 3. **Reload the page**: The GitHub sign-in entry is automatically replaced with "Admin Login". Sign in with your chosen password — feature parity with GitHub login is complete.
 

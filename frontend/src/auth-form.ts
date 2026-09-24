@@ -150,8 +150,12 @@ export class ConnectionForm {
       if (config.githubAuthEnabled) {
         this.renderGitHubLoginButton();
       }
-      // 匿名/GitHub 模式：页脚离散入口，供 Dashboard-only 用户在浏览器内设置/切换密码模式
-      this.renderAdminHashGenEntry();
+      // 入口可见性（模式感知）：仅匿名模式（未配置任何登录方式）保留页脚入口——
+      // 密码模式的自然受众，保持零配置可发现性；GitHub 模式隐藏入口（升级后
+      // 界面零变化），切换密码模式经 #password-setup 路由（README 引导）
+      if (config.authMode === 'anonymous') {
+        this.renderAdminHashGenEntry();
+      }
     } catch {
       // Config endpoint not available, skip Turnstile
     }
@@ -174,18 +178,12 @@ export class ConnectionForm {
             ? '<span id="github-login-placeholder"></span>'
             : '<p class="text-xs text-error" data-i18n="auth.githubNotConfigured">管理员尚未完整配置 GitHub OAuth，当前无法登录。</p>'
         }
-        <button type="button" id="admin-hash-gen-entry-btn" class="github-login-btn text-[11px] font-bold tracking-[0.1em] text-muted/70 hover:text-muted transition-all cursor-pointer flex items-center gap-1.5 bg-transparent border border-dim px-3 py-1 hover:border-[var(--accent)]" title="${t('auth.adminHashGenHint')}">
-          <span class="material-symbols-outlined" style="font-size: 14px;" aria-hidden="true">password</span>
-          <span data-i18n="auth.adminHashGenEntry">管理员密码登录设置</span>
-        </button>
       </div>
     `;
     translateDocument(container);
     if (githubAuthEnabled) this.renderGitHubLoginButton();
-    // 强制登录面板也暴露生成器入口：Dashboard-only 运维者可在不动任何既有变量的前提下切换/体验密码模式
-    document.getElementById('admin-hash-gen-entry-btn')?.addEventListener('click', () => {
-      openAdminHashGeneratorDialog();
-    });
+    // GitHub 模式（含强制面板）不展示生成器入口：已做出登录选择的用户升级后界面零变化；
+    // 切换密码模式经 #password-setup 路由（README 引导）
   }
 
   private renderGitHubLoginButton(): void {
