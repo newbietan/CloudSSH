@@ -465,7 +465,7 @@ export class CustomThemeModal {
     footer.className = 'flex items-center justify-between mt-4 pt-3 border-t border-dim shrink-0';
 
     const editorLink = document.createElement('a');
-    editorLink.href = './docs/theme-editor/index.html';
+    editorLink.href = 'https://newbietan.github.io/CloudSSH/theme-editor/';
     editorLink.target = '_blank';
     editorLink.rel = 'noopener noreferrer';
     editorLink.className =
