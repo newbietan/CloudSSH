@@ -37,15 +37,15 @@ test.beforeEach(async ({ page }) => {
 test('paginates after filtering and resets to the first page', async ({ page }) => {
   await page.goto('/');
 
-  await expect(page.locator('.server-card')).toHaveCount(9);
+  await expect(page.locator('.server-card')).toHaveCount(6);
   await expect(page.locator('#server-page-info')).toContainText('30');
 
   await page.locator('#server-page-next').click();
-  await expect(page.locator('.server-card')).toHaveCount(9);
+  await expect(page.locator('.server-card')).toHaveCount(6);
   await expect(page.locator('#server-page-info')).toContainText('2');
 
   await page.locator('#server-tag-filter').selectOption('production');
-  await expect(page.locator('.server-card')).toHaveCount(9);
+  await expect(page.locator('.server-card')).toHaveCount(6);
   await expect(page.locator('#server-pagination')).toBeVisible();
 
   await page.locator('#server-search').fill('Server 01');
@@ -57,7 +57,7 @@ test('有无标签的同排服务器卡片将操作按钮对齐到底部', async
   await page.goto('/');
 
   const visibleCards = page.locator('.server-card').filter({ visible: true });
-  await expect(visibleCards).toHaveCount(9);
+  await expect(visibleCards).toHaveCount(6);
 
   const positions = await page
     .locator('.server-card:nth-child(-n+3) .server-card-actions')

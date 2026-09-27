@@ -56,13 +56,13 @@ describe('服务器操作系统图标', () => {
 });
 
 describe('服务器列表搜索', () => {
-  it('手机、触屏平板和桌面端分别使用 3、6、9 张分页', () => {
+  it('手机端使用 3 张分页，触屏平板与桌面端使用 6 张分页', () => {
     expect(resolveServerPageSize(390, true)).toBe(3);
     expect(resolveServerPageSize(767, false)).toBe(3);
     expect(resolveServerPageSize(768, true)).toBe(6);
     expect(resolveServerPageSize(1180, true)).toBe(6);
-    expect(resolveServerPageSize(1024, false)).toBe(9);
-    expect(resolveServerPageSize(1181, true)).toBe(9);
+    expect(resolveServerPageSize(1024, false)).toBe(6);
+    expect(resolveServerPageSize(1181, true)).toBe(6);
   });
 
   it('按名称、主机和用户名进行不区分大小写的过滤', () => {

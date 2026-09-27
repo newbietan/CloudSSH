@@ -58,7 +58,7 @@ interface ServerSaveResponse {
   _debug?: unknown;
 }
 
-export const SERVER_PAGE_SIZE = 9;
+export const SERVER_PAGE_SIZE = 6;
 export const TABLET_SERVER_PAGE_SIZE = 6;
 export const MOBILE_SERVER_PAGE_SIZE = 3;
 
@@ -400,7 +400,7 @@ export class ServerList {
     grid.innerHTML = visibleServers.map((server) => this.renderServerCard(server)).join('');
 
     // 绑定卡片事件
-    visibleServers.forEach((server) => {
+    for (const server of visibleServers) {
       document
         .getElementById(`connect-${server.id}`)
         ?.addEventListener('click', () => this.connectServer(server.id));
@@ -429,7 +429,7 @@ export class ServerList {
           }
         });
       }
-    });
+    }
 
     if (page.totalPages > 1) {
       pagination?.classList.remove('hidden');
@@ -474,24 +474,28 @@ export class ServerList {
     const usesJumpHost = !isTunnel && server.jump_server_id !== null && server.jump_server_id !== undefined;
     const effectiveHint = usesJumpHost ? '' : server.region || server.inferred_hint || '';
     const isManual = !!server.region;
-    const regionLabelText = usesJumpHost
-      ? t('server.regionViaJump')
-      : effectiveHint
-        ? regionLabel(effectiveHint)
-        : isTunnel
-          ? t('region.autoShort')
-          : regionLabel('');
-    const regionTag = usesJumpHost
-      ? t('server.regionInherited')
-      : isTunnel
-        ? isManual
-          ? t('server.regionManual')
-          : t('server.regionAuto')
-        : effectiveHint
-          ? isManual
-            ? t('server.regionManual')
-            : t('server.regionAuto')
-          : t('server.regionAuto');
+    let regionLabelText = regionLabel('');
+    if (usesJumpHost) {
+      regionLabelText = t('server.regionViaJump');
+    } else if (effectiveHint) {
+      regionLabelText = regionLabel(effectiveHint);
+    } else if (isTunnel) {
+      regionLabelText = t('region.autoShort');
+    }
+    let regionTag = t('server.regionAuto');
+    if (usesJumpHost) {
+      regionTag = t('server.regionInherited');
+    } else if (isManual && (isTunnel || effectiveHint)) {
+      regionTag = t('server.regionManual');
+    }
+    let regionIcon = 'explore';
+    if (isTunnel) {
+      regionIcon = 'cloud';
+    } else if (usesJumpHost) {
+      regionIcon = 'route';
+    } else if (effectiveHint) {
+      regionIcon = 'my_location';
+    }
     const tagMarkup =
       (server.tags || []).length > 0
         ? `<div class="flex flex-wrap gap-1 mt-3">${server.tags
@@ -551,7 +555,7 @@ export class ServerList {
           <div class="server-card-region-row flex items-center gap-2 min-w-0">
             <span class="text-dim">${t('server.regionLabel')}</span>
             <span class="text-on-surface flex items-center gap-1">
-              <span class="material-symbols-outlined" style="font-size: 11px; color: var(--accent-secondary);">${isTunnel ? 'cloud' : usesJumpHost ? 'route' : effectiveHint ? 'my_location' : 'explore'}</span>
+              <span class="material-symbols-outlined" style="font-size: 11px; color: var(--accent-secondary);">${regionIcon}</span>
               ${this.escapeHtml(regionLabelText)}
             </span>
             <span class="text-[9px] text-dim border border-dim px-1 py-0.5 ml-0.5">${regionTag}</span>
@@ -685,12 +689,13 @@ export class ServerList {
     const submitBtn = document.getElementById('server-submit-btn');
     if (!modal || !title || !submitBtn) return;
 
-    title.textContent =
-      mode === 'add'
-        ? t('server.add')
-        : mode === 'clone'
-          ? t('server.cloneTitle')
-          : t('server.edit');
+    if (mode === 'add') {
+      title.textContent = t('server.add');
+    } else if (mode === 'clone') {
+      title.textContent = t('server.cloneTitle');
+    } else {
+      title.textContent = t('server.edit');
+    }
     // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     submitBtn.innerHTML = `
       <span class="material-symbols-outlined" style="font-size: 18px;">save</span>
@@ -1009,7 +1014,14 @@ export class ServerList {
         title: t('server.detailsTitle'),
         variant: 'warning',
       });
-      const missingId = name ? (host ? 'server-username' : 'server-host') : 'server-name';
+      let missingId = 'server-name';
+      if (name) {
+        if (host) {
+          missingId = 'server-username';
+        } else {
+          missingId = 'server-host';
+        }
+      }
       (document.getElementById(missingId) as HTMLInputElement)?.focus();
       return;
     }

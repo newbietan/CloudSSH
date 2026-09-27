@@ -97,7 +97,7 @@ test('服务器分页在手机、触屏平板和桌面宽度间自动切换', as
   await expect(page.locator('.server-card')).toHaveCount(6);
 
   await page.setViewportSize({ width: 1200, height: 800 });
-  await expect(page.locator('.server-card')).toHaveCount(9);
+  await expect(page.locator('.server-card')).toHaveCount(6);
 });
 
 test.describe('响应式断点边界', () => {
@@ -106,7 +106,7 @@ test.describe('响应式断点边界', () => {
   test('768px 精细指针设备统一使用桌面布局和分页', async ({ page }) => {
     await page.goto('/?lang=zh-CN');
 
-    await expect(page.locator('.server-card')).toHaveCount(9);
+    await expect(page.locator('.server-card')).toHaveCount(6);
     await expect(page.locator('#user-space-header-actions')).toBeVisible();
     await expect(page.locator('#user-space-more-btn')).toBeHidden();
   });
