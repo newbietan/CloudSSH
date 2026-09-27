@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.1] - 2026-09-27
+
+### Added
+
+- **多套自定义主题管理与管理模态框（CustomThemeModal）**：
+  - 支持用户上传、保存和管理多套自定义主题（上限 20 套，单套 ≤64KB），纯原生 DOM 安全构建，彻底杜绝 XSS 风险；
+  - 模态框内置色彩预览排（自动提取各主题的 Primary、Background、Surface、Accent 色彩），直观展示主题风格；
+  - 支持主题即时切换应用、删除二次确认防误触，以及拖拽/点击上传（Dropzone）JSON 配置文件；
+  - 模态框底栏固定提供在线主题编辑器跳转链接（`https://newbietan.github.io/CloudSSH/theme-editor/`）；
+  - 增加中英繁（zh-CN、zh-TW、en-US）三语国际化词条全量支持。
+- **自定义主题数据模型与后端跨设备同步**：
+  - 数据模型支持 `id`、`name`、`data`、`createdAt`，经 `normalizeUserThemePayload` 严格白名单与尺寸校验；
+  - `GET /api/user/theme` 返回完整主题库列表并兼容旧版单主题格式；
+  - `PUT /api/user/theme` 原子同步多主题列表；
+  - `DELETE /api/user/theme?id=xxx` 支持单个主题删除与整槽清空。
+
+### Changed
+
+- **液态分段主题切换器交互重构**：
+  - 分段条默认常驻 5 款主题选项（4 款内置 Dark / Light / Cyber / Liquid + 1 款自定义 Custom），移除了顶栏独立的上传按钮；
+  - 优化切换交互：未上传自定义主题时点击 Custom 拦截切换并自动弹出管理弹窗引导上传；已有自定义主题时点击直接激活活跃主题；处于 Custom 激活状态下再次点击 Custom 按钮唤出多主题管理弹窗；
+  - 切换回内置主题时保留用户的主题库资产（不再清空云端槽）；若删除了全部自定义主题，界面自动优雅回退至默认内置主题（Cyberpunk）。
+
 ## [2.5.0] - 2026-09-24
 
 ### Added
