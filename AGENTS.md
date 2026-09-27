@@ -252,7 +252,7 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 | `/api/shares/:id` | DELETE | Yes | Revoke a share owned by the current user |
 | `/api/shares/:id/audit` | GET | Yes | Read the paginated audit log for an owned share |
 | `/api/share/claim` | POST | No | Atomically claim a capability token and return a short-lived WebSocket ticket |
-| `/api/user/theme` | GET/PUT | Yes | Get or replace the signed-in user's single custom theme |
+| `/api/user/theme` | GET/PUT/DELETE | Yes | 获取/同步用户多套自定义主题库，或删除单个/全部自定义主题 |
 | `/api/known-hosts` | GET/POST/DELETE | Yes | Known host fingerprint CRUD (TOFU) |
 | `/api/snippets` | GET/POST | Yes | List or create command snippets (per-user, max 100) |
 | `/api/snippets/:id` | PUT/DELETE | Yes | Update or delete a command snippet (ownership scoped by user_id) |
