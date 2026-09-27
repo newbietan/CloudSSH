@@ -21,7 +21,12 @@ import {
   UI_STYLE_PRESETS,
   UI_THEMES,
 } from '../frontend/src/theme';
-import { SAFE_UI_THEME_PROPERTIES, THEME_MAX_BYTES } from '../src/theme-schema';
+import {
+  MAX_CUSTOM_THEMES,
+  normalizeUserThemePayload,
+  SAFE_UI_THEME_PROPERTIES,
+  THEME_MAX_BYTES,
+} from '../src/theme-schema';
 
 function relativeLuminance(hex: string): number {
   const channels = hex
@@ -354,11 +359,10 @@ describe('Standard 主题入口和编辑器', () => {
     expect(editorHtml).toContain('colorScheme,');
   });
 
-  it('用户空间和终端页都可以直接切换主题风格，仅用户空间支持导入自定义主题', () => {
+  it('用户空间和终端页都可以直接切换主题风格，移除独立上传按钮并支持多主题常驻', () => {
     expect(appHtml.match(/data-theme-selector/g)).toHaveLength(3);
-    expect(appHtml.match(/data-theme-import/g)).toHaveLength(1);
+    expect(appHtml).not.toContain('data-theme-import');
     expect(appHtml).not.toContain('data-theme-export');
-    expect(appHtml).not.toContain('data-theme-delete');
     expect(appHtml).toContain('Liquid Glass');
   });
 
@@ -552,5 +556,65 @@ describe('Theme V3 背景层、效果与版式', () => {
     expect(BUILT_IN_EFFECTS['liquid-glass']?.glow).toBeGreaterThan(0);
     expect(BUILT_IN_TYPOGRAPHY['liquid-glass']?.radiusScale).toBeGreaterThan(1);
     expect(BUILT_IN_BACKGROUND['standard-dark']).toBeUndefined();
+  });
+
+  describe('多自定义主题契约 — normalizeUserThemePayload', () => {
+    it('平滑升级旧版单主题对象', () => {
+      const legacyTheme = {
+        name: 'My Old Theme',
+        ui: { '--accent': '#ff0055' },
+        colorScheme: 'dark',
+      };
+      const res = normalizeUserThemePayload(legacyTheme);
+      expect(res).not.toBeNull();
+      expect(res!.themes).toHaveLength(1);
+      expect(res!.themes[0].id).toBe('default');
+      expect(res!.themes[0].name).toBe('My Old Theme');
+      expect(res!.themes[0].data.ui!['--accent']).toBe('#ff0055');
+      expect(res!.activeId).toBe('default');
+    });
+
+    it('正确解析多主题数组并校验 activeId', () => {
+      const payload = {
+        active_id: 't2',
+        themes: [
+          {
+            id: 't1',
+            name: 'Theme 1',
+            data: { ui: { '--accent': '#111111' } },
+            createdAt: 1000,
+          },
+          {
+            id: 't2',
+            name: 'Theme 2',
+            data: { ui: { '--accent': '#222222' } },
+            createdAt: 2000,
+          },
+        ],
+      };
+      const res = normalizeUserThemePayload(payload);
+      expect(res).not.toBeNull();
+      expect(res!.themes).toHaveLength(2);
+      expect(res!.activeId).toBe('t2');
+      expect(res!.themes[1].data.ui!['--accent']).toBe('#222222');
+    });
+
+    it('限制多主题数量不超过 MAX_CUSTOM_THEMES (20)', () => {
+      const manyThemes = Array.from({ length: 30 }, (_, i) => ({
+        id: `theme_${i}`,
+        name: `Theme ${i}`,
+        data: { ui: { '--accent': '#00ff00' } },
+      }));
+      const res = normalizeUserThemePayload({ themes: manyThemes });
+      expect(res).not.toBeNull();
+      expect(res!.themes.length).toBe(MAX_CUSTOM_THEMES);
+      expect(res!.themes.length).toBe(20);
+    });
+
+    it('非法或空 payload 返回 null', () => {
+      expect(normalizeUserThemePayload(null)).toBeNull();
+      expect(normalizeUserThemePayload('not an object')).toBeNull();
+      expect(normalizeUserThemePayload({ themes: 'invalid' })).toBeNull();
+    });
   });
 });

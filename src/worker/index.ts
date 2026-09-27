@@ -1,4 +1,9 @@
-import { normalizeThemeData, THEME_MAX_BYTES } from '../theme-schema';
+import {
+  MAX_CUSTOM_THEMES,
+  normalizeThemeData,
+  normalizeUserThemePayload,
+  THEME_MAX_BYTES,
+} from '../theme-schema';
 import { ALLOWED_LOCATION_HINTS, type Env, type SSHConnectionConfig } from '../types';
 import {
   getAuthenticatedUser,
@@ -687,6 +692,30 @@ async function handleThemeRoute(request: Request, env: Env): Promise<Response> {
     } catch {
       return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
     }
+
+    // 支持多套主题 payload：{ themes: [...], active_id: ... }
+    if (Array.isArray(body.themes)) {
+      if (body.themes.length > MAX_CUSTOM_THEMES) {
+        return Response.json({ error: 'Too many custom themes' }, { status: 400 });
+      }
+      const rawSerialized = JSON.stringify(body);
+      if (new TextEncoder().encode(rawSerialized).byteLength > MAX_CUSTOM_THEMES * THEME_MAX_BYTES) {
+        return Response.json({ error: 'Themes payload is too large' }, { status: 413 });
+      }
+      const normalizedPayload = normalizeUserThemePayload(body);
+      if (!normalizedPayload) {
+        return Response.json({ error: 'Invalid theme data' }, { status: 400 });
+      }
+      return stub.fetch(
+        new Request('http://internal/internal/theme', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: user.id, theme_data: JSON.stringify(normalizedPayload) }),
+        })
+      );
+    }
+
+    // 兼容原有的单个主题保存：{ theme_data: ... }
     const rawThemeData = body.theme_data;
     if (!rawThemeData || typeof rawThemeData !== 'object' || Array.isArray(rawThemeData)) {
       return Response.json({ error: 'Invalid theme data' }, { status: 400 });
@@ -710,9 +739,18 @@ async function handleThemeRoute(request: Request, env: Env): Promise<Response> {
   }
 
   if (request.method === 'DELETE') {
-    // 登录态下回归内置主题时清除云端自定义主题槽（幂等：无行也返回成功）
+    let themeId: string | null = null;
+    try {
+      const url = new URL(request.url);
+      themeId = url.searchParams.get('id');
+    } catch {
+      // ignore malformed URL
+    }
+    const targetUrl = themeId
+      ? `http://internal/internal/theme?user_id=${user.id}&theme_id=${encodeURIComponent(themeId)}`
+      : `http://internal/internal/theme?user_id=${user.id}`;
     return stub.fetch(
-      new Request(`http://internal/internal/theme?user_id=${user.id}`, {
+      new Request(targetUrl, {
         method: 'DELETE',
       })
     );

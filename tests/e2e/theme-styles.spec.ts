@@ -332,3 +332,69 @@ test('AI 模型选择下拉面板在浅色与暗色内置主题下无缝自适�
   await expect(selectedOption).toBeVisible();
   await expect(unselectedOption).toBeVisible();
 });
+
+test('自定义主题分段控制器交互与管理弹窗上传/多套管理/删除回退', async ({ page }) => {
+  await page.goto('/');
+
+  // 1. 验证独立上传按钮已被移除
+  await expect(page.locator('[data-theme-import]')).toHaveCount(0);
+
+  // 2. 验证分段控制器默认展示 5 个主题按钮
+  const customSegmentBtn = page.locator('#user-theme-segmented-container button[data-theme-id="__custom__"]');
+  await expect(customSegmentBtn).toBeVisible();
+  await expect(page.locator('#user-theme-segmented-container button[data-theme-id]')).toHaveCount(5);
+
+  // 3. 点击自定义主题按钮，未上传过时唤起管理弹窗
+  await customSegmentBtn.click();
+  const themeModal = page.locator('#custom-theme-modal');
+  await expect(themeModal).toBeVisible();
+  await expect(themeModal.locator('#custom-theme-dropzone')).toBeVisible();
+
+  // 4. 上传自定义主题
+  const customTheme1 = {
+    schemaVersion: 4,
+    name: 'Neon Horizon',
+    baseTheme: 'cyberpunk',
+    colorScheme: 'dark',
+    ui: {
+      '--accent': '#00ffaa',
+      '--bg': '#0a0a12',
+    },
+    appearance: {
+      style: 'cyberpunk',
+    },
+  };
+
+  await themeModal.locator('#custom-theme-file-input').setInputFiles({
+    name: 'neon-horizon.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(customTheme1)),
+  });
+
+  // 验证列表出现新主题卡片，并且处于激活状态
+  await expect(themeModal.locator('#custom-theme-items-container')).toContainText('Neon Horizon');
+  await expect(themeModal.locator('#custom-theme-items-container')).toContainText('Active');
+
+  // 关闭弹窗并验证分段控制器选中 Custom
+  await themeModal.locator('#custom-theme-modal-close-btn').click();
+  await expect(themeModal).toBeHidden();
+  await expect(customSegmentBtn).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'custom');
+
+  // 5. 已经处于 Custom 主题时，再次点击 Custom 按钮打开管理弹窗
+  await customSegmentBtn.click();
+  await expect(themeModal).toBeVisible();
+
+  // 6. 删除该主题并确认，验证自动回退到内置主题
+  await themeModal.locator('#custom-theme-items-container button[title="Delete"]').click();
+  await page.locator('.app-dialog__button--confirm').click();
+
+  // 验证弹窗内无主题提示并关闭弹窗
+  await expect(themeModal.locator('#custom-theme-items-container')).toContainText('No custom themes yet');
+  await themeModal.locator('#custom-theme-modal-close-btn').click();
+  await expect(themeModal).toBeHidden();
+
+  // 验证主题回退到内置主题（cyberpunk），Custom 不再处于选中状态
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'cyberpunk');
+  await expect(customSegmentBtn).toHaveAttribute('aria-selected', 'false');
+});

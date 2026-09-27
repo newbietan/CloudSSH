@@ -40,6 +40,7 @@ const THEME_OPTIONS = [
   { id: 'standard-light', label: 'Light', icon: 'light_mode' },
   { id: 'cyberpunk', label: 'Cyber', icon: 'bolt' },
   { id: 'liquid-glass', label: 'Liquid', icon: 'water_drop' },
+  { id: '__custom__', label: 'Custom', icon: 'palette' },
 ];
 
 export class LiquidSegmentedThemeControl {
@@ -48,6 +49,7 @@ export class LiquidSegmentedThemeControl {
   private readonly select: HTMLSelectElement;
   private buttons: Map<string, HTMLButtonElement> = new Map();
   private currentTheme: string = 'liquid-glass';
+  private onCustomThemeClickHandler?: (isCurrentlyActive: boolean) => void;
 
   // 双边异步物理弹簧引擎
   private leftSpring = new Spring(0, 210, 24);
@@ -120,11 +122,20 @@ export class LiquidSegmentedThemeControl {
     btn.appendChild(textSpan);
 
     btn.addEventListener('click', () => {
+      if (id === '__custom__' && this.onCustomThemeClickHandler) {
+        this.onCustomThemeClickHandler(this.currentTheme === '__custom__');
+        return;
+      }
       if (this.currentTheme === id) return;
       this.selectTheme(id);
     });
 
     return btn;
+  }
+
+  /** 设置点击自定义主题选项时的外部处理钩子 */
+  public setOnCustomThemeClick(handler: (isCurrentlyActive: boolean) => void): void {
+    this.onCustomThemeClickHandler = handler;
   }
 
   /** 点击分段选项时派发同步 */
@@ -249,7 +260,7 @@ export class LiquidSegmentedThemeControl {
     this.updateLensPosition(false);
   }
 
-  /** 确保自定义主题项存在 */
+  /** 确保自定义主题项存在（现已默认常驻在分段条中） */
   public ensureCustomButton(): void {
     if (this.buttons.has('__custom__')) return;
 
@@ -259,17 +270,9 @@ export class LiquidSegmentedThemeControl {
     this.updateLensPosition(false);
   }
 
-  /** 移除自定义主题项（登录态回归内置并清除云端主题槽时，与 select option 同步移除） */
+  /** 移除自定义主题项（保留空实现以兼容历史接口，多主题模式下不再移除非活跃项） */
   public removeCustomButton(): void {
-    const btn = this.buttons.get('__custom__');
-    if (!btn) return;
-    btn.remove();
-    this.buttons.delete('__custom__');
-    if (this.currentTheme === '__custom__') {
-      // 选中项被移除时透镜退化为不可见，由调用方随后 syncFromSelect 修正
-      this.currentTheme = '';
-    }
-    this.updateLensPosition(false);
+    // 保持 Custom 按钮默认常驻
   }
 
   public destroy(): void {

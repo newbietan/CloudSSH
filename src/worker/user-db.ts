@@ -9,6 +9,7 @@ import {
   type UnifiedServerMemory,
 } from '../server-memory-schema';
 import { normalizeSnippetInput, SNIPPET_MAX_COUNT } from '../snippet-schema';
+import { normalizeUserThemePayload } from '../theme-schema';
 import {
   ALLOWED_LOCATION_HINTS,
   type Env,
@@ -506,7 +507,7 @@ export class UserDBDO {
         if (!userIdStr) return Response.json({ error: 'Missing user_id' }, { status: 400 });
         const userId = parseInt(userIdStr, 10);
         if (isNaN(userId)) return Response.json({ error: 'Invalid user_id' }, { status: 400 });
-        return this.handleDeleteTheme(userId);
+        return this.handleDeleteTheme(userId, url.searchParams.get('theme_id'));
       }
       // --- One-time-token 消费 ---
       if (path === '/internal/connect-token/consume' && request.method === 'POST') {
@@ -1656,16 +1657,24 @@ export class UserDBDO {
     const rows = this.query<ThemeRow>('SELECT theme_data FROM user_themes WHERE user_id = ?', userId);
 
     if (rows.length === 0) {
-      return Response.json({ theme: null });
+      return Response.json({ theme: null, themes: [], activeId: null });
     }
 
     try {
+      const parsed = JSON.parse(rows[0].theme_data);
+      const normalized = normalizeUserThemePayload(parsed);
+      if (!normalized) {
+        return Response.json({ theme: null, themes: [], activeId: null });
+      }
+      const activeTheme =
+        normalized.themes.find((t) => t.id === normalized.activeId) ?? normalized.themes[0] ?? null;
       return Response.json({
-        // 行形状由上方 SELECT('theme_data') 定义，非法 JSON 由 catch 兜底为 null
-        theme: JSON.parse(rows[0].theme_data),
+        theme: activeTheme ? activeTheme.data : null,
+        themes: normalized.themes,
+        activeId: normalized.activeId,
       });
     } catch {
-      return Response.json({ theme: null });
+      return Response.json({ theme: null, themes: [], activeId: null });
     }
   }
 
@@ -1683,10 +1692,37 @@ export class UserDBDO {
   }
 
   /**
-   * 删除用户云端主题槽（登录态下回归内置主题时调用）。
+   * 删除用户云端自定义主题。
+   * 支持传 themeId 删除单个主题；缺省时清空整槽。
    * 幂等：无行时同样返回成功，DELETE 语义不区分是否存在。
    */
-  private handleDeleteTheme(userId: number): Response {
+  private handleDeleteTheme(userId: number, themeId?: string | null): Response {
+    if (themeId) {
+      const rows = this.query<ThemeRow>('SELECT theme_data FROM user_themes WHERE user_id = ?', userId);
+      if (rows.length > 0) {
+        try {
+          const parsed = JSON.parse(rows[0].theme_data);
+          const normalized = normalizeUserThemePayload(parsed);
+          if (normalized) {
+            const remaining = normalized.themes.filter((t) => t.id !== themeId);
+            const activeId =
+              normalized.activeId === themeId
+                ? (remaining.length > 0 ? remaining[0].id : null)
+                : normalized.activeId;
+            const updatedPayload = { themes: remaining, activeId };
+            this.db.exec(
+              `UPDATE user_themes SET theme_data = ?, updated_at = datetime('now') WHERE user_id = ?`,
+              JSON.stringify(updatedPayload),
+              userId
+            );
+          }
+        } catch {
+          // ignore
+        }
+      }
+      return Response.json({ success: true });
+    }
+
     this.db.exec('DELETE FROM user_themes WHERE user_id = ?', userId);
     return Response.json({ success: true });
   }

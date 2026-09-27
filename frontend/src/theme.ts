@@ -24,6 +24,7 @@ export {
   type ThemeBackground,
   type ThemeEffects,
   type ThemeTypography,
+  MAX_CUSTOM_THEMES,
   THEME_MAX_BYTES,
   THEME_SCHEMA_VERSION,
   type ThemeAppearance,
