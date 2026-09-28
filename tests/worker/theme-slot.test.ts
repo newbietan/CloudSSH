@@ -161,11 +161,15 @@ import { UserDBDO } from '../../src/worker/user-db';
 
 class FakeSql {
   statements: Array<{ query: string; values: unknown[] }> = [];
+  themeData?: string;
 
   exec(query: string, ...values: unknown[]): { toArray: () => unknown[] } {
     this.statements.push({ query, values });
     if (query.includes('CREATE TABLE') || query.includes('CREATE INDEX')) {
       return { toArray: () => [] };
+    }
+    if (query.includes('SELECT theme_data FROM user_themes')) {
+      return { toArray: () => (this.themeData ? [{ theme_data: this.themeData }] : []) };
     }
     if (query.includes('PRAGMA table_info')) {
       if (query.includes('PRAGMA table_info(servers)')) {
@@ -239,5 +243,27 @@ describe('UserDBDO — 主题槽删除', () => {
       new Request('http://internal/internal/theme?user_id=abc', { method: 'DELETE' })
     );
     expect(invalid.status).toBe(400);
+  });
+
+  it('DELETE 指定 theme_id 删除最后一套主题时执行整槽 DELETE', async () => {
+    const sql = new FakeSql();
+    sql.themeData = JSON.stringify({
+      themes: [{ id: 'theme-1', name: 'Theme 1', data: { name: 'Theme 1' }, createdAt: 12345 }],
+      activeId: 'theme-1',
+    });
+    const db = createUserDB(sql);
+
+    const res = await db.fetch(
+      new Request('http://internal/internal/theme?user_id=7&theme_id=theme-1', {
+        method: 'DELETE',
+      })
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true });
+
+    const del = sql.statements.find((s) => s.query.includes('DELETE FROM user_themes'));
+    expect(del).toBeDefined();
+    expect(del!.query).toContain('WHERE user_id = ?');
+    expect(del!.values).toEqual([7]);
   });
 });

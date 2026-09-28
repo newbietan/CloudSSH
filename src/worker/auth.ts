@@ -95,7 +95,7 @@ export function parseAdminPasswordHash(raw: string | undefined): ParsedAdminHash
 async function adminHashFingerprint(env: Env): Promise<string | null> {
   const raw = env.ADMIN_PASSWORD_HASH;
   if (!raw || raw.trim() === '') return null;
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw.trim()));
   const hex = Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
@@ -548,7 +548,10 @@ export async function handlePasswordLogin(request: Request, env: Env): Promise<R
     console.warn(`[Auth] password_login result=denied reason=lockout ip=${clientIP}`);
     return Response.json(
       { error: 'Too many failed attempts', retryAfterSec: throttle.retryAfterSec },
-      { status: 429 }
+      {
+        status: 429,
+        headers: { 'Retry-After': String(throttle.retryAfterSec) },
+      }
     );
   }
 

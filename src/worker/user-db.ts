@@ -1705,6 +1705,10 @@ export class UserDBDO {
           const normalized = normalizeUserThemePayload(parsed);
           if (normalized) {
             const remaining = normalized.themes.filter((t) => t.id !== themeId);
+            if (remaining.length === 0) {
+              this.db.exec('DELETE FROM user_themes WHERE user_id = ?', userId);
+              return Response.json({ success: true });
+            }
             const activeId =
               normalized.activeId === themeId
                 ? (remaining.length > 0 ? remaining[0].id : null)

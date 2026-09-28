@@ -675,7 +675,14 @@ globalImportThemeInput?.addEventListener('change', async (e) => {
 
   try {
     const text = await file.text();
-    const rawJson = JSON.parse(text);
+    let rawJson: unknown;
+    try {
+      rawJson = JSON.parse(text);
+    } catch {
+      notify(t('theme.invalidJson'), { title: t('theme.importTitle'), variant: 'danger' });
+      return;
+    }
+
     const data = normalizeImportedTheme(rawJson);
     if (!data) {
       notify(t('theme.importFailed'), { title: t('theme.importTitle'), variant: 'danger' });
@@ -688,8 +695,9 @@ globalImportThemeInput?.addEventListener('change', async (e) => {
     await customThemeStore.selectTheme(newItem.id);
     handleThemeSelection(CUSTOM_THEME_VALUE);
     notify(t('theme.importSuccess'), { variant: 'success' });
-  } catch {
-    notify(t('theme.invalidJson'), { title: t('theme.importTitle'), variant: 'danger' });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : t('theme.importFailed');
+    notify(msg, { title: t('theme.importTitle'), variant: 'danger' });
   }
   globalImportThemeInput.value = '';
 });
@@ -849,6 +857,10 @@ async function restoreCloudTheme(
     // 全新账号的云端主题槽（如密码模式新建管理员搭配既有浏览器状态）。
     const selection = localStorage.getItem('cloudssh_theme_selection');
     if (selection !== CUSTOM_THEME_VALUE) return;
+    if (customThemeStore.hasThemes()) {
+      await customThemeStore.syncToCloud();
+      return;
+    }
     const localRaw = localStorage.getItem('cloudssh_imported_theme');
     if (!localRaw) return;
     const localTheme = normalizeImportedTheme(JSON.parse(localRaw));

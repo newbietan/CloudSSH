@@ -506,6 +506,7 @@ describe('密码认证 — 登录端点', () => {
     );
 
     expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('300');
     const body = (await res.json()) as { retryAfterSec: number };
     expect(body.retryAfterSec).toBe(300);
   });

@@ -420,6 +420,18 @@ export class ConnectionForm {
           return;
         }
 
+        // 失败时统一重置 Turnstile 状态与组件，避免二次提交携已消费的旧 Token 导致卡死
+        if (this.turnstileEnabled && this.turnstileSitekey) {
+          turnstileToken = '';
+          if (this.adminDialogTurnstileId && window.turnstile) {
+            try {
+              window.turnstile.reset(this.adminDialogTurnstileId);
+            } catch {
+              /* 容忍已重置或未挂载异常 */
+            }
+          }
+        }
+
         // 错误按状态码映射 i18n，不回显后端原文
         if (response.status === 401) {
           showError(t('auth.adminLoginFailed'));
@@ -429,7 +441,6 @@ export class ConnectionForm {
           showError(t('auth.adminLoginLocked', { seconds: data.retryAfterSec ?? 60 }));
         } else if (response.status === 403) {
           showError(t('auth.adminLoginTurnstileFailed'));
-          turnstileToken = '';
         } else if (response.status === 500) {
           showError(t('auth.adminHashInvalid'));
         } else if (response.status === 501) {
