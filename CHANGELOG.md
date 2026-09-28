@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.2] - 2026-09-28
+
+### Fixed
+
+- **管理员登录 Turnstile 重试卡死问题**：
+  - 修复开启 Turnstile 时，若输错管理员密码（401），未重置 Turnstile 组件导致二次提交携带已消费的旧 Token 触发 403 并卡死在弹窗内的问题；登录非 200 响应时统一重置验证状态与 Widget。
+- **匿名多套自定义主题首次登录云端同步**：
+  - 修复用户在未登录状态下添加多套自定义主题后，首次登录只回填当前激活的一套且沿用旧版单主题格式的遗留问题；改为直接调用多主题原子同步，一次性将多套主题完整回填至新账号。
+- **单删最后一套主题残留空记录**：
+  - 修复在删除单个自定义主题后若剩余主题为空（`remaining.length === 0`）时，数据库仅更新为空数组 payload 而未真正删除行的问题；改为直接执行整槽 `DELETE`，保持数据干净。
+
+### Changed
+
+- **防御一致性与 HTTP 规范优化**：
+  - 增强 `ADMIN_PASSWORD_HASH` 空白字符防御一致性，计算密码代际指纹前统一做 `raw.trim()`，防止因配置源换行符差异导致指纹漂移；
+  - 为管理员登录 429 节流响应补充标准 `Retry-After` Header，提升 API 规范性；
+  - 优化全局文件导入 input 的异常分类逻辑，优先展示业务异常信息（如主题数量已达上限），避免误导用户以为 JSON 损坏；
+  - 同步更新 `AGENTS.md` 中服务器卡片分页数量文档说明（6/6/3）。
+
 ## [2.5.1] - 2026-09-27
 
 ### Added
