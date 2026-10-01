@@ -1,12 +1,13 @@
 import { copyTextToClipboard } from './clipboard';
 import { isValidTunnelHostname, maskIPAddress } from './host-display';
-import { onLocaleChange, t } from './i18n';
+import { getLocale, onLocaleChange, t } from './i18n';
 import { osDisplayName, osIconSvg } from './os-icons';
 import { parsePort } from './port';
 import { populateRegionSelect, regionLabel } from './regions';
 import { ShareManager } from './share-manager';
 import type { SSHHostInfo } from './terminal';
 import { confirmAction, notify } from './ui-feedback';
+import { formatTimestampWithRelative } from '../../src/server-memory-schema';
 
 interface UserInfo {
   id: number;
@@ -33,6 +34,8 @@ export interface ServerConfig {
   cf_tunnel_host?: string | null;
   cf_access_client_id?: string | null;
   has_cf_access_client_secret?: boolean;
+  /** 最近连接成功的 Unix 毫秒时间戳 */
+  last_connected_at?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -61,6 +64,9 @@ interface ServerSaveResponse {
 export const SERVER_PAGE_SIZE = 6;
 export const TABLET_SERVER_PAGE_SIZE = 6;
 export const MOBILE_SERVER_PAGE_SIZE = 3;
+
+export type ServerSortMode = 'recent' | 'updated' | 'created' | 'name';
+export const SERVER_SORT_STORAGE_KEY = 'cloudssh_server_sort';
 
 export function resolveServerPageSize(viewportWidth: number, coarsePointer: boolean): number {
   if (viewportWidth < 768) return MOBILE_SERVER_PAGE_SIZE;
@@ -123,6 +129,51 @@ export function paginateServers(
   };
 }
 
+export function sortServers(
+  servers: readonly ServerConfig[],
+  sortMode: ServerSortMode = 'recent'
+): ServerConfig[] {
+  const list = [...servers];
+  switch (sortMode) {
+    case 'recent':
+      return list.sort((a, b) => {
+        const aConnected = a.last_connected_at ?? 0;
+        const bConnected = b.last_connected_at ?? 0;
+        if (aConnected !== bConnected) {
+          return bConnected - aConnected;
+        }
+        const aUpdated = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+        const bUpdated = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+        if (aUpdated !== bUpdated && !Number.isNaN(aUpdated) && !Number.isNaN(bUpdated)) {
+          return bUpdated - aUpdated;
+        }
+        return 0;
+      });
+    case 'updated':
+      return list.sort((a, b) => {
+        const aUpdated = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+        const bUpdated = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+        if (aUpdated !== bUpdated && !Number.isNaN(aUpdated) && !Number.isNaN(bUpdated)) {
+          return bUpdated - aUpdated;
+        }
+        return 0;
+      });
+    case 'created':
+      return list.sort((a, b) => {
+        const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
+        if (aCreated !== bCreated && !Number.isNaN(aCreated) && !Number.isNaN(bCreated)) {
+          return bCreated - aCreated;
+        }
+        return 0;
+      });
+    case 'name':
+      return list.sort((a, b) => a.name.localeCompare(b.name));
+    default:
+      return list;
+  }
+}
+
 /**
  * 用户空间 — 服务器列表管理组件
  */
@@ -138,6 +189,7 @@ export class ServerList {
   private clearCfAccessClientSecret = false;
   private searchQuery = '';
   private selectedTag = '';
+  private sortMode: ServerSortMode = 'recent';
   private currentPage = 1;
   private pageSize = currentServerPageSize();
   private sharingEnabled = false;
@@ -151,6 +203,14 @@ export class ServerList {
     this.user = user;
     this.onLogout = onLogout;
     this.onConnect = onConnect;
+    try {
+      const savedSort = localStorage.getItem(SERVER_SORT_STORAGE_KEY) as ServerSortMode | null;
+      if (savedSort && ['recent', 'updated', 'created', 'name'].includes(savedSort)) {
+        this.sortMode = savedSort;
+      }
+    } catch {
+      /* ignore */
+    }
     onLocaleChange(() => this.renderServerGrid());
     this.init();
   }
@@ -249,6 +309,23 @@ export class ServerList {
         this.renderServerGrid();
       }
     );
+    const sortSelect = document.getElementById('server-sort') as HTMLSelectElement | null;
+    if (sortSelect) {
+      sortSelect.value = this.sortMode;
+      sortSelect.addEventListener('change', () => {
+        const mode = sortSelect.value as ServerSortMode;
+        if (['recent', 'updated', 'created', 'name'].includes(mode)) {
+          this.sortMode = mode;
+          try {
+            localStorage.setItem(SERVER_SORT_STORAGE_KEY, mode);
+          } catch {
+            /* ignore */
+          }
+          this.currentPage = 1;
+          this.renderServerGrid();
+        }
+      });
+    }
     document.getElementById('server-page-prev')?.addEventListener('click', () => {
       this.currentPage--;
       this.renderServerGrid();
@@ -379,6 +456,11 @@ export class ServerList {
       tagFilter.value = this.selectedTag;
     }
 
+    const sortSelect = document.getElementById('server-sort') as HTMLSelectElement | null;
+    if (sortSelect && sortSelect.value !== this.sortMode) {
+      sortSelect.value = this.sortMode;
+    }
+
     const filteredServers = filterServers(this.servers, this.searchQuery, this.selectedTag);
     if (filteredServers.length === 0) {
       grid.innerHTML = '';
@@ -392,7 +474,8 @@ export class ServerList {
     searchEmptyState.classList.add('hidden');
     searchEmptyState.classList.remove('flex');
 
-    const page = paginateServers(filteredServers, this.currentPage, this.pageSize);
+    const sortedServers = sortServers(filteredServers, this.sortMode);
+    const page = paginateServers(sortedServers, this.currentPage, this.pageSize);
     this.currentPage = page.currentPage;
     const visibleServers = page.items;
 
@@ -514,6 +597,10 @@ export class ServerList {
         </div>`
         : '';
 
+    const lastConnectedText = server.last_connected_at
+      ? formatTimestampWithRelative(server.last_connected_at, Date.now(), getLocale())
+      : t('server.neverConnected');
+
     const maskedHost = isTunnel ? null : maskIPAddress(server.host);
     const copyIPLabel = this.escapeAttr(t('server.clickToCopyIP'));
     // 隧道连接只看域名（实际端口由内网 cloudflared 配置决定）：卡片不展示端口
@@ -560,6 +647,10 @@ export class ServerList {
             </span>
             <span class="text-[9px] text-dim border border-dim px-1 py-0.5 ml-0.5">${regionTag}</span>
           </div>
+          <div class="server-card-meta-row flex items-center gap-2 min-w-0">
+            <span class="text-dim">${t('server.lastConnected')}</span>
+            <span class="text-on-surface min-w-0 truncate" title="${this.escapeAttr(lastConnectedText)}">${this.escapeHtml(lastConnectedText)}</span>
+          </div>
           ${tagMarkup}
         </div>
 
@@ -588,6 +679,7 @@ export class ServerList {
   private async connectServer(serverId: number): Promise<void> {
     const server = this.servers.find((s) => s.id === serverId);
     if (!server) return;
+    server.last_connected_at = Date.now();
 
     const connectBtn = document.getElementById(`connect-${serverId}`);
     if (connectBtn) {

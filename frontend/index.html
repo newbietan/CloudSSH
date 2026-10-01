@@ -275,7 +275,7 @@
                     >
                   </button>
                 </div>
-                <div id="server-tag-filter-wrapper" class="hidden sm:w-52">
+                <div id="server-tag-filter-wrapper" class="hidden sm:w-44">
                   <label
                     for="server-tag-filter"
                     class="sr-only"
@@ -288,6 +288,25 @@
                     data-i18n-aria-label="server.tagFilter"
                     aria-label="按标签筛选"
                   ></select>
+                </div>
+                <div id="server-sort-wrapper" class="sm:w-40">
+                  <label
+                    for="server-sort"
+                    class="sr-only"
+                    data-i18n="server.sortLabel"
+                    >排序方式</label
+                  >
+                  <select
+                    id="server-sort"
+                    class="terminal-input text-[13px] w-full cursor-pointer"
+                    data-i18n-aria-label="server.sortLabel"
+                    aria-label="排序方式"
+                  >
+                    <option value="recent" data-i18n="server.sortRecent">最近连接</option>
+                    <option value="updated" data-i18n="server.sortUpdated">最近修改</option>
+                    <option value="created" data-i18n="server.sortCreated">添加时间</option>
+                    <option value="name" data-i18n="server.sortName">名称 (A-Z)</option>
+                  </select>
                 </div>
               </div>
             </div>

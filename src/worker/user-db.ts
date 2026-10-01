@@ -68,6 +68,7 @@ type ServerRow = {
   cf_tunnel_host: string | null;
   cf_access_client_id: string | null;
   has_cf_access_client_secret: number;
+  last_connected_at: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -190,6 +191,7 @@ export class UserDBDO {
         cf_tunnel_host TEXT DEFAULT NULL,
         cf_access_client_id TEXT DEFAULT NULL,
         cf_access_client_secret TEXT DEFAULT NULL,
+        last_connected_at INTEGER DEFAULT NULL,
         created_at  TEXT DEFAULT (datetime('now')),
         updated_at  TEXT DEFAULT (datetime('now'))
       );
@@ -318,7 +320,11 @@ export class UserDBDO {
     if (!serverCols.some((c: any) => c.name === 'cf_access_client_secret')) {
       this.db.exec('ALTER TABLE servers ADD COLUMN cf_access_client_secret TEXT DEFAULT NULL');
     }
+    if (!serverCols.some((c: any) => c.name === 'last_connected_at')) {
+      this.db.exec('ALTER TABLE servers ADD COLUMN last_connected_at INTEGER DEFAULT NULL');
+    }
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_servers_jump ON servers(jump_server_id)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_servers_last_connected ON servers(user_id, last_connected_at DESC)');
 
     // === Migration: 给既有 ssh_shares 表追加审计清理留痕列（幂等） ===
     // SSHShareDO 清理审计后同步写入；管理端据此隐藏查看入口并集中展示清理记录
@@ -796,8 +802,9 @@ export class UserDBDO {
       `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, jump_server_id,
               transport_type, cf_tunnel_host, cf_access_client_id,
               (cf_access_client_secret IS NOT NULL AND cf_access_client_secret != '') AS has_cf_access_client_secret,
-              created_at, updated_at
-       FROM servers WHERE user_id = ? ORDER BY updated_at DESC`,
+              last_connected_at, created_at, updated_at
+       FROM servers WHERE user_id = ?
+       ORDER BY (last_connected_at IS NULL) ASC, last_connected_at DESC, updated_at DESC`,
       userId
     );
 
@@ -975,7 +982,7 @@ export class UserDBDO {
       `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, jump_server_id,
               transport_type, cf_tunnel_host, cf_access_client_id,
               (cf_access_client_secret IS NOT NULL AND cf_access_client_secret != '') AS has_cf_access_client_secret,
-              created_at, updated_at
+              last_connected_at, created_at, updated_at
        FROM servers WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
       body.user_id
     );
@@ -1225,7 +1232,7 @@ export class UserDBDO {
       `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, jump_server_id,
               transport_type, cf_tunnel_host, cf_access_client_id,
               (cf_access_client_secret IS NOT NULL AND cf_access_client_secret != '') AS has_cf_access_client_secret,
-              created_at, updated_at
+              last_connected_at, created_at, updated_at
        FROM servers WHERE id = ?`,
       serverId
     );
@@ -1784,6 +1791,8 @@ export class UserDBDO {
 
     const outermost = chain[0];
     const locationHint = outermost.region || outermost.inferred_hint || undefined;
+
+    this.db.exec('UPDATE servers SET last_connected_at = ? WHERE id = ?', Date.now(), serverId);
 
     const userRows = this.db
       .exec('SELECT github_id FROM users WHERE id = ?', body.user_id)

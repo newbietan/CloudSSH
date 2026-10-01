@@ -234,6 +234,8 @@ export interface ServerConfig {
   cf_access_client_id?: string | null;
   /** 是否已保存 Cloudflare Zero Trust Access Service Token Secret */
   has_cf_access_client_secret?: boolean;
+  /** 最近连接成功的 Unix 毫秒时间戳 */
+  last_connected_at?: number | null;
   created_at: string;
   updated_at: string;
 }

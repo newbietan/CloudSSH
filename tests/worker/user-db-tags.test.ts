@@ -97,6 +97,25 @@ describe('UserDB server tags', () => {
     ]);
   });
 
+  it('adds last_connected_at column idempotently and queries it in server list', async () => {
+    const sql = new FakeSql({ last_connected_at: 1700000000000 });
+    const database = createUserDB(sql);
+
+    expect(
+      sql.statements.some(({ query }) =>
+        query.includes('ALTER TABLE servers ADD COLUMN last_connected_at INTEGER DEFAULT NULL')
+      )
+    ).toBe(true);
+
+    const response = await database.fetch(
+      new Request('http://internal/internal/servers?user_id=7')
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual([
+      expect.objectContaining({ last_connected_at: 1700000000000 }),
+    ]);
+  });
+
   it('normalizes tags before updating SQLite', async () => {
     const sql = new FakeSql();
     const database = createUserDB(sql);
