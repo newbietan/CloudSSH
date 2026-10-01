@@ -512,6 +512,8 @@ export const zhTW = {
   'agent.editPrompt': '編輯訊息',
   'agent.copyPrompt': '複製提問',
   'agent.promptCopied': '提問已複製',
+  'agent.copyResponse': '複製回答',
+  'agent.responseCopied': '回答已複製',
   'agent.newChat': '新增會話',
   'agent.newChatConfirm': '確定要開啟新增會話嗎？（將清除目前對話上下文）',
   'agent.stopAndResend': '停止並重發',

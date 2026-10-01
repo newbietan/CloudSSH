@@ -279,6 +279,7 @@ export class AgentPanel {
       this.updateInputState();
       this.renderTerminalSelectionContext();
       this.refreshCodeBlockActions();
+      this.refreshResponseActions();
       if (this.isMemoryDrawerOpen) {
         this.renderMemoryContent();
       }
@@ -892,11 +893,13 @@ export class AgentPanel {
       const themeColor = 'var(--agent-agent-color)';
       const roleIcon = `<span class="material-symbols-outlined text-[15px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">smart_toy</span>`;
 
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
+      // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
       el.innerHTML = `
         <div class="flex gap-2 items-start">
           <div class="agent-role-icon-wrapper">${roleIcon}</div>
-          <div class="flex-1 min-w-0 text-[13px] whitespace-pre-wrap agent-md-content"></div>
+          <div class="flex-1 min-w-0 text-[13px]">
+            <div class="whitespace-pre-wrap agent-md-content"></div>
+          </div>
         </div>
       `;
 
@@ -920,6 +923,7 @@ export class AgentPanel {
 
   private handleStreamEnd(content: string): void {
     if (this.streamingEl) {
+      const finalContent = content || this.streamingText || '';
       // Remove raw text + cursor, replace with fully parsed Markdown
       const contentEl = this.streamingEl.querySelector('.agent-md-content');
       if (contentEl) {
@@ -927,14 +931,15 @@ export class AgentPanel {
         // renderMarkdown() wraps output in its own .agent-md-content div,
         // so we extract the inner HTML to avoid nesting.
         const tmp = document.createElement('div');
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
-        tmp.innerHTML = this.renderMarkdown(content || this.streamingText || '');
+        // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
+        tmp.innerHTML = this.renderMarkdown(finalContent);
         const inner = tmp.querySelector('.agent-md-content');
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
-        contentEl.innerHTML = inner ? inner.innerHTML : content || this.streamingText || '';
+        // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
+        contentEl.innerHTML = inner ? inner.innerHTML : finalContent;
         this.enhanceCodeBlocks(contentEl);
       }
-      this.sessionMessages.push({ role: 'response', content: content || this.streamingText || '' });
+      this.attachResponseActions(this.streamingEl, finalContent);
+      this.sessionMessages.push({ role: 'response', content: finalContent });
       this.saveSessionDraft(false);
       this.streamingEl = null;
       this.streamingText = '';
@@ -1157,6 +1162,7 @@ export class AgentPanel {
     this.messagesEl?.appendChild(el);
     if (isAgent) {
       this.enhanceCodeBlocks(el);
+      this.attachResponseActions(el, content);
     }
     this.scrollToBottom();
   }
@@ -1477,6 +1483,56 @@ export class AgentPanel {
         isFillButton ? t('agent.codeFill') : t('agent.codeCopy')
       );
     }, 1600);
+  }
+
+  private attachResponseActions(messageEl: HTMLElement, content: string): void {
+    if (!content.trim()) return;
+    const container = messageEl.querySelector<HTMLElement>('.flex-1');
+    if (!container || container.querySelector('.agent-response-actions')) return;
+
+    const actionsEl = document.createElement('div');
+    actionsEl.className = 'agent-response-actions';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'agent-response-action-btn agent-response-copy-btn';
+    copyBtn.setAttribute('data-i18n-title', 'agent.copyResponse');
+    copyBtn.title = t('agent.copyResponse');
+    copyBtn.setAttribute('aria-label', t('agent.copyResponse'));
+
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'material-symbols-outlined text-[13px]';
+    iconSpan.textContent = 'content_copy';
+    copyBtn.appendChild(iconSpan);
+
+    copyBtn.addEventListener('click', async () => {
+      const copied = await copyTextToClipboard(content);
+      if (copied) {
+        copyBtn.classList.add('is-success');
+        iconSpan.textContent = 'check';
+        copyBtn.title = t('agent.responseCopied');
+        copyBtn.setAttribute('aria-label', t('agent.responseCopied'));
+      } else {
+        iconSpan.textContent = 'close';
+      }
+      window.setTimeout(() => {
+        if (!copyBtn.isConnected) return;
+        copyBtn.classList.remove('is-success');
+        iconSpan.textContent = 'content_copy';
+        copyBtn.title = t('agent.copyResponse');
+        copyBtn.setAttribute('aria-label', t('agent.copyResponse'));
+      }, 1500);
+    });
+
+    actionsEl.appendChild(copyBtn);
+    container.appendChild(actionsEl);
+  }
+
+  private refreshResponseActions(): void {
+    this.panelEl?.querySelectorAll<HTMLButtonElement>('.agent-response-copy-btn').forEach((btn) => {
+      btn.title = t('agent.copyResponse');
+      btn.setAttribute('aria-label', t('agent.copyResponse'));
+    });
   }
 
   private scrollToBottom(): void {

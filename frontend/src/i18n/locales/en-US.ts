@@ -557,6 +557,8 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'agent.editPrompt': 'Edit message',
   'agent.copyPrompt': 'Copy prompt',
   'agent.promptCopied': 'Prompt copied',
+  'agent.copyResponse': 'Copy response',
+  'agent.responseCopied': 'Response copied',
   'agent.newChat': 'New chat',
   'agent.newChatConfirm': 'Start a new chat? (Current conversation context will be cleared)',
   'agent.stopAndResend': 'Stop & Resend',

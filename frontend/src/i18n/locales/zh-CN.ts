@@ -511,6 +511,8 @@ export const zhCN = {
   'agent.editPrompt': '编辑消息',
   'agent.copyPrompt': '复制提问',
   'agent.promptCopied': '提问已复制',
+  'agent.copyResponse': '复制回答',
+  'agent.responseCopied': '回答已复制',
   'agent.newChat': '新建会话',
   'agent.newChatConfirm': '确定要开启新建会话吗？（将清空当前对话上下文）',
   'agent.stopAndResend': '停止并重发',

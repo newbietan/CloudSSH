@@ -35,6 +35,15 @@ describe('Agent 面板控制与交互增强 (静态与词条校验)', () => {
     expect(panelSource).toContain('copyTextToClipboard(content)');
   });
 
+  it('AI 消息正文包含一键复制操作栏与反馈状态机', () => {
+    expect(panelSource).toContain('agent-response-actions');
+    expect(panelSource).toContain('agent-response-copy-btn');
+    expect(panelSource).toContain("setAttribute('data-i18n-title', 'agent.copyResponse')");
+    expect(panelSource).toContain('attachResponseActions');
+    expect(panelSource).toContain('refreshResponseActions');
+    expect(panelSource).toContain('copyTextToClipboard(content)');
+  });
+
   it('未完成任务时支持抢占式重发（supersede），向后端下发抢占标记', () => {
     expect(panelSource).toContain('const isSupersede = this.isAgentRunning');
     expect(panelSource).toContain("this.wsSend?.(JSON.stringify({ type: 'agent_stop' }))");
@@ -72,6 +81,8 @@ describe('Agent 面板控制与交互增强 (静态与词条校验)', () => {
       'agent.editPrompt',
       'agent.copyPrompt',
       'agent.promptCopied',
+      'agent.copyResponse',
+      'agent.responseCopied',
       'agent.newChat',
       'agent.newChatConfirm',
       'agent.stopAndResend',

@@ -3303,6 +3303,54 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   background: color-mix(in srgb, var(--on-surface) 12%, transparent);
 }
 
+/* Agent response message actions bar */
+.agent-response-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.agent-response:hover .agent-response-actions,
+.agent-response:focus-within .agent-response-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (pointer: coarse) {
+  .agent-response-actions {
+    opacity: 0.75;
+    pointer-events: auto;
+  }
+}
+
+.agent-response-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.agent-response-action-btn:hover {
+  color: var(--on-surface);
+  background: color-mix(in srgb, var(--on-surface) 12%, transparent);
+}
+
+.agent-response-action-btn.is-success {
+  color: var(--accent);
+}
+
 .agent-aborted-badge {
   display: inline-flex;
   align-items: center;
