@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.4] - 2026-10-01
+
+### Added
+
+- **服务器列表最近连接排序与偏好持久化（#153）**：
+  - 数据层（UserDBDO）在 `servers` 表中新增 `last_connected_at` 列及索引，并在发起连接申请令牌时自动更新毫秒时间戳（严格不修改 `updated_at`，保持配置修改历史完整性）；
+  - 查询默认按最近连接倒序排列（`ORDER BY (last_connected_at IS NULL) ASC, last_connected_at DESC, updated_at DESC`）；
+  - 列表工具栏新增排序方式选择框（`#server-sort`），支持「最近连接（默认）」、「最近修改」、「添加时间」、「名称 (A-Z)」多维排序；
+  - 排序偏好通过 `localStorage`（`cloudssh_server_sort`）持久化记忆，切换时平滑重置至首屏；
+  - 服务器卡片信息栏增加「最近连接」相对时间直观展示（如“5分钟前”、“从未连接”），并在连接时前端即时就地刷新置顶。
+- **国际化与多语言**：
+  - 完善中英繁三语关于服务器排序方式及最近连接状态的全部词条。
+
 ## [2.5.3] - 2026-10-01
 
 ### Added
