@@ -2897,6 +2897,80 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   display: block;
 }
 
+/* Agent Mode Segmented Control (Interactive vs Auto Mode) */
+.agent-mode-segmented {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--on-surface) 6%, transparent);
+  border: 1px solid var(--border);
+  box-sizing: border-box;
+}
+
+.agent-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  height: 22px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.agent-mode-btn:hover:not(.is-active) {
+  color: var(--on-surface);
+  background: color-mix(in srgb, var(--on-surface) 8%, transparent);
+}
+
+.agent-mode-btn.is-active {
+  background: var(--bg-elevated);
+  color: var(--on-surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.agent-mode-segmented[data-active-mode="auto"] .agent-mode-btn[data-mode="auto"].is-active {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 16%, var(--bg-elevated));
+}
+
+.agent-mode-segmented[data-active-mode="auto"] .agent-mode-btn[data-mode="auto"].is-active .material-symbols-outlined {
+  color: var(--warning);
+  font-variation-settings: 'FILL' 1;
+}
+
+.agent-mode-btn .material-symbols-outlined {
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* Agent confirmation auto countdown */
+.agent-confirm-progress-track {
+  width: 100%;
+  height: 3px;
+  background: color-mix(in srgb, var(--error) 20%, transparent);
+  border-radius: 9999px;
+  overflow: hidden;
+  margin-top: 6px;
+  margin-bottom: 8px;
+}
+
+.agent-confirm-progress-bar {
+  height: 100%;
+  background: var(--warning);
+  border-radius: 9999px;
+  width: 100%;
+  transition: width 3s linear;
+}
+
 /* ========== Agent Markdown Content (themed) ==========
    Style the DOM output from marked.js. All colors come from CSS variables so
    theme switching only touches :root variables — the markup is untouched. */

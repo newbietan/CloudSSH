@@ -44,6 +44,25 @@ describe('Agent 面板控制与交互增强 (静态与词条校验)', () => {
     expect(panelSource).toContain('copyTextToClipboard(content)');
   });
 
+  it('顶部操作栏包含交互与 Auto 运行模式切换分段控件并持久化设置', () => {
+    expect(panelSource).toContain('id="agent-mode-control"');
+    expect(panelSource).toContain('agent-mode-segmented');
+    expect(panelSource).toContain('data-mode="interactive"');
+    expect(panelSource).toContain('data-mode="auto"');
+    expect(panelSource).toContain('AGENT_MODE_STORAGE_KEY');
+    expect(panelSource).toContain('getAgentMode');
+    expect(panelSource).toContain('setAgentMode');
+  });
+
+  it('Auto 模式下确认弹窗具备 3 秒倒计时与自动批准机制，并支持清理定时器', () => {
+    expect(panelSource).toContain("const isAuto = this.agentMode === 'auto'");
+    expect(panelSource).toContain('agent.confirmAutoCountdown');
+    expect(panelSource).toContain('agent-confirm-progress-bar');
+    expect(panelSource).toContain('this.autoConfirmTimer = window.setTimeout');
+    expect(panelSource).toContain('clearAutoConfirmTimers');
+    expect(panelSource).toContain('this.resolvePendingConfirmation(true)');
+  });
+
   it('未完成任务时支持抢占式重发（supersede），向后端下发抢占标记', () => {
     expect(panelSource).toContain('const isSupersede = this.isAgentRunning');
     expect(panelSource).toContain("this.wsSend?.(JSON.stringify({ type: 'agent_stop' }))");
@@ -83,6 +102,14 @@ describe('Agent 面板控制与交互增强 (静态与词条校验)', () => {
       'agent.promptCopied',
       'agent.copyResponse',
       'agent.responseCopied',
+      'agent.modeInteractive',
+      'agent.modeInteractiveShort',
+      'agent.modeInteractiveTooltip',
+      'agent.modeAuto',
+      'agent.modeAutoShort',
+      'agent.modeAutoTooltip',
+      'agent.confirmAutoCountdown',
+      'agent.confirmAutoTitle',
       'agent.newChat',
       'agent.newChatConfirm',
       'agent.stopAndResend',

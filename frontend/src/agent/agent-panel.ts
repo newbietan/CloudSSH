@@ -19,6 +19,9 @@ import {
   type TerminalSelectionContext,
 } from './terminal-selection-context';
 
+export type AgentExecutionMode = 'interactive' | 'auto';
+export const AGENT_MODE_STORAGE_KEY = 'cloudssh_agent_mode';
+
 interface TerminalFillTarget {
   label: string;
   available: boolean;
@@ -95,6 +98,9 @@ export class AgentPanel {
   private livePreviewCache: string[] = [];
   private localeCleanup: (() => void) | null = null;
   private pendingTerminalSelection: TerminalSelectionContext | null = null;
+  private agentMode: AgentExecutionMode = 'interactive';
+  private autoConfirmTimer: number | null = null;
+  private autoConfirmInterval: number | null = null;
   private pendingConfirmation: {
     command: string;
     element: HTMLElement;
@@ -131,7 +137,57 @@ export class AgentPanel {
     private parentEl: HTMLElement = document.body,
     private isLoggedIn: boolean = false,
     private serverId?: number
-  ) {}
+  ) {
+    try {
+      const savedMode = localStorage.getItem(AGENT_MODE_STORAGE_KEY);
+      if (savedMode === 'auto' || savedMode === 'interactive') {
+        this.agentMode = savedMode;
+      }
+    } catch {
+      /* ignore storage access error */
+    }
+  }
+
+  getAgentMode(): AgentExecutionMode {
+    return this.agentMode;
+  }
+
+  setAgentMode(mode: AgentExecutionMode): void {
+    if (this.agentMode === mode) return;
+    this.agentMode = mode;
+    try {
+      localStorage.setItem(AGENT_MODE_STORAGE_KEY, mode);
+    } catch {
+      /* ignore */
+    }
+    this.updateModeUI();
+  }
+
+  private updateModeUI(): void {
+    const control = this.panelEl?.querySelector<HTMLElement>('#agent-mode-control');
+    if (!control) return;
+    control.dataset.activeMode = this.agentMode;
+    control.querySelectorAll<HTMLButtonElement>('.agent-mode-btn').forEach((btn) => {
+      const isActive = btn.dataset.mode === this.agentMode;
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-checked', isActive ? 'true' : 'false');
+    });
+  }
+
+  private refreshModeTooltips(): void {
+    const control = this.panelEl?.querySelector<HTMLElement>('#agent-mode-control');
+    if (!control) return;
+    const interactiveBtn = control.querySelector<HTMLButtonElement>('[data-mode="interactive"]');
+    const autoBtn = control.querySelector<HTMLButtonElement>('[data-mode="auto"]');
+    if (interactiveBtn) {
+      interactiveBtn.title = t('agent.modeInteractiveTooltip');
+      interactiveBtn.setAttribute('data-i18n-title', 'agent.modeInteractiveTooltip');
+    }
+    if (autoBtn) {
+      autoBtn.title = t('agent.modeAutoTooltip');
+      autoBtn.setAttribute('data-i18n-title', 'agent.modeAutoTooltip');
+    }
+  }
 
   setServerId(serverId?: number): void {
     const prevServerId = this.serverId;
@@ -186,7 +242,17 @@ export class AgentPanel {
             <span class="material-symbols-outlined text-[var(--accent-secondary)]" style="font-size: 18px; font-variation-settings: 'FILL' 1;">smart_toy</span>
             <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)] truncate" data-i18n="agent.title">AI Agent 助手</span>
           </div>
-          <div class="flex items-center gap-1">
+          <div class="flex items-center gap-1.5">
+            <div id="agent-mode-control" class="agent-mode-segmented" role="radiogroup" aria-label="Agent execution mode" data-active-mode="${this.agentMode}">
+              <button type="button" class="agent-mode-btn ${this.agentMode === 'interactive' ? 'is-active' : ''}" data-mode="interactive" data-i18n-title="agent.modeInteractiveTooltip" title="${t('agent.modeInteractiveTooltip')}" role="radio" aria-checked="${this.agentMode === 'interactive'}">
+                <span class="material-symbols-outlined">shield</span>
+                <span class="agent-mode-btn-text" data-i18n="agent.modeInteractiveShort">${t('agent.modeInteractiveShort')}</span>
+              </button>
+              <button type="button" class="agent-mode-btn ${this.agentMode === 'auto' ? 'is-active' : ''}" data-mode="auto" data-i18n-title="agent.modeAutoTooltip" title="${t('agent.modeAutoTooltip')}" role="radio" aria-checked="${this.agentMode === 'auto'}">
+                <span class="material-symbols-outlined">bolt</span>
+                <span class="agent-mode-btn-text" data-i18n="agent.modeAutoShort">${t('agent.modeAutoShort')}</span>
+              </button>
+            </div>
             <button id="agent-new-chat-btn" class="agent-header-btn" data-i18n-title="agent.newChat" title="${t('agent.newChat')}" aria-label="${t('agent.newChat')}">
               <span class="material-symbols-outlined" aria-hidden="true">add</span>
             </button>
@@ -280,6 +346,7 @@ export class AgentPanel {
       this.renderTerminalSelectionContext();
       this.refreshCodeBlockActions();
       this.refreshResponseActions();
+      this.refreshModeTooltips();
       if (this.isMemoryDrawerOpen) {
         this.renderMemoryContent();
       }
@@ -310,6 +377,14 @@ export class AgentPanel {
   }
 
   private bindEvents(): void {
+    this.panelEl?.querySelectorAll<HTMLButtonElement>('.agent-mode-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const mode = btn.dataset.mode as AgentExecutionMode;
+        if (mode === 'interactive' || mode === 'auto') {
+          this.setAgentMode(mode);
+        }
+      });
+    });
     this.panelEl?.querySelector('#agent-close-btn')?.addEventListener('click', () => this.hide());
     this.panelEl?.querySelector('#agent-new-chat-btn')?.addEventListener('click', () => void this.handleNewChat());
     this.panelEl?.querySelector('#agent-memory-btn')?.addEventListener('click', () => this.toggleMemoryDrawer());
@@ -416,6 +491,7 @@ export class AgentPanel {
 
   /** 离开当前会话上下文时，安全地拒绝仍在等待的危险操作。 */
   rejectPendingConfirmation(restoreFocus = true): void {
+    this.clearAutoConfirmTimers();
     this.resolvePendingConfirmation(false, restoreFocus);
   }
 
@@ -566,6 +642,7 @@ export class AgentPanel {
   }
 
   handleStop(): void {
+    this.clearAutoConfirmTimers();
     if (!this.isAgentRunning && !this.isWaitingConfirmation) return;
     this.wsSend?.(JSON.stringify({ type: 'agent_stop' }));
     if (this.isWaitingConfirmation) {
@@ -988,6 +1065,7 @@ export class AgentPanel {
   }
 
   private showConfirmDialog(command: string, reason: string): void {
+    this.clearAutoConfirmTimers();
     if (this.streamingEl) {
       this.convertStreamToThoughtStep();
     }
@@ -1001,20 +1079,40 @@ export class AgentPanel {
     this.isWaitingConfirmation = true;
     this.updateInputState();
 
+    const isAuto = this.agentMode === 'auto';
     const el = document.createElement('div');
     el.className = 'agent-confirm p-3 rounded border border-[var(--error)] bg-[var(--error-bg)]';
     el.setAttribute('role', 'alertdialog');
     el.setAttribute('aria-modal', 'true');
     el.setAttribute('aria-labelledby', 'agent-confirm-title');
     el.setAttribute('aria-describedby', 'agent-confirm-description');
+
+    const titleText = isAuto ? t('agent.confirmAutoTitle') : t('agent.confirmTitle');
+    const autoBadgeHtml = isAuto
+      ? `<span class="agent-confirm-badge text-[10px] font-bold text-warning flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-warning/15 shrink-0"><span class="material-symbols-outlined text-[12px]" style="font-variation-settings:'FILL' 1;">bolt</span>Auto</span>`
+      : '';
+    const progressBarHtml = isAuto
+      ? `<div class="agent-confirm-progress-track"><div class="agent-confirm-progress-bar"></div></div>`
+      : '';
+    const confirmBtnLabel = isAuto
+      ? t('agent.confirmAutoCountdown', { seconds: 3 })
+      : t('agent.confirm');
+
     // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     el.innerHTML = `
-      <div id="agent-confirm-title" class="text-[11px] font-bold text-[var(--error)] mb-1">⚠ ${t('agent.confirmTitle')}</div>
-      <div class="text-[12px] mb-1 font-code bg-black/20 p-1 rounded">$ ${escapeHtml(command)}</div>
+      <div class="flex items-center justify-between gap-1 mb-1">
+        <div id="agent-confirm-title" class="text-[11px] font-bold text-[var(--error)] flex items-center gap-1 min-w-0 truncate">
+          <span>⚠</span>
+          <span class="truncate">${escapeHtml(titleText)}</span>
+        </div>
+        ${autoBadgeHtml}
+      </div>
+      <div class="text-[12px] mb-1 font-code bg-black/20 p-1 rounded break-all">$ ${escapeHtml(command)}</div>
       <div id="agent-confirm-description" class="text-[11px] text-[var(--on-surface-variant)] mb-2">${escapeHtml(reason)}</div>
+      ${progressBarHtml}
       <div class="flex gap-2">
         <button type="button" class="agent-confirm-no cyber-button flex-1 py-1 text-[11px] font-bold">${t('agent.reject')}</button>
-        <button type="button" class="agent-confirm-yes cyber-button flex-1 py-1 text-[11px] font-bold bg-[var(--error)] text-white">${t('agent.confirm')}</button>
+        <button type="button" class="agent-confirm-yes cyber-button flex-1 py-1 text-[11px] font-bold bg-[var(--error)] text-white">${escapeHtml(confirmBtnLabel)}</button>
       </div>
     `;
 
@@ -1055,9 +1153,39 @@ export class AgentPanel {
     this.messagesEl?.appendChild(el);
     this.scrollToBottom();
     requestAnimationFrame(() => rejectButton.focus());
+
+    if (isAuto) {
+      let remaining = 3;
+      const progressBar = el.querySelector<HTMLElement>('.agent-confirm-progress-bar');
+      if (progressBar) {
+        requestAnimationFrame(() => {
+          progressBar.style.width = '0%';
+        });
+      }
+
+      this.autoConfirmInterval = window.setInterval(() => {
+        remaining -= 1;
+        if (remaining > 0 && confirmButton.isConnected) {
+          confirmButton.textContent = t('agent.confirmAutoCountdown', { seconds: remaining });
+        } else {
+          if (this.autoConfirmInterval !== null) {
+            window.clearInterval(this.autoConfirmInterval);
+            this.autoConfirmInterval = null;
+          }
+        }
+      }, 1000);
+
+      this.autoConfirmTimer = window.setTimeout(() => {
+        this.clearAutoConfirmTimers();
+        if (this.pendingConfirmation?.command === command) {
+          this.resolvePendingConfirmation(true);
+        }
+      }, 3000);
+    }
   }
 
   private resolvePendingConfirmation(approved: boolean, restoreFocus = true): void {
+    this.clearAutoConfirmTimers();
     const pending = this.pendingConfirmation;
     if (!pending) return;
 
@@ -1078,6 +1206,17 @@ export class AgentPanel {
         const target = pending.previousFocus?.isConnected ? pending.previousFocus : this.inputEl;
         target?.focus();
       });
+    }
+  }
+
+  private clearAutoConfirmTimers(): void {
+    if (this.autoConfirmTimer !== null) {
+      window.clearTimeout(this.autoConfirmTimer);
+      this.autoConfirmTimer = null;
+    }
+    if (this.autoConfirmInterval !== null) {
+      window.clearInterval(this.autoConfirmInterval);
+      this.autoConfirmInterval = null;
     }
   }
 
@@ -1628,6 +1767,7 @@ export class AgentPanel {
 
   dispose(): void {
     this.rejectPendingConfirmation(false);
+    this.clearAutoConfirmTimers();
     this.localeCleanup?.();
     this.localeCleanup = null;
     this.pendingTerminalSelection = null;
