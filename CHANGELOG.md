@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.3] - 2026-10-01
+
+### Added
+
+- **AI Agent 回复一键复制**：
+  - 在 AI 回复正文左下方添加轻量级操作栏与复制按钮，点击即复制原始 Markdown 格式内容；
+  - 保留排版标题、代码围栏、列表与强调格式，杜绝抓取 DOM 辅助工具栏文本；
+  - 桌面端悬停/聚焦淡入，触屏设备保持半透明常驻可见，复制成功后提供 1.5 秒高亮勾选反馈与 tooltip 提示；
+  - 覆盖流式输出结束与历史草稿恢复等全生命周期挂载。
+- **AI Agent 双运行模式与 3 秒自动批准机制（Auto 模式）**：
+  - 在 AI 面板顶部标题栏新增模式切换分段控制器（`[ 🛡️ 交互 | ⚡ Auto ]`），支持持久化用户偏好（`cloudssh_agent_mode`）；
+  - **默认交互模式**：保持人工安全确认，遇到高危操作挂起等待用户批准；
+  - **Auto 模式（无人值守）**：遇到需确认操作时弹出带有 3 秒平滑缩减进度条与动态倒计时的对话框，倒计时结束后自动放行，实现全自动推进运维任务；
+  - **随时介入与安全底线**：倒计时期间支持随时点击「拒绝」或按 `Escape` 立即阻断，或点击「立即允许」跳过等待；`rm -rf /` 等最高危黑名单命令依然受到内核级强制拦截拒不执行；
+  - 健全的定时器生命周期防泄漏机制，在任务停止、手动拒绝、会话切换或面板销毁时立即销毁定时器并阻断执行。
+- **国际化支持**：
+  - 完善中英繁（zh-CN、en-US、zh-TW）三语关于模式切换、提示与倒计时的词条。
+
 ## [2.5.2] - 2026-09-28
 
 ### Fixed
