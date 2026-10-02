@@ -157,6 +157,21 @@ describe('服务器列表多维排序', () => {
     const sorted = sortServers(sampleServers, 'updated');
     expect(sorted.map((s) => s.id)).toEqual([3, 1, 2]);
   });
+
+  it('ServerList 提供 refresh 方法并在返回主页时联动刷新', () => {
+    const serverListSource = readFileSync(
+      new URL('../frontend/src/server-list.ts', import.meta.url),
+      'utf8'
+    );
+    const mainSource = readFileSync(
+      new URL('../frontend/src/main.ts', import.meta.url),
+      'utf8'
+    );
+
+    expect(serverListSource).toContain('async refresh(): Promise<void>');
+    expect(serverListSource).toContain('server.last_connected_at = Date.now()');
+    expect(mainSource).toContain('serverList?.refresh()');
+  });
 });
 
 describe('终端响应式字号', () => {

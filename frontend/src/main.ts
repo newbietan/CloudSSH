@@ -323,6 +323,7 @@ function showConnectionPage(): void {
     requestAnimationFrame(() => {
       userThemeSegmentedControl?.refresh();
     });
+    void serverList?.refresh();
   } else {
     showAuthSection();
   }
@@ -351,6 +352,7 @@ function showOfflineUI(): void {
   if (isLoggedIn) {
     document.getElementById('user-space-section')?.classList.remove('hidden');
     document.getElementById('user-space-section')?.classList.add('flex');
+    void serverList?.refresh();
   } else {
     showAuthSection();
   }

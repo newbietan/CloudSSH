@@ -234,6 +234,17 @@ export class ServerList {
     this.renderServerGrid();
   }
 
+  /** 用户切回主页或重新展示时调用：先使用内存状态即时重排，再静默拉取后台最新数据同步 */
+  async refresh(): Promise<void> {
+    this.renderServerGrid();
+    try {
+      await this.fetchServers();
+      this.renderServerGrid();
+    } catch {
+      /* ignore network errors to keep memory state intact */
+    }
+  }
+
   /** 连接后由 os_detected 消息回调：更新某台服务器的操作系统并即时重渲染图标 */
   updateServerOS(serverId: number, os: string | null): void {
     const server = this.servers.find((s) => s.id === serverId);
@@ -679,7 +690,6 @@ export class ServerList {
   private async connectServer(serverId: number): Promise<void> {
     const server = this.servers.find((s) => s.id === serverId);
     if (!server) return;
-    server.last_connected_at = Date.now();
 
     const connectBtn = document.getElementById(`connect-${serverId}`);
     if (connectBtn) {
@@ -706,6 +716,12 @@ export class ServerList {
       }
 
       const { wsUrl } = (await res.json()) as { wsUrl: string };
+
+      // 连接凭证获取成功：记录最新连接时间并在最近连接排序下就地重置至首屏
+      server.last_connected_at = Date.now();
+      if (this.sortMode === 'recent') {
+        this.currentPage = 1;
+      }
 
       // 在当前页面内创建新标签并连接
       this.onConnect(wsUrl, server.name, {
