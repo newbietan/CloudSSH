@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.5] - 2026-10-02
+
+### Fixed
+
+- **返回主页时服务器列表最近连接排序未即时生效问题**：
+  - 为 `ServerList` 新增 `refresh()` 方法，采用“内存零延迟即时重排（`this.renderServerGrid()`）+ 后台静默同步（`this.fetchServers()`）”双阶段刷新机制，避免等待与白屏闪烁；
+  - 在获取连接凭据成功时就地记录最新时间戳，并在“最近连接”排序模式下自动重置页码至首屏（`this.currentPage = 1`）；
+  - 在用户点击标签栏「+」返回连接页（`showConnectionPage()`）及所有终端会话关闭返回主页（`showOfflineUI()`）时，联动触发 `serverList?.refresh()`，彻底根除必须手动按 F5 刷新才能看到刚连接服务器置顶的问题。
+
 ## [2.5.4] - 2026-10-01
 
 ### Added
