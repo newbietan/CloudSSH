@@ -30,32 +30,82 @@ export const AGENT_TOOLS: ToolDefinition[] = [
   tool('detect_environment', '探测当前服务器的用户、工作目录、Shell、PATH、alias 和系统环境。', {}),
 ];
 
-// Strict schemas are an upstream aid, not a replacement for validation at the execution boundary.
+// Strict schemas are an upstream aid, with resilient boundary coercion for smaller/varying models.
 export function parseToolArguments(name: string, json: string): Record<string, string | number | null> {
   const definition = AGENT_TOOLS.find(item => item.name === name);
   if (!definition) throw new Error('Unknown tool');
+
+  let cleanJson = json.trim();
+  const mdMatch = cleanJson.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (mdMatch) cleanJson = mdMatch[1].trim();
+
   let value: unknown;
-  try { value = JSON.parse(json); } catch { throw new Error('Invalid tool arguments'); }
+  try {
+    value = JSON.parse(cleanJson);
+  } catch {
+    const firstBrace = cleanJson.indexOf('{');
+    const lastBrace = cleanJson.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      try {
+        value = JSON.parse(cleanJson.slice(firstBrace, lastBrace + 1));
+      } catch {
+        throw new Error('Invalid tool arguments');
+      }
+    } else {
+      throw new Error('Invalid tool arguments');
+    }
+  }
+
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid tool arguments');
   const args = value as Record<string, unknown>;
   const result: Record<string, string | number | null> = {};
   const properties = definition.parameters.properties;
-  if (Object.keys(args).some(key => !Object.hasOwn(properties, key))) throw new Error('Unexpected tool argument');
+
   for (const [key, schema] of Object.entries(properties)) {
-    const field = args[key];
-    if (field === null && Array.isArray(schema.type)) { result[key] = null; continue; }
+    let field = args[key];
+    const allowsNull = Array.isArray(schema.type) && schema.type.includes('null');
+
+    // 允许为 null 的可选字段：缺省或显式 null 时安全回退为 null
+    if (allowsNull && (field === undefined || field === null)) {
+      result[key] = null;
+      continue;
+    }
+
+    // 允许为 null 的字段：弱模型常生成空字符串 ""，安全归一为 null
+    if (allowsNull && typeof field === 'string' && !field.trim()) {
+      result[key] = null;
+      continue;
+    }
+
+    // 非空必填字段：若未提供则拒绝
+    if (field === undefined || field === null) {
+      throw new Error(`Missing required parameter: ${key}`);
+    }
+
     const expectedType = Array.isArray(schema.type) ? schema.type[0] : schema.type;
-    if (typeof field !== expectedType) throw new Error('Invalid tool argument type');
+
+    // 类型软转换：弱模型常将数值序列化为引号字符串（如 "10000"）
+    if (expectedType === 'number' && typeof field === 'string' && field.trim()) {
+      const parsedNum = Number(field.trim());
+      if (Number.isFinite(parsedNum)) {
+        field = parsedNum;
+      }
+    }
+
+    if (typeof field !== expectedType) throw new Error(`Invalid tool argument type for ${key}`);
+
     if (typeof field === 'string') {
-      if (field.length > 16_000 || (schema.type === 'string' && !field.trim()) ||
-        (schema.enum && !schema.enum.includes(field))) throw new Error('Invalid tool argument value');
+      if (field.length > 16_000) throw new Error('Tool argument value exceeds limit');
+      if (!field.trim()) throw new Error('Empty string argument');
+      if (schema.enum && !schema.enum.includes(field)) throw new Error('Invalid enum value');
       result[key] = field;
     } else if (typeof field === 'number') {
       if (!Number.isFinite(field) || (schema.minimum != null && field < schema.minimum) ||
-        (schema.maximum != null && field > schema.maximum)) throw new Error('Invalid tool argument value');
+        (schema.maximum != null && field > schema.maximum)) throw new Error('Invalid number range');
       result[key] = field;
     }
   }
+
   if (name === 'docker_manage' && !['ps', 'images'].includes(String(result.action)) && !result.target) {
     throw new Error('Missing Docker target');
   }

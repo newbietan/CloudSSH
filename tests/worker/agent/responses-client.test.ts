@@ -194,14 +194,27 @@ describe('Responses protocol and execution boundary', () => {
     expect(keys).toHaveLength(3); expect(new Set(keys).size).toBe(1);
   });
 
-  it('uses strict schemas but still validates every argument locally', () => {
+  it('uses strict schemas while providing resilient coercion for smaller/varying models', () => {
     for (const tool of AGENT_TOOLS) {
       expect(tool).not.toHaveProperty('function');
       expect(tool.parameters.required).toEqual(Object.keys(tool.parameters.properties));
       expect(tool.parameters.additionalProperties).toBe(false);
     }
+    // 标准完整参数
     expect(parseToolArguments('execute_command', '{"command":"df -h","timeout_ms":null}')).toEqual({ command: 'df -h', timeout_ms: null });
-    for (const args of ['not JSON', '[]', '{"command":5,"timeout_ms":null}', '{"command":"df","timeout_ms":null,"evil":true}', '{"command":"df"}', '{"command":"df","timeout_ms":999999}']) {
+    // 弱模型常见容错：漏传可选为null的字段，回退默认 null
+    expect(parseToolArguments('execute_command', '{"command":"df -h"}')).toEqual({ command: 'df -h', timeout_ms: null });
+    // 弱模型常见容错：数字以字符串传参，自动类型软转换
+    expect(parseToolArguments('execute_command', '{"command":"df -h","timeout_ms":"15000"}')).toEqual({ command: 'df -h', timeout_ms: 15000 });
+    // 弱模型常见容错：多余幻觉字段静默忽略
+    expect(parseToolArguments('execute_command', '{"command":"df -h","timeout_ms":null,"extra":"noise"}')).toEqual({ command: 'df -h', timeout_ms: null });
+    // 弱模型常见容错：参数外层包裹 markdown ```json 标记
+    expect(parseToolArguments('execute_command', '```json\n{"command":"df -h"}\n```')).toEqual({ command: 'df -h', timeout_ms: null });
+    // 弱模型常见容错：空字符串在允许为 null 字段上安全归一为 null
+    expect(parseToolArguments('docker_manage', '{"action":"ps","target":"","options":""}')).toEqual({ action: 'ps', target: null, options: null });
+
+    // 真正非法的参数依然严格抛错
+    for (const args of ['not JSON', '[]', '{"command":5,"timeout_ms":null}', '{"command":"   "}', '{"command":"df","timeout_ms":999999}']) {
       expect(() => parseToolArguments('execute_command', args)).toThrow();
     }
     expect(() => parseToolArguments('unknown', '{}')).toThrow();
