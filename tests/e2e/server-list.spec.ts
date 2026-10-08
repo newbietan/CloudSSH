@@ -231,6 +231,8 @@ test('CF 隧道模式：表单隐藏端口字段、卡片仅展示域名、保�
 
   // 新建：默认直连显示端口字段；切到隧道后隐藏，切回直连恢复
   await page.locator('#add-server-btn').click();
+  // Wait for the modal's deferred initial focus before sequential fills can race it.
+  await expect(page.locator('#server-name')).toBeFocused();
   await expect(page.locator('#server-port-field')).toBeVisible();
   await page.locator('#modal-transport-tab-tunnel').click();
   await expect(page.locator('#server-port-field')).toBeHidden();

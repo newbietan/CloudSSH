@@ -1,297 +1,145 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentCore } from '../../src/worker/agent/core';
 import { TerminalContext } from '../../src/worker/agent/terminal-context';
-import type { AIConfig } from '../../src/worker/agent/types';
+import { aiConfig, functionCall, reply } from './agent/responses-fixtures';
 
-function createMockSSEResponse(chunks: string[]): Response {
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    start(controller) {
-      for (const chunk of chunks) {
-        controller.enqueue(encoder.encode(chunk));
-      }
-      controller.close();
-    },
-  });
-  return new Response(stream, {
-    status: 200,
-    headers: { 'Content-Type': 'text/event-stream' },
-  });
+vi.mock('../../src/worker/agent/ssrf', () => ({ validateBaseUrlWithDNS: async () => ({ valid: true }) }));
+
+function setup(exec?: (command: string, timeout: number, signal?: AbortSignal) => Promise<any>, config = async () => aiConfig) {
+  const frames: any[] = [];
+  const command = vi.fn(exec || (async () => ({ stdout: 'Linux', stderr: '', exitCode: 0 })));
+  const agent = new AgentCore(new TerminalContext(), frame => frames.push(frame), config, command, async () => true);
+  return { agent, frames, command };
 }
+afterEach(() => vi.restoreAllMocks());
 
-describe('AgentCore 任务停止、抢占与会话重置控制机制', () => {
-  const dummyAIConfig: AIConfig = {
-    base_url: 'https://api.openai.com/v1',
-    model: 'gpt-4o',
-    api_key: 'test-key',
-  };
-
-  it('用户手动停止任务时（agentAbort("user_stopped")），准确推送中文手动停止文案而非超时', async () => {
-    const frontendFrames: any[] = [];
-    const terminalContext = new TerminalContext();
-    const sendToFrontend = (msg: any) => frontendFrames.push(msg);
-    const fetchAIConfig = async () => dummyAIConfig;
-    const execCommand = vi.fn(async (_cmd: string, _timeout: number, signal?: AbortSignal) => {
-      // 模拟执行长时间命令时，用户在前端点击了 Stop
-      agent.agentAbort('user_stopped');
-      if (signal?.aborted) {
-        throw new Error('Command aborted');
-      }
-      return { stdout: 'done', stderr: '', exitCode: 0 };
+describe('Responses task control', () => {
+  it.each(['zh-CN', 'zh-TW', 'en-US'] as const)('stops and closes every call before continuing (%s)', async locale => {
+    let agent: AgentCore;
+    const created = setup(async command => {
+      if (!command.includes('PWD:$(pwd)')) agent.agentAbort('user_stopped');
+      return { stdout: 'partial', stderr: '', exitCode: 0 };
+    }); agent = created.agent;
+    const requests: any[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const body = JSON.parse(init?.body as string); requests.push(body);
+      return requests.length === 1 ? reply('resp_1', '', [functionCall('one'), functionCall('two')], body)
+        : reply('resp_2', '继续前先核查状态', [], body);
     });
-    const askConfirmation = vi.fn(async () => true);
-
-    const agent = new AgentCore(
-      terminalContext,
-      sendToFrontend,
-      fetchAIConfig,
-      execCommand,
-      askConfirmation
-    );
-
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => {
-      if (String(url).includes('chat/completions')) {
-        return createMockSSEResponse([
-          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"execute_command","arguments":"{\\"command\\":\\"sleep 10\\"}"}}]}}]}\n\n',
-          'data: [DONE]\n\n',
-        ]);
-      }
-      return new Response('{}', { status: 200 });
-    });
-
-    try {
-      await agent.handleAgentStart('user-1', '测试停止', 'zh-CN');
-
-      expect(agent.getStatus()).toBe('idle');
-      const responseFrame = frontendFrames.find(
-        (f) => f.subType === 'response' && f.content.includes('Agent 任务已由用户手动停止。')
-      );
-      expect(responseFrame).toBeDefined();
-      expect(responseFrame.content).not.toContain('执行超时');
-    } finally {
-      fetchSpy.mockRestore();
-    }
+    await agent.handleAgentStart('1', '开始', locale);
+    expect(created.frames.find(frame => frame.messageKey === 'agent.stopped')).toBeDefined();
+    expect(created.frames.at(-1)).toMatchObject({ subType: 'run_end', outcome: 'stopped' });
+    await agent.handleAgentStart('1', '不要重复执行，只检查状态', locale);
+    const outputs = requests[1].input.filter((item: any) => item.type === 'function_call_output');
+    expect(outputs.map((item: any) => item.call_id)).toEqual(['one', 'two']);
+    expect(JSON.parse(outputs[0].output).status).toBe('unknown');
+    expect(JSON.parse(outputs[1].output).status).toBe('cancelled');
+    expect(created.command).toHaveBeenCalledTimes(2); // initial environment + only the first call
   });
 
-  it('英文环境下手动停止任务时，准确推送英文停止文案', async () => {
-    const frontendFrames: any[] = [];
-    const terminalContext = new TerminalContext();
-    const sendToFrontend = (msg: any) => frontendFrames.push(msg);
-    const fetchAIConfig = async () => dummyAIConfig;
-    const execCommand = vi.fn(async () => {
-      agent.agentAbort('user_stopped');
-      return { stdout: 'done', stderr: '', exitCode: 0 };
+  it('resets the response pointer/cache key and detects environment again', async () => {
+    const { agent, command } = setup();
+    const requests: any[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const body = JSON.parse(init?.body as string); requests.push(body);
+      return reply(`resp_${requests.length}`, '完成', [], body);
     });
-    const askConfirmation = vi.fn(async () => true);
-
-    const agent = new AgentCore(
-      terminalContext,
-      sendToFrontend,
-      fetchAIConfig,
-      execCommand,
-      askConfirmation
-    );
-
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => {
-      if (String(url).includes('chat/completions')) {
-        return createMockSSEResponse([
-          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"execute_command","arguments":"{\\"command\\":\\"tail -f /var/log/syslog\\"}"}}]}}]}\n\n',
-          'data: [DONE]\n\n',
-        ]);
-      }
-      return new Response('{}', { status: 200 });
-    });
-
-    try {
-      await agent.handleAgentStart('user-1', 'Tail syslog', 'en-US');
-
-      expect(agent.getStatus()).toBe('idle');
-      const responseFrame = frontendFrames.find(
-        (f) => f.subType === 'response' && f.content === 'Agent task stopped by user.'
-      );
-      expect(responseFrame).toBeDefined();
-
-      frontendFrames.length = 0;
-      await agent.handleAgentStart('user-1', '查看日誌', 'zh-TW');
-      expect(agent.getStatus()).toBe('idle');
-      const responseFrameTW = frontendFrames.find(
-        (f) => f.subType === 'response' && f.content === 'Agent 任務已由使用者手動停止。'
-      );
-      expect(responseFrameTW).toBeDefined();
-    } finally {
-      fetchSpy.mockRestore();
-    }
+    await agent.handleAgentStart('1', '第一轮');
+    await agent.handleAgentStart('1', '第二轮');
+    expect(command).toHaveBeenCalledTimes(1);
+    expect(requests[1].previous_response_id).toBe('resp_1');
+    agent.resetSession();
+    expect((agent as any).context.pending).toEqual([]);
+    expect((agent as any).context.responseId).toBeUndefined();
+    await agent.handleAgentStart('1', '新会话');
+    expect(command).toHaveBeenCalledTimes(2);
+    expect(requests[2]).not.toHaveProperty('previous_response_id');
+    expect(requests[2].prompt_cache_key).not.toBe(requests[0].prompt_cache_key);
   });
 
-  it('未完成任务时新发起请求（抢占式中止 superseded），不发送超时或错误提示，新任务顺利执行', async () => {
-    const frontendFrames: any[] = [];
-    const terminalContext = new TerminalContext();
-    const sendToFrontend = (msg: any) => frontendFrames.push(msg);
-    const fetchAIConfig = async () => dummyAIConfig;
-    let commandCount = 0;
-    const execCommand = vi.fn(async () => {
-      commandCount++;
-      return { stdout: `Output ${commandCount}`, stderr: '', exitCode: 0 };
+  it('edits a user turn by branching from its starting response, not from later state', async () => {
+    const { agent } = setup();
+    const requests: any[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const body = JSON.parse(init?.body as string); requests.push(body);
+      return reply(`resp_${requests.length}`, '完成', [], body);
     });
-    const askConfirmation = vi.fn(async () => true);
-
-    const agent = new AgentCore(
-      terminalContext,
-      sendToFrontend,
-      fetchAIConfig,
-      execCommand,
-      askConfirmation
-    );
-
-    let callCount = 0;
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => {
-      if (String(url).includes('chat/completions')) {
-        callCount++;
-        return createMockSSEResponse([
-          `data: {"choices":[{"delta":{"content":"第 ${callCount} 次响应成功。"}},{"finish_reason":"stop"}]}\n\n`,
-          'data: [DONE]\n\n',
-        ]);
-      }
-      return new Response('{}', { status: 200 });
-    });
-
-    try {
-      // 模拟先启动第 1 个任务（故意让状态变为 running）
-      (agent as any).state.status = 'running';
-
-      // 启动新任务（supersede 抢占）
-      await agent.handleAgentStart('user-1', '抢占发起的新任务', 'zh-CN');
-
-      expect(agent.getStatus()).toBe('idle');
-      // 确保没有发送超时提醒
-      const timeoutFrame = frontendFrames.find(
-        (f) => f.subType === 'response' && f.content.includes('执行超时')
-      );
-      expect(timeoutFrame).toBeUndefined();
-
-      // 确保新任务正常生成了回复（stream_end 或 response）
-      const newResponse = frontendFrames.find(
-        (f) =>
-          (f.subType === 'stream_end' || f.subType === 'response') &&
-          f.content?.includes('第 1 次响应成功')
-      );
-      expect(newResponse).toBeDefined();
-    } finally {
-      fetchSpy.mockRestore();
-    }
+    await agent.handleAgentStart('1', '第一轮');
+    await agent.handleAgentStart('1', '第二轮');
+    await agent.handleAgentStart('1', '修改第二轮', 'zh-CN', undefined, 1);
+    expect(requests[2].previous_response_id).toBe('resp_1');
+    expect(requests[2].input.some((item: any) => item.content === '第二轮')).toBe(false);
+    expect(JSON.stringify(requests[2].input)).toContain('does not undo remote operations');
+    await agent.handleAgentStart('1', '修改第一轮', 'zh-CN', undefined, 0);
+    expect(requests[3]).not.toHaveProperty('previous_response_id');
+    expect(JSON.stringify(requests[3].input)).not.toContain('修改第二轮');
   });
 
-  it('resetSession() 彻底清空历史消息与状态，下一轮提问作为崭新会话重新检测环境', async () => {
-    const frontendFrames: any[] = [];
-    const terminalContext = new TerminalContext();
-    const sendToFrontend = (msg: any) => frontendFrames.push(msg);
-    const fetchAIConfig = async () => dummyAIConfig;
-    const detectedEnvs: string[] = [];
-    const execCommand = vi.fn(async (cmd: string) => {
-      if (cmd.includes('PWD:$(pwd)')) {
-        detectedEnvs.push(cmd);
-        return { stdout: 'Linux Ubuntu 22.04', stderr: '', exitCode: 0 };
-      }
-      return { stdout: 'ok', stderr: '', exitCode: 0 };
-    });
-    const askConfirmation = vi.fn(async () => true);
-
-    const agent = new AgentCore(
-      terminalContext,
-      sendToFrontend,
-      fetchAIConfig,
-      execCommand,
-      askConfirmation
-    );
-
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => {
-      if (String(url).includes('chat/completions')) {
-        return createMockSSEResponse([
-          'data: {"choices":[{"delta":{"content":"完成。"}},{"finish_reason":"stop"}]}\n\n',
-          'data: [DONE]\n\n',
-        ]);
-      }
-      return new Response('{}', { status: 200 });
-    });
-
-    try {
-      // 轮次 1：首次会话，触发环境探测
-      await agent.handleAgentStart('user-1', '第一次提问', 'zh-CN');
-      expect(detectedEnvs.length).toBe(1);
-
-      // 轮次 2：后续提问（未重置），不重新探测环境
-      await agent.handleAgentStart('user-1', '第二次提问', 'zh-CN');
-      expect(detectedEnvs.length).toBe(1);
-
-      // 执行重置
-      agent.resetSession();
-      expect(agent.getStatus()).toBe('idle');
-      expect((agent as any).state.messages).toHaveLength(0);
-      expect((agent as any).state.iteration).toBe(0);
-
-      // 轮次 3：重置后提问，必须重新触发首次环境探测
-      await agent.handleAgentStart('user-1', '重置后新话题', 'zh-CN');
-      expect(detectedEnvs.length).toBe(2);
-    } finally {
-      fetchSpy.mockRestore();
-    }
+  it('rejects invalid historical indices without switching to the latest chain', async () => {
+    const { agent, frames } = setup();
+    const mock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(reply('resp_1'));
+    await agent.handleAgentStart('1', '开始');
+    await agent.handleAgentStart('1', '编辑', 'zh-CN', undefined, 999);
+    expect(mock).toHaveBeenCalledTimes(1);
+    expect((agent as any).context.responseId).toBe('resp_1');
+    expect(frames.find(frame => frame.code === 'responses_history')).toBeDefined();
   });
 
-  it('handleAgentStart 携带 userIndex 支持原地编辑重发并截断其后所有历史轮次', async () => {
-    const frontendFrames: any[] = [];
-    const terminalContext = new TerminalContext();
-    const sendToFrontend = (msg: any) => frontendFrames.push(msg);
-    const fetchAIConfig = async () => dummyAIConfig;
-    const execCommand = vi.fn(async () => ({ stdout: 'ok', stderr: '', exitCode: 0 }));
-    const askConfirmation = vi.fn(async () => true);
+  it('does not reuse response IDs or stored credentials after configuration changes', async () => {
+    let config = aiConfig;
+    const { agent, frames } = setup(undefined, async () => config);
+    const mock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => reply('resp_1', '完成', [], JSON.parse(init?.body as string)));
+    await agent.handleAgentStart('1', '开始');
+    config = { ...aiConfig, base_url: 'https://another.example/v1', api_key: 'new-key' };
+    await agent.handleAgentStart('1', '继续');
+    expect(mock).toHaveBeenCalledTimes(1);
+    expect(frames.find(frame => frame.code === 'responses_config_changed')).toBeDefined();
+    agent.resetSession();
+    await agent.handleAgentStart('1', '新会话');
+    expect(mock).toHaveBeenLastCalledWith('https://another.example/v1/responses', expect.anything());
+  });
 
-    const agent = new AgentCore(
-      terminalContext,
-      sendToFrontend,
-      fetchAIConfig,
-      execCommand,
-      askConfirmation
-    );
-
-    let roundCount = 0;
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => {
-      if (String(url).includes('chat/completions')) {
-        roundCount++;
-        return createMockSSEResponse([
-          `data: {"choices":[{"delta":{"content":"回复轮次 ${roundCount}。"}},{"finish_reason":"stop"}]}\n\n`,
-          'data: [DONE]\n\n',
-        ]);
-      }
-      return new Response('{}', { status: 200 });
+  it('drains a superseded command before replacement execution and suppresses stale frames', async () => {
+    let started!: () => void;
+    const executing = new Promise<void>(resolve => { started = resolve; });
+    let active = 0;
+    const created = setup(async (command, _timeout, signal) => {
+      if (command.includes('PWD:$(pwd)')) return { stdout: 'Linux', stderr: '', exitCode: 0 };
+      active++;
+      expect(active).toBe(1);
+      started();
+      try {
+        await new Promise((_resolve, reject) => signal!.addEventListener('abort', () => reject(signal!.reason), { once: true }));
+        return { stdout: 'done', stderr: '', exitCode: 0 };
+      } finally { active--; }
     });
+    const requests: any[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const body = JSON.parse(init?.body as string); requests.push(body);
+      return requests.length === 1 ? reply('resp_1', '', [functionCall()], body) : reply('resp_2', '新任务完成', [], body);
+    });
+    const old = created.agent.handleAgentStart('1', '旧任务');
+    await executing;
+    const replacement = created.agent.handleAgentStart('1', '新任务');
+    await Promise.all([old, replacement]);
+    expect(active).toBe(0);
+    expect(requests[1].previous_response_id).toBe('resp_1');
+    expect(JSON.parse(requests[1].input.find((item: any) => item.type === 'function_call_output').output).status).toBe('unknown');
+    expect(created.frames.filter(frame => frame.subType === 'run_end')).toEqual([expect.objectContaining({ runId: 2, outcome: 'completed' })]);
+  });
 
-    try {
-      // 轮次 1：第 0 条用户消息
-      await agent.handleAgentStart('user-1', '第一条消息：查内存', 'zh-CN');
-      expect((agent as any).state.messages).toHaveLength(3); // system + user1 + assistant1
-
-      // 轮次 2：第 1 条用户消息
-      await agent.handleAgentStart('user-1', '第二条消息：查网络', 'zh-CN');
-      expect((agent as any).state.messages).toHaveLength(5); // system + user1 + assistant1 + user2 + assistant2
-      const messagesBeforeEdit = (agent as any).state.messages;
-      expect(messagesBeforeEdit.some((m: any) => m.content === '第二条消息：查网络')).toBe(true);
-
-      // 轮次 3：用户原地编辑第 0 条消息为 "第一条消息修改：查CPU"，并传入 userIndex: 0
-      await agent.handleAgentStart(
-        'user-1',
-        '第一条消息修改：查CPU',
-        'zh-CN',
-        undefined,
-        0 // userIndex: 0
-      );
-
-      const messagesAfterEdit = (agent as any).state.messages;
-      // 验证第 1 条及其之后的消息已被截断丢弃，仅保留 system + user1_new + assistant3
-      expect(messagesAfterEdit).toHaveLength(3);
-      expect(messagesAfterEdit.some((m: any) => m.content === '第二条消息：查网络')).toBe(false);
-      expect(messagesAfterEdit.some((m: any) => m.content === '第一条消息修改：查CPU')).toBe(true);
-    } finally {
-      fetchSpy.mockRestore();
-    }
+  it('reset during config loading prevents late initialization/output', async () => {
+    let resolveConfig!: (value: typeof aiConfig) => void;
+    const loading = new Promise<typeof aiConfig>(resolve => { resolveConfig = resolve; });
+    const { agent, command, frames } = setup(undefined, async () => loading);
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+    const pending = agent.handleAgentStart('1', '开始');
+    agent.resetSession();
+    resolveConfig(aiConfig);
+    await pending;
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(command).not.toHaveBeenCalled();
+    expect((agent as any).context.responseId).toBeUndefined();
+    expect(frames.filter(frame => frame.subType === 'run_end')).toEqual([]);
   });
 });

@@ -1,5 +1,7 @@
 // AI Config panel — BYOK settings for LLM API
 
+import { normalizeAIBaseUrl } from '../../src/ai-endpoint';
+import { responseErrorMessage } from './agent/response-errors';
 import { t, translateDocument } from './i18n';
 
 export class AIConfigPanel {
@@ -27,6 +29,8 @@ export class AIConfigPanel {
     this.modalEl.id = 'ai-config-modal';
     this.modalEl.className =
       'responsive-modal hidden fixed inset-0 z-[100] flex items-center justify-center';
+    // Static markup and trusted bundled i18n only; user config is assigned through input.value.
+    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     this.modalEl.innerHTML = `
       <div class="modal-overlay absolute inset-0" id="ai-modal-backdrop"></div>
       <div class="responsive-modal-panel cyber-box p-6 shadow-2xl relative z-10 w-full max-w-md sm:max-w-lg mx-4">
@@ -44,7 +48,8 @@ export class AIConfigPanel {
               <span class="text-muted mr-2">&gt;</span>
               <input id="ai-base-url" class="terminal-input text-[13px]" placeholder="https://api.openai.com/v1" type="url" required>
             </div>
-            <div class="text-[10px] text-muted opacity-60 mt-1" data-i18n="aiConfig.compatibleHint">支持 OpenAI、DeepSeek、通义千问、Kimi、OpenRouter 等兼容接口</div>
+            <div class="text-[10px] text-muted opacity-60 mt-1" data-i18n="aiConfig.compatibleHint">${t('aiConfig.compatibleHint')}</div>
+            <div class="text-[10px] text-muted mt-2" data-i18n="aiConfig.retentionHint">${t('aiConfig.retentionHint')}</div>
           </div>
           <div>
             <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="aiConfig.apiKey">API 密钥</label>
@@ -109,6 +114,7 @@ export class AIConfigPanel {
               >获取模型列表</button>
             </div>
             <div id="ai-fetch-status" class="text-[10px] mt-1 hidden"></div>
+            <div class="text-[10px] text-muted mt-1" data-i18n="aiConfig.modelDiscoveryHint">${t('aiConfig.modelDiscoveryHint')}</div>
           </div>
           <div class="pt-2 space-y-2">
             <div id="ai-config-error" class="text-[var(--error)] text-[11px] hidden"></div>
@@ -228,17 +234,11 @@ export class AIConfigPanel {
   }
 
   private isSameBaseUrl(urlA: string, urlB: string): boolean {
-    const normalize = (u: string) => {
-      let s = u.trim().replace(/\/+$/, '');
-      if (s.endsWith('/chat/completions')) {
-        s = s.slice(0, -'/chat/completions'.length).replace(/\/+$/, '');
-      }
-      if (s.endsWith('/models')) {
-        s = s.slice(0, -'/models'.length).replace(/\/+$/, '');
-      }
-      return s.toLowerCase();
-    };
-    return Boolean(urlA && urlB && normalize(urlA) === normalize(urlB));
+    try {
+      return normalizeAIBaseUrl(urlA) === normalizeAIBaseUrl(urlB);
+    } catch {
+      return false;
+    }
   }
 
   private updateClearButtonVisibility(): void {
@@ -412,6 +412,10 @@ export class AIConfigPanel {
       return;
     }
 
+    let root: string;
+    try { root = normalizeAIBaseUrl(baseUrl); }
+    catch { this.showFetchStatus(responseErrorMessage('responses_address'), true); return; }
+
     // 若未填 apiKey 且此前未配置过有效密钥，才强制要求填写
     if (!apiKey && !this.hasConfiguredKey) {
       this.showFetchStatus(t('aiConfig.credentialsRequired'), true);
@@ -430,7 +434,7 @@ export class AIConfigPanel {
     this.showFetchStatus(t('aiConfig.loadingModels'));
 
     try {
-      const body: { base_url: string; api_key?: string } = { base_url: baseUrl };
+      const body: { base_url: string; api_key?: string } = { base_url: root };
       if (apiKey) {
         body.api_key = apiKey;
       }
@@ -444,7 +448,7 @@ export class AIConfigPanel {
       const data = (await res.json()) as any;
 
       if (data.error) {
-        this.showFetchStatus(data.error, true);
+        this.showFetchStatus(data.code ? responseErrorMessage(data.code) : data.error, true);
         return;
       }
 
@@ -497,7 +501,7 @@ export class AIConfigPanel {
     const apiKeyEl = this.modalEl?.querySelector('#ai-api-key') as HTMLInputElement | null;
     const modelEl = this.modalEl?.querySelector('#ai-model') as HTMLInputElement | null;
 
-    const baseUrl = baseUrlEl?.value.trim() || '';
+    let baseUrl = baseUrlEl?.value.trim() || '';
     const apiKey = apiKeyEl?.value.trim() || '';
     const model = modelEl?.value.trim() || '';
 
@@ -512,6 +516,16 @@ export class AIConfigPanel {
         errorEl.textContent = t('aiConfig.required');
         errorEl.classList.remove('hidden');
       }
+      return;
+    }
+
+    try { baseUrl = normalizeAIBaseUrl(baseUrl); }
+    catch {
+      if (errorEl) { errorEl.textContent = responseErrorMessage('responses_address'); errorEl.classList.remove('hidden'); }
+      return;
+    }
+    if (!apiKey && this.hasConfiguredKey && !this.isSameBaseUrl(baseUrl, this.savedBaseUrl)) {
+      if (errorEl) { errorEl.textContent = t('aiConfig.urlChangedKeyRequired'); errorEl.classList.remove('hidden'); }
       return;
     }
 
@@ -540,7 +554,7 @@ export class AIConfigPanel {
       } else {
         const data = (await res.json()) as any;
         if (errorEl) {
-          errorEl.textContent = data.error || t('feedback.danger');
+          errorEl.textContent = data.code ? responseErrorMessage(data.code) : data.error || t('feedback.danger');
           errorEl.classList.remove('hidden');
         }
       }

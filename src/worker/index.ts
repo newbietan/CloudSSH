@@ -1,3 +1,4 @@
+import { normalizeAIBaseUrl } from '../ai-endpoint';
 import {
   MAX_CUSTOM_THEMES,
   normalizeThemeData,
@@ -877,17 +878,11 @@ async function handleSnippetsRoute(request: Request, url: URL, env: Env): Promis
 // ==================== AI config routes ====================
 
 function isSameBaseUrl(urlA: string, urlB: string): boolean {
-  const normalize = (u: string) => {
-    let s = u.trim().replace(/\/+$/, '');
-    if (s.endsWith('/chat/completions')) {
-      s = s.slice(0, -'/chat/completions'.length).replace(/\/+$/, '');
-    }
-    if (s.endsWith('/models')) {
-      s = s.slice(0, -'/models'.length).replace(/\/+$/, '');
-    }
-    return s.toLowerCase();
-  };
-  return normalize(urlA) === normalize(urlB);
+  try {
+    return normalizeAIBaseUrl(urlA) === normalizeAIBaseUrl(urlB);
+  } catch {
+    return false;
+  }
 }
 
 function sanitizeAIErrorMessage(msg: string, secret?: string): string {
@@ -932,6 +927,11 @@ async function handleAIRoute(request: Request, url: URL, env: Env): Promise<Resp
 
     // SSRF validation for base_url
     if (body.base_url) {
+      try {
+        body.base_url = normalizeAIBaseUrl(body.base_url as string);
+      } catch {
+        return Response.json({ error: 'Invalid Responses API address', code: 'responses_address' }, { status: 400 });
+      }
       const { validateBaseUrlWithDNS } = await import('./agent/ssrf');
       const check = await validateBaseUrlWithDNS(body.base_url as string);
       if (!check.valid) {
@@ -999,6 +999,12 @@ async function handleAIModelsProxy(
     return Response.json({ error: 'Missing base_url or api_key' }, { status: 400 });
   }
 
+  try {
+    effectiveBaseUrl = normalizeAIBaseUrl(effectiveBaseUrl);
+  } catch {
+    return Response.json({ error: 'Invalid Responses API address', code: 'responses_address' }, { status: 400 });
+  }
+
   // SSRF validation
   const { validateBaseUrlWithDNS } = await import('./agent/ssrf');
   const check = await validateBaseUrlWithDNS(effectiveBaseUrl);
@@ -1007,11 +1013,7 @@ async function handleAIModelsProxy(
   }
 
   try {
-    let cleanBaseUrl = effectiveBaseUrl.replace(/\/$/, '');
-    if (cleanBaseUrl.endsWith('/chat/completions')) {
-      cleanBaseUrl = cleanBaseUrl.slice(0, -'/chat/completions'.length);
-    }
-    const modelsUrl = `${cleanBaseUrl}/models`;
+    const modelsUrl = `${effectiveBaseUrl}/models`;
 
     const res = await fetch(modelsUrl, {
       redirect: 'manual', // Cloudflare Workers only supports 'follow' or 'manual'

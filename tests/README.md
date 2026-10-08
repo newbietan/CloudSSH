@@ -92,6 +92,8 @@ pnpm run verify
 - 键盘交互认证、OS 检测、跳板链、SFTP 上传冲突、分享会话策略
 - UserDB 服务器标签/片段迁移、规范化、序列化、更新与隔离
 - AI 模型代理安全：同 Base URL 强绑定免密拉取、跨地址凭据外带拦截（Credential Exfiltration）、CSRF Origin 防护与敏感 Token 脱敏
+- Responses Agent：HTTP/SSE 跨 chunk 与 CRLF、完整结束事件、上游有状态能力核实、call_id 配对、严格参数、停止/抢占/重置/编辑分支、预算检查点、独立结构化记忆与 usage
+- 流中断/incomplete 不执行残缺工具、不泄露 reasoning；新任务先等旧 exec 清理，不自动重放已执行命令
 
 ### 前端与构建
 
@@ -115,6 +117,7 @@ pnpm run verify
 - 服务器标签筛选、分页与配置快速克隆
 - 多标签操作：双击内联重命名、空值与失焦恢复、右键菜单项与外部点击关闭
 - Agent 终端选区附件与快捷诊断 Prompt 气泡点击填入
+- Responses 前端任务生命周期：正文结束继续运行、run_end 才结束、requestId 隔离过期帧、中文/繁中/英文错误与留存提示
 - 终端选区复制与焦点恢复
 - 认证挑战对话框、iOS 输入法、移动端后台连接恢复与分享会话领取
 - SFTP 覆盖确认、路径面包屑、表头排序、新建文件、主题样式与 UI 回归

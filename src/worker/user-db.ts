@@ -1,3 +1,4 @@
+import { normalizeAIBaseUrl } from '../ai-endpoint';
 import {
   MAX_SERVER_KNOWLEDGE,
   MAX_SERVER_WORK_LOGS,
@@ -2170,11 +2171,20 @@ export class UserDBDO {
       return Response.json({ error: 'Missing user_id, base_url or model' }, { status: 400 });
     }
 
-    // Check if an existing configuration exists with a valid API key
-    const existing = this.db
-      .exec('SELECT api_key_enc FROM ai_configs WHERE user_id = ?', body.user_id)
-      .toArray();
-    const hasExistingKey = existing.length > 0 && !!(existing[0] as any).api_key_enc;
+    try {
+      body.base_url = normalizeAIBaseUrl(body.base_url);
+    } catch {
+      return Response.json({ error: 'Invalid Responses API address', code: 'responses_address' }, { status: 400 });
+    }
+    const existing = this.query<{ base_url: string; api_key_enc: string }>(
+      'SELECT base_url, api_key_enc FROM ai_configs WHERE user_id = ?', body.user_id
+    );
+    const hasExistingKey = existing.length > 0 && !!existing[0].api_key_enc;
+    if (!body.api_key && hasExistingKey) {
+      let sameAddress = false;
+      try { sameAddress = normalizeAIBaseUrl(existing[0].base_url) === body.base_url; } catch { /* Legacy addresses need explicit reconfiguration. */ }
+      if (!sameAddress) return Response.json({ error: 'API address changed; provide a new key', code: 'responses_key_required' }, { status: 400 });
+    }
 
     if (!body.api_key && !hasExistingKey) {
       return Response.json({ error: '首次配置必须填写 API Key' }, { status: 400 });

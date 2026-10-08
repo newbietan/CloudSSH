@@ -2142,7 +2142,8 @@ export class SSHSession {
             parsed.locale,
             parsed.timezone,
             parsed.supersede === true,
-            typeof parsed.userIndex === 'number' ? parsed.userIndex : undefined
+            typeof parsed.userIndex === 'number' ? parsed.userIndex : undefined,
+            typeof parsed.requestId === 'string' && parsed.requestId.length <= 64 ? parsed.requestId : undefined
           );
           return;
         }
@@ -2820,7 +2821,8 @@ export class SSHSession {
     requestedLocale?: string,
     requestedTimezone?: string,
     supersede = false,
-    userIndex?: number
+    userIndex?: number,
+    requestId?: string
   ): Promise<void> {
     if (this.config.sessionPolicy?.source === 'share') {
       this.sendAgentFrame({
@@ -2931,7 +2933,7 @@ export class SSHSession {
       requestedTimezone.length <= 64
         ? requestedTimezone
         : undefined;
-    void this.agentCore.handleAgentStart(effectiveUserId, userMessage, locale, timezone, userIndex);
+    void this.agentCore.handleAgentStart(effectiveUserId, userMessage, locale, timezone, userIndex, requestId);
   }
 
   /**

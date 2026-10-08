@@ -1,59 +1,69 @@
-// Agent type definitions shared across all agent modules
+// Responses wire types and bounded, local task records. Task records are never replayed as chat history.
+import type {
+  KnowledgeAction,
+  KnowledgeCategory,
+  ServerKnowledgeItem,
+  ServerWorkLog,
+  UnifiedServerMemory,
+  WorkLogMode,
+} from '../../server-memory-schema';
 
-export type MessageRole = 'system' | 'user' | 'assistant' | 'tool';
+export type { ServerWorkLog, ServerKnowledgeItem, UnifiedServerMemory, KnowledgeCategory, WorkLogMode, KnowledgeAction };
 
-export interface ChatMessage {
-  role: MessageRole;
-  content: string | null;
-  tool_calls?: ToolCall[];
-  tool_call_id?: string;
+export interface ResponseFunctionCall {
+  type: 'function_call';
+  id: string;
+  call_id: string;
+  name: string;
+  arguments: string;
+  status: 'completed';
+}
+
+export type ResponseInput =
+  | { role: 'user'; content: string }
+  | { type: 'function_call_output'; call_id: string; output: string };
+
+export interface TaskRecord {
+  role: 'user' | 'assistant' | 'tool';
+  content: string;
+  calls?: ResponseFunctionCall[];
+  callId?: string;
+}
+
+export interface ToolParameter {
+  type: 'string' | 'number' | ['string' | 'number', 'null'];
+  description: string;
+  enum?: string[];
+  minimum?: number;
+  maximum?: number;
 }
 
 export interface ToolDefinition {
   type: 'function';
-  function: {
-    name: string;
-    description: string;
-    parameters: {
-      type: 'object';
-      properties: Record<
-        string,
-        {
-          type: string;
-          description: string;
-          enum?: string[];
-        }
-      >;
-      required?: string[];
-    };
+  name: string;
+  description: string;
+  strict: true;
+  parameters: {
+    type: 'object';
+    properties: Record<string, ToolParameter>;
+    required: string[];
+    additionalProperties: false;
   };
 }
 
-export interface ToolCall {
-  id: string;
-  type: 'function';
-  function: {
-    name: string;
-    arguments: string;
-  };
+export interface ResponseUsage {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  input_tokens_details?: { cached_tokens?: number };
+  output_tokens_details?: { reasoning_tokens?: number };
 }
 
-export interface ChatCompletionResponse {
+export interface ModelResponse {
   id: string;
-  choices: Array<{
-    message: {
-      role: 'assistant';
-      content: string | null;
-      tool_calls?: ToolCall[];
-      streamed?: boolean;
-    };
-    finish_reason: string;
-  }>;
-  usage?: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
-  };
+  text: string;
+  calls: ResponseFunctionCall[];
+  usage?: ResponseUsage;
 }
 
 export interface ExecResult {
@@ -65,31 +75,8 @@ export interface ExecResult {
 export interface AgentConfig {
   maxIterations: number;
   timeout: number;
-}
-
-export type AgentStatus = 'idle' | 'running';
-
-export interface AgentState {
-  status: AgentStatus;
-  messages: ChatMessage[];
-  iteration: number;
-  summary?: string; // 对话历史摘要（当消息被裁剪时生成）
-}
-
-export interface AgentFrame {
-  type: 'agent_frame';
-  subType:
-    | 'thinking'
-    | 'executing'
-    | 'response'
-    | 'error'
-    | 'confirm_required'
-    | 'stream_chunk'
-    | 'stream_end'
-    | 'progress_extend'
-    | 'memory_updated'
-    | 'reset_done';
-  [key: string]: unknown;
+  inputTokenBudget: number;
+  maxOutputTokens: number;
 }
 
 export interface AIConfig {
@@ -98,23 +85,16 @@ export interface AIConfig {
   api_key: string;
 }
 
-import type {
-  KnowledgeAction,
-  KnowledgeCategory,
-  ServerKnowledgeItem,
-  ServerWorkLog,
-  UnifiedServerMemory,
-  WorkLogMode,
-} from '../../server-memory-schema';
+export type AgentStatus = 'idle' | 'running';
+export type RunOutcome = 'completed' | 'stopped' | 'failed' | 'limit';
 
-export type {
-  ServerWorkLog,
-  ServerKnowledgeItem,
-  UnifiedServerMemory,
-  KnowledgeCategory,
-  WorkLogMode,
-  KnowledgeAction,
-};
+export interface AgentFrame {
+  type: 'agent_frame';
+  subType: 'run_start' | 'run_end' | 'thinking' | 'executing' | 'response' | 'error'
+    | 'confirm_required' | 'stream_chunk' | 'stream_end' | 'progress_extend'
+    | 'memory_updated' | 'reset_done';
+  [key: string]: unknown;
+}
 
 export interface AgentMemoryProvider {
   fetchUnifiedMemory(): Promise<UnifiedServerMemory>;
