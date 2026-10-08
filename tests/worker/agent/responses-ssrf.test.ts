@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ResponsesClient } from '../../../src/worker/agent/responses-client';
 import { aiConfig, responseObject } from './responses-fixtures';
 
-const request = { input: [{ role: 'user' as const, content: 'Inspect' }], instructions: 'Stable', store: true, stream: false, max_output_tokens: 8192 };
+const request = { input: [{ role: 'user' as const, content: 'Inspect' }], instructions: 'Stable', stream: false, max_output_tokens: 8192 };
 afterEach(() => vi.restoreAllMocks());
 
 describe('Responses credential boundary uses real SSRF validation', () => {
@@ -20,8 +20,8 @@ describe('Responses credential boundary uses real SSRF validation', () => {
     });
     const host = type === 1 ? 'responses-private-a.example.com' : 'responses-private-aaaa.example.com';
     // Test both main and auxiliary calls: they share the same guarded transport.
-    for (const store of [true, false]) {
-      await expect(new ResponsesClient({ ...aiConfig, base_url: `https://${host}/v1` }).create({ ...request, store }, new AbortController().signal)).rejects.toMatchObject({ code: 'responses_address' });
+    for (const stream of [true, false]) {
+      await expect(new ResponsesClient({ ...aiConfig, base_url: `https://${host}/v1` }).create({ ...request, stream }, new AbortController().signal)).rejects.toMatchObject({ code: 'responses_address' });
     }
     expect(fetch).toHaveBeenCalledTimes(2); // A + AAAA only; cached validation never forwards a key.
   });

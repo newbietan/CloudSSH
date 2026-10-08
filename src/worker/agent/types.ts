@@ -1,4 +1,5 @@
-// Responses wire types and bounded, local task records. Task records are never replayed as chat history.
+// Native, stateless Responses items. Evidence records are NOT protocol replay history.
+import type { AgentTaskCheckpoint } from '../../agent-task-schema';
 import type {
   KnowledgeAction,
   KnowledgeCategory,
@@ -19,15 +20,37 @@ export interface ResponseFunctionCall {
   status: 'completed';
 }
 
+export interface ResponseMessage {
+  type: 'message';
+  id: string;
+  role: 'assistant';
+  status: 'completed';
+  content: Array<{ type: 'output_text'; text: string; annotations: unknown[] }
+    | { type: 'refusal'; refusal: string }>;
+}
+
+export interface ResponseReasoning {
+  type: 'reasoning';
+  id: string;
+  summary: Array<{ type: 'summary_text'; text: string }>;
+  encrypted_content?: string;
+}
+
+export type ResponseOutput = ResponseMessage | ResponseFunctionCall | ResponseReasoning;
 export type ResponseInput =
   | { role: 'user'; content: string }
+  | ResponseOutput
   | { type: 'function_call_output'; call_id: string; output: string };
+
+export type ExecutionStatus = 'succeeded' | 'failed' | 'blocked' | 'rejected'
+  | 'cancelled' | 'invalid_arguments' | 'unknown';
 
 export interface TaskRecord {
   role: 'user' | 'assistant' | 'tool';
   content: string;
   calls?: ResponseFunctionCall[];
   callId?: string;
+  status?: ExecutionStatus;
 }
 
 export interface ToolParameter {
@@ -63,6 +86,7 @@ export interface ModelResponse {
   id: string;
   text: string;
   calls: ResponseFunctionCall[];
+  output: ResponseOutput[];
   usage?: ResponseUsage;
 }
 
@@ -92,14 +116,22 @@ export interface AgentFrame {
   type: 'agent_frame';
   subType: 'run_start' | 'run_end' | 'thinking' | 'executing' | 'response' | 'error'
     | 'confirm_required' | 'stream_chunk' | 'stream_end' | 'progress_extend'
-    | 'memory_updated' | 'reset_done';
+    | 'memory_updated' | 'memory_status' | 'context_status' | 'reset_done';
   [key: string]: unknown;
 }
 
+export interface MemoryWriteContext { sessionId: string; epoch: number }
+export interface AgentMemoryBatch extends MemoryWriteContext {
+  expectedRevision: number;
+  targetLogId?: number;
+  workLog?: { mode?: WorkLogMode; title: string; summary: string };
+  knowledge?: Array<{ action?: KnowledgeAction; category?: KnowledgeCategory; key: string; value?: string }>;
+}
 export interface AgentMemoryProvider {
   fetchUnifiedMemory(): Promise<UnifiedServerMemory>;
-  saveBatchMemory(batch: {
-    workLog?: { mode?: WorkLogMode; title: string; summary: string };
-    knowledge?: Array<{ action?: KnowledgeAction; category?: KnowledgeCategory; key: string; value?: string }>;
-  }): Promise<void>;
+  saveBatchMemory(batch: AgentMemoryBatch): Promise<void>;
+  beginSession?(context: MemoryWriteContext): Promise<void>;
+  saveTaskCheckpoint?(checkpoint: AgentTaskCheckpoint, context: MemoryWriteContext): Promise<void>;
+  fetchTaskCheckpoint?(taskId: string): Promise<AgentTaskCheckpoint>;
+  deleteTaskCheckpoint?(taskId: string, context: MemoryWriteContext): Promise<void>;
 }

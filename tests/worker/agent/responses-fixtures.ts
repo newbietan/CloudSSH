@@ -7,7 +7,7 @@ export function functionCall(id = 'call_1', name = 'execute_command', args: Reco
 }
 
 export function responseObject(id: string, text = 'Complete.', calls: ResponseFunctionCall[] = [], request: Record<string, any> = {}) {
-  return { id, status: 'completed', store: request.store ?? true, previous_response_id: request.previous_response_id ?? null,
+  return { id, status: 'completed', store: request.store ?? false,
     output: [...calls, ...(text ? [{ type: 'message', id: `msg_${id}`, role: 'assistant', status: 'completed', content: [{ type: 'output_text', text, annotations: [] }] }] : [])],
     usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120,
       input_tokens_details: { cached_tokens: 80 }, output_tokens_details: { reasoning_tokens: 5 } } };

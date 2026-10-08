@@ -43,11 +43,15 @@ export interface ServerKnowledgeItem {
   value: string;
   created_at: number;
   updated_at: number;
+  source?: 'user' | 'agent' | 'legacy';
+  stale?: boolean;
 }
 
 export interface UnifiedServerMemory {
   workLogs: ServerWorkLog[];
   knowledge: ServerKnowledgeItem[];
+  revision?: number;
+  scope?: string;
 }
 
 const SENSITIVE_KEY_PATTERN =

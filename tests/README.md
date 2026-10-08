@@ -91,7 +91,7 @@ pnpm run verify
 - 键盘交互认证、OS 检测、跳板链、SFTP 上传冲突、分享会话策略
 - UserDB 服务器标签/片段迁移、规范化、序列化、更新与隔离
 - AI 模型代理安全：同 Base URL 强绑定免密拉取、跨地址凭据外带拦截（Credential Exfiltration）、CSRF Origin 防护与敏感 Token 脱敏
-- Responses Agent：HTTP/SSE 跨 chunk 与 CRLF、完整结束事件、上游有状态能力核实、call_id 配对、严格参数、停止/抢占/重置/编辑分支、预算检查点、独立结构化记忆与 usage
+- Responses 原生无状态 Agent：HTTP/SSE 跨 chunk 与 CRLF、强制无状态（store: false）、原生输出项与加密 reasoning 回传、call_id 配对、执行事实日志（ExecutionJournal）、严格本地参数校验、停止/抢占/重置/编辑分支、原子预算检查点、任务相关性服务器记忆与 usage
 - 流中断/incomplete 不执行残缺工具、不泄露 reasoning；新任务先等旧 exec 清理，不自动重放已执行命令
 
 ### 前端与构建

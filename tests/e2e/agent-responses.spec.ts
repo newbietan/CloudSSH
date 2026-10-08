@@ -81,7 +81,7 @@ test('AI settings disclose retention and reject legacy generation addresses loca
     const module = await (window as any).eval("import('/src/ai-config.ts')");
     new module.AIConfigPanel().show();
   });
-  await expect(page.locator('[data-i18n="aiConfig.retentionHint"]')).toContainText('store:true');
+  await expect(page.locator('[data-i18n="aiConfig.retentionHint"]')).toContainText('store: false');
   await expect(page.locator('[data-i18n="aiConfig.modelDiscoveryHint"]')).toContainText('does not confirm');
   await page.locator('#ai-base-url').fill('https://api.openai.com/v1/chat/completions');
   await page.locator('#ai-model').fill('gpt-test');

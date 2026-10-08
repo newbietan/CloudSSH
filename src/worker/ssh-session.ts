@@ -27,6 +27,7 @@ import { KeyDerivation } from '../ssh/keys';
 import { nextSequenceNumber, SSHPacketBuilder, SSHPacketParser } from '../ssh/packet';
 import { SSHTransport } from '../ssh/transport';
 import type { Env } from '../types';
+import type { AgentTaskCheckpoint } from '../agent-task-schema';
 import { DetachedSessionBuffer } from './ssh-detached-buffer';
 import { KeyboardInteractiveAuthHandler, type PendingAuthChallenge } from './ssh-interactive-auth';
 import { parseIdleTimeout } from './idle-timeout';
@@ -2903,6 +2904,56 @@ export class SSHSession {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ user_id: Number(uid), ...batch }),
+                })
+              );
+            } catch {
+              /* ignore */
+            }
+          },
+          beginSession: async (context) => {
+            try {
+              const stub = env.USER_DB.get(env.USER_DB.idFromName(gid));
+              await stub.fetch(
+                new Request(`http://internal/internal/servers/${serverId}/agent-session`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ user_id: Number(uid), ...context }),
+                })
+              );
+            } catch {
+              /* ignore */
+            }
+          },
+          saveTaskCheckpoint: async (checkpoint, context) => {
+            try {
+              const stub = env.USER_DB.get(env.USER_DB.idFromName(gid));
+              await stub.fetch(
+                new Request(`http://internal/internal/servers/${serverId}/agent-checkpoint`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ user_id: Number(uid), checkpoint, ...context }),
+                })
+              );
+            } catch {
+              /* ignore */
+            }
+          },
+          fetchTaskCheckpoint: async (taskId) => {
+            const stub = env.USER_DB.get(env.USER_DB.idFromName(gid));
+            const res = await stub.fetch(
+              new Request(`http://internal/internal/servers/${serverId}/agent-checkpoint?user_id=${uid}&task_id=${taskId}`)
+            );
+            if (!res.ok) throw new Error('Checkpoint not found');
+            return (await res.json()) as AgentTaskCheckpoint;
+          },
+          deleteTaskCheckpoint: async (taskId, context) => {
+            try {
+              const stub = env.USER_DB.get(env.USER_DB.idFromName(gid));
+              await stub.fetch(
+                new Request(`http://internal/internal/servers/${serverId}/agent-checkpoint`, {
+                  method: 'DELETE',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ user_id: Number(uid), taskId, ...context }),
                 })
               );
             } catch {

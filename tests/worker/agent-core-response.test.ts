@@ -28,7 +28,7 @@ describe('AgentCore Responses delivery and context', () => {
     expect(frames.at(-1)).toMatchObject({ subType: 'run_end', outcome: 'completed', usage: { calls: 1, input: 100, cached: 80, output: 20, reasoning: 5 } });
   });
 
-  it('chains only new tool results, keeps instructions/tools stable, and does not resend snapshots', async () => {
+  it('replays complete native history statelessly while keeping instructions/tools stable', async () => {
     const { agent, exec, terminal } = setup();
     terminal.appendOutput('terminal unchanged');
     const requests: any[] = [];
@@ -40,8 +40,11 @@ describe('AgentCore Responses delivery and context', () => {
     expect(exec).toHaveBeenCalledWith('free -m', 10000, expect.any(AbortSignal));
     expect(mock).toHaveBeenCalledTimes(2);
     expect(requests[0]).not.toHaveProperty('messages');
-    expect(requests[1].previous_response_id).toBe('resp_1');
-    expect(requests[1].input).toEqual([expect.objectContaining({ type: 'function_call_output', call_id: 'call_1' })]);
+    expect(requests.every(body => body.store === false && !('previous_response_id' in body))).toBe(true);
+    expect(requests[1].input.slice(0, requests[0].input.length)).toEqual(requests[0].input);
+    expect(requests[1].input).toContainEqual(expect.objectContaining({ type: 'function_call', call_id: 'call_1' }));
+    expect(requests[1].input).toContainEqual(expect.objectContaining({ type: 'function_call_output', call_id: 'call_1' }));
+    expect(requests[1].input.filter((item: any) => item.content?.includes?.('terminal unchanged'))).toHaveLength(1);
     expect(requests[1].instructions).toBe(requests[0].instructions);
     expect(requests[1].tools).toEqual(requests[0].tools);
     expect(requests[1].prompt_cache_key).toBe(requests[0].prompt_cache_key);
@@ -59,7 +62,7 @@ describe('AgentCore Responses delivery and context', () => {
     terminal.appendOutput('new shell output');
     await agent.handleAgentStart('1', '第二轮');
     expect(requests[1].input.some((item: any) => item.content?.includes('new shell output'))).toBe(true);
-    expect(requests[1].input.some((item: any) => item.content === '第一轮')).toBe(false);
+    expect(requests[1].input.some((item: any) => item.content === '第一轮')).toBe(true);
     expect(requests[1].instructions).toBe(requests[0].instructions);
   });
 
@@ -73,7 +76,8 @@ describe('AgentCore Responses delivery and context', () => {
     await agent.handleAgentStart('1', 'First');
     await agent.handleAgentStart('1', 'Second');
     await agent.handleAgentStart('1', 'Corrected second', 'zh-CN', 'UTC', 1);
-    expect(requests[2].previous_response_id).toBe('resp_1');
+    expect(requests[2].input).toContainEqual(expect.objectContaining({ id: 'msg_resp_1' }));
+    expect(requests[2].input.some((item: any) => item.id === 'msg_resp_2')).toBe(false);
     expect(requests[2].input.some((item: any) => item.content?.includes('[UNTRUSTED OBSERVATION: environment]'))).toBe(true);
     expect(exec).toHaveBeenCalledTimes(2);
   });
@@ -91,7 +95,7 @@ describe('AgentCore Responses delivery and context', () => {
       return requests.length === 1 ? reply('resp_1', '', [functionCall()], body) : reply('resp_2', 'Inspect state before retry.', [], body);
     });
     await agent.handleAgentStart('1', 'Inspect');
-    const result = JSON.parse(requests[1].input[0].output);
+    const result = JSON.parse(requests[1].input.find((item: any) => item.type === 'function_call_output').output);
     expect(result.status).toBe('unknown');
     expect(result).not.toHaveProperty('executed', false);
     expect(result.instruction).toContain('inspect remote state');
@@ -117,7 +121,7 @@ describe('AgentCore Responses delivery and context', () => {
     expect(exec).toHaveBeenCalledTimes(1); // initial environment only
     expect(JSON.stringify(frames)).not.toContain('PRIVATE');
     expect(frames.find(frame => frame.subType === 'error')?.code).toBe('responses_incomplete');
-    expect((agent as any).context.responseId).toBeUndefined();
+    expect((agent as any).context.history).toEqual([]);
   });
 
   it('invalid arguments and blocked commands return results without unsafe execution', async () => {
@@ -132,12 +136,12 @@ describe('AgentCore Responses delivery and context', () => {
     });
     await agent.handleAgentStart('1', '检查');
     expect(exec).toHaveBeenCalledTimes(1);
-    const results = requests[1].input.map((item: any) => JSON.parse(item.output));
+    const results = requests[1].input.filter((item: any) => item.type === 'function_call_output').map((item: any) => JSON.parse(item.output));
     expect(results[0].status).toBe('invalid_arguments');
     expect(results[1].blocked).toBe(true);
   });
 
-  it('keeps long task results immutable in the upstream chain instead of rewriting history', async () => {
+  it('keeps all tool results immutable in local native replay history', async () => {
     const { agent } = setup({ exec: vi.fn(async () => ({ stdout: 'head' + 'x'.repeat(2000) + 'tail', stderr: '', exitCode: 0 })) });
     let step = 0;
     const requests: any[] = [];
@@ -148,14 +152,15 @@ describe('AgentCore Responses delivery and context', () => {
     });
     await agent.handleAgentStart('1', '连续检查');
     expect(requests).toHaveLength(9);
+    const first = requests[1].input.find((item: any) => item.type === 'function_call_output');
     for (const body of requests.slice(1)) {
-      expect(body.input).toHaveLength(1);
-      expect(body.input[0].output).toContain('tail');
-      expect(body.input[0].output).not.toContain('更早历史');
+      expect(body.input.find((item: any) => item.type === 'function_call_output')).toEqual(first);
+      expect(first.output).toContain('tail');
     }
+    expect(requests.at(-1).input.filter((item: any) => item.type === 'function_call_output')).toHaveLength(8);
   });
 
-  it('uses a structured checkpoint at the budget boundary and starts a fresh chain without orphan outputs', async () => {
+  it('uses a structured checkpoint and fresh continuation at the budget boundary without orphan outputs', async () => {
     const { agent } = setup();
     const requests: any[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
@@ -177,7 +182,7 @@ describe('AgentCore Responses delivery and context', () => {
     expect(JSON.stringify(requests[2].input)).toContain('free -m completed');
   });
 
-  it('fails closed if a checkpoint is invalid and does not abandon the existing chain', async () => {
+  it('fails closed if a checkpoint is invalid and does not abandon local history', async () => {
     const { agent, frames } = setup();
     let step = 0;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
@@ -190,7 +195,7 @@ describe('AgentCore Responses delivery and context', () => {
     });
     await agent.handleAgentStart('1', '检查');
     expect(step).toBe(1);
-    expect((agent as any).context.responseId).toBe('resp_1');
+    expect((agent as any).context.history).toContainEqual(expect.objectContaining({ type: 'function_call', call_id: 'call_1' }));
     expect((agent as any).context.pending[0].type).toBe('function_call_output');
     expect(frames.find(frame => frame.subType === 'error')?.code).toBe('responses_schema');
   });

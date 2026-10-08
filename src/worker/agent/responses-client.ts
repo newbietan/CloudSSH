@@ -1,6 +1,6 @@
 import { normalizeAIBaseUrl } from '../../ai-endpoint';
 import { validateBaseUrlWithDNS } from './ssrf';
-import type { AIConfig, ModelResponse, ResponseFunctionCall, ResponseInput, ResponseUsage, ToolDefinition } from './types';
+import type { AIConfig, ModelResponse, ResponseFunctionCall, ResponseInput, ResponseOutput, ResponseUsage, ToolDefinition } from './types';
 
 export class ResponsesError extends Error {
   constructor(public readonly code: string, public readonly status?: number) {
@@ -12,9 +12,7 @@ export class ResponsesError extends Error {
 interface ResponseRequest {
   input: ResponseInput[];
   instructions: string;
-  store: boolean;
   stream: boolean;
-  previous_response_id?: string;
   tools?: ToolDefinition[];
   max_output_tokens: number;
   prompt_cache_key?: string;
@@ -46,11 +44,9 @@ function parseResponse(value: unknown, request: ResponseRequest): ModelResponse 
   if (typeof response.id !== 'string' || !response.id || !Array.isArray(response.output)) {
     throw new ResponsesError('responses_invalid');
   }
-  // Do not accept a stateless facade that silently ignores response chaining.
-  if (request.store && (response.store !== true ||
-    (request.previous_response_id && response.previous_response_id !== request.previous_response_id))) {
-    throw new ResponsesError('responses_stateful_required');
-  }
+  // Missing echoes are allowed; explicitly contradicting store:false is not.
+  if (response.store === true) throw new ResponsesError('responses_storage');
+  const output: ResponseOutput[] = [];
   let text = '';
   let refused = false;
   const calls: ResponseFunctionCall[] = [];
@@ -64,23 +60,44 @@ function parseResponse(value: unknown, request: ResponseRequest): ModelResponse 
         throw new ResponsesError('responses_invalid');
       }
       callIds.add(item.call_id);
-      calls.push({ type: 'function_call', id: item.id, call_id: item.call_id,
-        name: item.name, arguments: item.arguments, status: 'completed' });
+      const call: ResponseFunctionCall = { type: 'function_call', id: item.id, call_id: item.call_id,
+        name: item.name, arguments: item.arguments, status: 'completed' };
+      calls.push(call);
+      output.push(call);
       if (calls.length > MAX_CALLS) throw new ResponsesError('responses_invalid');
     } else if (item.type === 'message') {
-      if (item.status !== 'completed' || item.role !== 'assistant' || !Array.isArray(item.content)) {
+      if (item.status !== 'completed' || item.role !== 'assistant' || typeof item.id !== 'string' ||
+        !item.id || !Array.isArray(item.content)) {
         throw new ResponsesError('responses_invalid');
       }
+      const content: Extract<ResponseOutput, { type: 'message' }>['content'] = [];
       for (const rawPart of item.content) {
         const part = object(rawPart);
-        if (part.type === 'output_text' && typeof part.text === 'string') text += part.text;
-        else if (part.type === 'refusal' && typeof part.refusal === 'string') {
+        if (part.type === 'output_text' && typeof part.text === 'string') {
+          if (part.annotations != null && !Array.isArray(part.annotations)) throw new ResponsesError('responses_invalid');
+          text += part.text;
+          content.push({ type: 'output_text', text: part.text, annotations: part.annotations ?? [] });
+        } else if (part.type === 'refusal' && typeof part.refusal === 'string') {
           refused = true;
           text += part.refusal;
-        }
-        else throw new ResponsesError('responses_invalid');
+          content.push({ type: 'refusal', refusal: part.refusal });
+        } else throw new ResponsesError('responses_invalid');
       }
-    } else if (item.type !== 'reasoning') {
+      output.push({ type: 'message', id: item.id, role: 'assistant', status: 'completed', content });
+    } else if (item.type === 'reasoning') {
+      if (typeof item.id !== 'string' || !item.id || !Array.isArray(item.summary)) throw new ResponsesError('responses_invalid');
+      const summary = item.summary.map(raw => {
+        const part = object(raw);
+        if (part.type !== 'summary_text' || typeof part.text !== 'string') throw new ResponsesError('responses_invalid');
+        return { type: 'summary_text' as const, text: part.text };
+      });
+      if (item.encrypted_content != null && (typeof item.encrypted_content !== 'string' || !item.encrypted_content)) {
+        throw new ResponsesError('responses_invalid');
+      }
+      if (request.tools && !item.encrypted_content) throw new ResponsesError('responses_reasoning');
+      output.push({ type: 'reasoning', id: item.id, summary,
+        ...(item.encrypted_content ? { encrypted_content: item.encrypted_content as string } : {}) });
+    } else {
       // Hosted tools and implicit protocol downgrades are not part of CloudSSH's execution boundary.
       throw new ResponsesError('responses_invalid');
     }
@@ -109,7 +126,7 @@ function parseResponse(value: unknown, request: ResponseRequest): ModelResponse 
     if ((usage.input_tokens_details?.cached_tokens || 0) > usage.input_tokens ||
       (usage.output_tokens_details?.reasoning_tokens || 0) > usage.output_tokens) throw new ResponsesError('responses_invalid');
   }
-  return { id: response.id, text, calls, usage };
+  return { id: response.id, text, calls, output, usage };
 }
 
 function delay(ms: number, signal: AbortSignal): Promise<void> {
@@ -168,8 +185,15 @@ export class ResponsesClient {
     const address = await validateBaseUrlWithDNS(this.baseUrl);
     signal.throwIfAborted();
     if (!address.valid) throw new ResponsesError('responses_address');
-    const body = JSON.stringify({ model: this.config.model, ...request,
-      ...(request.tools ? { tool_choice: 'auto', parallel_tool_calls: false } : {}) });
+    // Build the wire body explicitly: no caller can smuggle storage/chaining parameters.
+    const body = JSON.stringify({ model: this.config.model, store: false, truncation: 'disabled',
+      input: request.input, instructions: request.instructions, stream: request.stream,
+      max_output_tokens: request.max_output_tokens,
+      ...(request.prompt_cache_key ? { prompt_cache_key: request.prompt_cache_key } : {}),
+      ...(request.text ? { text: request.text } : {}),
+      ...(request.tools ? { tools: request.tools, tool_choice: 'auto', parallel_tool_calls: false,
+        include: ['reasoning.encrypted_content'] } : {}) });
+    if (new TextEncoder().encode(body).length > 2 * 1024 * 1024) throw new ResponsesError('responses_budget');
     const requestId = crypto.randomUUID();
     for (let attempt = 0; ; attempt++) {
       signal.throwIfAborted();
@@ -188,16 +212,9 @@ export class ResponsesClient {
           await delay(1000 * (attempt + 1), signal);
           continue;
         }
-        let expired = Boolean(request.previous_response_id && response.status === 404);
-        if (request.previous_response_id && response.status === 400) {
-          try {
-            const body = object(await readJsonBody(response, signal, 16_384));
-            const error = object(body.error);
-            expired = error.param === 'previous_response_id' || error.code === 'previous_response_not_found';
-          } catch { signal.throwIfAborted(); }
-        } else void response.body?.cancel();
-        // Inspect only bounded protocol identifiers; never forward the provider's message or body.
-        throw new ResponsesError(expired ? 'responses_chain' : 'responses_http', response.status);
+        void response.body?.cancel();
+        // Never expose provider error bodies, tokens or URLs.
+        throw new ResponsesError('responses_http', response.status);
       }
       // Never retry a stream after output has started. In particular, never replay SSH side effects.
       if (request.stream) return this.readStream(response, request, signal, onText);
@@ -248,7 +265,7 @@ export class ResponsesClient {
             throw new ResponsesError('responses_invalid');
           }
           // Arguments are assembled only from completed output, never executed from deltas.
-          // Reasoning items and encrypted_content remain on the provider and are never displayed.
+          // Opaque reasoning is retained only from completed output, never displayed or logged.
         }
         if (done) throw new ResponsesError('responses_stream'); // EOF is not successful completion.
       }

@@ -2,7 +2,21 @@
 
 import { isBlockedCommand, needsConfirmation } from './safety';
 import type { TerminalContext } from './terminal-context';
-import type { ExecResult } from './types';
+import type { ExecutionStatus, ExecResult } from './types';
+
+const STATUSES: ExecutionStatus[] = ['succeeded', 'failed', 'blocked', 'rejected', 'cancelled', 'invalid_arguments', 'unknown'];
+
+export function executionOutcome(tool: string, output: string): { status: ExecutionStatus; executed: boolean } {
+  let value: Record<string, unknown> = {};
+  try { value = JSON.parse(output); } catch { /* Text-only observations/confirmation. */ }
+  const status: ExecutionStatus = STATUSES.includes(value?.status as ExecutionStatus) ? value.status as ExecutionStatus
+    : value?.blocked ? 'blocked' : value?.user_rejected || output.startsWith('User rejected') ? 'rejected'
+      : typeof value?.exit_code === 'number' && value.exit_code !== 0 ? 'failed' : 'succeeded';
+  const executed = typeof value?.executed === 'boolean' ? value.executed
+    : !['blocked', 'rejected', 'cancelled', 'invalid_arguments'].includes(status) &&
+      !['read_terminal_context', 'ask_user_confirmation'].includes(tool);
+  return { status, executed };
+}
 
 // 工具结果进入 LLM 上下文的硬边界：head/tail 式截断（保留头尾、省略中间），
 // 防止 docker logs 等大输出把后续每轮 LLM 请求体撑到数 MB（弱网下直接拖垮 Agent）。
@@ -33,6 +47,16 @@ export class ToolExecutor {
   ) {}
 
   async execute(toolName: string, args: any, signal?: AbortSignal): Promise<string> {
+    const output = await this.executeRaw(toolName, args, signal);
+    const outcome = executionOutcome(toolName, output);
+    try {
+      const value = JSON.parse(output);
+      if (value && typeof value === 'object' && !Array.isArray(value)) return JSON.stringify({ ...value, ...outcome });
+    } catch { /* Text-only tools still receive explicit, non-authorizing outcomes. */ }
+    return JSON.stringify({ ...outcome, result: output });
+  }
+
+  private async executeRaw(toolName: string, args: any, signal?: AbortSignal): Promise<string> {
     switch (toolName) {
       case 'execute_command':
         return this.handleExec(args.command, args.timeout_ms ?? 10000, signal);
@@ -111,6 +135,9 @@ export class ToolExecutor {
         stdout: '',
         stderr: errMsg,
         exit_code: -1,
+        status: 'unknown',
+        executed: true,
+        instruction: 'Dispatch did not return a verified result; inspect remote state before retrying.',
       });
     } finally {
       if (watchdogInterval) {
@@ -129,7 +156,7 @@ export class ToolExecutor {
       });
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
-      return JSON.stringify({ stdout: '', stderr: errMsg, exit_code: -1 });
+      return JSON.stringify({ stdout: '', stderr: errMsg, exit_code: -1, status: 'unknown', executed: true });
     }
   }
 
@@ -140,7 +167,7 @@ export class ToolExecutor {
   ): Promise<string> {
     // Shell-safe whitelist: service names are typically [a-zA-Z0-9_-] with optional '@' instance
     if (service && !/^[a-zA-Z0-9_\-@.]+$/.test(service)) {
-      return JSON.stringify({ stdout: '', stderr: '非法的服务名称', exit_code: -1 });
+      return JSON.stringify({ stdout: '', stderr: '非法的服务名称', exit_code: -1, status: 'invalid_arguments', executed: false });
     }
 
     const VALID_ACTIONS = ['status', 'start', 'stop', 'restart', 'enable', 'disable'];
@@ -332,7 +359,7 @@ export class ToolExecutor {
       });
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
-      return JSON.stringify({ environment: '', stderr: errMsg, exit_code: -1 });
+      return JSON.stringify({ environment: '', stderr: errMsg, exit_code: -1, status: 'unknown', executed: true });
     }
   }
 }

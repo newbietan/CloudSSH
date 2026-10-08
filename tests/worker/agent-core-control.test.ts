@@ -37,7 +37,7 @@ describe('Responses task control', () => {
     expect(created.command).toHaveBeenCalledTimes(2); // initial environment + only the first call
   });
 
-  it('resets the response pointer/cache key and detects environment again', async () => {
+  it('resets local history/cache key and detects environment again', async () => {
     const { agent, command } = setup();
     const requests: any[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
@@ -47,17 +47,17 @@ describe('Responses task control', () => {
     await agent.handleAgentStart('1', '第一轮');
     await agent.handleAgentStart('1', '第二轮');
     expect(command).toHaveBeenCalledTimes(1);
-    expect(requests[1].previous_response_id).toBe('resp_1');
+    expect(requests[1].input).toContainEqual({ role: 'user', content: '第一轮' });
     agent.resetSession();
     expect((agent as any).context.pending).toEqual([]);
-    expect((agent as any).context.responseId).toBeUndefined();
+    expect((agent as any).context.history).toEqual([]);
     await agent.handleAgentStart('1', '新会话');
     expect(command).toHaveBeenCalledTimes(2);
     expect(requests[2]).not.toHaveProperty('previous_response_id');
     expect(requests[2].prompt_cache_key).not.toBe(requests[0].prompt_cache_key);
   });
 
-  it('edits a user turn by branching from its starting response, not from later state', async () => {
+  it('edits a user turn by branching from its local starting history, not later state', async () => {
     const { agent } = setup();
     const requests: any[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
@@ -67,7 +67,8 @@ describe('Responses task control', () => {
     await agent.handleAgentStart('1', '第一轮');
     await agent.handleAgentStart('1', '第二轮');
     await agent.handleAgentStart('1', '修改第二轮', 'zh-CN', undefined, 1);
-    expect(requests[2].previous_response_id).toBe('resp_1');
+    expect(requests[2].input).toContainEqual(expect.objectContaining({ id: 'msg_resp_1' }));
+    expect(requests[2]).not.toHaveProperty('previous_response_id');
     expect(requests[2].input.some((item: any) => item.content === '第二轮')).toBe(false);
     expect(JSON.stringify(requests[2].input)).toContain('does not undo remote operations');
     await agent.handleAgentStart('1', '修改第一轮', 'zh-CN', undefined, 0);
@@ -75,17 +76,17 @@ describe('Responses task control', () => {
     expect(JSON.stringify(requests[3].input)).not.toContain('修改第二轮');
   });
 
-  it('rejects invalid historical indices without switching to the latest chain', async () => {
+  it('rejects invalid historical indices without changing local history', async () => {
     const { agent, frames } = setup();
     const mock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(reply('resp_1'));
     await agent.handleAgentStart('1', '开始');
     await agent.handleAgentStart('1', '编辑', 'zh-CN', undefined, 999);
     expect(mock).toHaveBeenCalledTimes(1);
-    expect((agent as any).context.responseId).toBe('resp_1');
+    expect((agent as any).context.history).toContainEqual(expect.objectContaining({ id: 'msg_resp_1' }));
     expect(frames.find(frame => frame.code === 'responses_history')).toBeDefined();
   });
 
-  it('does not reuse response IDs or stored credentials after configuration changes', async () => {
+  it('does not forward local history or stored credentials after configuration changes', async () => {
     let config = aiConfig;
     const { agent, frames } = setup(undefined, async () => config);
     const mock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => reply('resp_1', '完成', [], JSON.parse(init?.body as string)));
@@ -123,7 +124,7 @@ describe('Responses task control', () => {
     const replacement = created.agent.handleAgentStart('1', '新任务');
     await Promise.all([old, replacement]);
     expect(active).toBe(0);
-    expect(requests[1].previous_response_id).toBe('resp_1');
+    expect(requests[1].input).toContainEqual(expect.objectContaining({ type: 'function_call', call_id: 'call_1' }));
     expect(JSON.parse(requests[1].input.find((item: any) => item.type === 'function_call_output').output).status).toBe('unknown');
     expect(created.frames.filter(frame => frame.subType === 'run_end')).toEqual([expect.objectContaining({ runId: 2, outcome: 'completed' })]);
   });
@@ -139,7 +140,7 @@ describe('Responses task control', () => {
     await pending;
     expect(fetchMock).not.toHaveBeenCalled();
     expect(command).not.toHaveBeenCalled();
-    expect((agent as any).context.responseId).toBeUndefined();
+    expect((agent as any).context.history).toEqual([]);
     expect(frames.filter(frame => frame.subType === 'run_end')).toEqual([]);
   });
 });

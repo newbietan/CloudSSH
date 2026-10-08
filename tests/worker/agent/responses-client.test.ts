@@ -6,7 +6,7 @@ import { aiConfig, functionCall, responseObject, sse } from './responses-fixture
 
 vi.mock('../../../src/worker/agent/ssrf', () => ({ validateBaseUrlWithDNS: async () => ({ valid: true }) }));
 
-const request = { input: [{ role: 'user' as const, content: 'Inspect' }], instructions: 'Stable', store: true, stream: true, tools: AGENT_TOOLS, max_output_tokens: 8192 };
+const request = { input: [{ role: 'user' as const, content: 'Inspect' }], instructions: 'Stable', stream: true, tools: AGENT_TOOLS, max_output_tokens: 8192 };
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe('Responses protocol and execution boundary', () => {
@@ -46,15 +46,16 @@ describe('Responses protocol and execution boundary', () => {
     expect(mock).toHaveBeenCalledTimes(1);
   });
 
-  it.each([false, undefined])('rejects a facade that does not confirm stored responses (%s)', async store => {
+  it.each([false, undefined])('accepts stateless responses without a storage echo (%s)', async store => {
     const response = { ...responseObject('resp_1'), store };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sse([{ type: 'response.completed', response }]));
-    await expect(new ResponsesClient(aiConfig).create(request, new AbortController().signal)).rejects.toMatchObject({ code: 'responses_stateful_required' });
+    expect((await new ResponsesClient(aiConfig).create(request, new AbortController().signal)).text).toBe('Complete.');
   });
 
-  it('rejects silently ignored previous_response_id and duplicate call IDs', async () => {
-    const mock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sse([{ type: 'response.completed', response: responseObject('resp_2') }]));
-    await expect(new ResponsesClient(aiConfig).create({ ...request, previous_response_id: 'resp_1' }, new AbortController().signal)).rejects.toMatchObject({ code: 'responses_stateful_required' });
+  it('rejects explicit storage and duplicate call IDs', async () => {
+    const mock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sse([{ type: 'response.completed',
+      response: { ...responseObject('resp_2'), store: true } }]));
+    await expect(new ResponsesClient(aiConfig).create(request, new AbortController().signal)).rejects.toMatchObject({ code: 'responses_storage' });
     mock.mockResolvedValue(sse([{ type: 'response.completed', response: responseObject('resp_3', '', [functionCall(), functionCall()]) }]));
     await expect(new ResponsesClient(aiConfig).create(request, new AbortController().signal)).rejects.toMatchObject({ code: 'responses_invalid' });
   });
@@ -84,7 +85,7 @@ describe('Responses protocol and execution boundary', () => {
   it('reads auxiliary structured output without tools, storage, or a response chain', async () => {
     const body = responseObject('resp_aux', '{"workLog":null,"knowledge":[]}', [], { store: false });
     const mock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(body)));
-    const result = await new ResponsesClient(aiConfig).create({ ...request, tools: undefined, store: false, stream: false }, new AbortController().signal);
+    const result = await new ResponsesClient(aiConfig).create({ ...request, tools: undefined, stream: false }, new AbortController().signal);
     expect(JSON.parse(result.text).workLog).toBeNull();
     const sent = JSON.parse(mock.mock.calls[0][1]?.body as string);
     expect(sent).not.toHaveProperty('messages');
@@ -96,19 +97,41 @@ describe('Responses protocol and execution boundary', () => {
     await expect(new ResponsesClient(aiConfig).create(request, new AbortController().signal)).rejects.toMatchObject({ code: 'responses_invalid' });
   });
 
-  it('recognizes expired response IDs reported as HTTP 400 without exposing provider messages', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ error: { param: 'previous_response_id', message: 'SECRET_PROVIDER_BODY' } }), { status: 400 }));
-    await expect(new ResponsesClient(aiConfig).create({ ...request, previous_response_id: 'expired' }, new AbortController().signal)).rejects.toMatchObject({ code: 'responses_chain', message: 'responses_chain' });
+  it('never sends storage/chaining overrides supplied at runtime', async () => {
+    const mock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sse([{ type: 'response.completed', response: responseObject('resp_1') }]));
+    await new ResponsesClient(aiConfig).create({ ...request, store: true, previous_response_id: 'ignored' } as any, new AbortController().signal);
+    const sent = JSON.parse(mock.mock.calls[0][1]?.body as string);
+    expect(sent.store).toBe(false);
+    expect(sent.truncation).toBe('disabled');
+    expect(sent).not.toHaveProperty('previous_response_id');
   });
 
-  it('does not classify unrelated HTTP 400 errors as expired history', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ error: { param: 'model', message: 'SECRET_PROVIDER_BODY' } }), { status: 400 }));
-    await expect(new ResponsesClient(aiConfig).create({ ...request, previous_response_id: 'valid' }, new AbortController().signal)).rejects.toMatchObject({ code: 'responses_http' });
+  it('treats HTTP failures uniformly without exposing provider bodies', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('SECRET_PROVIDER_BODY', { status: 400 }));
+    await expect(new ResponsesClient(aiConfig).create(request, new AbortController().signal)).rejects.toMatchObject({ code: 'responses_http', message: 'responses_http' });
+  });
+
+  it('preserves complete native reasoning and messages for replay without exposing reasoning as text', async () => {
+    const body = responseObject('resp_1', 'Visible', [functionCall()]);
+    (body.output as any[]).unshift({ type: 'reasoning', id: 'rs_1', summary: [{ type: 'summary_text', text: 'PRIVATE' }], encrypted_content: 'OPAQUE' });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sse([{ type: 'response.completed', response: body }]));
+    const onText = vi.fn();
+    const result = await new ResponsesClient(aiConfig).create(request, new AbortController().signal, onText);
+    expect(result.output).toEqual(body.output);
+    expect(result.text).toBe('Visible');
+    expect(onText).not.toHaveBeenCalled();
+  });
+
+  it('fails closed if reasoning cannot be replayed in stateless tool requests', async () => {
+    const body = responseObject('resp_1');
+    (body.output as any[]).unshift({ type: 'reasoning', id: 'rs_1', summary: [] });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sse([{ type: 'response.completed', response: body }]));
+    await expect(new ResponsesClient(aiConfig).create(request, new AbortController().signal)).rejects.toMatchObject({ code: 'responses_reasoning' });
   });
 
   it('does not execute calls alongside a model refusal', async () => {
     const body = responseObject('resp_1', '', [functionCall()]);
-    (body.output as any[]).push({ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'refusal', refusal: 'Declined' }] });
+    (body.output as any[]).push({ type: 'message', id: 'msg_refusal', role: 'assistant', status: 'completed', content: [{ type: 'refusal', refusal: 'Declined' }] });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sse([{ type: 'response.completed', response: body }]));
     await expect(new ResponsesClient(aiConfig).create(request, new AbortController().signal)).rejects.toMatchObject({ code: 'responses_invalid' });
   });
