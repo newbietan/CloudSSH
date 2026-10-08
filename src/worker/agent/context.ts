@@ -40,17 +40,29 @@ export class AgentContext {
     if (userIndex != null) {
       if (!Number.isSafeInteger(userIndex) || userIndex < 0) throw new ResponsesError('responses_history');
       const point = this.turns.get(userIndex);
-      if (!point) throw new ResponsesError('responses_history');
-      this.history = [...point.history];
-      this.pending = [...point.pending];
-      this.summary = point.summary;
-      this.estimatedTokens = point.estimatedTokens;
-      this.records = [...point.records];
-      for (const index of this.turns.keys()) if (index >= userIndex) this.turns.delete(index);
-      this.nextTurn = userIndex;
-      this.terminal = '';
-      this.memory = '';
-      this.pending.push(observation('history edit', 'Editing model history does not undo remote operations. Inspect current state before repeating any operation.'));
+      if (!point) {
+        if (this.turns.size === 0 && this.history.length === 0 && !this.summary) {
+          this.history = [];
+          this.pending = [];
+          this.summary = '';
+          this.estimatedTokens = 0;
+          this.records = [];
+          this.nextTurn = 0;
+        } else {
+          throw new ResponsesError('responses_history');
+        }
+      } else {
+        this.history = [...point.history];
+        this.pending = [...point.pending];
+        this.summary = point.summary;
+        this.estimatedTokens = point.estimatedTokens;
+        this.records = [...point.records];
+        for (const index of this.turns.keys()) if (index >= userIndex) this.turns.delete(index);
+        this.nextTurn = userIndex;
+        this.terminal = '';
+        this.memory = '';
+        this.pending.push(observation('history edit', 'Editing model history does not undo remote operations. Inspect current state before repeating any operation.'));
+      }
     } else {
       // A failed/aborted request was never accepted. Keep settled tool outputs, not unsent prompts.
       this.pending = this.pending.filter(item => 'type' in item && item.type === 'function_call_output');

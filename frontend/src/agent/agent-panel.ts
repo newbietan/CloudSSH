@@ -129,6 +129,7 @@ export class AgentPanel {
   private memoryBatchCancelBtn: HTMLButtonElement | null = null;
   private memoryBatchDeleteBtn: HTMLButtonElement | null = null;
   private revealedSecretIds: Set<number> = new Set();
+  private hasConfirmedSession: boolean = false;
   private sessionMessages: Array<{
     role: string;
     content: string;
@@ -524,6 +525,7 @@ export class AgentPanel {
     switch (msg.subType) {
       case 'run_start':
         this.isAgentRunning = true;
+        this.hasConfirmedSession = true;
         this.updateInputState();
         break;
       case 'run_end':
@@ -713,6 +715,7 @@ export class AgentPanel {
 
   private resetPanelState(): void {
     this.activeRequestId = null;
+    this.hasConfirmedSession = false;
     this.sessionMessages = [];
     this.clearSessionDraft();
     if (this.messagesEl) {
@@ -1503,7 +1506,8 @@ export class AgentPanel {
       this.handleStop();
     }
 
-    const targetUserIndex = options.userIndex ?? 0;
+    // 若当前会话属于离线草稿加载且尚未在当前连接产生过有效运行轮次，安全归一为第 0 轮
+    const targetUserIndex = this.hasConfirmedSession ? (options.userIndex ?? 0) : 0;
 
     // 1. 删除当前消息之后的所有后续节点（思考、执行、回复等全部清除，无需保留留痕）
     while (el.nextElementSibling) {

@@ -101,4 +101,12 @@ describe('bounded stateless Responses context and local branches', () => {
     expect(context.buildInput()).toContainEqual({ role: 'user', content: 'Inspect' });
     expect(() => context.beginTurn('Old edit', 0)).toThrow();
   });
+
+  it('smoothly heals and starts turn 0 when editing from a cold start/reconnected session with empty turns', () => {
+    const context = new AgentContext();
+    // 模拟重连或冷启动时，前端带着从草稿恢复的 userIndex: 1 提交编辑
+    expect(() => context.beginTurn('从草稿重发需求', 1)).not.toThrow();
+    expect(context.buildInput()).toContainEqual({ role: 'user', content: '从草稿重发需求' });
+    expect(context.history).toEqual([]);
+  });
 });
