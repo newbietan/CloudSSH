@@ -48,6 +48,7 @@ src/
 │   │   ├── core.ts       # Responses Agent orchestration, run lifecycle, safe tool execution
 │   │   ├── responses-client.ts # 唯一 Responses HTTP/SSE、严格完成语义与 usage
 │   │   ├── context.ts    # 原生无状态历史回传、不可变交互段、编辑检查点与本地 UTF-8 预算
+│   │   ├── context-limits.ts # 上下文与输出 token 预算、检查点限制常量
 │   │   ├── execution-journal.ts # 命令与工具执行事实日志（非对齐回放、证据脱敏、确切状态跟踪）
 │   │   ├── memory.ts     # 任务相关服务器记忆筛选、提炼队列与版本条件写入
 │   │   ├── tools.ts      # 7 tool definitions (execute_command, detect_environment, list_processes, service_manage, docker_manage, etc.)
@@ -73,6 +74,7 @@ src/
 │   ├── utils.ts      # Binary utilities
 │   ├── sftp.ts       # SFTP v3 client implementation
 │   └── sftp-types.ts # SFTP protocol constants and types
+├── ai-endpoint.ts    # Responses API 根地址校验与规范化纯函数
 ├── server-memory-schema.ts # Unified server memory schema for work logs and knowledge entries
 ├── agent-task-schema.ts    # 任务中断恢复检查点契约校验（短期有界操作事实）
 ├── share-resume-schema.ts  # One-time share session re-attach challenge and resume token schema
@@ -118,9 +120,11 @@ frontend/
 │   ├── server-list.ts     # Server UI (tags, search, responsive 6/6/3-card pagination, CRUD/connect/duplicate)
 │   ├── share-manager.ts   # Owner UI for creating, revoking, and auditing one-time shares
 │   ├── share-session.ts   # Public one-time share landing and claim flow
+│   ├── custom-theme-manager.ts # 多套自定义主题库管理与交互对话框
 │   ├── agent/
 │   │   ├── agent-panel.ts # AI assistant sidebar (context attachments, streaming, Markdown, confirmations, quick prompt chips)
 │   │   ├── code-actions.ts # Agent 代码块语言归一化与 Shell 单行命令可填性判定
+│   │   ├── response-errors.ts # 结构化 Responses 错误码本地化映射与安全展示
 │   │   └── terminal-selection-context.ts # Selection snapshots and untrusted-data prompt boundary
 │   ├── snippet-manager.ts # 命令片段库面板（云端/本地双后端、参数占位符录入、搜索/复制、填入/填入并执行、编辑/删除）
 │   ├── snippet-variables.ts # 命令片段 {{var}} 参数占位符提取与安全替换纯函数

@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-10-08
+
+### Changed
+
+- **AI Agent 完整迁移至原生 Responses API 规范（重大架构变更 / Breaking Change）**：
+  - **协议升级与解耦**：彻底移除对旧版 `/v1/chat/completions` 的依赖，全面对齐 OpenAI 标准 Responses API 规范，支持原生消息项、函数工具调用及通用推理节点（`reasoning`）；
+  - **强制无状态模式（Enforced `store: false`）**：所有请求（主任务、上下文压缩、记忆提炼）均强制携带 `store: false`，完全由 CloudSSH 在本地维护有界交互历史、确切执行事实日志（ExecutionJournal）与检查点，消除上游状态残留与会话污染，保护敏感服务器运维隐私；
+  - **防凭据外带安全机制（Anti-Credential Exfiltration）**：AI 设置弹窗与后端 API 严格绑定 Base URL 与已存密钥，修改接口地址时强制要求重新提交 API Key，严禁已绑定的机密凭证被静默发送至第三方新地址；
+  - **生态兼容与升级指引**：
+    - 支持 OpenAI 官方（`https://api.openai.com/v1`，模型如 `gpt-4o`、`o1`、`o3-mini` 等）、OpenRouter 及标准 Responses 聚合平台；
+    - 存量配置中带有 `/chat/completions` 后缀的旧地址升级后将被主动拦截，需手动修改为 API 根地址；
+    - 目前暂不支持仅提供 Chat Completions 专用接口的平台（如直连国内部分大模型服务），直接调用将返回 HTTP 404/405；强依赖此类模型服务的用户建议暂时维持 v2.5.5 版本。
+
+### Fixed
+
+- **弱小模型工具参数防御性容错**：
+  - 自动剥离模型输出外层的 Markdown JSON 标记与多余说明文本；
+  - 可选字段缺省时安全回退默认值，避免弱模型漏传参数报错 `invalid_arguments`；
+  - 纯数字字符串自动软转换为数值类型，空字符串安全归一为 `null`；
+  - 静默忽略模型附带的未知幻觉字段，显著提升弱小模型调用的泛化稳定性。
+- **Agent 交互与步骤流转优化**：
+  - **多步交错执行收纳**：增加思考过程状态机重激活机制，终态收折时彻底清除外部实时预览，修复多步交错执行下步骤盒未收起与命令残留泄漏问题；
+  - **聊天流卡片清理**：严格区分中间过程文本与最终回复，避免中间调用工具时提前发出 `stream_end` 导致聊天流残留中间过渡卡片；
+  - **草稿重发与冷启动自愈**：增加空上下文冷启动自愈逻辑，修复断线或切换模型重连后编辑重发历史草稿报错 `responses_history`。
+- **SSE 流与网关兼容性**：
+  - 增加拦截与安全跳过 `data: [DONE]` 终结帧标记，防止误作 JSON 解析报错；
+  - 静默忽略网关代理心跳包与非业务 SSE 事件，提升弱网长连接稳定性；
+  - 弹性兼容 `call_id`、`callId` 与 `id` 多种工具调用字段命名风格，放宽子项状态强校验，完美适配 OpenRouter 等聚合网关。
+
 ## [2.5.5] - 2026-10-02
 
 ### Fixed
