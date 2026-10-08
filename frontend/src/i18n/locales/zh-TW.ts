@@ -607,7 +607,6 @@ export const zhTW = {
   'agent.errors.responses_address': '請填寫 HTTPS API 根位址或 /responses 位址，不支援舊版聊天端點。',
   'agent.errors.responses_storage': '服務商未按要求使用無狀態 Responses 模式（回傳了 store:true）。',
   'agent.errors.responses_stateful_required': '該服務商不支援儲存 Responses 和回應 ID 鏈。',
-  'agent.errors.responses_reasoning': '模型未回傳無狀態回傳所需的推理資料，已停止執行。',
   'agent.errors.responses_http': 'Responses API 請求失敗（HTTP {status}），請檢查金鑰、模型和服務商能力。',
   'agent.errors.responses_chain': '已存回應不可用，請建立新會話；已執行的命令不會自動重播。',
   'agent.errors.responses_invalid': '服務商回傳了無效的 Responses 資料，不完整的工具呼叫未被執行。',

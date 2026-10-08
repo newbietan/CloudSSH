@@ -33,7 +33,6 @@ export interface ResponseReasoning {
   type: 'reasoning';
   id: string;
   summary: Array<{ type: 'summary_text'; text: string }>;
-  encrypted_content?: string;
 }
 
 export type ResponseOutput = ResponseMessage | ResponseFunctionCall | ResponseReasoning;

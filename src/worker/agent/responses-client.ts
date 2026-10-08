@@ -85,18 +85,14 @@ function parseResponse(value: unknown, request: ResponseRequest): ModelResponse 
       }
       output.push({ type: 'message', id: item.id, role: 'assistant', status: 'completed', content });
     } else if (item.type === 'reasoning') {
-      if (typeof item.id !== 'string' || !item.id || !Array.isArray(item.summary)) throw new ResponsesError('responses_invalid');
-      const summary = item.summary.map(raw => {
+      if (typeof item.id !== 'string' || !item.id) throw new ResponsesError('responses_invalid');
+      const rawSummary = Array.isArray(item.summary) ? item.summary : [];
+      const summary = rawSummary.map(raw => {
         const part = object(raw);
         if (part.type !== 'summary_text' || typeof part.text !== 'string') throw new ResponsesError('responses_invalid');
         return { type: 'summary_text' as const, text: part.text };
       });
-      if (item.encrypted_content != null && (typeof item.encrypted_content !== 'string' || !item.encrypted_content)) {
-        throw new ResponsesError('responses_invalid');
-      }
-      if (request.tools && !item.encrypted_content) throw new ResponsesError('responses_reasoning');
-      output.push({ type: 'reasoning', id: item.id, summary,
-        ...(item.encrypted_content ? { encrypted_content: item.encrypted_content as string } : {}) });
+      output.push({ type: 'reasoning', id: item.id, summary });
     } else {
       // Hosted tools and implicit protocol downgrades are not part of CloudSSH's execution boundary.
       throw new ResponsesError('responses_invalid');
@@ -186,13 +182,23 @@ export class ResponsesClient {
     signal.throwIfAborted();
     if (!address.valid) throw new ResponsesError('responses_address');
     // Build the wire body explicitly: no caller can smuggle storage/chaining parameters.
-    const body = JSON.stringify({ model: this.config.model, store: false, truncation: 'disabled',
-      input: request.input, instructions: request.instructions, stream: request.stream,
+    const payload: Record<string, unknown> = {
+      model: this.config.model,
+      store: false,
+      truncation: 'disabled',
+      input: request.input,
+      instructions: request.instructions,
+      stream: request.stream,
       max_output_tokens: request.max_output_tokens,
-      ...(request.prompt_cache_key ? { prompt_cache_key: request.prompt_cache_key } : {}),
-      ...(request.text ? { text: request.text } : {}),
-      ...(request.tools ? { tools: request.tools, tool_choice: 'auto', parallel_tool_calls: false,
-        include: ['reasoning.encrypted_content'] } : {}) });
+    };
+    if (request.prompt_cache_key) payload.prompt_cache_key = request.prompt_cache_key;
+    if (request.text) payload.text = request.text;
+    if (request.tools) {
+      payload.tools = request.tools;
+      payload.tool_choice = 'auto';
+      payload.parallel_tool_calls = false;
+    }
+    const body = JSON.stringify(payload);
     if (new TextEncoder().encode(body).length > 2 * 1024 * 1024) throw new ResponsesError('responses_budget');
     const requestId = crypto.randomUUID();
     for (let attempt = 0; ; attempt++) {
@@ -265,7 +271,7 @@ export class ResponsesClient {
             throw new ResponsesError('responses_invalid');
           }
           // Arguments are assembled only from completed output, never executed from deltas.
-          // Opaque reasoning is retained only from completed output, never displayed or logged.
+          // Reasoning items are retained only from completed output, never displayed or logged as text.
         }
         if (done) throw new ResponsesError('responses_stream'); // EOF is not successful completion.
       }

@@ -654,7 +654,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'agent.errors.responses_address': 'Enter an HTTPS API root or /responses address. Legacy chat endpoints are not supported.',
   'agent.errors.responses_storage': 'The provider did not respect stateless Responses mode (returned store: true).',
   'agent.errors.responses_stateful_required': 'This provider does not support stored Responses and response ID chaining.',
-  'agent.errors.responses_reasoning': 'The model did not return reasoning data required for stateless replay; execution stopped.',
   'agent.errors.responses_http': 'Responses API request failed (HTTP {status}). Check your key, model, and provider capabilities.',
   'agent.errors.responses_chain': 'The stored response is unavailable. Start a new chat; completed commands will not be replayed.',
   'agent.errors.responses_invalid': 'The provider returned an invalid Responses payload. No incomplete tool call was executed.',

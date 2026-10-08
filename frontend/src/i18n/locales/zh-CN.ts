@@ -606,7 +606,6 @@ export const zhCN = {
   'agent.errors.responses_address': '请填写 HTTPS API 根地址或 /responses 地址，不支持旧版聊天端点。',
   'agent.errors.responses_storage': '服务商未按要求使用无状态 Responses 模式（返回了 store:true）。',
   'agent.errors.responses_stateful_required': '该服务商不支持存储 Responses 和响应 ID 链。',
-  'agent.errors.responses_reasoning': '模型未返回无状态回传所需的推理数据，已停止执行。',
   'agent.errors.responses_http': 'Responses API 请求失败（HTTP {status}），请检查密钥、模型和服务商能力。',
   'agent.errors.responses_chain': '已存响应不可用，请新建会话；已执行的命令不会自动重放。',
   'agent.errors.responses_invalid': '服务商返回了无效的 Responses 数据，不完整的工具调用未被执行。',

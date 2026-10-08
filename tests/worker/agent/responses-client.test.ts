@@ -113,7 +113,7 @@ describe('Responses protocol and execution boundary', () => {
 
   it('preserves complete native reasoning and messages for replay without exposing reasoning as text', async () => {
     const body = responseObject('resp_1', 'Visible', [functionCall()]);
-    (body.output as any[]).unshift({ type: 'reasoning', id: 'rs_1', summary: [{ type: 'summary_text', text: 'PRIVATE' }], encrypted_content: 'OPAQUE' });
+    (body.output as any[]).unshift({ type: 'reasoning', id: 'rs_1', summary: [{ type: 'summary_text', text: 'PRIVATE' }] });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sse([{ type: 'response.completed', response: body }]));
     const onText = vi.fn();
     const result = await new ResponsesClient(aiConfig).create(request, new AbortController().signal, onText);
@@ -122,11 +122,13 @@ describe('Responses protocol and execution boundary', () => {
     expect(onText).not.toHaveBeenCalled();
   });
 
-  it('fails closed if reasoning cannot be replayed in stateless tool requests', async () => {
-    const body = responseObject('resp_1');
-    (body.output as any[]).unshift({ type: 'reasoning', id: 'rs_1', summary: [] });
+  it('accepts reasoning items with empty or optional summary from compatible providers without breaking tool flow', async () => {
+    const body = responseObject('resp_1', 'Ready', [functionCall()]);
+    (body.output as any[]).unshift({ type: 'reasoning', id: 'rs_openrouter', summary: [] });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sse([{ type: 'response.completed', response: body }]));
-    await expect(new ResponsesClient(aiConfig).create(request, new AbortController().signal)).rejects.toMatchObject({ code: 'responses_reasoning' });
+    const result = await new ResponsesClient(aiConfig).create(request, new AbortController().signal);
+    expect(result.calls).toHaveLength(1);
+    expect(result.output.some(item => item.type === 'reasoning')).toBe(true);
   });
 
   it('does not execute calls alongside a model refusal', async () => {
