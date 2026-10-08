@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeTerminalSize } from '../src/types';
 
-describe('Types', () => {
-  describe('normalizeTerminalSize', () => {
-    it('should return valid terminal size', () => {
+describe('终端尺寸归一化 (normalizeTerminalSize)', () => {
+  it('should return valid terminal size', () => {
       const result = normalizeTerminalSize(80, 24);
 
       expect(result).not.toBeNull();
@@ -83,4 +82,3 @@ describe('Types', () => {
       expect(result).toBeNull();
     });
   });
-});

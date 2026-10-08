@@ -38,7 +38,7 @@ async function mountPanel(page: Page, path: string, entries: Array<Record<string
   await page.waitForSelector('#sftp-panel');
 }
 
-test.describe('SFTP 第一阶段功能 E2E', () => {
+test.describe('SFTP 路径导航与排序 E2E', () => {
   test('路径面包屑导航正常渲染并可点击直达', async ({ page }) => {
     const entries = [makeEntry('nginx.conf', 100, 1000)];
     await mountPanel(page, '/var/log/nginx', entries);
