@@ -669,7 +669,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'agent.errors.responses_timeout': 'The Agent timed out. Inspect remote state before continuing.',
   'agent.errors.responses_empty': 'The model returned neither visible text nor a tool call; the task was not reported as completed.',
   'agent.errors.responses_key_required': 'The API address changed. Enter the key explicitly to bind it to the new address.',
-  'aiConfig.retentionHint': 'All requests enforce store: false (stateless mode); the provider does not retain session context. History and checkpoints remain locally managed.',
+  'aiConfig.retentionHint': 'CloudSSH only supports the Responses API. Please make sure the API address is correct.',
   'aiConfig.modelDiscoveryHint': 'A model list does not confirm support for the Responses API, function tools, or structured output.',
   'aiConfig.title': 'AI Agent settings',
   'aiConfig.provider': 'Provider',
@@ -682,7 +682,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'aiConfig.saveFailed': 'Could not save AI settings: {message}',
   'aiConfig.loadFailed': 'Could not load models: {message}',
   'aiConfig.compatibleHint':
-    'Responses API only: stateless execution (store: false), function tools, streaming, and JSON Schema output are required.',
+    'CloudSSH only supports the Responses API. Please make sure the API address is correct.',
   'aiConfig.keyUnchanged': 'Leave blank to keep the existing key',
   'aiConfig.currentKey': 'Current key: ****{last4} (leave blank to keep it)',
   'aiConfig.required': 'Base URL and model are required.',

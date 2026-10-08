@@ -48,8 +48,7 @@ export class AIConfigPanel {
               <span class="text-muted mr-2">&gt;</span>
               <input id="ai-base-url" class="terminal-input text-[13px]" placeholder="https://api.openai.com/v1" type="url" required>
             </div>
-            <div class="text-[10px] text-muted opacity-60 mt-1" data-i18n="aiConfig.compatibleHint">${t('aiConfig.compatibleHint')}</div>
-            <div class="text-[10px] text-muted mt-2" data-i18n="aiConfig.retentionHint">${t('aiConfig.retentionHint')}</div>
+            <div class="text-[10px] text-muted opacity-70 mt-1.5" data-i18n="aiConfig.compatibleHint">${t('aiConfig.compatibleHint')}</div>
           </div>
           <div>
             <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="aiConfig.apiKey">API 密钥</label>
