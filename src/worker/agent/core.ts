@@ -245,11 +245,14 @@ export class AgentCore {
         this.addUsage(totals, response, 'main');
         context.accept(response, input);
         this.resetTimeout(controller);
+        const isTerminal = !response.calls.length;
         if (response.text.trim()) {
           finalText = response.text.trim();
-          this.emit(id, { subType: streamed ? 'stream_end' : 'response', content: response.text });
+          if (isTerminal) {
+            this.emit(id, { subType: streamed ? 'stream_end' : 'response', content: response.text });
+          }
         }
-        if (!response.calls.length) {
+        if (isTerminal) {
           if (!response.text.trim()) throw new ResponsesError('responses_empty');
           outcome = 'completed';
           break;

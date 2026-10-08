@@ -806,6 +806,9 @@ export class AgentPanel {
   }
 
   private showThinking(iteration: number): void {
+    if (this.streamingEl) {
+      this.convertStreamToThoughtStep();
+    }
     this.ensureThinkingProcess();
     this.reactivateThinkingProcess();
     const firstIteration = iteration === 0;
