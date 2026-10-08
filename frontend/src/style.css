@@ -3696,7 +3696,8 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   font-size: 11px;
 }
 
-.tp-live-preview:empty {
+.tp-live-preview:empty,
+.agent-thinking-process.tp-done .tp-live-preview {
   display: none;
   border: none;
   padding: 0;

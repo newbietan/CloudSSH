@@ -89,3 +89,37 @@ test('AI settings disclose retention and reject legacy generation addresses loca
   await page.locator('#ai-save-btn').click();
   await expect(page.locator('#ai-config-error')).toContainText('Legacy chat endpoints are not supported');
 });
+
+test('thinking box completely collapses live preview on completion even after interleaved text and tool calls', async ({ page }) => {
+  await mount(page);
+  await page.evaluate(() => {
+    const { panel, sent } = (window as any).__responsesAgent;
+    panel.sendMessage('查看服务器硬件');
+    const requestId = sent.at(-1).requestId;
+    panel.handleAgentFrame({ subType: 'run_start', runId: 1, requestId });
+    // Step 1: execute df -h
+    panel.handleAgentFrame({ subType: 'executing', runId: 1, requestId, tool: 'execute_command', args: { command: 'df -h' } });
+    // Interleaved text stream chunk (triggers mid-run collapse)
+    panel.handleAgentFrame({ subType: 'stream_chunk', runId: 1, requestId, content: '正在分析...' });
+    // Step 2: execute uname -a
+    panel.handleAgentFrame({ subType: 'executing', runId: 1, requestId, tool: 'execute_command', args: { command: 'uname -a' } });
+    // Final stream end and run_end
+    panel.handleAgentFrame({ subType: 'stream_end', runId: 1, requestId, content: '硬件分析完成。' });
+    panel.handleAgentFrame({ subType: 'run_end', runId: 1, requestId, outcome: 'completed' });
+  });
+
+  const thinkingBox = page.locator('.agent-thinking-process');
+  await expect(thinkingBox).toBeVisible();
+  await expect(thinkingBox).toHaveClass(/tp-done/);
+  await expect(thinkingBox).not.toHaveClass(/tp-expanded/);
+  // Live preview must be hidden on done
+  await expect(page.locator('.tp-live-preview')).toBeHidden();
+  await expect(thinkingBox.locator('.tp-status')).toContainText('已完成 3 个步骤');
+
+  // Clicking accordion expands full history
+  await thinkingBox.locator('.tp-accordion').click();
+  await expect(thinkingBox).toHaveClass(/tp-expanded/);
+  await expect(thinkingBox.locator('.tp-steps')).toContainText('$ df -h');
+  await expect(thinkingBox.locator('.tp-steps')).toContainText('正在分析');
+  await expect(thinkingBox.locator('.tp-steps')).toContainText('$ uname -a');
+});

@@ -784,8 +784,27 @@ export class AgentPanel {
       });
   }
 
+  private reactivateThinkingProcess(): void {
+    if (!this.thinkingProcessEl || !this.thinkingIsDone) return;
+    this.thinkingIsDone = false;
+    this.thinkingProcessEl.classList.remove('tp-done', 'tp-expanded');
+
+    const mainIcon = this.thinkingProcessEl.querySelector('.tp-icon') as HTMLElement | null;
+    if (mainIcon) mainIcon.textContent = 'smart_toy';
+
+    const dots = this.thinkingProcessEl.querySelector('.thinking-dots') as HTMLElement | null;
+    if (dots) dots.style.display = '';
+
+    if (this.thinkingStatusEl) {
+      this.thinkingStatusEl.textContent = t('agent.processingSteps', {
+        count: this.thinkingStepCount,
+      });
+    }
+  }
+
   private showThinking(iteration: number): void {
     this.ensureThinkingProcess();
+    this.reactivateThinkingProcess();
     const firstIteration = iteration === 0;
     if (!firstIteration) {
       this.addThinkingStep('thinking', t('agent.thinkingStep', { step: iteration + 1 }));
@@ -799,6 +818,7 @@ export class AgentPanel {
       this.convertStreamToThoughtStep();
     }
     this.ensureThinkingProcess();
+    this.reactivateThinkingProcess();
     const cmd = args?.command || '';
     const label =
       tool === 'ask_user_confirmation'
@@ -903,8 +923,16 @@ export class AgentPanel {
   }
 
   private collapseThinkingProcess(): void {
-    if (!this.thinkingProcessEl || this.thinkingIsDone) return;
+    if (!this.thinkingProcessEl) return;
+    const wasDone = this.thinkingIsDone;
     this.thinkingIsDone = true;
+
+    // 终态下无条件清空外部实时预览容器与缓存，确保折叠时完全收纳
+    if (this.thinkingLiveEl) this.thinkingLiveEl.replaceChildren();
+    this.livePreviewCache = [];
+    this.thinkingProcessEl.classList.add('tp-done');
+
+    if (wasDone) return;
 
     if (this.thinkingCurrentEl?.firstElementChild) {
       this.thinkingStepsEl?.appendChild(this.thinkingCurrentEl.firstElementChild);
