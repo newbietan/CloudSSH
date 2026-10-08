@@ -54,22 +54,33 @@ function parseResponse(value: unknown, request: ResponseRequest): ModelResponse 
   for (const raw of response.output) {
     const item = object(raw);
     if (item.type === 'function_call') {
-      if (item.status !== 'completed' || typeof item.id !== 'string' || !item.id ||
-        typeof item.call_id !== 'string' || !item.call_id || typeof item.name !== 'string' || !item.name ||
-        typeof item.arguments !== 'string' || item.arguments.length > 64_000 || callIds.has(item.call_id)) {
+      if (item.status === 'incomplete' || item.status === 'in_progress') {
         throw new ResponsesError('responses_invalid');
       }
-      callIds.add(item.call_id);
-      const call: ResponseFunctionCall = { type: 'function_call', id: item.id, call_id: item.call_id,
+      const callId = typeof item.call_id === 'string' && item.call_id
+        ? item.call_id
+        : typeof item.callId === 'string' && item.callId
+          ? item.callId
+          : typeof item.id === 'string' && item.id
+            ? item.id
+            : null;
+      const itemId = typeof item.id === 'string' && item.id ? item.id : callId;
+      if (!callId || !itemId || typeof item.name !== 'string' || !item.name ||
+        typeof item.arguments !== 'string' || item.arguments.length > 64_000 || callIds.has(callId)) {
+        throw new ResponsesError('responses_invalid');
+      }
+      callIds.add(callId);
+      const call: ResponseFunctionCall = { type: 'function_call', id: itemId, call_id: callId,
         name: item.name, arguments: item.arguments, status: 'completed' };
       calls.push(call);
       output.push(call);
       if (calls.length > MAX_CALLS) throw new ResponsesError('responses_invalid');
     } else if (item.type === 'message') {
-      if (item.status !== 'completed' || item.role !== 'assistant' || typeof item.id !== 'string' ||
-        !item.id || !Array.isArray(item.content)) {
+      if (item.status === 'incomplete' || item.status === 'in_progress' ||
+        (item.role != null && item.role !== 'assistant') || !Array.isArray(item.content)) {
         throw new ResponsesError('responses_invalid');
       }
+      const itemId = typeof item.id === 'string' && item.id ? item.id : crypto.randomUUID();
       const content: Extract<ResponseOutput, { type: 'message' }>['content'] = [];
       for (const rawPart of item.content) {
         const part = object(rawPart);
@@ -83,16 +94,20 @@ function parseResponse(value: unknown, request: ResponseRequest): ModelResponse 
           content.push({ type: 'refusal', refusal: part.refusal });
         } else throw new ResponsesError('responses_invalid');
       }
-      output.push({ type: 'message', id: item.id, role: 'assistant', status: 'completed', content });
+      output.push({ type: 'message', id: itemId, role: 'assistant', status: 'completed', content });
     } else if (item.type === 'reasoning') {
-      if (typeof item.id !== 'string' || !item.id) throw new ResponsesError('responses_invalid');
-      const rawSummary = Array.isArray(item.summary) ? item.summary : [];
-      const summary = rawSummary.map(raw => {
-        const part = object(raw);
-        if (part.type !== 'summary_text' || typeof part.text !== 'string') throw new ResponsesError('responses_invalid');
-        return { type: 'summary_text' as const, text: part.text };
-      });
-      output.push({ type: 'reasoning', id: item.id, summary });
+      const itemId = typeof item.id === 'string' && item.id ? item.id : crypto.randomUUID();
+      const summary: Array<{ type: 'summary_text'; text: string }> = [];
+      if (Array.isArray(item.summary)) {
+        for (const raw of item.summary) {
+          if (typeof raw === 'string') {
+            summary.push({ type: 'summary_text', text: raw });
+          } else if (raw && typeof raw === 'object' && typeof (raw as any).text === 'string') {
+            summary.push({ type: 'summary_text', text: (raw as any).text });
+          }
+        }
+      }
+      output.push({ type: 'reasoning', id: itemId, summary });
     } else {
       // Hosted tools and implicit protocol downgrades are not part of CloudSSH's execution boundary.
       throw new ResponsesError('responses_invalid');
@@ -102,25 +117,27 @@ function parseResponse(value: unknown, request: ResponseRequest): ModelResponse 
   if (calls.length && (!request.tools || refused)) throw new ResponsesError('responses_invalid');
   let usage: ResponseUsage | undefined;
   if (response.usage != null) {
-    const raw = object(response.usage);
-    for (const field of ['input_tokens', 'output_tokens', 'total_tokens']) {
-      if (typeof raw[field] !== 'number' || !Number.isSafeInteger(raw[field]) || (raw[field] as number) < 0) {
-        throw new ResponsesError('responses_invalid');
-      }
+    try {
+      const raw = object(response.usage);
+      const toTokens = (val: unknown): number => {
+        if (typeof val === 'number' && Number.isFinite(val) && val >= 0) return Math.round(val);
+        return 0;
+      };
+      const inputTokens = toTokens(raw.input_tokens);
+      const outputTokens = toTokens(raw.output_tokens);
+      const totalTokens = toTokens(raw.total_tokens) || (inputTokens + outputTokens);
+      const inputDetails = raw.input_tokens_details == null ? {} : object(raw.input_tokens_details);
+      const outputDetails = raw.output_tokens_details == null ? {} : object(raw.output_tokens_details);
+      usage = {
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        total_tokens: totalTokens,
+        input_tokens_details: { cached_tokens: toTokens(inputDetails.cached_tokens) },
+        output_tokens_details: { reasoning_tokens: toTokens(outputDetails.reasoning_tokens) },
+      };
+    } catch {
+      /* Usage 是非业务阻断元数据，遇到异常结构时忽略或降级，绝不击穿主任务 */
     }
-    const inputDetails = raw.input_tokens_details == null ? {} : object(raw.input_tokens_details);
-    const outputDetails = raw.output_tokens_details == null ? {} : object(raw.output_tokens_details);
-    const counter = (value: unknown): number => {
-      if (value == null) return 0;
-      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw new ResponsesError('responses_invalid');
-      return value;
-    };
-    usage = { input_tokens: counter(raw.input_tokens), output_tokens: counter(raw.output_tokens),
-      total_tokens: counter(raw.total_tokens),
-      input_tokens_details: { cached_tokens: counter(inputDetails.cached_tokens) },
-      output_tokens_details: { reasoning_tokens: counter(outputDetails.reasoning_tokens) } };
-    if ((usage.input_tokens_details?.cached_tokens || 0) > usage.input_tokens ||
-      (usage.output_tokens_details?.reasoning_tokens || 0) > usage.output_tokens) throw new ResponsesError('responses_invalid');
   }
   return { id: response.id, text, calls, output, usage };
 }
@@ -255,7 +272,13 @@ export class ResponsesClient {
           const data = frame.split(/\r\n|\n|\r/).filter(line => line.startsWith('data:'))
             .map(line => line.slice(5).replace(/^ /, '')).join('\n');
           if (!data) continue; // SSE comments/heartbeats
-          const event = object(parseJSON(data));
+          if (data.trim() === '[DONE]') continue; // 行业标准：终结帧安全跳过，绝不交给 JSON.parse
+          let event: Record<string, unknown>;
+          try {
+            event = object(parseJSON(data));
+          } catch {
+            continue; // 忽略非 JSON 数据（如代理心跳或注释），保证流平稳消费
+          }
           if (event.type === 'response.output_text.delta') {
             if (typeof event.delta !== 'string') throw new ResponsesError('responses_invalid');
             streamedChars += event.delta.length;
@@ -267,9 +290,8 @@ export class ResponsesClient {
             throw new ResponsesError('responses_incomplete');
           } else if (event.type === 'response.failed' || event.type === 'error') {
             throw new ResponsesError('responses_failed');
-          } else if (typeof event.type !== 'string' || !event.type.startsWith('response.')) {
-            throw new ResponsesError('responses_invalid');
           }
+          // 对于心跳包（ping/keep-alive）或网关自定义辅助事件，静默忽略，绝不抛错阻断业务
           // Arguments are assembled only from completed output, never executed from deltas.
           // Reasoning items are retained only from completed output, never displayed or logged as text.
         }

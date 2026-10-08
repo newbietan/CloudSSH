@@ -131,6 +131,50 @@ describe('Responses protocol and execution boundary', () => {
     expect(result.output.some(item => item.type === 'reasoning')).toBe(true);
   });
 
+  it('handles terminal data: [DONE] frame and unknown proxy SSE events gracefully', async () => {
+    const body = responseObject('resp_1', '服务器硬件正常。');
+    // 模拟网关在 completed 之后甚至粘包发来 data: [DONE]
+    const customStream = new Response(new ReadableStream({
+      async start(controller) {
+        const text = 'event: ping\ndata: {"type":"ping"}\n\n' +
+          'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"服务器硬件正常。"}\n\n' +
+          `event: response.completed\ndata: ${JSON.stringify({ type: 'response.completed', response: body })}\n\n` +
+          'data: [DONE]\n\n';
+        controller.enqueue(new TextEncoder().encode(text));
+        controller.close();
+      },
+    }), { headers: { 'Content-Type': 'text/event-stream' } });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(customStream);
+    const onText = vi.fn();
+    const result = await new ResponsesClient(aiConfig).create(request, new AbortController().signal, onText);
+    expect(result.text).toBe('服务器硬件正常。');
+    expect(onText).toHaveBeenCalledWith('服务器硬件正常。');
+  });
+
+  it('normalizes tool call identifier across call_id, callId, and id formats and accepts omitted item status', async () => {
+    const body = {
+      id: 'resp_call_id',
+      status: 'completed',
+      output: [
+        {
+          type: 'function_call',
+          callId: 'call_camel_case',
+          name: 'execute_command',
+          arguments: '{"command":"df -h","timeout_ms":null}',
+          // 故意不传 item.status，模拟 OpenRouter / 第三方服务商常见返回
+        },
+      ],
+      usage: { input_tokens: 100.5, output_tokens: 20.2, total_tokens: 120.7,
+        output_tokens_details: { reasoning_tokens: 30 } }, // 浮点数与倒挂元数据容错
+    };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sse([{ type: 'response.completed', response: body }]));
+    const result = await new ResponsesClient(aiConfig).create(request, new AbortController().signal);
+    expect(result.calls).toHaveLength(1);
+    expect(result.calls[0].call_id).toBe('call_camel_case');
+    expect(result.calls[0].status).toBe('completed');
+    expect(result.usage?.input_tokens).toBe(101);
+  });
+
   it('does not execute calls alongside a model refusal', async () => {
     const body = responseObject('resp_1', '', [functionCall()]);
     (body.output as any[]).push({ type: 'message', id: 'msg_refusal', role: 'assistant', status: 'completed', content: [{ type: 'refusal', refusal: 'Declined' }] });
