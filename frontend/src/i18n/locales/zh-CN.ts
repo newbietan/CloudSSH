@@ -472,6 +472,8 @@ export const zhCN = {
   'sftp.deleted': '删除完成',
   'sftp.invalidName': '名称不能为空，且不能包含 /、\\ 或空字符。',
   'sftp.error': 'SFTP 操作失败：{message}',
+  'sftp.error.failureHint':
+    '写入文件失败：远端返回 Failure（通常为服务器磁盘空间不足或配额超限，请在终端执行 df -h 检查）',
   'sftp.edit': '在线编辑',
   'sftp.editAction': '编辑',
   'sftp.contextEdit': '在线编辑',

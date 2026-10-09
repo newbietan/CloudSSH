@@ -513,6 +513,8 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'sftp.deleted': 'Delete completed',
   'sftp.invalidName': 'The name cannot be empty or contain /, \\ or null characters.',
   'sftp.error': 'SFTP operation failed: {message}',
+  'sftp.error.failureHint':
+    'Write failed: Remote returned Failure (typically insufficient disk space or quota exceeded; check with df -h in terminal)',
   'sftp.edit': 'Edit file online',
   'sftp.editAction': 'Edit',
   'sftp.contextEdit': 'Edit online',

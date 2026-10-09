@@ -46,6 +46,13 @@ const SFTP_HEARTBEAT_INTERVAL_MS = 30000;
 
 export { shouldFallbackToDownload, type EditReadErrorCode };
 
+export function formatSFTPErrorMessage(message: string): string {
+  if (message.includes('Failure')) {
+    return t('sftp.error.failureHint');
+  }
+  return message;
+}
+
 export class SFTPPanel {
   private container: HTMLElement;
   private currentPath: string = '/';
@@ -1792,7 +1799,7 @@ export class SFTPPanel {
   private showError(message: string): void {
     const errorEl = this.container.querySelector('#sftp-error')!;
     const errorText = this.container.querySelector('#sftp-error-text')!;
-    errorText.textContent = message;
+    errorText.textContent = formatSFTPErrorMessage(message);
     errorEl.classList.remove('hidden');
     errorEl.classList.add('flex');
     this.hideLoading();

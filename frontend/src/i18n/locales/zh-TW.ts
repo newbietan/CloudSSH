@@ -473,6 +473,8 @@ export const zhTW = {
   'sftp.deleted': '刪除完成',
   'sftp.invalidName': '名稱不能為空，且不能包含 /、\\ 或空字元。',
   'sftp.error': 'SFTP 操作失敗：{message}',
+  'sftp.error.failureHint':
+    '寫入檔案失敗：遠端返回 Failure（通常為伺服器磁碟空間不足或配額超限，請在終端執行 df -h 檢查）',
   'sftp.edit': '線上編輯',
   'sftp.editAction': '編輯',
   'sftp.contextEdit': '線上編輯',
