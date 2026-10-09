@@ -2410,13 +2410,20 @@ export class SSHSession {
         this.sftpHandler.cancelDownload();
         break;
       case 'sftp_upload_start':
-        await this.sftpHandler.uploadStart(msg.path, msg.size || 0, msg.overwrite === true);
+        await this.sftpHandler.uploadStart(
+          msg.path,
+          msg.size || 0,
+          msg.overwrite === true,
+          typeof msg.resumeOffset === 'number' ? msg.resumeOffset : 0
+        );
         break;
       case 'sftp_upload_end':
-        await this.sftpHandler.uploadEnd();
+        await this.sftpHandler.uploadEnd(
+          typeof msg.expectedHash === 'string' ? msg.expectedHash : undefined
+        );
         break;
       case 'sftp_upload_cancel':
-        await this.sftpHandler.uploadCancel();
+        await this.sftpHandler.uploadCancel(msg.deletePartial === true);
         break;
       case 'sftp_delete':
         await this.sftpHandler.deletePath(msg.path);
@@ -2468,7 +2475,8 @@ export class SSHSession {
       (message: string) => {
         this.sendDebug(message);
       },
-      this.debugMode
+      this.debugMode,
+      (remotePath: string) => this.computeRemoteChecksum(remotePath)
     );
 
     const openMsg = sftpChannel.buildOpenSession(channelID);
@@ -3362,6 +3370,25 @@ export class SSHSession {
 
   private isExecChannel(channelID: number): boolean {
     return this.activeExecChannels.has(channelID);
+  }
+
+  /**
+   * 计算远端文件的 SHA-256 哈希值，用于 SFTP 上传完整性校验。
+   */
+  async computeRemoteChecksum(remotePath: string): Promise<string | null> {
+    if (this.state !== 'ready' && this.state !== 'rekey') return null;
+    const escaped = `'${remotePath.replace(/'/g, "'\\''")}'`;
+    const cmd = `sha256sum ${escaped} 2>/dev/null || sha256 -q ${escaped} 2>/dev/null || shasum -a 256 ${escaped} 2>/dev/null`;
+    try {
+      const res = await this.executeAgentCommand(cmd, 30000);
+      if (res.exitCode === 0 && res.stdout.trim()) {
+        const match = res.stdout.match(/[a-fA-F0-9]{64}/);
+        return match ? match[0].toLowerCase() : null;
+      }
+    } catch {
+      return null;
+    }
+    return null;
   }
 
   private sendAgentFrame(msg: any): void {

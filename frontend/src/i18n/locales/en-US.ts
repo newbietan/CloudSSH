@@ -468,6 +468,16 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'sftp.uploadCancelled': 'Upload cancelled',
   'sftp.downloadCancelled': 'Download cancelled',
   'sftp.uploadStreamEnded': 'The file stream ended before the upload completed',
+  'sftp.resumeTitle': 'Incomplete File Detected',
+  'sftp.resumeMessage':
+    '“{name}” already partially exists on the server ({existingSize} of {totalSize}, {percent}%). Resume uploading from checkpoint?',
+  'sftp.resumeAction': 'Resume Upload',
+  'sftp.otherOptions': 'Overwrite or Cancel',
+  'sftp.hashVerified': 'Uploaded: {name} (SHA-256 integrity verified)',
+  'sftp.hashMismatch': 'Warning: “{name}” uploaded, but SHA-256 checksum mismatched. File may be corrupted.',
+  'sftp.etaSeconds': '{seconds}s remaining',
+  'sftp.etaMinutes': '{minutes}m {seconds}s remaining',
+  'sftp.etaHours': '{hours}h {minutes}m remaining',
   'sftp.overwriteTitle': 'Overwrite existing file',
   'sftp.overwriteMessage':
     '“{name}” already exists (current file: {existingSize}; new file: {newSize}). Overwrite it? This cannot be undone.',

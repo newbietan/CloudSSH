@@ -429,6 +429,16 @@ export const zhTW = {
   'sftp.uploadCancelled': '上傳已取消',
   'sftp.downloadCancelled': '下載已取消',
   'sftp.uploadStreamEnded': '檔案讀取提前結束，上傳未完成',
+  'sftp.resumeTitle': '發現未完成的檔案',
+  'sftp.resumeMessage':
+    '“{name}”在伺服器上已有部分資料（已上傳 {existingSize} / 共 {totalSize}，{percent}%）。是否從斷點繼續上傳？',
+  'sftp.resumeAction': '斷點續傳',
+  'sftp.otherOptions': '重新上傳或取消',
+  'sftp.hashVerified': '已上傳：{name}（SHA-256 完整性校驗通過）',
+  'sftp.hashMismatch': '警告：“{name}”已上傳，但 SHA-256 校驗不符，檔案可能損壞',
+  'sftp.etaSeconds': '剩餘 {seconds} 秒',
+  'sftp.etaMinutes': '剩餘 {minutes} 分 {seconds} 秒',
+  'sftp.etaHours': '剩餘 {hours} 小時 {minutes} 分',
   'sftp.overwriteTitle': '覆蓋同名檔案',
   'sftp.overwriteMessage':
     '“{name}”已存在（原檔案 {existingSize}，新檔案 {newSize}）。確定覆蓋嗎？此操作無法撤銷。',

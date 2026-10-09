@@ -428,6 +428,16 @@ export const zhCN = {
   'sftp.uploadCancelled': '上传已取消',
   'sftp.downloadCancelled': '下载已取消',
   'sftp.uploadStreamEnded': '文件读取提前结束，上传未完成',
+  'sftp.resumeTitle': '发现未完成的文件',
+  'sftp.resumeMessage':
+    '“{name}”在服务器上已有部分数据（已上传 {existingSize} / 共 {totalSize}，{percent}%）。是否从断点继续上传？',
+  'sftp.resumeAction': '断点续传',
+  'sftp.otherOptions': '重新上传或取消',
+  'sftp.hashVerified': '已上传：{name}（SHA-256 完整性校验通过）',
+  'sftp.hashMismatch': '警告：“{name}”已上传，但 SHA-256 校验不匹配，文件可能损坏',
+  'sftp.etaSeconds': '剩余 {seconds} 秒',
+  'sftp.etaMinutes': '剩余 {minutes} 分 {seconds} 秒',
+  'sftp.etaHours': '剩余 {hours} 小时 {minutes} 分',
   'sftp.overwriteTitle': '覆盖同名文件',
   'sftp.overwriteMessage':
     '“{name}”已存在（原文件 {existingSize}，新文件 {newSize}）。确定覆盖吗？此操作无法撤销。',

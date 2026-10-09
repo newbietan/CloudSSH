@@ -24,6 +24,7 @@ import {
   promptRename,
 } from './sftp-dialogs';
 import { confirmAction, notify } from './ui-feedback';
+import { StreamingSHA256 } from './sha256-stream';
 
 export interface SFTPFileEntry {
   name: string;
@@ -639,7 +640,7 @@ export class SFTPPanel {
         this.onUploadProgress(msg.loaded, msg.total);
         break;
       case 'sftp_upload_complete':
-        this.onUploadComplete(msg.path);
+        this.onUploadComplete(msg.path, msg.hash, msg.hashMatch);
         break;
       case 'sftp_upload_cancelled':
         this.onUploadCancelled();
@@ -1122,7 +1123,16 @@ export class SFTPPanel {
 
     let sendOffset = 0;
     let acknowledged = 0;
-    const maxBufferedBytes = UPLOAD_CHUNK_SIZE * UPLOAD_CONCURRENCY;
+    let resumeOffset = 0;
+    const hasher = new StreamingSHA256();
+
+    let currentWindowBytes = UPLOAD_CHUNK_SIZE * UPLOAD_CONCURRENCY; // 1MB initial
+    const MIN_WINDOW_BYTES = 256 * 1024;
+    const MAX_WINDOW_BYTES = 4 * 1024 * 1024;
+    let lastAckTime = performance.now();
+    let lastAckBytes = 0;
+    let smoothedSpeed = 0;
+
     let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
     let pendingChunk: Uint8Array | null = null;
     let pendingChunkOffset = 0;
@@ -1139,34 +1149,95 @@ export class SFTPPanel {
       let startResult = await readyPromise;
 
       if (startResult.status === 'conflict') {
-        const confirmed = await confirmAction({
-          title: t('sftp.overwriteTitle'),
-          message: t('sftp.overwriteMessage', {
-            name: file.name,
-            existingSize: this.formatSize(startResult.conflict.existingSize),
-            newSize: this.formatSize(file.size),
-          }),
-          confirmText: t('sftp.overwrite'),
-          cancelText: t('common.cancel'),
-          variant: 'danger',
-        });
-        if (!confirmed || this.uploadCancelRequested || !this.visible) {
-          this.uploadActive = false;
-          this.setIdleStatus(t('sftp.uploadSkipped'));
-          return false;
+        const existingSize = startResult.conflict.existingSize;
+        const canResume = existingSize > 0 && existingSize < file.size;
+
+        if (canResume) {
+          const wantResume = await confirmAction({
+            title: t('sftp.resumeTitle'),
+            message: t('sftp.resumeMessage', {
+              name: file.name,
+              existingSize: this.formatSize(existingSize),
+              totalSize: this.formatSize(file.size),
+              percent: Math.round((existingSize / file.size) * 100),
+            }),
+            confirmText: t('sftp.resumeAction'),
+            cancelText: t('sftp.otherOptions'),
+            variant: 'info',
+          });
+
+          if (this.uploadCancelRequested || !this.visible) {
+            this.uploadActive = false;
+            this.setIdleStatus(t('sftp.uploadSkipped'));
+            return false;
+          }
+
+          if (wantResume) {
+            resumeOffset = existingSize;
+            const resumeReadyPromise = this.uploadWaiter.waitReady();
+            this.sendJSON({
+              type: 'sftp_upload_start',
+              path,
+              size: file.size,
+              overwrite: false,
+              resumeOffset,
+            });
+            startResult = await resumeReadyPromise;
+          }
         }
 
-        const overwriteReadyPromise = this.uploadWaiter.waitReady();
-        this.sendJSON({ type: 'sftp_upload_start', path, size: file.size, overwrite: true });
-        startResult = await overwriteReadyPromise;
+        if (resumeOffset === 0) {
+          const confirmed = await confirmAction({
+            title: t('sftp.overwriteTitle'),
+            message: t('sftp.overwriteMessage', {
+              name: file.name,
+              existingSize: this.formatSize(existingSize),
+              newSize: this.formatSize(file.size),
+            }),
+            confirmText: t('sftp.overwrite'),
+            cancelText: t('common.cancel'),
+            variant: 'danger',
+          });
+          if (!confirmed || this.uploadCancelRequested || !this.visible) {
+            this.uploadActive = false;
+            this.setIdleStatus(t('sftp.uploadSkipped'));
+            return false;
+          }
+
+          const overwriteReadyPromise = this.uploadWaiter.waitReady();
+          this.sendJSON({ type: 'sftp_upload_start', path, size: file.size, overwrite: true });
+          startResult = await overwriteReadyPromise;
+        }
       }
 
       if (startResult.status !== 'ready') {
         throw new Error(t('sftp.uploadConflictUnresolved'));
       }
 
-      reader = file.stream().getReader();
-      this.showProgress(t('sftp.uploading', { name: file.name }), 0);
+      if (resumeOffset > 0) {
+        // 对已有远端数据前缀进行流式哈希累加
+        const prefixBlob = file.slice(0, resumeOffset);
+        const prefixReader = prefixBlob.stream().getReader();
+        while (true) {
+          const { done, value } = await prefixReader.read();
+          if (done) break;
+          if (value) hasher.update(value);
+        }
+        prefixReader.releaseLock();
+
+        reader = file.slice(resumeOffset).stream().getReader();
+        sendOffset = resumeOffset;
+        acknowledged = resumeOffset;
+        lastAckBytes = resumeOffset;
+      } else {
+        reader = file.stream().getReader();
+        sendOffset = 0;
+        acknowledged = 0;
+        lastAckBytes = 0;
+      }
+
+      const initialPercent = file.size > 0 ? (acknowledged / file.size) * 100 : 0;
+      this.showProgress(t('sftp.uploading', { name: file.name }), initialPercent);
       if (this.uploadCancelRequested) {
         await this.waitForUploadCancel();
         return false;
@@ -1183,6 +1254,7 @@ export class SFTPPanel {
         const end = Math.min(pendingChunkOffset + UPLOAD_CHUNK_SIZE, pendingChunk.length);
         const chunk = pendingChunk.subarray(pendingChunkOffset, end);
         pendingChunkOffset = end;
+        hasher.update(chunk);
         return chunk;
       };
 
@@ -1197,7 +1269,7 @@ export class SFTPPanel {
         return true;
       };
 
-      while (sendOffset < file.size && sendOffset - acknowledged < maxBufferedBytes) {
+      while (sendOffset < file.size && sendOffset - acknowledged < currentWindowBytes) {
         if (this.uploadCancelRequested) {
           await this.waitForUploadCancel();
           return false;
@@ -1209,19 +1281,40 @@ export class SFTPPanel {
 
       while (acknowledged < file.size) {
         acknowledged = await this.uploadWaiter.waitProgress();
+        const now = performance.now();
+        const durationSec = (now - lastAckTime) / 1000;
+        const deltaBytes = acknowledged - lastAckBytes;
+
+        if (durationSec > 0.05 && deltaBytes > 0) {
+          const instantSpeed = deltaBytes / durationSec;
+          smoothedSpeed = smoothedSpeed === 0 ? instantSpeed : 0.7 * smoothedSpeed + 0.3 * instantSpeed;
+
+          // 基于 ACK 延迟的自适应滑动窗口调优
+          if (durationSec < 0.6) {
+            currentWindowBytes = Math.min(MAX_WINDOW_BYTES, currentWindowBytes + 256 * 1024);
+          } else if (durationSec > 2.0) {
+            currentWindowBytes = Math.max(MIN_WINDOW_BYTES, Math.floor(currentWindowBytes * 0.75));
+          }
+
+          lastAckTime = now;
+          lastAckBytes = acknowledged;
+          this.updateProgressWithSpeed(acknowledged, file.size, smoothedSpeed);
+        }
+
         if (this.uploadCancelRequested) {
           await this.waitForUploadCancel();
           return false;
         }
-        while (sendOffset < file.size && sendOffset - acknowledged < maxBufferedBytes) {
+        while (sendOffset < file.size && sendOffset - acknowledged < currentWindowBytes) {
           if (!(await sendNextChunk())) {
             throw new Error(t('sftp.uploadStreamEnded'));
           }
         }
       }
 
+      const expectedHash = hasher.digest();
       const completePromise = this.uploadWaiter.waitComplete();
-      this.sendJSON({ type: 'sftp_upload_end' });
+      this.sendJSON({ type: 'sftp_upload_end', expectedHash });
       await completePromise;
       return true;
     } catch (e) {
@@ -1441,7 +1534,7 @@ export class SFTPPanel {
     this.uploadWaiter.resolveProgress(loaded);
   }
 
-  private onUploadComplete(_path: string): void {
+  private onUploadComplete(path?: string, _hash?: string, hashMatch?: boolean): void {
     this.uploadWaiter.resolveComplete();
     this.uploadActive = false;
     this.uploadCancelRequested = false;
@@ -1450,6 +1543,13 @@ export class SFTPPanel {
     this.hideProgress();
     this.setIdleStatus(this.getItemsStatus());
     this.refresh();
+
+    const filename = path ? path.split('/').pop() || path : '';
+    if (hashMatch === true && filename) {
+      notify(t('sftp.hashVerified', { name: filename }), { variant: 'success', duration: 3000 });
+    } else if (hashMatch === false && filename) {
+      notify(t('sftp.hashMismatch', { name: filename }), { variant: 'warning', duration: 6000 });
+    }
   }
 
   private onUploadCancelled(): void {
@@ -1688,6 +1788,46 @@ export class SFTPPanel {
     progressText.textContent = text;
     progressPercent.textContent = Math.round(percent) + '%';
     progressBar.style.width = percent + '%';
+  }
+
+  private formatSpeed(bytesPerSec: number): string {
+    if (bytesPerSec <= 0) return '';
+    return `${this.formatSize(bytesPerSec)}/s`;
+  }
+
+  private formatETA(seconds: number): string {
+    if (!Number.isFinite(seconds) || seconds <= 0) return '';
+    if (seconds < 60) return t('sftp.etaSeconds', { seconds });
+    if (seconds < 3600) {
+      const minutes = Math.floor(seconds / 60);
+      const remainingSec = Math.floor(seconds % 60);
+      return t('sftp.etaMinutes', { minutes, seconds: remainingSec });
+    }
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return t('sftp.etaHours', { hours, minutes });
+  }
+
+  private updateProgressWithSpeed(loaded: number, total: number, bytesPerSec?: number): void {
+    const percent = total > 0 ? (loaded / total) * 100 : 0;
+    const progressPercent = this.container.querySelector('#sftp-progress-percent')!;
+    const progressBar = this.container.querySelector('#sftp-progress-bar')! as HTMLElement;
+    const progressText = this.container.querySelector('#sftp-progress-text')!;
+
+    progressPercent.textContent = Math.round(percent) + '%';
+    progressBar.style.width = percent + '%';
+
+    const loadedStr = this.formatSize(loaded);
+    const totalStr = this.formatSize(total);
+    const speedStr = bytesPerSec && bytesPerSec > 0 ? ` · ${this.formatSpeed(bytesPerSec)}` : '';
+    const remainingBytes = total - loaded;
+    const etaStr =
+      bytesPerSec && bytesPerSec > 0 && remainingBytes > 0
+        ? ` · ${this.formatETA(Math.ceil(remainingBytes / bytesPerSec))}`
+        : '';
+
+    const baseTitle = progressText.textContent?.replace(/\(.*/, '').trim() || '';
+    progressText.textContent = `${baseTitle} (${loadedStr} / ${totalStr}${speedStr}${etaStr})`;
   }
 
   private updateProgress(loaded: number, total: number): void {

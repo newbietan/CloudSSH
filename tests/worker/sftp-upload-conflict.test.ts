@@ -42,7 +42,7 @@ describe('SFTP 同名上传保护', () => {
     const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
     const source = readFileSync(join(rootDir, 'src/worker/ssh-session.ts'), 'utf8');
     expect(source).toContain(
-      'this.sftpHandler.uploadStart(msg.path, msg.size || 0, msg.overwrite === true)'
+      'this.sftpHandler.uploadStart(\n          msg.path,\n          msg.size || 0,\n          msg.overwrite === true'
     );
   });
 
@@ -122,5 +122,58 @@ describe('SFTP 同名上传保护', () => {
       message: '检查目标文件失败: 权限被拒绝',
     });
     expect(sftp.openFile).not.toHaveBeenCalled();
+  });
+
+  it('断点续传：resumeOffset > 0 时使用 WRITE | CREAT 追加写入，不截断也不重复 stat', async () => {
+    const { handler, sendJSON, sftp } = createHandler({
+      openFile: vi.fn().mockResolvedValue(new Uint8Array([SSH_FXP_HANDLE])),
+    });
+
+    await handler.uploadStart('/home/deploy/archive.tar.gz', 500 * 1024 * 1024, false, 300 * 1024 * 1024);
+
+    expect(sftp.stat).not.toHaveBeenCalled();
+    expect(sftp.openFile).toHaveBeenCalledWith(
+      '/home/deploy/archive.tar.gz',
+      SSH_FXF_WRITE | SSH_FXF_CREAT
+    );
+    expect(sendJSON).toHaveBeenCalledWith({
+      type: 'sftp_upload_ready',
+      path: '/home/deploy/archive.tar.gz',
+      resumed: true,
+      resumeOffset: 300 * 1024 * 1024,
+    });
+  });
+
+  it('上传完成时执行 SHA-256 哈希完整性校验并返回对比结果', async () => {
+    const sendJSON = vi.fn();
+    const computeChecksum = vi.fn(async () => 'abc123def456');
+    const handler = new SFTPHandler(
+      1,
+      new SSHChannel(),
+      vi.fn(),
+      sendJSON,
+      vi.fn(),
+      vi.fn(),
+      false,
+      computeChecksum
+    );
+    const sftp = {
+      openFile: vi.fn().mockResolvedValue(new Uint8Array([SSH_FXP_HANDLE])),
+      closeHandle: vi.fn().mockResolvedValue(new Uint8Array([SSH_FXP_STATUS])),
+      parseHandleResponse: vi.fn(() => new Uint8Array([1])),
+    };
+    Object.assign(handler as unknown as Record<string, unknown>, { ready: true, sftp });
+
+    await handler.uploadStart('/home/deploy/archive.tar.gz', 1024, true);
+    await handler.uploadEnd('abc123def456');
+
+    expect(computeChecksum).toHaveBeenCalledWith('/home/deploy/archive.tar.gz');
+    expect(sendJSON).toHaveBeenCalledWith({
+      type: 'sftp_upload_complete',
+      path: '/home/deploy/archive.tar.gz',
+      size: 0,
+      hash: 'abc123def456',
+      hashMatch: true,
+    });
   });
 });
