@@ -41,7 +41,6 @@ export interface SFTPFileEntry {
 export type GetSFTPWebSocketUrlFn = () => string | null;
 
 const UPLOAD_CHUNK_SIZE = 128 * 1024;
-const UPLOAD_CONCURRENCY = 8;
 const DOWNLOAD_URL_REVOKE_DELAY_MS = 1000;
 const SFTP_HEARTBEAT_INTERVAL_MS = 30000;
 
@@ -1126,9 +1125,9 @@ export class SFTPPanel {
     let resumeOffset = 0;
     const hasher = new StreamingSHA256();
 
-    let currentWindowBytes = UPLOAD_CHUNK_SIZE * UPLOAD_CONCURRENCY; // 1MB initial
-    const MIN_WINDOW_BYTES = 256 * 1024;
-    const MAX_WINDOW_BYTES = 4 * 1024 * 1024;
+    let currentWindowBytes = 2 * 1024 * 1024; // 2MB 初始滑动窗口，适配叠加高延迟（200~1000ms）网络
+    const MIN_WINDOW_BYTES = 2 * 1024 * 1024; // 2MB 下限，保证永远大于后端的 256KB progress ACK 周期
+    const MAX_WINDOW_BYTES = 8 * 1024 * 1024; // 8MB 上限，充分释放长肥管道吞吐量
     let lastAckTime = performance.now();
     let lastAckBytes = 0;
     let smoothedSpeed = 0;
@@ -1269,46 +1268,72 @@ export class SFTPPanel {
         return true;
       };
 
-      while (sendOffset < file.size && sendOffset - acknowledged < currentWindowBytes) {
+      while (sendOffset < file.size || acknowledged < file.size) {
         if (this.uploadCancelRequested) {
           await this.waitForUploadCancel();
           return false;
         }
-        if (!(await sendNextChunk())) {
-          throw new Error(t('sftp.uploadStreamEnded'));
-        }
-      }
 
-      while (acknowledged < file.size) {
-        acknowledged = await this.uploadWaiter.waitProgress();
-        const now = performance.now();
-        const durationSec = (now - lastAckTime) / 1000;
-        const deltaBytes = acknowledged - lastAckBytes;
-
-        if (durationSec > 0.05 && deltaBytes > 0) {
-          const instantSpeed = deltaBytes / durationSec;
-          smoothedSpeed = smoothedSpeed === 0 ? instantSpeed : 0.7 * smoothedSpeed + 0.3 * instantSpeed;
-
-          // 基于 ACK 延迟的自适应滑动窗口调优
-          if (durationSec < 0.6) {
-            currentWindowBytes = Math.min(MAX_WINDOW_BYTES, currentWindowBytes + 256 * 1024);
-          } else if (durationSec > 2.0) {
-            currentWindowBytes = Math.max(MIN_WINDOW_BYTES, Math.floor(currentWindowBytes * 0.75));
-          }
-
-          lastAckTime = now;
-          lastAckBytes = acknowledged;
-          this.updateProgressWithSpeed(acknowledged, file.size, smoothedSpeed);
-        }
-
-        if (this.uploadCancelRequested) {
-          await this.waitForUploadCancel();
-          return false;
-        }
+        // 1. 发送在途数据，直到填满当前动态窗口或已达文件末尾
         while (sendOffset < file.size && sendOffset - acknowledged < currentWindowBytes) {
+          if (this.uploadCancelRequested) {
+            await this.waitForUploadCancel();
+            return false;
+          }
           if (!(await sendNextChunk())) {
             throw new Error(t('sftp.uploadStreamEnded'));
           }
+        }
+
+        // 如果全部数据已发送并已得到全部确认，提前跳出
+        if (acknowledged >= file.size) break;
+
+        // 2. 等待服务端进度 ACK（带超时竞速保护，高延迟网络防死锁）
+        let progressAck: number | null = null;
+        let progressTimeoutId: ReturnType<typeof setTimeout> | undefined;
+
+        try {
+          progressAck = await Promise.race([
+            this.uploadWaiter.waitProgress(),
+            new Promise<null>((resolve) => {
+              progressTimeoutId = setTimeout(() => resolve(null), 4000);
+            }),
+          ]);
+        } finally {
+          if (progressTimeoutId) clearTimeout(progressTimeoutId);
+        }
+
+        if (this.uploadCancelRequested) {
+          await this.waitForUploadCancel();
+          return false;
+        }
+
+        if (progressAck !== null) {
+          acknowledged = progressAck;
+          const now = performance.now();
+          const durationSec = (now - lastAckTime) / 1000;
+          const deltaBytes = acknowledged - lastAckBytes;
+
+          if (durationSec > 0.05 && deltaBytes > 0) {
+            const instantSpeed = deltaBytes / durationSec;
+            // 针对高延迟抖动网络的指数平滑（EMA）
+            smoothedSpeed = smoothedSpeed === 0 ? instantSpeed : 0.8 * smoothedSpeed + 0.2 * instantSpeed;
+
+            // 针对高延迟 BDP（带宽时延积）网络的动态自适应窗口：
+            // 延迟良好且稳定时，逐步扩容到 4MB ~ 8MB；延迟极大（>3.5s）时保守微调，但底线绝不低于 2MB！
+            if (durationSec < 1.0) {
+              currentWindowBytes = Math.min(MAX_WINDOW_BYTES, currentWindowBytes + 512 * 1024);
+            } else if (durationSec > 3.5) {
+              currentWindowBytes = Math.max(MIN_WINDOW_BYTES, Math.floor(currentWindowBytes * 0.85));
+            }
+
+            lastAckTime = now;
+            lastAckBytes = acknowledged;
+            this.updateProgressWithSpeed(acknowledged, file.size, smoothedSpeed);
+          }
+        } else {
+          // 超时保护被触发：适当放大窗口 512KB 以打破可能的计数死锁，并继续推进下一轮发送
+          currentWindowBytes = Math.min(MAX_WINDOW_BYTES, currentWindowBytes + 512 * 1024);
         }
       }
 
@@ -1504,7 +1529,8 @@ export class SFTPPanel {
   private cancelCurrentTransfer(): void {
     if (this.uploadActive) {
       this.uploadCancelRequested = true;
-      this.uploadCancelConfirmed = false;
+      this.uploadCancelConfirmed = true;
+      this.uploadWaiter.reject(t('sftp.uploadCancelled'));
       if (!this.uploadCancelWaiter) {
         this.uploadCancelWaiter = new Deferred<void>();
       }

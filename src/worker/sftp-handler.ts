@@ -24,7 +24,7 @@ import {
 const DOWNLOAD_CHUNK_SIZE = 128 * 1024;
 const DOWNLOAD_CONCURRENCY = 8;
 const DOWNLOAD_PROGRESS_CHUNKS = 8;
-const UPLOAD_PROGRESS_CHUNKS = 8;
+const UPLOAD_PROGRESS_BYTES = 256 * 1024; // 每 256KB 回报一次进度，适配高延迟长肥管道网络
 const MAX_SFTP_FILE_SIZE = 500 * 1024 * 1024; // 500MB limit
 const EDITOR_MAX_FILE_SIZE = 2 * 1024 * 1024; // 在线编辑仅限小文本文件
 const BINARY_SNIFF_BYTES = 8192; // 与 Git 一致的空字节嗅探窗口
@@ -79,7 +79,7 @@ export class SFTPHandler {
   private uploadHandle: Uint8Array | null = null;
   private uploadOffset: number = 0;
   private uploadBytesWritten: number = 0;
-  private uploadChunksSinceProgress: number = 0;
+  private uploadBytesSinceProgress: number = 0;
   private uploadTotalSize: number = 0;
   private uploadPath: string = '';
   private uploadWritePromises: Set<Promise<void>> = new Set();
@@ -198,7 +198,7 @@ export class SFTPHandler {
     this.uploadHandle = null;
     this.uploadOffset = 0;
     this.uploadBytesWritten = 0;
-    this.uploadChunksSinceProgress = 0;
+    this.uploadBytesSinceProgress = 0;
     this.uploadTotalSize = 0;
     this.uploadPath = '';
     this.uploadWritePromises.clear();
@@ -823,11 +823,11 @@ export class SFTPHandler {
       }
 
       this.uploadBytesWritten += data.length;
-      this.uploadChunksSinceProgress++;
+      this.uploadBytesSinceProgress += data.length;
 
       if (
         this.uploadTotalSize > 0 &&
-        (this.uploadChunksSinceProgress >= UPLOAD_PROGRESS_CHUNKS ||
+        (this.uploadBytesSinceProgress >= UPLOAD_PROGRESS_BYTES ||
           this.uploadBytesWritten >= this.uploadTotalSize)
       ) {
         this.sendJSON({
@@ -835,7 +835,7 @@ export class SFTPHandler {
           loaded: this.uploadBytesWritten,
           total: this.uploadTotalSize,
         });
-        this.uploadChunksSinceProgress = 0;
+        this.uploadBytesSinceProgress = 0;
       }
     })();
 
@@ -856,7 +856,7 @@ export class SFTPHandler {
       // 出现错误时保留已写入的部分文件，不调用 removeIncompleteUpload，以便断点续传！
       this.sendError('upload', '上传失败: ' + error.message);
     } else {
-      if (this.uploadTotalSize > 0 && this.uploadChunksSinceProgress > 0) {
+      if (this.uploadTotalSize > 0 && this.uploadBytesSinceProgress > 0) {
         this.sendJSON({
           type: 'sftp_upload_progress',
           loaded: uploadedBytes,
