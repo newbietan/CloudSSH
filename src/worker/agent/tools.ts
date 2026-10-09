@@ -28,6 +28,9 @@ export const AGENT_TOOLS: ToolDefinition[] = [
     options: { type: ['string', 'null'], description: '额外参数，没有时为 null' },
   }),
   tool('detect_environment', '探测当前服务器的用户、工作目录、Shell、PATH、alias 和系统环境。', {}),
+  tool('fetch_web_content', '通过安全 HTTP/HTTPS 请求读取指定公开网页或 API 的文本内容（只读）。用于查阅公开技术文档、模型仓库页面、API 规范等。严格阻断内网和私网地址。', {
+    url: { type: 'string', description: '待读取的公开 HTTP/HTTPS 网页或 API 地址' },
+  }),
 ];
 
 // Strict schemas are an upstream aid, with resilient boundary coercion for smaller/varying models.

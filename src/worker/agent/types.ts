@@ -87,6 +87,8 @@ export interface ModelResponse {
   calls: ResponseFunctionCall[];
   output: ResponseOutput[];
   usage?: ResponseUsage;
+  status?: 'completed' | 'incomplete';
+  incompleteReason?: string;
 }
 
 export interface ExecResult {

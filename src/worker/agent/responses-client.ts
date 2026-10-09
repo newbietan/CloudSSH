@@ -17,6 +17,7 @@ interface ResponseRequest {
   max_output_tokens: number;
   prompt_cache_key?: string;
   text?: { format: { type: 'json_schema'; name: string; strict: true; schema: Record<string, unknown> } };
+  allowIncomplete?: boolean;
 }
 
 const MAX_RESPONSE_CHARS = 1_000_000;
@@ -38,14 +39,29 @@ function parseJSON(text: string): Record<string, unknown> {
 
 function parseResponse(value: unknown, request: ResponseRequest): ModelResponse {
   const response = object(value);
-  if (response.status !== 'completed') {
-    throw new ResponsesError(response.status === 'incomplete' ? 'responses_incomplete' : 'responses_failed');
+  const isIncomplete = response.status === 'incomplete';
+  if (response.status !== 'completed' && (!isIncomplete || !request.allowIncomplete)) {
+    throw new ResponsesError(isIncomplete ? 'responses_incomplete' : 'responses_failed');
   }
   if (typeof response.id !== 'string' || !response.id || !Array.isArray(response.output)) {
     throw new ResponsesError('responses_invalid');
   }
   // Missing echoes are allowed; explicitly contradicting store:false is not.
   if (response.store === true) throw new ResponsesError('responses_storage');
+
+  let incompleteReason: string | undefined;
+  if (isIncomplete) {
+    if (response.incomplete_details && typeof response.incomplete_details === 'object') {
+      const details = response.incomplete_details as Record<string, unknown>;
+      if (typeof details.reason === 'string') {
+        incompleteReason = details.reason;
+        if (incompleteReason === 'content_filter') {
+          throw new ResponsesError('responses_incomplete');
+        }
+      }
+    }
+  }
+
   const output: ResponseOutput[] = [];
   let text = '';
   let refused = false;
@@ -54,8 +70,10 @@ function parseResponse(value: unknown, request: ResponseRequest): ModelResponse 
   for (const raw of response.output) {
     const item = object(raw);
     if (item.type === 'function_call') {
-      if (item.status === 'incomplete' || item.status === 'in_progress') {
-        throw new ResponsesError('responses_invalid');
+      if (isIncomplete || item.status === 'incomplete' || item.status === 'in_progress') {
+        // Incomplete tool calls must NEVER be executed.
+        if (!isIncomplete) throw new ResponsesError('responses_invalid');
+        continue;
       }
       const callId = typeof item.call_id === 'string' && item.call_id
         ? item.call_id
@@ -76,7 +94,7 @@ function parseResponse(value: unknown, request: ResponseRequest): ModelResponse 
       output.push(call);
       if (calls.length > MAX_CALLS) throw new ResponsesError('responses_invalid');
     } else if (item.type === 'message') {
-      if (item.status === 'incomplete' || item.status === 'in_progress' ||
+      if ((!isIncomplete && (item.status === 'incomplete' || item.status === 'in_progress')) ||
         (item.role != null && item.role !== 'assistant') || !Array.isArray(item.content)) {
         throw new ResponsesError('responses_invalid');
       }
@@ -114,6 +132,11 @@ function parseResponse(value: unknown, request: ResponseRequest): ModelResponse 
     }
     if (text.length > MAX_RESPONSE_CHARS) throw new ResponsesError('responses_invalid');
   }
+
+  if (isIncomplete && !text.trim()) {
+    throw new ResponsesError('responses_incomplete');
+  }
+
   if (calls.length && (!request.tools || refused)) throw new ResponsesError('responses_invalid');
   let usage: ResponseUsage | undefined;
   if (response.usage != null) {
@@ -139,7 +162,15 @@ function parseResponse(value: unknown, request: ResponseRequest): ModelResponse 
       /* Usage 是非业务阻断元数据，遇到异常结构时忽略或降级，绝不击穿主任务 */
     }
   }
-  return { id: response.id, text, calls, output, usage };
+    return {
+      id: response.id,
+      text,
+      calls,
+      output,
+      usage,
+      status: isIncomplete ? 'incomplete' : 'completed',
+      incompleteReason,
+    };
 }
 
 function delay(ms: number, signal: AbortSignal): Promise<void> {
@@ -287,6 +318,10 @@ export class ResponsesClient {
           } else if (event.type === 'response.completed') {
             return parseResponse(event.response, request);
           } else if (event.type === 'response.incomplete') {
+            if (request.allowIncomplete && event.response && typeof event.response === 'object') {
+              const respObj = { ...(event.response as Record<string, unknown>), status: 'incomplete' };
+              return parseResponse(respObj, request);
+            }
             throw new ResponsesError('responses_incomplete');
           } else if (event.type === 'response.failed' || event.type === 'error') {
             throw new ResponsesError('responses_failed');

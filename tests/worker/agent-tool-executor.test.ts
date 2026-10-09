@@ -122,3 +122,149 @@ describe('工具结果进 LLM 前截断 — token budgeting', () => {
     expect(parsed.stdout.length).toBeLessThan(70_000);
   });
 });
+
+describe('fetch_web_content — 安全只读网页读取与清洗', () => {
+  function mockWebFetch(handler: (url: string) => Response) {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const urlStr = String(input);
+      if (urlStr.includes('1.1.1.1') || urlStr.includes('dns-query')) {
+        return new Response(
+          JSON.stringify({
+            Status: 0,
+            Answer: [{ type: 1, data: '93.184.216.34' }],
+          }),
+          { headers: { 'Content-Type': 'application/dns-json' } }
+        );
+      }
+      return handler(urlStr);
+    });
+  }
+
+  it('SSRF 防御：拦截 localhost、内网与元数据地址', async () => {
+    const { executor } = makeExecutor({ stdout: '', stderr: '', exitCode: 0 });
+    const blockedUrls = [
+      'http://localhost/admin',
+      'http://127.0.0.1:8080',
+      'http://192.168.1.1/router',
+      'http://169.254.169.254/latest/meta-data',
+      'ftp://example.com/file',
+    ];
+
+    for (const url of blockedUrls) {
+      const raw = await executor.execute('fetch_web_content', { url });
+      const parsed = JSON.parse(raw);
+      expect(parsed.blocked).toBe(true);
+      expect(parsed.status).toBe('blocked');
+    }
+  });
+
+  it('成功读取 HTML 并剥离 script/style/标签，解码实体字符', async () => {
+    const { executor } = makeExecutor({ stdout: '', stderr: '', exitCode: 0 });
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Model Hub</title>
+          <style>body { color: red; }</style>
+          <script>console.log("secret");</script>
+        </head>
+        <body>
+          <h1>Minimax-H3 模型</h1>
+          <p>量化版本：&quot;GPTQ-Int4&quot; &amp; &lt;AWQ&gt;</p>
+          <div>显存需求：16GB</div>
+        </body>
+      </html>
+    `;
+    mockWebFetch(() =>
+      new Response(html, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      })
+    );
+
+    const raw = await executor.execute('fetch_web_content', {
+      url: 'https://example.com/models/minimax-h3',
+    });
+    const parsed = JSON.parse(raw);
+    expect(parsed.status).toBe('succeeded');
+    expect(parsed.executed).toBe(false); // 只读工具不记录物理执行
+    expect(parsed.content).toContain('Minimax-H3 模型');
+    expect(parsed.content).toContain('量化版本："GPTQ-Int4" & <AWQ>');
+    expect(parsed.content).toContain('显存需求：16GB');
+    expect(parsed.content).not.toContain('console.log');
+    expect(parsed.content).not.toContain('color: red');
+  });
+
+  it('JSON 响应格式化返回', async () => {
+    const { executor } = makeExecutor({ stdout: '', stderr: '', exitCode: 0 });
+    const data = { model: 'MiniMax-H3', quantization: ['int4', 'int8'], context_length: 32768 };
+    mockWebFetch(() =>
+      new Response(JSON.stringify(data), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    const raw = await executor.execute('fetch_web_content', {
+      url: 'https://example.com/api/model-info',
+    });
+    const parsed = JSON.parse(raw);
+    expect(parsed.status).toBe('succeeded');
+    expect(parsed.content).toContain('"MiniMax-H3"');
+    expect(parsed.content).toContain('32768');
+  });
+
+  it('重定向防护：安全重定向正常跟随，重定向至内网被拦截', async () => {
+    const { executor } = makeExecutor({ stdout: '', stderr: '', exitCode: 0 });
+
+    mockWebFetch(url => {
+      if (url.includes('redirect-to-internal')) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: 'http://127.0.0.1:8080/internal' },
+        });
+      }
+      return new Response('internal page');
+    });
+
+    const raw = await executor.execute('fetch_web_content', {
+      url: 'https://example.com/redirect-to-internal',
+    });
+    const parsed = JSON.parse(raw);
+    expect(parsed.status).toBe('blocked');
+    expect(parsed.blocked).toBe(true);
+  });
+
+  it('拒绝二进制内容', async () => {
+    const { executor } = makeExecutor({ stdout: '', stderr: '', exitCode: 0 });
+    mockWebFetch(() =>
+      new Response('binary data', {
+        headers: { 'Content-Type': 'application/octet-stream' },
+      })
+    );
+
+    const raw = await executor.execute('fetch_web_content', {
+      url: 'https://example.com/model.tar.gz',
+    });
+    const parsed = JSON.parse(raw);
+    expect(parsed.status).toBe('failed');
+    expect(parsed.error).toContain('不支持读取二进制内容');
+  });
+
+  it('超长网页内容安全截断至 16,000 字符内', async () => {
+    const { executor } = makeExecutor({ stdout: '', stderr: '', exitCode: 0 });
+    const hugeHtml = `<p>${'A'.repeat(30_000)}</p>`;
+    mockWebFetch(() =>
+      new Response(hugeHtml, {
+        headers: { 'Content-Type': 'text/html' },
+      })
+    );
+
+    const raw = await executor.execute('fetch_web_content', {
+      url: 'https://example.com/huge-doc',
+    });
+    const parsed = JSON.parse(raw);
+    expect(parsed.status).toBe('succeeded');
+    expect(parsed.truncated).toBe(true);
+    expect(parsed.content).toContain('内容过长已截断');
+    expect(parsed.content.length).toBeLessThan(17_000);
+  });
+});

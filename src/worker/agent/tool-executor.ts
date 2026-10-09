@@ -1,6 +1,7 @@
 // Tool call execution engine — dispatches tool calls to their implementations
 
 import { isBlockedCommand, needsConfirmation } from './safety';
+import { validateBaseUrlWithDNS } from './ssrf';
 import type { TerminalContext } from './terminal-context';
 import type { ExecutionStatus, ExecResult } from './types';
 
@@ -14,7 +15,7 @@ export function executionOutcome(tool: string, output: string): { status: Execut
       : typeof value?.exit_code === 'number' && value.exit_code !== 0 ? 'failed' : 'succeeded';
   const executed = typeof value?.executed === 'boolean' ? value.executed
     : !['blocked', 'rejected', 'cancelled', 'invalid_arguments'].includes(status) &&
-      !['read_terminal_context', 'ask_user_confirmation'].includes(tool);
+      !['read_terminal_context', 'ask_user_confirmation', 'fetch_web_content'].includes(tool);
   return { status, executed };
 }
 
@@ -72,6 +73,8 @@ export class ToolExecutor {
         return this.handleDetectEnvironment(signal);
       case 'ask_user_confirmation':
         return this.handleConfirmation(args.command, args.reason, signal);
+      case 'fetch_web_content':
+        return this.handleFetchWebContent(args.url, signal);
       default:
         return `Unknown tool: ${toolName}`;
     }
@@ -362,4 +365,188 @@ export class ToolExecutor {
       return JSON.stringify({ environment: '', stderr: errMsg, exit_code: -1, status: 'unknown', executed: true });
     }
   }
+
+  private async handleFetchWebContent(rawUrl: string, signal?: AbortSignal): Promise<string> {
+    if (typeof rawUrl !== 'string' || !rawUrl.trim()) {
+      return JSON.stringify({ status: 'invalid_arguments', error: 'URL 不能为空' });
+    }
+    const cleanUrl = rawUrl.trim();
+    let currentUrl = cleanUrl;
+    const maxRedirects = 3;
+
+    for (let hop = 0; hop <= maxRedirects; hop++) {
+      if (signal?.aborted) {
+        return JSON.stringify({ status: 'cancelled', error: '操作已取消' });
+      }
+
+      const validation = await validateBaseUrlWithDNS(currentUrl);
+      if (!validation.valid) {
+        return JSON.stringify({
+          status: 'blocked',
+          blocked: true,
+          error: `URL 安全检查未通过：${validation.reason ?? '禁止访问的目标地址'}`,
+          url: currentUrl,
+        });
+      }
+
+      let parsed: URL;
+      try {
+        parsed = new URL(currentUrl);
+      } catch {
+        return JSON.stringify({ status: 'invalid_arguments', error: '无效的 URL 格式', url: currentUrl });
+      }
+
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return JSON.stringify({ status: 'blocked', blocked: true, error: '仅支持 HTTP/HTTPS 协议', url: currentUrl });
+      }
+
+      try {
+        const timeoutController = new AbortController();
+        const timeoutId = setTimeout(() => timeoutController.abort(), 15000);
+        const combinedAbort = () => timeoutController.abort();
+        signal?.addEventListener('abort', combinedAbort, { once: true });
+
+        let response: Response;
+        try {
+          response = await fetch(currentUrl, {
+            method: 'GET',
+            redirect: 'manual',
+            signal: timeoutController.signal,
+            headers: {
+              'User-Agent': 'CloudSSH-Agent/2.6 (compatible; Linux x86_64)',
+              Accept: 'text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.8',
+            },
+          });
+        } finally {
+          clearTimeout(timeoutId);
+          signal?.removeEventListener('abort', combinedAbort);
+        }
+
+        if ([301, 302, 303, 307, 308].includes(response.status)) {
+          const location = response.headers.get('Location');
+          if (!location) {
+            return JSON.stringify({ status: 'failed', error: `重定向缺少 Location 头 (HTTP ${response.status})`, url: currentUrl });
+          }
+          if (hop === maxRedirects) {
+            return JSON.stringify({ status: 'failed', error: '重定向次数过多（已达上限 3 次）', url: currentUrl });
+          }
+          try {
+            currentUrl = new URL(location, currentUrl).toString();
+          } catch {
+            return JSON.stringify({ status: 'failed', error: '无效的重定向目标地址', location });
+          }
+          continue;
+        }
+
+        if (!response.ok) {
+          return JSON.stringify({ status: 'failed', error: `请求失败 (HTTP ${response.status} ${response.statusText})`, url: currentUrl });
+        }
+
+        const contentType = (response.headers.get('Content-Type') || '').toLowerCase();
+        if (
+          contentType &&
+          !contentType.includes('text/') &&
+          !contentType.includes('application/json') &&
+          !contentType.includes('application/xml') &&
+          !contentType.includes('application/xhtml+xml') &&
+          !contentType.includes('application/javascript')
+        ) {
+          return JSON.stringify({
+            status: 'failed',
+            error: `不支持读取二进制内容 (Content-Type: ${contentType})`,
+            url: currentUrl,
+          });
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          return JSON.stringify({ status: 'failed', error: '无法读取响应流', url: currentUrl });
+        }
+
+        let rawText = '';
+        const decoder = new TextDecoder();
+        let totalBytes = 0;
+        const maxBytes = 512 * 1024;
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            totalBytes += value.byteLength;
+            rawText += decoder.decode(value, { stream: true });
+            if (totalBytes > maxBytes) {
+              await reader.cancel();
+              break;
+            }
+          }
+          rawText += decoder.decode();
+        } finally {
+          reader.releaseLock();
+        }
+
+        const cleanedText = extractReadableText(rawText, contentType);
+        const MAX_OUTPUT_CHARS = 16_000;
+        let result = cleanedText;
+        let truncated = false;
+        if (result.length > MAX_OUTPUT_CHARS) {
+          result = `${result.slice(0, MAX_OUTPUT_CHARS)}\n\n[... 内容过长已截断：仅显示前 16,000 字符 ...]`;
+          truncated = true;
+        }
+
+        return JSON.stringify({
+          status: 'succeeded',
+          url: currentUrl,
+          content_type: contentType || 'unknown',
+          length: result.length,
+          truncated,
+          content: result,
+        });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return JSON.stringify({ status: 'failed', error: `网络请求失败: ${message}`, url: currentUrl });
+      }
+    }
+
+    return JSON.stringify({ status: 'failed', error: '未知请求错误', url: currentUrl });
+  }
+}
+
+export function extractReadableText(raw: string, contentType: string): string {
+  if (contentType.includes('application/json')) {
+    try {
+      const parsed = JSON.parse(raw);
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      return raw;
+    }
+  }
+
+  let text = raw;
+  text = text.replace(/<!--[\s\S]*?-->/g, '');
+  text = text.replace(/<(script|style|svg|noscript)[^>]*>[\s\S]*?<\/\1>/gi, '');
+  text = text.replace(/<\/(p|div|h[1-6]|li|tr|article|section|header|footer)>/gi, '\n');
+  text = text.replace(/<(br|hr)\s*\/?>/gi, '\n');
+  text = text.replace(/<[^>]+>/g, ' ');
+  text = decodeHtmlEntities(text);
+  text = text.replace(/[ \t]+/g, ' ');
+  text = text.replace(/\n\s*\n\s*\n+/g, '\n\n');
+  return text.trim();
+}
+
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, code) => {
+      const n = Number.parseInt(code, 10);
+      return !Number.isNaN(n) && n > 0 && n < 65536 ? String.fromCharCode(n) : '';
+    })
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => {
+      const n = Number.parseInt(hex, 16);
+      return !Number.isNaN(n) && n > 0 && n < 65536 ? String.fromCharCode(n) : '';
+    });
 }

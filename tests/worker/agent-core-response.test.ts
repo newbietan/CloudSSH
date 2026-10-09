@@ -222,6 +222,59 @@ describe('AgentCore Responses delivery and context', () => {
     expect(requests[1]).not.toHaveProperty('tools');
   });
 
+  it('auto-stitches incomplete response with partial text and seamlessly finishes', async () => {
+    const { agent, frames } = setup();
+    const requests: any[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const body = JSON.parse(init?.body as string);
+      requests.push(body);
+      if (requests.length === 1) {
+        return sse([
+          { type: 'response.output_text.delta', delta: '第一段很长的推导分析内容...' },
+          {
+            type: 'response.incomplete',
+            response: {
+              ...responseObject('resp_1', '第一段很长的推导分析内容...', []),
+              status: 'incomplete',
+              incomplete_details: { reason: 'max_output_tokens' },
+            },
+          },
+        ]);
+      }
+      return reply('resp_2', '第二段内容并得出最终结论。', [], body);
+    });
+
+    await agent.handleAgentStart('1', '长任务测试');
+    expect(agent.getStatus()).toBe('idle');
+    expect(requests).toHaveLength(2);
+    expect(requests[1].input.some((item: any) => item.content?.includes('system continuation'))).toBe(true);
+    const streamEnd = frames.find(frame => frame.subType === 'stream_end');
+    expect(streamEnd?.content).toContain('第一段很长的推导分析内容');
+    expect(streamEnd?.content).toContain('第二段内容并得出最终结论');
+    expect(frames.at(-1)).toMatchObject({ subType: 'run_end', outcome: 'completed' });
+  });
+
+  it('fails with responses_incomplete when auto-stitch exceeds maximum attempts', async () => {
+    const { agent, frames } = setup();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return sse([
+        { type: 'response.output_text.delta', delta: '未完待续...' },
+        {
+          type: 'response.incomplete',
+          response: {
+            ...responseObject('resp_inc', '未完待续...', []),
+            status: 'incomplete',
+            incomplete_details: { reason: 'max_output_tokens' },
+          },
+        },
+      ]);
+    });
+
+    await agent.handleAgentStart('1', '无限截断任务');
+    expect(frames.find(frame => frame.subType === 'error')?.code).toBe('responses_incomplete');
+    expect(frames.at(-1)).toMatchObject({ subType: 'run_end', outcome: 'failed' });
+  });
+
   it('TerminalContext snapshots remain bounded and preserve the tail', () => {
     const terminal = new TerminalContext();
     terminal.appendOutput('x'.repeat(25_000) + '\nend');
