@@ -467,7 +467,7 @@ export const zhCN = {
   'sftp.renameMessage': '输入“{name}”的新名称。',
   'sftp.deleteTitle': '删除项目',
   'sftp.deleteMessage': '确定删除“{name}”吗？此操作无法撤销。',
-  'sftp.deleteManyMessage': '确定删除选中的 {count} 个项目吗？目录必须为空，此操作无法撤销。',
+  'sftp.deleteManyMessage': '确定删除选中的 {count} 个项目吗？此操作无法撤销。',
   'sftp.selectedCount': '已选择 {count} 项',
   'sftp.deleted': '删除完成',
   'sftp.invalidName': '名称不能为空，且不能包含 /、\\ 或空字符。',

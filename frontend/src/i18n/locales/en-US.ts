@@ -508,7 +508,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'sftp.deleteTitle': 'Delete item',
   'sftp.deleteMessage': 'Delete “{name}”? This cannot be undone.',
   'sftp.deleteManyMessage':
-    'Delete the {count} selected items? Directories must be empty. This cannot be undone.',
+    'Delete the {count} selected items? This cannot be undone.',
   'sftp.selectedCount': '{count} items selected',
   'sftp.deleted': 'Delete completed',
   'sftp.invalidName': 'The name cannot be empty or contain /, \\ or null characters.',

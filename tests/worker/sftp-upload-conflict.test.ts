@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { SSHChannel } from '../../src/ssh/channel';
 import {
+  SSH_FX_FAILURE,
   SSH_FX_NO_SUCH_FILE,
+  SSH_FX_OK,
   SSH_FX_PERMISSION_DENIED,
   SSH_FXF_CREAT,
   SSH_FXF_EXCL,
@@ -297,5 +299,96 @@ describe('SFTP 同名上传保护', () => {
     }
     await Promise.all(promises);
     expect(pendingWritesCount).toBe(0);
+  });
+});
+
+describe('SFTP 目录递归删除 (rmdirRecursive)', () => {
+  it('空目录直接通过原生 rmdir 成功删除', async () => {
+    const sendJSON = vi.fn();
+    const handler = new SFTPHandler(1, new SSHChannel(), vi.fn(), sendJSON, vi.fn(), vi.fn());
+    const sftp = {
+      rmdir: vi.fn().mockResolvedValue(new Uint8Array([SSH_FXP_STATUS])),
+      parseStatusResponse: vi.fn(() => ({ code: SSH_FX_OK, message: 'OK' })),
+    };
+    Object.assign(handler as unknown as Record<string, unknown>, { ready: true, sftp });
+
+    await handler.removeDirectory('/home/developer/empty_dir');
+
+    expect(sftp.rmdir).toHaveBeenCalledWith('/home/developer/empty_dir');
+    expect(sendJSON).toHaveBeenCalledWith({
+      type: 'sftp_rmdir_result',
+      path: '/home/developer/empty_dir',
+      success: true,
+    });
+  });
+
+  it('非空目录遇 Failure (ENOTEMPTY) 自动触发递归清理并彻底删除', async () => {
+    const sendJSON = vi.fn();
+    const handler = new SFTPHandler(1, new SSHChannel(), vi.fn(), sendJSON, vi.fn(), vi.fn());
+
+    const removedFiles: string[] = [];
+    const removedDirs: string[] = [];
+
+    const sftp = {
+      rmdir: vi.fn().mockImplementation(async (path: string) => {
+        if (path === '/test_dir' && (removedFiles.length < 2 || removedDirs.length < 1)) {
+          return new Uint8Array([SSH_FXP_STATUS]);
+        }
+        if (path === '/test_dir/sub_dir' && !removedFiles.includes('/test_dir/sub_dir/sub_file.txt')) {
+          return new Uint8Array([SSH_FXP_STATUS]);
+        }
+        removedDirs.push(path);
+        return new Uint8Array([SSH_FXP_STATUS]);
+      }),
+      openDir: vi.fn().mockResolvedValue(new Uint8Array([SSH_FXP_HANDLE])),
+      parseHandleResponse: vi.fn((resp: Uint8Array) => resp),
+      closeHandle: vi.fn().mockResolvedValue(new Uint8Array([SSH_FXP_STATUS])),
+      listAllEntries: vi.fn().mockImplementation(async () => {
+        if (sftp.listAllEntries.mock.calls.length === 1) {
+          return {
+            entries: [
+              { filename: '.', attrs: { permissions: 0o040000 | 0o755 } },
+              { filename: '..', attrs: { permissions: 0o040000 | 0o755 } },
+              { filename: 'file1.txt', attrs: { permissions: 0o100000 | 0o644 } },
+              { filename: 'sub_dir', attrs: { permissions: 0o040000 | 0o755 } },
+            ],
+            isTruncated: false,
+          };
+        }
+        return {
+          entries: [
+            { filename: '.', attrs: { permissions: 0o040000 | 0o755 } },
+            { filename: '..', attrs: { permissions: 0o040000 | 0o755 } },
+            { filename: 'sub_file.txt', attrs: { permissions: 0o100000 | 0o644 } },
+          ],
+          isTruncated: false,
+        };
+      }),
+      removeFile: vi.fn().mockImplementation(async (filePath: string) => {
+        removedFiles.push(filePath);
+        return new Uint8Array([SSH_FXP_STATUS]);
+      }),
+      parseStatusResponse: vi.fn(() => {
+        if (sftp.parseStatusResponse.mock.calls.length === 1) {
+          return { code: SSH_FX_FAILURE, message: 'Failure' };
+        }
+        return { code: SSH_FX_OK, message: 'OK' };
+      }),
+    };
+
+    Object.assign(handler as unknown as Record<string, unknown>, { ready: true, sftp });
+
+    await handler.removeDirectory('/test_dir');
+
+    expect(removedFiles).toContain('/test_dir/file1.txt');
+    expect(removedFiles).toContain('/test_dir/sub_dir/sub_file.txt');
+    expect(removedDirs).toContain('/test_dir/sub_dir');
+    expect(removedDirs).toContain('/test_dir');
+
+    expect(sendJSON).toHaveBeenCalledWith({
+      type: 'sftp_rmdir_result',
+      path: '/test_dir',
+      success: true,
+    });
   });
 });

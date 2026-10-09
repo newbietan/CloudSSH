@@ -468,7 +468,7 @@ export const zhTW = {
   'sftp.renameMessage': '輸入“{name}”的新名稱。',
   'sftp.deleteTitle': '刪除項目',
   'sftp.deleteMessage': '確定刪除“{name}”嗎？此操作無法撤銷。',
-  'sftp.deleteManyMessage': '確定刪除選中的 {count} 個項目嗎？目錄必須為空，此操作無法撤銷。',
+  'sftp.deleteManyMessage': '確定刪除選中的 {count} 個項目嗎？此操作無法撤銷。',
   'sftp.selectedCount': '已選擇 {count} 項',
   'sftp.deleted': '刪除完成',
   'sftp.invalidName': '名稱不能為空，且不能包含 /、\\ 或空字元。',

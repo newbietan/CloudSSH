@@ -7,6 +7,7 @@ import {
   type SFTPFileAttributes,
   type SFTPFileEntry,
   SSH_FX_EOF,
+  SSH_FX_FAILURE,
   SSH_FX_NO_SUCH_FILE,
   SSH_FX_OK,
   SSH_FXF_CREAT,
@@ -1010,6 +1011,63 @@ export class SFTPHandler {
     }
   }
 
+  /**
+   * 递归删除非空目录及其内部所有子目录与文件。
+   * 安全防护：
+   * 1. 严格跳过 '.' 与 '..'；
+   * 2. 遇到符号链接（symlink）直接解除链接（removeFile），不递归深入，防止死循环；
+   * 3. 遇到子目录深度优先递归删除；
+   * 4. 清空全部条目后调用 rmdir 删除当前空目录。
+   */
+  private async rmdirRecursive(dirPath: string): Promise<void> {
+    const openResp = await this.sftp.openDir(dirPath);
+    const openType = openResp[0];
+    if (openType === SSH_FXP_STATUS) {
+      const status = this.sftp.parseStatusResponse(openResp);
+      throw new Error(status.message);
+    }
+    if (openType !== SSH_FXP_HANDLE) {
+      throw new Error('打开目录失败');
+    }
+
+    const handle = this.sftp.parseHandleResponse(openResp);
+    let entries: SFTPFileEntry[] = [];
+    try {
+      const result = await this.sftp.listAllEntries(handle);
+      entries = result.entries;
+    } finally {
+      await this.sftp.closeHandle(handle).catch(() => {});
+    }
+
+    for (const entry of entries) {
+      if (entry.filename === '.' || entry.filename === '..') {
+        continue;
+      }
+      const childPath = dirPath === '/' ? `/${entry.filename}` : `${dirPath}/${entry.filename}`;
+      const isDir = getFileTypeFromPermissions(entry.attrs.permissions ?? 0) === 'dir';
+
+      if (isDir) {
+        await this.rmdirRecursive(childPath);
+      } else {
+        const rmResp = await this.sftp.removeFile(childPath);
+        if (rmResp[0] === SSH_FXP_STATUS) {
+          const status = this.sftp.parseStatusResponse(rmResp);
+          if (status.code !== SSH_FX_OK) {
+            throw new Error(`删除文件 ${entry.filename} 失败: ${status.message}`);
+          }
+        }
+      }
+    }
+
+    const rmdirResp = await this.sftp.rmdir(dirPath);
+    if (rmdirResp[0] === SSH_FXP_STATUS) {
+      const status = this.sftp.parseStatusResponse(rmdirResp);
+      if (status.code !== SSH_FX_OK) {
+        throw new Error(status.message);
+      }
+    }
+  }
+
   // Remove directory
   async removeDirectory(path: string): Promise<void> {
     if (!this.ready) {
@@ -1018,15 +1076,29 @@ export class SFTPHandler {
     }
 
     try {
+      // 优先尝试标准 rmdir（若为空目录直接高效删除）
       const resp = await this.sftp.rmdir(path);
       const type = resp[0];
 
       if (type === SSH_FXP_STATUS) {
         const status = this.sftp.parseStatusResponse(resp);
-        if (status.code !== SSH_FX_OK) {
-          this.sendError('rmdir', status.message);
+        if (status.code === SSH_FX_OK) {
+          this.sendJSON({ type: 'sftp_rmdir_result', path, success: true });
           return;
         }
+
+        // 若返回 Failure（POSIX rmdir 对非空目录返回 ENOTEMPTY），自动转入深度递归删除！
+        if (status.code === SSH_FX_FAILURE || status.message === 'Failure') {
+          if (this.debugEnabled) {
+            this.sendDebug(`[SFTP] rmdir failed with Failure, attempting recursive deletion for: ${path}`);
+          }
+          await this.rmdirRecursive(path);
+          this.sendJSON({ type: 'sftp_rmdir_result', path, success: true });
+          return;
+        }
+
+        this.sendError('rmdir', status.message);
+        return;
       }
 
       this.sendJSON({ type: 'sftp_rmdir_result', path, success: true });
