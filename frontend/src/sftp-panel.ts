@@ -40,7 +40,7 @@ export interface SFTPFileEntry {
 
 export type GetSFTPWebSocketUrlFn = () => string | null;
 
-const UPLOAD_CHUNK_SIZE = 128 * 1024;
+export const UPLOAD_CHUNK_SIZE = 32 * 1024; // 32KB — 对齐 OpenSSH (DEFAULT_COPY_BUFLEN=32768) 与 FileZilla 工业标准
 const DOWNLOAD_URL_REVOKE_DELAY_MS = 1000;
 const SFTP_HEARTBEAT_INTERVAL_MS = 30000;
 
@@ -1132,9 +1132,9 @@ export class SFTPPanel {
     let resumeOffset = 0;
     const hasher = new StreamingSHA256();
 
-    let currentWindowBytes = 512 * 1024; // 512KB 慢启动初始窗口，保护隧道/QUIC 缓冲区不发生瞬时溢出
-    const MIN_WINDOW_BYTES = 512 * 1024; // 512KB 绝对下限（为后端 256KB progress ACK 周期的 2 倍，杜绝死锁与流控溢出）
-    const MAX_WINDOW_BYTES = 4 * 1024 * 1024; // 4MB 动态上限，长肥管道安全上限
+    let currentWindowBytes = 256 * 1024; // 256KB 慢启动初始窗口，保护隧道与长肥管道不发生突发溢出
+    const MIN_WINDOW_BYTES = 256 * 1024; // 256KB 绝对下限（为后端 128KB progress ACK 周期的 2 倍，杜绝死锁与流控溢出）
+    const MAX_WINDOW_BYTES = 2 * 1024 * 1024; // 2MB 动态上限，长肥管道安全上限
     let lastAckTime = performance.now();
     let lastAckBytes = 0;
     let smoothedSpeed = 0;
@@ -1327,10 +1327,10 @@ export class SFTPPanel {
             smoothedSpeed = smoothedSpeed === 0 ? instantSpeed : 0.8 * smoothedSpeed + 0.2 * instantSpeed;
 
             // 针对高延迟 BDP（带宽时延积）网络的动态自适应窗口（慢启动与拥塞平滑）：
-            // 收到确认顺畅且延迟良好时（<1.5s），平滑累加 256KB 扩容窗口（最高达 4MB）；
-            // 延迟过大或抖动（>3.0s）时，适当按 0.85 比例平滑收缩，但绝不低于 512KB 安全底线！
+            // 收到确认顺畅且延迟良好时（<1.5s），平滑累加 128KB 扩容窗口（最高达 2MB）；
+            // 延迟过大或抖动（>3.0s）时，适当按 0.85 比例平滑收缩，但绝不低于 256KB 安全底线！
             if (durationSec < 1.5) {
-              currentWindowBytes = Math.min(MAX_WINDOW_BYTES, currentWindowBytes + 256 * 1024);
+              currentWindowBytes = Math.min(MAX_WINDOW_BYTES, currentWindowBytes + 128 * 1024);
             } else if (durationSec > 3.0) {
               currentWindowBytes = Math.max(MIN_WINDOW_BYTES, Math.floor(currentWindowBytes * 0.85));
             }
@@ -1340,8 +1340,8 @@ export class SFTPPanel {
             this.updateProgressWithSpeed(acknowledged, file.size, smoothedSpeed);
           }
         } else {
-          // 超时保护被触发（4秒内未收到 ACK）：温和提升 256KB 窗口以打破潜在死锁
-          currentWindowBytes = Math.min(MAX_WINDOW_BYTES, currentWindowBytes + 256 * 1024);
+          // 超时保护被触发（4秒内未收到 ACK）：温和提升 128KB 窗口以打破潜在死锁
+          currentWindowBytes = Math.min(MAX_WINDOW_BYTES, currentWindowBytes + 128 * 1024);
         }
       }
 

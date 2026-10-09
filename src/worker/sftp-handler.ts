@@ -24,8 +24,8 @@ import {
 const DOWNLOAD_CHUNK_SIZE = 128 * 1024;
 const DOWNLOAD_CONCURRENCY = 8;
 const DOWNLOAD_PROGRESS_CHUNKS = 8;
-const UPLOAD_PROGRESS_BYTES = 256 * 1024; // 每 256KB 回报一次进度，适配高延迟长肥管道网络
-export const MAX_IN_FLIGHT_UPLOAD_WRITES = 4; // 最多允许 4 个分片（4 * 128KB = 512KB）在途写入未确认，保护隧道与长肥网络流控
+const UPLOAD_PROGRESS_BYTES = 128 * 1024; // 每 128KB (4 个 32KB 分片) 回报一次进度，适配高延迟长肥管道网络
+export const MAX_IN_FLIGHT_UPLOAD_WRITES = 8; // 最多允许 8 个分片（8 * 32KB = 256KB）在途写入未确认，保护隧道与长肥网络流控
 const MAX_SFTP_FILE_SIZE = 500 * 1024 * 1024; // 500MB limit
 const EDITOR_MAX_FILE_SIZE = 2 * 1024 * 1024; // 在线编辑仅限小文本文件
 const BINARY_SNIFF_BYTES = 8192; // 与 Git 一致的空字节嗅探窗口

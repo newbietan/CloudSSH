@@ -626,6 +626,8 @@ export class SSHSessionDO {
         23, 80, 443, 25, 465, 587, 110, 143, 993, 995, 3306, 5432, 6379, 9200, 11211, 27017, 5060,
       ];
 
+      const debugMode = this.env.DEBUG_MODE === 'true';
+
       let transport: any;
       let latency = 0;
 
@@ -706,7 +708,15 @@ export class SSHSessionDO {
         }
 
         tunnelWs.accept();
-        transport = new TunnelWebSocketStream(tunnelWs);
+        transport = new TunnelWebSocketStream(tunnelWs, (msg) => {
+          if (debugMode) {
+            try {
+              ws.send(JSON.stringify({ type: 'debug', message: msg }));
+            } catch {
+              /* ignore */
+            }
+          }
+        });
         await transport.opened;
         latency = Date.now() - startTime;
       } else {
@@ -750,7 +760,6 @@ export class SSHSessionDO {
         config.sessionPolicy?.source === 'share'
           ? true
           : this.env.STRICT_HOST_KEY_VERIFY !== 'false';
-      const debugMode = this.env.DEBUG_MODE === 'true';
       const pendingSize = this.pendingTerminalSizes.get(ws);
       if (pendingSize) {
         config.cols = pendingSize.cols;

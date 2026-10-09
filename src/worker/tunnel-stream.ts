@@ -33,12 +33,16 @@ export class TunnelWebSocketStream {
 
   private controller: ReadableStreamDefaultController<Uint8Array> | null = null;
   private isClosed = false;
+  private lastWriteTime = 0;
 
   private readonly onMessage: (event: MessageEvent) => void;
-  private readonly onClose: () => void;
-  private readonly onError: () => void;
+  private readonly onClose: (event?: any) => void;
+  private readonly onError: (event?: any) => void;
 
-  constructor(private readonly ws: WebSocket) {
+  constructor(
+    private readonly ws: WebSocket,
+    private readonly onDebug?: (msg: string) => void
+  ) {
     // Ensure binary frames arrive as ArrayBuffer
     this.ws.binaryType = 'arraybuffer';
 
@@ -67,11 +71,16 @@ export class TunnelWebSocketStream {
       }
     };
 
-    this.onClose = () => {
+    this.onClose = (event?: any) => {
+      const code = event && typeof event.code === 'number' ? event.code : 1000;
+      const reason = event && typeof event.reason === 'string' ? event.reason : '';
+      this.onDebug?.(`[TunnelWS] closed: code=${code}, reason=${reason || '(none)'}`);
       this.closeStream();
     };
 
-    this.onError = () => {
+    this.onError = (event?: any) => {
+      const msg = event instanceof Error ? event.message : 'Tunnel WebSocket connection error';
+      this.onDebug?.(`[TunnelWS] error: ${msg}`);
       this.closeStream(new Error('Tunnel WebSocket connection error'));
     };
 
@@ -89,11 +98,21 @@ export class TunnelWebSocketStream {
     });
 
     this.writable = new WritableStream<Uint8Array>({
-      write: (data) => {
+      write: async (data) => {
         if (this.isClosed) {
           throw new Error('Tunnel WebSocket is closed');
         }
         try {
+          // Pacing throttle for bulk frames over Cloudflare Tunnel:
+          // 大包（>= 8KB）之间保持微小的平滑间隔（2ms），避免瞬时密集脉冲冲垮跨国高延迟下代理/QUIC 缓冲区
+          if (data.length >= 8192) {
+            const now = Date.now();
+            const elapsed = now - this.lastWriteTime;
+            if (elapsed < 2) {
+              await new Promise((resolve) => setTimeout(resolve, 2 - elapsed));
+            }
+            this.lastWriteTime = Date.now();
+          }
           this.ws.send(data);
         } catch (err) {
           this.closeStream(err instanceof Error ? err : new Error(String(err)));
