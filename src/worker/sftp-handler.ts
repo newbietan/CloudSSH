@@ -25,6 +25,7 @@ const DOWNLOAD_CHUNK_SIZE = 128 * 1024;
 const DOWNLOAD_CONCURRENCY = 8;
 const DOWNLOAD_PROGRESS_CHUNKS = 8;
 const UPLOAD_PROGRESS_BYTES = 256 * 1024; // 每 256KB 回报一次进度，适配高延迟长肥管道网络
+export const MAX_IN_FLIGHT_UPLOAD_WRITES = 4; // 最多允许 4 个分片（4 * 128KB = 512KB）在途写入未确认，保护隧道与长肥网络流控
 const MAX_SFTP_FILE_SIZE = 500 * 1024 * 1024; // 500MB limit
 const EDITOR_MAX_FILE_SIZE = 2 * 1024 * 1024; // 在线编辑仅限小文本文件
 const BINARY_SNIFF_BYTES = 8192; // 与 Git 一致的空字节嗅探窗口
@@ -214,9 +215,7 @@ export class SFTPHandler {
   }
 
   private trackUploadWrite(writePromise: Promise<void>): Promise<void> {
-    this.uploadWritePromises.add(writePromise);
-
-    writePromise
+    const safePromise = writePromise
       .catch((e) => {
         const error = e instanceof Error ? e : new Error(String(e));
         if (!this.uploadError) {
@@ -225,9 +224,10 @@ export class SFTPHandler {
         }
       })
       .finally(() => {
-        this.uploadWritePromises.delete(writePromise);
+        this.uploadWritePromises.delete(safePromise);
       });
 
+    this.uploadWritePromises.add(safePromise);
     return writePromise;
   }
 
@@ -805,6 +805,21 @@ export class SFTPHandler {
 
     if (this.uploadError) {
       throw this.uploadError;
+    }
+
+    // 在途并发写入流控：最多允许 MAX_IN_FLIGHT_UPLOAD_WRITES 个分片（512KB）在途未确认写入，
+    // 杜绝无物理背压的出站 WebSocket/CF 隧道瞬间灌包打爆 QUIC/TCP 缓冲区
+    while (
+      this.uploadWritePromises.size >= MAX_IN_FLIGHT_UPLOAD_WRITES &&
+      !this.uploadError &&
+      this.uploadHandle
+    ) {
+      if (this.uploadWritePromises.size === 0) break;
+      await Promise.race(Array.from(this.uploadWritePromises));
+    }
+
+    if (!this.uploadHandle || this.uploadError) {
+      return;
     }
 
     const handle = this.uploadHandle;

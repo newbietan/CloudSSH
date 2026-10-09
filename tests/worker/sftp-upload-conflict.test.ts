@@ -15,7 +15,7 @@ import {
   SSH_FXP_STATUS,
   SSH_S_IFREG,
 } from '../../src/ssh/sftp-types';
-import { SFTPHandler } from '../../src/worker/sftp-handler';
+import { MAX_IN_FLIGHT_UPLOAD_WRITES, SFTPHandler } from '../../src/worker/sftp-handler';
 
 function createHandler(sftpOverrides: Record<string, unknown>) {
   const sendJSON = vi.fn();
@@ -175,5 +175,55 @@ describe('SFTP 同名上传保护', () => {
       hash: 'abc123def456',
       hashMatch: true,
     });
+  });
+
+  it('限制最大在途写入请求为 MAX_IN_FLIGHT_UPLOAD_WRITES (4 个分片)，保护长肥网络与隧道流控', async () => {
+    let pendingWritesCount = 0;
+    let maxObservedInFlight = 0;
+    const writeResolvers: Array<() => void> = [];
+
+    const sendJSON = vi.fn();
+    const handler = new SFTPHandler(1, new SSHChannel(), vi.fn(), sendJSON, vi.fn(), vi.fn());
+    const sftp = {
+      openFile: vi.fn().mockResolvedValue(new Uint8Array([SSH_FXP_HANDLE])),
+      parseHandleResponse: vi.fn(() => new Uint8Array([1])),
+      writeFile: vi.fn(async () => {
+        pendingWritesCount++;
+        maxObservedInFlight = Math.max(maxObservedInFlight, pendingWritesCount);
+        await new Promise<void>((resolve) => writeResolvers.push(resolve));
+        pendingWritesCount--;
+        return new Uint8Array([SSH_FXP_STATUS, 0, 0, 0, 0, 0, 0, 0, 0]);
+      }),
+      parseStatusResponse: vi.fn(() => ({ code: 0, message: 'OK' })),
+    };
+    Object.assign(handler as unknown as Record<string, unknown>, { ready: true, sftp });
+
+    await handler.uploadStart('/test.bin', 10 * 1024 * 1024, true);
+
+    // 连续抛送 5 个分片
+    const p1 = handler.onUploadChunk(new Uint8Array(128 * 1024));
+    const p2 = handler.onUploadChunk(new Uint8Array(128 * 1024));
+    const p3 = handler.onUploadChunk(new Uint8Array(128 * 1024));
+    const p4 = handler.onUploadChunk(new Uint8Array(128 * 1024));
+    const p5 = handler.onUploadChunk(new Uint8Array(128 * 1024));
+
+    // 此时前 4 个分片进入在途，第 5 个分片被流控阻断等待
+    await new Promise((r) => setTimeout(r, 10));
+    expect(maxObservedInFlight).toBe(MAX_IN_FLIGHT_UPLOAD_WRITES);
+    expect(sftp.writeFile).toHaveBeenCalledTimes(4);
+
+    // 释放第 1 个分片
+    writeResolvers[0]();
+    await new Promise((r) => setTimeout(r, 10));
+
+    // 第 5 个分片被唤醒并进入写入
+    expect(sftp.writeFile).toHaveBeenCalledTimes(5);
+
+    // 释放其余分片
+    while (writeResolvers.length > 0) {
+      writeResolvers.shift()!();
+    }
+    await Promise.all([p1, p2, p3, p4, p5]);
+    expect(pendingWritesCount).toBe(0);
   });
 });
