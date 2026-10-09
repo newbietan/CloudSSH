@@ -24,8 +24,9 @@ import {
 const DOWNLOAD_CHUNK_SIZE = 128 * 1024;
 const DOWNLOAD_CONCURRENCY = 8;
 const DOWNLOAD_PROGRESS_CHUNKS = 8;
-const UPLOAD_PROGRESS_BYTES = 128 * 1024; // 每 128KB (4 个 32KB 分片) 回报一次进度，适配高延迟长肥管道网络
-export const MAX_IN_FLIGHT_UPLOAD_WRITES = 8; // 最多允许 8 个分片（8 * 32KB = 256KB）在途写入未确认，保护隧道与长肥网络流控
+export const MAX_IN_FLIGHT_TUNNEL_WRITES = 2; // 隧道模式：最多允许 2 个分片（64KB）在途，严格低于 256KB 溢出红线
+export const MAX_IN_FLIGHT_DIRECT_WRITES = 16; // 直连 TCP 模式：最多允许 16 个分片（2MB）在途，跑满物理带宽
+export const MAX_IN_FLIGHT_UPLOAD_WRITES = MAX_IN_FLIGHT_DIRECT_WRITES; // 兼容别名
 const MAX_SFTP_FILE_SIZE = 500 * 1024 * 1024; // 500MB limit
 const EDITOR_MAX_FILE_SIZE = 2 * 1024 * 1024; // 在线编辑仅限小文本文件
 const BINARY_SNIFF_BYTES = 8192; // 与 Git 一致的空字节嗅探窗口
@@ -154,6 +155,10 @@ export class SFTPHandler {
     buf[offset + 3] = val & 0xff;
   }
 
+  private readonly isTunnel: boolean;
+  private readonly maxInFlightWrites: number;
+  private readonly progressBytesThreshold: number;
+
   constructor(
     channelID: number,
     channel: SSHChannel,
@@ -162,7 +167,8 @@ export class SFTPHandler {
     sendBinary: SendBinaryFn,
     sendDebug: SendDebugFn,
     debugEnabled: boolean = false,
-    computeChecksum?: ComputeChecksumFn
+    computeChecksum?: ComputeChecksumFn,
+    isTunnel: boolean = false
   ) {
     this.channelID = channelID;
     this.channel = channel;
@@ -173,6 +179,9 @@ export class SFTPHandler {
     this.sendDebug = sendDebug;
     this.debugEnabled = debugEnabled;
     this.computeChecksum = computeChecksum;
+    this.isTunnel = isTunnel;
+    this.maxInFlightWrites = isTunnel ? MAX_IN_FLIGHT_TUNNEL_WRITES : MAX_IN_FLIGHT_DIRECT_WRITES;
+    this.progressBytesThreshold = isTunnel ? 32 * 1024 : 256 * 1024;
 
     this.sftp.setSendCallback(this.channelDataSend);
     this.sftp.setDebugCallback(sendDebug, debugEnabled);
@@ -281,7 +290,7 @@ export class SFTPHandler {
       if (!this.ready) {
         this.ready = true;
         if (this.debugEnabled) this.sendDebug(`[SFTP] Version OK`);
-        this.sendJSON({ type: 'sftp_ready' });
+        this.sendJSON({ type: 'sftp_ready', isTunnel: this.isTunnel });
       }
     } catch (e) {
       this.sendError('init', 'SFTP 版本协商失败: ' + (e instanceof Error ? e.message : String(e)));
@@ -784,6 +793,7 @@ export class SFTPHandler {
       const readyPayload: Record<string, unknown> = {
         type: 'sftp_upload_ready',
         path,
+        isTunnel: this.isTunnel,
       };
       if (isResuming) {
         readyPayload.resumed = true;
@@ -807,10 +817,9 @@ export class SFTPHandler {
       throw this.uploadError;
     }
 
-    // 在途并发写入流控：最多允许 MAX_IN_FLIGHT_UPLOAD_WRITES 个分片（512KB）在途未确认写入，
-    // 杜绝无物理背压的出站 WebSocket/CF 隧道瞬间灌包打爆 QUIC/TCP 缓冲区
+    // 在途并发写入流控：隧道模式限制为 2 (64KB)，直连模式放开至 16 (2MB)
     while (
-      this.uploadWritePromises.size >= MAX_IN_FLIGHT_UPLOAD_WRITES &&
+      this.uploadWritePromises.size >= this.maxInFlightWrites &&
       !this.uploadError &&
       this.uploadHandle
     ) {
@@ -842,7 +851,7 @@ export class SFTPHandler {
 
       if (
         this.uploadTotalSize > 0 &&
-        (this.uploadBytesSinceProgress >= UPLOAD_PROGRESS_BYTES ||
+        (this.uploadBytesSinceProgress >= this.progressBytesThreshold ||
           this.uploadBytesWritten >= this.uploadTotalSize)
       ) {
         this.sendJSON({

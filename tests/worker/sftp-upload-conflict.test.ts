@@ -15,7 +15,11 @@ import {
   SSH_FXP_STATUS,
   SSH_S_IFREG,
 } from '../../src/ssh/sftp-types';
-import { MAX_IN_FLIGHT_UPLOAD_WRITES, SFTPHandler } from '../../src/worker/sftp-handler';
+import {
+  MAX_IN_FLIGHT_DIRECT_WRITES,
+  MAX_IN_FLIGHT_TUNNEL_WRITES,
+  SFTPHandler,
+} from '../../src/worker/sftp-handler';
 
 function createHandler(sftpOverrides: Record<string, unknown>) {
   const sendJSON = vi.fn();
@@ -84,6 +88,7 @@ describe('SFTP 同名上传保护', () => {
     expect(sendJSON).toHaveBeenCalledWith({
       type: 'sftp_upload_ready',
       path: '/home/deploy/new.txt',
+      isTunnel: false,
     });
   });
 
@@ -102,6 +107,7 @@ describe('SFTP 同名上传保护', () => {
     expect(sendJSON).toHaveBeenCalledWith({
       type: 'sftp_upload_ready',
       path: '/home/deploy/config.yml',
+      isTunnel: false,
     });
   });
 
@@ -141,6 +147,7 @@ describe('SFTP 同名上传保护', () => {
       path: '/home/deploy/archive.tar.gz',
       resumed: true,
       resumeOffset: 300 * 1024 * 1024,
+      isTunnel: false,
     });
   });
 
@@ -177,13 +184,23 @@ describe('SFTP 同名上传保护', () => {
     });
   });
 
-  it('限制最大在途写入请求为 MAX_IN_FLIGHT_UPLOAD_WRITES (8 个分片)，保护长肥网络与隧道流控', async () => {
+  it('隧道模式限制最大在途写入请求为 MAX_IN_FLIGHT_TUNNEL_WRITES (2 个分片 = 64KB)，防止出站队列溢出', async () => {
     let pendingWritesCount = 0;
     let maxObservedInFlight = 0;
     const writeResolvers: Array<() => void> = [];
 
     const sendJSON = vi.fn();
-    const handler = new SFTPHandler(1, new SSHChannel(), vi.fn(), sendJSON, vi.fn(), vi.fn());
+    const handler = new SFTPHandler(
+      1,
+      new SSHChannel(),
+      vi.fn(),
+      sendJSON,
+      vi.fn(),
+      vi.fn(),
+      false,
+      undefined,
+      true
+    );
     const sftp = {
       openFile: vi.fn().mockResolvedValue(new Uint8Array([SSH_FXP_HANDLE])),
       parseHandleResponse: vi.fn(() => new Uint8Array([1])),
@@ -200,25 +217,81 @@ describe('SFTP 同名上传保护', () => {
 
     await handler.uploadStart('/test.bin', 10 * 1024 * 1024, true);
 
-    // 连续抛送 9 个分片（MAX_IN_FLIGHT_UPLOAD_WRITES + 1）
+    // 连续抛送 3 个分片（MAX_IN_FLIGHT_TUNNEL_WRITES + 1）
     const promises: Array<Promise<void>> = [];
-    for (let i = 0; i < MAX_IN_FLIGHT_UPLOAD_WRITES + 1; i++) {
+    for (let i = 0; i < MAX_IN_FLIGHT_TUNNEL_WRITES + 1; i++) {
       promises.push(handler.onUploadChunk(new Uint8Array(32 * 1024)));
     }
 
-    // 此时前 8 个分片进入在途，第 9 个分片被流控阻断等待
+    // 此时前 2 个分片进入在途，第 3 个分片被流控阻断等待
     await new Promise((r) => setTimeout(r, 10));
-    expect(maxObservedInFlight).toBe(MAX_IN_FLIGHT_UPLOAD_WRITES);
-    expect(sftp.writeFile).toHaveBeenCalledTimes(MAX_IN_FLIGHT_UPLOAD_WRITES);
+    expect(maxObservedInFlight).toBe(MAX_IN_FLIGHT_TUNNEL_WRITES);
+    expect(sftp.writeFile).toHaveBeenCalledTimes(MAX_IN_FLIGHT_TUNNEL_WRITES);
 
     // 释放第 1 个分片
     writeResolvers[0]();
     await new Promise((r) => setTimeout(r, 10));
 
-    // 第 9 个分片被唤醒并进入写入
-    expect(sftp.writeFile).toHaveBeenCalledTimes(MAX_IN_FLIGHT_UPLOAD_WRITES + 1);
+    // 第 3 个分片被唤醒并进入写入
+    expect(sftp.writeFile).toHaveBeenCalledTimes(MAX_IN_FLIGHT_TUNNEL_WRITES + 1);
 
     // 释放其余分片
+    while (writeResolvers.length > 0) {
+      writeResolvers.shift()!();
+    }
+    await Promise.all(promises);
+    expect(pendingWritesCount).toBe(0);
+  });
+
+  it('直连模式放开在途限制为 MAX_IN_FLIGHT_DIRECT_WRITES (16 个分片 = 2MB)，满血释放物理带宽', async () => {
+    let pendingWritesCount = 0;
+    let maxObservedInFlight = 0;
+    const writeResolvers: Array<() => void> = [];
+
+    const sendJSON = vi.fn();
+    const handler = new SFTPHandler(
+      1,
+      new SSHChannel(),
+      vi.fn(),
+      sendJSON,
+      vi.fn(),
+      vi.fn(),
+      false,
+      undefined,
+      false
+    );
+    const sftp = {
+      openFile: vi.fn().mockResolvedValue(new Uint8Array([SSH_FXP_HANDLE])),
+      parseHandleResponse: vi.fn(() => new Uint8Array([1])),
+      writeFile: vi.fn(async () => {
+        pendingWritesCount++;
+        maxObservedInFlight = Math.max(maxObservedInFlight, pendingWritesCount);
+        await new Promise<void>((resolve) => writeResolvers.push(resolve));
+        pendingWritesCount--;
+        return new Uint8Array([SSH_FXP_STATUS, 0, 0, 0, 0, 0, 0, 0, 0]);
+      }),
+      parseStatusResponse: vi.fn(() => ({ code: 0, message: 'OK' })),
+    };
+    Object.assign(handler as unknown as Record<string, unknown>, { ready: true, sftp });
+
+    await handler.uploadStart('/test.bin', 10 * 1024 * 1024, true);
+
+    // 连续抛送 17 个分片（MAX_IN_FLIGHT_DIRECT_WRITES + 1）
+    const promises: Array<Promise<void>> = [];
+    for (let i = 0; i < MAX_IN_FLIGHT_DIRECT_WRITES + 1; i++) {
+      promises.push(handler.onUploadChunk(new Uint8Array(128 * 1024)));
+    }
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(maxObservedInFlight).toBe(MAX_IN_FLIGHT_DIRECT_WRITES);
+    expect(sftp.writeFile).toHaveBeenCalledTimes(MAX_IN_FLIGHT_DIRECT_WRITES);
+
+    // 释放第 1 个分片
+    writeResolvers[0]();
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(sftp.writeFile).toHaveBeenCalledTimes(MAX_IN_FLIGHT_DIRECT_WRITES + 1);
+
     while (writeResolvers.length > 0) {
       writeResolvers.shift()!();
     }

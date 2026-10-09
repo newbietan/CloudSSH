@@ -82,6 +82,7 @@ export class SFTPPanel {
   private uploadQueuePending: number = 0;
   private uploadQueuedFiles: number = 0;
   private uploadActive: boolean = false;
+  private isTunnel: boolean = false;
   private uploadQueueGeneration: number = 0;
   private downloadWaiter: Deferred<void> | null = null;
   private downloadQueueTail: Promise<void> = Promise.resolve();
@@ -597,6 +598,7 @@ export class SFTPPanel {
       case 'sftp_ready':
         this.initializing = false;
         this.sftpReady = true;
+        this.isTunnel = msg.isTunnel === true;
         this.navigate('~');
         break;
       case 'sftp_list_result':
@@ -634,6 +636,9 @@ export class SFTPPanel {
         this.onDownloadCancelled();
         break;
       case 'sftp_upload_ready':
+        if (msg.isTunnel !== undefined) {
+          this.isTunnel = msg.isTunnel === true;
+        }
         this.onUploadReady();
         break;
       case 'sftp_upload_conflict':
@@ -1132,9 +1137,12 @@ export class SFTPPanel {
     let resumeOffset = 0;
     const hasher = new StreamingSHA256();
 
-    let currentWindowBytes = 256 * 1024; // 256KB 慢启动初始窗口，保护隧道与长肥管道不发生突发溢出
-    const MIN_WINDOW_BYTES = 256 * 1024; // 256KB 绝对下限（为后端 128KB progress ACK 周期的 2 倍，杜绝死锁与流控溢出）
-    const MAX_WINDOW_BYTES = 2 * 1024 * 1024; // 2MB 动态上限，长肥管道安全上限
+    // 区分直连模式（满血全速）与 CF 隧道模式（安全受控）
+    const chunkSize = this.isTunnel ? 32 * 1024 : 128 * 1024;
+    let currentWindowBytes = this.isTunnel ? 64 * 1024 : 2 * 1024 * 1024;
+    const MIN_WINDOW_BYTES = this.isTunnel ? 64 * 1024 : 1 * 1024 * 1024;
+    const MAX_WINDOW_BYTES = this.isTunnel ? 128 * 1024 : 8 * 1024 * 1024;
+    const windowStepBytes = this.isTunnel ? 32 * 1024 : 512 * 1024;
     let lastAckTime = performance.now();
     let lastAckBytes = 0;
     let smoothedSpeed = 0;
@@ -1257,7 +1265,7 @@ export class SFTPPanel {
           pendingChunkOffset = 0;
         }
 
-        const end = Math.min(pendingChunkOffset + UPLOAD_CHUNK_SIZE, pendingChunk.length);
+        const end = Math.min(pendingChunkOffset + chunkSize, pendingChunk.length);
         const chunk = pendingChunk.subarray(pendingChunkOffset, end);
         pendingChunkOffset = end;
         hasher.update(chunk);
@@ -1327,10 +1335,10 @@ export class SFTPPanel {
             smoothedSpeed = smoothedSpeed === 0 ? instantSpeed : 0.8 * smoothedSpeed + 0.2 * instantSpeed;
 
             // 针对高延迟 BDP（带宽时延积）网络的动态自适应窗口（慢启动与拥塞平滑）：
-            // 收到确认顺畅且延迟良好时（<1.5s），平滑累加 128KB 扩容窗口（最高达 2MB）；
-            // 延迟过大或抖动（>3.0s）时，适当按 0.85 比例平滑收缩，但绝不低于 256KB 安全底线！
+            // 收到确认顺畅且延迟良好时（<1.5s），平滑累加扩容窗口；
+            // 延迟过大或抖动（>3.0s）时，适当按 0.85 比例平滑收缩，但绝不低于安全底线！
             if (durationSec < 1.5) {
-              currentWindowBytes = Math.min(MAX_WINDOW_BYTES, currentWindowBytes + 128 * 1024);
+              currentWindowBytes = Math.min(MAX_WINDOW_BYTES, currentWindowBytes + windowStepBytes);
             } else if (durationSec > 3.0) {
               currentWindowBytes = Math.max(MIN_WINDOW_BYTES, Math.floor(currentWindowBytes * 0.85));
             }
@@ -1340,8 +1348,8 @@ export class SFTPPanel {
             this.updateProgressWithSpeed(acknowledged, file.size, smoothedSpeed);
           }
         } else {
-          // 超时保护被触发（4秒内未收到 ACK）：温和提升 128KB 窗口以打破潜在死锁
-          currentWindowBytes = Math.min(MAX_WINDOW_BYTES, currentWindowBytes + 128 * 1024);
+          // 超时保护被触发（4秒内未收到 ACK）：温和提升窗口以打破潜在死锁
+          currentWindowBytes = Math.min(MAX_WINDOW_BYTES, currentWindowBytes + windowStepBytes);
         }
       }
 

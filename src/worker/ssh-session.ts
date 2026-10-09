@@ -6,7 +6,12 @@ import {
   KEX_ALGORITHM_ECDH_NISTP256,
 } from '../ssh/algorithms';
 import { SSHAuth } from '../ssh/auth';
-import { type ChannelDataChunk, SSHChannel } from '../ssh/channel';
+import {
+  type ChannelDataChunk,
+  SSH_CHANNEL_DEFAULT_MAX_PACKET_SIZE,
+  SSH_CHANNEL_TUNNEL_MAX_PACKET_SIZE,
+  SSHChannel,
+} from '../ssh/channel';
 import {
   base64UrlEncodeUnsigned,
   convertSSHECDSASig,
@@ -207,6 +212,7 @@ export class SSHSession {
   private readonly idleTimeoutMs: number;
   private idleWatchdogInterval: ReturnType<typeof setInterval> | null = null;
   private shellReadyTimeout: ReturnType<typeof setTimeout> | null = null;
+  private readonly channelMaxPacketSize: number;
   private terminalSize: TerminalSize = { cols: 120, rows: 40 };
   private debugMode: boolean = false;
 
@@ -306,7 +312,11 @@ export class SSHSession {
 
     this.transport = new SSHTransport();
     this.packetParser = new SSHPacketParser();
-    this.shellChannel = new SSHChannel();
+    this.channelMaxPacketSize =
+      this.config.transportType === 'cf_tunnel'
+        ? SSH_CHANNEL_TUNNEL_MAX_PACKET_SIZE
+        : SSH_CHANNEL_DEFAULT_MAX_PACKET_SIZE;
+    this.shellChannel = new SSHChannel(this.channelMaxPacketSize);
     this.channels.set(0, this.shellChannel);
     this.updateTerminalSize(config.cols, config.rows);
 
@@ -371,7 +381,7 @@ export class SSHSession {
     }
 
     const channelID = this.nextChannelID++;
-    const channel = new SSHChannel();
+    const channel = new SSHChannel(this.channelMaxPacketSize);
     this.channels.set(channelID, channel);
 
     const stream = new DirectTcpipStream(
@@ -2450,7 +2460,7 @@ export class SSHSession {
     }
 
     const channelID = this.nextChannelID++;
-    const sftpChannel = new SSHChannel();
+    const sftpChannel = new SSHChannel(this.channelMaxPacketSize);
     this.channels.set(channelID, sftpChannel);
 
     this.sftpHandler = new SFTPHandler(
@@ -2476,7 +2486,8 @@ export class SSHSession {
         this.sendDebug(message);
       },
       this.debugMode,
-      (remotePath: string) => this.computeRemoteChecksum(remotePath)
+      (remotePath: string) => this.computeRemoteChecksum(remotePath),
+      this.config.transportType === 'cf_tunnel'
     );
 
     const openMsg = sftpChannel.buildOpenSession(channelID);
@@ -3248,7 +3259,7 @@ export class SSHSession {
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     this.recordUserActivity();
     const channelID = this.nextChannelID++;
-    const channel = new SSHChannel();
+    const channel = new SSHChannel(this.channelMaxPacketSize);
     this.channels.set(channelID, channel);
 
     const execCh = new AgentExecChannel(channelID, channel);

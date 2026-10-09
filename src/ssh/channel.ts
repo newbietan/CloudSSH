@@ -31,26 +31,26 @@ function writeBytes(target: Uint8Array, offset: number, source: Uint8Array): num
   return offset + source.length;
 }
 
-/**
- * RFC 4254 §5.1: Maximum packet size for SSH channels.
- * 采用 16384 (16KB) 安全上限（与 PuTTY 等业界标准一致）：
- * 1. 杜绝 Cloudflare Tunnel (cloudflared) 内部 32KB 固定读取缓冲区发生单帧溢出截断；
- * 2. 避免任何反向代理、WAF 或嵌入式 SSH (Dropbear) 的 32KB 边界丢包；
- * 3. 完整封包加密后 (~16.4KB) 远低于 32768 字节，MAC 校验绝对安全。
- */
-export const SSH_CHANNEL_MAX_PACKET_SIZE = 16384;
+/** RFC 4254 §5.1: 默认直连 TCP 模式单包最大载荷上限 (32KB)，满血最高吞吐 */
+export const SSH_CHANNEL_DEFAULT_MAX_PACKET_SIZE = 32768;
+
+/** RFC 4254 §5.1: Cloudflare 隧道 (cloudflared) 模式单包最大载荷上限 (16KB)，杜绝 32KB 读取溢出截断 */
+export const SSH_CHANNEL_TUNNEL_MAX_PACKET_SIZE = 16384;
+
+/** 兼容别名：默认直连上限 */
+export const SSH_CHANNEL_MAX_PACKET_SIZE = SSH_CHANNEL_DEFAULT_MAX_PACKET_SIZE;
 
 export class SSHChannel {
   private localChannelID: number = 0;
   private remoteChannelID: number = 0;
   private localWindowSize: number = 2097152;
   private remoteWindowSize: number = 0;
-  private maxPacketSize: number = SSH_CHANNEL_MAX_PACKET_SIZE;
+  private maxPacketSize: number = SSH_CHANNEL_DEFAULT_MAX_PACKET_SIZE;
   private pendingLocalWindowAdjustBytes: number = 0;
   private eofSent: boolean = false;
   private closed: boolean = false;
 
-  constructor(maxPacketSize: number = SSH_CHANNEL_MAX_PACKET_SIZE) {
+  constructor(maxPacketSize: number = SSH_CHANNEL_DEFAULT_MAX_PACKET_SIZE) {
     this.maxPacketSize = maxPacketSize;
   }
 
