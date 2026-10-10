@@ -34,7 +34,10 @@ function writeBytes(target: Uint8Array, offset: number, source: Uint8Array): num
 /** RFC 4254 §5.1: 默认直连 TCP 模式单包最大载荷上限 (32KB)，满血最高吞吐 */
 export const SSH_CHANNEL_DEFAULT_MAX_PACKET_SIZE = 32768;
 
-/** RFC 4254 §5.1: Cloudflare 隧道 (cloudflared) 模式单包最大载荷上限 (16KB)，杜绝 32KB 读取溢出截断 */
+/**
+ * RFC 4254 §5.1: 隧道模式 SSH 通道载荷上限（16KiB）。
+ * 这不含 SSH/加密开销；cloudflared 的 16KiB 消息边界由 tunnel-stream.ts 在加密后分帧保护。
+ */
 export const SSH_CHANNEL_TUNNEL_MAX_PACKET_SIZE = 16384;
 
 /** 兼容别名：默认直连上限 */

@@ -21,6 +21,11 @@ export function isValidTunnelHostname(host: string): boolean {
   );
 }
 
+// cloudflared 2026.9.3/2026.10.0 TCP-over-WebSocket uses a 16KiB copy buffer.
+// Conn.Read copies a whole message into it without retaining an oversized tail.
+// Cap the encrypted carrier message, NOT just the SSH channel data payload.
+const MAX_TUNNEL_WEBSOCKET_MESSAGE_BYTES = 16 * 1024;
+
 /**
  * A minimal Socket-compatible duplex byte stream backed by an outbound
  * Cloudflare Tunnel WebSocket connection.
@@ -103,17 +108,24 @@ export class TunnelWebSocketStream {
           throw new Error('Tunnel WebSocket is closed');
         }
         try {
-          // Pacing throttle for bulk frames over Cloudflare Tunnel:
-          // 大包（>= 8KB）之间保持微小的平滑间隔（2ms），避免瞬时密集脉冲冲垮跨国高延迟下代理/QUIC 缓冲区
-          if (data.length >= 8192) {
-            const now = Date.now();
-            const elapsed = now - this.lastWriteTime;
-            if (elapsed < 2) {
-              await new Promise((resolve) => setTimeout(resolve, 2 - elapsed));
+          // WebSocket message boundaries are independent of SSH packet boundaries.
+          // Split AFTER encryption so headers, padding and MAC/tag bytes also fit.
+          // The serialized WritableStream preserves every byte's original order.
+          for (let offset = 0; offset < data.length; offset += MAX_TUNNEL_WEBSOCKET_MESSAGE_BYTES) {
+            const frame = data.subarray(offset, offset + MAX_TUNNEL_WEBSOCKET_MESSAGE_BYTES);
+            if (frame.length >= 8192) {
+              const elapsed = Date.now() - this.lastWriteTime;
+              if (elapsed < 2) {
+                await new Promise((resolve) => setTimeout(resolve, 2 - elapsed));
+              }
+              this.lastWriteTime = Date.now();
             }
-            this.lastWriteTime = Date.now();
+            // The connection can close while waiting between carrier messages.
+            if (this.isClosed) {
+              throw new Error('Tunnel WebSocket is closed');
+            }
+            this.ws.send(frame);
           }
-          this.ws.send(data);
         } catch (err) {
           this.closeStream(err instanceof Error ? err : new Error(String(err)));
           throw err;

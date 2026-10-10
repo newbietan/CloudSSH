@@ -25,7 +25,7 @@ import {
 const DOWNLOAD_CHUNK_SIZE = 128 * 1024;
 const DOWNLOAD_CONCURRENCY = 8;
 const DOWNLOAD_PROGRESS_CHUNKS = 8;
-export const MAX_IN_FLIGHT_TUNNEL_WRITES = 2; // 隧道模式：最多允许 2 个分片（64KB）在途，严格低于 256KB 溢出红线
+export const MAX_IN_FLIGHT_TUNNEL_WRITES = 2; // 隧道保守并发窗口（2 × 32KiB）；消息截断由加密后载体分帧防护
 export const MAX_IN_FLIGHT_DIRECT_WRITES = 16; // 直连 TCP 模式：最多允许 16 个分片（2MB）在途，跑满物理带宽
 export const MAX_IN_FLIGHT_UPLOAD_WRITES = MAX_IN_FLIGHT_DIRECT_WRITES; // 兼容别名
 const MAX_SFTP_FILE_SIZE = 500 * 1024 * 1024; // 500MB limit
