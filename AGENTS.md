@@ -4,7 +4,7 @@
   - wrangler.toml (Durable Objects、环境变量、路由)
   - src/worker/index.ts (API 路由、入口逻辑)
   - scripts/build-html.js (构建流程)
-  - package.json (依赖、脚本命令)
+  - package.json / frontend/package.json (版本同步、依赖、脚本命令)
   - src/types.ts (Env 接口、类型定义)
   - biome.json (代码格式与 lint 约定)
   - .pi-lens.json (pi-lens 项目策略：规则禁用与豁免口径，见 #31)

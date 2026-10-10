@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.2] - 2026-10-10
+
+### Fixed
+
+- **移动端 tmux 触摸滚动（#158）**：在支持滚轮的远端鼠标模式下，将触摸滑动转换为 xterm 按当前协议编码的滚轮事件，支持进入 tmux 复制模式并双向浏览历史；报文绑定手势起始面板并限制单次发送数量，同时保留普通终端本地历史滚动、移动选区优先及 Shell 就绪门控。
+- **移动端 Ctrl/Alt 焦点冲突（#158）**：修复启用焦点报告后，点击修饰键时终端重新聚焦的报文被误当成键盘输入、导致 Ctrl/Alt 提前失效的问题；精确分流焦点报文并原样通过现有 trzsz 管线发送，不消耗一次性修饰键，也不干扰 iOS 输入法延迟回退与去重。
+
+### Changed
+
+- **移动端终端回归覆盖**：新增 Chromium 与 WebKit 的触摸滚轮、焦点报告、修饰键、粘贴、连接门控及输入法回归测试，验证取消、断连、协议切换与既有终端交互行为。
+
 ## [2.6.1] - 2026-10-10
 
 ### Added
