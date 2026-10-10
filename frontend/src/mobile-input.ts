@@ -31,6 +31,11 @@ export function diffTextareaInput(oldValue: string, newValue: string): string {
   return `${'\x7f'.repeat(removedCount)}${newValue.substring(commonPrefixLength)}`;
 }
 
+/** 精确识别 xterm 的焦点报告，不能将方向键、Alt 或粘贴等 ESC 序列一并视为报告。 */
+export function isTerminalFocusReport(data: string): boolean {
+  return data === '\x1b[I' || data === '\x1b[O';
+}
+
 /** 将移动端一次性 Ctrl/Alt 状态应用到下一段终端输入。 */
 export function applyMobileModifier(
   data: string,

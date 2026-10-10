@@ -20,6 +20,7 @@ import {
   applyMobileModifier,
   diffTextareaInput,
   isIOSLike,
+  isTerminalFocusReport,
   type MobileModifier,
   type MobileTerminalKey,
   mobileTerminalKeySequence,
@@ -116,6 +117,7 @@ interface TerminalCell {
 }
 
 interface MobileScrollGesture {
+  mode: 'local' | 'remote';
   pointerId: number;
   startX: number;
   startY: number;
@@ -125,6 +127,7 @@ interface MobileScrollGesture {
 }
 
 const MOBILE_SCROLL_START_THRESHOLD_PX = 10;
+const MAX_MOBILE_WHEEL_EVENTS_PER_MOVE = 16;
 const MOBILE_VIEWPORT_QUERY = '(max-width: 767px), (max-width: 1180px) and (pointer: coarse)';
 const MOBILE_CONNECTION_RECOVERY_QUERY = '(pointer: coarse)';
 
@@ -184,6 +187,7 @@ export class SSHTerminal {
   private mobileSelectionPointerId: number | null = null;
   private mobileSelectionStart: TerminalCell | null = null;
   private mobileScrollGesture: MobileScrollGesture | null = null;
+  private dispatchingMobileWheel = false;
   private mobileModifier: MobileModifier | null = null;
   private imeTextarea: HTMLTextAreaElement | null = null;
   private imePendingBaseline: string | null = null;
@@ -606,18 +610,27 @@ export class SSHTerminal {
     this.mobileSelectionStart = null;
   }
 
+  private getMobileScrollMode(): MobileScrollGesture['mode'] | null {
+    const mouseMode = this.terminal.modes.mouseTrackingMode;
+    // X10 only reports button presses, not wheels. Never fall back to cursor keys here.
+    if (mouseMode === 'x10') return null;
+    if (mouseMode !== 'none') {
+      return this.sessionReady && this.ws?.readyState === WebSocket.OPEN && this.trzszFilter
+        ? 'remote'
+        : null;
+    }
+    return this.terminal.buffer.active.type === 'normal' ? 'local' : null;
+  }
+
   private beginMobileScroll(event: PointerEvent): void {
     if (event.pointerType === 'mouse' || this.mobileSelectionMode) return;
     const target = event.target;
     if (!(target instanceof Element) || !target.closest('.xterm-screen')) return;
-    // 备用屏幕和远端鼠标协议由远端应用控制，不能把滑动误当作本地历史滚动。
-    if (
-      this.terminal.buffer.active.type !== 'normal' ||
-      this.terminal.modes.mouseTrackingMode !== 'none'
-    )
-      return;
+    const mode = this.getMobileScrollMode();
+    if (!mode) return;
 
     this.mobileScrollGesture = {
+      mode,
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
@@ -630,6 +643,11 @@ export class SSHTerminal {
   private updateMobileScroll(event: PointerEvent): boolean {
     const gesture = this.mobileScrollGesture;
     if (!gesture || gesture.pointerId !== event.pointerId) return false;
+    // A mode/connection change must not turn an in-flight remote swipe into local scrolling.
+    if (gesture.mode !== this.getMobileScrollMode()) {
+      this.finishMobileScroll(event.pointerId);
+      return false;
+    }
 
     if (!gesture.active) {
       const distanceX = Math.abs(event.clientX - gesture.startX);
@@ -656,10 +674,43 @@ export class SSHTerminal {
     gesture.lastY = event.clientY;
     const lines = Math.trunc(gesture.remainder / cellHeight);
     if (lines !== 0) {
-      this.terminal.scrollLines(lines);
+      if (gesture.mode === 'remote') {
+        this.dispatchMobileScrollWheel(gesture, lines);
+      } else {
+        this.terminal.scrollLines(lines);
+      }
       gesture.remainder -= lines * cellHeight;
     }
     return true;
+  }
+
+  private dispatchMobileScrollWheel(gesture: MobileScrollGesture, lines: number): void {
+    const screen = this.container.querySelector<HTMLElement>('.xterm-screen');
+    if (!screen) return;
+    const rect = screen.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    // Anchor to the original tmux pane even when pointer capture drags outside the screen.
+    const clientX = Math.min(Math.max(gesture.startX, rect.left), rect.right - 0.01);
+    const clientY = Math.min(Math.max(gesture.startY, rect.top), rect.bottom - 0.01);
+    const count = Math.min(Math.abs(lines), MAX_MOBILE_WHEEL_EVENTS_PER_MOVE);
+    this.dispatchingMobileWheel = true;
+    try {
+      for (let index = 0; index < count; index++) {
+        // xterm negotiates SGR/legacy/pixel encoding and emits through onData/onBinary -> trzsz.
+        screen.dispatchEvent(
+          new WheelEvent('wheel', {
+            bubbles: true,
+            cancelable: true,
+            clientX,
+            clientY,
+            deltaMode: WheelEvent.DOM_DELTA_LINE,
+            deltaY: Math.sign(lines),
+          })
+        );
+      }
+    } finally {
+      this.dispatchingMobileWheel = false;
+    }
   }
 
   private finishMobileScroll(pointerId?: number): boolean {
@@ -1245,10 +1296,12 @@ export class SSHTerminal {
     // User input goes through trzsz filter
     this.disposables.push(
       this.terminal.onData((data) => {
-        if (this.imePendingBaseline !== null && data) {
+        const focusReport = isTerminalFocusReport(data);
+        // DECSET 1004 / focus changes emit onData too, but are not observed IME text input.
+        if (this.imePendingBaseline !== null && data && !focusReport) {
           this.imePendingHandled = true;
         }
-        this.processTerminalInput(data);
+        this.processTerminalInput(data, focusReport ? 'focus-report' : 'keyboard');
       })
     );
 
@@ -1373,9 +1426,16 @@ export class SSHTerminal {
     return true;
   }
 
-  private processTerminalInput(data: string): void {
+  private processTerminalInput(
+    data: string,
+    source: 'keyboard' | 'focus-report' = 'keyboard'
+  ): void {
     if (!this.sessionReady || !this.trzszFilter) return;
-    const transformed = applyMobileModifier(data, this.mobileModifier);
+    // Focus/mouse reports must keep their encoding and not consume one-shot keyboard modifiers.
+    const transformed = applyMobileModifier(
+      data,
+      source === 'focus-report' || this.dispatchingMobileWheel ? null : this.mobileModifier
+    );
     if (transformed.consumed) this.setMobileModifier(null);
     this.trzszFilter.processTerminalInput(transformed.data);
   }
@@ -1601,6 +1661,7 @@ export class SSHTerminal {
 
   private resetActiveConnection(): void {
     this.authChallengeDialog?.dismiss();
+    this.finishMobileScroll();
     this.stopHeartbeat();
     this.clearReconnectTimeout();
     this.disposeConnectionDisposables();

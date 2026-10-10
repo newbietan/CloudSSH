@@ -3,6 +3,7 @@ import {
   applyMobileModifier,
   diffTextareaInput,
   isIOSLike,
+  isTerminalFocusReport,
   mobileTerminalKeySequence,
 } from '../frontend/src/mobile-input';
 
@@ -32,9 +33,25 @@ describe('移动端 IME 输入补偿', () => {
   });
 });
 
+describe('终端焦点报告识别', () => {
+  it.each(['\x1b[I', '\x1b[O'])('只识别完整的焦点报告 %j', (data) => {
+    expect(isTerminalFocusReport(data)).toBe(true);
+  });
+
+  it('不把方向键、Alt、粘贴、文本或拼接序列误识别为焦点报告', () => {
+    for (const data of [
+      '', 'I', 'O', '\x1b[A', '\x1b[1;5A', '\x1b[5~', '\x1bx',
+      '\x1b[200~text\x1b[201~', '\x1b[Itext', '\x1b[I\x1b[O', '\x9bI',
+    ]) {
+      expect(isTerminalFocusReport(data)).toBe(false);
+    }
+  });
+});
+
 describe('移动端一次性修饰键', () => {
   it('将 Ctrl 字母转换成控制字符并在成功后消费状态', () => {
     expect(applyMobileModifier('c', 'ctrl')).toEqual({ data: '\x03', consumed: true });
+    expect(applyMobileModifier('b', 'ctrl')).toEqual({ data: '\x02', consumed: true });
     expect(applyMobileModifier('[', 'ctrl')).toEqual({ data: '\x1b', consumed: true });
   });
 

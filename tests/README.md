@@ -122,12 +122,14 @@ pnpm run verify
 - SFTP 覆盖确认、路径面包屑、表头排序、新建文件、主题样式与 UI 回归
 - 终端抽屉分段切换器：桌面端胶囊轮廓与可辨识边缘、双边异步物理弹簧滑块位移、PC 隐藏移动端更多操作按钮、三大抽屉宽度统一、匿名模式隐藏 AI Agent（display: none）与登录同步解锁
 - 移动端终端交互与用户空间：紧凑顶栏与菜单入口、视口与软键盘动态适配、单指滑动历史、字号响应式断点、移动端抽屉平行入口与 AI 设置弹窗无横向溢出
+- tmux 触摸滚轮（`terminal-touch-scroll.spec.ts`，Chromium + WebKit）：VT200/drag/any 与 SGR/旧式二进制/像素编码、双向滚动、原始面板坐标、Ctrl 状态保留、Shell/连接门控、选区优先、取消/模式切换/断连清理与报文数量上限
+- 终端焦点报告（`terminal-focus-report.spec.ts`，Chromium + WebKit）：真实 Ctrl/Alt 按钮与焦点切换、DECSET 1004、Ctrl+B/方向键、bracketed paste、Shell/连接门控及 iOS IME 回退/去重
 - UI 与样式回归：Liquid Glass 下 AI 模型下拉面板与设置面板滚动能力（overflow 简写防回归）、窄视口弹窗横向溢出消除、主题化滚动条兜底与 .no-scrollbar 样式
 - AI 模型下拉选择（Combobox 展开、选项切换、清空、免密拉取与浅色/暗色主题自适应切换）
 
 ## 当前限制
 
-- Playwright 的完整界面与无障碍回归主要运行 Chromium；认证挑战、iOS 输入法和移动端后台连接恢复另在 WebKit 设备项目中执行。Firefox 尚未纳入当前质量门禁。
+- Playwright 的完整界面与无障碍回归主要运行 Chromium；认证挑战、iOS 输入法、移动端后台连接恢复、SFTP 面板操作、终端触摸滚轮和焦点报告另在 WebKit 设备项目中执行。Firefox 尚未纳入当前质量门禁。
 - 浏览器 E2E 主要通过 mock API 验证前端行为，尚未连接真实 OpenSSH/Dropbear 和 SFTP 服务。
 - SSHSessionDO、SSH 会话状态机、SFTP 数据流和 AgentCore 等运行态模块的覆盖率仍偏低。
 - 新增协议状态、WebSocket 消息或安全边界时，应优先补充运行时错误、取消、超时和畸形输入测试，而不仅验证成功路径。
