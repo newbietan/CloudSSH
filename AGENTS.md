@@ -37,7 +37,7 @@ src/
 │   ├── share-audit-writer.ts    # 分享审计事件投递、防抖刷新与关闭留痕
 │   ├── direct-tcpip-stream.ts # RFC 4254 direct-tcpip 背压字节流，用于嵌套 SSH 跳板链
 │   ├── tunnel-stream.ts       # 出站 Cloudflare 隧道 WebSocket 全双工流适配器
-│   ├── sftp-handler.ts    # SFTP protocol ops, task queue, concurrent download, upload tracking
+│   ├── sftp-handler.ts    # SFTP ops, bounded upload/resume/checksum, concurrent download, recursive deletion
 │   ├── user-db.ts    # UserDBDO - user/server/命令片段存储（含标签、OS、跳板关系与片段持久化）
 │   ├── server-tags.ts # 服务器标签规范化与 SQLite JSON 序列化
 │   ├── os-detect.ts  # 远端操作系统输出解析、规范 key 与持久化白名单
@@ -51,9 +51,9 @@ src/
 │   │   ├── context-limits.ts # 上下文与输出 token 预算、检查点限制常量
 │   │   ├── execution-journal.ts # 命令与工具执行事实日志（非对齐回放、证据脱敏、确切状态跟踪）
 │   │   ├── memory.ts     # 任务相关服务器记忆筛选、提炼队列与版本条件写入
-│   │   ├── tools.ts      # 7 tool definitions (execute_command, detect_environment, list_processes, service_manage, docker_manage, etc.)
-│   │   ├── tool-executor.ts  # Tool dispatch, execution, and blocked command rejection
-│   │   ├── prompt.ts     # System prompt for the agent
+│   │   ├── tools.ts      # 8 tool definitions, including read-only fetch_web_content
+│   │   ├── tool-executor.ts  # Tool dispatch, blocked command rejection, bounded SSRF-safe web reads
+│   │   ├── prompt.ts     # System prompt, long-task decomposition and step-by-step verification
 │   │   ├── safety.ts     # Two-layer security: blocked patterns + confirmation patterns
 │   │   ├── ssrf.ts       # SSRF protection for AI base_url
 │   │   ├── terminal-context.ts  # Terminal output ring buffer
@@ -110,6 +110,7 @@ frontend/
 │   ├── sftp-editor-session.ts # SFTP 在线编辑协调器（挂载、只读呈现、冲突比对与覆盖上传）
 │   ├── sftp-dialogs.ts    # SFTP 交互对话框（新建文件/目录、重命名、删除与名称校验）
 │   ├── sftp-transfer.ts   # SFTP 传输控制器与异步同步原语（UploadWaiter / Deferred）
+│   ├── sha256-stream.ts   # 上传与续传前缀的常量内存流式 SHA-256
 │   ├── sftp-helpers.ts    # SFTP 面包屑解析、多维排序与格式化辅助纯函数
 │   ├── code-editor.ts     # CodeMirror 6 modal wrapper for SFTP online editing (theme-variable highlighting)
 │   ├── editor-content.ts  # Online editing pure helpers (binary sniff, UTF-8/GB18030 decode, BOM/EOL round-trip)
@@ -369,7 +370,7 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
 29. **CI paths-ignore 作用域** - `deploy.yml` 的 `paths-ignore` 使用标准 glob：`*` 不匹配 `/`，因此 `*.md` 只覆盖仓库根目录的 Markdown，`tests/` 等子目录下的文档变更（如 `tests/README.md`）会照常触发部署流水线。忽略目录内文件必须用 `**/*.md` / `**/*.png` 等跨目录模式；修改 `deploy.yml` 本身会触发一次校验运行（属于预期行为，且能验证新过滤规则）。
 
-30. **Agent exec 输出有界性（弱网 OOM 防线）** - `AgentExecChannel` 对 exec 通道 stdout/stderr 执行有界捕获：合计 4MB 硬上限（`MAX_EXEC_CAPTURE_BYTES`，超限不再续 SSH window 并由会话层关闭通道击杀远端命令，如无界输出的 `docker logs`），保留头 128KB + 尾 256KB 环形视图并附加截断说明，`onData/onExtendedData` 的布尔返回值控制 window 续期，改动时勿恢复无界累积。守卫不只此一层：`docker_manage(logs)` 强制 `--tail 200` 且拒绝 `-f/--follow`；工具结果序列化进 LLM 前经 64K 字符中间截断；socket 写带 15s deadline（超时关底层 socket 解挂）；独立于写路径的被动 idle 看门狗（60s 无入站数据即关闭）与终端输入队列 4MB 上限共同保证弱网下会话必然收敛，勿移除任一防线。
+30. **Agent exec 输出有界性（弱网 OOM 防线）** - `AgentExecChannel` 对 exec 通道 stdout/stderr 执行有界捕获：合计 4MB 硬上限（`MAX_EXEC_CAPTURE_BYTES`，超限不再续 SSH window 并由会话层关闭通道击杀远端命令，如无界输出的 `docker logs`），保留头 128KB + 尾 256KB 环形视图并附加截断说明，`onData/onExtendedData` 的布尔返回值控制 window 续期，改动时勿恢复无界累积。守卫不只此一层：`docker_manage(logs)` 强制 `--tail 200` 且拒绝 `-f/--follow`；工具结果序列化进 LLM 前经 64K 字符中间截断；socket 写带 60s deadline（适配高延迟传输，超时关底层 socket 解挂）；独立于写路径的被动 idle 看门狗（60s 无入站数据即关闭）与终端输入队列 4MB 上限共同保证弱网下会话必然收敛，勿移除任一防线。
 
 31. **pi-lens 项目策略口径** - `.pi-lens.json` 仅供本机 pi-lens（AI 代码审查插件）读取，不参与构建、部署与 CI 门禁（同 #27 的 Biome 定位），`pi-lens-ignore` 行内注释仅为工具豁免、无运行时行为。其中 `rules.disable` 是已**逐条评估后的误报静音**（以风格类规则为主；`ignore` 仅豁免测试夹具/README/生成文件等路径），而非无差别静音：**XSS 类规则（`no-inner-html`/`ts-xss-dom-sink`）刻意不做项目级禁用**——行内 `pi-lens-ignore` 只豁免逐处核实过的站点（agent-panel 的 Markdown 渲染经 DOMPurify 消毒，其余动态值均 escapeHtml 或来自可信 i18n 词条），未来新增的 innerHTML 站点仍会被规则捕获。新增 innerHTML 时请优先保证转义/消毒并核实后加行内豁免，切勿把这两条加入 `disable` 列表；安全类规则（如 `ast-grep:no-open-redirect`）同理保持克制——扩大禁用清单前先确认告警为误报，优先修复或局部豁免。pi-lens 版本/规则集随设备升级可能产生新告警，处理标准以“是否真实影响运行与门禁”为准。
 
@@ -390,6 +391,8 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 39. **单管理员密码登录（与 GitHub OAuth 互斥，密码优先）** - 认证模式由环境变量在部署时决定，运行时单一激活：`ADMIN_PASSWORD_HASH` 非空即密码模式（优先级最高，GitHub 配置原地保留但路由 501 禁用，前端入口整体替换为管理员登录）；置空/删除即刻退回 GitHub 模式（GitHub 侧配置与数据零影响）；哈希非空但格式损坏 → fail closed（登录 500、`/api/config` 暴露 `passwordHashInvalid`、前端错误面板），**绝不静默回退**。本地管理员使用哨兵 `github_id = -1`（GitHub ID 恒为正数无碰撞）路由到专属 UserDBDO 实例 `idFromName('-1')`，零数据迁移；首次登录幂等 upsert 唯一用户行，密码模式下 GitHub OAuth 回调被 501 堵死（唯一的建用户入口），单用户排他性由“不存在注册路径”天然保证。会话令牌格式 `-1:<fp8>:<randomHex>`（fp8 = 哈希串 SHA-256 前 8 hex，内嵌密码代际指纹）：换 `ADMIN_PASSWORD_HASH` 即全灭旧会话，`getAuthenticatedUser` 在 Worker 侧校验指纹，无需 DO 清理。**双向模式门**：密码模式拒绝 GitHub 会话/一次性令牌，GitHub/匿名模式拒绝哨兵会话/令牌（`getAuthenticatedUser` + `/api/ssh` token 路径两处，防止模式切换后旧凭据残活）。登录验证采用客户端预拉伸（server relief）：浏览器按 `/api/config` 公开参数（盐/迭代数非机密）在本地跑 PBKDF2（Free 套餐 10ms CPU 上限使服务端高强度 KDF 不可行），Worker 仅做一次 SHA-256 + 恒时比对（`timingSafeEqualBytes` 手写恒时比较，勿改回非常时比较），原始密码永不离开浏览器；哈希生成入口（模式感知）：仅匿名模式（未配置任何登录方式）显示认证页脚「管理员密码登录设置」链接——GitHub 模式（含 `REQUIRE_GITHUB_AUTH` 强制面板）一律隐藏，既有用户升级后界面零变化；`#password-setup` URL 路由全模式可用（`main.ts` init 消费后从地址栏清除，README 引导 GitHub 实例切换与密码轮换）；坏哈希面板保留「重新生成」链接。生成器（`admin-hash-generator.ts`）供 Dashboard-only 部署用户在浏览器内用自定义密码生成，密码同样不出浏览器；另配 `scripts/hash-password.mjs`（本地 CLI）；生成器（`buildAdminPasswordHash`）、登录预拉伸（`stretchAdminPassword`）、服务端 `parseAdminPasswordHash` 与脚本四方口径必须一致（`tests/worker/password-auth.test.ts` 守护，格式 `pbkdf2$sha256$<iterations>$<salt-b64url>$<verifier-b64url>`）。防爆破三道防线：同源 Origin 校验（防跨站登录 CSRF）→ Turnstile（已配置时必验）→ 哨兵 DO 持久化登录节流（5 次连败后指数退避 60s×2^n 封顶 15 分钟，跨 isolate 权威，连败超 15 分钟衰减重置；公网部署建议开启 Turnstile，否则攻击者可持频造成持续锁定骚扰）。`REQUIRE_GITHUB_AUTH` 语义泛化为“要求登录”（密码会话同样满足，变量名保留兼容）；密码模式**不改变匿名 SSH 行为**，需强制登录请配合 `REQUIRE_GITHUB_AUTH=true`。模式切换为平行数据宇宙：密码模式期间新建数据留在哨兵 DO，切回 GitHub 不合并（旧 GitHub 数据即刻恢复）。前端：`auth-form.ts` 按 `authMode` 整体替换登录入口（按钮/强制登录面板/坏哈希错误面板三处文案同步），登录对话框复用 `auth-challenge-dialog` 样式类，错误按状态码映射 i18n 不回显后端原文；`server-list.ts` 对本地管理员 `avatar_url` 为 null 渲染首字母回退块，勿直接 `img.src = null`。
 
 40. **Responses 原生无状态 Agent** - LLM 调用仅通过 `agent/responses-client.ts` 使用 `/responses`，不兼容 Chat Completions。全部请求（主任务、上下文压缩、记忆提炼）强制使用 `store:false`（无状态模式），不依赖 `previous_response_id` 或上游响应链，原生支持所有兼容标准 Responses API 的平台（包括 OpenRouter 及各类兼容中继与 OpenAI 本身）。由 CloudSSH 在本地维护原生历史输出项（assistant message、function_call 及通用 reasoning 节点），不依赖任何特定厂商私有字段（如 encrypted_content）；reasoning 仅作为结构化逻辑保留并回传，绝不作为正文展示或写入长期记忆。动态终端/环境/记忆为显式不可信观察；`call_id` 严格配对工具结果，只有在完整 `response.completed` 且参数通过本地校验后才执行函数。停止/抢占将调用结果妥善闭合为执行事实（succeeded / failed / blocked / rejected / cancelled / unknown），替换任务先等旧 exec 清理，绝不自动重放副作用。`requestId` 仅作前端关联（非授权）；正文 stream_end 不等于任务结束，以 run_end 为准。上下文输入预算默认 64K token、输出 8K（含推理），超限时原子触发结构化检查点开启干净续接段。长期记忆由 AgentMemoryManager 驱动任务相关性筛选、证据脱敏、版本条件写入（乐观锁 revision）与并发队列保护；凭据采用 AES-GCM 行级静态加密存储，绝不截断凭据。历史分支编辑只在本地分叉交互段，绝不回滚远端已发生的物理操作。Base URL 只接受 HTTPS 根地址或 /responses；路径大小写敏感，更新地址不带新 key 必须拒绝（PUT 与 /models 同步防外带）。用量日志仅包含数字元数据，不能记录请求、终端内容或密钥。
+
+41. **SFTP 上传续传、校验与目录删除** - 上传按远端已写入大小续传，失败或取消时保留部分文件；浏览器通过 `sha256-stream.ts` 流式计算完整文件（含续传前缀）哈希，不得恢复整文件内存读取。上传完成后在远端校验工具可用时比对 SHA-256，不可用时不因校验本身阻止成功。直连/隧道窗口与 ACK 必须使用共享策略（见 #38），4 秒 ACK 等待恢复仍受最大窗口限制，不得无限放开。非空目录删除先尝试 `rmdir`，通用 `Failure` 才触发递归遍历；它不是 `ENOTEMPTY` 的确切证明，权限等失败仍应报告。目录句柄必须关闭，跳过 `.` / `..`，符号链接按文件删除而非递归进入。
 
 ## Deployment Notes
 
