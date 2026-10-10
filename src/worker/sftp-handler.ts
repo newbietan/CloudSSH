@@ -1,3 +1,4 @@
+import { getSFTPUploadPolicy } from '../sftp-upload-policy';
 import type { SSHChannel } from '../ssh/channel';
 import { SFTPClient } from '../ssh/sftp';
 import {
@@ -25,8 +26,10 @@ import {
 const DOWNLOAD_CHUNK_SIZE = 128 * 1024;
 const DOWNLOAD_CONCURRENCY = 8;
 const DOWNLOAD_PROGRESS_CHUNKS = 8;
-export const MAX_IN_FLIGHT_TUNNEL_WRITES = 2; // 隧道保守并发窗口（2 × 32KiB）；消息截断由加密后载体分帧防护
-export const MAX_IN_FLIGHT_DIRECT_WRITES = 16; // 直连 TCP 模式：最多允许 16 个分片（2MB）在途，跑满物理带宽
+// Count limits remain independent: tunnel writes use 32KiB chunks (512KiB total),
+// while direct writes retain 128KiB chunks (2MiB total).
+export const MAX_IN_FLIGHT_TUNNEL_WRITES = getSFTPUploadPolicy(true).maxInFlightWrites;
+export const MAX_IN_FLIGHT_DIRECT_WRITES = getSFTPUploadPolicy(false).maxInFlightWrites;
 export const MAX_IN_FLIGHT_UPLOAD_WRITES = MAX_IN_FLIGHT_DIRECT_WRITES; // 兼容别名
 const MAX_SFTP_FILE_SIZE = 500 * 1024 * 1024; // 500MB limit
 const EDITOR_MAX_FILE_SIZE = 2 * 1024 * 1024; // 在线编辑仅限小文本文件
@@ -181,8 +184,9 @@ export class SFTPHandler {
     this.debugEnabled = debugEnabled;
     this.computeChecksum = computeChecksum;
     this.isTunnel = isTunnel;
-    this.maxInFlightWrites = isTunnel ? MAX_IN_FLIGHT_TUNNEL_WRITES : MAX_IN_FLIGHT_DIRECT_WRITES;
-    this.progressBytesThreshold = isTunnel ? 32 * 1024 : 256 * 1024;
+    const uploadPolicy = getSFTPUploadPolicy(isTunnel);
+    this.maxInFlightWrites = uploadPolicy.maxInFlightWrites;
+    this.progressBytesThreshold = uploadPolicy.progressAckBytes;
 
     this.sftp.setSendCallback(this.channelDataSend);
     this.sftp.setDebugCallback(sendDebug, debugEnabled);
@@ -818,7 +822,7 @@ export class SFTPHandler {
       throw this.uploadError;
     }
 
-    // 在途并发写入流控：隧道模式限制为 2 (64KB)，直连模式放开至 16 (2MB)
+    // Bounded write pipeline: 512KiB in tunnel mode, unchanged 2MiB in direct mode.
     while (
       this.uploadWritePromises.size >= this.maxInFlightWrites &&
       !this.uploadError &&

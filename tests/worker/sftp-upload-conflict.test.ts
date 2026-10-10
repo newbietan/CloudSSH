@@ -186,7 +186,7 @@ describe('SFTP 同名上传保护', () => {
     });
   });
 
-  it('隧道模式限制最大在途写入请求为 MAX_IN_FLIGHT_TUNNEL_WRITES (2 个分片 = 64KB)，防止出站队列溢出', async () => {
+  it('隧道流水线允许 16 个写请求，完整 2MiB 队列仍受并发上限及逐块 ACK 约束', async () => {
     let pendingWritesCount = 0;
     let maxObservedInFlight = 0;
     const writeResolvers: Array<() => void> = [];
@@ -219,30 +219,43 @@ describe('SFTP 同名上传保护', () => {
 
     await handler.uploadStart('/test.bin', 10 * 1024 * 1024, true);
 
-    // 连续抛送 3 个分片（MAX_IN_FLIGHT_TUNNEL_WRITES + 1）
+    expect(MAX_IN_FLIGHT_TUNNEL_WRITES).toBe(16);
+    const totalChunks = 64; // The browser's maximum 2MiB window, not an unbounded queue.
     const promises: Array<Promise<void>> = [];
-    for (let i = 0; i < MAX_IN_FLIGHT_TUNNEL_WRITES + 1; i++) {
+    for (let i = 0; i < totalChunks; i++) {
       promises.push(handler.onUploadChunk(new Uint8Array(32 * 1024)));
     }
 
-    // 此时前 2 个分片进入在途，第 3 个分片被流控阻断等待
-    await new Promise((r) => setTimeout(r, 10));
-    expect(maxObservedInFlight).toBe(MAX_IN_FLIGHT_TUNNEL_WRITES);
-    expect(sftp.writeFile).toHaveBeenCalledTimes(MAX_IN_FLIGHT_TUNNEL_WRITES);
+    expect(maxObservedInFlight).toBe(16);
+    expect(sftp.writeFile).toHaveBeenCalledTimes(16);
+    expect(sendJSON.mock.calls.some(([frame]) => frame.type === 'sftp_upload_progress')).toBe(false);
 
-    // 释放第 1 个分片
-    writeResolvers[0]();
-    await new Promise((r) => setTimeout(r, 10));
+    writeResolvers.shift()!();
+    await vi.waitFor(() => expect(sftp.writeFile).toHaveBeenCalledTimes(17));
+    expect(sendJSON).toHaveBeenCalledWith({
+      type: 'sftp_upload_progress',
+      loaded: 32 * 1024,
+      total: 10 * 1024 * 1024,
+    });
 
-    // 第 3 个分片被唤醒并进入写入
-    expect(sftp.writeFile).toHaveBeenCalledTimes(MAX_IN_FLIGHT_TUNNEL_WRITES + 1);
-
-    // 释放其余分片
-    while (writeResolvers.length > 0) {
-      writeResolvers.shift()!();
+    // Release successive batches, including writes admitted by those releases.
+    for (let pass = 0; pass < totalChunks && pendingWritesCount > 0; pass++) {
+      while (writeResolvers.length > 0) writeResolvers.shift()!();
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    await Promise.all(promises);
+    expect(sftp.writeFile).toHaveBeenCalledTimes(totalChunks);
     expect(pendingWritesCount).toBe(0);
+    await Promise.all(promises);
+    expect(maxObservedInFlight).toBe(16);
+    const progressFrames = sendJSON.mock.calls.filter(
+      ([frame]) => frame.type === 'sftp_upload_progress'
+    );
+    expect(progressFrames).toHaveLength(totalChunks);
+    expect(sendJSON).toHaveBeenCalledWith({
+      type: 'sftp_upload_progress',
+      loaded: 2 * 1024 * 1024,
+      total: 10 * 1024 * 1024,
+    });
   });
 
   it('直连模式放开在途限制为 MAX_IN_FLIGHT_DIRECT_WRITES (16 个分片 = 2MB)，满血释放物理带宽', async () => {

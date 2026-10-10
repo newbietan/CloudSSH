@@ -1,3 +1,4 @@
+import { getSFTPUploadPolicy } from '../../src/sftp-upload-policy';
 import {
   type ActiveEditorSession,
   type EditReadErrorCode,
@@ -1137,12 +1138,13 @@ export class SFTPPanel {
     let resumeOffset = 0;
     const hasher = new StreamingSHA256();
 
-    // 区分直连模式（满血全速）与 CF 隧道模式（安全受控）
-    const chunkSize = this.isTunnel ? 32 * 1024 : 128 * 1024;
-    let currentWindowBytes = this.isTunnel ? 64 * 1024 : 2 * 1024 * 1024;
-    const MIN_WINDOW_BYTES = this.isTunnel ? 64 * 1024 : 1 * 1024 * 1024;
-    const MAX_WINDOW_BYTES = this.isTunnel ? 128 * 1024 : 8 * 1024 * 1024;
-    const windowStepBytes = this.isTunnel ? 32 * 1024 : 512 * 1024;
+    // Carrier framing is independent; keep the browser/Worker pipeline policy aligned.
+    const uploadPolicy = getSFTPUploadPolicy(this.isTunnel);
+    const chunkSize = uploadPolicy.chunkSize;
+    let currentWindowBytes = uploadPolicy.initialWindowBytes;
+    const MIN_WINDOW_BYTES = uploadPolicy.minWindowBytes;
+    const MAX_WINDOW_BYTES = uploadPolicy.maxWindowBytes;
+    const windowStepBytes = uploadPolicy.windowStepBytes;
     let lastAckTime = performance.now();
     let lastAckBytes = 0;
     let smoothedSpeed = 0;
