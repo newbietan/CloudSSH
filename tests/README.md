@@ -8,6 +8,7 @@
 tests/
 ├── build/                         # 生产构建、可复现性和原生弹窗回归
 ├── e2e/                           # Chromium 浏览器交互与 axe 无障碍检查
+├── interop/                       # 真实 SSH 互操作（OpenSSH + 独立 Go 网关，含 Go 工作区与依赖锁）
 ├── ssh/                           # SSH 算法、认证、加密、KEX、Packet 与测试密钥夹具
 ├── worker/                        # Worker 路由、安全、DNS、UserDB、标签与 Cloudflare 隧道测试
 ├── agent-code-actions.test.ts # Agent 代码块语言归一化与单行 Shell 命令识别
@@ -42,6 +43,7 @@ tests/
 ```
 
 `tests/ssh/fixtures/` 中的私钥只用于公开的协议测试，不得用于生产服务器或真实账号。
+Go 工作区（`go.work` / `go.work.sum`）与网关模块统一位于 `tests/interop/`，用途与运行方式见 [互操作测试说明](./interop/README.md)。
 
 ## 运行命令
 
@@ -62,12 +64,15 @@ pnpm test --watch
 pnpm exec playwright install chromium webkit
 pnpm run test:e2e
 
-# 类型检查、测试、可复现构建和 E2E 完整门禁
+# 显式运行真实 SSH 互操作（需 macOS/Linux、OpenSSH 和 Go ≥1.24）
+pnpm run test:interop
+
+# 类型检查、测试、可复现构建和 E2E 完整门禁（不启用进程级互操作测试）
 pnpm run verify
 ```
 
 > **测试类型检查**：`pnpm run typecheck` 的 worker 阶段会依次执行
-> `tsc --noEmit`（src）、`tsc -p tests/tsconfig.worker.json`（tests/worker|ssh|build，
+> `tsc --noEmit`（src）、`tsc -p tests/tsconfig.worker.json`（tests/worker|ssh|build|interop，
 > workers-types 环境）与 `tsc -p tests/tsconfig.frontend.json`（tests 根目录 *.test.ts + e2e，
 > DOM 环境）。两个测试配置分开的原因：`@cloudflare/workers-types` 声明的基础 DOM 接口
 > （如 Element.append）与 DOM lib 合并冲突，不能在同一项目里同时加载。

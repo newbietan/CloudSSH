@@ -429,7 +429,7 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 ## SSH 兼容增强边界
 
 - `frontend/package.json` 的 `bcrypt-pbkdf@1.0.2` 仅用于浏览器解锁，不是生产 SSH 协议库。支持 OpenSSH bcrypt + AES-CTR 与 PKCS#8 PBES2/PBKDF2 + AES-CBC；口令不上传、不持久化，解锁私钥仍进入 Worker 签名。匿名导入关闭凭据记忆；保存服务器必须单独同意按既有账号加密存储（非独立 KMS），编辑器代际变化后禁止迟到解锁结果提交。预算与许可见 `docs/ssh-compatibility.md`，不要无界执行用户提供的 KDF 参数。
-- `tests/interop/` 与根 `go.work` 是测试工具，不参与 Worker/前端产物。`test:interop` 显式启动 loopback-only OpenSSH（仅当前账号及临时授权文件）和独立 Go 网关，不修改系统账号密码/SSH 配置。普通 `verify` 不运行这些进程级测试；`.github/workflows/ssh-interop.yml` 是独立 Ubuntu/macOS CI，不部署、不使用生产 secrets。Go 依赖锁在测试模块 go.mod/go.sum，不能把该网关当生产依赖。
+- Go 工作区与网关统一收纳在 `tests/interop/`（`go.work` / `go.work.sum`、`gateway/go.mod` / `gateway/go.sum` / `gateway/main.go`），仅为测试工具，不参与 Worker/前端产物；不要在根目录重新创建 Go 工作区。用途与目录说明见 `tests/interop/README.md`。`test:interop` 显式启动 loopback-only OpenSSH（仅当前账号及临时授权文件）和独立 Go 网关，不修改系统账号密码/SSH 配置。普通 `verify` 不运行这些进程级测试；`.github/workflows/ssh-interop.yml` 是独立 Ubuntu/macOS CI，不部署、不使用生产 secrets。Go 依赖锁在测试模块 go.mod/go.sum，不能把该网关当生产依赖。
 
 ## Deployment Notes
 

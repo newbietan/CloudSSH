@@ -374,16 +374,19 @@ CloudSSH/
 │       ├── sftp-editor-session.ts # SFTP 在线编辑协调器
 │       ├── sftp-helpers.ts        # SFTP 面包屑解析与多维排序
 │       └── snippet-variables.ts   # 命令片段参数占位符提取与替换
-├── docs/                   # GitHub Pages 静态资源
+├── docs/                   # 专题文档与 GitHub Pages 静态资源
 │   └── theme-editor/       # 可视化主题编辑器
 ├── scripts/                # 构建脚本
-├── tests/                  # Vitest 单元/集成 + Playwright E2E 与 axe 回归（build/ e2e/ ssh/ worker/）
-├── .github/workflows/      # CI/CD 自动部署配置（deploy / github-pages / sync-upstream）
+├── tests/                  # Vitest 单元/集成 + Playwright E2E 与 axe 回归
+│   └── interop/            # 真实 SSH 互操作测试，集中收纳 Go 工作区与 gateway/ 模块
+├── .github/workflows/      # CI/CD（deploy / github-pages / ssh-interop / sync-upstream）
 ├── biome.json              # 代码格式与 lint 约定
 ├── playwright.config.ts    # 浏览器 E2E 测试配置
 ├── pnpm-workspace.yaml     # pnpm 工作区配置
 └── wrangler.toml           # Cloudflare 部署配置
 ```
+
+项目级配置（`biome.json`、`tsconfig.json`、`vitest.config.ts`、`playwright.config.ts`、`wrangler.toml` 等）保留在根目录，方便工具自动发现。Go 代码仅用于 [SSH 互操作测试](tests/interop/README.md)，工作区及依赖文件统一位于 `tests/interop/`，不参与生产构建或部署；常规开发与部署不需要安装 Go。
 
 ### 本地开发
 

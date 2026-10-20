@@ -73,7 +73,10 @@ pnpm run test:interop
   真实 Shell 可能读取该账号的启动配置，建议在隔离 CI/测试账号中运行，不要把这些公开测试密钥部署到真实服务。
 - Go 网关：测试模块锁定独立 `golang.org/x/crypto/ssh` 实现，只监听 loopback。
   覆盖 none、password、OTP、公钥后 password、错误响应及 session/exec 通道；不执行宿主机命令。
-  `go.work` 仅帮助编辑器识别该测试模块。Go 模块及其依赖不进入生产 Worker/浏览器包。
+  Go 工作区统一位于 `tests/interop/go.work` 与 `tests/interop/go.work.sum`，模块与依赖锁位于
+  `tests/interop/gateway/`；编辑器需要时可单独打开 `tests/interop/` 工作区。
+  测试在 `gateway/` 内构建，自动发现上级工作区，无需在项目根目录保留 Go 配置。
+  Go 模块及其依赖不进入生产 Worker/浏览器包，目录与运行说明见 [互操作测试说明](../tests/interop/README.md)。
 - `.github/workflows/ssh-interop.yml` 提供 Ubuntu/macOS 独立 CI；不使用生产 secrets，不自动部署。
   本地通过不等于该新 CI 已在远端运行。原部署门禁仍是 `pnpm run verify`。
 

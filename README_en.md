@@ -376,16 +376,19 @@ CloudSSH/
 │       ├── sftp-editor-session.ts # SFTP online editing coordinator
 │       ├── sftp-helpers.ts        # SFTP breadcrumb parsing and multi-key sorting
 │       └── snippet-variables.ts   # Command snippet parameter placeholders parsing & replacement
-├── docs/                   # GitHub Pages static assets
+├── docs/                   # Technical documentation and GitHub Pages static assets
 │   └── theme-editor/       # Visual theme editor
 ├── scripts/                # Build scripts
-├── tests/                  # Vitest unit/integration + Playwright E2E and axe regression (build/ e2e/ ssh/ worker/)
-├── .github/workflows/      # CI/CD workflows (deploy / github-pages / sync-upstream)
+├── tests/                  # Vitest unit/integration + Playwright E2E and axe regression
+│   └── interop/            # Real SSH interoperability tests, including the Go workspace and gateway/ module
+├── .github/workflows/      # CI/CD (deploy / github-pages / ssh-interop / sync-upstream)
 ├── biome.json              # Code formatting and lint conventions
 ├── playwright.config.ts    # Browser E2E test configuration
 ├── pnpm-workspace.yaml     # pnpm workspace configuration
 └── wrangler.toml           # Cloudflare deployment configuration
 ```
+
+Project-wide configuration (`biome.json`, `tsconfig.json`, `vitest.config.ts`, `playwright.config.ts`, `wrangler.toml`, etc.) stays at the repository root for tool discovery. Go code is used only for [SSH interoperability tests](tests/interop/README.md); its workspace and dependency files all live under `tests/interop/` and are not part of production builds or deployments. Normal development and deployment do not require Go.
 
 ### Local Development
 
