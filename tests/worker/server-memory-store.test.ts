@@ -1,16 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ServerMemoryStore } from '../../src/worker/server-memory-store';
-import { AGENT_KNOWLEDGE_TTL_MS } from '../../src/server-memory-schema';
-import { selectServerMemory } from '../../src/worker/agent/memory';
-import type { OperationFact } from '../../src/worker/agent/execution-journal';
-
-const sessionId = '12345678-1234-4123-8123-123456789abc';
-const taskId = '12345678-1234-4123-8123-123456789def';
-const now = 1_800_000_000_000;
-const context = { sessionId, epoch: 0 };
-const encode = (value: string) => 'encrypted:' + Buffer.from(value).toString('base64');
-const decode = (value: string) => Buffer.from(value.slice('encrypted:'.length), 'base64').toString();
+import type { MemoryTask } from '../../src/worker/agent/types';
 
 function setup() {
   const db = new DatabaseSync(':memory:');
@@ -19,187 +10,81 @@ function setup() {
     CREATE TABLE server_work_logs(id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, server_id INTEGER,
       title TEXT, summary TEXT, created_at INTEGER, updated_at INTEGER);
     CREATE TABLE server_knowledge(id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, server_id INTEGER,
-      category TEXT, key TEXT, value TEXT, created_at INTEGER, updated_at INTEGER, UNIQUE(user_id,server_id,key));
-    CREATE TABLE agent_knowledge_meta(user_id INTEGER, server_id INTEGER, key TEXT, source TEXT, scope TEXT,
-      encrypted INTEGER DEFAULT 0, PRIMARY KEY(user_id,server_id,key));`);
+      category TEXT, key TEXT, value TEXT, created_at INTEGER, updated_at INTEGER, UNIQUE(user_id,server_id,key));`);
   const sql = { exec(query: string, ...values: (string | number | null)[]) {
     if (query.includes('CREATE TABLE')) { db.exec(query); return { toArray: () => [] }; }
     const statement = db.prepare(query);
     if (statement.columns().length) return { toArray: () => statement.all(...values) };
-    statement.run(...values);
-    return { toArray: () => [] };
+    statement.run(...values); return { toArray: () => [] };
   } };
-  const encrypt = vi.fn(async (value: string) => encode(value));
-  const decrypt = vi.fn(async (value: string) => decode(value));
   const create = () => new ServerMemoryStore(sql as never, callback => {
-    db.exec('BEGIN');
-    try { const result = callback(); db.exec('COMMIT'); return result; }
+    db.exec('BEGIN'); try { const result = callback(); db.exec('COMMIT'); return result; }
     catch (error) { db.exec('ROLLBACK'); throw error; }
-  }, encrypt, decrypt);
+  }, async value => 'enc:' + Buffer.from(value).toString('base64'),
+  async value => Buffer.from(value.slice(4), 'base64').toString());
   const store = create();
-  const post = (action: string, body: Record<string, unknown>, serverId = 1) => store.handle(serverId, action,
+  const post = (action: string, body: Record<string, unknown>) => store.handle(1, action,
     new Request('http://internal/memory', { method: 'POST', body: JSON.stringify({ user_id: 10, ...body }) }));
-  const read = async () => {
-    const res = await store.handle(1, 'memory', new Request('http://internal/memory?user_id=10'));
-    expect(res.status).toBe(200);
-    return await res.json<import('../../src/server-memory-schema').UnifiedServerMemory>();
-  };
-  return { db, create, store, post, read, encrypt };
+  return { db, create, store, post };
 }
-let fixture: ReturnType<typeof setup>;
-beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(now); fixture = setup(); });
-afterEach(() => { fixture.db.close(); vi.useRealTimers(); });
+let f: ReturnType<typeof setup>;
+beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(1_800_000_000_000); f = setup(); });
+afterEach(() => { f.db.close(); vi.useRealTimers(); });
+const task: MemoryTask = { taskId: 'task-1', goal: '部署', conversation: '配置和部署操作', locale: 'zh-CN', timezone: 'UTC' };
 
-const fact: OperationFact = { taskId, callId: 'call_1', tool: 'execute_command', description: 'inspect nginx',
-  status: 'unknown', executed: true, exitCode: -1, evidence: 'SECRET_TERMINAL', at: now };
-
-describe('Memory store real SQLite transactions and migrations', () => {
-  it('migrates old metadata idempotently without replacing user data', async () => {
-    fixture.create();
-    const columns = fixture.db.prepare('PRAGMA table_info(agent_knowledge_meta)').all().map(row => row.name);
-    for (const name of ['evidence', 'task_id', 'verified_at', 'expires_at']) expect(columns).toContain(name);
-    expect((await fixture.post('knowledge', { category: 'rule', key: 'deploy_rule', value: 'never restart' })).status).toBe(201);
-    fixture.create();
-    expect((await fixture.read()).knowledge[0]).toMatchObject({ key: 'deploy_rule', value: 'never restart', source: 'user' });
+describe('Saved memory and simple retry persistence', () => {
+  it('stores and returns a complete reusable private key using the existing encrypted storage', async () => {
+    const key = '  -----BEGIN PRIVATE KEY-----\n' + 'A'.repeat(2000) + '\n-----END PRIVATE KEY-----\n';
+    expect((await f.post('knowledge', { category: 'credential', key: 'deploy_key', value: key })).status).toBe(201);
+    expect((await f.create().read(1, 10)).knowledge[0].value).toBe(key);
+    expect(f.db.prepare('SELECT value FROM server_knowledge').get()?.value).not.toContain('BEGIN PRIVATE KEY');
+    vi.setSystemTime(Date.now() + 90 * 86400_000);
+    expect((await f.store.read(1, 10)).knowledge[0].value).toBe(key); // No automatic expiry/filtering.
   });
 
-  it('saves pending distillation encrypted, updates retries, and prunes on exceeding max retries', async () => {
-    const job = { goal: 'Inspect nginx', taskId, sessionId, epoch: 0, records: [] };
-    const res = await fixture.post('pending-distillation', { ...context, taskId, retries: 1, job });
-    if (res.status !== 200) console.log('ERROR STATUS:', res.status, await res.text());
-    expect(res.status).toBe(200);
-    const row = fixture.db.prepare('SELECT payload_enc, retries FROM agent_pending_distillations WHERE task_id = ?').get(taskId) as any;
-    expect(row.retries).toBe(1);
-    expect(decode(String(row.payload_enc))).toContain('pending-distillation');
-
-    // Updating retries
-    await fixture.post('pending-distillation', { ...context, taskId, retries: 2, job });
-    const row2 = fixture.db.prepare('SELECT retries FROM agent_pending_distillations WHERE task_id = ?').get(taskId) as any;
-    expect(row2.retries).toBe(2);
-
-    // Deleting when distillation succeeds
-    const delRes = await fixture.store.handle(1, 'pending-distillation',
-      new Request('http://internal/memory', { method: 'DELETE', body: JSON.stringify({ user_id: 10, taskId, ...context }) }));
-    expect(delRes.status).toBe(200);
-    expect(fixture.db.prepare('SELECT COUNT(*) AS n FROM agent_pending_distillations WHERE task_id = ?').get(taskId) as any).toEqual({ n: 0 });
+  it('creates work logs, merges a recent continuation and updates/deletes knowledge', async () => {
+    await f.post('work-log', { title: '部署应用', summary: '应用已启动' });
+    await f.store.saveBatch(1, 10, { workLog: { mode: 'update_latest', title: '部署并验证', summary: '应用启动后验证正常' },
+      knowledge: [{ category: 'config', key: 'port', value: '8080' }] });
+    const memory = await f.store.read(1, 10);
+    expect(memory.workLogs).toHaveLength(1);
+    expect(memory.workLogs[0].title).toBe('部署并验证');
+    await f.store.saveBatch(1, 10, { knowledge: [{ action: 'delete', key: 'port' }] });
+    expect((await f.store.read(1, 10)).knowledge).toEqual([]);
   });
 
-  it('saves verification provenance and expires only automatically verified config/note facts', async () => {
-    const values = [['config', 'nginx_port', '8080'], ['note', 'nginx_note', 'nginx'],
-      ['rule', 'nginx_rule', 'never restart'], ['credential', 'nginx_token', 'SECRET_TOKEN']];
-    expect((await fixture.post('batch', { ...context, taskId, expectedRevision: 0,
-      knowledge: values.map(([category, key, value]) => ({ action: 'set', category, key, value, evidence: ['user'] })) })).status).toBe(200);
-    await fixture.post('knowledge', { category: 'config', key: 'manual_port', value: '22' });
-    const saved = await fixture.read();
-    expect(saved.knowledge.find(item => item.key === 'nginx_port')).toMatchObject({ evidence: ['user'], task_id: taskId,
-      verified_at: now, expires_at: now + AGENT_KNOWLEDGE_TTL_MS });
-    const credential = fixture.db.prepare("SELECT value FROM server_knowledge WHERE key='nginx_token'").get()!;
-    expect(credential.value).not.toContain('SECRET_TOKEN');
-    vi.setSystemTime(now + AGENT_KNOWLEDGE_TTL_MS + 1);
-    const expired = await fixture.read();
-    expect(expired.knowledge.find(item => item.key === 'nginx_port')?.stale).toBe(true);
-    for (const key of ['nginx_rule', 'nginx_token', 'manual_port']) {
-      const item = expired.knowledge.find(item => item.key === key)!;
-      expect(item.stale).toBe(false); expect(item.expires_at).toBeUndefined();
-    }
-    expect(selectServerMemory(expired, 'nginx_port nginx_note nginx_token').knowledge.map(item => item.key))
-      .not.toEqual(expect.arrayContaining(['nginx_port', 'nginx_note']));
+  it('does not overwrite a concurrent memory update', async () => {
+    await f.post('knowledge', { key: 'port', value: '443' });
+    await expect(f.store.saveBatch(1, 10, { expectedRevision: 0,
+      knowledge: [{ key: 'port', value: '22' }] })).rejects.toMatchObject({ status: 409 });
+    expect((await f.store.read(1, 10)).knowledge[0].value).toBe('443');
   });
 
-  it('keeps user ownership and non-expiry after an explicitly authorized agent update', async () => {
-    await fixture.post('knowledge', { category: 'config', key: 'user_port', value: '22' });
-    const memory = await fixture.read();
-    const result = await fixture.post('batch', { ...context, taskId, expectedRevision: memory.revision,
-      knowledge: [{ action: 'set', category: 'config', key: 'user_port', value: '23', evidence: ['user'] }] });
-    expect(result.status).toBe(200);
-    const item = (await fixture.read()).knowledge[0];
-    expect(item).toMatchObject({ value: '23', source: 'user', evidence: ['user'] });
-    expect(item.expires_at).toBeUndefined();
+  it('commits the summary and removes its pending task together, so a repeated Alarm cannot append it again', async () => {
+    await f.store.enqueueMemory(1, 10, task);
+    const row = f.store.nextTask()!;
+    expect((await f.create().taskInput(row)).conversation).toBe(task.conversation);
+    const batch = { workLog: { title: '完成部署', summary: '服务部署正常' } };
+    await f.store.saveBatch(1, 10, batch, row);
+    expect(f.create().nextTask()).toBeUndefined();
+    await expect(f.store.saveBatch(1, 10, batch, row)).rejects.toMatchObject({ status: 409 });
+    expect((await f.store.read(1, 10)).workLogs).toHaveLength(1);
   });
 
-  it('returns a machine-readable revision conflict after encryption yields, with no partial writes', async () => {
-    let release!: () => void;
-    const blocked = new Promise<void>(resolve => { release = resolve; });
-    fixture.encrypt.mockImplementationOnce(async value => { await blocked; return encode(value); });
-    const pending = fixture.post('batch', { ...context, taskId, expectedRevision: 0,
-      knowledge: [{ action: 'set', category: 'credential', key: 'new_token', value: 'SECRET', evidence: ['user'] }] });
-    await Promise.resolve(); await Promise.resolve();
-    await fixture.post('knowledge', { category: 'config', key: 'user_port', value: '443' });
-    release();
-    const response = await pending;
-    expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({ code: 'memory_revision_conflict' });
-    expect((await fixture.read()).knowledge.map(item => item.key)).toEqual(['user_port']);
+  it('rolls back both writes and task deletion when the transaction fails', async () => {
+    await f.store.enqueueMemory(1, 10, task);
+    const row = f.store.nextTask()!;
+    await f.store.read(1, 10);
+    f.db.exec("CREATE TRIGGER fail_revision BEFORE UPDATE ON agent_memory_state BEGIN SELECT RAISE(ABORT, 'failed'); END");
+    await expect(f.store.saveBatch(1, 10, { workLog: { title: '部署', summary: '部署完成' } }, row)).rejects.toThrow();
+    expect((await f.store.read(1, 10)).workLogs).toEqual([]);
+    expect(f.db.prepare('SELECT COUNT(*) AS n FROM agent_pending_distillations').get()).toEqual({ n: 1 });
   });
 
-  it('rejects stale sessions after crypto and never classifies that as a revision retry', async () => {
-    await fixture.post('session', context);
-    let release!: () => void;
-    fixture.encrypt.mockImplementationOnce(async value => { await new Promise<void>(resolve => { release = resolve; }); return encode(value); });
-    const job = { goal: 'Inspect', taskId, sessionId, epoch: 0, records: [] };
-    const pending = fixture.post('pending-distillation', { ...context, taskId, retries: 1, job });
-    await Promise.resolve(); await Promise.resolve();
-    await fixture.post('session', { ...context, epoch: 1 });
-    release();
-    const res = await pending;
-    expect(res.status).toBe(409);
-    expect(await res.json()).not.toHaveProperty('code', 'memory_revision_conflict');
-  });
-
-  it('rejects invalid mixed batches atomically and enforces ownership', async () => {
-    const bad = await fixture.post('batch', { expectedRevision: 0,
-      knowledge: [{ action: 'set', category: 'config', key: 'port', value: '22' }], workLog: { title: '', summary: '' } });
-    expect(bad.status).toBe(400);
-    expect((await fixture.read()).knowledge).toEqual([]);
-    const forbidden = await fixture.post('knowledge', { key: 'port', value: '22' }, 2);
-    expect(forbidden.status).toBe(403);
-  });
-
-  it('rolls back all knowledge when the revision write fails instead of reporting success', async () => {
-    await fixture.read();
-    fixture.db.exec("CREATE TRIGGER fail_revision BEFORE UPDATE ON agent_memory_state BEGIN SELECT RAISE(ABORT, 'SECRET_SQL_ERROR'); END");
-    const res = await fixture.post('batch', { ...context, taskId, expectedRevision: 0,
-      knowledge: [{ action: 'set', category: 'config', key: 'port', value: '22', evidence: ['user'] }] });
-    expect(res.status).toBe(500);
-    expect(JSON.stringify(await res.json())).not.toContain('SECRET_SQL_ERROR');
-    const memory = await fixture.read();
-    expect(memory.knowledge).toEqual([]);
-    expect(memory.revision).toBe(0);
-  });
-
-  it('does not swallow session or recovery checkpoint storage failures', async () => {
-    fixture.db.exec("CREATE TRIGGER fail_session BEFORE INSERT ON agent_memory_sessions BEGIN SELECT RAISE(ABORT, 'SECRET_SQL_ERROR'); END");
-    expect((await fixture.post('session', context)).status).toBe(500);
-    fixture.db.exec('DROP TRIGGER fail_session');
-    fixture.db.exec("CREATE TRIGGER fail_checkpoint BEFORE INSERT ON agent_task_checkpoints BEGIN SELECT RAISE(ABORT, 'SECRET_SQL_ERROR'); END");
-    const checkpoint = {
-      taskId,
-      goal: 'Inspect',
-      summary: 'Interrupted task evidence.',
-      operations: [{ callId: fact.callId, tool: fact.tool, description: fact.description, status: fact.status, executed: fact.executed, exitCode: fact.exitCode, at: fact.at }],
-      step: 1,
-      updatedAt: Date.now(),
-    };
-    const res = await fixture.post('checkpoint', { ...context, checkpoint });
-    expect(res.status).toBe(500);
-    expect(JSON.stringify(await res.json())).not.toContain('SECRET_SQL_ERROR');
-  });
-
-  it('cleans pending distillations on server cleanup', async () => {
-    const job = { goal: 'Inspect', taskId, sessionId, epoch: 0, records: [] };
-    await fixture.post('pending-distillation', { ...context, taskId, retries: 1, job });
-    fixture.store.cleanup(1);
-    expect(fixture.db.prepare('SELECT COUNT(*) AS n FROM agent_pending_distillations WHERE server_id = ?').get(1) as any).toEqual({ n: 0 });
-  });
-
-  it('deletes metadata by knowledge key, never an unrelated SQLite rowid', async () => {
-    await fixture.post('knowledge', { category: 'credential', key: 'keep_token', value: 'KEEP_SECRET' });
-    await fixture.post('knowledge', { category: 'credential', key: 'remove_token', value: 'REMOVE_SECRET' });
-    fixture.db.exec("UPDATE agent_knowledge_meta SET rowid=50 WHERE key='remove_token'");
-    const memory = await fixture.read();
-    const res = await fixture.store.handle(1, 'knowledge', new Request('http://internal/memory?user_id=10', { method: 'DELETE' }), memory.knowledge.find(item => item.key === 'remove_token')!.id);
-    expect(res.status).toBe(200);
-    expect(fixture.db.prepare('SELECT key FROM agent_knowledge_meta').all().map(row => row.key)).toEqual(['keep_token']);
-    expect((await fixture.read()).knowledge[0].value).toBe('KEEP_SECRET');
+  it('keeps server ownership isolation and removes pending work when the server is deleted', async () => {
+    await expect(f.store.read(2, 10)).rejects.toMatchObject({ status: 403 });
+    await f.store.enqueueMemory(1, 10, task);
+    f.store.cleanup(1);
+    expect(f.store.nextTask()).toBeUndefined();
   });
 });

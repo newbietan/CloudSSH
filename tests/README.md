@@ -110,13 +110,13 @@ pnpm run verify
 - 键盘交互认证、OS 检测、跳板链、SFTP 上传冲突、分享会话策略
 - UserDB 服务器标签/片段迁移、规范化、序列化、更新与隔离
 - AI 模型代理安全：同 Base URL 强绑定免密拉取、跨地址凭据外带拦截（Credential Exfiltration）、CSRF Origin 防护与敏感 Token 脱敏
-- Responses 原生无状态 Agent：HTTP/SSE 跨 chunk 与 CRLF、强制无状态（store: false）、原生输出项与 reasoning 节点回传、call_id 配对、执行事实日志（ExecutionJournal）、严格本地参数校验、停止/抢占/重置/编辑分支、原子预算检查点、任务相关性服务器记忆与 usage。
-- `worker/agent/responses-compat.test.ts`：标准 encrypted_content/phase 多轮续接、缺失 ID 不伪造、完成态 JSON 容错、明确 unsupported 才降级、重试次数/幂等键/Retry-After、错误体有界/脱敏与主任务/辅助请求预算；JSON Schema 回退仍须本地知识校验，原生压缩不走 JSON 摘要生成。
-- `worker/agent/checkpoint.test.ts` / `worker/agent-checkpoint-recovery.test.ts`：应用层上下文紧凑化、前缀摘要+近期尾部保真、86 步事实保留、平滑本地降级、取消/超时与预算原子性，不重放历史工具调用。
-- `worker/agent/memory-validation.test.ts` / `worker/agent/memory-provider.test.ts`：LLM 工作历程总结与知识提炼、失败本地持久化与 3 次重试（超限丢弃）、显式 revision 冲突重算、去重/用户保护、10s 存储超时与 HTTP 错误传播。
-- `worker/server-memory-store.test.ts`：使用 Node 内置 `node:sqlite` 做真实 SQLite 迁移与事务测试，覆盖证据/30 天过期、敏感值加密封装、幂等任务日志、epoch 与加密后 revision 复查及清理；不新增生产依赖。
-- `worker/agent/ai-config-budgets.test.ts`：旧库两列幂等升级、预算保存/省略保留/null 重置/模型变更、密钥保留与地址绑定；`e2e/agent-responses.spec.ts` 验证简短错误展示、本地降级提示、记忆冲突/忙碌/日志失败不打断正文及预算设置交互，详细诊断仅走 DEBUG_MODE 终端。协议用例使用贴近真实形状的模拟数据，不代替付费服务商实测。
-- 流中断/incomplete 不执行残缺工具、不泄露 reasoning；新任务先等旧 exec 清理，不自动重放已执行命令
+- Responses Agent：HTTP/SSE 跨 chunk 与 CRLF、`store:false`、原生输出项与 reasoning 续接、call_id 配对、参数校验，以及停止/替换/重置/历史编辑。
+- `worker/agent/context.test.ts` / `worker/agent-checkpoint-recovery.test.ts`：早期对话摘要、近期完整工具交互、摘要失败续接、预算不足保留原历史及长任务继续执行。没有独立执行账本或证据包测试。
+- `worker/agent/memory.test.ts` / `worker/agent-core-response.test.ts`：可读自然语言工作历程、普通会话提交、完整长密钥保存，以及后续部署请求直接收到保存的原值。
+- `worker/agent/memory-provider.test.ts`：读取记忆、单一路径提交会话及基本存储错误/超时处理。
+- `worker/server-memory-store.test.ts`：使用 Node 内置 `node:sqlite` 验证完整凭据的加密读写、日志合并、版本冲突、事务回滚和任务清理，不新增生产依赖。
+- `worker/agent/memory-alarm.test.ts`：真实 UserDBDO + SQLite，覆盖手动记忆 CRUD 与归属检查、服务器删除清理，以及无浏览器/SSH 时重建恢复、读取当前 AI 配置、最多三次后台重试、耗尽删除和重复 Alarm 不追加重复日志。替代原先重复模拟 SQL 行为的记忆路由夹具。
+- `worker/agent/responses-compat.test.ts` / `worker/agent/ai-config-budgets.test.ts`：标准续接、可选参数兼容、基本 HTTP 重试、配置与预算；`e2e/agent-responses.spec.ts` 保留简短错误、上下文提示、记忆面板与预算设置交互。协议测试使用模拟数据，不代替真实服务商实测。
 
 ### 前端与构建
 

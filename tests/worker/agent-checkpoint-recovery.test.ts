@@ -15,6 +15,14 @@ function setup(contextWindow = 64_000) {
   return { agent, frames, exec };
 }
 
+function seedOlderHistory(agent: AgentCore) {
+  const context = (agent as any).context;
+  for (let i = 0; i < 4; i++) {
+    context.beginTurn(`Earlier request ${i}`);
+    context.accept({ ...responseObject(`old_${i}`, 'Earlier observation'), text: 'Earlier observation', calls: [] }, context.buildInput());
+  }
+}
+
 describe('Application-level long-task compaction in AgentCore', () => {
   it('continues after 86 settled steps without replay, compacting older turns and preserving recent interaction', async () => {
     const { agent, frames, exec } = setup(256_000);
@@ -46,14 +54,13 @@ describe('Application-level long-task compaction in AgentCore', () => {
     expect(new Set(commands).size).toBe(86);
 
     const next = requests.at(-1);
-    const factItem = next.input.find((item: any) => typeof item.content === 'string' && item.content.includes('[UNTRUSTED OBSERVATION: execution facts]'));
-    const ledger = JSON.parse(factItem.content.split('\n')[1]);
-    expect(ledger.rows).toHaveLength(86);
-    expect(ledger.rows.find((row: any[]) => row[2] === 'inspect_43').slice(3)).toEqual(['failed', true, 1]);
+    expect(JSON.stringify(next.input)).toContain('blog inspected');
+    expect(next.input).toContainEqual(expect.objectContaining({ type: 'function_call', call_id: 'call_86' }));
+    expect(next.input).toContainEqual(expect.objectContaining({ type: 'function_call_output', call_id: 'call_86' }));
     expect(JSON.stringify(next.input)).toContain('never change firewall rules');
   });
 
-  it('smoothly recovers with local facts if the summarization request fails', async () => {
+  it('continues with recent conversation if the summary request fails', async () => {
     const { agent, frames } = setup(256_000);
     let steps = 0;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
@@ -73,8 +80,9 @@ describe('Application-level long-task compaction in AgentCore', () => {
     expect(frames.at(-1)).toMatchObject({ subType: 'run_end', outcome: 'completed' });
   });
 
-  it('rebuilds unaccepted context and ledger when the first post-compact request fails', async () => {
+  it('keeps the summarized conversation when the first continuation request fails', async () => {
     const { agent, frames } = setup();
+    seedOlderHistory(agent);
     const requests: any[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       const body = JSON.parse(init!.body as string); requests.push(body);
@@ -96,13 +104,14 @@ describe('Application-level long-task compaction in AgentCore', () => {
     await agent.handleAgentStart('1', 'Continue the interrupted task');
     expect(frames.at(-1)).toMatchObject({ subType: 'run_end', outcome: 'completed' });
     expect(requests).toHaveLength(4);
-    for (const text of ['execution facts', 'do not restart it', 'Continue the interrupted task']) {
+    for (const text of ['Summary of nginx inspection', 'do not restart it', 'Continue the interrupted task']) {
       expect(JSON.stringify(requests[3].input)).toContain(text);
     }
   });
 
   it('reset during compaction cancels execution and leaves session clean', async () => {
     const { agent, frames } = setup();
+    seedOlderHistory(agent);
     let requests = 0;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       if (++requests === 1) {

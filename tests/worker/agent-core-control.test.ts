@@ -70,7 +70,7 @@ describe('Responses task control', () => {
     expect(requests[2].input).toContainEqual(expect.objectContaining({ id: 'msg_resp_1' }));
     expect(requests[2]).not.toHaveProperty('previous_response_id');
     expect(requests[2].input.some((item: any) => item.content === '第二轮')).toBe(false);
-    expect(JSON.stringify(requests[2].input)).toContain('does not undo remote operations');
+    expect(JSON.stringify(requests[2].input)).toContain('history edit');
     await agent.handleAgentStart('1', '修改第一轮', 'zh-CN', undefined, 0);
     expect(requests[3]).not.toHaveProperty('previous_response_id');
     expect(JSON.stringify(requests[3].input)).not.toContain('修改第二轮');

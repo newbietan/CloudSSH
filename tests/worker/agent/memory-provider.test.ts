@@ -1,66 +1,35 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Env } from '../../../src/types';
 import { createAgentMemoryProvider } from '../../../src/worker/agent/memory-provider';
+import type { MemoryTask } from '../../../src/worker/agent/types';
 
-function setup(response: Response | (() => Promise<Response>)) {
-  const fetch = vi.fn(async (_request: Request) => typeof response === 'function' ? await response() : response);
-  const env = { USER_DB: { idFromName: vi.fn(value => value), get: vi.fn(() => ({ fetch })) } } as unknown as Env;
-  const provider = createAgentMemoryProvider(env, 'github-id', '10', 1);
+function setup(response: () => Promise<Response>) {
+  const fetch = vi.fn(async (_request: Request) => response());
+  const provider = createAgentMemoryProvider({ USER_DB: { idFromName: (name: string) => name,
+    get: () => ({ fetch }) } } as never, 'owner', '10', 1);
   return { provider, fetch };
 }
-const batch = { expectedRevision: 7, sessionId: 'session', epoch: 0, knowledge: [] };
 afterEach(() => vi.useRealTimers());
+const task: MemoryTask = { taskId: 'task-1', goal: '部署', conversation: '使用提供的密钥完成部署', locale: 'zh-CN', timezone: 'UTC' };
 
-describe('Authoritative memory storage adapter', () => {
-  it.each([400, 403, 404, 500])('does not swallow failed write HTTP %s or expose its body', async status => {
-    const { provider } = setup(new Response('SECRET_STORAGE_BODY', { status }));
-    const error = await provider.saveBatchMemory(batch).catch(error => error);
-    expect(error).toMatchObject({ code: 'responses_memory_storage', status });
-    expect(JSON.stringify(error)).not.toContain('SECRET');
+describe('Memory provider', () => {
+  it('submits the conversation to its saved server without a second local queue', async () => {
+    const { provider, fetch } = setup(async () => Response.json({ success: true }));
+    await provider.enqueueMemory(task);
+    expect(fetch.mock.calls[0][0].url).toBe('http://internal/internal/servers/1/agent-memory');
+    expect(await fetch.mock.calls[0][0].json()).toEqual({ user_id: 10, task });
   });
 
-  it.each([true, false])('distinguishes revision conflicts from stale sessions (revision=%s)', async revision => {
-    const { provider } = setup(Response.json({ code: revision ? 'memory_revision_conflict' : 'stale_session', error: 'SECRET' }, { status: 409 }));
-    await expect(provider.saveBatchMemory(batch)).rejects.toMatchObject({ code: revision ? 'responses_memory_conflict' : 'responses_memory_storage', status: 409 });
-  });
-
-  it('does not turn a failed read into an empty revision-zero memory', async () => {
-    const { provider } = setup(new Response('', { status: 500 }));
+  it('reports storage failures instead of pretending memory was read or saved', async () => {
+    const { provider } = setup(async () => new Response('failed', { status: 500 }));
     await expect(provider.fetchUnifiedMemory()).rejects.toMatchObject({ code: 'responses_memory_storage' });
+    await expect(provider.enqueueMemory(task)).rejects.toMatchObject({ code: 'responses_memory_storage' });
   });
 
-  it('binds writes to server/user and keeps them on internal DO routes', async () => {
-    const { provider, fetch } = setup(Response.json({ success: true }));
-    await provider.saveBatchMemory(batch);
-    const req = fetch.mock.calls[0][0] as Request;
-    expect(req.url).toBe('http://internal/internal/servers/1/memory/batch');
-    expect(await req.json()).toEqual({ user_id: 10, ...batch });
-  });
-
-  it('bounds non-cancellable DO calls with an independent 10s deadline', async () => {
+  it('does not leave a stuck storage call running indefinitely', async () => {
     vi.useFakeTimers();
     const { provider } = setup(async () => new Promise(() => {}));
-    const pending = provider.fetchUnifiedMemory();
-    const checked = expect(pending).rejects.toMatchObject({ code: 'responses_memory_storage' });
-    await vi.advanceTimersByTimeAsync(10_000);
-    await checked;
+    const checked = expect(provider.fetchUnifiedMemory()).rejects.toMatchObject({ code: 'responses_memory_storage' });
+    await vi.advanceTimersByTimeAsync(10_000); await checked;
     expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it('honors reset/parent cancellation without retrying a write', async () => {
-    const { provider, fetch } = setup(async () => new Promise(() => {}));
-    const controller = new AbortController();
-    const pending = provider.saveBatchMemory(batch, controller.signal);
-    controller.abort('reset');
-    await expect(pending).rejects.toMatchObject({ code: 'responses_memory_storage' });
-    expect(fetch).toHaveBeenCalledTimes(1);
-  });
-
-  it('calls internal pending-distillation endpoints on save and delete', async () => {
-    const { provider, fetch } = setup(Response.json({ success: true }));
-    await provider.savePendingDistillation!('task-1', {} as any, 1, { sessionId: 'sess', epoch: 0 });
-    expect((fetch.mock.calls[0][0] as Request).url).toBe('http://internal/internal/servers/1/agent-pending-distillation');
-    await provider.deletePendingDistillation!('task-1', { sessionId: 'sess', epoch: 0 });
-    expect((fetch.mock.calls[1][0] as Request).method).toBe('DELETE');
   });
 });

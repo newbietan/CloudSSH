@@ -42,7 +42,8 @@ src/
 │   ├── tunnel-stream.ts       # 出站 Cloudflare 隧道 WebSocket 全双工流适配器
 │   ├── sftp-handler.ts    # SFTP ops, bounded upload/resume/checksum, concurrent download, recursive deletion
 │   ├── sftp-delete-budget.ts # 整棵删除树的条目/估算内存/请求/深度/时间预算
-│   ├── user-db.ts    # UserDBDO - user/server/命令片段存储（含标签、OS、跳板关系与片段持久化）
+│   ├── user-db.ts    # UserDBDO - 用户存储与持久化记忆队列 Alarm 消费
+│   ├── server-memory-store.ts # 统一记忆存储、基本版本检查与 Alarm 后台重试
 │   ├── server-tags.ts # 服务器标签规范化与 SQLite JSON 序列化
 │   ├── os-detect.ts  # 远端操作系统输出解析、规范 key 与持久化白名单
 │   ├── auth.ts       # 认证模式解析（单管理员密码/GitHub 互斥）+ OAuth 流程 + Session 中间件 + 密码登录
@@ -52,14 +53,11 @@ src/
 │   │   ├── core.ts       # Responses Agent orchestration, run lifecycle, safe tool execution
 │   │   ├── responses-client.ts # 唯一 Responses HTTP/SSE、原生续接、有界能力兼容与严格完成语义
 │   │   ├── responses-errors.ts # 上游错误参数分类与 Retry-After（不保留原始错误正文）
-│   │   ├── context.ts    # 原生无状态历史回传、不可变交互段、编辑检查点与本地 UTF-8 预算
-│   │   ├── context-limits.ts # 上下文与输出 token 预算、检查点限制常量
-│   │   ├── checkpoint.ts # /responses/compact 原生压缩、完整窗口预检与 60s 原子提交
-│   │   ├── compaction-window.ts # 原生 compaction/保留消息校验，不裁剪或重写服务端规范窗口
-│   │   ├── execution-log.ts # 独立于 LLM 的确定性工作事实与日志摘要
-│   │   ├── memory-provider.ts # 内部记忆存储适配器、10s 有界等待与显式 revision 冲突分类
-│   │   ├── execution-journal.ts # 命令与工具执行事实日志（非对齐回放、证据脱敏、确切状态跟踪）
-│   │   ├── memory.ts     # 任务相关服务器记忆筛选、提炼队列与版本条件写入
+│   │   ├── context.ts    # 普通会话、原生工具配对、历史编辑与近期交互保留
+│   │   ├── context-limits.ts # 上下文大小限制与共享 Token 估算
+│   │   ├── checkpoint.ts # 标准 Responses 摘要早期对话并保留近期交互
+│   │   ├── memory-provider.ts # 读取服务器记忆、提交会话供后台提炼
+│   │   ├── memory.ts     # 单次 LLM 提炼自然语言工作历程与可复用知识
 │   │   ├── tools.ts      # 8 tool definitions, including read-only fetch_web_content
 │   │   ├── tool-executor.ts  # Tool dispatch, blocked command rejection, bounded SSRF-safe web reads
 │   │   ├── prompt.ts     # System prompt, long-task decomposition and step-by-step verification
@@ -89,7 +87,6 @@ src/
 ├── ai-model-policy.ts # 前后端共享的模型上下文/输出 Token 预算与范围校验
 ├── agent-response-diagnostics.ts # 调用阶段、参数、错误码与本地请求 UUID 的共享诊断白名单
 ├── server-memory-schema.ts # Unified server memory schema for work logs and knowledge entries
-├── agent-task-schema.ts    # 任务中断恢复检查点契约校验（短期有界操作事实）
 ├── share-resume-schema.ts  # One-time share session re-attach challenge and resume token schema
 ├── sftp-upload-policy.ts   # Browser/Worker shared bounded upload windows, write concurrency and progress ACK policy
 ├── terminal-output-policy.ts # Browser/Worker shared terminal output in-flight limit and receipt ACK deadlines
@@ -417,11 +414,15 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
 39. **单管理员密码登录（与 GitHub OAuth 互斥，密码优先）** - 认证模式由环境变量在部署时决定，运行时单一激活：`ADMIN_PASSWORD_HASH` 非空即密码模式（优先级最高，GitHub 配置原地保留但路由 501 禁用，前端入口整体替换为管理员登录）；置空/删除即刻退回 GitHub 模式（GitHub 侧配置与数据零影响）；哈希非空但格式损坏 → fail closed（登录 500、`/api/config` 暴露 `passwordHashInvalid`、前端错误面板），**绝不静默回退**。本地管理员使用哨兵 `github_id = -1`（GitHub ID 恒为正数无碰撞）路由到专属 UserDBDO 实例 `idFromName('-1')`，零数据迁移；首次登录幂等 upsert 唯一用户行，密码模式下 GitHub OAuth 回调被 501 堵死（唯一的建用户入口），单用户排他性由“不存在注册路径”天然保证。会话令牌格式 `-1:<fp8>:<randomHex>`（fp8 = 哈希串 SHA-256 前 8 hex，内嵌密码代际指纹）：换 `ADMIN_PASSWORD_HASH` 即全灭旧会话，`getAuthenticatedUser` 在 Worker 侧校验指纹，无需 DO 清理。**双向模式门**：密码模式拒绝 GitHub 会话/一次性令牌，GitHub/匿名模式拒绝哨兵会话/令牌（`getAuthenticatedUser` + `/api/ssh` token 路径两处，防止模式切换后旧凭据残活）。登录验证采用客户端预拉伸（server relief）：浏览器按 `/api/config` 公开参数（盐/迭代数非机密）在本地跑 PBKDF2（Free 套餐 10ms CPU 上限使服务端高强度 KDF 不可行），Worker 仅做一次 SHA-256 + 恒时比对（`timingSafeEqualBytes` 手写恒时比较，勿改回非常时比较），原始密码永不离开浏览器；哈希生成入口（模式感知）：仅匿名模式（未配置任何登录方式）显示认证页脚「管理员密码登录设置」链接——GitHub 模式（含 `REQUIRE_GITHUB_AUTH` 强制面板）一律隐藏，既有用户升级后界面零变化；`#password-setup` URL 路由全模式可用（`main.ts` init 消费后从地址栏清除，README 引导 GitHub 实例切换与密码轮换）；坏哈希面板保留「重新生成」链接。生成器（`admin-hash-generator.ts`）供 Dashboard-only 部署用户在浏览器内用自定义密码生成，密码同样不出浏览器；另配 `scripts/hash-password.mjs`（本地 CLI）；生成器（`buildAdminPasswordHash`）、登录预拉伸（`stretchAdminPassword`）、服务端 `parseAdminPasswordHash` 与脚本四方口径必须一致（`tests/worker/password-auth.test.ts` 守护，格式 `pbkdf2$sha256$<iterations>$<salt-b64url>$<verifier-b64url>`）。防爆破三道防线：同源 Origin 校验（防跨站登录 CSRF）→ Turnstile（已配置时必验）→ 哨兵 DO 持久化登录节流（5 次连败后指数退避 60s×2^n 封顶 15 分钟，跨 isolate 权威，连败超 15 分钟衰减重置；公网部署建议开启 Turnstile，否则攻击者可持频造成持续锁定骚扰）。`REQUIRE_GITHUB_AUTH` 语义泛化为“要求登录”（密码会话同样满足，变量名保留兼容）；密码模式**不改变匿名 SSH 行为**，需强制登录请配合 `REQUIRE_GITHUB_AUTH=true`。模式切换为平行数据宇宙：密码模式期间新建数据留在哨兵 DO，切回 GitHub 不合并（旧 GitHub 数据即刻恢复）。前端：`auth-form.ts` 按 `authMode` 整体替换登录入口（按钮/强制登录面板/坏哈希错误面板三处文案同步），登录对话框复用 `auth-challenge-dialog` 样式类，错误按状态码映射 i18n 不回显后端原文；`server-list.ts` 对本地管理员 `avatar_url` 为 null 渲染首字母回退块，勿直接 `img.src = null`。
 
-40. **Responses 原生无状态 Agent 与应用层上下文紧凑化** - LLM 调用仅通过 `agent/responses-client.ts` 使用标准 `/responses` 并强制 `store:false`（无状态模式），不依赖 `previous_response_id`、服务端历史链或上游特定的 `/responses/compact` 扩展端点，原生兼容所有遵循标准 `/responses` 规范的服务商与中转网关。由 CloudSSH 在本地维护原生历史输出项，白名单保留标准 reasoning.encrypted_content/content/status 与 assistant phase；encrypted_content 是标准续接字段，不是应一律丢弃的厂商私有字段。reasoning 仅作有界、不可信的续接数据，不展示、不写入长期记忆，也不强制所有提供商返回 encrypted_content。保留真实 item ID，缺失时不得伪造 UUID；function_call 的 call_id 不得从 item.id 猜测（兼容明确的 callId 别名）。动态终端/环境/记忆为显式不可信观察；`call_id` 严格配对工具结果，只有在完整 `response.completed`（或完成态 JSON 响应）且参数通过本地校验后才执行函数。停止/抢占将调用结果妥善闭合为执行事实（succeeded / failed / blocked / rejected / cancelled / unknown），替换任务先等旧 exec 清理，绝不自动重放副作用。`requestId` 仅作前端关联（非授权）；正文 stream_end 不等于任务结束，以 run_end 为准。上下文窗口/输出预算默认 64,000/8,192 Token（输出含推理），AI 设置可选配置 context_window（8,192–1,000,000）/max_output_tokens（256–128,000 且小于窗口）；主任务和知识生成服从配置输出上限，UTF-8 字节仅作保守估算，不是假定通用 tokenizer。UserDBDO 的 ai_configs 用幂等 ALTER 增加两列；PUT 省略预算保留同模型旧值，显式 null 恢复默认，改地址/模型且省略则重置默认；修改生效需新建 Agent 会话。只有 400/422 明确报告某个可选参数不支持时才有界修正（单次最多 6 次，学习范围限本客户端），不得移除 store:false、输入/指令、工具或凭据边界。可选工具 strict:false 和辅助请求 JSON Schema 提示回退仍经相同本地参数/业务校验。瞬时 HTTP 错误最多重试 2 次，Retry-After 封顶 30s；同请求沿用幂等键、改载荷必须换键，开始消费成功响应后不得重试或重放 SSH。错误体最多读取 32Ki 字符/2s，普通聊天/通知仅显示简短本地化错误（压缩失败保留安全暂停提示），不拼接阶段/参数/错误码/请求 UUID/Token 用量；详细白名单诊断仅在 `DEBUG_MODE=true` 时经 `type: debug` 输出到网页 SSH 终端，普通 `agent_frame` 仅保留用于文案的用途字段，严禁保存或显示原始上游正文/头部/密钥；记忆失败用通知展示，不得打断新任务的正文流。长期记忆由 AgentMemoryManager 驱动任务相关性筛选、证据脱敏、版本条件写入（乐观锁 revision）与并发队列保护；敏感凭据采用 AES-GCM 行级存储，绝不截断凭据；**加密根密钥存于同一 UserDBDO SQLite 的 `system_config.encryption_secret`，再按用户派生，非独立 Secret/KMS**。它仅避免凭据列直接存明文，不能抵御包含密钥的整库泄露、数据库读权限失陷或 Worker 代码执行权限失陷，不能当作独立的凭据保护边界。#38 的 Service Token、SSH 凭据与 AI API key 复用此机制，同受该限制。历史分支编辑只在本地分叉交互段，绝不回滚远端已发生的物理操作。Base URL 只接受 HTTPS 根地址或 /responses；路径大小写敏感，更新地址不带新 key 必须拒绝（PUT 与 /models 同步防外带）。用量日志仅包含数字元数据，不能记录请求、终端内容或密钥。
+40. **Responses Agent：个人运维助手，不是审计平台** - 使用标准 `/responses` 与 `store:false`，本地维护普通对话和原生工具调用；不依赖服务商响应链或 `/responses/compact`。保留标准 reasoning 续接字段与 assistant phase，但不展示或写入长期记忆；真实 item ID/call_id 不伪造，工具调用只在完整完成且参数有效后执行。停止/替换任务先清理旧 exec，历史编辑不撤销远端操作。任务上限固定为 175 步，不再根据进度评分反复扩展。
 
-    **长任务应用层紧凑化（替代脆弱的外部 compact 扩展）**：达到上下文预算阈值时，`checkpoint.ts` 将历史拆分为早期交互前缀与近期完整尾部。早期交互前缀通过标准 `/responses`（`COMPACTION_PROMPT`，低推理预算，输出上限 1500 Token）压缩为高密度事实陈述；近期尾部（最近完整交互与关键操作）完整保留，精确用户请求（累计≤96KiB）与不可分支回滚的 `ExecutionJournal` 完整执行账本作为权威不可篡改观察注入。整个过程与一次模型调用共享 60s deadline，继承取消边界。若模型生成摘要失败或超时，自动平滑降级为本地执行事实摘要，不中断主任务且已执行命令绝不重放；仅当续接总预算无法容纳必需执行事实时才安全暂停。替换后首个请求失败仍保留紧凑上下文与未被接受的事实守卫。该机制完全建立在标准 `/responses` 基础之上，彻底根除各家中转网关对 `/responses/compact` 支持缺失或返回不透明加密对象无法反解导致的脆弱性。
+    **上下文**：默认 64,000/8,192 Token（输出含推理），AI 设置可调整窗口与输出上限；改配置后新建会话。接近容量时仅摘要较早对话，保留近期完整工具交互；摘要最多 20 秒、1,500 输出 Token，失败使用已有摘要和近期对话继续。无法容纳续接时保留原历史。`context-limits.ts` 统一估算，2.5 bytes/token 仅为启发式，不能把字节直接视为 Token。不保留独立 ExecutionJournal、任务证据包或永久执行事实检查点。
 
-    **自然语言工作历程与长期知识提炼**：工作记录必须体现完整运维意图、排查背景与最终结论，拒绝机械拼接截断的代码或机器流水；系统将完整交互上下文（用户诉求、执行命令及关键输出、最终结论）送交 LLM，提炼为高质量自然语言工作历程（支持 30 分钟连续排查窗口自动 update_latest 有机合并）与可复用原子知识。提炼若因网络、超时或服务商错误暂时失败，任务上下文自动加密持久化至 SQLite（agent_pending_distillations），后台异步以指数退避重试最多 3 次，每次拉取最新版本；若 3 次重试之后仍未成功，则果断丢弃并清理待处理记录，杜绝无限堆积。已知凭据在辅助输入中脱敏，新凭据只能来自用户显式原文，不可从工具输出推断。队列不保留整份旧记忆；每次生成前读取最新 revision，精确去重、拒绝同批冲突 key，保护用户手动知识，记录本地证据 callId/user 与 taskId。自动验证的 config/note 30 天过期后停止注入，不自动删除；手动知识、rule、credential 不自动过期，已授权更新手动知识仍保留 user 来源。metadata 幂等 ALTER 增加 evidence/task_id/verified_at/expires_at。能力学习仅限同一 manager/配置，reset 清除。内部存储适配器检查 HTTP 状态并有 10s deadline，不得吞错；最终写入在 crypto await 后复查 revision/session/ownership，原子提交。冲突/队列满失败用简短通知，不打断新任务正文；详细契约见 `docs/agent-context-memory.md`。
+    **知识与工作历程**：保存的配置、知识和完整凭据直接提供给 Agent，不重复索取；移除关键词召回、来源/时效规则、授权判定和额外脱敏。凭据保留空格/换行/空密码，单值上限 16,384 字符，不静默截断；界面掩码不影响 Agent 使用原值。LLM 从普通会话生成自然语言 workLog 与 knowledge，连续工作可在 30 分钟内合并。不建立机器执行流水或来源审计。沿用现有 AES-GCM 存储；根密钥仍在同一 UserDBDO SQLite 的 `system_config.encryption_secret`，不是独立 Secret/KMS，也不抵御整库或运行时失陷。
+
+    **唯一后台路径**：任务结束后通过 `/internal/servers/:id/agent-memory` 保存会话，由 UserDBDO Alarm 提炼；不维护 SSH 会话内的第二执行队列或在线状态轮询。每次读取当前 AI 配置和记忆 revision，一次生成、最多 25 秒。首次失败后以 2/4/8 秒最多重试三次，耗尽删除；记录尝试次数和下次唤醒时间以跨实例恢复。记忆写入与任务删除同事务，保留基本服务器归属/版本检查；不增加租约、完成回执、epoch 或失败审计。旧凭据及失败任务兼容读取。
+
+    **协议与诊断**：仅对明确不支持的可选参数有界兼容，不移除 `store:false`、工具或凭据边界；保留 HTTP 瞬时重试和完整完成语义。Base URL 绑定及同源校验不变。普通错误仅简短本地化展示，详细白名单诊断仍只在 `DEBUG_MODE=true` 时输出网页终端，不输出原始服务商错误。详见 `docs/agent-context-memory.md`。
 
 41. **SFTP 上传续传、校验与目录删除** - 上传按远端已写入大小续传，失败或取消时保留部分文件；浏览器通过 `sha256-stream.ts` 流式计算完整文件（含续传前缀）哈希，不得恢复整文件内存读取。上传完成后在远端校验工具可用时比对 SHA-256，不可用时不因校验本身阻止成功。直连/隧道窗口与 ACK 必须使用共享策略（见 #38），4 秒 ACK 等待恢复仍受最大窗口限制，不得无限放开。非空目录删除先尝试 `rmdir`，通用 `Failure` 才触发递归遍历；它不是 `ENOTEMPTY` 的确切证明，权限等失败仍应报告。目录句柄必须关闭，跳过 `.` / `..`，拒绝带路径分隔符/NUL 的子条目，符号链接按文件删除而非递归进入。`SFTPDeleteBudget` 整棵树共享上限：50,000 条目、16MiB 累计条目估算内存、100,000 次请求（含预留 CLOSE）、深度 64、5 分钟；每目录最多 10,000 条目与 8MiB 估算内存，READDIR 最多 1024 次、连续 3 次空批次即失败。截断/预算耗尽必须明确报错，不对截断目录做部分删除；此前已完成的兄弟目录/文件删除不会回滚。deadline 传入 OPENDIR/READDIR/REMOVE/RMDIR 请求等待，超时后最多额外 5s 做一次句柄清理；清理失败仍不能保证远端句柄成功释放。UI 列表保留 2000 条上限，计数恰好到上限时再读 EOF 区分完整与截断。
 

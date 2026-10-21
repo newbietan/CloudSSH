@@ -5,6 +5,7 @@ import { marked, type Tokens } from 'marked';
 import {
   formatTimestampWithRelative,
   isSensitiveKeyOrValue,
+  KNOWLEDGE_VALUE_MAX_LENGTH,
   normalizeKnowledgeInput,
   type ServerKnowledgeItem,
   type UnifiedServerMemory,
@@ -573,9 +574,6 @@ export class AgentPanel {
           this.updateInputState();
         }
         break;
-      case 'progress_extend':
-        this.showProgressExtend(t('agent.progressContinue'), msg.currentIteration, msg.newMax, t('agent.progressActive'));
-        break;
       case 'reset_done':
         if (this.isAgentRunning) break;
         this.activeRequestId = null;
@@ -590,17 +588,7 @@ export class AgentPanel {
         }
         break;
       case 'memory_status':
-        if (msg.code === 'memory_failed') {
-          // Auxiliary failures must not remove a newer task's streaming message.
-          notify(t('agent.memoryFailure') + '\n' + responseErrorMessage(msg.errorCode, msg.status, msg.diagnostics),
-            { variant: 'warning' });
-        } else if (msg.code === 'memory_conflict') {
-          notify(t('agent.memoryConflict'), { variant: 'warning' });
-        } else if (msg.code === 'memory_busy') {
-          notify(t('agent.memoryBusy'), { variant: 'warning' });
-        } else if (msg.code === 'memory_log_failed') {
-          notify(t('agent.memoryLogFailed'), { variant: 'warning' });
-        }
+        notify(t('agent.memoryFailure'), { variant: 'warning' });
         break;
       case 'memory_updated':
         // Cache invalidation is not task completion: a late log write must preserve interrupted drafts.
@@ -1128,32 +1116,6 @@ export class AgentPanel {
     this.sessionMessages.push({ role: 'error', content: message || t('feedback.danger') });
     this.saveSessionDraft(false);
     this.appendMessage('error', message || t('feedback.danger'));
-  }
-
-  private showProgressExtend(
-    message: string,
-    currentIteration: number,
-    newMax: number,
-    reason: string
-  ): void {
-    const el = document.createElement('div');
-    el.className =
-      'agent-progress-extend p-2 rounded border border-[var(--accent)] bg-[var(--accent-bg)] text-[11px]';
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
-    el.innerHTML = `
-      <div class="flex items-center gap-2">
-        <span class="material-symbols-outlined text-[14px]" style="color:var(--accent);font-variation-settings:'FILL' 1;">trending_up</span>
-        <span class="font-bold text-[var(--accent)]">${t('agent.progressTitle')}</span>
-      </div>
-      <div class="agent-progress-detail mt-1">
-        ${escapeHtml(t('agent.progressCurrent', { message, current: currentIteration, max: newMax }))}
-      </div>
-      <div class="agent-progress-detail mt-1 text-[11px]">
-        ${escapeHtml(t('agent.progressReason', { reason }))}
-      </div>
-    `;
-    this.messagesEl?.appendChild(el);
-    this.scrollToBottom();
   }
 
   private showConfirmDialog(command: string, reason: string, confirmationId: unknown): void {
@@ -2411,7 +2373,7 @@ export class AgentPanel {
           <input id="agent-knowledge-key" type="text" placeholder="${t('agent.knowledgeKey')}" class="terminal-input flex-1 text-xs py-1 px-2 rounded border border-[var(--border)] bg-[var(--bg)] font-code text-primary" required maxlength="64" />
         </div>
         <div>
-          <textarea id="agent-knowledge-value" rows="2" placeholder="${t('agent.knowledgeValue')}" class="terminal-input w-full text-xs py-1 px-2 rounded border border-[var(--border)] bg-[var(--bg)] font-code resize-none text-primary" required maxlength="512"></textarea>
+          <textarea id="agent-knowledge-value" rows="2" placeholder="${t('agent.knowledgeValue')}" class="terminal-input w-full text-xs py-1 px-2 rounded border border-[var(--border)] bg-[var(--bg)] font-code resize-none text-primary" required maxlength="${KNOWLEDGE_VALUE_MAX_LENGTH}"></textarea>
         </div>
         <div class="flex justify-end gap-2">
           <button type="button" id="agent-knowledge-cancel-btn" class="px-2 py-0.5 text-xs text-muted hover:text-primary cursor-pointer">${t('agent.memoryCancel')}</button>

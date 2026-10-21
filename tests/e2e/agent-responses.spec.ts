@@ -123,7 +123,6 @@ test('an auxiliary memory failure warns without removing the active task stream'
         providerCode: 'server_error', requestId: '12345678-1234-4123-8123-123456789abc' } });
   });
   await expect(page.locator('.app-toast')).toContainText('Knowledge extraction failed');
-  await expect(page.locator('.app-toast')).toContainText('HTTP 500');
   for (const detail of ['server_error', '12345678-1234-4123-8123-123456789abc']) {
     await expect(page.locator('.app-toast')).not.toContainText(detail);
   }
@@ -132,9 +131,9 @@ test('an auxiliary memory failure warns without removing the active task stream'
 });
 
 for (const [locale, fallback, paused] of [
-  ['zh-CN', '本地执行事实', '安全暂停'],
-  ['zh-TW', '本機執行事實', '安全暫停'],
-  ['en-US', 'local execution facts', 'safely paused'],
+  ['zh-CN', '近期对话', '安全暂停'],
+  ['zh-TW', '近期對話', '安全暫停'],
+  ['en-US', 'recent conversation', 'safely paused'],
 ]) {
   test(`context compaction local fallback and pause diagnostics are localized (${locale})`, async ({ page }) => {
     await mount(page, locale);
@@ -166,26 +165,6 @@ for (const [locale, fallback, paused] of [
     for (const value of ['12345678-1234-4123-8123-123456789abc']) await expect(messages).not.toContainText(value);
     await expect(messages).not.toContainText('SECRET');
     await expect(page.locator('#agent-send-btn')).not.toHaveClass(/is-stopping/);
-  });
-}
-
-for (const [code, expected] of [
-  ['memory_conflict', 'Memory changed in another task'],
-  ['memory_busy', 'knowledge queue is full'],
-  ['memory_log_failed', 'Work log storage could not be confirmed'],
-]) {
-  test(`memory ${code} warns without interrupting a newer task`, async ({ page }) => {
-    await mount(page, 'en-US');
-    await page.evaluate(code => {
-      const { panel, sent } = (window as any).__responsesAgent;
-      panel.sendMessage('New task');
-      const requestId = sent.at(-1).requestId;
-      panel.handleAgentFrame({ subType: 'stream_chunk', requestId, content: 'ACTIVE_STREAM' });
-      panel.handleAgentFrame({ subType: 'memory_status', code });
-    }, code);
-    await expect(page.locator('.app-toast')).toContainText(expected);
-    await expect(page.locator('#agent-send-btn')).toHaveClass(/is-stopping/);
-    await expect(page.locator('#agent-messages')).toContainText('ACTIVE_STREAM');
   });
 }
 

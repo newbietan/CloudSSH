@@ -2,6 +2,7 @@ import { normalizeAIBaseUrl } from '../../ai-endpoint';
 import { resolveAIModelBudgets, type AIModelBudgets } from '../../ai-model-policy';
 import { normalizeResponseDiagnostics, type ResponseDiagnostics } from '../../agent-response-diagnostics';
 import { providerError, retryAfterMs } from './responses-errors';
+import { estimateTokens } from './context-limits';
 import { validateBaseUrlWithDNS } from './ssrf';
 import type { AIConfig, ModelResponse, ResponseFunctionCall, ResponseInput, ResponseOutput, ResponseUsage, ToolDefinition } from './types';
 
@@ -320,7 +321,7 @@ export class ResponsesClient {
 
   private withinBudget(payload: Record<string, unknown>): boolean {
     const bodyBytes = new TextEncoder().encode(JSON.stringify(payload)).length;
-    const estimatedInputTokens = Math.ceil(bodyBytes / 2.5);
+    const estimatedInputTokens = estimateTokens(payload);
     return bodyBytes <= 2 * 1024 * 1024 &&
       estimatedInputTokens + Number(payload.max_output_tokens) + 512 < this.budgets.context_window;
   }

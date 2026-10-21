@@ -1,6 +1,9 @@
 import { normalizeAIBaseUrl } from '../ai-endpoint';
 import { resolveAIModelBudgets } from '../ai-model-policy';
 import { ServerMemoryStore } from './server-memory-store';
+import { distillMemory } from './agent/memory';
+import { ResponsesError } from './agent/responses-client';
+import type { AIConfig } from './agent/types';
 import { normalizeSnippetInput, SNIPPET_MAX_COUNT } from '../snippet-schema';
 import { normalizeMobileShortcutsPayload } from '../mobile-shortcuts-schema';
 import { normalizeUserThemePayload } from '../theme-schema';
@@ -124,6 +127,7 @@ export class UserDBDO {
   private static readonly MAX_CONNECT_TOKENS = 1000;
   private derivedKeyCache: Map<number, CryptoKey> = new Map();
   private memoryStore: ServerMemoryStore;
+  private memoryRun: Promise<void> | null = null;
 
   constructor(state: DurableObjectState, env: Env) {
     this.env = env;
@@ -133,7 +137,45 @@ export class UserDBDO {
       callback => typeof (state.storage as any).transactionSync === 'function'
         ? (state.storage as any).transactionSync(callback) : callback(),
       (value, userId) => this.encryptCredential(value, userId),
-      (value, userId) => this.decryptCredential(value, userId));
+      (value, userId) => this.decryptCredential(value, userId),
+      async at => { if (typeof state.storage.setAlarm === 'function') await state.storage.setAlarm(at); });
+    // Old pending rows become recoverable after deployment/reconstruction, without a live SSH tab.
+    if (typeof state.blockConcurrencyWhile === 'function') {
+      state.blockConcurrencyWhile(() => this.memoryStore.rearm());
+    }
+  }
+
+  async alarm(): Promise<void> {
+    if (!this.memoryRun) this.memoryRun = this.processMemoryTask().finally(() => { this.memoryRun = null; });
+    await this.memoryRun;
+  }
+
+  private async processMemoryTask(): Promise<void> {
+    const row = this.memoryStore.nextTask();
+    await this.memoryStore.rearm();
+    if (!row) return;
+    const controller = new AbortController();
+    let timer!: ReturnType<typeof setTimeout>;
+    const expired = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => { controller.abort('memory_timeout'); reject(new ResponsesError('responses_timeout')); }, 25_000);
+    });
+    try {
+      await Promise.race([expired, (async () => {
+        const task = await this.memoryStore.taskInput(row);
+        const response = await this.handleGetAIConfigDecrypted(row.user_id);
+        if (!response.ok) throw new ResponsesError('ai_not_configured');
+        const config = await response.json<AIConfig>();
+        const memory = await this.memoryStore.read(row.server_id, row.user_id);
+        controller.signal.throwIfAborted();
+        const batch = await distillMemory(config, task, memory, controller.signal);
+        await this.memoryStore.saveBatch(row.server_id, row.user_id, batch, row, controller.signal);
+      })()]);
+    } catch {
+      this.memoryStore.retryTask(row);
+    } finally {
+      clearTimeout(timer);
+      await this.memoryStore.rearm();
+    }
   }
 
   /**
@@ -455,17 +497,9 @@ export class UserDBDO {
         return this.handleUpdateServerOS(parseInt(osMatch[1], 10), request);
       }
 
-      const agentMemoryMatch = path.match(/^\/internal\/servers\/(\d+)\/agent-(session|checkpoint|pending-distillation)$/);
-      if (agentMemoryMatch && (['checkpoint', 'pending-distillation'].includes(agentMemoryMatch[2])
-        ? ['GET', 'POST', 'DELETE'].includes(request.method) : request.method === 'POST')) {
-        return this.memoryStore.handle(Number(agentMemoryMatch[1]), agentMemoryMatch[2], request);
-      }
-
-      // /internal/servers/:id/memory/batch
-      const batchMemoryMatch = path.match(/^\/internal\/servers\/(\d+)\/memory\/batch$/);
-      if (batchMemoryMatch && request.method === 'POST') {
-        const serverId = parseInt(batchMemoryMatch[1], 10);
-        return this.memoryStore.handle(serverId, 'batch', request);
+      const agentMemoryMatch = path.match(/^\/internal\/servers\/(\d+)\/agent-memory$/);
+      if (agentMemoryMatch && request.method === 'POST') {
+        return this.memoryStore.handle(Number(agentMemoryMatch[1]), 'task', request);
       }
 
       // /internal/servers/:id/memory

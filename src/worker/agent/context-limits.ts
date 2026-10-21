@@ -2,11 +2,15 @@
 export const MAX_CONTEXT_BYTES = 2 * 1024 * 1024;
 export const MAX_RETAINED_BYTES = 3 * 1024 * 1024;
 export const MAX_TOOL_RESULT_BYTES = 64 * 1024;
-export const MAX_EVIDENCE_BYTES = 96 * 1024;
 const encoder = new TextEncoder();
 
 export function bytes(value: unknown): number {
   return encoder.encode(typeof value === 'string' ? value : JSON.stringify(value)).length;
+}
+
+/** Shared fallback estimate; not a model-specific tokenizer. */
+export function estimateTokens(value: unknown): number {
+  return Math.ceil(bytes(value) / 2.5);
 }
 
 export function boundedText(text: string, limit: number): string {

@@ -235,7 +235,6 @@ describe('fetch_web_content — 安全只读网页读取与清洗', () => {
     });
     const parsed = JSON.parse(raw);
     expect(parsed.status).toBe('succeeded');
-    expect(parsed.executed).toBe(false); // 只读工具不记录物理执行
     expect(parsed.content).toContain('Minimax-H3 模型');
     expect(parsed.content).toContain('量化版本："GPTQ-Int4" & <AWQ>');
     expect(parsed.content).toContain('显存需求：16GB');
