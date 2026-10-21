@@ -6,6 +6,7 @@ import type { UnifiedServerMemory } from '../../server-memory-schema';
 import { AgentContext, boundedText, observation } from './context';
 import { prepareContextCheckpoint } from './checkpoint';
 import { ExecutionJournal } from './execution-journal';
+import { buildExecutionLog } from './execution-log';
 import { AgentMemoryManager, selectServerMemory } from './memory';
 import {
   formatServerMemoryForPrompt,
@@ -53,6 +54,7 @@ export class AgentCore {
   private state = { status: 'idle' as 'idle' | 'running', iteration: 0 };
   private context = new AgentContext();
   private abortController = new AbortController();
+  private memoryController = new AbortController();
   private activeRun: Promise<void> | null = null;
   private runId = 0;
   private requestId?: string;
@@ -86,7 +88,8 @@ export class AgentCore {
         finally { this.resetTimeout(controller); }
       }, () => this.resetTimeout(this.abortController));
     if (this.memoryProvider) {
-      this.memoryManager = new AgentMemoryManager(this.memoryProvider, () => this.epoch, frame => this.emit(this.runId, frame));
+      this.memoryManager = new AgentMemoryManager(this.memoryProvider, () => this.epoch,
+        frame => this.emit(this.runId, frame), memory => { this.unifiedMemory = memory; });
     }
   }
 
@@ -114,6 +117,10 @@ export class AgentCore {
     this.agentAbort('reset');
     ++this.runId;
     ++this.epoch;
+    this.memoryController.abort('reset');
+    this.memoryController = new AbortController();
+    const invalidate = this.memoryProvider?.beginSession?.({ sessionId: this.context.cacheKey.slice('cloudssh:'.length), epoch: this.epoch }).catch(() => {});
+    if (invalidate) this.waitUntil?.(invalidate);
     this.context = new AgentContext();
     this.journal = new ExecutionJournal();
     this.memoryManager?.reset();
@@ -138,7 +145,7 @@ export class AgentCore {
     this.loopTimeout = null;
   }
 
-  private addUsage(totals: UsageTotals, response: ModelResponse, purpose: 'main' | 'checkpoint'): void {
+  private addUsage(totals: UsageTotals, response: Pick<ModelResponse, 'usage'>, purpose: 'main' | 'checkpoint'): void {
     totals.calls++;
     if (purpose === 'checkpoint') totals.checkpointCalls++;
     if (response.usage) {
@@ -160,6 +167,7 @@ export class AgentCore {
     const epoch = this.epoch;
     const taskId = crypto.randomUUID();
     const sessionId = context.cacheKey.slice('cloudssh:'.length);
+    const memorySignal = this.memoryController.signal;
     this.state = { status: 'running', iteration: 0 };
     this.progress = progress();
     const totals = usageTotals();
@@ -229,11 +237,12 @@ export class AgentCore {
         if (context.needsCheckpoint(budget, prefix)) {
           if (!context.canCheckpoint) throw new ResponsesError('responses_budget');
           purpose = 'checkpoint';
+          this.emit(id, { subType: 'context_status', compacting: true });
           const selected = selectServerMemory(this.unifiedMemory, message);
           const memoryFingerprint = JSON.stringify(selected);
           const memoryContent = boundedText(formatServerMemoryForPrompt(selected, locale, Date.now(), timezone), 6500);
           let terminalSnapshot = '';
-          const checkpoint = await prepareContextCheckpoint({ context, client, budgets, signal,
+          const checkpoint = await prepareContextCheckpoint({ context, client, instructions, signal,
             facts: this.journal.facts(),
             canContinue: input => {
               terminalSnapshot = this.terminalContext.snapshot(200, 4000);
@@ -245,16 +254,10 @@ export class AgentCore {
                 prompt_cache_key: context.cacheKey, allowIncomplete: true });
             },
             onUsage: response => this.addUsage(totals, response, 'checkpoint'),
-            onIncomplete: diagnostics => {
-              totals.calls++; totals.checkpointCalls++;
-              totals.output += diagnostics.outputTokens ?? 0;
-              totals.reasoning += diagnostics.reasoningTokens ?? 0;
-            },
-            onRecovering: () => this.emit(id, { subType: 'context_status', recovering: true }),
           });
           signal.throwIfAborted();
           // No history mutation until the full continuation (including observations) has fitted.
-          context.replaceWithCheckpoint(checkpoint.summary, checkpoint.safety);
+          context.replaceWithCompaction(checkpoint.output, checkpoint.safety);
           if (this.environment) context.pending.push(observation('environment', this.environment));
           context.observeTerminal(terminalSnapshot);
           context.observeMemory(memoryFingerprint, memoryContent);
@@ -362,7 +365,7 @@ export class AgentCore {
           const taskCheckpoint: AgentTaskCheckpoint = {
             taskId,
             goal: message,
-            summary: context.summary || finalText || 'Interrupted task evidence.',
+            summary: finalText || 'Interrupted task execution facts. Verify remote state before continuing.',
             operations: facts.map(f => ({ callId: f.callId, tool: f.tool, description: f.description,
               status: f.status, executed: f.executed, exitCode: f.exitCode, at: f.at })),
             step: this.state.iteration,
@@ -375,12 +378,28 @@ export class AgentCore {
           this.waitUntil?.(deletePromise);
         }
         const taskRecords = this.journal.taskRecords(taskId, message, finalText);
-        if ((didExecute || outcome === 'completed') && taskRecords.length > 1 && !shouldBypassDistillation(taskRecords) && this.memoryManager) {
-          const promise = this.memoryManager.enqueue({ records: taskRecords, memory: this.unifiedMemory,
-            goal: message, config: aiConfig, locale, timezone,
-            interrupted: outcome !== 'completed', iteration: this.state.iteration, epoch, sessionId });
-          this.waitUntil?.(promise);
-        }
+        const config = aiConfig;
+        const iteration = this.state.iteration;
+        const promise = (async () => {
+          // This write is independent of LLM extraction, its queue capacity and schema validation.
+          if (facts.length && this.memoryProvider?.saveExecutionLog) {
+            try {
+              await this.memoryProvider.saveExecutionLog(buildExecutionLog(taskId, message, facts, outcome, iteration, locale),
+                { sessionId, epoch }, memorySignal);
+              if (epoch === this.epoch) this.emit(this.runId, { subType: 'memory_updated' });
+            } catch {
+              if (epoch === this.epoch && !memorySignal.aborted) this.emit(this.runId,
+                { subType: 'memory_status', code: 'memory_log_failed' });
+            }
+          }
+          if (epoch !== this.epoch || memorySignal.aborted) return;
+          if ((didExecute || outcome === 'completed') && taskRecords.length > 1 && !shouldBypassDistillation(taskRecords) && this.memoryManager) {
+            await this.memoryManager.enqueue({ records: taskRecords, memory: this.unifiedMemory,
+              goal: message, config, locale, timezone, taskId,
+              interrupted: outcome !== 'completed', iteration, epoch, sessionId });
+          }
+        })();
+        this.waitUntil?.(promise);
       }
     }
   }

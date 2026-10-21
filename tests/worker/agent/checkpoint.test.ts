@@ -1,20 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { prepareContextCheckpoint, CHECKPOINT_DEADLINE_MS } from '../../../src/worker/agent/checkpoint';
 import { AgentContext } from '../../../src/worker/agent/context';
-import { bytes } from '../../../src/worker/agent/context-limits';
 import type { OperationFact } from '../../../src/worker/agent/execution-journal';
 import { ResponsesClient } from '../../../src/worker/agent/responses-client';
-import type { ModelResponse } from '../../../src/worker/agent/types';
-import { aiConfig, checkpoint, responseObject, functionCall } from './responses-fixtures';
+import type { ModelResponse, ResponseInput } from '../../../src/worker/agent/types';
+import { aiConfig, compactedWindow, compactReply, compactObject, functionCall } from './responses-fixtures';
 
 vi.mock('../../../src/worker/agent/ssrf', () => ({ validateBaseUrlWithDNS: async () => ({ valid: true }) }));
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
-const complete = (value: unknown = checkpoint) => new Response(JSON.stringify(responseObject('resp_cp', JSON.stringify(value))));
-const incomplete = (reason: unknown = 'max_output_tokens') => new Response(JSON.stringify({
-  ...responseObject('resp_inc', 'SECRET_PARTIAL_JSON'), status: 'incomplete', incomplete_details: { reason },
-  usage: { input_tokens: 100, output_tokens: 8192, output_tokens_details: { reasoning_tokens: 8000 } },
-}));
-function setup(cap = 8192, count = 3) {
+function setup(count = 3) {
   const context = new AgentContext();
   context.beginTurn('Inspect nginx; never change firewall rules.');
   const model: ModelResponse = { id: 'accepted', text: 'Inspecting', output: [], calls: [] };
@@ -23,174 +17,127 @@ function setup(cap = 8192, count = 3) {
     tool: 'execute_command', description: `inspect_${i}`, status: i === 1 ? 'unknown' : 'succeeded',
     executed: true, exitCode: i === 1 ? -1 : 0, evidence: `observed_${i}`, at: i }));
   const controller = new AbortController();
-  const budgets = { context_window: 64_000, max_output_tokens: cap };
-  const client = new ResponsesClient({ ...aiConfig, ...budgets });
-  const options = { context, client, budgets, facts, signal: controller.signal,
-    canContinue: vi.fn((input: Parameters<AgentContext['fitsBudget']>[2]) => context.fitsBudget(64_000 - cap, 'Stable', input)),
-    onUsage: vi.fn(), onIncomplete: vi.fn(), onRecovering: vi.fn() };
+  const client = new ResponsesClient(aiConfig);
+  const options = { context, client, instructions: 'Stable trusted system instructions', facts, signal: controller.signal,
+    canContinue: vi.fn((input: ResponseInput[]) => context.fitsBudget(55_808, 'Stable', input)), onUsage: vi.fn() };
   return { context, facts, controller, options };
 }
 
-describe('Atomic checkpoint preparation and bounded token-limit recovery', () => {
-  it('never prepares or falls back while a tool chain still has open calls', async () => {
+describe('Atomic native Responses compaction', () => {
+  it('posts the whole current window with ONLY compact-supported fields', async () => {
+    const { context, options } = setup();
+    const before = context.buildInput();
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(compactReply());
+    const result = await prepareContextCheckpoint(options);
+    expect(fetch.mock.calls[0][0]).toBe(aiConfig.base_url + '/responses/compact');
+    expect(JSON.parse(fetch.mock.calls[0][1]!.body as string)).toEqual({ model: aiConfig.model,
+      input: before, instructions: options.instructions });
+    expect(result).toMatchObject({ source: 'native', output: compactedWindow });
+    expect(JSON.parse(result.safety).rows[1]).toEqual(['call_1', 'execute_command', 'inspect_1', 'unknown', true, -1]);
+    expect(context.buildInput()).toEqual(before);
+    expect(options.onUsage).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ usage: { input_tokens: 2000,
+      output_tokens: 200, total_tokens: 2200, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } } }));
+  });
+
+  it('keeps every retained item and all 86 statuses, adding guards without pruning the canonical prefix', async () => {
+    const { context, options } = setup(86);
+    const retained = [...compactedWindow, functionCall('settled'),
+      { type: 'function_call_output' as const, call_id: 'settled', output: 'EXACT_RECENT_OUTPUT' }];
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(compactReply(retained));
+    const result = await prepareContextCheckpoint(options);
+    context.replaceWithCompaction(result.output, result.safety);
+    const next = context.buildInput();
+    expect(next.slice(0, retained.length)).toEqual(retained);
+    expect(JSON.parse(result.safety).rows).toHaveLength(86);
+    expect(JSON.parse(result.safety).rows[43][2]).toBe('inspect_43');
+    expect(JSON.stringify(next)).toContain('never change firewall rules');
+    expect(JSON.stringify(next)).toContain('EXACT_RECENT_OUTPUT');
+  });
+
+  it('does not compact open tool transactions', async () => {
     const { context, options } = setup();
     const call = functionCall();
     context.accept({ id: 'pending', text: '', calls: [call], output: [call] }, context.buildInput());
     const fetch = vi.spyOn(globalThis, 'fetch');
     await expect(prepareContextCheckpoint(options)).rejects.toMatchObject({ code: 'responses_budget' });
     expect(fetch).not.toHaveBeenCalled();
-    expect(options.canContinue).not.toHaveBeenCalled();
   });
 
-  it('uses local facts without an HTTP request when the auxiliary envelope cannot fit', async () => {
-    const { options } = setup();
-    vi.spyOn(options.client, 'canFit').mockReturnValue(false);
-    const fetch = vi.spyOn(globalThis, 'fetch');
-    const result = await prepareContextCheckpoint(options);
-    expect(result.source).toBe('local');
-    expect(JSON.parse(result.safety).rows).toHaveLength(3);
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('allocates reasoning-inclusive output above the old 4096 cap and keeps the schema in instructions', async () => {
+  it.each([404, 405, 501])('pauses on unavailable compact HTTP %s without claiming proven non-support', async status => {
     const { context, options } = setup();
     const before = context.buildInput();
-    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(complete());
-    const result = await prepareContextCheckpoint(options);
-    const body = JSON.parse(fetch.mock.calls[0][1]!.body as string);
-    expect(body.max_output_tokens).toBe(8192);
-    expect(body.reasoning).toEqual({ effort: 'low' });
-    expect(body.instructions).toContain(JSON.stringify(body.text.format.schema));
-    expect(body).not.toHaveProperty('tools');
-    expect(body.store).toBe(false);
-    expect(result.source).toBe('model');
-    expect(context.buildInput()).toEqual(before); // preparation itself never changes history
-    expect(JSON.parse(result.safety).rows[1]).toEqual(['call_1', 'execute_command', 'inspect_1', 'unknown', true, -1]);
-  });
-
-  it('regenerates once with a new key and a smaller evidence view, without echoing partial output', async () => {
-    const { context, options } = setup(16_384);
-    context.record({ role: 'assistant', content: 'detail'.repeat(1000) });
-    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(incomplete()).mockResolvedValueOnce(complete());
-    expect((await prepareContextCheckpoint(options)).source).toBe('model');
-    const bodies = fetch.mock.calls.map(([, init]) => JSON.parse(init!.body as string));
-    expect(bodies.map(body => body.max_output_tokens)).toEqual([8192, 16_384]);
-    expect(bytes(bodies[1].input)).toBeLessThan(bytes(bodies[0].input));
-    expect(JSON.stringify(bodies)).not.toContain('SECRET_PARTIAL_JSON');
-    expect(bodies.every(body => body.store === false && !body.previous_response_id && !body.tools)).toBe(true);
-    const keys = fetch.mock.calls.map(([, init]) => (init!.headers as Record<string, string>)['Idempotency-Key']);
-    expect(new Set(keys).size).toBe(2);
-    expect(options.onRecovering).toHaveBeenCalledTimes(1);
-    expect(options.onIncomplete).toHaveBeenCalledWith(expect.objectContaining({ incompleteReason: 'max_output_tokens', outputTokens: 8192, reasoningTokens: 8000 }));
-  });
-
-  it('uses a local fallback after two explicit output-limit stops, retaining every middle status and prior summary', async () => {
-    const { context, options } = setup(8192, 86);
-    context.summary = JSON.stringify(checkpoint);
-    context.beginTurn('Continue the interrupted task');
-    const before = context.buildInput();
-    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => incomplete());
-    const result = await prepareContextCheckpoint(options);
-    expect(fetch).toHaveBeenCalledTimes(2);
-    expect(result).toMatchObject({ source: 'local', summary: JSON.stringify(checkpoint) });
-    expect(JSON.parse(result.safety).rows).toHaveLength(86);
-    expect(JSON.parse(result.safety).rows[43][2]).toBe('inspect_43');
-    const input = context.checkpointSegment(result.summary, result.safety);
-    expect(JSON.stringify(input)).toContain('never change firewall rules');
-    expect(JSON.stringify(input)).toContain('Continue the interrupted task');
-    expect(context.buildInput()).toEqual(before);
-  });
-
-  it('never exceeds a user-selected small output cap, including during recovery', async () => {
-    const { options } = setup(256);
-    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => incomplete());
-    expect((await prepareContextCheckpoint(options)).source).toBe('local');
-    expect(fetch.mock.calls.map(([, init]) => JSON.parse(init!.body as string).max_output_tokens)).toEqual([256, 256]);
-  });
-
-  it.each(['content_filter', 'SECRET_UNKNOWN_REASON', null])('does not regenerate or fall back for non-token reasons (%s)', async reason => {
-    const { context, options } = setup();
-    const before = context.buildInput();
-    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => incomplete(reason));
-    await expect(prepareContextCheckpoint(options)).rejects.toMatchObject({ code: 'responses_incomplete', diagnostics: {
-      incompleteReason: reason === 'content_filter' ? 'content_filter' : 'unknown',
-    } });
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('SECRET', { status }));
+    await expect(prepareContextCheckpoint(options)).rejects.toMatchObject({ code: 'responses_compaction_unavailable', status,
+      diagnostics: { purpose: 'checkpoint', stage: 'http' } });
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(options.canContinue).not.toHaveBeenCalled();
     expect(context.buildInput()).toEqual(before);
   });
 
-  it.each(['http', 'protocol', 'schema'])('preserves history without recovery on %s failure', async type => {
+  it.each([
+    {}, { ...compactObject(), object: 'response' }, { ...compactObject(), output: [] },
+    { ...compactObject(), output: [{ type: 'compaction', id: 'cmp_bad', encrypted_content: '' }] },
+    { ...compactObject(), output: [...compactedWindow, { type: 'message', role: 'system', content: [] }] },
+    { ...compactObject(), output: [...compactedWindow, { type: 'web_search_call', id: 'hosted' }] },
+    { ...compactObject(), output: [...compactedWindow, { ...functionCall(), status: 'in_progress' }] },
+    { ...compactObject(), status: 'incomplete' },
+  ])('rejects malformed or unsupported native windows atomically (%#)', async value => {
     const { context, options } = setup();
     const before = context.buildInput();
-    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => type === 'http'
-      ? new Response('{"error":{"message":"SECRET"}}', { status: 401 })
-      : type === 'protocol' ? new Response(JSON.stringify({ status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } })) : complete({}));
-    await expect(prepareContextCheckpoint(options)).rejects.toMatchObject({ code: type === 'http' ? 'responses_http' : type === 'protocol' ? 'responses_invalid' : 'responses_schema' });
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify(value)));
+    await expect(prepareContextCheckpoint(options)).rejects.toMatchObject({ code: 'responses_invalid' });
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(options.canContinue).not.toHaveBeenCalled();
     expect(context.buildInput()).toEqual(before);
   });
 
-  it('refuses local fallback atomically if mandatory facts/constraints cannot fit the main request', async () => {
+  it('keeps the old history if the complete next main request cannot fit', async () => {
     const { context, options } = setup();
     const before = context.buildInput();
     options.canContinue.mockReturnValue(false);
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => incomplete());
-    await expect(prepareContextCheckpoint(options)).rejects.toMatchObject({ code: 'responses_budget', diagnostics: { incompleteReason: 'max_output_tokens' } });
-    expect(context.buildInput()).toEqual(before);
-  });
-
-  it('does not discard a valid model summary before checking the whole continuation budget', async () => {
-    const { context, options } = setup();
-    const before = context.buildInput();
-    options.canContinue.mockReturnValue(false);
-    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(complete());
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(compactReply());
     await expect(prepareContextCheckpoint(options)).rejects.toMatchObject({ code: 'responses_budget' });
-    expect(fetch).toHaveBeenCalledTimes(1);
     expect(context.buildInput()).toEqual(before);
   });
 
-  it('shares one deadline across both generations and does not recover a stalled response', async () => {
-    vi.useFakeTimers();
-    const { context, options } = setup();
-    const before = context.buildInput();
-    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementationOnce(async () => {
-      await new Promise(resolve => setTimeout(resolve, CHECKPOINT_DEADLINE_MS - 1000));
-      return incomplete();
-    }).mockImplementation(async (_url, init) => new Promise((_resolve, reject) => {
-      init!.signal!.addEventListener('abort', () => reject(init!.signal!.reason), { once: true });
-    }));
-    const pending = prepareContextCheckpoint(options);
-    const checked = expect(pending).rejects.toMatchObject({ code: 'responses_timeout' });
-    await vi.advanceTimersByTimeAsync(CHECKPOINT_DEADLINE_MS - 1000);
-    expect(fetch).toHaveBeenCalledTimes(2);
-    await vi.advanceTimersByTimeAsync(1000);
-    await checked;
-    expect(context.buildInput()).toEqual(before);
-  });
-
-  it('cleans the shared deadline after a successful checkpoint', async () => {
+  it('bounds HTTP retries and preserves the same body and idempotency key', async () => {
     vi.useFakeTimers();
     const { options } = setup();
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(complete());
-    await prepareContextCheckpoint(options);
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('', { status: 503 }))
+      .mockResolvedValueOnce(compactReply());
+    const pending = prepareContextCheckpoint(options);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect((await pending).source).toBe('native');
+    const requests = fetch.mock.calls.map(([, init]) => init!);
+    expect(requests[0].body).toBe(requests[1].body);
+    expect(requests[0].headers).toEqual(requests[1].headers);
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('cancels recovery promptly on stop/reset without local replacement', async () => {
-    const { controller, context, options } = setup();
+  it.each([false, true])('cancels a stalled compact without replacing history (reset=%s)', async reset => {
+    vi.useFakeTimers();
+    const { context, options, controller } = setup();
     const before = context.buildInput();
-    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(incomplete())
-      .mockImplementation(async (_url, init) => new Promise((_resolve, reject) => {
-        init!.signal!.addEventListener('abort', () => reject(init!.signal!.reason), { once: true });
-      }));
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => new Promise((_resolve, reject) => {
+      init!.signal!.addEventListener('abort', () => reject(init!.signal!.reason), { once: true });
+    }));
     const pending = prepareContextCheckpoint(options);
-    const checked = expect(pending).rejects.toBe('reset');
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
-    controller.abort('reset');
+    const checked = reset ? expect(pending).rejects.toBe('reset')
+      : expect(pending).rejects.toMatchObject({ code: 'responses_timeout' });
+    await vi.advanceTimersByTimeAsync(0);
+    if (reset) controller.abort('reset');
+    else await vi.advanceTimersByTimeAsync(CHECKPOINT_DEADLINE_MS);
     await checked;
-    expect(options.canContinue).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(1);
     expect(context.buildInput()).toEqual(before);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('rejects redirects without forwarding credentials, and bounds returned bodies', async () => {
+    const { options } = setup();
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('', { status: 302,
+      headers: { Location: 'https://evil.example' } }));
+    await expect(prepareContextCheckpoint(options)).rejects.toMatchObject({ code: 'responses_redirect' });
+    expect(fetch.mock.calls[0][1]!.redirect).toBe('manual');
+    fetch.mockResolvedValueOnce(new Response('x'.repeat(1_000_001)));
+    await expect(prepareContextCheckpoint(options)).rejects.toMatchObject({ code: 'responses_invalid' });
   });
 });

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentCore } from '../../src/worker/agent/core';
 import { TerminalContext } from '../../src/worker/agent/terminal-context';
-import { aiConfig, checkpoint, functionCall, reply, responseObject, sse } from './agent/responses-fixtures';
+import { aiConfig, compactedWindow, compactReply, functionCall, reply, responseObject, sse } from './agent/responses-fixtures';
 
 // Protocol fixtures stub DNS; the real outbound guard is covered in responses-ssrf.test.ts.
 vi.mock('../../src/worker/agent/ssrf', () => ({ validateBaseUrlWithDNS: async () => ({ valid: true }) }));
@@ -88,7 +88,7 @@ describe('AgentCore Responses delivery and context', () => {
     expect(frames.find(frame => frame.code === 'responses_config_changed')).toBeTruthy();
   });
 
-  it('schema capability fallback still rejects invalid checkpoints and preserves tool history', async () => {
+  it('native compact never falls back to a JSON schema request and preserves tool history on invalid output', async () => {
     const { agent, frames } = setup();
     let requests = 0;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
@@ -101,8 +101,8 @@ describe('AgentCore Responses delivery and context', () => {
       return sse([{ type: 'response.completed', response }]);
     });
     await agent.handleAgentStart('1', 'Inspect');
-    expect(requests).toBe(3);
-    expect(frames.find(frame => frame.code === 'responses_schema')).toMatchObject({ diagnostics: { purpose: 'checkpoint' } });
+    expect(requests).toBe(2);
+    expect(frames.find(frame => frame.code === 'responses_invalid')).toMatchObject({ diagnostics: { purpose: 'checkpoint' } });
     expect((agent as any).context.pending[0].type).toBe('function_call_output');
     expect((agent as any).context.history).toContainEqual(expect.objectContaining({ type: 'function_call' }));
   });
@@ -216,12 +216,12 @@ describe('AgentCore Responses delivery and context', () => {
     expect(requests.at(-1).input.filter((item: any) => item.type === 'function_call_output')).toHaveLength(8);
   });
 
-  it('uses a structured checkpoint and fresh continuation at the budget boundary without orphan outputs', async () => {
+  it('uses native compaction and its entire canonical window at the budget boundary', async () => {
     const { agent } = setup();
     const requests: any[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       const body = JSON.parse(init?.body as string); requests.push(body);
-      if (!body.stream) return new Response(JSON.stringify(responseObject('resp_checkpoint', JSON.stringify(checkpoint), [], body)));
+      if (!body.stream) return compactReply();
       if (requests.length === 1) {
         const response = responseObject('resp_1', '', [functionCall()], body);
         response.usage.input_tokens = 55_000; response.usage.total_tokens = 55_020;
@@ -231,11 +231,12 @@ describe('AgentCore Responses delivery and context', () => {
     });
     await agent.handleAgentStart('1', '检查 nginx');
     expect(requests).toHaveLength(3);
-    expect(requests[1]).toMatchObject({ store: false, stream: false, text: { format: { name: 'agent_checkpoint' } } });
+    expect(Object.keys(requests[1]).sort()).toEqual(['input', 'instructions', 'model']);
     expect(requests[1]).not.toHaveProperty('previous_response_id');
     expect(requests[2]).not.toHaveProperty('previous_response_id');
     expect(requests[2].input.some((item: any) => item.type === 'function_call_output')).toBe(false);
-    expect(JSON.stringify(requests[2].input)).toContain('free -m completed');
+    expect(requests[2].input.slice(0, compactedWindow.length)).toEqual(compactedWindow);
+    expect(JSON.stringify(requests[2].input)).toContain('execution facts');
   });
 
   it('fails closed if a checkpoint is invalid and does not abandon local history', async () => {
@@ -253,12 +254,13 @@ describe('AgentCore Responses delivery and context', () => {
     expect(step).toBe(1);
     expect((agent as any).context.history).toContainEqual(expect.objectContaining({ type: 'function_call', call_id: 'call_1' }));
     expect((agent as any).context.pending[0].type).toBe('function_call_output');
-    expect(frames.find(frame => frame.subType === 'error')?.code).toBe('responses_schema');
+    expect(frames.find(frame => frame.subType === 'error')?.code).toBe('responses_invalid');
   });
 
   it('distills interrupted work through a separate structured Responses request and waitUntil', async () => {
     let agent: AgentCore;
-    const memory = { fetchUnifiedMemory: async () => ({ workLogs: [], knowledge: [] }), saveBatchMemory: vi.fn(async () => {}) };
+    const memory = { fetchUnifiedMemory: async () => ({ workLogs: [], knowledge: [], revision: 0 }),
+      saveBatchMemory: vi.fn(async () => {}), saveExecutionLog: vi.fn(async () => {}) };
     const exec = vi.fn(async (command: string) => {
       if (!command.includes('PWD:$(pwd)')) agent.agentAbort('connection_closed');
       return { stdout: 'Listening on port 8080', stderr: '', exitCode: 0 };
@@ -267,15 +269,38 @@ describe('AgentCore Responses delivery and context', () => {
     const requests: any[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       const body = JSON.parse(init?.body as string); requests.push(body);
-      if (!body.stream) return new Response(JSON.stringify(responseObject('memory', JSON.stringify({ workLog: { mode: 'create', title: '检查端口', summary: '执行已中断，需核查状态' }, knowledge: [{ action: 'set', category: 'config', key: 'service_port', value: '8080' }] }), [], body)));
+      if (!body.stream) return new Response(JSON.stringify(responseObject('memory', JSON.stringify({ knowledge: [{ action: 'set', category: 'config', key: 'service_port', value: '8080' }] }), [], body)));
       return reply('resp_1', '', [functionCall()], body);
     });
     await agent.handleAgentStart('1', '检查端口');
     await Promise.all(created.waits);
-    expect(memory.saveBatchMemory).toHaveBeenCalledWith(expect.objectContaining({ workLog: expect.objectContaining({ title: '[已中断] 检查端口' }) }));
+    expect(memory.saveExecutionLog).toHaveBeenCalledWith(expect.objectContaining({ goal: '[已中断] 检查端口',
+      operations: [expect.objectContaining({ status: 'unknown' })] }), expect.any(Object), expect.any(AbortSignal));
+    expect(memory.saveBatchMemory).not.toHaveBeenCalled(); // unknown execution cannot establish a port fact
     expect(requests[1]).toMatchObject({ store: false, stream: false, text: { format: { name: 'server_memory' } } });
     expect(requests[1]).not.toHaveProperty('previous_response_id');
     expect(requests[1]).not.toHaveProperty('tools');
+  });
+
+  it('persists deterministic work facts even when knowledge extraction fails twice', async () => {
+    const memory = { fetchUnifiedMemory: async () => ({ workLogs: [], knowledge: [], revision: 0 }),
+      saveBatchMemory: vi.fn(async () => {}), saveExecutionLog: vi.fn(async () => {}) };
+    const { agent, waits, frames } = setup({ memory });
+    let main = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const body = JSON.parse(init!.body as string);
+      if (!body.stream) return new Response(JSON.stringify(responseObject('invalid_memory', '{}')));
+      return ++main === 1 ? reply('tool', '', [functionCall()]) : reply('done', 'Inspection completed.');
+    });
+    await agent.handleAgentStart('1', 'Inspect without changes');
+    await Promise.all(waits);
+    expect(memory.saveExecutionLog).toHaveBeenCalledTimes(1);
+    expect(memory.saveExecutionLog).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'completed',
+      operations: [expect.objectContaining({ callId: 'call_1', status: 'succeeded', exitCode: 0 })] }),
+      expect.any(Object), expect.any(AbortSignal));
+    expect(memory.saveBatchMemory).not.toHaveBeenCalled();
+    expect(frames).toContainEqual(expect.objectContaining({ subType: 'memory_status', code: 'memory_failed' }));
+    expect(frames).toContainEqual(expect.objectContaining({ subType: 'run_end', outcome: 'completed' }));
   });
 
   it('auto-stitches incomplete response with partial text and seamlessly finishes', async () => {

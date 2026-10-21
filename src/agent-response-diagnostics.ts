@@ -1,4 +1,14 @@
 // Never pass provider messages/bodies through this boundary: they may echo credentials or input.
+export const RESPONSE_ERROR_CODES = [
+  'ai_not_configured', 'responses_address', 'responses_storage', 'responses_stateful_required',
+  'responses_http', 'responses_chain', 'responses_invalid',
+  'responses_incomplete', 'responses_failed', 'responses_stream', 'responses_redirect',
+  'responses_schema', 'responses_history', 'responses_config_changed', 'responses_input',
+  'responses_budget', 'responses_timeout', 'responses_empty', 'responses_key_required', 'responses_limits',
+  'responses_compaction_unsupported', 'responses_compaction_unavailable',
+  'responses_probe_consent', 'responses_probe_busy', 'responses_memory_storage', 'responses_memory_conflict',
+] as const;
+
 export const RESPONSE_PURPOSES = ['main', 'checkpoint', 'memory'] as const;
 export const RESPONSE_STAGES = ['http', 'stream', 'parse'] as const;
 export const RESPONSE_PARAMETERS = [
@@ -59,4 +69,13 @@ export function normalizeResponseDiagnostics(value: unknown): ResponseDiagnostic
     result.requestId = raw.requestId;
   }
   return result;
+}
+
+/** For DEBUG_MODE terminal output only; never log a raw error, frame, or provider body. */
+export function responseErrorDebugMessage(code: unknown, status: unknown, details: unknown): string {
+  const known = member(RESPONSE_ERROR_CODES, code) ?? 'responses_failed';
+  const httpStatus = typeof status === 'number' && Number.isInteger(status) && status >= 100 && status <= 599
+    ? status : undefined;
+  return 'Agent Responses failure: ' + JSON.stringify({ code: known, status: httpStatus,
+    ...normalizeResponseDiagnostics(details) });
 }

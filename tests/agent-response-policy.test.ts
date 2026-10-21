@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveAIModelBudgets } from '../src/ai-model-policy';
-import { normalizeResponseDiagnostics } from '../src/agent-response-diagnostics';
+import { normalizeResponseDiagnostics, responseErrorDebugMessage } from '../src/agent-response-diagnostics';
 import { responseErrorMessage } from '../frontend/src/agent/response-errors';
 import { setLocale } from '../frontend/src/i18n';
 
@@ -35,25 +35,39 @@ describe('AI model budgets and safe diagnostics', () => {
     }
     expect(normalizeResponseDiagnostics({ outputTokens: 0, reasoningTokens: 0 })).toEqual({ outputTokens: 0, reasoningTokens: 0 });
   });
-  it.each(['zh-CN', 'zh-TW', 'en-US'] as const)('explains checkpoint pauses and safe usage details in %s', locale => {
+  it.each(['zh-CN', 'zh-TW', 'en-US'] as const)('explains checkpoint pauses without technical diagnostics in %s', locale => {
     setLocale(locale, { persist: false });
     const message = responseErrorMessage('responses_incomplete', undefined, { purpose: 'checkpoint', stage: 'parse',
       requestId, incompleteReason: 'max_output_tokens', requestedOutputTokens: 8192, outputTokens: 8000,
       reasoningTokens: 7900, providerMessage: 'SECRET' });
     expect(message).toContain(locale === 'en-US' ? 'safely paused' : locale === 'zh-TW' ? '安全暫停' : '安全暂停');
-    expect(message).toContain('8192'); expect(message).toContain('8000'); expect(message).toContain('7900');
+    for (const detail of ['8192', '8000', '7900', requestId, 'max_output_tokens']) expect(message).not.toContain(detail);
     expect(message).not.toMatch(/SECRET|agent\./);
   });
-  it.each(['zh-CN', 'zh-TW', 'en-US'] as const)('renders only allowlisted error details in %s', locale => {
+  it.each(['zh-CN', 'zh-TW', 'en-US'] as const)('shows only the short HTTP error message in %s', locale => {
     setLocale(locale, { persist: false });
     const message = responseErrorMessage('responses_http', 400, {
-      purpose: 'checkpoint', stage: 'http', requestId, parameter: 'text.format',
+      purpose: 'main', stage: 'http', requestId, parameter: 'text.format',
       providerCode: 'unsupported_parameter', message: '<script>SECRET</script>',
     });
     expect(message).toContain('400');
-    expect(message).toContain('text.format');
-    expect(message).toContain(requestId);
+    expect(message).toBe(responseErrorMessage('responses_http', 400));
+    for (const detail of ['text.format', 'unsupported_parameter', requestId, '\n']) expect(message).not.toContain(detail);
+    if (locale === 'zh-CN') expect(message).toBe('Responses API 请求失败（HTTP 400），请检查密钥、模型和服务商能力。');
     expect(message).not.toMatch(/SECRET|<script>|agent\.error/);
     expect(responseErrorMessage('SECRET', 'SECRET' as any, { requestId: 'SECRET' })).not.toContain('SECRET');
+  });
+  it('formats only allowlisted diagnostics for the debug terminal', () => {
+    const message = responseErrorDebugMessage('responses_http', 400, { purpose: 'memory', stage: 'http',
+      parameter: 'text.format', providerCode: 'unsupported_parameter', requestId,
+      incompleteReason: 'max_output_tokens', requestedOutputTokens: 8192, outputTokens: 8000,
+      reasoningTokens: 7900, message: 'SECRET', api_key: 'SECRET', upstreamRequestId: 'SECRET' });
+    expect(message).toBe('Agent Responses failure: ' + JSON.stringify({ code: 'responses_http', status: 400,
+      purpose: 'memory', stage: 'http', parameter: 'text.format', providerCode: 'unsupported_parameter',
+      incompleteReason: 'max_output_tokens', requestedOutputTokens: 8192, outputTokens: 8000,
+      reasoningTokens: 7900, requestId }));
+    expect(message).not.toContain('SECRET');
+    expect(responseErrorDebugMessage('SECRET', 'SECRET', { requestId: 'SECRET' }))
+      .toBe('Agent Responses failure: {"code":"responses_failed"}');
   });
 });

@@ -10,6 +10,8 @@
 export const MAX_SERVER_WORK_LOGS = 10;
 export const MAX_SERVER_KNOWLEDGE = 500;
 export const MAX_BATCH_DELETE_KNOWLEDGE_IDS = 100;
+// Only automatically verified config/note facts expire. User facts, rules and credentials do not.
+export const AGENT_KNOWLEDGE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** 连续运维任务自动合并时间窗口（30分钟内视为连续排障/维护任务流） */
 export const CONSECUTIVE_TASK_WINDOW_MS = 30 * 60 * 1000;
@@ -45,6 +47,10 @@ export interface ServerKnowledgeItem {
   updated_at: number;
   source?: 'user' | 'agent' | 'legacy';
   stale?: boolean;
+  evidence?: string[];
+  task_id?: string;
+  verified_at?: number;
+  expires_at?: number;
 }
 
 export interface UnifiedServerMemory {

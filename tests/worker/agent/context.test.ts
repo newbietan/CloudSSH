@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AgentContext } from '../../../src/worker/agent/context';
 import { MAX_CONTEXT_BYTES, MAX_RETAINED_BYTES, bytes } from '../../../src/worker/agent/context-limits';
 import type { ModelResponse, ResponseFunctionCall } from '../../../src/worker/agent/types';
-import { functionCall, responseObject } from './responses-fixtures';
+import { compactedWindow, functionCall, responseObject } from './responses-fixtures';
 
 function response(id: string, text = 'Complete.', calls: ResponseFunctionCall[] = []): ModelResponse {
   return { ...responseObject(id, text, calls), text, calls } as ModelResponse;
@@ -57,8 +57,8 @@ describe('bounded stateless Responses context and local branches', () => {
     context.beginTurn('Discarded future'); accept(context, response('resp_2', '', [later]));
     context.toolResult(later, 'Discarded future result');
     context.beginTurn('Corrected', 1);
-    expect(context.checkpointInput()).toContain('Earlier remote fact');
-    expect(context.checkpointInput()).not.toContain('Discarded future');
+    expect(JSON.stringify(context.buildInput())).toContain('Earlier remote fact');
+    expect(JSON.stringify(context.buildInput())).not.toContain('Discarded future');
   });
 
   it('bounds retained edit snapshots by count and shared-item UTF-8 bytes', () => {
@@ -93,36 +93,34 @@ describe('bounded stateless Responses context and local branches', () => {
     const context = new AgentContext();
     const call = functionCall();
     context.beginTurn('Inspect'); accept(context, response('resp_1', '', [call]));
-    expect(() => context.replaceWithCheckpoint('premature')).toThrow();
+    expect(() => context.replaceWithCompaction(compactedWindow, 'premature')).toThrow();
     context.toolResult(call, 'status unknown: interrupted');
     expect(context.needsCheckpoint(100, 'Stable')).toBe(true);
-    context.replaceWithCheckpoint('Inspect before retrying unknown commands.');
-    expect(context.buildInput().every(item => !('type' in item))).toBe(true);
-    expect(context.buildInput()).toContainEqual({ role: 'user', content: 'Inspect' });
+    context.replaceWithCompaction(compactedWindow, 'Inspect before retrying unknown commands.');
+    expect(context.buildInput().slice(0, compactedWindow.length)).toEqual(compactedWindow);
+    expect(JSON.stringify(context.buildInput())).toContain('Inspect');
     expect(() => context.beginTurn('Old edit', 0)).toThrow();
   });
 
-  it('serializes bounded Unicode/escaped evidence as valid JSON without cutting mandatory facts', () => {
+  it('keeps exact Unicode constraints alongside the canonical opaque window', () => {
     const context = new AgentContext();
     context.beginTurn('原始约束：禁止修改防火墙'); accept(context, response('first'));
-    for (let i = 0; i < 64; i++) context.record({ role: 'tool', callId: `id_${i}`, content: ('界\\\"\n'.repeat(2000)) });
     context.beginTurn('继续未完成的任务');
-    const operations = { rows: Array.from({ length: 86 }, (_, i) => [i, i === 43 ? 'unknown' : 'succeeded']) };
-    const serialized = context.checkpointInput(8192, operations);
-    expect(bytes(serialized)).toBeLessThanOrEqual(8192);
-    const parsed = JSON.parse(serialized);
-    expect(parsed.requests).toEqual(['原始约束：禁止修改防火墙', '继续未完成的任务']);
-    expect(parsed.operations).toEqual(operations);
-    expect(parsed.records.every((record: any) => typeof record.content === 'string')).toBe(true);
-    expect(() => context.checkpointInput(100, operations)).toThrow();
+    const safety = JSON.stringify({ rows: [[43, 'unknown']] });
+    context.replaceWithCompaction(compactedWindow, safety);
+    const serialized = JSON.stringify(context.buildInput());
+    expect(serialized).toContain('原始约束：禁止修改防火墙');
+    expect(serialized).toContain('继续未完成的任务');
+    expect(serialized).toContain('unknown');
+    expect(context.buildInput().slice(0, compactedWindow.length)).toEqual(compactedWindow);
   });
 
   it('preserves an unaccepted compacted segment and safety ledger across repeated requests', () => {
     const context = new AgentContext();
     context.beginTurn('Original goal and constraints'); accept(context, response('first'));
-    context.replaceWithCheckpoint('Complete summary', '{"status":"unknown","operation":"already dispatched"}');
+    context.replaceWithCompaction(compactedWindow, '{"status":"unknown","operation":"already dispatched"}');
     context.beginTurn('Continue');
-    expect(JSON.stringify(context.buildInput())).toContain('Complete summary');
+    expect(context.buildInput().slice(0, compactedWindow.length)).toEqual(compactedWindow);
     expect(JSON.stringify(context.buildInput())).toContain('already dispatched');
     expect(JSON.stringify(context.buildInput())).toContain('Original goal and constraints');
     expect(JSON.stringify(context.buildInput())).toContain('Continue');
@@ -131,7 +129,7 @@ describe('bounded stateless Responses context and local branches', () => {
   it('allows an unaccepted checkpoint to use reserved headroom instead of recompacting an empty history', () => {
     const context = new AgentContext();
     context.beginTurn('Original request'); accept(context, response('first'));
-    context.replaceWithCheckpoint('Prepared summary', 'x'.repeat(42_000));
+    context.replaceWithCompaction(compactedWindow, 'x'.repeat(42_000));
     context.beginTurn('Continue');
     expect(context.canCheckpoint).toBe(false);
     expect(context.fitsBudget(55_808, '')).toBe(true);

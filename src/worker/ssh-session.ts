@@ -37,7 +37,7 @@ import { KeyDerivation } from '../ssh/keys';
 import { nextSequenceNumber, SSHPacketBuilder, SSHPacketParser } from '../ssh/packet';
 import { SSHTransport } from '../ssh/transport';
 import type { Env } from '../types';
-import type { AgentTaskCheckpoint } from '../agent-task-schema';
+import { normalizeResponseDiagnostics, responseErrorDebugMessage } from '../agent-response-diagnostics';
 import { DetachedSessionBuffer } from './ssh-detached-buffer';
 import { KeyboardInteractiveAuthHandler, type PendingAuthChallenge } from './ssh-interactive-auth';
 import { parseIdleTimeout } from './idle-timeout';
@@ -80,7 +80,8 @@ import {
 import { AgentCore } from './agent/core';
 import { AgentExecChannel } from './agent/exec-channel';
 import { TerminalContext } from './agent/terminal-context';
-import type { AgentMemoryProvider, UnifiedServerMemory } from './agent/types';
+import type { AgentMemoryProvider } from './agent/types';
+import { createAgentMemoryProvider } from './agent/memory-provider';
 import { DirectTcpipStream } from './direct-tcpip-stream';
 import { detectAndPersistRemoteOS } from './os-detect';
 import { SFTPHandler } from './sftp-handler';
@@ -2981,84 +2982,7 @@ export class SSHSession {
       const gid = this.githubId;
       const env = this.env;
       if (serverId && uid && gid && env) {
-        memoryProvider = {
-          fetchUnifiedMemory: async () => {
-            try {
-              const stub = env.USER_DB.get(env.USER_DB.idFromName(gid));
-              const res = await stub.fetch(
-                new Request(`http://internal/internal/servers/${serverId}/memory?user_id=${uid}`)
-              );
-              if (!res.ok) return { workLogs: [], knowledge: [] };
-              return (await res.json()) as UnifiedServerMemory;
-            } catch {
-              return { workLogs: [], knowledge: [] };
-            }
-          },
-          saveBatchMemory: async (batch) => {
-            try {
-              const stub = env.USER_DB.get(env.USER_DB.idFromName(gid));
-              await stub.fetch(
-                new Request(`http://internal/internal/servers/${serverId}/memory/batch`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ user_id: Number(uid), ...batch }),
-                })
-              );
-            } catch {
-              /* ignore */
-            }
-          },
-          beginSession: async (context) => {
-            try {
-              const stub = env.USER_DB.get(env.USER_DB.idFromName(gid));
-              await stub.fetch(
-                new Request(`http://internal/internal/servers/${serverId}/agent-session`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ user_id: Number(uid), ...context }),
-                })
-              );
-            } catch {
-              /* ignore */
-            }
-          },
-          saveTaskCheckpoint: async (checkpoint, context) => {
-            try {
-              const stub = env.USER_DB.get(env.USER_DB.idFromName(gid));
-              await stub.fetch(
-                new Request(`http://internal/internal/servers/${serverId}/agent-checkpoint`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ user_id: Number(uid), checkpoint, ...context }),
-                })
-              );
-            } catch {
-              /* ignore */
-            }
-          },
-          fetchTaskCheckpoint: async (taskId) => {
-            const stub = env.USER_DB.get(env.USER_DB.idFromName(gid));
-            const res = await stub.fetch(
-              new Request(`http://internal/internal/servers/${serverId}/agent-checkpoint?user_id=${uid}&task_id=${taskId}`)
-            );
-            if (!res.ok) throw new Error('Checkpoint not found');
-            return (await res.json()) as AgentTaskCheckpoint;
-          },
-          deleteTaskCheckpoint: async (taskId, context) => {
-            try {
-              const stub = env.USER_DB.get(env.USER_DB.idFromName(gid));
-              await stub.fetch(
-                new Request(`http://internal/internal/servers/${serverId}/agent-checkpoint`, {
-                  method: 'DELETE',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ user_id: Number(uid), taskId, ...context }),
-                })
-              );
-            } catch {
-              /* ignore */
-            }
-          },
-        };
+        memoryProvider = createAgentMemoryProvider(env, gid, uid, serverId);
       }
 
       this.agentCore = new AgentCore(
@@ -3325,7 +3249,14 @@ export class SSHSession {
   private sendAgentFrame(msg: any): void {
     try {
       if (this.ws.readyState === WebSocket.OPEN) {
-        this.ws.send(JSON.stringify(msg));
+        let frame = msg;
+        if (msg.diagnostics) {
+          this.sendDebug(() => responseErrorDebugMessage(msg.errorCode ?? msg.code, msg.status, msg.diagnostics));
+          const { purpose } = normalizeResponseDiagnostics(msg.diagnostics);
+          // Keep only the purpose needed for checkpoint pause copy in the normal UI channel.
+          frame = { ...msg, diagnostics: purpose ? { purpose } : undefined };
+        }
+        this.ws.send(JSON.stringify(frame));
       }
     } catch {
       /* WebSocket 已关闭，无法送达 */

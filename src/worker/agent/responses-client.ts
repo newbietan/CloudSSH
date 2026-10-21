@@ -2,8 +2,9 @@ import { normalizeAIBaseUrl } from '../../ai-endpoint';
 import { resolveAIModelBudgets, type AIModelBudgets } from '../../ai-model-policy';
 import { normalizeResponseDiagnostics, type ResponseDiagnostics } from '../../agent-response-diagnostics';
 import { providerError, retryAfterMs } from './responses-errors';
+import { validatedCompactionWindow } from './compaction-window';
 import { validateBaseUrlWithDNS } from './ssrf';
-import type { AIConfig, ModelResponse, ResponseFunctionCall, ResponseInput, ResponseOutput, ResponseUsage, ToolDefinition } from './types';
+import type { AIConfig, CompactedResponse, ModelResponse, ResponseFunctionCall, ResponseInput, ResponseOutput, ResponseUsage, ToolDefinition } from './types';
 
 export class ResponsesError extends Error {
   constructor(public readonly code: string, public readonly status?: number,
@@ -172,6 +173,10 @@ function parseResponse(value: unknown, request: ResponseRequest): ModelResponse 
         });
       }
       output.push(reasoning);
+    } else if (item.type === 'compaction') {
+      const window = validatedCompactionWindow([item]);
+      if (!window) throw new ResponsesError('responses_invalid');
+      output.push(window[0] as Extract<ResponseOutput, { type: 'compaction' }>);
     } else {
       // Hosted tools and implicit protocol downgrades are not part of CloudSSH's execution boundary.
       throw new ResponsesError('responses_invalid');
@@ -394,6 +399,75 @@ export class ResponsesClient {
       const failure = error instanceof ResponsesError ? error : new ResponsesError('responses_failed');
       failure.diagnostics = normalizeResponseDiagnostics({ ...failure.diagnostics,
         requestId, stage, purpose: request.purpose ?? 'main' });
+      throw failure;
+    }
+  }
+
+  /** Standalone compaction is inherently stateless. Its contract has NO store, stream,
+   * tools, reasoning, text.format or max_output_tokens fields. Never downgrade to generation.
+   */
+  async compact(input: ResponseInput[], instructions: string, signal: AbortSignal): Promise<CompactedResponse> {
+    const requestId = crypto.randomUUID();
+    let stage: ResponseDiagnostics['stage'] = 'http';
+    try {
+      signal.throwIfAborted();
+      const address = await validateBaseUrlWithDNS(this.baseUrl);
+      signal.throwIfAborted();
+      if (!address.valid) throw new ResponsesError('responses_address');
+      const body = JSON.stringify({ model: this.config.model, input, instructions });
+      const bodyBytes = new TextEncoder().encode(body).length;
+      if (bodyBytes > 2 * 1024 * 1024 || bodyBytes + 512 >= this.budgets.context_window) {
+        throw new ResponsesError('responses_budget');
+      }
+      for (let attempt = 0; ; attempt++) {
+        signal.throwIfAborted();
+        const response = await fetch(`${this.baseUrl}/responses/compact`, {
+          method: 'POST', redirect: 'manual', signal,
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.config.api_key}`,
+            'Idempotency-Key': requestId }, body,
+        });
+        if (response.status >= 300 && response.status < 400) {
+          void response.body?.cancel();
+          throw new ResponsesError('responses_redirect');
+        }
+        if (!response.ok) {
+          if (attempt < 2 && [429, 500, 502, 503, 504].includes(response.status)) {
+            void response.body?.cancel();
+            await delay(retryAfterMs(response.headers.get('Retry-After')) ?? 1000 * (attempt + 1), signal);
+            continue;
+          }
+          let errorBody: unknown;
+          try {
+            errorBody = await readJsonBody(response, AbortSignal.any([signal, AbortSignal.timeout(2000)]), 32_768);
+          } catch { signal.throwIfAborted(); }
+          const failure = providerError(errorBody);
+          // A missing route may also mean a wrong base path/deployment. HTTP status alone
+          // is not evidence that the provider/model lacks native compaction.
+          const unsupported = [400, 404, 405, 422, 501].includes(response.status) &&
+            ['unsupported_feature', 'unsupported_model'].includes(failure.diagnostics.providerCode ?? '');
+          const unavailable = [404, 405, 501].includes(response.status) && !failure.diagnostics.providerCode;
+          throw new ResponsesError(unsupported ? 'responses_compaction_unsupported'
+            : unavailable ? 'responses_compaction_unavailable' : 'responses_http', response.status, failure.diagnostics);
+        }
+        stage = 'parse';
+        const result = object(await readJsonBody(response, signal, MAX_RESPONSE_CHARS));
+        signal.throwIfAborted();
+        if (result.store === true) throw new ResponsesError('responses_storage');
+        if (result.object !== 'response.compaction' || typeof result.id !== 'string' || !result.id ||
+          !Number.isSafeInteger(result.created_at) || (result.created_at as number) < 0 ||
+          (result.status != null && result.status !== 'completed')) throw new ResponsesError('responses_invalid');
+        const output = validatedCompactionWindow(result.output);
+        if (!output) throw new ResponsesError('responses_invalid');
+        // Reuse numeric-only usage parsing, never interpret compacted text as assistant output.
+        const usage = parseResponse({ id: result.id, status: 'completed', output: [], usage: result.usage },
+          { input: [], instructions: '', stream: false, max_output_tokens: 1 }).usage;
+        return { id: result.id, requestId, output, usage };
+      }
+    } catch (error) {
+      if (signal.aborted) throw signal.reason;
+      const failure = error instanceof ResponsesError ? error : new ResponsesError('responses_failed');
+      failure.diagnostics = normalizeResponseDiagnostics({ ...failure.diagnostics,
+        requestId, stage, purpose: 'checkpoint' });
       throw failure;
     }
   }

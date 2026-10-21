@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ResponsesClient } from '../../../src/worker/agent/responses-client';
 import { retryAfterMs } from '../../../src/worker/agent/responses-errors';
 import { AGENT_TOOLS } from '../../../src/worker/agent/tools';
-import { CHECKPOINT_FORMAT } from '../../../src/worker/agent/prompt';
+import { MEMORY_FORMAT } from '../../../src/worker/agent/prompt';
 import { AgentMemoryManager } from '../../../src/worker/agent/memory';
 import { aiConfig, functionCall, responseObject, sse } from './responses-fixtures';
 
@@ -121,11 +121,11 @@ describe('Bounded, explicit capability fallback', () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(unsupported('text.format.type'))
       .mockResolvedValueOnce(new Response(JSON.stringify(responseObject('resp_aux', '{}'))));
     const result = await new ResponsesClient(aiConfig).create({ ...request, purpose: 'checkpoint',
-      tools: undefined, stream: false, text: { format: CHECKPOINT_FORMAT } }, signal());
+      tools: undefined, stream: false, text: { format: MEMORY_FORMAT } }, signal());
     expect(result.text).toBe('{}'); // Caller must validate; no fake success/schema repair here.
     const next = JSON.parse(fetch.mock.calls[1][1]!.body as string);
     expect(next).not.toHaveProperty('text');
-    expect(next.instructions).toContain(JSON.stringify(CHECKPOINT_FORMAT.schema));
+    expect(next.instructions).toContain(JSON.stringify(MEMORY_FORMAT.schema));
     expect(next.instructions).toContain(request.instructions);
     expect(next.store).toBe(false);
   });
@@ -183,7 +183,7 @@ describe('Auxiliary memory compatibility', () => {
     const provider = { fetchUnifiedMemory: vi.fn(async () => memory), saveBatchMemory: vi.fn(async () => {}) };
     const frames: any[] = [];
     const manager = new AgentMemoryManager(provider, () => 1, frame => frames.push(frame));
-    const output = valid ? JSON.stringify({ workLog: { mode: 'create', title: 'Inspection', summary: 'Inspected Linux' }, knowledge: [] }) : '{}';
+    const output = valid ? JSON.stringify({ knowledge: [{ action: 'set', category: 'config', key: 'os_name', value: 'Linux' }] }) : '{}';
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(unsupported('text.format'))
       .mockImplementation(async () => new Response(JSON.stringify(responseObject('resp_memory', output))));
     await manager.enqueue({ records: [{ role: 'user', content: 'Inspect Linux' }, { role: 'assistant', content: 'Inspected Linux' }],
@@ -191,7 +191,8 @@ describe('Auxiliary memory compatibility', () => {
       interrupted: false, iteration: 1, epoch: 1, sessionId: 'session-test' });
     expect(JSON.parse(fetch.mock.calls[1][1]!.body as string).max_output_tokens).toBe(1024);
     if (valid) {
-      expect(provider.saveBatchMemory).toHaveBeenCalledWith(expect.objectContaining({ expectedRevision: 4, workLog: expect.objectContaining({ title: 'Inspection' }) }));
+      expect(provider.saveBatchMemory).toHaveBeenCalledWith(expect.objectContaining({ expectedRevision: 4,
+        knowledge: [{ action: 'set', category: 'config', key: 'os_name', value: 'Linux', evidence: ['user'] }] }), expect.any(AbortSignal));
       expect(frames).toContainEqual({ subType: 'memory_updated' });
     } else {
       expect(provider.saveBatchMemory).not.toHaveBeenCalled();

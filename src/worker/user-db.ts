@@ -455,9 +455,10 @@ export class UserDBDO {
         return this.handleUpdateServerOS(parseInt(osMatch[1], 10), request);
       }
 
-      const agentMemoryMatch = path.match(/^\/internal\/servers\/(\d+)\/agent-(session|checkpoint)$/);
-      if (agentMemoryMatch && ['GET', 'POST', 'DELETE'].includes(request.method)) {
-        return this.memoryStore.handle(Number(agentMemoryMatch[1]), agentMemoryMatch[2] === 'session' ? 'session' : 'checkpoint', request);
+      const agentMemoryMatch = path.match(/^\/internal\/servers\/(\d+)\/agent-(session|checkpoint|execution)$/);
+      if (agentMemoryMatch && (agentMemoryMatch[2] === 'checkpoint'
+        ? ['GET', 'POST', 'DELETE'].includes(request.method) : request.method === 'POST')) {
+        return this.memoryStore.handle(Number(agentMemoryMatch[1]), agentMemoryMatch[2], request);
       }
 
       // /internal/servers/:id/memory/batch

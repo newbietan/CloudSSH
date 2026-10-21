@@ -78,13 +78,12 @@ describe('AgentMemoryManager and selectServerMemory', () => {
     const manager = new AgentMemoryManager(provider, () => 1, frame => emitted.push(frame));
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(responseObject('resp_mem', JSON.stringify({
-      workLog: { mode: 'update_latest', title: '更新 nginx 端口', summary: '成功修改为 8080' },
-      knowledge: [{ action: 'set', category: 'config', key: 'nginx_port', value: '8080' }],
+      knowledge: [{ action: 'set', category: 'config', key: 'nginx_port', value: '9090' }],
     })))));
 
     const journal = new ExecutionJournal();
     const call = functionCall('c1', 'execute_command', { command: 'systemctl restart nginx' });
-    journal.settle('task_1', call, JSON.stringify({ stdout: 'restarted port 8080', exit_code: 0 }));
+    journal.settle('task_1', call, JSON.stringify({ stdout: 'restarted port 9090', exit_code: 0 }));
     const taskRecords = journal.taskRecords('task_1', '重启 nginx');
 
     await manager.enqueue({
@@ -102,9 +101,9 @@ describe('AgentMemoryManager and selectServerMemory', () => {
 
     expect(provider.saveBatchMemory).toHaveBeenCalledTimes(1);
     expect(saved[0]).toMatchObject({
-      expectedRevision: 3,
+      expectedRevision: 4,
       sessionId: 'sess_1',
-      workLog: { title: '更新 nginx 端口' },
+      knowledge: [{ action: 'set', category: 'config', key: 'nginx_port', value: '9090', evidence: ['c1'] }],
     });
     expect(emitted).toContainEqual({ subType: 'memory_updated' });
   });
@@ -122,8 +121,7 @@ describe('AgentMemoryManager and selectServerMemory', () => {
     const manager = new AgentMemoryManager(provider, () => 1, frame => emitted.push(frame));
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(responseObject('resp_mem', JSON.stringify({
-      workLog: { mode: 'create', title: '测试', summary: '测试' },
-      knowledge: [],
+      knowledge: [{ action: 'set', category: 'note', key: 'inspection', value: 'ok' }],
     })))));
 
     const journal = new ExecutionJournal();

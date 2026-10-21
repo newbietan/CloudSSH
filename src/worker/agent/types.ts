@@ -39,9 +39,17 @@ export interface ResponseReasoning {
   status?: 'completed' | 'incomplete' | 'in_progress';
 }
 
-export type ResponseOutput = ResponseMessage | ResponseFunctionCall | ResponseReasoning;
+export interface ResponseCompaction {
+  type: 'compaction';
+  id: string;
+  encrypted_content: string;
+  created_by?: string;
+}
+
+export type ResponseOutput = ResponseMessage | ResponseFunctionCall | ResponseReasoning | ResponseCompaction;
 export type ResponseInput =
   | { role: 'user'; content: string }
+  | { type: 'message'; role: 'user'; content: Array<{ type: 'input_text'; text: string }>; id?: string; status?: 'completed' }
   | ResponseOutput
   | { type: 'function_call_output'; call_id: string; output: string };
 
@@ -97,6 +105,13 @@ export interface ModelResponse {
   incompleteReason?: string;
 }
 
+export interface CompactedResponse {
+  id: string;
+  requestId: string;
+  output: ResponseInput[];
+  usage?: ResponseUsage;
+}
+
 export interface ExecResult {
   stdout: string;
   stderr: string;
@@ -130,15 +145,21 @@ export interface AgentFrame {
 }
 
 export interface MemoryWriteContext { sessionId: string; epoch: number }
+export interface AgentExecutionLog extends AgentTaskCheckpoint {
+  outcome: RunOutcome;
+}
 export interface AgentMemoryBatch extends MemoryWriteContext {
   expectedRevision: number;
+  taskId?: string;
   targetLogId?: number;
   workLog?: { mode?: WorkLogMode; title: string; summary: string };
-  knowledge?: Array<{ action?: KnowledgeAction; category?: KnowledgeCategory; key: string; value?: string }>;
+  knowledge?: Array<{ action?: KnowledgeAction; category?: KnowledgeCategory; key: string; value?: string;
+    evidence?: string[] }>;
 }
 export interface AgentMemoryProvider {
-  fetchUnifiedMemory(): Promise<UnifiedServerMemory>;
-  saveBatchMemory(batch: AgentMemoryBatch): Promise<void>;
+  fetchUnifiedMemory(signal?: AbortSignal): Promise<UnifiedServerMemory>;
+  saveBatchMemory(batch: AgentMemoryBatch, signal?: AbortSignal): Promise<void>;
+  saveExecutionLog?(entry: AgentExecutionLog, context: MemoryWriteContext, signal?: AbortSignal): Promise<void>;
   beginSession?(context: MemoryWriteContext): Promise<void>;
   saveTaskCheckpoint?(checkpoint: AgentTaskCheckpoint, context: MemoryWriteContext): Promise<void>;
   fetchTaskCheckpoint?(taskId: string): Promise<AgentTaskCheckpoint>;

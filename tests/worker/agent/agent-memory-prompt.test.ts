@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   extractDistillationSnapshot, formatDistillationMessages, formatDistillationPromptInput,
   formatServerMemoryForPrompt, MAX_MEMORY_PROMPT_CHARS, MEMORY_DISTILLATION_PROMPT,
-  MEMORY_FORMAT, CHECKPOINT_FORMAT, shouldBypassDistillation,
+  MEMORY_FORMAT, shouldBypassDistillation,
 } from '../../../src/worker/agent/prompt';
 import type { TaskRecord, UnifiedServerMemory } from '../../../src/worker/agent/types';
 import { functionCall } from './responses-fixtures';
@@ -89,9 +89,6 @@ describe('Responses task records and server memory', () => {
   it('keeps prompt examples aligned with every required memory schema field', () => {
     const example = JSON.parse(MEMORY_DISTILLATION_PROMPT.match(/示例格式：\n([\s\S]+?)\n若本轮/)![1]);
     for (const key of MEMORY_FORMAT.schema.required) expect(example).toHaveProperty(key);
-    for (const key of MEMORY_FORMAT.schema.properties.workLog.anyOf[1].required!) {
-      expect(example.workLog).toHaveProperty(key);
-    }
     const schema = MEMORY_FORMAT.schema.properties.knowledge.items;
     for (const item of example.knowledge) {
       expect(Object.keys(item).sort()).toEqual([...schema.required].sort());
@@ -103,12 +100,12 @@ describe('Responses task records and server memory', () => {
     expect(MEMORY_DISTILLATION_PROMPT).toContain('严禁截断或猜测');
   });
 
-  it('uses strict structured schemas for both checkpoint and memory, allowing null workLog', () => {
+  it('extracts only knowledge and never lets the model generate or rewrite execution logs', () => {
     expect(MEMORY_DISTILLATION_PROMPT).toContain('服务器智能会话总结助手');
     expect(MEMORY_DISTILLATION_PROMPT).toContain('状态不明');
-    expect(MEMORY_FORMAT.schema.required).toEqual(['workLog', 'knowledge']);
-    expect(MEMORY_FORMAT.schema.properties.workLog.anyOf[0]).toEqual({ type: 'null' });
-    expect(CHECKPOINT_FORMAT.schema.required).toContain('unknown');
-    expect(CHECKPOINT_FORMAT.schema.additionalProperties).toBe(false);
+    expect(MEMORY_DISTILLATION_PROMPT).toContain('不生成或改写工作日志');
+    expect(MEMORY_FORMAT.schema.required).toEqual(['knowledge']);
+    expect(MEMORY_FORMAT.schema.properties).not.toHaveProperty('workLog');
+    expect(MEMORY_FORMAT.schema.additionalProperties).toBe(false);
   });
 });

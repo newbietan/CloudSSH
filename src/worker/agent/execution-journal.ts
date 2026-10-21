@@ -24,7 +24,7 @@ export function redactEvidence(text: string): string {
     .replace(/-----BEGIN [A-Z\s]*PRIVATE KEY-----[\s\S]*?-----END [A-Z\s]*PRIVATE KEY-----/g, '[REDACTED PRIVATE KEY]')
     .replace(/\b(?:sk-[\w-]{12,}|gh[pousr]_[\w]{12,}|xox[baprs]-[\w-]{10,})\b/g, '[REDACTED TOKEN]')
     .replace(/\bBearer\s+[\w.\-]+/gi, 'Bearer [REDACTED]')
-    .replace(/((?:password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)\s*[=:]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi, '$1[REDACTED]');
+    .replace(/((?:password|passwd|secret|token|api[_-]?key|access[_-]?token|auth[_-]?token)\s*[=:]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi, '$1[REDACTED]');
 }
 
 function description(call: ResponseFunctionCall): string {

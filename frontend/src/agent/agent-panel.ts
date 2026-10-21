@@ -583,21 +583,23 @@ export class AgentPanel {
         this.updateInputState();
         break;
       case 'context_status':
-        if (msg.compacted && msg.checkpointSource === 'local') {
-          notify(t('agent.contextLocalFallback'), { variant: 'warning' });
-        } else if (msg.recovering === true) {
-          notify(t('agent.contextRecovering'), { variant: 'info' });
-        }
+        if (msg.compacting === true) notify(t('agent.contextCompacting'), { variant: 'info' });
         break;
       case 'memory_status':
         if (msg.code === 'memory_failed') {
           // Auxiliary failures must not remove a newer task's streaming message.
           notify(t('agent.memoryFailure') + '\n' + responseErrorMessage(msg.errorCode, msg.status, msg.diagnostics),
             { variant: 'warning' });
+        } else if (msg.code === 'memory_conflict') {
+          notify(t('agent.memoryConflict'), { variant: 'warning' });
+        } else if (msg.code === 'memory_busy') {
+          notify(t('agent.memoryBusy'), { variant: 'warning' });
+        } else if (msg.code === 'memory_log_failed') {
+          notify(t('agent.memoryLogFailed'), { variant: 'warning' });
         }
         break;
       case 'memory_updated':
-        if (!this.isAgentRunning) this.clearSessionDraft();
+        // Cache invalidation is not task completion: a late log write must preserve interrupted drafts.
         if (this.serverId) {
           void this.fetchServerMemory();
         }

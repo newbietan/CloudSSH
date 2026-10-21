@@ -26,6 +26,7 @@ import {
   LOCAL_ADMIN_GITHUB_ID,
 } from './auth';
 import { HTML } from './html';
+import { handleAICapabilityProbe } from './ai-capability-route';
 
 export { SSHSessionDO } from './durable-object';
 export { SSHShareDO } from './share-do';
@@ -245,7 +246,7 @@ export default {
 
       // ==================== AI Config Routes (需认证) ====================
 
-      if (url.pathname === '/api/ai/config' || url.pathname === '/api/ai/models') {
+      if (url.pathname.startsWith('/api/ai/')) {
         return handleAIRoute(request, url, env);
       }
 
@@ -1034,6 +1035,11 @@ async function handleAIRoute(request: Request, url: URL, env: Env): Promise<Resp
         body: JSON.stringify(body),
       })
     );
+  }
+
+  // Explicitly paid synthetic test; no server/session data is supplied to the probe.
+  if (url.pathname === '/api/ai/capabilities/probe' && request.method === 'POST') {
+    return handleAICapabilityProbe(request, user.id, String(user.github_id), stub);
   }
 
   // POST /api/ai/models — proxy model list from user's LLM provider
