@@ -93,35 +93,33 @@ describe('bounded stateless Responses context and local branches', () => {
     const context = new AgentContext();
     const call = functionCall();
     context.beginTurn('Inspect'); accept(context, response('resp_1', '', [call]));
-    expect(() => context.replaceWithCompaction('premature', [])).toThrow();
+    expect(() => context.replaceWithCompaction('premature')).toThrow();
     context.toolResult(call, 'status unknown: interrupted');
     expect(context.needsCheckpoint(100, 'Stable')).toBe(true);
-    context.replaceWithCompaction('Inspect before retrying unknown commands.', [], 'safety_info');
+    context.replaceWithCompaction('Inspect before retrying unknown commands.', 'safety_info');
     expect(JSON.stringify(context.buildInput())).toContain('context summary');
     expect(JSON.stringify(context.buildInput())).toContain('Inspect before retrying unknown commands.');
     expect(JSON.stringify(context.buildInput())).toContain('Inspect');
     expect(() => context.beginTurn('Old edit', 0)).toThrow();
   });
 
-  it('keeps exact Unicode constraints alongside the compacted summary and retained tail', () => {
+  it('keeps exact Unicode constraints alongside the compacted summary and safety ledger', () => {
     const context = new AgentContext();
     context.beginTurn('原始约束：禁止修改防火墙'); accept(context, response('first'));
     context.beginTurn('继续未完成的任务');
     const safety = JSON.stringify({ rows: [[43, 'unknown']] });
-    const retained = [{ role: 'user' as const, content: '最近的指令' }];
-    context.replaceWithCompaction('前期摘要', retained, safety);
+    context.replaceWithCompaction('前期摘要', safety);
     const serialized = JSON.stringify(context.buildInput());
     expect(serialized).toContain('原始约束：禁止修改防火墙');
     expect(serialized).toContain('继续未完成的任务');
     expect(serialized).toContain('前期摘要');
-    expect(serialized).toContain('最近的指令');
     expect(serialized).toContain('unknown');
   });
 
   it('preserves an unaccepted compacted segment and safety ledger across repeated requests', () => {
     const context = new AgentContext();
     context.beginTurn('Original goal and constraints'); accept(context, response('first'));
-    context.replaceWithCompaction('Complete summary', [], '{"status":"unknown","operation":"already dispatched"}');
+    context.replaceWithCompaction('Complete summary', '{"status":"unknown","operation":"already dispatched"}');
     context.beginTurn('Continue');
     expect(JSON.stringify(context.buildInput())).toContain('Complete summary');
     expect(JSON.stringify(context.buildInput())).toContain('already dispatched');
@@ -132,12 +130,12 @@ describe('bounded stateless Responses context and local branches', () => {
   it('allows an unaccepted checkpoint to use reserved headroom instead of recompacting an empty history', () => {
     const context = new AgentContext();
     context.beginTurn('Original request'); accept(context, response('first'));
-    context.replaceWithCompaction('Prepared summary', [], 'x'.repeat(42_000));
+    context.replaceWithCompaction('Prepared summary', 'x'.repeat(42_000));
     context.beginTurn('Continue');
     expect(context.canCheckpoint).toBe(false);
     expect(context.fitsBudget(55_808, '')).toBe(true);
     expect(context.needsCheckpoint(55_808, '')).toBe(false);
-    expect(context.needsCheckpoint(40_000, '')).toBe(true);
+    expect(context.needsCheckpoint(15_000, '')).toBe(true);
   });
 
   it('rejects cumulative user constraints beyond their bounded allocation without dropping earlier requests', () => {

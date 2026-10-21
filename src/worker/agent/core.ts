@@ -237,7 +237,6 @@ export class AgentCore {
         if (context.needsCheckpoint(budget, prefix)) {
           if (!context.canCheckpoint) throw new ResponsesError('responses_budget');
           purpose = 'checkpoint';
-          this.emit(id, { subType: 'context_status', compacting: true });
           const selected = selectServerMemory(this.unifiedMemory, message);
           const memoryFingerprint = JSON.stringify(selected);
           const memoryContent = boundedText(formatServerMemoryForPrompt(selected, locale, Date.now(), timezone), 6500);
@@ -257,7 +256,7 @@ export class AgentCore {
           });
           signal.throwIfAborted();
           // No history mutation until the full continuation (including observations) has fitted.
-          context.replaceWithCompaction(checkpoint.summary, checkpoint.retained, checkpoint.safety);
+          context.replaceWithCompaction(checkpoint.summary, checkpoint.safety);
           if (this.environment) context.pending.push(observation('environment', this.environment));
           context.observeTerminal(terminalSnapshot);
           context.observeMemory(memoryFingerprint, memoryContent);

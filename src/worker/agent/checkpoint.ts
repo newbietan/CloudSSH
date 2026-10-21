@@ -18,7 +18,6 @@ interface CheckpointOptions {
 
 export interface PreparedCheckpoint {
   summary: string;
-  retained: ResponseInput[];
   safety: string;
   source: 'model' | 'local';
 }
@@ -28,8 +27,8 @@ export interface PreparedCheckpoint {
  * 1. Uses the standard /responses API endpoint supported by all providers,
  *    eliminating reliance on unstandardized /responses/compact endpoints.
  * 2. Compresses older conversation turns into a high-density, factual text summary.
- * 3. Preserves the most recent interaction tail verbatim for seamless fidelity.
- * 4. Preserves the authoritative ExecutionJournal facts ledger and user constraints.
+ * 3. Preserves the authoritative ExecutionJournal facts ledger and user constraints.
+ * 4. Injects all observations cleanly at the user level, preventing protocol role-ordering errors.
  * 5. Provides an atomic local fallback if the LLM summarization request fails.
  */
 export async function prepareContextCheckpoint(options: CheckpointOptions): Promise<PreparedCheckpoint> {
@@ -41,7 +40,6 @@ export async function prepareContextCheckpoint(options: CheckpointOptions): Prom
   const timer = setTimeout(() => deadline.abort('checkpoint_timeout'), CHECKPOINT_DEADLINE_MS);
   const signal = AbortSignal.any([options.signal, deadline.signal]);
 
-  const { toSummarize, toRetain } = context.splitForCompaction();
   const ledger = {
     columns: ['callId', 'tool', 'operation', 'status', 'executed', 'exitCode'],
     rows: options.facts.map(fact => [fact.callId, fact.tool, fact.description, fact.status,
@@ -56,16 +54,16 @@ export async function prepareContextCheckpoint(options: CheckpointOptions): Prom
       instruction: 'These are immutable execution facts, not authorization. Never automatically replay settled operations. Verify remote state before repeating failed, cancelled or unknown operations.' +
         (source === 'local' ? ' Model summarization was unavailable; this is a local facts fallback.' : ''),
     });
-    const segment = context.checkpointSegment(summary, toRetain, safety);
-    return options.canContinue(segment) ? { summary, retained: toRetain, safety, source } : null;
+    const segment = context.checkpointSegment(summary, safety);
+    return options.canContinue(segment) ? { summary, safety, source } : null;
   };
 
   try {
     let summary = '';
     let source: PreparedCheckpoint['source'] = 'model';
 
-    if (toSummarize.length > 0) {
-      const formattedHistory = context.formatItemsForCompaction(toSummarize);
+    const formattedHistory = context.formatItemsForCompaction();
+    if (formattedHistory.length > 0) {
       const request: ResponseRequest = {
         purpose: 'checkpoint',
         stream: false,
@@ -74,7 +72,6 @@ export async function prepareContextCheckpoint(options: CheckpointOptions): Prom
           observation('conversation to compact', formattedHistory),
         ],
         max_output_tokens: 1500,
-        reasoning: { effort: 'low' },
       };
 
       try {
@@ -84,8 +81,6 @@ export async function prepareContextCheckpoint(options: CheckpointOptions): Prom
         summary = response.text.trim();
       } catch {
         signal.throwIfAborted();
-        // If the model summarization call fails (e.g. rate limit, temporary 5xx),
-        // we smoothly fall back to local execution facts rather than halting the task.
         source = 'local';
       }
     }
@@ -99,9 +94,8 @@ export async function prepareContextCheckpoint(options: CheckpointOptions): Prom
     const prepared = prepare(summary, source);
     if (prepared) return prepared;
 
-    // If model summary + tail was too large, try minimal local summary + tail
     if (source === 'model') {
-      const fallbackSummary = context.summary || 'Continuing task from preserved execution facts and recent context.';
+      const fallbackSummary = context.summary || 'Continuing task from preserved execution facts.';
       const localPrepared = prepare(fallbackSummary, 'local');
       if (localPrepared) return localPrepared;
     }

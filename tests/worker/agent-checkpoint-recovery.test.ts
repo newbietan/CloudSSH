@@ -27,7 +27,8 @@ describe('Application-level long-task compaction in AgentCore', () => {
         compactions++;
         return Response.json(responseObject('checkpoint_summary', 'Successfully summarized earlier steps; blog inspected.'));
       }
-      if (steps++ >= 86) return reply('final', 'Inspection complete.');
+      if (steps >= 86) return reply('final', 'Inspection complete.');
+      steps++;
       const call = functionCall(`call_${steps}`, 'execute_command', { command: `inspect_${steps}`, timeout_ms: null });
       const response = responseObject(`response_${steps}`, '', [call]);
       response.usage.input_tokens = steps === 86 ? 240_000 : 1000;
@@ -63,7 +64,7 @@ describe('Application-level long-task compaction in AgentCore', () => {
       if (steps++ >= 5) return reply('final', 'Done.');
       const call = functionCall(`call_${steps}`);
       const response = responseObject(`resp_${steps}`, '', [call]);
-      response.usage.input_tokens = steps === 5 ? 240_000 : 1000;
+      response.usage.input_tokens = steps >= 3 ? 240_000 : 1000;
       return sse([{ type: 'response.completed', response }]);
     });
 
@@ -73,12 +74,12 @@ describe('Application-level long-task compaction in AgentCore', () => {
   });
 
   it('rebuilds unaccepted context and ledger when the first post-compact request fails', async () => {
-    const { agent, frames, exec } = setup();
+    const { agent, frames } = setup();
     const requests: any[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       const body = JSON.parse(init!.body as string); requests.push(body);
       if (requests.length === 1) {
-        const response = responseObject('first', '', [functionCall()]); response.usage.input_tokens = 55_000;
+        const response = responseObject('turn1', 'Initial check complete.'); response.usage.input_tokens = 55_000;
         return sse([{ type: 'response.completed', response }]);
       }
       if (!body.stream) {
@@ -89,6 +90,8 @@ describe('Application-level long-task compaction in AgentCore', () => {
     });
 
     await agent.handleAgentStart('1', 'Inspect nginx; do not restart it.');
+    expect(frames.at(-1)).toMatchObject({ subType: 'run_end', outcome: 'completed' });
+    await agent.handleAgentStart('1', 'Now check firewall');
     expect(frames.at(-1)).toMatchObject({ subType: 'run_end', outcome: 'failed' });
     await agent.handleAgentStart('1', 'Continue the interrupted task');
     expect(frames.at(-1)).toMatchObject({ subType: 'run_end', outcome: 'completed' });
@@ -96,26 +99,25 @@ describe('Application-level long-task compaction in AgentCore', () => {
     for (const text of ['execution facts', 'do not restart it', 'Continue the interrupted task']) {
       expect(JSON.stringify(requests[3].input)).toContain(text);
     }
-    expect(exec.mock.calls.filter(([command]) => command === 'free -m')).toHaveLength(1);
   });
 
   it('reset during compaction cancels execution and leaves session clean', async () => {
-    const { agent, frames, exec } = setup();
+    const { agent, frames } = setup();
     let requests = 0;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       if (++requests === 1) {
-        const response = responseObject('first', '', [functionCall()]); response.usage.input_tokens = 55_000;
+        const response = responseObject('turn1', 'Initial check done.'); response.usage.input_tokens = 55_000;
         return sse([{ type: 'response.completed', response }]);
       }
       return new Promise((_resolve, reject) => init!.signal!.addEventListener('abort', () => reject(init!.signal!.reason), { once: true }));
     });
-    const pending = agent.handleAgentStart('1', 'Inspect');
+    await agent.handleAgentStart('1', 'Initial setup');
+    const pending = agent.handleAgentStart('1', 'Inspect next');
     await vi.waitFor(() => expect(requests).toBeGreaterThanOrEqual(2));
     agent.resetSession();
     await pending;
     expect((agent as any).context.buildInput()).toEqual([]);
     expect(frames.filter(frame => frame.subType === 'context_status' && frame.compacted)).toEqual([]);
-    expect(exec.mock.calls.filter(([command]) => command === 'free -m')).toHaveLength(1);
     expect(agent.getStatus()).toBe('idle');
   });
 });

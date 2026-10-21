@@ -82,7 +82,7 @@ export class AgentContext {
     this.currentGoal = message;
     this.requests.push(message);
     if (!this.history.length && this.summary) {
-      this.pending = this.checkpointSegment(this.summary, [], this.safety);
+      this.pending = this.checkpointSegment(this.summary, this.safety);
     } else {
       this.pending.push({ role: 'user', content: message });
     }
@@ -144,102 +144,59 @@ export class AgentContext {
 
   needsCheckpoint(budget: number, prefix: string): boolean {
     if (!this.history.length && this.summary) return !this.fitsBudget(budget, prefix);
-    return Math.max(bytes(this.buildInput()) + bytes(prefix),
-      this.estimatedTokens + bytes(this.pending)) + 4096 >= budget * 0.75 ||
-      bytes(this.records) >= MAX_EVIDENCE_BYTES * 0.9;
+    if (!this.canCheckpoint) return false;
+    // Convert UTF-8 bytes to estimated tokens (~2.5 bytes/token for mixed Chinese/English/code).
+    // Never compare raw byte counts directly to token budget!
+    const estimatedInputTokens = Math.ceil((bytes(this.buildInput()) + bytes(prefix)) / 2.5);
+    const effectiveTokens = this.estimatedTokens > 0
+      ? Math.max(this.estimatedTokens, estimatedInputTokens)
+      : estimatedInputTokens;
+    return effectiveTokens + 2048 >= budget * 0.8;
   }
 
   fitsBudget(budget: number, prefix: string, input = this.buildInput()): boolean {
-    return bytes(input) <= MAX_CONTEXT_BYTES && bytes(input) + bytes(prefix) + 4096 < budget;
+    const estimatedInputTokens = Math.ceil((bytes(input) + bytes(prefix)) / 2.5);
+    return bytes(input) <= MAX_CONTEXT_BYTES && estimatedInputTokens + 1024 < budget;
   }
 
   /**
-   * Identifies an optimal transaction boundary to split history into:
-   * 1. toSummarize: older interaction items that will be compressed into a high-density summary.
-   * 2. toRetain: recent interaction items preserved verbatim for maximum recency fidelity.
-   * Never splits across open tool calls or incomplete assistant/tool transactions.
+   * Formats older conversation items into structured readable text for compaction summarization.
    */
-  splitForCompaction(): { toSummarize: ResponseInput[]; toRetain: ResponseInput[] } {
-    if (!this.canCheckpoint) throw new ResponsesError('responses_budget');
-    const items = this.history;
-    const len = items.length;
-    if (len <= 4) {
-      return { toSummarize: [...items], toRetain: [] };
-    }
-
-    // Identify all valid cut boundaries where all opened function calls prior to i are closed prior to i
-    const validCuts: number[] = [];
-    const openCalls = new Set<string>();
-    for (let i = 0; i < len; i++) {
-      const item = items[i];
-      if ('type' in item && item.type === 'function_call') {
-        openCalls.add(item.call_id);
-      } else if ('type' in item && item.type === 'function_call_output') {
-        openCalls.delete(item.call_id);
-      }
-      if (openCalls.size === 0 && i < len - 1) {
-        validCuts.push(i + 1);
-      }
-    }
-
-    if (validCuts.length === 0) {
-      return { toSummarize: [...items], toRetain: [] };
-    }
-
-    // Aim to retain roughly the last 20%~40% of items (or at least the latest complete interaction),
-    // while keeping retained tail under 24KB so the new segment remains compact.
-    const targetRetainCount = Math.min(8, Math.max(2, Math.floor(len * 0.3)));
-    let bestCut = validCuts[0];
-    for (const cut of validCuts) {
-      const retainCount = len - cut;
-      const tail = items.slice(cut);
-      if (bytes(tail) <= 24 * 1024 && retainCount <= targetRetainCount * 1.5) {
-        bestCut = cut;
-        break;
-      }
-    }
-
-    const toSummarize = items.slice(0, bestCut);
-    const toRetain = items.slice(bestCut);
-    return { toSummarize, toRetain };
-  }
-
-  /**
-   * Formats older items to summarize into structured readable text for compaction.
-   */
-  formatItemsForCompaction(items: ResponseInput[], limitBytes = 32 * 1024): string {
+  formatItemsForCompaction(limitBytes = 32 * 1024): string {
     const lines: string[] = [];
     if (this.summary) {
       lines.push(`[Previous Summary]\n${this.summary}\n[/Previous Summary]`);
     }
-    for (const item of items) {
+    const allItems = [...this.history, ...this.pending];
+    for (const item of allItems) {
       if ('role' in item && item.role === 'user' && typeof item.content === 'string') {
-        lines.push(`User: ${boundedUtf8(item.content, 1000)}`);
+        if (!item.content.startsWith('[UNTRUSTED OBSERVATION:')) {
+          lines.push(`User: ${boundedUtf8(item.content, 1000)}`);
+        }
       } else if ('type' in item && item.type === 'message' && Array.isArray(item.content)) {
         const text = item.content.map(p => 'text' in p ? p.text : '').join('').trim();
         if (text) lines.push(`Assistant: ${boundedUtf8(text, 1000)}`);
       } else if ('type' in item && item.type === 'function_call') {
-        lines.push(`Tool Call: ${item.name}(${boundedUtf8(item.arguments, 500)})`);
+        lines.push(`Command Executed: ${item.name}(${boundedUtf8(item.arguments, 500)})`);
       } else if ('type' in item && item.type === 'function_call_output') {
-        lines.push(`Tool Result (${item.call_id}): ${boundedUtf8(item.output, 600)}`);
+        lines.push(`Command Output: ${boundedUtf8(item.output, 600)}`);
       }
     }
     return boundedUtf8(lines.join('\n\n'), limitBytes);
   }
 
-  checkpointSegment(summary: string, retained: ResponseInput[] = [], safety = ''): ResponseInput[] {
+  checkpointSegment(summary: string, safety = ''): ResponseInput[] {
     return [
       observation('context summary', summary),
       ...(this.requests.length > 1 ? [observation('preserved user requests', JSON.stringify(this.requests))] : []),
       ...(safety ? [observation('execution facts', safety)] : []),
-      ...retained,
       { role: 'user', content: this.currentGoal },
     ];
   }
 
-  replaceWithCompaction(summary: string, retained: ResponseInput[] = [], safety = ''): void {
+  replaceWithCompaction(summary: string, safety = ''): void {
     if (!this.canCheckpoint) throw new ResponsesError('responses_budget');
-    const next = this.checkpointSegment(summary, retained, safety);
+    const next = this.checkpointSegment(summary, safety);
     if (bytes(next) > MAX_CONTEXT_BYTES) throw new ResponsesError('responses_budget');
     this.summary = summary;
     this.safety = safety;
