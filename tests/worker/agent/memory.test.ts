@@ -78,6 +78,7 @@ describe('AgentMemoryManager and selectServerMemory', () => {
     const manager = new AgentMemoryManager(provider, () => 1, frame => emitted.push(frame));
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(responseObject('resp_mem', JSON.stringify({
+      workLog: { mode: 'update_latest', title: '更新 nginx 端口', summary: '成功修改为 9090' },
       knowledge: [{ action: 'set', category: 'config', key: 'nginx_port', value: '9090' }],
     })))));
 
@@ -103,6 +104,7 @@ describe('AgentMemoryManager and selectServerMemory', () => {
     expect(saved[0]).toMatchObject({
       expectedRevision: 4,
       sessionId: 'sess_1',
+      workLog: { title: '更新 nginx 端口' },
       knowledge: [{ action: 'set', category: 'config', key: 'nginx_port', value: '9090', evidence: ['c1'] }],
     });
     expect(emitted).toContainEqual({ subType: 'memory_updated' });
@@ -121,6 +123,7 @@ describe('AgentMemoryManager and selectServerMemory', () => {
     const manager = new AgentMemoryManager(provider, () => 1, frame => emitted.push(frame));
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(responseObject('resp_mem', JSON.stringify({
+      workLog: { mode: 'create', title: '测试', summary: '测试' },
       knowledge: [{ action: 'set', category: 'note', key: 'inspection', value: 'ok' }],
     })))));
 

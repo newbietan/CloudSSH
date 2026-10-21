@@ -52,11 +52,13 @@ export class ServerMemoryStore {
           updated_at INTEGER NOT NULL, PRIMARY KEY(user_id, server_id, task_id)
         );
         CREATE INDEX IF NOT EXISTS idx_agent_checkpoints_expiry ON agent_task_checkpoints(expires_at);
-        CREATE TABLE IF NOT EXISTS agent_execution_logs (
+        CREATE TABLE IF NOT EXISTS agent_pending_distillations (
           user_id INTEGER NOT NULL, server_id INTEGER NOT NULL, task_id TEXT NOT NULL,
-          log_id INTEGER NOT NULL, payload_enc TEXT NOT NULL, created_at INTEGER NOT NULL,
+          session_id TEXT NOT NULL, epoch INTEGER NOT NULL, retries INTEGER NOT NULL DEFAULT 0,
+          payload_enc TEXT NOT NULL, updated_at INTEGER NOT NULL,
           PRIMARY KEY(user_id, server_id, task_id)
         );
+        CREATE INDEX IF NOT EXISTS idx_agent_pending_distillations ON agent_pending_distillations(user_id, server_id);
       `);
       const columns = new Set(this.query<{ name: string }>('PRAGMA table_info(agent_knowledge_meta)').map(row => row.name));
       const migrations = [
@@ -126,7 +128,7 @@ export class ServerMemoryStore {
         return action === 'checkpoint' ? await this.getCheckpoint(serverId, userId, url.searchParams.get('task_id'))
           : Response.json(await this.read(serverId, userId));
       }
-      if (request.method === 'DELETE' && action !== 'checkpoint' && action !== 'knowledge-batch') {
+      if (request.method === 'DELETE' && action !== 'checkpoint' && action !== 'knowledge-batch' && action !== 'pending-distillation') {
         const userId = Number(url.searchParams.get('user_id'));
         return this.remove(serverId, userId, action, itemId!);
       }
@@ -134,7 +136,15 @@ export class ServerMemoryStore {
       const userId = Number(body.user_id);
       this.state(serverId, userId);
       if (action === 'session') return this.beginSession(serverId, userId, body);
-      if (action === 'execution') return await this.saveExecutionLog(serverId, userId, body);
+      if (action === 'pending-distillation') {
+        if (request.method === 'DELETE') {
+          this.session(serverId, userId, body);
+          if (typeof body.taskId !== 'string' || !TASK_ID_PATTERN.test(body.taskId)) throw new MemoryStoreError(400, 'Invalid task');
+          this.db.exec('DELETE FROM agent_pending_distillations WHERE user_id = ? AND server_id = ? AND task_id = ?', userId, serverId, body.taskId);
+          return Response.json({ success: true });
+        }
+        return await this.putPendingDistillation(serverId, userId, body);
+      }
       if (action === 'checkpoint') {
         if (request.method === 'DELETE') {
           this.session(serverId, userId, body);
@@ -271,8 +281,6 @@ export class ServerMemoryStore {
     try {
       this.db.exec(`DELETE FROM agent_knowledge_meta WHERE user_id = ? AND server_id = ? AND key NOT IN (
         SELECT key FROM server_knowledge WHERE user_id = ? AND server_id = ?)`, userId, serverId, userId, serverId);
-      this.db.exec(`DELETE FROM agent_execution_logs WHERE user_id = ? AND server_id = ? AND log_id NOT IN (
-        SELECT id FROM server_work_logs WHERE user_id = ? AND server_id = ?)`, userId, serverId, userId, serverId);
     } catch { /* mock fallback */ }
   }
 
@@ -398,35 +406,26 @@ export class ServerMemoryStore {
     });
   }
 
-  private async saveExecutionLog(serverId: number, userId: number, body: Record<string, unknown>): Promise<Response> {
+  private async putPendingDistillation(serverId: number, userId: number, body: Record<string, unknown>): Promise<Response> {
     this.session(serverId, userId, body);
-    const entry = body.entry;
-    const outcome = entry && typeof entry === 'object' && 'outcome' in entry ? entry.outcome : undefined;
-    if (!validTaskCheckpoint(entry) || !entry.operations.length ||
-      !['completed', 'stopped', 'failed', 'limit'].includes(String(outcome))) {
-      throw new MemoryStoreError(400, 'Invalid execution log');
+    const taskId = body.taskId;
+    const retries = Number(body.retries ?? 0);
+    if (typeof taskId !== 'string' || !TASK_ID_PATTERN.test(taskId) || !Number.isSafeInteger(retries) || retries < 0) {
+      throw new MemoryStoreError(400, 'Invalid pending distillation');
     }
-    const log = normalizeWorkLogInput({ title: entry.goal, summary: entry.summary }, { truncate: true });
-    if (!log.ok) throw new MemoryStoreError(400, 'Invalid execution log');
     const scope = this.state(serverId, userId).scope;
-    // Persist exact execution statuses, NOT reasoning, native items, terminal output or model summaries.
-    const payload = await this.encrypt(JSON.stringify({ purpose: 'agent-execution-log', serverId, scope,
-      taskId: entry.taskId, outcome, step: entry.step, updatedAt: entry.updatedAt,
-      operations: entry.operations.map(op => ({ callId: op.callId, tool: op.tool, description: op.description,
-        status: op.status, executed: op.executed, exitCode: op.exitCode, at: op.at })) }), userId);
+    const payload = await this.encrypt(JSON.stringify({ purpose: 'pending-distillation', serverId, scope, job: body.job }), userId);
     return this.transaction(() => {
       this.session(serverId, userId, body);
       if (this.state(serverId, userId).scope !== scope) throw new MemoryStoreError(409, 'Server route changed');
-      if (this.query<{ task_id: string }>('SELECT task_id FROM agent_execution_logs WHERE user_id = ? AND server_id = ? AND task_id = ?', userId, serverId, entry.taskId).length) {
-        return Response.json({ success: true });
-      }
-      this.writeLog(serverId, userId, log.value);
-      const saved = this.query<{ id: number }>('SELECT id FROM server_work_logs WHERE server_id = ? AND user_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1', serverId, userId)[0];
-      if (!saved) throw new MemoryStoreError(500, 'Execution log write failed');
-      this.db.exec('INSERT INTO agent_execution_logs (user_id, server_id, task_id, log_id, payload_enc, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-        userId, serverId, entry.taskId, saved.id, payload, Date.now());
-      this.trim(serverId, userId);
-      this.bump(serverId, userId);
+      const now = Date.now();
+      this.db.exec(`INSERT INTO agent_pending_distillations (user_id, server_id, task_id, session_id, epoch, retries, payload_enc, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, server_id, task_id) DO UPDATE SET
+        session_id = excluded.session_id, epoch = excluded.epoch, retries = excluded.retries,
+        payload_enc = excluded.payload_enc, updated_at = excluded.updated_at`,
+        userId, serverId, taskId, body.sessionId as string, body.epoch as number, retries, payload, now);
+      this.db.exec('DELETE FROM agent_pending_distillations WHERE user_id = ? AND server_id = ? AND (retries > 3 OR updated_at < ?)',
+        userId, serverId, now - 24 * 60 * 60 * 1000);
       return Response.json({ success: true });
     });
   }
@@ -492,7 +491,7 @@ export class ServerMemoryStore {
       this.db.exec('DELETE FROM agent_knowledge_meta WHERE server_id = ?', serverId);
       this.db.exec('DELETE FROM agent_memory_sessions WHERE server_id = ?', serverId);
       this.db.exec('DELETE FROM agent_task_checkpoints WHERE server_id = ?', serverId);
-      this.db.exec('DELETE FROM agent_execution_logs WHERE server_id = ?', serverId);
+      this.db.exec('DELETE FROM agent_pending_distillations WHERE server_id = ?', serverId);
     } catch { /* mock fallback */ }
   }
 }

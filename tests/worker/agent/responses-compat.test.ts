@@ -183,7 +183,10 @@ describe('Auxiliary memory compatibility', () => {
     const provider = { fetchUnifiedMemory: vi.fn(async () => memory), saveBatchMemory: vi.fn(async () => {}) };
     const frames: any[] = [];
     const manager = new AgentMemoryManager(provider, () => 1, frame => frames.push(frame));
-    const output = valid ? JSON.stringify({ knowledge: [{ action: 'set', category: 'config', key: 'os_name', value: 'Linux' }] }) : '{}';
+    const output = valid ? JSON.stringify({
+      workLog: { mode: 'create', title: 'Inspect Linux', summary: 'Linux inspected' },
+      knowledge: [{ action: 'set', category: 'config', key: 'os_name', value: 'Linux' }],
+    }) : '{}';
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(unsupported('text.format'))
       .mockImplementation(async () => new Response(JSON.stringify(responseObject('resp_memory', output))));
     await manager.enqueue({ records: [{ role: 'user', content: 'Inspect Linux' }, { role: 'assistant', content: 'Inspected Linux' }],

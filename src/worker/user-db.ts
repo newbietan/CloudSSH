@@ -455,8 +455,8 @@ export class UserDBDO {
         return this.handleUpdateServerOS(parseInt(osMatch[1], 10), request);
       }
 
-      const agentMemoryMatch = path.match(/^\/internal\/servers\/(\d+)\/agent-(session|checkpoint|execution)$/);
-      if (agentMemoryMatch && (agentMemoryMatch[2] === 'checkpoint'
+      const agentMemoryMatch = path.match(/^\/internal\/servers\/(\d+)\/agent-(session|checkpoint|pending-distillation)$/);
+      if (agentMemoryMatch && (['checkpoint', 'pending-distillation'].includes(agentMemoryMatch[2])
         ? ['GET', 'POST', 'DELETE'].includes(request.method) : request.method === 'POST')) {
         return this.memoryStore.handle(Number(agentMemoryMatch[1]), agentMemoryMatch[2], request);
       }

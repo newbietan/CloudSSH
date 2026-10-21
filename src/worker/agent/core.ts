@@ -6,7 +6,6 @@ import type { UnifiedServerMemory } from '../../server-memory-schema';
 import { AgentContext, boundedText, observation } from './context';
 import { prepareContextCheckpoint } from './checkpoint';
 import { ExecutionJournal } from './execution-journal';
-import { buildExecutionLog } from './execution-log';
 import { AgentMemoryManager, selectServerMemory } from './memory';
 import {
   formatServerMemoryForPrompt,
@@ -380,17 +379,6 @@ export class AgentCore {
         const config = aiConfig;
         const iteration = this.state.iteration;
         const promise = (async () => {
-          // This write is independent of LLM extraction, its queue capacity and schema validation.
-          if (facts.length && this.memoryProvider?.saveExecutionLog) {
-            try {
-              await this.memoryProvider.saveExecutionLog(buildExecutionLog(taskId, message, facts, outcome, iteration, locale),
-                { sessionId, epoch }, memorySignal);
-              if (epoch === this.epoch) this.emit(this.runId, { subType: 'memory_updated' });
-            } catch {
-              if (epoch === this.epoch && !memorySignal.aborted) this.emit(this.runId,
-                { subType: 'memory_status', code: 'memory_log_failed' });
-            }
-          }
           if (epoch !== this.epoch || memorySignal.aborted) return;
           if ((didExecute || outcome === 'completed') && taskRecords.length > 1 && !shouldBypassDistillation(taskRecords) && this.memoryManager) {
             await this.memoryManager.enqueue({ records: taskRecords, memory: this.unifiedMemory,

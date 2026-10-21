@@ -145,7 +145,8 @@ export interface AgentMemoryBatch extends MemoryWriteContext {
 export interface AgentMemoryProvider {
   fetchUnifiedMemory(signal?: AbortSignal): Promise<UnifiedServerMemory>;
   saveBatchMemory(batch: AgentMemoryBatch, signal?: AbortSignal): Promise<void>;
-  saveExecutionLog?(entry: AgentExecutionLog, context: MemoryWriteContext, signal?: AbortSignal): Promise<void>;
+  savePendingDistillation?(taskId: string, job: unknown, retries: number, context: MemoryWriteContext, signal?: AbortSignal): Promise<void>;
+  deletePendingDistillation?(taskId: string, context: MemoryWriteContext): Promise<void>;
   beginSession?(context: MemoryWriteContext): Promise<void>;
   saveTaskCheckpoint?(checkpoint: AgentTaskCheckpoint, context: MemoryWriteContext): Promise<void>;
   fetchTaskCheckpoint?(taskId: string): Promise<AgentTaskCheckpoint>;

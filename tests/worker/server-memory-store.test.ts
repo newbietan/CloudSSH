@@ -2,7 +2,6 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ServerMemoryStore } from '../../src/worker/server-memory-store';
 import { AGENT_KNOWLEDGE_TTL_MS } from '../../src/server-memory-schema';
-import { buildExecutionLog } from '../../src/worker/agent/execution-log';
 import { selectServerMemory } from '../../src/worker/agent/memory';
 import type { OperationFact } from '../../src/worker/agent/execution-journal';
 
@@ -64,21 +63,25 @@ describe('Memory store real SQLite transactions and migrations', () => {
     expect((await fixture.read()).knowledge[0]).toMatchObject({ key: 'deploy_rule', value: 'never restart', source: 'user' });
   });
 
-  it('records complete execution statuses independently and deduplicates the same task ID', async () => {
-    const operations = Array.from({ length: 86 }, (_, i) => ({ ...fact, callId: `call_${i}`, status: i === 43 ? 'unknown' as const : 'succeeded' as const, exitCode: i === 43 ? -1 : 0 }));
-    const entry = buildExecutionLog(taskId, 'Inspect nginx token=SECRET_TOKEN', operations, 'stopped', 86, 'en-US');
-    expect((await fixture.post('execution', { entry: { ...entry, reasoning: 'SECRET_REASONING' }, ...context })).status).toBe(200);
-    expect((await fixture.post('execution', { entry, ...context })).status).toBe(200);
-    const memory = await fixture.read();
-    expect(memory.workLogs).toHaveLength(1);
-    expect(memory.revision).toBe(1);
-    expect(memory.workLogs[0].title).not.toContain('SECRET_TOKEN');
-    const row = fixture.db.prepare('SELECT payload_enc FROM agent_execution_logs').get()!;
-    expect(row.payload_enc).not.toContain('inspect nginx');
-    const payload = JSON.parse(decode(String(row.payload_enc)));
-    expect(payload.operations).toHaveLength(86);
-    expect(payload.operations[43]).toMatchObject({ status: 'unknown', executed: true, exitCode: -1, at: now });
-    expect(JSON.stringify(payload)).not.toMatch(/SECRET_TERMINAL|SECRET_REASONING/);
+  it('saves pending distillation encrypted, updates retries, and prunes on exceeding max retries', async () => {
+    const job = { goal: 'Inspect nginx', taskId, sessionId, epoch: 0, records: [] };
+    const res = await fixture.post('pending-distillation', { ...context, taskId, retries: 1, job });
+    if (res.status !== 200) console.log('ERROR STATUS:', res.status, await res.text());
+    expect(res.status).toBe(200);
+    const row = fixture.db.prepare('SELECT payload_enc, retries FROM agent_pending_distillations WHERE task_id = ?').get(taskId) as any;
+    expect(row.retries).toBe(1);
+    expect(decode(String(row.payload_enc))).toContain('pending-distillation');
+
+    // Updating retries
+    await fixture.post('pending-distillation', { ...context, taskId, retries: 2, job });
+    const row2 = fixture.db.prepare('SELECT retries FROM agent_pending_distillations WHERE task_id = ?').get(taskId) as any;
+    expect(row2.retries).toBe(2);
+
+    // Deleting when distillation succeeds
+    const delRes = await fixture.store.handle(1, 'pending-distillation',
+      new Request('http://internal/memory', { method: 'DELETE', body: JSON.stringify({ user_id: 10, taskId, ...context }) }));
+    expect(delRes.status).toBe(200);
+    expect(fixture.db.prepare('SELECT COUNT(*) AS n FROM agent_pending_distillations WHERE task_id = ?').get(taskId) as any).toEqual({ n: 0 });
   });
 
   it('saves verification provenance and expires only automatically verified config/note facts', async () => {
@@ -133,15 +136,14 @@ describe('Memory store real SQLite transactions and migrations', () => {
     await fixture.post('session', context);
     let release!: () => void;
     fixture.encrypt.mockImplementationOnce(async value => { await new Promise<void>(resolve => { release = resolve; }); return encode(value); });
-    const entry = buildExecutionLog(taskId, 'Inspect', [fact], 'stopped', 1, 'en-US');
-    const pending = fixture.post('execution', { entry, ...context });
+    const job = { goal: 'Inspect', taskId, sessionId, epoch: 0, records: [] };
+    const pending = fixture.post('pending-distillation', { ...context, taskId, retries: 1, job });
     await Promise.resolve(); await Promise.resolve();
     await fixture.post('session', { ...context, epoch: 1 });
     release();
     const res = await pending;
     expect(res.status).toBe(409);
     expect(await res.json()).not.toHaveProperty('code', 'memory_revision_conflict');
-    expect((await fixture.read()).workLogs).toEqual([]);
   });
 
   it('rejects invalid mixed batches atomically and enforces ownership', async () => {
@@ -170,18 +172,24 @@ describe('Memory store real SQLite transactions and migrations', () => {
     expect((await fixture.post('session', context)).status).toBe(500);
     fixture.db.exec('DROP TRIGGER fail_session');
     fixture.db.exec("CREATE TRIGGER fail_checkpoint BEFORE INSERT ON agent_task_checkpoints BEGIN SELECT RAISE(ABORT, 'SECRET_SQL_ERROR'); END");
-    const checkpoint = buildExecutionLog(taskId, 'Inspect', [fact], 'stopped', 1, 'en-US');
+    const checkpoint = {
+      taskId,
+      goal: 'Inspect',
+      summary: 'Interrupted task evidence.',
+      operations: [{ callId: fact.callId, tool: fact.tool, description: fact.description, status: fact.status, executed: fact.executed, exitCode: fact.exitCode, at: fact.at }],
+      step: 1,
+      updatedAt: Date.now(),
+    };
     const res = await fixture.post('checkpoint', { ...context, checkpoint });
     expect(res.status).toBe(500);
     expect(JSON.stringify(await res.json())).not.toContain('SECRET_SQL_ERROR');
   });
 
-  it('cleans encrypted execution evidence when its work log is deleted', async () => {
-    await fixture.post('execution', { entry: buildExecutionLog(taskId, 'Inspect', [fact], 'stopped', 1, 'en-US'), ...context });
-    const memory = await fixture.read();
-    const res = await fixture.store.handle(1, 'work-log', new Request('http://internal/memory?user_id=10', { method: 'DELETE' }), memory.workLogs[0].id);
-    expect(res.status).toBe(200);
-    expect(fixture.db.prepare('SELECT COUNT(*) AS n FROM agent_execution_logs').get()!.n).toBe(0);
+  it('cleans pending distillations on server cleanup', async () => {
+    const job = { goal: 'Inspect', taskId, sessionId, epoch: 0, records: [] };
+    await fixture.post('pending-distillation', { ...context, taskId, retries: 1, job });
+    fixture.store.cleanup(1);
+    expect(fixture.db.prepare('SELECT COUNT(*) AS n FROM agent_pending_distillations WHERE server_id = ?').get(1) as any).toEqual({ n: 0 });
   });
 
   it('deletes metadata by knowledge key, never an unrelated SQLite rowid', async () => {

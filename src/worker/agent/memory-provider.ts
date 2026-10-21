@@ -55,7 +55,10 @@ export function createAgentMemoryProvider(env: Env, githubId: string, userId: st
   return {
     fetchUnifiedMemory: async signal => await request(`/memory?user_id=${userId}`, 'GET', undefined, signal, true) as UnifiedServerMemory,
     saveBatchMemory: (batch, signal) => write('/memory/batch', 'POST', batch, signal),
-    saveExecutionLog: (entry, context, signal) => write('/agent-execution', 'POST', { entry, ...context }, signal),
+    savePendingDistillation: (taskId, job, retries, context, signal) =>
+      write('/agent-pending-distillation', 'POST', { taskId, job, retries, ...context }, signal),
+    deletePendingDistillation: (taskId, context) =>
+      write('/agent-pending-distillation', 'DELETE', { taskId, ...context }),
     beginSession: context => write('/agent-session', 'POST', context),
     saveTaskCheckpoint: (checkpoint, context) => write('/agent-checkpoint', 'POST', { checkpoint, ...context }),
     fetchTaskCheckpoint: async taskId => await request(`/agent-checkpoint?user_id=${userId}&task_id=${taskId}`, 'GET', undefined, undefined, true) as AgentTaskCheckpoint,

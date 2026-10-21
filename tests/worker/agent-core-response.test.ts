@@ -240,10 +240,10 @@ describe('AgentCore Responses delivery and context', () => {
     expect(JSON.stringify(requests[2].input)).toContain('execution facts');
   });
 
-  it('distills interrupted work through a separate structured Responses request and waitUntil', async () => {
+  it('distills interrupted work into workLog and knowledge through a separate structured Responses request and waitUntil', async () => {
     let agent: AgentCore;
     const memory = { fetchUnifiedMemory: async () => ({ workLogs: [], knowledge: [], revision: 0 }),
-      saveBatchMemory: vi.fn(async () => {}), saveExecutionLog: vi.fn(async () => {}) };
+      saveBatchMemory: vi.fn(async () => {}) };
     const exec = vi.fn(async (command: string) => {
       if (!command.includes('PWD:$(pwd)')) agent.agentAbort('connection_closed');
       return { stdout: 'Listening on port 8080', stderr: '', exitCode: 0 };
@@ -252,37 +252,37 @@ describe('AgentCore Responses delivery and context', () => {
     const requests: any[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       const body = JSON.parse(init?.body as string); requests.push(body);
-      if (!body.stream) return new Response(JSON.stringify(responseObject('memory', JSON.stringify({ knowledge: [{ action: 'set', category: 'config', key: 'service_port', value: '8080' }] }), [], body)));
+      if (!body.stream) return new Response(JSON.stringify(responseObject('memory', JSON.stringify({
+        workLog: { mode: 'create', title: '检查端口', summary: '中断前发现监听8080端口' },
+        knowledge: [{ action: 'set', category: 'config', key: 'service_port', value: '8080' }],
+      }), [], body)));
       return reply('resp_1', '', [functionCall()], body);
     });
     await agent.handleAgentStart('1', '检查端口');
     await Promise.all(created.waits);
-    expect(memory.saveExecutionLog).toHaveBeenCalledWith(expect.objectContaining({ goal: '[已中断] 检查端口',
-      operations: [expect.objectContaining({ status: 'unknown' })] }), expect.any(Object), expect.any(AbortSignal));
-    expect(memory.saveBatchMemory).not.toHaveBeenCalled(); // unknown execution cannot establish a port fact
+    expect(memory.saveBatchMemory).toHaveBeenCalledWith(expect.objectContaining({
+      workLog: expect.objectContaining({ title: '[已中断] 检查端口', summary: expect.stringContaining('8080') }),
+    }), expect.any(AbortSignal));
     expect(requests[1]).toMatchObject({ store: false, stream: false, text: { format: { name: 'server_memory' } } });
     expect(requests[1]).not.toHaveProperty('previous_response_id');
     expect(requests[1]).not.toHaveProperty('tools');
   });
 
-  it('persists deterministic work facts even when knowledge extraction fails twice', async () => {
+  it('persists pending distillation to storage for retry when distillation fails', async () => {
     const memory = { fetchUnifiedMemory: async () => ({ workLogs: [], knowledge: [], revision: 0 }),
-      saveBatchMemory: vi.fn(async () => {}), saveExecutionLog: vi.fn(async () => {}) };
+      saveBatchMemory: vi.fn(async () => {}), savePendingDistillation: vi.fn(async () => {}) };
     const { agent, waits, frames } = setup({ memory });
     let main = 0;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       const body = JSON.parse(init!.body as string);
-      if (!body.stream) return new Response(JSON.stringify(responseObject('invalid_memory', '{}')));
+      if (!body.stream) return new Response('Server Error', { status: 500 });
       return ++main === 1 ? reply('tool', '', [functionCall()]) : reply('done', 'Inspection completed.');
     });
     await agent.handleAgentStart('1', 'Inspect without changes');
     await Promise.all(waits);
-    expect(memory.saveExecutionLog).toHaveBeenCalledTimes(1);
-    expect(memory.saveExecutionLog).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'completed',
-      operations: [expect.objectContaining({ callId: 'call_1', status: 'succeeded', exitCode: 0 })] }),
-      expect.any(Object), expect.any(AbortSignal));
-    expect(memory.saveBatchMemory).not.toHaveBeenCalled();
-    expect(frames).toContainEqual(expect.objectContaining({ subType: 'memory_status', code: 'memory_failed' }));
+    expect(memory.savePendingDistillation).toHaveBeenCalledTimes(1);
+    expect(memory.savePendingDistillation).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ goal: 'Inspect without changes' }),
+      1, expect.any(Object));
     expect(frames).toContainEqual(expect.objectContaining({ subType: 'run_end', outcome: 'completed' }));
   });
 

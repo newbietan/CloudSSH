@@ -1,5 +1,5 @@
-import { isSensitiveKeyOrValue, normalizeKnowledgeInput, VALID_KNOWLEDGE_CATEGORIES,
-  type UnifiedServerMemory } from '../../server-memory-schema';
+import { isSensitiveKeyOrValue, normalizeKnowledgeInput, normalizeWorkLogInput,
+  VALID_KNOWLEDGE_CATEGORIES, WORK_LOG_TITLE_MAX_LENGTH, type UnifiedServerMemory } from '../../server-memory-schema';
 import { resolveAIModelBudgets } from '../../ai-model-policy';
 import { boundedUtf8, bytes } from './context-limits';
 import { observation } from './context';
@@ -55,6 +55,7 @@ export interface MemoryJob {
   epoch: number;
   sessionId: string;
   taskId?: string;
+  retries?: number;
 }
 const MAX_QUEUE_BYTES = 1024 * 1024;
 const MAX_JOB_BYTES = 512 * 1024;
@@ -67,11 +68,34 @@ function parseObject(text: string): Record<string, unknown> {
   throw new ResponsesError('responses_schema');
 }
 
-function parseDistillation(text: string): Knowledge[] {
+interface DistilledMemory {
+  workLog?: AgentMemoryBatch['workLog'];
+  knowledge: Knowledge[];
+}
+
+function parseDistillation(text: string): DistilledMemory {
   const parsed = parseObject(text);
-  if (!Array.isArray(parsed.knowledge) || parsed.knowledge.length > 100 || Object.keys(parsed).some(key => key !== 'knowledge')) {
+  if (!Object.hasOwn(parsed, 'workLog') || !Array.isArray(parsed.knowledge) || parsed.knowledge.length > 100 ||
+    Object.keys(parsed).some(key => key !== 'workLog' && key !== 'knowledge')) {
     throw new ResponsesError('responses_schema');
   }
+
+  const batch: DistilledMemory = { knowledge: [] };
+
+  if (parsed.workLog !== null) {
+    if (!parsed.workLog || typeof parsed.workLog !== 'object' || Array.isArray(parsed.workLog)) {
+      throw new ResponsesError('responses_schema');
+    }
+    const raw = parsed.workLog as Record<string, unknown>;
+    if ((raw.mode !== 'create' && raw.mode !== 'update_latest') ||
+      Object.keys(raw).some(key => !['mode', 'title', 'summary'].includes(key))) {
+      throw new ResponsesError('responses_schema');
+    }
+    const log = normalizeWorkLogInput(raw, { truncate: true });
+    if (!log.ok) throw new ResponsesError('responses_schema');
+    batch.workLog = log.value;
+  }
+
   const unique = new Map<string, Knowledge>();
   for (const item of parsed.knowledge) {
     if (!item || typeof item !== 'object' || Array.isArray(item) ||
@@ -84,7 +108,8 @@ function parseDistillation(text: string): Knowledge[] {
     if (old && JSON.stringify(old) !== JSON.stringify(normalized.value)) throw new ResponsesError('responses_schema');
     unique.set(normalized.value.key, normalized.value);
   }
-  return [...unique.values()];
+  batch.knowledge = [...unique.values()];
+  return batch;
 }
 
 /** Race even storage adapters that cannot cancel their underlying work; callers recheck epochs before writes. */
@@ -106,6 +131,7 @@ export class AgentMemoryManager {
   private controller: AbortController | null = null;
   private client?: ResponsesClient;
   private clientConfig = '';
+  private lastLogId?: number;
 
   constructor(private provider: AgentMemoryProvider, private epoch: () => number,
     private emit: (frame: Record<string, unknown>) => void,
@@ -116,6 +142,7 @@ export class AgentMemoryManager {
     this.controller?.abort('reset');
     this.client = undefined;
     this.clientConfig = '';
+    this.lastLogId = undefined;
   }
 
   enqueue(job: MemoryJob): Promise<void> {
@@ -143,14 +170,32 @@ export class AgentMemoryManager {
         try { await this.distill(job, controller.signal); }
         catch (error) {
           if (job.epoch === this.epoch() && controller.signal.reason !== 'reset') {
-            const failure = controller.signal.aborted ? new ResponsesError('responses_timeout')
-              : error instanceof ResponsesError ? error : new ResponsesError('responses_failed');
-            this.emit({ subType: 'memory_status', code: failure.code === 'responses_memory_conflict' ? 'memory_conflict' : 'memory_failed',
-              errorCode: failure.code, status: failure.status, diagnostics: { purpose: 'memory', ...failure.diagnostics } });
+            const currentRetries = (job.retries ?? 0) + 1;
+            if (currentRetries <= 3 && job.taskId && this.provider.savePendingDistillation) {
+              await this.provider.savePendingDistillation(job.taskId, job, currentRetries,
+                { sessionId: job.sessionId, epoch: job.epoch }).catch(() => {});
+              void this.scheduleRetry({ ...job, retries: currentRetries });
+            } else {
+              if (job.taskId && this.provider.deletePendingDistillation) {
+                await this.provider.deletePendingDistillation(job.taskId,
+                  { sessionId: job.sessionId, epoch: job.epoch }).catch(() => {});
+              }
+              const failure = controller.signal.aborted ? new ResponsesError('responses_timeout')
+                : error instanceof ResponsesError ? error : new ResponsesError('responses_failed');
+              this.emit({ subType: 'memory_status', code: failure.code === 'responses_memory_conflict' ? 'memory_conflict' : 'memory_failed',
+                errorCode: failure.code, status: failure.status, diagnostics: { purpose: 'memory', ...failure.diagnostics } });
+            }
           }
         } finally { clearTimeout(timer); this.controller = null; }
       }
     } finally { this.running = null; }
+  }
+
+  private async scheduleRetry(job: MemoryJob): Promise<void> {
+    const delayMs = Math.min(10_000, (job.retries ?? 1) * 2000);
+    await new Promise(resolve => setTimeout(resolve, delayMs));
+    if (job.epoch !== this.epoch()) return;
+    return this.enqueue(job);
   }
 
   private async distill(job: MemoryJob, signal: AbortSignal): Promise<void> {
@@ -188,12 +233,13 @@ export class AgentMemoryManager {
         source: item.source, value: item.category === 'credential' || isSensitiveKeyOrValue(item.key, item.value)
           ? '[REDACTED]' : boundedUtf8(redactEvidence(item.value), 256) }));
       const input = JSON.stringify({ goal: job.goal, operations,
-        conclusion: boundedUtf8(redactEvidence(job.records.at(-1)?.content ?? ''), attempt ? 800 : 2000), known,
+        conclusion: boundedUtf8(redactEvidence(job.records.at(-1)?.content ?? ''), attempt ? 800 : 2000),
+        existingWorkLogs: memory.workLogs.slice(0, 2), known,
         time, timezone: job.timezone, locale: job.locale });
       if (bytes(input) > 48 * 1024) throw new ResponsesError('responses_budget');
       const instructions = MEMORY_DISTILLATION_PROMPT + '\nReturn only one JSON object matching this JSON Schema:\n' +
         JSON.stringify(MEMORY_FORMAT.schema) + (attempt ? '\nThe previous attempt did not produce an accepted memory update (failed local validation, output limit or revision conflict). Regenerate from this fresh evidence, not previous output. Use short atomic facts, every required field, no Markdown.' : '');
-      let knowledge: Knowledge[];
+      let distilled: DistilledMemory;
       try {
         const result = await client.create({ purpose: 'memory', stream: false, instructions,
           input: [observation('memory evidence', input)],
@@ -204,7 +250,7 @@ export class AgentMemoryManager {
           reasoning: result.usage?.output_tokens_details?.reasoning_tokens });
         signal.throwIfAborted();
         if (job.epoch !== this.epoch()) return;
-        try { knowledge = parseDistillation(result.text); }
+        try { distilled = parseDistillation(result.text); }
         catch (error) {
           if (error instanceof ResponsesError) error.diagnostics = { purpose: 'memory', stage: 'parse', parameter: 'text.format', requestId: result.requestId };
           throw error;
@@ -215,8 +261,15 @@ export class AgentMemoryManager {
         throw error;
       }
       const batch: AgentMemoryBatch = { expectedRevision: memory.revision!, sessionId: job.sessionId,
-        epoch: job.epoch, taskId: job.taskId, knowledge: [] };
-      for (const value of knowledge) {
+        epoch: job.epoch, taskId: job.taskId, workLog: distilled.workLog, knowledge: [] };
+      if (batch.workLog && this.lastLogId && memory.workLogs.some(item => item.id === this.lastLogId)) {
+        batch.targetLogId = this.lastLogId;
+      }
+      if (job.interrupted && batch.workLog) {
+        const prefix = job.locale === 'en-US' ? '[Interrupted] ' : job.locale === 'zh-TW' ? '[已中斷] ' : '[已中断] ';
+        batch.workLog.title = `${prefix}${batch.workLog.title}`.slice(0, WORK_LOG_TITLE_MAX_LENGTH);
+      }
+      for (const value of distilled.knowledge) {
         const existing = memory.knowledge.find(item => item.key === value.key);
         const namesKey = job.goal.toLowerCase().includes(value.key.toLowerCase());
         if (value.action === 'delete') {
@@ -236,7 +289,7 @@ export class AgentMemoryManager {
           existing.value === value.value && existing.category === value.category) continue;
         batch.knowledge!.push({ ...value, evidence: [...new Set(evidence)] });
       }
-      if (!batch.knowledge!.length) return;
+      if (!batch.workLog && !batch.knowledge!.length) return;
       signal.throwIfAborted();
       if (job.epoch !== this.epoch()) return;
       try { await boundedAwait(this.provider.saveBatchMemory(batch, signal), signal); }
@@ -249,6 +302,10 @@ export class AgentMemoryManager {
       const updated = await boundedAwait(this.provider.fetchUnifiedMemory(signal), signal);
       signal.throwIfAborted();
       if (job.epoch !== this.epoch()) return;
+      if (batch.workLog) this.lastLogId = batch.targetLogId ?? updated.workLogs[0]?.id;
+      if (job.taskId && this.provider.deletePendingDistillation) {
+        await this.provider.deletePendingDistillation(job.taskId, { sessionId: job.sessionId, epoch: job.epoch }).catch(() => {});
+      }
       this.onUpdated?.(updated);
       this.emit({ subType: 'memory_updated' });
       return;

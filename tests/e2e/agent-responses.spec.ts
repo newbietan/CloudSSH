@@ -41,7 +41,7 @@ test('Responses text completion does not finish the task; run_end does', async (
   expect(await page.evaluate(() => localStorage.getItem('cloudssh_agent_draft_1'))).toBeNull();
 });
 
-test('late execution-log updates do not erase an interrupted task draft', async ({ page }) => {
+test('late memory updates do not erase an interrupted task draft', async ({ page }) => {
   await mount(page);
   await page.evaluate(() => {
     const { panel, sent } = (window as any).__responsesAgent;

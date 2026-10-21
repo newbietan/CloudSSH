@@ -7,7 +7,7 @@ import { aiConfig, responseObject } from './responses-fixtures';
 vi.mock('../../../src/worker/agent/ssrf', () => ({ validateBaseUrlWithDNS: async () => ({ valid: true }) }));
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 const fact = { action: 'set', category: 'config', key: 'ssh_port', value: '22' };
-const valid = { knowledge: [fact] };
+const valid = { workLog: { mode: 'create', title: '检查 fail2ban', summary: '只读检查已完成' }, knowledge: [fact] };
 const reply = (text: string) => new Response(JSON.stringify(responseObject('resp_memory', text)));
 function setup() {
   const memory: MemoryJob['memory'] = { workLogs: [], knowledge: [], revision: 7 };
@@ -44,20 +44,20 @@ describe('Bounded knowledge extraction and consolidation', () => {
     const keys = fetch.mock.calls.map(([, init]) => (init!.headers as Record<string, string>)['Idempotency-Key']);
     expect(keys[0]).not.toBe(keys[1]);
     expect(provider.saveBatchMemory).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ expectedRevision: 7,
+      workLog: expect.objectContaining({ title: '检查 fail2ban' }),
       knowledge: [{ ...fact, evidence: ['user'] }] }), expect.any(AbortSignal));
-    expect(provider.saveBatchMemory.mock.calls[0][0]).not.toHaveProperty('workLog');
     expect(frames).toEqual([{ subType: 'memory_updated' }]);
   });
 
   it.each([
     'not JSON SECRET_INVALID_OUTPUT', '{}', JSON.stringify({ knowledge: null }),
-    JSON.stringify({ workLog: null, knowledge: [] }),
-    JSON.stringify({ knowledge: [{ ...fact, value: 'x'.repeat(513) }] }),
-    JSON.stringify({ knowledge: [{ ...fact, category: 'credential', value: 'S'.repeat(513) }] }),
-    JSON.stringify({ knowledge: [{ category: 'config', key: 'port', value: '22' }] }),
-    JSON.stringify({ knowledge: [{ action: 'delete', key: 'port' }] }),
-    JSON.stringify({ knowledge: [{ ...fact, category: 'bogus' }] }),
-    JSON.stringify({ knowledge: [fact, { ...fact, value: '23' }] }),
+    JSON.stringify({ workLog: { mode: 'invalid', title: '', summary: '' }, knowledge: [] }),
+    JSON.stringify({ workLog: { mode: 'create', title: 'x', summary: 'y' }, knowledge: [{ ...fact, value: 'x'.repeat(513) }] }),
+    JSON.stringify({ workLog: { mode: 'create', title: 'x', summary: 'y' }, knowledge: [{ ...fact, category: 'credential', value: 'S'.repeat(513) }] }),
+    JSON.stringify({ workLog: { mode: 'create', title: 'x', summary: 'y' }, knowledge: [{ category: 'config', key: 'port', value: '22' }] }),
+    JSON.stringify({ workLog: { mode: 'create', title: 'x', summary: 'y' }, knowledge: [{ action: 'delete', key: 'port' }] }),
+    JSON.stringify({ workLog: { mode: 'create', title: 'x', summary: 'y' }, knowledge: [{ ...fact, category: 'bogus' }] }),
+    JSON.stringify({ workLog: { mode: 'create', title: 'x', summary: 'y' }, knowledge: [fact, { ...fact, value: '23' }] }),
   ])('rejects invalid/conflicting batches atomically after at most two generations (%#)', async output => {
     const { provider, frames, manager, job } = setup();
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => reply(output));
@@ -111,7 +111,7 @@ describe('Bounded knowledge extraction and consolidation', () => {
       memory.knowledge = [{ id: 1, user_id: 1, server_id: 1, key: fact.key, category: 'config', value: '23', source: 'user', created_at: 1, updated_at: 1 }];
       throw new ResponsesError('responses_memory_conflict', 409);
     });
-    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => reply(JSON.stringify(valid)));
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => reply(JSON.stringify({ workLog: null, knowledge: [fact] })));
     await manager.enqueue(job);
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(provider.saveBatchMemory).toHaveBeenCalledTimes(1); // latest user-owned value protected
@@ -134,7 +134,7 @@ describe('Bounded knowledge extraction and consolidation', () => {
     const { memory, provider, manager, job } = setup();
     provider.saveBatchMemory.mockImplementation(async () => { memory.revision!++; });
     let calls = 0;
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => reply(JSON.stringify({ knowledge: [{ ...fact, value: String(22 + calls++) }] })));
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => reply(JSON.stringify({ workLog: null, knowledge: [{ ...fact, value: String(22 + calls++) }] })));
     const first = manager.enqueue(job);
     const second = manager.enqueue({ ...job, goal: 'port 23' });
     await Promise.all([first, second]);
@@ -174,7 +174,7 @@ describe('Bounded knowledge extraction and consolidation', () => {
 
   it('deduplicates exact proposals and does not write unchanged facts', async () => {
     const { memory, provider, manager, job } = setup();
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => reply(JSON.stringify({ knowledge: [fact, fact] })));
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => reply(JSON.stringify({ workLog: null, knowledge: [fact, fact] })));
     await manager.enqueue(job);
     expect(provider.saveBatchMemory.mock.calls[0][0].knowledge).toHaveLength(1);
     provider.saveBatchMemory.mockClear();
@@ -186,12 +186,33 @@ describe('Bounded knowledge extraction and consolidation', () => {
   it('protects user-authored facts, credentials, and deletion intent on regenerated output', async () => {
     const { memory, provider, manager, job } = setup();
     memory.knowledge = [{ id: 1, user_id: 1, server_id: 1, category: 'config', key: 'protected_port', value: '80', source: 'user', created_at: 1, updated_at: 1 }];
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(reply('{}')).mockResolvedValueOnce(reply(JSON.stringify({ knowledge: [
-      { ...fact, key: 'protected_port' },
-      { action: 'set', category: 'credential', key: 'invented_token', value: 'UNOBSERVED_SECRET' },
-      { action: 'delete', category: 'note', key: 'protected_port', value: null },
-    ] })));
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(reply('{}')).mockResolvedValueOnce(reply(JSON.stringify({
+      workLog: { mode: 'create', title: '修改', summary: '已修改' },
+      knowledge: [
+        { ...fact, key: 'protected_port' },
+        { action: 'set', category: 'credential', key: 'invented_token', value: 'UNOBSERVED_SECRET' },
+        { action: 'delete', category: 'note', key: 'protected_port', value: null },
+      ],
+    })));
     await manager.enqueue(job);
     expect(provider.saveBatchMemory).not.toHaveBeenCalled();
+  });
+
+  it('persists failed job context to storage and retries up to 3 times before decisively discarding', async () => {
+    const { provider, manager, job } = setup();
+    const savedPending: any[] = [];
+    const deletedPending: string[] = [];
+    (provider as any).savePendingDistillation = vi.fn(async (taskId: string, _j: any, retries: number) => {
+      savedPending.push({ taskId, retries });
+    });
+    (provider as any).deletePendingDistillation = vi.fn(async (taskId: string) => {
+      deletedPending.push(taskId);
+    });
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('Server error', { status: 500 }));
+
+    await manager.enqueue(job);
+    expect(savedPending).toHaveLength(1);
+    expect(savedPending[0]).toMatchObject({ taskId: job.taskId, retries: 1 });
   });
 });

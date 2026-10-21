@@ -55,4 +55,12 @@ describe('Authoritative memory storage adapter', () => {
     await expect(pending).rejects.toMatchObject({ code: 'responses_memory_storage' });
     expect(fetch).toHaveBeenCalledTimes(1);
   });
+
+  it('calls internal pending-distillation endpoints on save and delete', async () => {
+    const { provider, fetch } = setup(Response.json({ success: true }));
+    await provider.savePendingDistillation!('task-1', {} as any, 1, { sessionId: 'sess', epoch: 0 });
+    expect((fetch.mock.calls[0][0] as Request).url).toBe('http://internal/internal/servers/1/agent-pending-distillation');
+    await provider.deletePendingDistillation!('task-1', { sessionId: 'sess', epoch: 0 });
+    expect((fetch.mock.calls[1][0] as Request).method).toBe('DELETE');
+  });
 });

@@ -100,12 +100,11 @@ describe('Responses task records and server memory', () => {
     expect(MEMORY_DISTILLATION_PROMPT).toContain('严禁截断或猜测');
   });
 
-  it('extracts only knowledge and never lets the model generate or rewrite execution logs', () => {
+  it('uses strict structured schemas for memory, requiring workLog and knowledge', () => {
     expect(MEMORY_DISTILLATION_PROMPT).toContain('服务器智能会话总结助手');
-    expect(MEMORY_DISTILLATION_PROMPT).toContain('状态不明');
-    expect(MEMORY_DISTILLATION_PROMPT).toContain('不生成或改写工作日志');
-    expect(MEMORY_FORMAT.schema.required).toEqual(['knowledge']);
-    expect(MEMORY_FORMAT.schema.properties).not.toHaveProperty('workLog');
+    expect(MEMORY_FORMAT.schema.required).toEqual(['workLog', 'knowledge']);
+    expect(MEMORY_FORMAT.schema.properties).toHaveProperty('workLog');
+    expect(MEMORY_FORMAT.schema.properties).toHaveProperty('knowledge');
     expect(MEMORY_FORMAT.schema.additionalProperties).toBe(false);
   });
 });
