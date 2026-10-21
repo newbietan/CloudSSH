@@ -120,7 +120,7 @@ describe('Bounded, explicit capability fallback', () => {
   it('falls back from unsupported JSON schema guidance without abandoning local validation', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(unsupported('text.format.type'))
       .mockResolvedValueOnce(new Response(JSON.stringify(responseObject('resp_aux', '{}'))));
-    const result = await new ResponsesClient(aiConfig).create({ ...request, purpose: 'checkpoint',
+    const result = await new ResponsesClient(aiConfig).create({ ...request, purpose: 'memory',
       tools: undefined, stream: false, text: { format: MEMORY_FORMAT } }, signal());
     expect(result.text).toBe('{}'); // Caller must validate; no fake success/schema repair here.
     const next = JSON.parse(fetch.mock.calls[1][1]!.body as string);

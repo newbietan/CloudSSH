@@ -645,37 +645,6 @@ describe('安全 — 自定义主题接口边界', () => {
 // =====================================================================
 
 describe('安全 — SSRF 接缝（AI base_url）', () => {
-  it('付费能力验证必须登录，匿名请求不访问服务商', async () => {
-    const worker = await loadWorker();
-    const res = await worker.fetch(makeRequest('/api/ai/capabilities/probe', { method: 'POST',
-      headers: { Origin: 'https://cloudssh.test' }, body: { acknowledge_cost: true } }), makeEnv());
-    expect(res.status).toBe(401);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it.each([undefined, 'https://evil.example'])('付费能力验证对缺省/跨站 Origin 失败关闭（%s）', async Origin => {
-    const worker = await loadWorker();
-    const env = makeEnv({ userDbStub: makeDOStub(() => Response.json({ id: 12, github_id: 999991, username: 'alice' })) });
-    const res = await worker.fetch(makeRequest('/api/ai/capabilities/probe', { method: 'POST',
-      cookies: { session: '999991:legit_session' }, headers: Origin ? { Origin } : {},
-      body: { acknowledge_cost: true, base_url: 'https://api.example.com/v1', model: 'model', api_key: 'SECRET' } }), env);
-    expect(res.status).toBe(403);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('能力验证沿用真实 SSRF 防线，不发送密钥到私有地址或执行 SSH', async () => {
-    const worker = await loadWorker();
-    const ssh = makeDOStub(() => Response.json({}));
-    const env = makeEnv({ sshSessionStub: ssh, userDbStub: makeDOStub(() => Response.json({ id: 12, github_id: 999992, username: 'alice' })) });
-    const res = await worker.fetch(makeRequest('/api/ai/capabilities/probe', { method: 'POST',
-      cookies: { session: '999992:legit_session' }, headers: { Origin: 'https://cloudssh.test' },
-      body: { acknowledge_cost: true, base_url: 'https://127.0.0.1/v1', model: 'model', api_key: 'SECRET' } }), env);
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ verdict: 'inconclusive', reason: 'address' });
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(ssh.fetch).not.toHaveBeenCalled();
-  });
-
   it('PUT /api/ai/config base_url=内网地址 → 400', async () => {
     const worker = await loadWorker();
     const env = makeEnv({

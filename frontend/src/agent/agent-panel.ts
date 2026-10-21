@@ -583,7 +583,11 @@ export class AgentPanel {
         this.updateInputState();
         break;
       case 'context_status':
-        if (msg.compacting === true) notify(t('agent.contextCompacting'), { variant: 'info' });
+        if (msg.compacted && msg.checkpointSource === 'local') {
+          notify(t('agent.contextLocalFallback'), { variant: 'warning' });
+        } else if (msg.compacting === true) {
+          notify(t('agent.contextCompacting'), { variant: 'info' });
+        }
         break;
       case 'memory_status':
         if (msg.code === 'memory_failed') {

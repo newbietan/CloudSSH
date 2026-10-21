@@ -257,7 +257,7 @@ export class AgentCore {
           });
           signal.throwIfAborted();
           // No history mutation until the full continuation (including observations) has fitted.
-          context.replaceWithCompaction(checkpoint.output, checkpoint.safety);
+          context.replaceWithCompaction(checkpoint.summary, checkpoint.retained, checkpoint.safety);
           if (this.environment) context.pending.push(observation('environment', this.environment));
           context.observeTerminal(terminalSnapshot);
           context.observeMemory(memoryFingerprint, memoryContent);

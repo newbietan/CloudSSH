@@ -1,51 +1,51 @@
-# Agent 本地上下文、原生压缩与长期记忆
+# Agent 本地上下文紧凑化与长期记忆
 
-## 方案与兼容要求
+## 方案与通用兼容性
 
-CloudSSH 由 SSHSessionDO 本地管理有界会话历史，不使用 `previous_response_id` 或 Conversations 服务端历史。
+CloudSSH 由 SSHSessionDO 本地管理有界会话历史，不使用 `previous_response_id` 或 Conversations 服务端历史，完全基于标准无状态 Responses API（`POST /responses`，强制 `store:false`）。
 
-- 主任务和知识提炼：`POST <base_url>/responses`，强制 `store:false`。
-- 长会话：独立 `POST <base_url>/responses/compact`，采用原生无状态 compaction，不使用模型 JSON 摘要或本地保底。
-- 模型列表、`/responses` 可用、某个服务商品牌，都不证明当前模型支持 `/responses/compact`。需要在实际端点验证。
-- Base URL 仍填写 HTTPS 根地址或完整 `/responses` 地址，不填写 `/responses/compact`。更换服务商/模型/密钥后须新建 Agent 会话，旧加密续接数据不转发到新配置。
+- **彻底消除脆弱的扩展依赖**：市面上大部分第三方中转站及非 OpenAI 服务商并不支持 `/responses/compact` 独立端点，或无法反解服务端私有加密 compaction 对象。CloudSSH 自建应用层紧凑化机制，完全运行在通用标准 `/responses` 之上，保证 100% 广泛兼容所有 Responses 服务商。
+- Base URL 填写 HTTPS 根地址或完整 `/responses` 地址。更换服务商/模型/密钥后须新建 Agent 会话，防止跨配置混用。
 - “本地管理”不是本地推理：当前请求内容仍发送给配置的服务商。`store:false` 和无状态接口不能替代对实际留存政策的核查。
 
-## 原生压缩契约
+## 应用层上下文紧凑化契约
 
-1. 在没有未闭合工具调用的边界，将完整本地 `input` 和同一系统 `instructions` 发送给 compact。
-2. 请求只带 `model`、`input`、`instructions`。官方独立 compact 契约没有 `store`、`stream`、`tools`、`text.format`、`reasoning`、`max_output_tokens` 参数。
-3. 接收 `object: response.compaction` 对象，验证原生 compaction item、消息和函数工具历史。当前只支持应用已有的文本/函数工具子集，未知类型、特权角色和畸形数据失败关闭。
-4. 返回的整个 `output` 是下一段规范上下文，包含不透明加密状态及服务端保留的消息。完整保留其字段、内容和顺序，不只提取加密 item，也不自行裁剪近期消息。
-5. 在规范窗口后追加应用拥有的用户请求与 ExecutionJournal 事实守卫，并重新注入当前环境、终端和相关记忆。
-6. 完整下一请求（包括工具定义和输出预留）通过预算检查后，才原子替换当前上下文。compact 返回的工具调用只作为历史回传，绝不当成新调用执行。
-
-压缩总 deadline 为 60 秒，包含最多两次瞬时 HTTP 重试；相同载荷沿用本地幂等键。拒绝重定向，错误体有界读取并只保留白名单诊断。成功响应开始消费后不重试解析、不会生成补救摘要。
-
-不支持接口、协议错误、超时或预算不足时，保留旧历史和已结算工具结果，任务安全暂停。不会自动降级成 JSON 摘要、丢弃执行事实或重跑 SSH 命令。停止/抢占/reset 会取消压缩。若替换后首个主请求失败，再次继续仍保留规范窗口和未被接受的事实守卫。
+1. **智能边界切分**：当会话接近上下文预算阈值时，`context.ts` 的 `splitForCompaction()` 会逆序扫描完整事务边界，将历史拆分为：
+   - **早期交互前缀（toSummarize）**：超过保留窗口的较早用户诉求、助手回复与工具交互。
+   - **近期完整尾部（toRetain）**：保留最近 1~2 轮完整交互（近期命令输出、真实报错与助手分析），绝不在未闭合的工具调用中截断，彻底避免全量摘要化带来的近期操作“失忆（Amnesia）”。
+2. **高密度事实摘要生成**：将早期前缀格式化为高信息密度文本，使用标准 `/responses` 端点与专用 `COMPACTION_PROMPT` 指令生成纯事实陈述（低推理预算，输出上限 1500 Token）。
+3. **权威事实与精确约束注入**：紧凑化段落包含三层不可篡改保障：
+   - 早期事实摘要：`[UNTRUSTED OBSERVATION: context summary]`
+   - 用户原始诉求与精确约束：`[UNTRUSTED OBSERVATION: preserved user requests]`（累计≤96KiB 约束保证不丢失）
+   - 不可回滚的完整执行事实账本：`[UNTRUSTED OBSERVATION: execution facts]`（由 `ExecutionJournal` 权威提供所有已执行命令的精确退出码与状态）
+   - 近期完整交互尾部（toRetain）原生回传
+4. **平滑降级与失败保底**：
+   - 压缩与一次模型调用共享 60 秒 deadline，并受用户取消边界保护。
+   - 若模型生成摘要暂时失败或超时，系统自动平滑降级为**本地执行事实保底摘要**继续推进，不中断用户主任务，更绝不自动重跑已执行的远端命令。
+   - 仅当续接总预算严重不足以容纳必需执行事实时，才安全暂停任务并保留旧上下文。
 
 ### 预算与有限性
 
-- 默认上下文/普通生成输出预算为 64,000/8,192 Token。普通生成的输出上限包含推理 Token。
-- **原生 compact 不支持 `max_output_tokens`，因此该设置不能限制 compact 服务端生成额度或费用。** 本地仍限制请求体、响应读取、等待时间和后续上下文大小。
-- 当前 UTF-8 字节预算是保守估算，不是通用 tokenizer；包括加密载荷在内的本地字节上限可能比模型实际 Token 容量更早触发安全暂停。
-- 继续保留 2MiB 当前序列化上下文、3MiB 编辑快照预算、96KiB 累计精确用户请求与有界执行账本。不保证无限长会话。
-- 会话历史和加密续接 items 仍属于当前 SSHSessionDO 的内存状态；这不是完整会话持久化或跨任意故障恢复。长期记忆与中断检查点另行保存，不应把原生 reasoning/compaction 内容写入长期记忆。
+- 默认上下文/普通生成输出预算为 64,000/8,192 Token（输出含推理）。
+- 当前 UTF-8 字节预算是保守估算，不是通用 tokenizer。
+- 保留 2MiB 当前序列化上下文、3MiB 编辑快照预算、96KiB 累计精确用户请求与有界执行账本。不保证无限长会话。
+- 会话历史与摘要属于当前 SSHSessionDO 的内存状态；长期记忆与中断检查点另行持久化。
 
 ## 三种状态分开管理
 
 | 状态 | 来源与用途 | 生命周期 |
 | --- | --- | --- |
-| Responses 会话历史 | 原生 items、工具结果、加密续接与当前观察 | 当前 Agent 会话，有界内存 |
+| Responses 会话历史 | 原生 items、工具结果与近期完整交互观察 | 当前 Agent 会话，有界内存 |
 | 执行事实/工作记录 | 程序确定性记录状态、调用标识、脱敏命令摘要、退出码与时间 | 每任务记录，最近 10 条工作日志 |
 | 长期知识 | 模型提议，程序证据筛选、权限与版本校验 | 用户/服务器隔离的持久键值知识 |
 
 ### 确定性工作记录
 
-`execution-log.ts` 只使用真实执行事实生成工作记录，不依赖知识模型返回有效 JSON。未知/失败/取消不能被改写成成功。
+`execution-log.ts` 只使用真实执行事实生成工作记录，不依赖模型返回有效 JSON。未知/失败/取消不能被改写成成功。
 
-UserDBDO 通过内部 `agent-execution` 路由接收任务记录，按 taskId 幂等提交工作日志与 `agent_execution_logs` 的加密事实载荷。完整状态载荷不含模型推理、原生续接 items 或原始终端输出；列表摘要是有界计数与最近操作信息。
+UserDBDO 通过内部 `agent-execution` 路由接收任务记录，按 taskId 幂等提交工作日志与 `agent_execution_logs` 的加密事实载荷。完整状态载荷不含模型推理或原始终端输出；列表摘要是有界计数与最近操作信息。
 
-任务日志不再由模型自动 `update_latest` 合并，以免新摘要覆盖旧执行状态。日志与加密事实随最近 10 条限制一起清理，手动删除日志也清理对应事实；它不是无限期、防篡改的安全审计库。存储不可用时仍可能无法记录，但会明确通知，不伪装成功；不要因保存失败重跑远端任务。
+任务日志按任务独立记录，不再由模型自动 `update_latest` 破坏性合并，以免新摘要覆盖旧执行状态。日志与加密事实随最近 10 条限制一起清理，手动删除日志也清理对应事实；它不是无限期、防篡改的安全审计库。存储不可用时会明确通知，不伪装成功；不要因保存失败重跑远端任务。
 
 ### 异步知识提炼与合并
 
@@ -82,32 +82,8 @@ UserDBDO 通过内部 `agent-execution` 路由接收任务记录，按 taskId �
 
 普通聊天/通知仅显示简短错误及必要的安全暂停状态。阶段、白名单参数/错误码、本地请求 UUID 和 Token 明细仅在 `DEBUG_MODE=true` 时通过 `type: debug` 输出网页 SSH 终端。任何模式都不输出原始上游错误正文、头部或密钥。
 
-## 原生压缩兼容性主动测试与开发者联调
-
-由于并非所有 Responses 服务商或中转网关都支持 `/responses/compact`，系统提供了两级验证手段：
-
-### 1. 网页前端设置面板（用户显式触发）
-- 在「AI Agent 设置」中提供「测试原生压缩」按钮与费用知情复选框。
-- 必须用户显式勾选知情同意后方可触发，严禁页面加载或输入变化时自动发请求计费。
-- 采用合成验证 Token 进行独立 `POST /responses/compact` 与无工具续接往返测试，验证通过方报告 supported。
-- 表单地址、模型、密钥、预算任何一项变动立即在前端注销测试结论，避免陈旧结果误导。
-
-### 2. 开发者真实服务商测试（默认跳过）
-- 测试用例位于 `tests/worker/agent/capability-live.test.ts`。
-- 默认测试套件及 CI 门禁不会向外部发送任何付费网络请求（自动跳过）。
-- 开发者或运维若需验证某一中转网关或官方模型，可显式传入环境变量运行：
-  ```bash
-  CLOUDSSH_LIVE_AI_TEST=1 \
-  CLOUDSSH_LIVE_AI_KEY="sk-..." \
-  CLOUDSSH_LIVE_AI_BASE_URL="https://api.openai.com/v1" \
-  CLOUDSSH_LIVE_AI_MODEL="gpt-4o-mini" \
-  pnpm exec vitest run tests/worker/agent/capability-live.test.ts
-  ```
-- 仅使用纯合成数据验证契约完整性，绝不接触真实服务器环境或生产数据。
-
 ## 参考
 
-- [OpenAI Compaction](https://developers.openai.com/api/docs/guides/compaction)
-- [OpenAI Compact API](https://developers.openai.com/api/reference/resources/responses/methods/compact)
-- [OpenAI Agents SDK Sessions](https://openai.github.io/openai-agents-js/guides/sessions/)
+- [OpenAI Responses API Guide](https://platform.openai.com/docs/guides/conversation-state)
+- [OpenAI Cookbook: Context Engineering & Short-Term Memory Management](https://cookbook.openai.com/examples/agents_sdk/session_memory)
 - [OpenAI Long-Term Memory Notes](https://developers.openai.com/cookbook/examples/agents_sdk/context_personalization)

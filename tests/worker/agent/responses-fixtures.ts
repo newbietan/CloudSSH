@@ -1,4 +1,4 @@
-import type { ResponseFunctionCall, ResponseInput } from '../../../src/worker/agent/types';
+import type { ResponseFunctionCall } from '../../../src/worker/agent/types';
 
 export const aiConfig = { base_url: 'https://api.openai.com/v1', model: 'gpt-test', api_key: 'test-key' };
 
@@ -27,16 +27,4 @@ export function sse(events: unknown[], splitBytes = 0, crlf = false): Response {
 export function reply(id: string, text = 'Complete.', calls: ResponseFunctionCall[] = [], request: Record<string, any> = {}): Response {
   return sse([...(text ? [{ type: 'response.output_text.delta', delta: text }] : []),
     { type: 'response.completed', response: responseObject(id, text, calls, request) }]);
-}
-
-export const compactedWindow: ResponseInput[] = [
-  { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Inspect nginx' }] },
-  { type: 'compaction', id: 'cmp_native', encrypted_content: 'OPAQUE_COMPACTION_STATE' },
-];
-export function compactObject(output: ResponseInput[] = compactedWindow) {
-  return { id: 'compact_native', object: 'response.compaction', created_at: 1, output,
-    usage: { input_tokens: 2000, output_tokens: 200, total_tokens: 2200 } };
-}
-export function compactReply(output: ResponseInput[] = compactedWindow): Response {
-  return new Response(JSON.stringify(compactObject(output)), { headers: { 'Content-Type': 'application/json' } });
 }

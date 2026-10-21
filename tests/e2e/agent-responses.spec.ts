@@ -131,41 +131,39 @@ test('an auxiliary memory failure warns without removing the active task stream'
   await expect(page.locator('#agent-messages')).toContainText('ACTIVE_STREAM');
 });
 
-for (const [locale, compacting, paused] of [
-  ['zh-CN', '正在进行原生上下文压缩', '安全暂停'],
-  ['zh-TW', '正在進行原生上下文壓縮', '安全暫停'],
-  ['en-US', 'Native context compaction is running', 'safely paused'],
+for (const [locale, fallback, paused] of [
+  ['zh-CN', '本地执行事实', '安全暂停'],
+  ['zh-TW', '本機執行事實', '安全暫停'],
+  ['en-US', 'local execution facts', 'safely paused'],
 ]) {
-  test(`native compaction progress and unsupported-provider pauses are localized (${locale})`, async ({ page }) => {
+  test(`context compaction local fallback and pause diagnostics are localized (${locale})`, async ({ page }) => {
     await mount(page, locale);
     await page.evaluate(() => {
       const { panel, sent } = (window as any).__responsesAgent;
       panel.sendMessage('Inspect');
       const requestId = sent.at(-1).requestId;
       panel.handleAgentFrame({ subType: 'stream_chunk', requestId, content: 'ACTIVE_CHECKPOINT_STREAM' });
-      panel.handleAgentFrame({ subType: 'context_status', requestId: 'stale', compacting: true });
+      panel.handleAgentFrame({ subType: 'context_status', requestId: 'stale', compacted: true, checkpointSource: 'local' });
     });
     await expect(page.locator('.app-toast')).toHaveCount(0);
     await page.evaluate(() => {
       const { panel, sent } = (window as any).__responsesAgent;
-      panel.handleAgentFrame({ subType: 'context_status', requestId: sent.at(-1).requestId, compacting: true });
+      panel.handleAgentFrame({ subType: 'context_status', requestId: sent.at(-1).requestId, compacted: true, checkpointSource: 'local' });
     });
-    await expect(page.locator('.app-toast').filter({ hasText: compacting })).toBeVisible();
+    await expect(page.locator('.app-toast').filter({ hasText: fallback })).toBeVisible();
     await expect(page.locator('#agent-send-btn')).toHaveClass(/is-stopping/);
     await expect(page.locator('#agent-messages')).toContainText('ACTIVE_CHECKPOINT_STREAM');
     await page.evaluate(() => {
       const { panel, sent } = (window as any).__responsesAgent;
       const requestId = sent.at(-1).requestId;
-      panel.handleAgentFrame({ subType: 'error', requestId, runId: 1, code: 'responses_compaction_unsupported', status: 404,
+      panel.handleAgentFrame({ subType: 'error', requestId, runId: 1, code: 'responses_budget',
         message: 'SECRET_PROVIDER_BODY', diagnostics: { purpose: 'checkpoint', stage: 'http',
-          incompleteReason: 'max_output_tokens', requestedOutputTokens: 8192, outputTokens: 8000,
-          reasoningTokens: 7900, requestId: '12345678-1234-4123-8123-123456789abc', rawReason: 'SECRET' } });
+          requestId: '12345678-1234-4123-8123-123456789abc' } });
       panel.handleAgentFrame({ subType: 'run_end', requestId, runId: 1, outcome: 'failed' });
     });
     const messages = page.locator('#agent-messages');
     await expect(messages).toContainText(paused);
-    await expect(messages).toContainText('/responses/compact');
-    for (const value of ['8192', '8000', '7900', '12345678-1234-4123-8123-123456789abc']) await expect(messages).not.toContainText(value);
+    for (const value of ['12345678-1234-4123-8123-123456789abc']) await expect(messages).not.toContainText(value);
     await expect(messages).not.toContainText('SECRET');
     await expect(page.locator('#agent-send-btn')).not.toHaveClass(/is-stopping/);
   });
@@ -232,53 +230,6 @@ test('model token budgets load, validate, save and reset without resending the s
   await page.locator('#ai-save-btn').click();
   await expect.poll(() => writes.length).toBe(2);
   expect(writes[1]).toMatchObject({ context_window: null, max_output_tokens: null });
-});
-
-test('native compaction capability test requires explicit cost consent and invalidates status on edit', async ({ page }) => {
-  await mockAnonymousSession(page);
-  let probePayload: any = null;
-  let probeResponse: any = { verdict: 'supported', reason: 'verified', step: 'continuation', checkedAt: Date.now() };
-  await page.route('**/api/ai/config', route => route.fulfill({ json: {
-    configured: true, base_url: 'https://api.example.com/v1', model: 'model-test', api_key_last4: 'last',
-  } }));
-  await page.route('**/api/ai/capabilities/probe', route => {
-    probePayload = route.request().postDataJSON();
-    return route.fulfill({ json: probeResponse });
-  });
-  await page.goto('/?lang=en-US');
-  await page.evaluate(async () => {
-    const module = await (window as any).eval("import('/src/ai-config.ts')");
-    (window as any).__aiProbePanel = new module.AIConfigPanel();
-    (window as any).__aiProbePanel.show();
-  });
-  await expect(page.locator('#ai-base-url')).toHaveValue('https://api.example.com/v1');
-  await expect(page.locator('#ai-model')).toHaveValue('model-test');
-
-  // 1. Without consent, probe does not make a request and displays warning
-  await page.locator('#ai-probe-btn').click();
-  await expect(page.locator('#ai-probe-status')).toContainText('Please check the cost acknowledgement');
-  expect(probePayload).toBeNull();
-
-  // 2. With consent checked, runs probe and displays supported verdict
-  await page.locator('#ai-probe-consent').check();
-  await page.locator('#ai-probe-btn').click();
-  await expect.poll(() => probePayload).toMatchObject({
-    base_url: 'https://api.example.com/v1',
-    model: 'model-test',
-    acknowledge_cost: true,
-  });
-  await expect(page.locator('#ai-probe-status')).toContainText('Native compaction verified');
-
-  // 3. Modifying model clears probe status
-  await page.locator('#ai-model').fill('model-edited');
-  await expect(page.locator('#ai-probe-status')).toBeHidden();
-
-  // 4. Inconclusive response renders translated reason
-  probePayload = null;
-  probeResponse = { verdict: 'inconclusive', reason: 'endpoint', step: 'compact', checkedAt: Date.now() };
-  await page.locator('#ai-probe-btn').click();
-  await expect.poll(() => probePayload).toMatchObject({ model: 'model-edited' });
-  await expect(page.locator('#ai-probe-status')).toContainText('provider does not offer /responses/compact');
 });
 
 test('confirmation buttons and closure frames bind to one ID, even for identical commands', async ({ page }) => {

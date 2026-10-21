@@ -39,14 +39,7 @@ export interface ResponseReasoning {
   status?: 'completed' | 'incomplete' | 'in_progress';
 }
 
-export interface ResponseCompaction {
-  type: 'compaction';
-  id: string;
-  encrypted_content: string;
-  created_by?: string;
-}
-
-export type ResponseOutput = ResponseMessage | ResponseFunctionCall | ResponseReasoning | ResponseCompaction;
+export type ResponseOutput = ResponseMessage | ResponseFunctionCall | ResponseReasoning;
 export type ResponseInput =
   | { role: 'user'; content: string }
   | { type: 'message'; role: 'user'; content: Array<{ type: 'input_text'; text: string }>; id?: string; status?: 'completed' }
@@ -103,13 +96,6 @@ export interface ModelResponse {
   usage?: ResponseUsage;
   status?: 'completed' | 'incomplete';
   incompleteReason?: string;
-}
-
-export interface CompactedResponse {
-  id: string;
-  requestId: string;
-  output: ResponseInput[];
-  usage?: ResponseUsage;
 }
 
 export interface ExecResult {

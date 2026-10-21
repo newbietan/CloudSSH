@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentCore } from '../../src/worker/agent/core';
 import { TerminalContext } from '../../src/worker/agent/terminal-context';
-import { aiConfig, compactedWindow, compactReply, functionCall, reply, responseObject, sse } from './agent/responses-fixtures';
+import { aiConfig, functionCall, reply, responseObject, sse } from './agent/responses-fixtures';
 
 // Protocol fixtures stub DNS; the real outbound guard is covered in responses-ssrf.test.ts.
 vi.mock('../../src/worker/agent/ssrf', () => ({ validateBaseUrlWithDNS: async () => ({ valid: true }) }));
@@ -88,23 +88,22 @@ describe('AgentCore Responses delivery and context', () => {
     expect(frames.find(frame => frame.code === 'responses_config_changed')).toBeTruthy();
   });
 
-  it('native compact never falls back to a JSON schema request and preserves tool history on invalid output', async () => {
+  it('compacts with summarization at budget boundary and preserves tool history on continuation error', async () => {
     const { agent, frames } = setup();
     let requests = 0;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       requests++;
       const body = JSON.parse(init!.body as string);
-      if (body.text) return new Response(JSON.stringify({ error: { code: 'unsupported_parameter', param: 'text.format' } }), { status: 400 });
-      if (!body.stream) return new Response(JSON.stringify(responseObject('resp_bad_checkpoint', '{}')));
+      if (!body.stream) return Response.json(responseObject('resp_cp', 'Summary.'));
+      if (requests === 3) return new Response('{"error":{"code":"invalid_api_key"}}', { status: 401 });
       const response = responseObject('resp_first', '', [functionCall()]);
       response.usage.input_tokens = 55_000;
       return sse([{ type: 'response.completed', response }]);
     });
     await agent.handleAgentStart('1', 'Inspect');
-    expect(requests).toBe(2);
-    expect(frames.find(frame => frame.code === 'responses_invalid')).toMatchObject({ diagnostics: { purpose: 'checkpoint' } });
-    expect((agent as any).context.pending[0].type).toBe('function_call_output');
-    expect((agent as any).context.history).toContainEqual(expect.objectContaining({ type: 'function_call' }));
+    expect(requests).toBe(3);
+    expect(frames.find(frame => frame.subType === 'error')?.code).toBe('responses_http');
+    expect(JSON.stringify((agent as any).context.buildInput())).toContain('Summary.');
   });
 
   it('appends changed terminal observations without changing the instruction prefix', async () => {
@@ -216,12 +215,12 @@ describe('AgentCore Responses delivery and context', () => {
     expect(requests.at(-1).input.filter((item: any) => item.type === 'function_call_output')).toHaveLength(8);
   });
 
-  it('uses native compaction and its entire canonical window at the budget boundary', async () => {
+  it('uses application-level compaction at the budget boundary without orphan outputs', async () => {
     const { agent } = setup();
     const requests: any[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       const body = JSON.parse(init?.body as string); requests.push(body);
-      if (!body.stream) return compactReply();
+      if (!body.stream) return Response.json(responseObject('resp_cp', 'Nginx inspected.'));
       if (requests.length === 1) {
         const response = responseObject('resp_1', '', [functionCall()], body);
         response.usage.input_tokens = 55_000; response.usage.total_tokens = 55_020;
@@ -231,30 +230,14 @@ describe('AgentCore Responses delivery and context', () => {
     });
     await agent.handleAgentStart('1', '检查 nginx');
     expect(requests).toHaveLength(3);
-    expect(Object.keys(requests[1]).sort()).toEqual(['input', 'instructions', 'model']);
+    expect(requests[1].instructions).toContain('紧凑总结');
+    expect(requests[1].stream).toBe(false);
+    expect(requests[1].max_output_tokens).toBe(1500);
     expect(requests[1]).not.toHaveProperty('previous_response_id');
     expect(requests[2]).not.toHaveProperty('previous_response_id');
     expect(requests[2].input.some((item: any) => item.type === 'function_call_output')).toBe(false);
-    expect(requests[2].input.slice(0, compactedWindow.length)).toEqual(compactedWindow);
+    expect(JSON.stringify(requests[2].input)).toContain('Nginx inspected.');
     expect(JSON.stringify(requests[2].input)).toContain('execution facts');
-  });
-
-  it('fails closed if a checkpoint is invalid and does not abandon local history', async () => {
-    const { agent, frames } = setup();
-    let step = 0;
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
-      const body = JSON.parse(init?.body as string);
-      if (!body.stream) return new Response(JSON.stringify(responseObject('aux', '{}', [], body)));
-      step++;
-      const response = responseObject('resp_1', '', [functionCall()], body);
-      response.usage.input_tokens = 55_000; response.usage.total_tokens = 55_020;
-      return sse([{ type: 'response.completed', response }]);
-    });
-    await agent.handleAgentStart('1', '检查');
-    expect(step).toBe(1);
-    expect((agent as any).context.history).toContainEqual(expect.objectContaining({ type: 'function_call', call_id: 'call_1' }));
-    expect((agent as any).context.pending[0].type).toBe('function_call_output');
-    expect(frames.find(frame => frame.subType === 'error')?.code).toBe('responses_invalid');
   });
 
   it('distills interrupted work through a separate structured Responses request and waitUntil', async () => {

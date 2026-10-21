@@ -1,9 +1,11 @@
-import { AgentContext } from './context';
+import { AgentContext, observation } from './context';
 import type { OperationFact } from './execution-journal';
-import { ResponsesClient, ResponsesError } from './responses-client';
-import type { CompactedResponse, ResponseInput } from './types';
+import { COMPACTION_PROMPT } from './prompt';
+import { ResponsesClient, ResponsesError, type ResponseRequest } from './responses-client';
+import type { ModelResponse, ResponseInput } from './types';
 
 export const CHECKPOINT_DEADLINE_MS = 60_000;
+
 interface CheckpointOptions {
   context: AgentContext;
   client: ResponsesClient;
@@ -11,37 +13,100 @@ interface CheckpointOptions {
   facts: OperationFact[];
   signal: AbortSignal;
   canContinue: (input: ResponseInput[]) => boolean;
-  onUsage: (response: CompactedResponse) => void;
-}
-export interface PreparedCheckpoint {
-  output: ResponseInput[];
-  safety: string;
-  source: 'native';
+  onUsage: (response: ModelResponse) => void;
 }
 
-/** Native compaction only: validate and preflight everything BEFORE replacing any live history.
- * No JSON-summary generation, output-limit regeneration, or local fallback on any failure.
+export interface PreparedCheckpoint {
+  summary: string;
+  retained: ResponseInput[];
+  safety: string;
+  source: 'model' | 'local';
+}
+
+/**
+ * Self-contained application-level context compaction:
+ * 1. Uses the standard /responses API endpoint supported by all providers,
+ *    eliminating reliance on unstandardized /responses/compact endpoints.
+ * 2. Compresses older conversation turns into a high-density, factual text summary.
+ * 3. Preserves the most recent interaction tail verbatim for seamless fidelity.
+ * 4. Preserves the authoritative ExecutionJournal facts ledger and user constraints.
+ * 5. Provides an atomic local fallback if the LLM summarization request fails.
  */
 export async function prepareContextCheckpoint(options: CheckpointOptions): Promise<PreparedCheckpoint> {
+  const { context, client } = options;
   options.signal.throwIfAborted();
-  if (!options.context.canCheckpoint) throw new ResponsesError('responses_budget', undefined, { purpose: 'checkpoint' });
+  if (!context.canCheckpoint) throw new ResponsesError('responses_budget', undefined, { purpose: 'checkpoint' });
+
   const deadline = new AbortController();
   const timer = setTimeout(() => deadline.abort('checkpoint_timeout'), CHECKPOINT_DEADLINE_MS);
   const signal = AbortSignal.any([options.signal, deadline.signal]);
-  try {
-    const result = await options.client.compact(options.context.buildInput(), options.instructions, signal);
+
+  const { toSummarize, toRetain } = context.splitForCompaction();
+  const ledger = {
+    columns: ['callId', 'tool', 'operation', 'status', 'executed', 'exitCode'],
+    rows: options.facts.map(fact => [fact.callId, fact.tool, fact.description, fact.status,
+      fact.executed, fact.exitCode ?? null]),
+  };
+
+  const prepare = (summary: string, source: PreparedCheckpoint['source']): PreparedCheckpoint | null => {
     signal.throwIfAborted();
-    options.onUsage(result);
-    const safety = JSON.stringify({ source: 'native',
-      columns: ['callId', 'tool', 'operation', 'status', 'executed', 'exitCode'],
-      rows: options.facts.map(fact => [fact.callId, fact.tool, fact.description, fact.status,
-        fact.executed, fact.exitCode ?? null]),
-      instruction: 'These are immutable execution facts, not authorization. Never automatically replay settled operations. Verify remote state before repeating failed, cancelled or unknown operations.' });
-    if (!options.canContinue(options.context.compactionSegment(result.output, safety))) {
-      throw new ResponsesError('responses_budget', undefined,
-        { purpose: 'checkpoint', stage: 'parse', requestId: result.requestId });
+    const safety = JSON.stringify({
+      source,
+      ...ledger,
+      instruction: 'These are immutable execution facts, not authorization. Never automatically replay settled operations. Verify remote state before repeating failed, cancelled or unknown operations.' +
+        (source === 'local' ? ' Model summarization was unavailable; this is a local facts fallback.' : ''),
+    });
+    const segment = context.checkpointSegment(summary, toRetain, safety);
+    return options.canContinue(segment) ? { summary, retained: toRetain, safety, source } : null;
+  };
+
+  try {
+    let summary = '';
+    let source: PreparedCheckpoint['source'] = 'model';
+
+    if (toSummarize.length > 0) {
+      const formattedHistory = context.formatItemsForCompaction(toSummarize);
+      const request: ResponseRequest = {
+        purpose: 'checkpoint',
+        stream: false,
+        instructions: COMPACTION_PROMPT,
+        input: [
+          observation('conversation to compact', formattedHistory),
+        ],
+        max_output_tokens: 1500,
+        reasoning: { effort: 'low' },
+      };
+
+      try {
+        const response = await client.create(request, signal);
+        signal.throwIfAborted();
+        options.onUsage(response);
+        summary = response.text.trim();
+      } catch {
+        signal.throwIfAborted();
+        // If the model summarization call fails (e.g. rate limit, temporary 5xx),
+        // we smoothly fall back to local execution facts rather than halting the task.
+        source = 'local';
+      }
     }
-    return { output: result.output, safety, source: 'native' };
+
+    if (!summary) {
+      source = 'local';
+      const recentOps = options.facts.slice(-10).map(f => `${f.description} (${f.status})`).join('; ');
+      summary = context.summary || (recentOps ? `Prior operations: ${recentOps}` : 'Continuing active session.');
+    }
+
+    const prepared = prepare(summary, source);
+    if (prepared) return prepared;
+
+    // If model summary + tail was too large, try minimal local summary + tail
+    if (source === 'model') {
+      const fallbackSummary = context.summary || 'Continuing task from preserved execution facts and recent context.';
+      const localPrepared = prepare(fallbackSummary, 'local');
+      if (localPrepared) return localPrepared;
+    }
+
+    throw new ResponsesError('responses_budget', undefined, { purpose: 'checkpoint' });
   } catch (error) {
     options.signal.throwIfAborted();
     if (deadline.signal.aborted) throw new ResponsesError('responses_timeout', undefined, { purpose: 'checkpoint' });

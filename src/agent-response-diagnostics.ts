@@ -5,8 +5,7 @@ export const RESPONSE_ERROR_CODES = [
   'responses_incomplete', 'responses_failed', 'responses_stream', 'responses_redirect',
   'responses_schema', 'responses_history', 'responses_config_changed', 'responses_input',
   'responses_budget', 'responses_timeout', 'responses_empty', 'responses_key_required', 'responses_limits',
-  'responses_compaction_unsupported', 'responses_compaction_unavailable',
-  'responses_probe_consent', 'responses_probe_busy', 'responses_memory_storage', 'responses_memory_conflict',
+  'responses_memory_storage', 'responses_memory_conflict',
 ] as const;
 
 export const RESPONSE_PURPOSES = ['main', 'checkpoint', 'memory'] as const;

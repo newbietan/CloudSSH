@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ResponsesClient } from '../../../src/worker/agent/responses-client';
-import { aiConfig, compactReply, responseObject } from './responses-fixtures';
+import { aiConfig, responseObject } from './responses-fixtures';
 
 const request = { input: [{ role: 'user' as const, content: 'Inspect' }], instructions: 'Stable', stream: false, max_output_tokens: 8192 };
 afterEach(() => vi.restoreAllMocks());
@@ -10,7 +10,6 @@ describe('Responses credential boundary uses real SSRF validation', () => {
     const fetch = vi.spyOn(globalThis, 'fetch');
     const client = new ResponsesClient({ ...aiConfig, base_url: `https://${host}/v1` });
     await expect(client.create(request, new AbortController().signal)).rejects.toMatchObject({ code: 'responses_address' });
-    await expect(client.compact(request.input, request.instructions, new AbortController().signal)).rejects.toMatchObject({ code: 'responses_address' });
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -25,8 +24,6 @@ describe('Responses credential boundary uses real SSRF validation', () => {
     for (const stream of [true, false]) {
       await expect(new ResponsesClient({ ...aiConfig, base_url: `https://${host}/v1` }).create({ ...request, stream }, new AbortController().signal)).rejects.toMatchObject({ code: 'responses_address' });
     }
-    await expect(new ResponsesClient({ ...aiConfig, base_url: `https://${host}/v1` })
-      .compact(request.input, request.instructions, new AbortController().signal)).rejects.toMatchObject({ code: 'responses_address' });
     expect(fetch).toHaveBeenCalledTimes(2); // A + AAAA only; cached validation never forwards a key.
   });
 
@@ -34,8 +31,5 @@ describe('Responses credential boundary uses real SSRF validation', () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(responseObject('resp_1'))));
     await new ResponsesClient({ ...aiConfig, base_url: 'https://8.8.8.8/v1' }).create(request, new AbortController().signal);
     expect(fetch).toHaveBeenCalledExactlyOnceWith('https://8.8.8.8/v1/responses', expect.objectContaining({ redirect: 'manual', headers: expect.objectContaining({ Authorization: `Bearer ${aiConfig.api_key}` }) }));
-    fetch.mockResolvedValueOnce(compactReply());
-    await new ResponsesClient({ ...aiConfig, base_url: 'https://8.8.8.8/v1' }).compact(request.input, request.instructions, new AbortController().signal);
-    expect(fetch).toHaveBeenLastCalledWith('https://8.8.8.8/v1/responses/compact', expect.objectContaining({ redirect: 'manual', headers: expect.objectContaining({ Authorization: `Bearer ${aiConfig.api_key}` }) }));
   });
 });

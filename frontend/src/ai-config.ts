@@ -2,7 +2,6 @@
 
 import { normalizeAIBaseUrl } from '../../src/ai-endpoint';
 import { resolveAIModelBudgets } from '../../src/ai-model-policy';
-import { normalizeAIProbeResult } from '../../src/ai-capability';
 import { responseErrorMessage } from './agent/response-errors';
 import { t, translateDocument } from './i18n';
 
@@ -131,22 +130,6 @@ export class AIConfigPanel {
             </div>
             <p id="ai-budget-hint" class="text-[10px] mt-2" data-i18n="aiConfig.budgetHint"></p>
           </details>
-          <div class="border-t border-dim pt-3 space-y-2">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-bold text-muted tracking-[0.05em]" data-i18n="aiConfig.compactionTestTitle">原生压缩兼容性测试</span>
-              <button
-                type="button"
-                id="ai-probe-btn"
-                class="cyber-button px-2.5 py-1 text-[11px] font-bold tracking-[0.05em] shrink-0 whitespace-nowrap"
-                data-i18n="aiConfig.runProbe"
-              >测试原生压缩</button>
-            </div>
-            <div class="flex items-start gap-1.5 text-[10px] text-muted">
-              <input type="checkbox" id="ai-probe-consent" class="mt-0.5 rounded border-dim bg-transparent">
-              <label for="ai-probe-consent" class="cursor-pointer select-none" data-i18n="aiConfig.probeConsent">已知晓此测试将向当前接口发送合成请求并可能产生少量 API Token 费用</label>
-            </div>
-            <div id="ai-probe-status" class="text-[11px] leading-relaxed hidden"></div>
-          </div>
           <div class="pt-2 space-y-2">
             <div id="ai-config-error" class="text-[var(--error)] text-[11px] hidden"></div>
             <div id="ai-config-success" class="text-[var(--accent)] text-[11px] hidden"></div>
@@ -167,16 +150,7 @@ export class AIConfigPanel {
     this.modalEl
       .querySelector('#ai-fetch-models-btn')
       ?.addEventListener('click', () => this.fetchModels());
-    this.modalEl.querySelector('#ai-probe-btn')?.addEventListener('click', () => this.runProbe());
     this.modalEl.querySelector('#ai-save-btn')?.addEventListener('click', () => this.saveConfig());
-
-    const invalidateProbe = () => this.clearProbeStatus();
-    this.modalEl.querySelector('#ai-base-url')?.addEventListener('input', invalidateProbe);
-    this.modalEl.querySelector('#ai-api-key')?.addEventListener('input', invalidateProbe);
-    this.modalEl.querySelector('#ai-model')?.addEventListener('input', invalidateProbe);
-    this.modalEl.querySelector('#ai-context-window')?.addEventListener('input', invalidateProbe);
-    this.modalEl.querySelector('#ai-max-output-tokens')?.addEventListener('input', invalidateProbe);
-    this.modalEl.querySelector('#ai-probe-consent')?.addEventListener('change', invalidateProbe);
 
     this.setupComboboxEvents();
   }
@@ -412,136 +386,6 @@ export class AIConfigPanel {
     const successEl = this.modalEl?.querySelector('#ai-config-success') as HTMLElement | null;
     errorEl?.classList.add('hidden');
     successEl?.classList.add('hidden');
-    this.clearProbeStatus();
-  }
-
-  private showProbeStatus(msg: string, variant: 'success' | 'error' | 'warning' | 'info' = 'info'): void {
-    const el = this.modalEl?.querySelector('#ai-probe-status') as HTMLElement | null;
-    if (!el) return;
-    el.textContent = msg;
-    const colorClass = variant === 'success' ? 'text-[var(--accent)]'
-      : variant === 'error' ? 'text-[var(--error)]'
-      : variant === 'warning' ? 'text-amber-400'
-      : 'text-muted';
-    el.className = `text-[11px] leading-relaxed mt-1 ${colorClass}`;
-    el.classList.remove('hidden');
-  }
-
-  private clearProbeStatus(): void {
-    const el = this.modalEl?.querySelector('#ai-probe-status') as HTMLElement | null;
-    if (el) {
-      el.textContent = '';
-      el.classList.add('hidden');
-    }
-  }
-
-  private async runProbe(): Promise<void> {
-    const errorEl = this.modalEl?.querySelector('#ai-config-error') as HTMLElement | null;
-    const successEl = this.modalEl?.querySelector('#ai-config-success') as HTMLElement | null;
-    errorEl?.classList.add('hidden');
-    successEl?.classList.add('hidden');
-
-    const consentEl = this.modalEl?.querySelector('#ai-probe-consent') as HTMLInputElement | null;
-    if (!consentEl?.checked) {
-      this.showProbeStatus(t('aiConfig.probeConsentRequired'), 'warning');
-      return;
-    }
-
-    const baseUrlEl = this.modalEl?.querySelector('#ai-base-url') as HTMLInputElement | null;
-    const apiKeyEl = this.modalEl?.querySelector('#ai-api-key') as HTMLInputElement | null;
-    const modelEl = this.modalEl?.querySelector('#ai-model') as HTMLInputElement | null;
-    const probeBtn = this.modalEl?.querySelector('#ai-probe-btn') as HTMLButtonElement | null;
-
-    let baseUrl = baseUrlEl?.value.trim() || '';
-    const apiKey = apiKeyEl?.value.trim() || '';
-    const model = modelEl?.value.trim() || '';
-
-    if (!baseUrl || !model) {
-      this.showProbeStatus(t('aiConfig.required'), 'error');
-      return;
-    }
-
-    try { baseUrl = normalizeAIBaseUrl(baseUrl); }
-    catch {
-      this.showProbeStatus(responseErrorMessage('responses_address'), 'error');
-      return;
-    }
-
-    if (!apiKey && !this.hasConfiguredKey) {
-      this.showProbeStatus(t('aiConfig.credentialsRequired'), 'error');
-      return;
-    }
-
-    if (!apiKey && this.hasConfiguredKey && this.savedBaseUrl && !this.isSameBaseUrl(baseUrl, this.savedBaseUrl)) {
-      this.showProbeStatus(t('aiConfig.urlChangedKeyRequired'), 'error');
-      return;
-    }
-
-    const contextEl = this.modalEl?.querySelector('#ai-context-window') as HTMLInputElement | null;
-    const outputEl = this.modalEl?.querySelector('#ai-max-output-tokens') as HTMLInputElement | null;
-    const budgets = {
-      context_window: contextEl?.value === '' ? null : contextEl?.valueAsNumber ?? null,
-      max_output_tokens: outputEl?.value === '' ? null : outputEl?.valueAsNumber ?? null,
-    };
-    try { resolveAIModelBudgets(budgets); }
-    catch {
-      this.showProbeStatus(responseErrorMessage('responses_limits'), 'error');
-      return;
-    }
-
-    if (probeBtn) probeBtn.disabled = true;
-    this.showProbeStatus(t('aiConfig.probeRunning'), 'info');
-
-    try {
-      const body: {
-        base_url: string;
-        model: string;
-        acknowledge_cost: boolean;
-        context_window: number | null;
-        max_output_tokens: number | null;
-        api_key?: string;
-      } = {
-        base_url: baseUrl,
-        model,
-        acknowledge_cost: true,
-        ...budgets,
-      };
-      if (apiKey) body.api_key = apiKey;
-
-      const res = await fetch('/api/ai/capabilities/probe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as any;
-        const msg = data.code ? responseErrorMessage(data.code) : t('feedback.danger');
-        this.showProbeStatus(msg, 'error');
-        return;
-      }
-
-      const raw = await res.json().catch(() => null);
-      const result = normalizeAIProbeResult(raw);
-      if (!result) {
-        this.showProbeStatus(responseErrorMessage('responses_invalid'), 'error');
-        return;
-      }
-
-      if (result.verdict === 'supported') {
-        this.showProbeStatus(t('aiConfig.probeSupported'), 'success');
-      } else if (result.verdict === 'unsupported') {
-        const reason = t(`aiConfig.probeReason.${result.reason}` as any);
-        this.showProbeStatus(t('aiConfig.probeUnsupported', { reason }), 'error');
-      } else {
-        const reason = t(`aiConfig.probeReason.${result.reason}` as any);
-        this.showProbeStatus(t('aiConfig.probeInconclusive', { reason }), 'warning');
-      }
-    } catch {
-      this.showProbeStatus(t('aiConfig.networkError'), 'error');
-    } finally {
-      if (probeBtn) probeBtn.disabled = false;
-    }
   }
 
   private async loadConfig(): Promise<void> {

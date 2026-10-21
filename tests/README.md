@@ -112,12 +112,10 @@ pnpm run verify
 - AI 模型代理安全：同 Base URL 强绑定免密拉取、跨地址凭据外带拦截（Credential Exfiltration）、CSRF Origin 防护与敏感 Token 脱敏
 - Responses 原生无状态 Agent：HTTP/SSE 跨 chunk 与 CRLF、强制无状态（store: false）、原生输出项与 reasoning 节点回传、call_id 配对、执行事实日志（ExecutionJournal）、严格本地参数校验、停止/抢占/重置/编辑分支、原子预算检查点、任务相关性服务器记忆与 usage。
 - `worker/agent/responses-compat.test.ts`：标准 encrypted_content/phase 多轮续接、缺失 ID 不伪造、完成态 JSON 容错、明确 unsupported 才降级、重试次数/幂等键/Retry-After、错误体有界/脱敏与主任务/辅助请求预算；JSON Schema 回退仍须本地知识校验，原生压缩不走 JSON 摘要生成。
-- `worker/agent/checkpoint.test.ts` / `worker/agent-checkpoint-recovery.test.ts`：独立 `/responses/compact` 的专用参数、完整规范窗口回传、86 步事实保留、HTTP 失败不降级、取消/超时与预算原子性，不重放历史工具调用。
+- `worker/agent/checkpoint.test.ts` / `worker/agent-checkpoint-recovery.test.ts`：应用层上下文紧凑化、前缀摘要+近期尾部保真、86 步事实保留、平滑本地降级、取消/超时与预算原子性，不重放历史工具调用。
 - `worker/agent/memory-validation.test.ts` / `worker/agent/memory-provider.test.ts`：知识提炼与确定性工作记录解耦、共享 25s 与两次生成上限、显式 revision 冲突重算、去重/用户保护、10s 存储超时与 HTTP 错误传播。
 - `worker/server-memory-store.test.ts`：使用 Node 内置 `node:sqlite` 做真实 SQLite 迁移与事务测试，覆盖证据/30 天过期、敏感值加密封装、幂等任务日志、epoch 与加密后 revision 复查及清理；不新增生产依赖。
-- `worker/ai-capability-route.test.ts` / `worker/agent/capability-probe.test.ts`：显式付费验证路由鉴权、同源 Origin CSRF 校验、地址变更密钥外带防护、费用知情勾选约束、单用户 60 秒冷却限流，以及合成两阶段原生压缩与续接契约模拟。
-- `worker/agent/capability-live.test.ts`（显式运行）：开发者针对真实服务商的独立联调入口，使用纯合成 Token 验证真实 `/responses/compact` 与上下文续接。必须通过 `CLOUDSSH_LIVE_AI_TEST=1` 搭配 `CLOUDSSH_LIVE_AI_KEY` 显式开启；默认单元与门禁测试自动跳过，绝不产生非预期的外部费用。
-- `worker/agent/ai-config-budgets.test.ts`：旧库两列幂等升级、预算保存/省略保留/null 重置/模型变更、密钥保留与地址绑定；`e2e/agent-responses.spec.ts` 验证简短错误展示、原生压缩/不支持提示、记忆冲突/忙碌/日志失败不打断正文及预算设置交互，详细诊断仅走 DEBUG_MODE 终端。协议用例使用贴近真实形状的模拟数据，不代替付费服务商实测。
+- `worker/agent/ai-config-budgets.test.ts`：旧库两列幂等升级、预算保存/省略保留/null 重置/模型变更、密钥保留与地址绑定；`e2e/agent-responses.spec.ts` 验证简短错误展示、本地降级提示、记忆冲突/忙碌/日志失败不打断正文及预算设置交互，详细诊断仅走 DEBUG_MODE 终端。协议用例使用贴近真实形状的模拟数据，不代替付费服务商实测。
 - 流中断/incomplete 不执行残缺工具、不泄露 reasoning；新任务先等旧 exec 清理，不自动重放已执行命令
 
 ### 前端与构建

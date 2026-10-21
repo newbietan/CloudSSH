@@ -1,4 +1,13 @@
-// Agent system prompt templates
+import {
+  CONSECUTIVE_TASK_WINDOW_MS,
+  formatCurrentTimeAnchor,
+  formatTimestampWithRelative,
+  type MemoryLocale,
+  type ServerKnowledgeItem,
+  type ServerWorkLog,
+  type UnifiedServerMemory,
+} from '../../server-memory-schema';
+import type { ResponseFunctionCall, TaskRecord } from './types';
 
 export const SYSTEM_PROMPT = `你是 CloudSSH 内置的**资深 Linux 运维工程师助手**。你帮助用户操作和分析远程服务器。
 
@@ -99,17 +108,6 @@ exec channel 会创建独立 SSH channel，返回 JSON：
 
 工具层的安全拦截作为最终兜底——即使你判断失误调用 execute_command 执行了危险命令，工具也会拦截。`;
 
-import {
-  CONSECUTIVE_TASK_WINDOW_MS,
-  formatCurrentTimeAnchor,
-  formatTimestampWithRelative,
-  type MemoryLocale,
-  type ServerKnowledgeItem,
-  type ServerWorkLog,
-  type UnifiedServerMemory,
-} from '../../server-memory-schema';
-import type { ResponseFunctionCall, TaskRecord } from './types';
-
 export function getSystemPrompt(): string {
   return SYSTEM_PROMPT;
 }
@@ -137,7 +135,6 @@ export function formatServerMemoryForPrompt(
   const isTraditional = locale === 'zh-TW';
   const parts: string[] = [];
 
-  // 1. 始终注入当前系统时间基准（解决“昨天”、“今天”、“刚才”等时态理解）
   const timeAnchor = formatCurrentTimeAnchor(now, locale, timeZone);
   parts.push(
     isEn
@@ -154,7 +151,6 @@ export function formatServerMemoryForPrompt(
     return parts.join('\n\n');
   }
 
-  // 2. 工作历程日志（分段预算：保留最新记录，超出预算按条省略，杜绝截断尾部指引）
   if (hasLogs) {
     const logHeader = isEn
       ? '## Recent Server Work Logs (Activity History)'
@@ -167,7 +163,6 @@ export function formatServerMemoryForPrompt(
     const candidateLogs = memory.workLogs.slice(0, 6);
     for (let i = 0; i < candidateLogs.length; i++) {
       const log = candidateLogs[i];
-      // 统一使用 updated_at（与数据库排序和合并逻辑一致）
       const ts = typeof log.updated_at === 'number' ? log.updated_at : log.created_at;
       const timeStr = formatTimestampWithRelative(ts, now, locale, timeZone);
       const line = `- [${timeStr}] ${log.title}: ${log.summary}`;
@@ -188,7 +183,6 @@ export function formatServerMemoryForPrompt(
     parts.push(`${logHeader}\n${logLines.join('\n')}`);
   }
 
-  // 3. 上下文知识与凭据备忘（分段预算：单条值限长+按条控制，保证指引恒定保留）
   if (hasKnowledge) {
     const kHeader = isEn
       ? '## Saved Context Knowledge, Parameters & Credentials'
@@ -247,7 +241,6 @@ export function formatServerMemoryForPrompt(
     parts.push(`${kHeader}\n${kLines.join('\n')}`);
   }
 
-  // 4. 行动指引（核心行为约束：完整保留，绝不截断）
   const guidance = isEn
     ? `【Memory & Continuity Guidance】\n1. If the user asks what work was done (e.g., "What did I do today/yesterday?", "Show recent operations"), refer to [Recent Server Work Logs] above and answer strictly using the timestamps provided (${timeZone || 'local time'}). DO NOT convert or guess UTC times.\n2. If an operation requires a token, password, credential, URL, or rule that exists in [Saved Context Knowledge], REUSE IT DIRECTLY. DO NOT repeatedly ask the user for it!`
     : isTraditional
@@ -294,22 +287,11 @@ export const MEMORY_DISTILLATION_PROMPT = `你是一个服务器智能会话总�
 }
 若本轮没有有证据支持的可复用知识，返回 {"knowledge": []}。`;
 
-/**
- * 从多轮交互消息历史中抽取用于记忆提炼的快照。
- *
- * 核心策略：
- * 1. 过滤 system 消息；
- * 2. 逆序寻找到本轮交互的起点 User 消息，保证提炼模型能看到用户最初的任务需求与参数；
- * 3. 若本轮交互步骤过多（> 16 条），保留首条 User 消息与最近的 15 条消息，既防止超出提炼窗口，又绝不丢失核心目标；
- * 4. 极端兜底时取最后 10 条非 system 消息。
- */
 export function extractDistillationSnapshot(messages: TaskRecord[]): TaskRecord[] {
   if (!Array.isArray(messages) || messages.length === 0) return [];
-
   const nonSystem = messages;
   if (nonSystem.length === 0) return [];
 
-  // 从后往前查找最后一条 user 消息
   let lastUserIdx = -1;
   for (let i = nonSystem.length - 1; i >= 0; i--) {
     if (nonSystem[i].role === 'user') {
@@ -320,7 +302,6 @@ export function extractDistillationSnapshot(messages: TaskRecord[]): TaskRecord[
 
   if (lastUserIdx !== -1) {
     const roundMsgs = nonSystem.slice(lastUserIdx);
-    // 若本轮步数较多（超过 16 条消息），保留首条 User 消息 + 尾部 15 条上下文
     if (roundMsgs.length > 16) {
       return [roundMsgs[0], ...roundMsgs.slice(-15)];
     }
@@ -360,16 +341,6 @@ function extractCommandSummary(toolCall: ResponseFunctionCall): string {
   return name;
 }
 
-/**
- * 将快照消息序列化为便于提炼模型理解的高信息密度紧凑文本。
- *
- * 核心优化：
- * 1. 彻底剔除所有 tool 输出（绝不传递冗长原始 stdout/stderr/日志）；
- * 2. 提取用户原始诉求（保留任务目标与显式提供的 Token/端口/配置参数）；
- * 3. 提取执行的关键命令简写（便于模型理解实际做了什么，即使 AI 最终回复较简短也能准确提炼）；
- * 4. 提取 AI 最终给出的结论；
- * 5. 将 Token 消耗压缩 80%~90%，极大提升提炼响应速度并避免超长截断。
- */
 export function formatDistillationMessages(snapshotMsgs: TaskRecord[]): string {
   const userPrompts: string[] = [];
   const executedCommands: string[] = [];
@@ -421,11 +392,39 @@ export function formatDistillationMessages(snapshotMsgs: TaskRecord[]): string {
   return parts.join('\n');
 }
 
-/**
- * 组装用于记忆提炼的输入上下文。
- * 注入已存的最近 WorkLog 与现有 Knowledge 键值清单，
- * 赋能提炼模型进行多轮任务合并（mode: 'update_latest'）与已有实体键对齐（Entity Alignment）。
- */
+const TRIVIAL_GREETING_PATTERN =
+  /^[\s\p{P}]*(?:你好|您好|hi|hello|hey|在吗|在么|在嗎|哈喽|哈囉|早上好|早安|中午好|午安|晚上好|晚安|test|ping)(?:[\s\p{P}]+(?:你好|您好|hi|hello|hey|在吗|在么|在嗎|哈喽|哈囉|早上好|早安|中午好|午安|晚上好|晚安|test|ping))*[\s\p{P}]*$/iu;
+
+const KNOWLEDGE_KEYWORD_PATTERN =
+  /(?:token|key|secret|password|passwd|pwd|credential|port|端口|連接埠|http|\/|\b\d{2,5}\b|config|rule|偏好|记住|記住|金鑰|憑據)/i;
+
+export function shouldBypassDistillation(snapshotMsgs: TaskRecord[]): boolean {
+  if (!Array.isArray(snapshotMsgs) || snapshotMsgs.length === 0) return true;
+
+  const hasToolCalls = snapshotMsgs.some(
+    (m) => (m.role === 'assistant' && Array.isArray(m.calls) && m.calls.length > 0) ||
+      (m.role === 'tool' && m.content)
+  );
+  if (hasToolCalls) return false;
+
+  const userContents = snapshotMsgs
+    .filter((m) => m.role === 'user' && typeof m.content === 'string')
+    .map((m) => m.content.trim())
+    .filter(Boolean);
+
+  if (userContents.length === 0) return true;
+
+  return userContents.every(
+    (text) => TRIVIAL_GREETING_PATTERN.test(text) && !KNOWLEDGE_KEYWORD_PATTERN.test(text)
+  );
+}
+
+export const COMPACTION_PROMPT = `你是会话紧凑化助手。请阅读需要归档的早期交互历史，将其紧凑总结为一段事实陈述（不超过 1500 字）。
+要求：
+1. 提取并保留：任务核心目标、用户明确给出的关键约束与偏好、排查到的核心事实/配置参数（如生效的端口、路径、版本）、已确定解决的问题、以及当前待继续的任务。
+2. 严禁改写或虚构命令执行状态；未执行或取消的操作不要当作已完成。
+3. 纯文本陈述，不要分段过多，不要输出 Markdown 标题或代码块，不要输出额外寒暄。`;
+
 export function formatDistillationPromptInput(
   snapshotMsgs: TaskRecord[],
   recentLogs: ServerWorkLog[] = [],
@@ -502,38 +501,4 @@ export function formatDistillationPromptInput(
   parts.push(`${convHeader}\n${conversation}`);
 
   return parts.join('\n\n');
-}
-
-const TRIVIAL_GREETING_PATTERN =
-  /^[\s\p{P}]*(?:你好|您好|hi|hello|hey|在吗|在么|在嗎|哈喽|哈囉|早上好|早安|中午好|午安|晚上好|晚安|test|ping)(?:[\s\p{P}]+(?:你好|您好|hi|hello|hey|在吗|在么|在嗎|哈喽|哈囉|早上好|早安|中午好|午安|晚上好|晚安|test|ping))*[\s\p{P}]*$/iu;
-
-const KNOWLEDGE_KEYWORD_PATTERN =
-  /(?:token|key|secret|password|passwd|pwd|credential|port|端口|連接埠|http|\/|\b\d{2,5}\b|config|rule|偏好|记住|記住|金鑰|憑據)/i;
-
-/**
- * 判断当前快照是否属于无命令执行的纯问候或无实质信息交互，从而在本地直接熔断跳过提炼。
- * 避免无意义的后台 LLM API 请求与 Token 消耗。
- */
-export function shouldBypassDistillation(snapshotMsgs: TaskRecord[]): boolean {
-  if (!Array.isArray(snapshotMsgs) || snapshotMsgs.length === 0) return true;
-
-  // 1. 检查是否存在实质工具调用
-  const hasToolCalls = snapshotMsgs.some(
-    (m) => m.role === 'assistant' && Array.isArray(m.calls) && m.calls.length > 0
-  );
-  if (hasToolCalls) return false;
-
-  // 2. 无工具调用时，检查用户消息是否为纯寒暄且无任何知识/凭据特征
-  const userContents = snapshotMsgs
-    .filter((m) => m.role === 'user' && typeof m.content === 'string')
-    .map((m) => m.content!.trim())
-    .filter(Boolean);
-
-  if (userContents.length === 0) return true;
-
-  const isAllTrivial = userContents.every(
-    (text) => TRIVIAL_GREETING_PATTERN.test(text) && !KNOWLEDGE_KEYWORD_PATTERN.test(text)
-  );
-
-  return isAllTrivial;
 }
