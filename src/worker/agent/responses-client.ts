@@ -320,8 +320,9 @@ export class ResponsesClient {
 
   private withinBudget(payload: Record<string, unknown>): boolean {
     const bodyBytes = new TextEncoder().encode(JSON.stringify(payload)).length;
+    const estimatedInputTokens = Math.ceil(bodyBytes / 2.5);
     return bodyBytes <= 2 * 1024 * 1024 &&
-      bodyBytes + Number(payload.max_output_tokens) + 512 < this.budgets.context_window;
+      estimatedInputTokens + Number(payload.max_output_tokens) + 512 < this.budgets.context_window;
   }
 
   /** Same serialized-body budget used by create(), for atomic checkpoint preflight. */

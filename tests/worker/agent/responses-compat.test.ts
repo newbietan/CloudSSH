@@ -261,7 +261,7 @@ describe('Safe diagnostics and model budgets', () => {
   it('rejects an oversized context locally before making any request', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch');
     await expect(new ResponsesClient({ ...aiConfig, context_window: 8192, max_output_tokens: 1024 })
-      .create({ ...request, input: [{ role: 'user', content: 'x'.repeat(8192) }] }, signal()))
+      .create({ ...request, input: [{ role: 'user', content: 'x'.repeat(24_000) }] }, signal()))
       .rejects.toMatchObject({ code: 'responses_budget' });
     expect(fetch).not.toHaveBeenCalled();
   });

@@ -61,7 +61,7 @@ describe('Responses protocol and execution boundary', () => {
     const client = new ResponsesClient(aiConfig);
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sse([{ type: 'response.completed', response: responseObject('done') }]));
     expect(client.canFit(request)).toBe(true);
-    const oversized = { ...request, instructions: '界'.repeat(24_000) };
+    const oversized = { ...request, instructions: '界'.repeat(60_000) };
     expect(client.canFit(oversized)).toBe(false);
     await expect(client.create(oversized, new AbortController().signal)).rejects.toMatchObject({ code: 'responses_budget' });
     expect(fetch).not.toHaveBeenCalled();
