@@ -201,7 +201,7 @@ flowchart TB
 
 ##### Update Notices
 
-The app checks the official `main` branch for a newer stable version in the background. An optional, dismissible footer hint appears when one is available (inside “More actions” on mobile terminals). Open the changelog and, if desired, sync your repository and redeploy. Nothing is automatically refreshed, upgraded, or disconnected. Dismissing a version does not hide later releases.
+The app checks the official `main` branch for a newer stable version in the background. The connection page shows a compact version badge next to “Connection parameters”, with a dismissible hint when an update is available. User-space and desktop-terminal hints remain in the footer; mobile-terminal hints are inside “More actions”. Open the changelog and, if desired, sync your repository and redeploy. Nothing is automatically refreshed, upgraded, or disconnected. Dismissing a version does not hide later releases.
 
 The Worker reads public version metadata from a fixed official GitHub URL without forwarding user credentials or server information. Successful checks are cached for six hours; failures silently back off for 15 minutes and never affect normal use.
 

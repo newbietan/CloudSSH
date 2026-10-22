@@ -14,6 +14,96 @@ async function mockUpdate(page: Page, latestVersion: unknown): Promise<void> {
   });
 }
 
+for (const width of [320, 390, 614]) {
+  for (const locale of ['zh-CN', 'zh-TW', 'en-US']) {
+    test(`连接页版本紧随标题，三语与更新提示不挤压操作区：${width}px/${locale}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 });
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      let latestVersion: string | null = null;
+      await page.route('**/api/version', (route) => {
+        if (route.request().method() !== 'GET') return route.fallback();
+        return route.fulfill({ json: { latestVersion } });
+      });
+      await page.goto(`/?lang=${locale}`);
+      const header = page.locator('.auth-connection-header');
+      const notice = header.locator('.auth-connection-heading [data-version-notice]');
+      await expect(notice).toHaveText(`v${APP_VERSION}`);
+      await expect(authNotice(page)).toHaveCount(1);
+      await expect(page.locator('#auth-section main > [data-version-notice]')).toHaveCount(0);
+
+      for (const update of [false, true]) {
+        if (update) {
+          latestVersion = nextVersion;
+          await page.evaluate((key) => localStorage.removeItem(key), VERSION_CACHE_KEY);
+          await page.reload();
+          await expect(notice.locator('a')).toContainText(nextVersion);
+          await expect(notice.getByRole('button')).toBeVisible();
+        }
+        const layout = await header.evaluate((element) => {
+          const rect = (selector: string) => element.querySelector(selector)!.getBoundingClientRect();
+          const title = rect('.auth-connection-title');
+          const version = rect('.version-notice__current');
+          const notice = rect('[data-version-notice]');
+          const actions = rect('.auth-connection-actions');
+          const header = element.getBoundingClientRect();
+          return {
+            versionAfterTitle: version.left >= title.right,
+            sameRow: Math.abs(title.y + title.height / 2 - version.y - version.height / 2) < 3,
+            noticeFits: notice.left >= header.left && notice.right <= header.right + 1,
+            actionsFit: actions.left >= header.left && actions.right <= header.right + 1,
+            overlap: notice.left < actions.right && notice.right > actions.left &&
+              notice.top < actions.bottom && notice.bottom > actions.top,
+            headerFits: element.scrollWidth <= element.clientWidth + 1,
+            pageFits: document.documentElement.scrollWidth <= innerWidth,
+          };
+        });
+        if (!update) {
+          expect(layout.versionAfterTitle).toBe(true);
+          expect(layout.sameRow).toBe(true);
+        }
+        expect(layout.noticeFits).toBe(true);
+        expect(layout.actionsFit).toBe(true);
+        expect(layout.overlap).toBe(false);
+        expect(layout.headerFits).toBe(true);
+        expect(layout.pageFits).toBe(true);
+        await expect(header.locator('[data-language-toggle]')).toBeVisible();
+      }
+    });
+  }
+}
+
+test('强制登录页的标题版本徽标在四款主题下可读，更新仍可忽略', async ({ page }) => {
+  await mockUpdate(page, nextVersion);
+  await page.route('**/api/config', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ json: {
+      turnstileEnabled: false,
+      sitekey: '',
+      githubAuthEnabled: true,
+      githubAuthRequired: true,
+      authMode: 'github',
+    } });
+  });
+  await page.goto('/?lang=zh-CN');
+  for (const theme of ['standard-dark', 'standard-light', 'cyberpunk', 'liquid-glass']) {
+    await page.evaluate((theme) => localStorage.setItem('cloudssh_theme_selection', theme), theme);
+    await page.reload();
+    await expect(page.locator('#host')).toHaveCount(0);
+    const notice = page.locator('.auth-connection-header [data-version-notice]');
+    await expect(notice.locator('.version-notice__current')).toHaveText(`v${APP_VERSION}`);
+    await expect(notice.locator('a')).toBeVisible();
+    await page.evaluate(async () => {
+      await Promise.all(document.getAnimations()
+        .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+        .map((animation) => animation.finished.catch(() => {})));
+    });
+    const result = await new AxeBuilder({ page }).include('.auth-version-notice').analyze();
+    expect(result.violations, theme).toEqual([]);
+  }
+  await authNotice(page).getByRole('button').click();
+  await expect(authNotice(page)).toHaveText(`v${APP_VERSION}`);
+});
+
 test('检测不阻塞表单、不抢焦点；提示只打开固定更新日志', async ({ page }) => {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });

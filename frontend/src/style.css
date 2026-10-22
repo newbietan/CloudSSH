@@ -462,9 +462,44 @@ html {
   color: var(--on-surface-variant);
 }
 
+.auth-connection-header {
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.auth-connection-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.auth-connection-title {
+  white-space: nowrap;
+}
+
+.auth-connection-actions {
+  flex-shrink: 0;
+  gap: 8px;
+  margin-left: auto;
+}
+
 .auth-version-notice {
-  justify-content: center;
-  margin-top: 12px;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  max-width: 100%;
+}
+
+.auth-version-notice .version-notice__current {
+  padding: 2px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9999px;
+  background: var(--accent-bg);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.4;
 }
 
 .version-notice__current {

@@ -125,14 +125,17 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
               class="theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent opacity-50"
             ></div>
             <div
-              class="flex items-center justify-between mb-8 pb-4 border-b border-dim"
+              class="auth-connection-header flex items-center justify-between mb-8 pb-4 border-b border-dim"
             >
-              <span
-                class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]"
-                data-i18n="auth.connectionParameters"
-                >连接参数</span
-              >
-              <div class="flex items-center gap-3">
+              <div class="auth-connection-heading">
+                <span
+                  class="auth-connection-title text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]"
+                  data-i18n="auth.connectionParameters"
+                  >连接参数</span
+                >
+                <div class="auth-version-notice" data-version-notice></div>
+              </div>
+              <div class="auth-connection-actions flex items-center">
                 <div data-language-switcher></div>
                 <span
                   class="material-symbols-outlined text-[var(--accent-secondary)]"
@@ -156,7 +159,6 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
               >[ GitHub Open Source ]</a
             >
           </div>
-          <div class="auth-version-notice" data-version-notice></div>
         </main>
       </div>
 
