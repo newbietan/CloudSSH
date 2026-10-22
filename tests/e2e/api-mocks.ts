@@ -15,6 +15,7 @@ const DEFAULT_GET_RESPONSES: Record<string, { status: number; json: unknown }> =
       authMode: 'anonymous',
     },
   },
+  '/api/version': { status: 200, json: { latestVersion: null } },
   '/api/auth/me': { status: 401, json: { error: 'unauthorized' } },
   '/api/user/mobile-shortcuts': { status: 200, json: { shortcuts: null } },
   '/api/user/theme': { status: 200, json: { themes: [], activeId: null, theme: null } },

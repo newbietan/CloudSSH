@@ -30,6 +30,7 @@ CloudSSH is a serverless Web SSH terminal built on Cloudflare Workers. Users con
 src/
 ├── worker/           # Cloudflare Worker entry and Durable Objects
 │   ├── index.ts      # Main worker entry (request routing, bounded in-memory SSH rate limiting)
+│   ├── version-check.ts # 官方 main 版本检查、有界读取与缓存
 │   ├── durable-object.ts  # SSHSessionDO - manages SSH sessions
 │   ├── share-do.ts    # SSHShareDO - one-time capability lifecycle and share-only audit log
 │   ├── ssh-session.ts     # SSH session logic, multi-channel routing, SFTP handling
@@ -83,6 +84,7 @@ src/
 │   ├── sftp.ts       # SFTP v3 client implementation
 │   ├── sftp-reader.ts # SFTP v3 长度先校验的有界字段游标
 │   └── sftp-types.ts # SFTP protocol constants and types
+├── version.ts        # 构建版本、稳定版语义比较与更新检测共享常量
 ├── ai-endpoint.ts    # Responses API 根地址校验与规范化纯函数
 ├── ai-model-policy.ts # 前后端共享的模型上下文/输出 Token 预算与范围校验
 ├── agent-response-diagnostics.ts # 调用阶段、参数、错误码与本地请求 UUID 的共享诊断白名单
@@ -98,6 +100,7 @@ src/
 frontend/
 ├── src/
 │   ├── main.ts            # Frontend entry point (路由、theme、i18n、事件处理、Esc 快速返回终端)
+│   ├── version-notice.ts  # 非阻塞版本检测、缓存与可忽略的三语页脚提示
 │   ├── terminal.ts        # xterm.js terminal setup (search, dynamic RTT latency, log export, 选区->Agent)
 │   ├── terminal-layout.ts # 响应式终端字体与视口尺寸（桌面/平板/移动）
 │   ├── terminal-status.ts # SSH 状态事件 → i18n 文案翻译与状态栏渲染
@@ -295,6 +298,7 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 | `/api/ssh` | WebSocket | Conditional | SSH terminal WebSocket connection |
 | `/api/ssh/sftp` | WebSocket | Token | SFTP data WebSocket (attaches to existing session) |
 | `/api/health` | GET | No | Health check |
+| `/api/version` | GET | No | 官方 main 最新稳定版本（缓存元数据，失败返回 latestVersion: null） |
 | `/api/config` | GET | No | Feature flags (turnstile, GitHub auth enabled) |
 
 ## Testing
@@ -429,6 +433,8 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 42. **SSH/SFTP 入站解析收敛** - SSH `nextPacket()` 的 `null` 仅表示报文未收齐；GCM/CTR 解密失败必须抛错，由会话层关闭 TCP/WebSocket 并清空解析缓冲，不得在认证失败后继续堆积或分发剩余报文；当前前端将 `packet_error` 视为不可重试错误，避免畸形服务器导致无限自动重连。SFTP v3 使用 `SFTPReader` 在读整数/切片/推进 offset 前校验边界；单报文体 ≤1MiB、接收缓冲 ≤2MiB、NAME 单包 ≤10,000 条且受剩余字节约束、filename/longname 各 ≤16KiB、HANDLE ≤256 字节。STATUS 的消息与语言字段必须完整，扩展属性按 v3 标志有界读取，不支持的版本/标志及不匹配请求的响应失败关闭。协议错误拒绝所有待决请求、清理其计时器/缓冲，并经会话层终止连接；目录枚举另外受 #41 的计数、估算内存和时间预算约束。
 
 43. **前端微交互、弹簧引擎与移动端手势边界** - 统一 Spring 物理弹簧引擎（`frontend/src/spring.ts`）通过 Euler 数值积分求解刚度与阻尼，提供 `snapTo` 与 `settled`，供主题/抽屉液态分段器与各类微交互共享，严禁私自重复实现；抽屉面板移动端触摸右滑关闭（`frontend/src/drawer-swipe.ts`）严格以 `headerSelector` 限定在头部，规避 iOS Safari 屏幕左缘系统返回手势冲突，且与列表纵向滚动明确隔离（纵向位移判定后即刻交还原生滚动），关闭时统一路由原面板的 `hide()`/`close()` 语义，保持在途传输中断（AGENTS.md #37）与清理逻辑；主视图切换过渡（`#terminal-section`）必须保持仅纯透明度淡入，严禁添加带 `transform` 的动画以防破坏其内部 `position: fixed` 抽屉面板的包含块（containing block）基准；所有微动效全量接入 `@media (prefers-reduced-motion: reduce)` 与 `data-ui-motion` 档位收敛；卡片指针聚光灯通过 rAF 节流直接写入 CSS 变量并在粗指针设备上跳过注册；骨架屏必须携带 `aria-busy` 与 `aria-hidden` 无障碍属性；SFTP 列表仅在行数 ≤150 时启用交错入场动画以防大目录并发卡顿。
+
+44. **可选版本更新提示** - 运行版本从根 `package.json` 构建时导入（根/前端版本保持同步），与官方 `main/package.json` 的稳定 SemVer 数值比较，不按字符串或提交数比较，不依赖 GitHub Releases/Tags，也不提示降级或预发布版本。`GET /api/version` 只向固定官方 raw GitHub URL 请求公开版本元数据（不转发用户头部/凭据、不跟随重定向），读取上限 16KiB、4s 超时，Worker isolate 去重/缓存并使用 Cloudflare fetch 缓存；成功缓存 6h、失败退避 15min，失败只返回 null。前端非阻塞同源读取，5s 超时，localStorage/内存缓存与跨标签页忽略同步；可见页面按缓存到期检查，隐藏/离线不检查，恢复可见/在线时重试。匿名页与用户空间/桌面终端页脚显示当前版本及可忽略的小提示，移动终端放进“更多”菜单，分享认领页不检查；忽略仅针对该新版，下一个新版可再次提示。不弹窗、不自动更新/刷新/跳转、不影响 SSH/SFTP/Agent；更新日志链接为固定官方地址，三语文案随语言切换。
 
 ## SSH 兼容增强边界
 

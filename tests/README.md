@@ -38,6 +38,7 @@ tests/
 ├── terminal-size.test.ts          # 终端尺寸归一化与范围越界校验
 ├── terminal-status.test.ts        # SSH 状态事件翻译
 ├── terminal-text.test.ts          # 终端文本处理
+├── version-notice.test.ts         # 版本语义比较、缓存有效期与损坏数据降级
 ├── theme.test.ts                  # 内置/自定义主题
 └── README.md
 ```
@@ -80,7 +81,7 @@ pnpm run verify
 ## E2E 网络隔离约定
 
 - 所有 `tests/e2e/*.spec.ts` 必须从 `./fixtures` 导入 `test` / `expect`，不得直接使用原始 Playwright `test`。`tests/e2e-fixtures.test.ts` 会扫描新旧 spec，防止漏接自动守卫。
-- 自动 fixture 在每个浏览器 context 上安装基础 GET Mock：`/api/config`、`/api/auth/me`（默认匿名）、`/api/user/theme`（空主题库）和 `/api/user/mobile-shortcuts`。不再依赖手动调用 helper；popup/同 context 新页面同样受保护，Service Worker 禁用以免绕过路由。
+- 自动 fixture 在每个浏览器 context 上安装基础 GET Mock：`/api/config`、`/api/auth/me`（默认匿名）、`/api/user/theme`（空主题库）、`/api/user/mobile-shortcuts` 和 `/api/version`（无更新）。不再依赖手动调用 helper；popup/同 context 新页面同样受保护，Service Worker 禁用以免绕过路由。
 - 业务接口与所有 PUT/POST/DELETE 必须在触发交互前显式 Mock，并核对请求方法、路径/参数、载荷和结果。页面级 `page.route()` 优先于 context 默认值；不处理的方法应 `route.fallback()`，不能统一返回成功。
 - 未声明的 API 会被中止并记录。即使应用 `catch` 后继续运行，fixture 清理阶段仍令测试失败，报告中附 `unmocked-api-requests`，只记录方法和路径，不记录查询值/正文/凭据。手工创建独立 context 时应调用 `installApiMocks()` 并在关闭后检查其守卫。
 - Playwright 始终启动全新 `--mode e2e --strictPort` Vite，不复用普通开发服务器；4173 被占用时明确失败，不漂移端口。E2E 不运行 8787 后端；漏到服务器的 `/api` 请求返回带标记的 **501 JSON**，而不是 SPA 的 **200 HTML**，页面 `route.continue()` 的绕过也会被守卫识别。普通开发仍保留 Worker 代理。

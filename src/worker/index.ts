@@ -26,6 +26,7 @@ import {
   LOCAL_ADMIN_GITHUB_ID,
 } from './auth';
 import { HTML } from './html';
+import { handleVersionCheck } from './version-check';
 
 export { SSHSessionDO } from './durable-object';
 export { SSHShareDO } from './share-do';
@@ -349,6 +350,11 @@ export default {
 
       if (url.pathname === '/api/health') {
         return Response.json({ status: 'ok', timestamp: Date.now() });
+      }
+
+      // Public, cached metadata only; never tied to sessions or user credentials.
+      if (url.pathname === '/api/version') {
+        return handleVersionCheck(request);
       }
 
       // Return config info (includes GitHub auth availability)

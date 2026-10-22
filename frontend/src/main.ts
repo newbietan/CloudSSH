@@ -26,6 +26,7 @@ import { LiquidSegmentedThemeControl } from './theme-segmented';
 import { LiquidSegmentedDrawerControl } from './drawer-segmented';
 import { customThemeModal, customThemeStore } from './custom-theme-manager';
 import { notify } from './ui-feedback';
+import { initVersionNotice } from './version-notice';
 
 // ==================== 全局状态 ====================
 
@@ -1026,6 +1027,9 @@ async function init(): Promise<void> {
     renderShareLanding(shareToken, showSharedTerminal);
     return;
   }
+
+  // Optional metadata check is never awaited; share recipients do not need deployment hints.
+  initVersionNotice();
 
   // 独立终端标签页模式：URL 包含 wsUrl 参数
   if (isTerminalTab()) {

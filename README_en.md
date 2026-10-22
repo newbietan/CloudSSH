@@ -199,6 +199,12 @@ flowchart TB
 
 > **Note**: To deploy a test environment, repeat the above steps on the `test` branch to create a separate Worker (e.g., `cloudssh-test`). The Durable Objects data between both environments is completely isolated.
 
+##### Update Notices
+
+The app checks the official `main` branch for a newer stable version in the background. An optional, dismissible footer hint appears when one is available (inside “More actions” on mobile terminals). Open the changelog and, if desired, sync your repository and redeploy. Nothing is automatically refreshed, upgraded, or disconnected. Dismissing a version does not hide later releases.
+
+The Worker reads public version metadata from a fixed official GitHub URL without forwarding user credentials or server information. Successful checks are cached for six hours; failures silently back off for 15 minutes and never affect normal use.
+
 ##### Optional: Automatically Sync Upstream Releases
 
 A fork can use the built-in `Sync upstream` GitHub Actions workflow to periodically synchronize the latest `main` branch from this project into its own `main` branch. This feature is **disabled by default**. Once enabled, it checks daily at 04:20 Asia/Shanghai; branch updates created by a successful sync are automatically built and deployed by Cloudflare Git integration, so no additional deployment toggle is required.

@@ -21,7 +21,7 @@ export default defineConfig({
     {
       name: 'webkit-mobile',
       testMatch: [
-        /(?:api-isolation|auth-challenge|none-auth|connection-recovery|ios-ime|sftp-panel-actions)\.spec\.ts/,
+        /(?:api-isolation|auth-challenge|none-auth|connection-recovery|ios-ime|sftp-panel-actions|version-notice)\.spec\.ts/,
         /terminal-(?:touch-scroll|focus-report)\.spec\.ts/,
       ],
       use: { ...devices['iPhone 13'] },
