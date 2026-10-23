@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.2] - 2026-10-23
+
+### Security
+
+- **Agent 浏览器草稿账号隔离**：修复同一浏览器配置文件切换账号后，相同局部服务器 ID 可能恢复前一账号中断对话的问题。草稿改为按稳定 GitHub 用户 ID 与服务器 ID 隔离，恢复时校验归属；未登录或缺少明确身份时不读写草稿，单管理员账号使用独立命名空间。
+- **退出清理与旧草稿处理**：退出时关闭原账号标签页、清理其全部服务器草稿，销毁后的迟到消息不能重建缓存；升级启动时删除无法确认归属的旧格式草稿，不自动归属于新登录账号。原账号的 30 分钟中断恢复与完成清理语义保留，服务器端工作历程和知识不受影响。
+
+### Changed
+
+- **账号隔离回归覆盖**：新增草稿命名空间与清理单元测试，补齐 Chromium/WebKit 下同浏览器换号、相同局部服务器 ID、原账号恢复、过期及归属不匹配拒绝、实际前端退出链路和迟到消息回归；同步 Agent 记忆文档和维护约定。
+
 ## [2.8.1] - 2026-10-23
 
 ### Fixed
