@@ -148,6 +148,7 @@ frontend/
 │   │   ├── agent-panel.ts # AI assistant sidebar (context attachments, streaming, Markdown, confirmations, quick prompt chips)
 │   │   ├── code-actions.ts # Agent 代码块语言归一化与 Shell 单行命令可填性判定
 │   │   ├── response-errors.ts # 结构化 Responses 错误码本地化映射与安全展示
+│   │   ├── session-draft.ts # 浏览器中断草稿的 GitHub ID + serverId 命名空间与退出/旧格式清理
 │   │   └── terminal-selection-context.ts # Selection snapshots and untrusted-data prompt boundary
 │   ├── snippet-manager.ts # 命令片段库面板（云端/本地双后端、参数占位符录入、搜索/复制、填入/填入并执行、编辑/删除）
 │   ├── snippet-variables.ts # 命令片段 {{var}} 参数占位符提取与安全替换纯函数
@@ -421,6 +422,8 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 40. **Responses Agent：个人运维助手，不是审计平台** - 使用标准 `/responses` 与 `store:false`，本地维护普通对话和原生工具调用；不依赖服务商响应链或 `/responses/compact`。保留标准 reasoning 续接字段与 assistant phase，但不展示或写入长期记忆；真实 item ID/call_id 不伪造，工具调用只在完整完成且参数有效后执行。停止/替换任务先清理旧 exec，历史编辑不撤销远端操作。任务上限固定为 175 步，不再根据进度评分反复扩展。
 
     **上下文**：默认 64,000/8,192 Token（输出含推理），AI 设置可调整窗口与输出上限；改配置后新建会话。接近容量时仅摘要较早对话，保留近期完整工具交互；摘要最多 20 秒、1,500 输出 Token，失败使用已有摘要和近期对话继续。无法容纳续接时保留原历史。`context-limits.ts` 统一估算，2.5 bytes/token 仅为启发式，不能把字节直接视为 Token。不保留独立 ExecutionJournal、任务证据包或永久执行事实检查点。
+
+    **浏览器中断草稿隔离**：30 分钟草稿仅按稳定 `github_id` + `serverId` 保存（本地管理员为 `-1`），不能用各分片可能相同的 `user.id` 或单独的 `serverId`；身份缺失或匿名时禁止读写。启动删除无法确认归属的旧无用户 key，绝不迁移到当前账号；退出关闭原账号面板并清理其全部服务器草稿，销毁后的迟到帧不得重建草稿。身份从认证响应经 `TabManager` 传入面板，换号时关闭旧标签，保留同账号中断恢复、完成清理与原有 TTL。`tests/agent-session-draft.test.ts` / `e2e/agent-responses.spec.ts` 覆盖命名空间、同浏览器换号、登出和迟到帧。
 
     **知识与工作历程**：保存的配置、知识和完整凭据直接提供给 Agent，不重复索取；移除关键词召回、来源/时效规则、授权判定和额外脱敏。凭据保留空格/换行/空密码，单值上限 16,384 字符，不静默截断；界面掩码不影响 Agent 使用原值。LLM 从普通会话生成自然语言 workLog 与 knowledge，连续工作可在 30 分钟内合并。不建立机器执行流水或来源审计。沿用现有 AES-GCM 存储；根密钥仍在同一 UserDBDO SQLite 的 `system_config.encryption_secret`，不是独立 Secret/KMS，也不抵御整库或运行时失陷。
 

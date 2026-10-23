@@ -13,6 +13,7 @@ tests/
 ├── worker/                        # Worker 路由、安全、DNS、UserDB、标签与 Cloudflare 隧道测试
 ├── agent-code-actions.test.ts # Agent 代码块语言归一化与单行 Shell 命令识别
 ├── agent-response-policy.test.ts # 三语安全诊断白名单与模型 Token 预算边界
+├── agent-session-draft.test.ts # Agent 草稿用户命名空间、旧格式清理与退出清理
 ├── agent-terminal-selection.test.ts # 终端选区附件和非授权安全边界
 ├── api-errors.test.ts          # API 错误信息边界与状态码
 ├── auth-challenge-dialog.test.ts # RFC 4256 认证挑战对话框交互
@@ -154,6 +155,7 @@ OpenSSH 覆盖七种裸钥/证书协商、PTY/Shell、exec 与 SFTP；Go 网关�
 - 多标签操作：双击内联重命名、空值与失焦恢复、右键菜单项与外部点击关闭
 - Agent 终端选区附件与快捷诊断 Prompt 气泡点击填入
 - Responses 前端任务生命周期：正文结束继续运行、run_end 才结束、requestId 隔离过期帧、中文/繁中/英文错误与留存提示
+- Agent 草稿账号隔离（`agent-session-draft.test.ts` / `e2e/agent-responses.spec.ts`）：稳定 GitHub ID + 服务器 ID 命名空间、本地管理员、缺失身份禁用、同浏览器换号同局部 ID 不串号、原账号恢复、过期/归属不匹配拒绝、旧无用户草稿删除，以及真实前端退出链路清理与迟到消息不重建。
 - 终端选区复制与焦点恢复
 - 认证挑战对话框、移动端后台连接恢复与分享会话领取
 - IME 回归（`ios-ime.spec.ts` / `agent-responses.spec.ts`，Chromium + WebKit）：终端通过真实 xterm `onData` → Shell 就绪门控 → trzsz → 模拟 socket 验证拼音不泄漏、最终中文只发送一次、确认 Enter 不执行及下一次 Enter 立即可用；覆盖提交后紧接标点、Agent 主输入框/内联编辑的 composition/isComposing/229 保护、Shift+Enter、失焦恢复及文本对话框

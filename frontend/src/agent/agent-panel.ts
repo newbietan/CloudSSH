@@ -16,6 +16,7 @@ import { getLocale, onLocaleChange, t, translateDocument } from '../i18n';
 import { confirmAction, notify } from '../ui-feedback';
 import { getTerminalFillCommand, normalizeCodeLanguage } from './code-actions';
 import { responseErrorMessage } from './response-errors';
+import { agentSessionDraftKey } from './session-draft';
 import {
   buildTerminalSelectionMessage,
   createTerminalSelectionContext,
@@ -81,6 +82,7 @@ export class AgentPanel {
   private inputEl: HTMLTextAreaElement | null = null;
   private sendBtn: HTMLElement | null = null;
   private isVisible: boolean = false;
+  private disposed = false;
   private beforeShowHandler: (() => void) | null = null;
   private isAgentRunning: boolean = false;
   private activeRequestId: string | null = null;
@@ -143,7 +145,8 @@ export class AgentPanel {
   constructor(
     private parentEl: HTMLElement = document.body,
     private isLoggedIn: boolean = false,
-    private serverId?: number
+    private serverId?: number,
+    private readonly githubId?: number
   ) {
     try {
       const savedMode = localStorage.getItem(AGENT_MODE_STORAGE_KEY);
@@ -232,7 +235,7 @@ export class AgentPanel {
   }
 
   render(): void {
-    if (this.panelEl) return;
+    if (this.panelEl || this.disposed) return;
 
     this.panelEl = document.createElement('div');
     this.panelEl.id = 'agent-panel';
@@ -541,6 +544,7 @@ export class AgentPanel {
   }
 
   handleAgentFrame(msg: any): void {
+    if (this.disposed) return;
     // Correlation is local UI state, never an authentication credential.
     if (msg.requestId && msg.requestId !== this.activeRequestId) return;
     if (msg.requestId && !this.isAgentRunning &&
@@ -1801,19 +1805,34 @@ export class AgentPanel {
     this.panelEl?.querySelector('#agent-resume-task-chip')?.remove();
   }
 
+  private get sessionDraftKey(): string | null {
+    return this.isLoggedIn && !this.disposed
+      ? agentSessionDraftKey(this.githubId, this.serverId)
+      : null;
+  }
+
   private loadSessionDraft(): void {
-    if (!this.serverId || !this.messagesEl) return;
+    const key = this.sessionDraftKey;
+    if (!key || !this.messagesEl) return;
     try {
-      const raw = localStorage.getItem(`cloudssh_agent_draft_${this.serverId}`);
+      const raw = localStorage.getItem(key);
       if (!raw) return;
       const draft = JSON.parse(raw);
-      if (!draft || !Array.isArray(draft.messages) || draft.messages.length === 0) return;
-      // 仅恢复 30 分钟内的中断会话；已完成或过期会话立即清理，避免与云端提炼记忆重复
+      // Never infer ownership from the current login or a colliding local server ID.
       if (
-        !draft.wasInterrupted ||
-        Date.now() - Number(draft.updatedAt || 0) > SESSION_DRAFT_TTL_MS
+        !draft || draft.githubId !== this.githubId || draft.serverId !== this.serverId ||
+        !Array.isArray(draft.messages) || draft.messages.length === 0
       ) {
-        localStorage.removeItem(`cloudssh_agent_draft_${this.serverId}`);
+        localStorage.removeItem(key);
+        return;
+      }
+      // 仅恢复 30 分钟内的中断会话；已完成或过期会话立即清理，避免与云端提炼记忆重复
+      const age = Date.now() - draft.updatedAt;
+      if (
+        draft.wasInterrupted !== true || !Number.isFinite(draft.updatedAt) ||
+        age < 0 || age > SESSION_DRAFT_TTL_MS
+      ) {
+        localStorage.removeItem(key);
         return;
       }
       this.sessionMessages = [...draft.messages];
@@ -1833,33 +1852,39 @@ export class AgentPanel {
   }
 
   private saveSessionDraft(isInterrupted: boolean): void {
-    if (!this.serverId) return;
-    // 任务正常完成或无消息时，立即删除本地暂存草稿，由云端记忆（WorkLog & Knowledge）全权接管
-    if (!isInterrupted || this.sessionMessages.length === 0) {
-      localStorage.removeItem(`cloudssh_agent_draft_${this.serverId}`);
-      return;
-    }
+    const key = this.sessionDraftKey;
+    if (!key) return;
     try {
+      // 任务正常完成或无消息时，立即删除本地暂存草稿，由云端记忆（WorkLog & Knowledge）全权接管
+      if (!isInterrupted || this.sessionMessages.length === 0) {
+        localStorage.removeItem(key);
+        return;
+      }
       const draft = {
+        githubId: this.githubId,
         serverId: this.serverId,
         updatedAt: Date.now(),
         messages: this.sessionMessages.slice(-20),
         wasInterrupted: true,
       };
-      localStorage.setItem(`cloudssh_agent_draft_${this.serverId}`, JSON.stringify(draft));
+      localStorage.setItem(key, JSON.stringify(draft));
     } catch {
-      /* ignore */
+      /* ignore unavailable storage */
     }
   }
 
   private clearSessionDraft(): void {
-    if (this.serverId) {
-      localStorage.removeItem(`cloudssh_agent_draft_${this.serverId}`);
+    const key = this.sessionDraftKey;
+    try {
+      if (key) localStorage.removeItem(key);
+    } catch {
+      /* ignore unavailable storage */
     }
     this.removeResumeChip();
   }
 
   dispose(): void {
+    this.disposed = true;
     this.rejectPendingConfirmation(false);
     this.clearAutoConfirmTimers();
     this.localeCleanup?.();

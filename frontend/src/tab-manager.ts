@@ -37,7 +37,7 @@ export class TabManager {
   private tabBarEl: HTMLElement;
   private terminalAreaEl: HTMLElement;
   private tabCounter = 0;
-  private _isLoggedIn: boolean = false;
+  private githubId: number | null = null;
 
   /** 标签右键菜单的 document click 监听器（关闭菜单时统一移除，防止累积） */
   private tabCtxCloseHandler: ((e: MouseEvent) => void) | null = null;
@@ -67,8 +67,12 @@ export class TabManager {
     this.terminalAreaEl = document.getElementById(terminalAreaId)!;
   }
 
-  setLoggedIn(loggedIn: boolean): void {
-    this._isLoggedIn = loggedIn;
+  setUser(githubId: number | null): void {
+    if (this.githubId !== githubId) {
+      this.githubId = githubId;
+      // A delayed shell_ready from an old account must not acquire the new identity.
+      if (this.tabs.size > 0) this.closeAllTabs();
+    }
     this.updateSelectionAction();
   }
 
@@ -156,8 +160,10 @@ export class TabManager {
         tab.sftpPanel.handleSSHReady();
 
         // 初始化 Agent 面板（仅登录用户）
-        if (this._isLoggedIn && !tab.agentPanel) {
-          tab.agentPanel = new AgentPanel(document.body, true, tab.hostInfo?.serverId);
+        if (this.githubId !== null && !tab.agentPanel) {
+          tab.agentPanel = new AgentPanel(
+            document.body, true, tab.hostInfo?.serverId, this.githubId
+          );
           tab.agentPanel.render();
           tab.agentPanel.setWebSocketSend((data: string) =>
             tab.terminal.sendWebSocketMessage(data)
@@ -784,7 +790,7 @@ export class TabManager {
     const button = document.getElementById('ask-ai-selection-btn');
     if (!button) return;
     const visible = !!(
-      this._isLoggedIn &&
+      this.githubId !== null &&
       tab &&
       tab.id === this.activeTabId &&
       tab.state === 'connected' &&
