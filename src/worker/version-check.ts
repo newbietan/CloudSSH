@@ -22,7 +22,9 @@ async function fetchLatestVersion(): Promise<string | null> {
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     const response = await fetch(UPSTREAM_VERSION_URL, {
-      redirect: 'error',
+      // Workers rejects redirect: 'error' before sending the request. Manual mode
+      // never follows redirects; the !response.ok check below rejects every 3xx.
+      redirect: 'manual',
       signal: controller.signal,
       headers: { Accept: 'application/json', 'User-Agent': 'CloudSSH-Version-Check' },
       cf: {

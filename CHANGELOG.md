@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.3] - 2026-10-23
+
+### Fixed
+
+- **最新版本检测始终返回空值**：修复版本检查使用 Cloudflare Workers 不支持的 `redirect: 'error'`，导致请求在发送前失败、`latestVersion` 持续返回 `null` 且无法提示新版本的问题；改用 `manual` 并显式拒绝 3xx，继续保持固定官方上游、不跟随重定向、不转发用户凭据、有界读取与超时保护。
+
+### Changed
+
+- **版本检测回归覆盖**：补充 Workers 重定向模式兼容性及 301/302/303/307/308 拒绝测试，同步维护约定；旧部署需更新本次修复后才能恢复版本检测。
+
 ## [2.8.2] - 2026-10-23
 
 ### Security

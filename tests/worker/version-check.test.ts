@@ -34,11 +34,34 @@ describe('public update check', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe(upstream);
-    expect(init?.redirect).toBe('error');
+    expect(init?.redirect).toBe('manual');
     const headers = new Headers(init?.headers);
     expect(headers.get('cookie')).toBeNull();
     expect(headers.get('authorization')).toBeNull();
     expect(response.headers.get('cache-control')).toBe('public, max-age=21600');
+  });
+
+  it('uses a Workers-compatible redirect mode so valid metadata is not silently lost', async () => {
+    fetchMock.mockImplementation(async (_url, init) => {
+      // Node fetch supports 'error', but Workers only accepts 'follow' and 'manual'.
+      if (init?.redirect === 'error') throw new TypeError('Invalid redirect value');
+      return Response.json({ version: '2.8.2' });
+    });
+    const handle = await loadHandler();
+    expect(await (await handle(request())).json()).toEqual({ latestVersion: '2.8.2' });
+    expect(fetchMock.mock.calls[0][1]?.redirect).toBe('manual');
+  });
+
+  it.each([301, 302, 303, 307, 308])('rejects an upstream %i without following its target', async (status) => {
+    fetchMock.mockResolvedValue(new Response(null, {
+      status, headers: { Location: 'http://127.0.0.1/private' },
+    }));
+    const response = await (await loadHandler())(request());
+    expect(await response.json()).toEqual({ latestVersion: null });
+    expect(response.headers.get('cache-control')).toBe('public, max-age=900');
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(upstream, expect.objectContaining({
+      redirect: 'manual',
+    }));
   });
 
   it('deduplicates concurrent requests and refreshes expired success caches', async () => {
@@ -73,7 +96,6 @@ describe('public update check', () => {
 
   it.each([
     () => new Response('rate limited', { status: 429 }),
-    () => new Response(null, { status: 302, headers: { Location: 'https://evil.example' } }),
     () => new Response('<html>not JSON</html>'),
     () => Response.json(null),
     () => Response.json({}),
