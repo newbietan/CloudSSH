@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.1] - 2026-10-23
+
+### Fixed
+
+- **苹果拼音输入与回车确认兼容**：
+  - iOS 终端的延迟输入补偿避开 IME 组词过程，避免将尚未选定的拼音误发到远端；最终文本仍由 xterm `onData` 发送，保留空格、标点补发与去重。
+  - 终端在 macOS/iOS 下识别输入法确认 Enter，按本次按键周期隔离确认与执行，不阻断浏览器选词；下一次正常 Enter 可立即执行，不引入可能吞掉连续标点或回车的 50/100ms 屏蔽窗口。
+  - Agent 主输入框与消息内联编辑补齐 composition、`isComposing` 和 Safari `keyCode=229` 兼容判断，防止确认拼音时误提交；标签重命名和文本对话框沿用同类保护，组词期间 Escape 不误取消编辑或关闭对话框。
+
+### Changed
+
+- **Fork CI 执行策略**：为 SSH 互操作工作流补齐 job 级维护者仓库检查，与 Workers 部署、GitHub Pages 的既有策略保持一致；其他所有者的 Fork 跳过这些任务，不分配 Linux/macOS runner。保留 `Sync upstream` 手动按需执行，以及通过 `AUTO_SYNC_UPSTREAM=true` 显式开启的定时同步；Cloudflare 面板 / Git 集成部署不受影响。
+- **回归覆盖与部署说明**：补充真实 xterm 输入链路的拼音隔离、最终文本单次提交、确认 Enter、连续标点和 Shell 就绪门控测试，扩展 Agent 主输入框 / 内联编辑的 Chromium 与 WebKit 覆盖，并新增工作流策略回归检查；同步中英文 Fork 部署说明及维护约定。输入法自动化使用合成事件，不能代替苹果原生输入法真机验证。
+
 ## [2.8.0] - 2026-10-22
 
 ### Added
