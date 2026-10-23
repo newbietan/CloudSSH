@@ -199,6 +199,8 @@ flowchart TB
 
 > **说明**：如需部署 test 环境，可 Fork 后在 `test` 分支上重复上述步骤，创建独立的 Worker（如 `cloudssh-test`）。两个环境的 Durable Objects 数据完全隔离，各自独立。
 
+> **Fork 的 CI 策略**：通过 Cloudflare 面板 / Git 集成部署不需要启用 GitHub Actions，也不需要配置本项目 CI 使用的 Cloudflare Secrets。Workers 部署、GitHub Pages 发布和 SSH 互操作测试的 job 仅在仓库所有者为 `newbietan` 时执行；其他用户的 Fork 中只保留按需运行的上游同步。GitHub 可能显示这些受限工作流的 **Skipped** 记录，但不会分配 runner 执行任务。
+
 ##### 版本更新提示
 
 页面会在后台检查官方 `main` 分支的最新稳定版本；连接页的版本标记位于“连接参数”标题后；有新版时，同处显示可忽略的小提示。用户空间和桌面终端仍放在页脚，移动端终端位于“更多”菜单。点击可查看更新日志，升级由部署者自行选择同步仓库并重新部署；不会自动刷新、强制升级或中断当前会话。忽略仅针对该版本，下个新版仍可提示。
@@ -207,14 +209,15 @@ flowchart TB
 
 ##### 可选：自动同步上游版本
 
-Fork 仓库可以通过内置的 `Sync upstream` GitHub Actions 工作流，定时将本项目 `main` 分支的最新版本同步到自己的 `main` 分支。该功能**默认关闭**，开启后每天北京时间 04:20 检查一次；同步产生的分支更新会由 Cloudflare Git 集成自动构建并部署，无需额外配置部署开关。
+Fork 仓库可以按需使用内置的 `Sync upstream` GitHub Actions 工作流，将本项目 `main` 分支的最新版本同步到自己的 `main` 分支。**手动同步无需配置变量；定时同步默认关闭**，显式开启后每天北京时间 04:20 检查一次。同步产生的分支更新会由 Cloudflare Git 集成自动构建并部署，无需额外配置 CI 部署凭据。
 
 1. 确认 Cloudflare Worker 连接的是你自己的 Fork 仓库，且 Production branch 设置为 `main`，自动构建处于开启状态。
 2. 进入 Fork 仓库的 **Actions** 页面并启用工作流。已有 Fork 如果尚未包含 `Sync upstream`，请先通过 GitHub 的 **Sync fork** 功能手动同步一次。
-3. 进入 **Settings → Secrets and variables → Actions → Variables**，创建 Repository variable：
+3. **按需同步**：进入 **Actions → Sync upstream → Run workflow**，选择 `main` 后手动执行；无需设置仓库变量。
+4. **可选的定时同步**：进入 **Settings → Secrets and variables → Actions → Variables**，创建 Repository variable：
    - Name：`AUTO_SYNC_UPSTREAM`
    - Value：`true`
-4. 如需立即同步，进入 **Actions → Sync upstream → Run workflow** 手动执行；手动执行不要求设置上述变量。
+   - 删除该变量或将其设为 `false` 即可关闭定时同步，手动执行仍然可用。
 
 > **同步说明**：若上游工作流发生改动时，自动同步会失败，请手动完成一次仓库同步即可。
 

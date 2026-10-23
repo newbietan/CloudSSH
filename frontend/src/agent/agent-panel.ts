@@ -103,6 +103,7 @@ export class AgentPanel {
   private localeCleanup: (() => void) | null = null;
   private pendingTerminalSelection: TerminalSelectionContext | null = null;
   private agentMode: AgentExecutionMode = 'interactive';
+  private isInputComposing: boolean = false;
   private autoConfirmTimer: number | null = null;
   private autoConfirmInterval: number | null = null;
   private pendingConfirmation: {
@@ -427,7 +428,22 @@ export class AgentPanel {
       }
     });
 
+    this.inputEl?.addEventListener('compositionstart', () => {
+      this.isInputComposing = true;
+    });
+    this.inputEl?.addEventListener('compositionend', () => {
+      this.isInputComposing = false;
+    });
+    this.inputEl?.addEventListener('blur', () => {
+      this.isInputComposing = false;
+    });
+
     this.inputEl?.addEventListener('keydown', (e) => {
+      // Safari can report isComposing=false on the IME confirmation Enter.
+      if (e.isComposing || this.isInputComposing || e.keyCode === 229) {
+        if (e.key === 'Escape') e.stopPropagation();
+        return;
+      }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         this.handleSend();
@@ -1490,7 +1506,22 @@ export class AgentPanel {
 
     saveBtn.addEventListener('click', saveAndSubmit);
 
+    let isInlineComposing = false;
+    textarea.addEventListener('compositionstart', () => {
+      isInlineComposing = true;
+    });
+    textarea.addEventListener('compositionend', () => {
+      isInlineComposing = false;
+    });
+    textarea.addEventListener('blur', () => {
+      isInlineComposing = false;
+    });
+
     textarea.addEventListener('keydown', (e) => {
+      if (e.isComposing || isInlineComposing || e.keyCode === 229) {
+        if (e.key === 'Escape') e.stopPropagation();
+        return;
+      }
       if (e.key === 'Escape') {
         e.preventDefault();
         cancel();
@@ -1839,6 +1870,7 @@ export class AgentPanel {
     this.messagesEl = null;
     this.contextEl = null;
     this.inputEl = null;
+    this.isInputComposing = false;
     this.sendBtn = null;
     this.memoryDrawerEl = null;
     this.memoryTabWorkLogBtn = null;

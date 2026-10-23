@@ -214,7 +214,9 @@ class DialogManager {
       event.preventDefault();
       this.cancel();
     });
+    let isComposing = false;
     dialog.addEventListener('keydown', (event) => {
+      if (event.isComposing || isComposing || event.keyCode === 229) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         this.cancel();
@@ -223,8 +225,18 @@ class DialogManager {
     dialog.addEventListener('click', (event) => {
       if (event.target === dialog) this.cancel();
     });
+    this.input?.addEventListener('compositionstart', () => {
+      isComposing = true;
+    });
+    this.input?.addEventListener('compositionend', () => {
+      isComposing = false;
+    });
+    this.input?.addEventListener('blur', () => {
+      isComposing = false;
+    });
     this.input?.addEventListener('input', () => this.clearInputError());
     this.input?.addEventListener('keydown', (event) => {
+      if (event.isComposing || isComposing || event.keyCode === 229) return;
       if (event.key === 'Enter') {
         event.preventDefault();
         this.submit();

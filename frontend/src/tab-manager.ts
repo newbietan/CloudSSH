@@ -540,7 +540,16 @@ export class TabManager {
       this.renameTab(tab.id, input.value);
     };
 
+    let isComposing = false;
+    input.addEventListener('compositionstart', () => {
+      isComposing = true;
+    });
+    input.addEventListener('compositionend', () => {
+      isComposing = false;
+    });
+
     input.addEventListener('keydown', (e) => {
+      if (e.isComposing || isComposing || e.keyCode === 229) return;
       if (e.key === 'Enter') {
         e.preventDefault();
         commit();

@@ -348,3 +348,72 @@ test('thinking box completely collapses live preview on completion even after in
   await expect(thinkingBox.locator('.tp-steps')).toContainText('正在分析');
   await expect(thinkingBox.locator('.tp-steps')).toContainText('$ uname -a');
 });
+
+for (const inline of [false, true]) {
+  for (const signal of ['composition', 'isComposing', '229']) {
+    test(`Agent ${inline ? '内联编辑' : '主输入框'}按 ${signal} 保护选词回车，下一次 Enter 无需等待`, async ({ page }) => {
+      await mount(page);
+      if (inline) {
+        await page.evaluate(() => {
+          const { panel, sent } = (window as any).__responsesAgent;
+          panel.sendMessage('原问题');
+          const requestId = sent[0].requestId;
+          panel.handleAgentFrame({ subType: 'run_start', runId: 1, requestId });
+          panel.handleAgentFrame({ subType: 'run_end', runId: 1, requestId, outcome: 'completed' });
+          sent.length = 0;
+        });
+        await page.locator('.agent-user-edit-btn').focus();
+        await page.locator('.agent-user-edit-btn').press('Enter');
+      }
+      const input = page.locator(inline ? '.agent-user-edit-textarea' : '#agent-input');
+      await input.focus();
+      const result = await input.evaluate((el: HTMLTextAreaElement, signal) => {
+        const { panel, sent } = (window as any).__responsesAgent;
+        const key = (key: string, keyCode: number, isComposing = false) => {
+          const event = new KeyboardEvent('keydown', {
+            bubbles: true, cancelable: true, key, keyCode, isComposing,
+          });
+          el.dispatchEvent(event);
+          return event.defaultPrevented;
+        };
+        el.value = 'nihao';
+        if (signal === 'composition') {
+          el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+        }
+        const prevented = key('Enter', signal === '229' ? 229 : 13, signal === 'isComposing');
+        key('Escape', signal === '229' ? 229 : 27, signal === 'isComposing');
+        const during = { count: sent.length, open: panel.isOpen, connected: el.isConnected };
+        el.value = '你好';
+        el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '你好' }));
+        // Safari's confirmation Enter can arrive after compositionend with isComposing=false.
+        key('Enter', 229);
+        const afterConfirm = sent.length;
+        key('Enter', 13); // Immediately send intentionally; there is no arbitrary cooldown.
+        return { prevented, during, afterConfirm, sent: [...sent] };
+      }, signal);
+      expect(result.prevented).toBe(false);
+      expect(result.during).toEqual({ count: 0, open: true, connected: true });
+      expect(result.afterConfirm).toBe(0);
+      expect(result.sent).toHaveLength(1);
+      expect(result.sent[0]).toMatchObject({ type: 'agent_start', message: '你好' });
+    });
+  }
+}
+
+test('Agent 保留 Shift+Enter 换行与点击发送，失焦后不残留组词状态', async ({ page }) => {
+  await mount(page);
+  const input = page.locator('#agent-input');
+  await input.fill('第一行');
+  await input.evaluate((el) => {
+    el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    el.blur(); // Interrupted composition may not deliver compositionend.
+  });
+  await input.focus();
+  await input.press('Shift+Enter');
+  await expect(input).toHaveValue('第一行\n');
+  expect(await page.evaluate(() => (window as any).__responsesAgent.sent.length)).toBe(0);
+  await page.locator('#agent-send-btn').click();
+  const sent = await page.evaluate(() => (window as any).__responsesAgent.sent);
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({ type: 'agent_start', message: '第一行' });
+});

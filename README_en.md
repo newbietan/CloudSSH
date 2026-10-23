@@ -199,6 +199,8 @@ flowchart TB
 
 > **Note**: To deploy a test environment, repeat the above steps on the `test` branch to create a separate Worker (e.g., `cloudssh-test`). The Durable Objects data between both environments is completely isolated.
 
+> **Fork CI policy**: Deployment through the Cloudflare dashboard / Git integration does not require GitHub Actions or the Cloudflare Secrets used by this project's CI. Worker deployment, GitHub Pages publishing, and SSH interoperability jobs run only when the repository owner is `newbietan`. Other users' forks only need the optional upstream sync workflow. GitHub may show **Skipped** records for the restricted workflows, but no runners execute those jobs.
+
 ##### Update Notices
 
 The app checks the official `main` branch for a newer stable version in the background. The connection page shows a compact version badge next to “Connection parameters”, with a dismissible hint when an update is available. User-space and desktop-terminal hints remain in the footer; mobile-terminal hints are inside “More actions”. Open the changelog and, if desired, sync your repository and redeploy. Nothing is automatically refreshed, upgraded, or disconnected. Dismissing a version does not hide later releases.
@@ -207,14 +209,15 @@ The Worker reads public version metadata from a fixed official GitHub URL withou
 
 ##### Optional: Automatically Sync Upstream Releases
 
-A fork can use the built-in `Sync upstream` GitHub Actions workflow to periodically synchronize the latest `main` branch from this project into its own `main` branch. This feature is **disabled by default**. Once enabled, it checks daily at 04:20 Asia/Shanghai; branch updates created by a successful sync are automatically built and deployed by Cloudflare Git integration, so no additional deployment toggle is required.
+A fork can optionally use the built-in `Sync upstream` GitHub Actions workflow to synchronize this project's latest `main` branch into its own `main` branch. **Manual sync requires no repository variable; scheduled sync is disabled by default.** Once explicitly enabled, scheduled sync checks daily at 04:20 Asia/Shanghai. Branch updates created by a successful sync are automatically built and deployed by Cloudflare Git integration, without additional CI deployment credentials.
 
 1. Make sure the Cloudflare Worker is connected to your fork, its Production branch is set to `main`, and automatic builds are enabled.
 2. Open the fork's **Actions** page and enable workflows. If an existing fork does not yet contain `Sync upstream`, first use GitHub's **Sync fork** feature once to obtain the workflow.
-3. Go to **Settings → Secrets and variables → Actions → Variables** and create a Repository variable:
+3. **On-demand sync**: Open **Actions → Sync upstream → Run workflow**, select `main`, and run it manually. No repository variable is required.
+4. **Optional scheduled sync**: Go to **Settings → Secrets and variables → Actions → Variables** and create a Repository variable:
    - Name: `AUTO_SYNC_UPSTREAM`
    - Value: `true`
-4. To sync immediately, open **Actions → Sync upstream → Run workflow**. Manual runs do not require the variable above.
+   - Delete the variable or set it to `false` to disable scheduled sync. Manual runs remain available.
 
 > **Sync behavior**: If upstream workflows change, automatic synchronization may fail. In that case, simply synchronize the repository manually once.
 

@@ -34,6 +34,9 @@ permissions:
 
 jobs:
   interoperability:
+    # Fork deployments use Cloudflare Git integration, not the maintainer's CI.
+    # Keep this at job level so neither matrix runner is allocated in other owners' forks.
+    if: github.repository_owner == 'newbietan'
     strategy:
       fail-fast: false
       matrix:

@@ -133,6 +133,7 @@ pnpm run verify
 - 终端与用户空间液态分段切换器（Liquid Segmented Controls）：双边异步物理弹簧引擎、液态透镜滑块拉伸与泊位、桌面专属分段条与移动端菜单平行入口互斥联动
 - AI 配置与模型选择：自定义 Combobox 下拉组件（全量展开、即时过滤、一键清空、多主题自适应）、免密拉取联动与敏感凭证即时清理
 - 构建可复现性、xterm 生产构建兼容和原生弹窗禁用
+- `workflow-policy.test.ts`：源码级检查所有非同步工作流的每个 job 均有维护者仓库 owner 限制（在分配 runner 前跳过 Fork CI），并保留 Fork 的免变量手动同步与显式开启的定时同步
 
 ### 真实 SSH 互操作（显式运行）
 
@@ -140,7 +141,7 @@ pnpm run verify
 需要本机 `sshd`/`ssh-keygen` 和 Go ≥1.24；不会修改系统 SSH 配置、用户密码或授权文件。
 OpenSSH 覆盖七种裸钥/证书协商、PTY/Shell、exec 与 SFTP；Go 网关覆盖 none/password/OTP/
 公钥后 password 及错误响应。默认 `pnpm test` 跳过这些进程级用例，独立运行失败必须按失败处理。
-`ssh-interop.yml` 提供 Ubuntu/macOS CI，尚不代表已在远端运行通过。
+`ssh-interop.yml` 仅在仓库所有者为 `newbietan` 时提供 Ubuntu/macOS CI，其他所有者的 Fork 跳过；本地验证不代表已在远端运行通过。
 详细边界见 [SSH 兼容说明](../docs/ssh-compatibility.md)。
 
 ### 浏览器 E2E
@@ -154,7 +155,8 @@ OpenSSH 覆盖七种裸钥/证书协商、PTY/Shell、exec 与 SFTP；Go 网关�
 - Agent 终端选区附件与快捷诊断 Prompt 气泡点击填入
 - Responses 前端任务生命周期：正文结束继续运行、run_end 才结束、requestId 隔离过期帧、中文/繁中/英文错误与留存提示
 - 终端选区复制与焦点恢复
-- 认证挑战对话框、iOS 输入法、移动端后台连接恢复与分享会话领取
+- 认证挑战对话框、移动端后台连接恢复与分享会话领取
+- IME 回归（`ios-ime.spec.ts` / `agent-responses.spec.ts`，Chromium + WebKit）：终端通过真实 xterm `onData` → Shell 就绪门控 → trzsz → 模拟 socket 验证拼音不泄漏、最终中文只发送一次、确认 Enter 不执行及下一次 Enter 立即可用；覆盖提交后紧接标点、Agent 主输入框/内联编辑的 composition/isComposing/229 保护、Shift+Enter、失焦恢复及文本对话框
 - SFTP 覆盖确认、路径面包屑、表头排序、新建文件、主题样式与 UI 回归
 - 终端抽屉分段切换器：桌面端胶囊轮廓与可辨识边缘、双边异步物理弹簧滑块位移、PC 隐藏移动端更多操作按钮、三大抽屉宽度统一、匿名模式隐藏 AI Agent（display: none）与登录同步解锁
 - 移动端终端交互与用户空间：紧凑顶栏与菜单入口、视口与软键盘动态适配、单指滑动历史、字号响应式断点、移动端抽屉平行入口与 AI 设置弹窗无横向溢出
@@ -165,7 +167,8 @@ OpenSSH 覆盖七种裸钥/证书协商、PTY/Shell、exec 与 SFTP；Go 网关�
 
 ## 当前限制
 
-- Playwright 的完整界面与无障碍回归主要运行 Chromium；API 隔离守卫、认证挑战、iOS 输入法、移动端后台连接恢复、SFTP 面板操作、终端触摸滚轮和焦点报告另在 WebKit 设备项目中执行。Firefox 尚未纳入当前质量门禁。
+- Playwright 的完整界面与无障碍回归主要运行 Chromium；API 隔离守卫、认证挑战、iOS 输入法、Agent Responses 交互、移动端后台连接恢复、SFTP 面板操作、终端触摸滚轮和焦点报告另在 WebKit 设备项目中执行。Firefox 尚未纳入当前质量门禁。
+- IME 测试通过合成 composition/键盘事件验证已知时序，WebKit 设备模拟不等于 iOS/macOS 原生拼音输入法实测；发布前仍需苹果设备人工验证选词、回车、空格与连续标点。
 - 浏览器 E2E 仍以 mock API 验证前端行为；真实 OpenSSH/SFTP 和 Go 网关由显式 `test:interop` 单独覆盖。尚未实测 Dropbear、Windows OpenSSH 和 Cloudflare 真机链路。
 - SSHSessionDO、SSH 会话状态机、SFTP 数据流和 AgentCore 等运行态模块的覆盖率仍偏低。
 - 新增协议状态、WebSocket 消息或安全边界时，应优先补充运行时错误、取消、超时和畸形输入测试，而不仅验证成功路径。

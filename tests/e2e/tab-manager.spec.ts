@@ -32,6 +32,26 @@ test.describe('终端标签页重命名与多标签操作', () => {
 
     // 重命名完成后文本更新
     await expect(label).toHaveText('Production-DB');
+
+    await label.dblclick();
+    const result = await input.evaluate((el: HTMLInputElement) => {
+      const key = (key: string, keyCode: number) => el.dispatchEvent(new KeyboardEvent('keydown', {
+        bubbles: true, cancelable: true, key, keyCode,
+      }));
+      el.value = 'shujuku';
+      el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+      key('Enter', 13);
+      key('Escape', 27);
+      const during = el.isConnected;
+      el.value = '数据库';
+      el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '数据库' }));
+      key('Enter', 229);
+      const afterConfirm = el.isConnected;
+      key('Enter', 13);
+      return { during, afterConfirm };
+    });
+    expect(result).toEqual({ during: true, afterConfirm: true });
+    await expect(label).toHaveText('数据库');
   });
 
   test('右键标签页弹出上下文菜单', async ({ page }) => {
