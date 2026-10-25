@@ -199,15 +199,13 @@ flowchart TB
 
 > **说明**：如需部署 test 环境，可 Fork 后在 `test` 分支上重复上述步骤，创建独立的 Worker（如 `cloudssh-test`）。两个环境的 Durable Objects 数据完全隔离，各自独立。
 
-> **Fork 的 CI 策略**：通过 Cloudflare 面板 / Git 集成部署不需要启用 GitHub Actions，也不需要配置本项目 CI 使用的 Cloudflare Secrets。Workers 部署、GitHub Pages 发布和 SSH 互操作测试的 job 仅在仓库所有者为 `newbietan` 时执行；其他用户的 Fork 中只保留按需运行的上游同步。GitHub 可能显示这些受限工作流的 **Skipped** 记录，但不会分配 runner 执行任务。
-
 ##### 版本更新提示
 
-页面会在后台检查官方 `main` 分支的最新稳定版本；连接页的版本标记位于“连接参数”标题后；有新版时，同处显示可忽略的小提示。用户空间和桌面终端仍放在页脚，移动端终端位于“更多”菜单。点击可查看更新日志，升级由部署者自行选择同步仓库并重新部署；不会自动刷新、强制升级或中断当前会话。忽略仅针对该版本，下个新版仍可提示。
+项目会在后台检查官方 `main` 分支的最新稳定版本；有新版时，同处显示可忽略的小提示。点击可查看更新日志，升级由部署者自行选择同步仓库并重新部署；不会自动刷新、强制升级或中断当前会话。忽略仅针对该版本，下个新版仍可提示。
 
 检查由 Worker 向固定的官方 GitHub 地址读取公开版本号，不向 GitHub 发送用户凭据或服务器信息。成功检查缓存 6 小时，失败静默退避 15 分钟；网络不可用时不影响正常使用。
 
-##### 可选：自动同步上游版本
+##### 可选：自动同步上游最新版本（自动更新）
 
 Fork 仓库可以按需使用内置的 `Sync upstream` GitHub Actions 工作流，将本项目 `main` 分支的最新版本同步到自己的 `main` 分支。**手动同步无需配置变量；定时同步默认关闭**，显式开启后每天北京时间 04:20 检查一次。同步产生的分支更新会由 Cloudflare Git 集成自动构建并部署，无需额外配置 CI 部署凭据。
 
@@ -338,7 +336,7 @@ SSH 跳转不需要额外环境变量，但必须启用 GitHub OAuth 并使用�
 
 ##### 通过 Cloudflare 隧道连接内网服务器
 
-在添加/编辑服务器时，选择**“Cloudflare 隧道”**连接模式，可直接穿透连接无公网 IP、无开放端口的私有内网服务器（如家庭宽带 NAS、局域网机器、私有开发机），免除端口映射或跳板机配置：
+在添加/编辑服务器时，选择**Cloudflare 隧道**连接模式，可直接穿透连接无公网 IP、无开放端口的私有内网服务器（如家庭宽带 NAS、局域网机器、私有开发机），免除端口映射或跳板机配置：
 
 1. **内网服务器配置 cloudflared**：在内网服务器运行 Cloudflare Tunnel，将配置好的公开主机名指向本地 SSH 端口（例如 `service: ssh://localhost:22`）。
 2. **在 CloudSSH 添加服务器**：
@@ -348,10 +346,10 @@ SSH 跳转不需要额外环境变量，但必须启用 GitHub OAuth 并使用�
    - **Zero Trust 访问凭据 (可选)**：若在 Zero Trust 中为该域名开启了 Access 策略，需填入 Service Token 的 Client ID 与 Client Secret；若后续不再需要，支持一键清除已存密钥。
 3. **连接与体验**：连接成功后状态栏会呈现 `CF-XXX`（Cloudflare 到内网隧道握手耗时）与 `RTT`（浏览器到 Cloudflare 边缘耗时）双段延迟，SSH 终端、SFTP 在线编辑与 AI Agent 全量无缝复用。
 
-### AI Agent：Responses API 配置与会话
+#### AI Agent：Responses API 配置与会话
 
 - **协议规范与服务商兼容现状**：
-  - **通用兼容支持**：主任务与上下文紧凑化仅需服务商支持标准 `/responses` 规范与函数工具调用，原生支持 OpenAI 官方（`gpt-4o`、`o1`、`o3-mini` 等）、Azure OpenAI、OpenRouter 以及各类标准 Responses 中转网关。
+  - **通用兼容支持**：主任务与上下文紧凑化仅需服务商支持标准 `/responses` 规范与函数工具调用，原生支持 OpenAI 官方、Azure OpenAI、OpenRouter 以及各类标准 Responses 中转网关。
   - **不兼容的接口**：目前仅提供传统 Chat Completions（`/v1/chat/completions`）的接口不可用。
   - **详细说明**：[本地上下文紧凑化与长期记忆](docs/agent-context-memory.md)。
 - **配置与升级指引**：在 AI 设置中填写 HTTPS API 根地址（如 `https://api.openai.com/v1`）或完整 `/responses` 地址、模型及密钥；旧 `/chat/completions` 地址需手动改为根地址。更换地址必须重新填写密钥。

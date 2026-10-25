@@ -199,15 +199,13 @@ flowchart TB
 
 > **Note**: To deploy a test environment, repeat the above steps on the `test` branch to create a separate Worker (e.g., `cloudssh-test`). The Durable Objects data between both environments is completely isolated.
 
-> **Fork CI policy**: Deployment through the Cloudflare dashboard / Git integration does not require GitHub Actions or the Cloudflare Secrets used by this project's CI. Worker deployment, GitHub Pages publishing, and SSH interoperability jobs run only when the repository owner is `newbietan`. Other users' forks only need the optional upstream sync workflow. GitHub may show **Skipped** records for the restricted workflows, but no runners execute those jobs.
-
 ##### Update Notices
 
-The app checks the official `main` branch for a newer stable version in the background. The connection page shows a compact version badge next to “Connection parameters”, with a dismissible hint when an update is available. User-space and desktop-terminal hints remain in the footer; mobile-terminal hints are inside “More actions”. Open the changelog and, if desired, sync your repository and redeploy. Nothing is automatically refreshed, upgraded, or disconnected. Dismissing a version does not hide later releases.
+The project checks the official `main` branch for a newer stable version in the background; when a new version is available, a dismissible hint is displayed. Click to view the changelog; upgrading is entirely at the deployer's discretion by syncing the repository and redeploying. Nothing is automatically refreshed, upgraded, or disconnected. Dismissing a version does not hide later releases.
 
 The Worker reads public version metadata from a fixed official GitHub URL without forwarding user credentials or server information. Successful checks are cached for six hours; failures silently back off for 15 minutes and never affect normal use.
 
-##### Optional: Automatically Sync Upstream Releases
+##### Optional: Automatically Sync Upstream Releases (Auto Update)
 
 A fork can optionally use the built-in `Sync upstream` GitHub Actions workflow to synchronize this project's latest `main` branch into its own `main` branch. **Manual sync requires no repository variable; scheduled sync is disabled by default.** Once explicitly enabled, scheduled sync checks daily at 04:20 Asia/Shanghai. Branch updates created by a successful sync are automatically built and deployed by Cloudflare Git integration, without additional CI deployment credentials.
 
@@ -340,7 +338,7 @@ Every server in a jump relation must belong to the same GitHub user. Self-refere
 
 ##### Connecting via Cloudflare Tunnel
 
-When adding or editing a server, choose the **"Cloudflare Tunnel"** transport mode to directly connect to private intranet servers (homelab NAS, private LAN hosts, internal dev machines) without public IPs or port forwarding:
+When adding or editing a server, choose the **Cloudflare Tunnel** transport mode to directly connect to private intranet servers (homelab NAS, private LAN hosts, internal dev machines) without public IPs or port forwarding:
 
 1. **Configure cloudflared on the internal server**: Run Cloudflare Tunnel on your internal machine and map a public hostname to your local SSH service (e.g., `service: ssh://localhost:22`).
 2. **Add the server in CloudSSH**:
@@ -350,10 +348,10 @@ When adding or editing a server, choose the **"Cloudflare Tunnel"** transport mo
    - **Zero Trust Credentials (Optional)**: If Access policy is enabled for this hostname in Cloudflare Zero Trust, provide the Service Token's Client ID and Client Secret; one-click clearing is supported when the secret is no longer needed.
 3. **Connection & Experience**: Upon connection, the status bar displays dual-segment latency (`CF-XXX` for Cloudflare to tunnel handshake, `RTT` for browser to Cloudflare edge), with full terminal, SFTP online editing, and AI Agent features available.
 
-### AI Agent: Responses API Configuration and Sessions
+#### AI Agent: Responses API Configuration and Sessions
 
 - **Protocol Specification & Provider Compatibility**:
-  - **Universal Compatibility**: Main tasks and context compaction require only support for the standard `/responses` endpoint and function tools, natively supporting official OpenAI (`gpt-4o`, `o1`, `o3-mini`, etc.), Azure OpenAI, OpenRouter, and standard Responses gateways.
+  - **Universal Compatibility**: Main tasks and context compaction require only support for the standard `/responses` endpoint and function tools, natively supporting official OpenAI, Azure OpenAI, OpenRouter, and standard Responses gateways.
   - **Unsupported Interfaces**: Endpoints providing exclusively legacy Chat Completions (`/v1/chat/completions`) are not supported.
   - **Implementation Details**: [Local context compaction and long-term memory](docs/agent-context-memory.md) (Chinese).
 - **Configuration & Migration**: Configure an HTTPS API root (for example `https://api.openai.com/v1`) or a complete `/responses` address, model, and key. Legacy `/chat/completions` URLs are blocked and must be changed to the root URL. Changing the address requires providing the API key again.
