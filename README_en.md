@@ -54,6 +54,8 @@
   - [GitHub Integration](#recommended-deploy-via-github-integration)
     - [Automatically Sync Upstream](#optional-automatically-sync-upstream-releases)
   - [Configurable Environment Variables](#configurable-environment-variables)
+  - [Enable Cloudflare Access Login](#optional-enable-cloudflare-zero-trust-access-login-email-otp-passwordless)
+  - [Enable Single-Admin Password Login](#optional-enable-single-admin-password-sign-in-alternative-to-github-oauth)
   - [Configure Turnstile](#optional-configure-turnstile-human-verification)
   - [Configure GitHub OAuth](#optional-configure-github-oauth-login--server-management)
 - [Development](#development)
@@ -231,6 +233,7 @@ All feature flags and security controls are managed through Worker environment v
 | `BASE_URL` | Required if login enabled | None | Full public origin URL of the deployed application (e.g. `https://ssh.example.com`), used to construct OAuth authorization redirect callbacks. | Must exactly match the Authorization callback URL domain configured in your GitHub OAuth App, without trailing slashes `/`. Falls back to the request Host header if omitted. |
 | `GITHUB_ALLOWED_USER_IDS` | Optional | None (unrestricted) | Comma-separated allowlist of GitHub **numeric user IDs** permitted to sign in (e.g. `83105156,6236783`). | **Core security control for private instances**. When unset, any GitHub user can log in; once set, non-allowlisted users are rejected (fails closed). Obtain your numeric ID by visiting `https://api.github.com/users/<username>` and checking the `id` field. |
 | `ADMIN_PASSWORD_HASH` | Required if password login enabled | None | Single-admin password sign-in credential (format: `pbkdf2$sha256$<iterations>$<salt>$<verifier>`; generate in-browser from your own custom password via the “Admin password sign-in setup” link at the bottom of the auth form, or locally via `pnpm run hash-password`). Any non-empty value enables password mode: mutually exclusive with GitHub login and takes precedence; the instance then admits only the local admin account, with feature parity to GitHub login. | **Sensitive credential; always set as Secret type**. Clear or remove the variable to instantly revert to GitHub login (GitHub configuration and data are untouched); changing the value rotates the password and immediately invalidates all existing sessions. Password mode does not change anonymous SSH behavior — combine with `REQUIRE_GITHUB_AUTH=true` to force login; enable Turnstile on public deployments for brute-force protection. |
+| `CF_ACCESS` | Optional | Auto-detected | Cloudflare Zero Trust Access authentication mode switch. Automatically takes effect when clicking "Enable Cloudflare Access" next to the Worker domain in the Dashboard, or can be explicitly set to `true`. | When enabled, no GitHub OAuth or password is required; users sign in directly via email OTP codes. Multi-user accounts are naturally isolated. |
 | `REQUIRE_GITHUB_AUTH` | Optional | `false` | Whether to require sign-in (GitHub or single-admin password session both satisfy) for all terminal connections. When set to `true`, anonymous direct SSH access is completely disabled. | **Recommended for public deployments**. Prevents unauthorized visitors from using your Worker as an open outbound SSH jump proxy. Shipped by default via wrangler.toml `[vars]`; customize by editing the config file. |
 | `TURNSTILE_SITEKEY` | Optional | None | Cloudflare Turnstile human-verification public Site Key. | Public key. Used together with `TURNSTILE_SECRET`. Turnstile verification is automatically disabled if either variable is omitted or empty. |
 | `TURNSTILE_SECRET` | Optional | None | Cloudflare Turnstile human-verification Secret Key used for server-side verification token validation. | **Sensitive credential; recommend storing as Secret type**. Effectively blocks automated crawlers, botnets, and credential stuffing. Not deployed by default (opt in yourself); on Git/CLI-deployed instances, configure via the Dashboard Secret type — secrets are not overwritten by wrangler deploys. |
@@ -242,6 +245,19 @@ All feature flags and security controls are managed through Worker environment v
 >
 > 1. **Encrypted Secret Storage**: In the Cloudflare Dashboard under *Settings → Variables and Secrets*, it is strongly recommended to store all sensitive variables containing passwords, Secrets, or Keys as **Secret** type. Secrets are stored in Cloudflare's dedicated encrypted storage layer and will not be overwritten when rebuilding or redeploying code.
 > 2. **Reserved Variables**: `MAX_CONNECTIONS` is declared as an interface placeholder for future connection budgeting; it is currently unread by runtime code, so do not rely on it.
+
+#### Optional: Enable Cloudflare Zero Trust Access Login (Email OTP Passwordless)
+
+Don't want to configure GitHub OAuth, and don't want to memorize a password? You can enable Cloudflare Access directly on your Worker in the Cloudflare Dashboard with one click, signing in passwordlessly using a 6-digit One-Time PIN sent to your personal or team email:
+
+1. **One-Click Enable**: In the Cloudflare Dashboard ➔ **Workers & Pages** ➔ Select your Worker (e.g. `cloudssh`) ➔ **Settings** ➔ **Domains & Routes**.
+2. **Enable Policy**: Next to your custom domain or `*.workers.dev`, click **`Enable Cloudflare Access`**, specify allowed emails or domain suffixes (e.g. your email or `@company.com`), and save.
+3. **Open the Site**: Visit CloudSSH, enter the 6-digit email PIN code received, and immediately land on your dashboard!
+   - **Zero Manual Configuration**: The system automatically detects Cloudflare edge identity headers — no need to copy complex team domains or AUD tags.
+   - **Multi-Tenant Data Isolation**: Each verified email is assigned an isolated SQLite database partition; multiple team members can use the instance without interference.
+   - **Single Logout**: Clicking Sign Out redirects to Cloudflare's official Access logout endpoint, terminating the edge session.
+
+> **Auth Mode Priority**: `ADMIN_PASSWORD_HASH` (password first) > `CF_ACCESS` / auto-detected (Access mode) > `GitHub OAuth` > Anonymous mode. When multiple configurations coexist, the higher priority mode is authoritative.
 
 #### Optional: Enable Single-Admin Password Sign-In (Alternative to GitHub OAuth)
 

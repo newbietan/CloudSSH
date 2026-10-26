@@ -54,6 +54,8 @@
   - [GitHub 绑定自动部署](#推荐通过-github-绑定自动部署)
     - [自动同步上游版本](#可选自动同步上游版本)
   - [可配置环境变量](#可配置环境变量)
+  - [启用 Cloudflare Access 登录](#可选启用-cloudflare-zero-trust-access-登录邮箱验证码免密登录)
+  - [启用单管理员密码登录](#可选启用单管理员密码登录替代-github-oauth)
   - [配置 Turnstile](#可选配置-turnstile-人机验证)
   - [配置 GitHub OAuth](#可选配置-github-oauth-登录与服务器管理)
 - [开发说明](#development)
@@ -231,6 +233,7 @@ Fork 仓库可以按需使用内置的 `Sync upstream` GitHub Actions 工作流�
 | `BASE_URL`                | 启用登录时必填     | 无                       | 部署站点的完整公网访问根地址（如 `https://ssh.example.com`），用于生成 OAuth 授权回调跳转。                                                                                                                                                                                                        | 域名必须与 GitHub OAuth App 中的 Authorization callback URL 完全一致，末尾**不要**加斜杠 `/`。未配置时降级使用请求上下文 Host。                                                                                                                                                                   |
 | `GITHUB_ALLOWED_USER_IDS` | 可选               | 无（不限制）             | 允许登录系统的 GitHub **数字用户 ID** 白名单列表，多个 ID 以英文逗号分隔（如 `83105156,6236783`）。                                                                                                                                                                                                | **私有化部署核心防线**。未配置时任何 GitHub 用户均可登录；一旦配置，仅白名单用户允许登录（fail-closed 机制）。数字 ID 可访问 `https://api.github.com/users/<username>` 查看 `id` 字段获取。                                                                                                       |
 | `ADMIN_PASSWORD_HASH`     | 启用密码登录时必填 | 无                       | 单管理员密码登录凭据（格式：`pbkdf2$sha256$<迭代数>$<盐>$<校验值>`，用自定义密码在浏览器内生成——匿名实例页尾入口或任意实例 `#password-setup` 路由——或本地 `pnpm run hash-password`）。非空即启用密码模式：与 GitHub 登录互斥且优先级更高，全实例仅本地管理员一个账号，功能与 GitHub 登录完全一致。 | **敏感凭据，务必设为 Secret 类型**。置空/删除即刻退回 GitHub 登录模式（GitHub 配置与数据零影响）；换新值 = 修改密码（所有已登录会话立即失效）。密码模式不改变匿名 SSH 行为，需强制登录请配合 `REQUIRE_GITHUB_AUTH=true`；公网部署建议同时开启 Turnstile 防爆破。                                  |
+| `CF_ACCESS`               | 可选               | 自动感知                 | Cloudflare Zero Trust Access 认证模式开关。在控制台 Worker 域名旁一键点击「Enable Cloudflare Access」即可自动生效，亦可显式设为 `true`。                                                                                             | 开启后无需配置 GitHub OAuth 或密码，直接以邮箱验证码登入系统。多用户天然隔离。                                                                                                                                                   |
 | `REQUIRE_GITHUB_AUTH`     | 可选               | `false`                  | 是否强制登录后才可使用 SSH 终端（GitHub 或单管理员密码会话均满足）。设为 `true` 时彻底禁用匿名直连入口。                                                                                                                                                                                           | **公网部署防被蹭推荐开启**。若不希望未授权访客将你的 Worker 用作公开 SSH 代理节点，建议配置为 `true` 并配合白名单使用。wrangler.toml `[vars]` 随部署默认下发，自定义请改配置文件。                                                                                                                |
 | `TURNSTILE_SITEKEY`       | 可选               | 无                       | Cloudflare Turnstile 人机验证的前端公开 Site Key。                                                                                                                                                                                                                                                 | 公开密钥。与 `TURNSTILE_SECRET` 配合使用，在未配置或配置任一为空时人机验证功能自动禁用。                                                                                                                                                                                                          |
 | `TURNSTILE_SECRET`        | 可选               | 无                       | Cloudflare Turnstile 人机验证的服务端 Secret Key，用于校验前端回传的人机验证 Token。                                                                                                                                                                                                               | **敏感密钥，建议保存为 Secret 类型**。开启后可有效拦截自动化扫描脚本、批量机器人和恶意滥用。默认不部署（自行选择加入）；经 Git/CLI 部署的实例建议用 Dashboard Secret 类型配置——Secret 不受 wrangler 部署覆盖。                                                                                    |
@@ -242,6 +245,19 @@ Fork 仓库可以按需使用内置的 `Sync upstream` GitHub Actions 工作流�
 >
 > 1. **Secret 安全存储**：在 Cloudflare Dashboard 的 _Settings → Variables and Secrets_ 中，强烈建议将所有包含密码、Secret、Key 等敏感凭据的变量统一选择为 **Secret** 类型。Secrets 存储在 Cloudflare 独立加密存储层中，重新构建和部署 Worker 时不会被代码覆盖。
 > 2. **预留变量说明**：代码中保留了 `MAX_CONNECTIONS` 环境变量接口定义，当前版本暂未读取生效，请勿依赖。
+
+#### 可选：启用 Cloudflare Zero Trust Access 登录（邮箱验证码免密登录）
+
+不想配置 GitHub OAuth，也不想记住固定密码？可以在 Cloudflare 控制台直接为 Worker 一键开启 Cloudflare Access，仅凭个人/团队邮箱收到的 6 位验证码（One-Time PIN）即可直接免密登录：
+
+1. **一键启用**：在 Cloudflare Dashboard ➔ **Workers & Pages** ➔ 点击你的 Worker（如 `cloudssh`）➔ **Settings** ➔ **Domains & Routes**。
+2. **开启策略**：在你的域名或 `*.workers.dev` 旁点击 **`Enable Cloudflare Access`**，填入允许登录的邮箱或邮箱后缀（如你自己的邮箱或 `@company.com`），点击保存。
+3. **打开站点**：访问 CloudSSH 站点，输入收到的 6 位邮箱验证码即可直接登入系统！
+   - **零手动配置**：系统自动感知 Cloudflare 边缘鉴权标头，无需手动填写复杂的团队域名或 AUD 密钥。
+   - **多租户数据隔离**：每个通过验证的邮箱自动分配独立的云端数据库切片，多成员使用互不影响。
+   - **单点注销**：点击退出登录自动重定向至 Cloudflare 官方注销端点，清理 Access 边缘会话。
+
+> **多认证模式优先级说明**：`ADMIN_PASSWORD_HASH`（密码优先） > `CF_ACCESS` / 自动感知（Access 模式） > `GitHub OAuth` > 匿名模式。若同时开启，以更高优先级的模式为准。
 
 #### 可选：启用单管理员密码登录（替代 GitHub OAuth）
 
