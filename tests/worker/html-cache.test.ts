@@ -7,13 +7,13 @@ describe('HTML ETag & 304 conditional caching', () => {
     const etag1 = getHtmlEtag();
     const etag2 = getHtmlEtag();
     expect(etag1).toBe(etag2);
-    expect(etag1.startsWith('"')).toBe(true);
+    expect(etag1.startsWith('W/"')).toBe(true);
     expect(etag1.endsWith('"')).toBe(true);
     expect(etag1.length).toBeGreaterThan(10);
   });
 
   describe('matchesEtag', () => {
-    const etag = '"2.8.3-abc-123"';
+    const etag = 'W/"2.8.3-abc-123"';
 
     it('returns false for null or empty header', () => {
       expect(matchesEtag(null, etag)).toBe(false);
@@ -21,6 +21,7 @@ describe('HTML ETag & 304 conditional caching', () => {
     });
 
     it('matches exact ETag', () => {
+      expect(matchesEtag('W/"2.8.3-abc-123"', etag)).toBe(true);
       expect(matchesEtag('"2.8.3-abc-123"', etag)).toBe(true);
     });
 

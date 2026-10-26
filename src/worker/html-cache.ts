@@ -17,7 +17,7 @@ export function getHtmlEtag(): string {
       h1 = Math.imul(h1 ^ c, 0x01000193);
       h2 = Math.imul(h2 ^ (c >>> 8), 0x01000193);
     }
-    cachedHtmlEtag = `"${APP_VERSION}-${(h1 >>> 0).toString(16)}-${(h2 >>> 0).toString(16)}"`;
+    cachedHtmlEtag = `W/"${APP_VERSION}-${(h1 >>> 0).toString(16)}-${(h2 >>> 0).toString(16)}"`;
   }
   return cachedHtmlEtag;
 }
