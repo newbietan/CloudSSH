@@ -45,21 +45,58 @@ const LOCAL_ADMIN_GITHUB_ID = -1;
 export { LOCAL_ADMIN_GITHUB_ID };
 const LOCAL_ADMIN_ROUTE_KEY = String(LOCAL_ADMIN_GITHUB_ID);
 
+/** Cloudflare Access 模式下的哨兵用户 ID，避免与 GitHub 正整数或本地管理员 (-1) 碰撞 */
+export const CF_ACCESS_USER_GITHUB_ID = -2;
+
 /** 会话令牌内嵌的密码代际指纹长度（sha256 前 8 hex）；换 ADMIN_PASSWORD_HASH 即吊销全部旧会话 */
 const ADMIN_HASH_FINGERPRINT_LEN = 8;
 
-export type AuthMode = 'password' | 'github' | 'anonymous';
+export type AuthMode = 'password' | 'cf_access' | 'github' | 'anonymous';
 
 /**
- * 认证模式解析（密码优先）：
+ * 提取 Cloudflare Access 注入的合法已认证邮箱。
+ * 外部客户端发来的伪造标头会被 Cloudflare 边缘代理强行清洗；非空且含 @ 即为合法认证邮箱。
+ */
+export function getCFAccessEmail(request: Request): string | null {
+  const email = request.headers.get('Cf-Access-Authenticated-User-Email');
+  if (typeof email === 'string' && email.trim().length > 0 && email.includes('@')) {
+    return email.trim().toLowerCase();
+  }
+  return null;
+}
+
+/**
+ * 生成基于邮箱的确定性 UserDBDO 路由键。
+ * 格式为 cf:<sanitized-prefix>-<64bit-fnv1a-hash>，长度严格 <= 40 字符（远低于 DO 64 字节上限）。
+ */
+export function getAccessUserRouteKey(email: string): string {
+  const clean = email.toLowerCase().trim();
+  let h1 = 0x811c9dc5;
+  let h2 = 0x27d4eb2f;
+  for (let i = 0; i < clean.length; i++) {
+    const c = clean.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193);
+    h2 = Math.imul(h2 ^ (c >>> 8), 0x01000193);
+  }
+  const hash = `${(h1 >>> 0).toString(16).padStart(8, '0')}${(h2 >>> 0).toString(16).padStart(8, '0')}`;
+  const prefix = clean.replace(/[^a-z0-9]/g, '').slice(0, 20);
+  return `cf:${prefix}-${hash}`;
+}
+
+/**
+ * 认证模式解析（优先级）：
  * - ADMIN_PASSWORD_HASH 非空 → 密码模式（GitHub 配置原地保留但路由禁用）
+ * - request 携带合法 Cf-Access 标头，或 env.CF_ACCESS === 'true' → CF Access 模式
  * - 仅 GitHub ID+SECRET → GitHub 模式
- * - 都无 → 匿名模式（现状）
+ * - 都无 → 匿名模式
  * 哈希非空但格式损坏时仍返回 'password'：登录 fail closed，绝不静默回退。
  */
-export function resolveAuthMode(env: Env): AuthMode {
+export function resolveAuthMode(env: Env, request?: Request): AuthMode {
   const hash = env.ADMIN_PASSWORD_HASH;
   if (hash !== undefined && hash.trim() !== '') return 'password';
+  if ((request && getCFAccessEmail(request)) || env.CF_ACCESS === 'true') {
+    return 'cf_access';
+  }
   if (env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET) return 'github';
   return 'anonymous';
 }
@@ -232,6 +269,29 @@ function oauthFailure(message: string, status: number): Response {
  *   cookie 仍可认证。
  */
 export async function getAuthenticatedUser(request: Request, env: Env): Promise<UserInfo | null> {
+  const mode = resolveAuthMode(env, request);
+
+  // 1. CF Access 自动感知与免密鉴权
+  if (mode === 'cf_access') {
+    const email = getCFAccessEmail(request);
+    if (!email) return null;
+    const routeKey = getAccessUserRouteKey(email);
+    const stub = getUserDBStub(env, routeKey);
+    const res = await stub.fetch(
+      new Request('http://internal/internal/access-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+    );
+    if (!res.ok) return null;
+    const user = await res.json<UserInfo>();
+    return {
+      ...user,
+      email,
+    };
+  }
+
   const cookies = parseCookies(request);
   const sessionToken = cookies.session;
   if (!sessionToken) return null;
@@ -239,7 +299,7 @@ export async function getAuthenticatedUser(request: Request, env: Env): Promise<
   const [routeKey] = sessionToken.split(':');
   if (!routeKey) return null;
 
-  if (resolveAuthMode(env) === 'password') {
+  if (mode === 'password') {
     if (routeKey !== LOCAL_ADMIN_ROUTE_KEY) return null;
     const parts = sessionToken.split(':');
     if (parts.length !== 3) return null;
@@ -260,8 +320,10 @@ export async function getAuthenticatedUser(request: Request, env: Env): Promise<
 
   if (!res.ok) return null;
   const user = await res.json<UserInfo>();
-  // 本地管理员不适用 GitHub 白名单（该名单仅约束 GitHub 账号）
-  if (user.github_id === LOCAL_ADMIN_GITHUB_ID) return user;
+  // 本地管理员与 CF Access 用户不适用 GitHub 白名单（该名单仅约束 GitHub 账号）
+  if (user.github_id === LOCAL_ADMIN_GITHUB_ID || user.github_id === CF_ACCESS_USER_GITHUB_ID) {
+    return user;
+  }
   return isGitHubUserAllowed(env, user.github_id) ? user : null;
 }
 
@@ -434,6 +496,22 @@ export async function handleGitHubCallback(request: Request, env: Env): Promise<
  * POST /api/auth/logout → 登出
  */
 export async function handleLogout(request: Request, env: Env): Promise<Response> {
+  if (resolveAuthMode(env, request) === 'cf_access') {
+    return new Response(
+      JSON.stringify({
+        success: true,
+        authMode: 'cf_access',
+        logoutUrl: '/cdn-cgi/access/logout',
+      }),
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Set-Cookie': 'session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0',
+        },
+      }
+    );
+  }
+
   const cookies = parseCookies(request);
   const sessionToken = cookies.session;
 

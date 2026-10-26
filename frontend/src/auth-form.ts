@@ -111,12 +111,17 @@ export class ConnectionForm {
         sitekey: string;
         githubAuthEnabled: boolean;
         githubAuthRequired: boolean;
-        authMode?: 'password' | 'github' | 'anonymous';
+        authMode?: 'password' | 'cf_access' | 'github' | 'anonymous';
         passwordAuth?: { kdf: string; iterations: number; salt: string } | null;
         passwordHashInvalid?: boolean;
       };
       this.turnstileEnabled = config.turnstileEnabled;
       this.turnstileSitekey = config.sitekey;
+
+      // Cloudflare Access 模式：由 Cloudflare 边缘网关接管身份，不渲染外部登录表单
+      if (config.authMode === 'cf_access') {
+        return;
+      }
 
       // 单管理员密码模式：登录入口整体替换（与 GitHub 入口互斥，不并列展示）。
       // 哈希损坏 → fail closed 错误面板（与后端坏哈希拒绝登录的语义对齐）

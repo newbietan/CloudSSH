@@ -13,7 +13,7 @@ import {
   type SSHConnectionConfig,
   type SSHJumpHostConfig,
 } from '../types';
-import { LOCAL_ADMIN_GITHUB_ID } from './auth';
+import { CF_ACCESS_USER_GITHUB_ID, LOCAL_ADMIN_GITHUB_ID } from './auth';
 import { inferLocationHint } from './ip-geo';
 import { isDetectedOS } from './os-detect';
 import { deserializeServerRow, serializeServerTags } from './server-tags';
@@ -413,6 +413,9 @@ export class UserDBDO {
       if (path === '/internal/oauth-user' && request.method === 'POST') {
         return this.handleOAuthUser(request);
       }
+      if (path === '/internal/access-user' && request.method === 'POST') {
+        return this.handleAccessUser(request);
+      }
 
       // --- 单管理员密码认证（本地管理员 upsert + 登录节流，仅 Worker 内部链路可达） ---
       if (path === '/internal/local-admin-user' && request.method === 'POST') {
@@ -698,6 +701,49 @@ export class UserDBDO {
     const newUser = this.query<UserRow>(
       'SELECT id, github_id, username, avatar_url FROM users WHERE github_id = ?',
       github_id
+    )[0];
+
+    return Response.json(newUser);
+  }
+
+  // ==================== Cloudflare Access 邮箱用户 ====================
+
+  /**
+   * 幂等 upsert CF Access 用户行（github_id = -2，固定非碰撞哨兵；username = 规范化邮箱地址）。
+   * 每个 CF Access 用户被路由到独立的 UserDBDO 实例，因此其 SQLite 内只有一条对应用户行。
+   */
+  private async handleAccessUser(request: Request): Promise<Response> {
+    const { email } = await request.json<{ email: string }>();
+    const cleanEmail = typeof email === 'string' ? email.toLowerCase().trim() : '';
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return Response.json({ error: 'Invalid email' }, { status: 400 });
+    }
+
+    const existing = this.query<UserRow>(
+      'SELECT id, github_id, username, avatar_url FROM users WHERE github_id = ?',
+      CF_ACCESS_USER_GITHUB_ID
+    );
+    if (existing.length > 0) {
+      if (existing[0].username !== cleanEmail) {
+        this.db.exec(
+          "UPDATE users SET username = ?, updated_at = datetime('now') WHERE github_id = ?",
+          cleanEmail,
+          CF_ACCESS_USER_GITHUB_ID
+        );
+        existing[0].username = cleanEmail;
+      }
+      return Response.json(existing[0]);
+    }
+
+    this.db.exec(
+      'INSERT INTO users (github_id, username, avatar_url) VALUES (?, ?, NULL)',
+      CF_ACCESS_USER_GITHUB_ID,
+      cleanEmail
+    );
+
+    const newUser = this.query<UserRow>(
+      'SELECT id, github_id, username, avatar_url FROM users WHERE github_id = ?',
+      CF_ACCESS_USER_GITHUB_ID
     )[0];
 
     return Response.json(newUser);

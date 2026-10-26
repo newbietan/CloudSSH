@@ -1420,7 +1420,12 @@ export class ServerList {
 
   private async logout(): Promise<void> {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      const res = await fetch('/api/auth/logout', { method: 'POST' });
+      const data = (await res.json().catch(() => ({}))) as { logoutUrl?: string };
+      if (data?.logoutUrl === '/cdn-cgi/access/logout') {
+        window.location.href = '/cdn-cgi/access/logout';
+        return;
+      }
     } catch {
       // 即使请求失败也清除本地状态
     }

@@ -191,6 +191,8 @@ export interface Env {
   // 置空/删除即刻退回 GitHub 模式；verifier = SHA-256(PBKDF2(password, salt, iterations))。
   // 浏览器端执行 PBKDF2 预拉伸（server relief），Worker 侧仅做一次 SHA-256 比对（Free 套餐 CPU 安全）。
   ADMIN_PASSWORD_HASH?: string;
+  // Cloudflare Zero Trust Access 认证模式支持（可选；未配置时若检测到 Cf-Access 标头亦可自动感知）
+  CF_ACCESS?: string;
 }
 
 /** /api/config 下发的密码认证公开参数（盐与迭代数非机密，供浏览器预拉伸） */
@@ -204,8 +206,10 @@ export interface UserInfo {
   id: number;
   github_id: number;
   username: string;
-  /** 本地管理员（密码模式）无头像，恒为 null；GitHub 用户为头像 URL */
+  /** 本地管理员（密码模式）与 CF Access 用户无头像，恒为 null；GitHub 用户为头像 URL */
   avatar_url: string | null;
+  /** Cloudflare Access 模式下的已验证邮箱 */
+  email?: string | null;
 }
 
 export interface ServerConfig {
