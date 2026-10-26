@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createHtmlResponse, getHtmlEtag, matchesEtag } from '../../src/worker/html-cache';
+import {
+  createHtmlResponse,
+  getHtmlEtag,
+  getHtmlLastModified,
+  matchesEtag,
+  matchesLastModified,
+} from '../../src/worker/html-cache';
 import worker from '../../src/worker/index';
 
 describe('HTML ETag & 304 conditional caching', () => {
@@ -45,6 +51,25 @@ describe('HTML ETag & 304 conditional caching', () => {
     });
   });
 
+  describe('matchesLastModified', () => {
+    const lastModified = 'Mon, 26 Oct 2026 08:00:00 GMT';
+
+    it('returns false for null or empty header', () => {
+      expect(matchesLastModified(null, lastModified)).toBe(false);
+      expect(matchesLastModified('', lastModified)).toBe(false);
+    });
+
+    it('returns true when client date matches or is newer', () => {
+      expect(matchesLastModified(lastModified, lastModified)).toBe(true);
+      expect(matchesLastModified('Mon, 26 Oct 2026 09:00:00 GMT', lastModified)).toBe(true);
+    });
+
+    it('returns false when client date is older or invalid', () => {
+      expect(matchesLastModified('Mon, 26 Oct 2026 07:00:00 GMT', lastModified)).toBe(false);
+      expect(matchesLastModified('invalid-date', lastModified)).toBe(false);
+    });
+  });
+
   describe('createHtmlResponse', () => {
     it('returns 200 with HTML and required cache/security headers on initial request', async () => {
       const request = new Request('https://cloudssh.local/');
@@ -52,8 +77,9 @@ describe('HTML ETag & 304 conditional caching', () => {
 
       expect(response.status).toBe(200);
       expect(response.headers.get('Content-Type')).toBe('text/html;charset=UTF-8');
-      expect(response.headers.get('Cache-Control')).toBe('no-cache');
+      expect(response.headers.get('Cache-Control')).toBe('no-cache, no-transform');
       expect(response.headers.get('ETag')).toBe(getHtmlEtag());
+      expect(response.headers.get('Last-Modified')).toBe(getHtmlLastModified());
       expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
       expect(response.headers.get('X-Frame-Options')).toBe('DENY');
 
@@ -70,12 +96,24 @@ describe('HTML ETag & 304 conditional caching', () => {
 
       expect(response.status).toBe(304);
       expect(response.headers.get('ETag')).toBe(etag);
-      expect(response.headers.get('Cache-Control')).toBe('no-cache');
+      expect(response.headers.get('Cache-Control')).toBe('no-cache, no-transform');
+      expect(response.headers.get('Last-Modified')).toBe(getHtmlLastModified());
       expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
       expect(response.headers.get('X-Frame-Options')).toBe('DENY');
 
       const body = await response.text();
       expect(body).toBe('');
+    });
+
+    it('returns 304 Not Modified when If-Modified-Since is matching or newer', async () => {
+      const lastModified = getHtmlLastModified();
+      const request = new Request('https://cloudssh.local/', {
+        headers: { 'If-Modified-Since': lastModified },
+      });
+      const response = createHtmlResponse(request);
+
+      expect(response.status).toBe(304);
+      expect(await response.text()).toBe('');
     });
 
     it('returns 200 when If-None-Match does not match', async () => {
