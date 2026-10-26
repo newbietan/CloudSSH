@@ -1,6 +1,12 @@
 // Tool call execution engine — dispatches tool calls to their implementations
 
-import { isBlockedCommand, needsConfirmation } from './safety';
+import {
+  isBlockedCommand,
+  isBlockedFilePath,
+  needsConfirmation,
+  needsFileReadConfirmation,
+  needsFileWriteConfirmation,
+} from './safety';
 import { validateBaseUrlWithDNS } from './ssrf';
 import type { TerminalContext } from './terminal-context';
 import type { ExecResult } from './types';
@@ -51,6 +57,10 @@ export class ToolExecutor {
         return this.handleConfirmation(args.command, args.reason, signal);
       case 'fetch_web_content':
         return this.handleFetchWebContent(args.url, signal);
+      case 'read_file':
+        return this.handleReadFile(args.path, args.offset, args.limit, signal);
+      case 'write_file':
+        return this.handleWriteFile(args.path, args.content, args.search, signal);
       default:
         return `Unknown tool: ${toolName}`;
     }
@@ -499,6 +509,211 @@ export class ToolExecutor {
 
     return JSON.stringify({ status: 'failed', error: '未知请求错误', url: currentUrl });
   }
+
+  private async handleReadFile(
+    path: unknown,
+    offset?: number | null,
+    limit?: number | null,
+    signal?: AbortSignal
+  ): Promise<string> {
+    const rawPath = typeof path === 'string' ? path.trim() : '';
+    if (!rawPath) {
+      return JSON.stringify({ error: '路径不能为空' });
+    }
+
+    const confirm = needsFileReadConfirmation(rawPath);
+    if (confirm.required) {
+      const approved = await this.askConfirmationWithAbort(rawPath, confirm.reason!, signal);
+      if (!approved) {
+        if (signal?.aborted) return JSON.stringify({ status: 'cancelled', executed: false });
+        return JSON.stringify({
+          error: '用户拒绝读取此文件',
+          user_rejected: true,
+          path: rawPath,
+        });
+      }
+    }
+
+    if (signal?.aborted) return JSON.stringify({ status: 'cancelled', executed: false });
+
+    const safeOffset = Math.max(1, typeof offset === 'number' && Number.isSafeInteger(offset) ? offset : 1);
+    const safeLimit = Math.min(
+      Math.max(1, typeof limit === 'number' && Number.isSafeInteger(limit) ? limit : 200),
+      1000
+    );
+
+    const escaped = `'${rawPath.replace(/'/g, "'\\''")}'`;
+    const script =
+      `if [ ! -e ${escaped} ]; then echo "__NOT_FOUND__"; exit 1; fi; ` +
+      `if [ -d ${escaped} ]; then echo "__IS_DIR__"; exit 1; fi; ` +
+      `wc -l < ${escaped} 2>/dev/null || echo -1; ` +
+      `echo "---CLOUDSSH_FILE_DIV---"; ` +
+      `tail -n +${safeOffset} ${escaped} 2>/dev/null | head -n ${safeLimit} | head -c 65536`;
+
+    try {
+      const res = await this.execCommand(script, 15000, signal);
+      if (res.stdout.includes('__NOT_FOUND__')) {
+        return JSON.stringify({ error: '文件不存在或无法访问', path: rawPath });
+      }
+      if (res.stdout.includes('__IS_DIR__')) {
+        return JSON.stringify({ error: '指定路径是目录而非普通文件', path: rawPath });
+      }
+      if (res.exitCode !== 0 && !res.stdout.includes('---CLOUDSSH_FILE_DIV---')) {
+        return JSON.stringify({ error: '文件不存在或无法访问', path: rawPath });
+      }
+
+      const divIdx = res.stdout.indexOf('---CLOUDSSH_FILE_DIV---');
+      let totalLines = -1;
+      let rawContent = res.stdout;
+      if (divIdx !== -1) {
+        const header = res.stdout.slice(0, divIdx).trim();
+        const parsed = Number.parseInt(header, 10);
+        if (!Number.isNaN(parsed)) totalLines = parsed;
+        rawContent = res.stdout.slice(divIdx + '---CLOUDSSH_FILE_DIV---\n'.length);
+      }
+
+      if (rawContent.includes('\0')) {
+        return JSON.stringify({ error: '文件包含二进制数据，无法作为纯文本读取', path: rawPath });
+      }
+
+      const isTruncated = rawContent.length >= 65536;
+      const resultObj = {
+        path: rawPath,
+        offset: safeOffset,
+        limit: safeLimit,
+        total_lines: totalLines >= 0 ? totalLines : undefined,
+        truncated: isTruncated,
+        content: rawContent,
+        note: isTruncated ? '内容达到 64KB 上限已截断，可通过指定更大 offset 继续读取' : undefined,
+      };
+      return JSON.stringify(resultObj);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return JSON.stringify({ error: `读取文件失败: ${msg}`, path: rawPath });
+    }
+  }
+
+  private async handleWriteFile(
+    path: unknown,
+    content: unknown,
+    search?: string | null,
+    signal?: AbortSignal
+  ): Promise<string> {
+    const rawPath = typeof path === 'string' ? path.trim() : '';
+    if (!rawPath) {
+      return JSON.stringify({ error: '路径不能为空' });
+    }
+    if (typeof content !== 'string') {
+      return JSON.stringify({ error: 'content 必须为字符串' });
+    }
+    if (content.length > 512 * 1024) {
+      return JSON.stringify({ error: '单次写入内容超过 512KB 硬上限' });
+    }
+
+    const blocked = isBlockedFilePath(rawPath);
+    if (blocked.blocked) {
+      return JSON.stringify({
+        error: `写入被安全策略拦截：${blocked.reason}`,
+        path: rawPath,
+        blocked: true,
+      });
+    }
+
+    const confirm = needsFileWriteConfirmation(rawPath);
+    if (confirm.required) {
+      const approved = await this.askConfirmationWithAbort(rawPath, confirm.reason!, signal);
+      if (!approved) {
+        if (signal?.aborted) return JSON.stringify({ status: 'cancelled', executed: false });
+        return JSON.stringify({
+          error: '用户拒绝写入或修改此文件',
+          path: rawPath,
+          user_rejected: true,
+        });
+      }
+    }
+
+    if (signal?.aborted) return JSON.stringify({ status: 'cancelled', executed: false });
+
+    if (typeof search === 'string' && search.length > 0) {
+      return this.handlePatchFile(rawPath, search, content, signal);
+    }
+
+    return this.writeContentToFile(rawPath, content, signal);
+  }
+
+  private async handlePatchFile(
+    path: string,
+    search: string,
+    replace: string,
+    signal?: AbortSignal
+  ): Promise<string> {
+    const escaped = `'${path.replace(/'/g, "'\\''")}'`;
+    const readCmd = `if [ ! -f ${escaped} ]; then echo "__NOT_FOUND__"; exit 1; fi; cat ${escaped}`;
+    let readRes: ExecResult;
+    try {
+      readRes = await this.execCommand(readCmd, 15000, signal);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return JSON.stringify({ error: `读取待修改文件失败: ${msg}`, path });
+    }
+
+    if (readRes.stdout.includes('__NOT_FOUND__') || readRes.exitCode !== 0) {
+      return JSON.stringify({ error: '待修改的文件不存在或非普通文件', path });
+    }
+
+    const originalContent = readRes.stdout;
+    if (!originalContent.includes(search)) {
+      return JSON.stringify({
+        error: '未在文件中找到匹配的原始文本',
+        path,
+        search,
+      });
+    }
+
+    const occurrences = originalContent.split(search).length - 1;
+    if (occurrences > 1) {
+      return JSON.stringify({
+        error: `原始文本在文件中出现多次(${occurrences}处)，请提供更多上下文以确保唯一匹配`,
+        path,
+        occurrences,
+      });
+    }
+
+    const patchedContent = originalContent.replace(search, replace);
+    return this.writeContentToFile(path, patchedContent, signal, { patched: true });
+  }
+
+  private async writeContentToFile(
+    path: string,
+    content: string,
+    signal?: AbortSignal,
+    extra?: Record<string, unknown>
+  ): Promise<string> {
+    const escaped = `'${path.replace(/'/g, "'\\''")}'`;
+    const b64 = encodeUtf8Base64(content);
+    const writeCmd =
+      `printf '%s' '${b64}' | (base64 -d 2>/dev/null || base64 -D 2>/dev/null) > ${escaped} && wc -c < ${escaped}`;
+
+    try {
+      const res = await this.execCommand(writeCmd, 20000, signal);
+      if (res.exitCode !== 0) {
+        return JSON.stringify({
+          error: `写入文件失败 (exit code ${res.exitCode}): ${res.stderr.trim()}`,
+          path,
+        });
+      }
+      const bytesWritten = Number.parseInt(res.stdout.trim(), 10);
+      return JSON.stringify({
+        success: true,
+        path,
+        bytes_written: Number.isSafeInteger(bytesWritten) ? bytesWritten : content.length,
+        ...extra,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return JSON.stringify({ error: `写入文件失败: ${msg}`, path });
+    }
+  }
 }
 
 export function extractReadableText(raw: string, contentType: string): string {
@@ -539,4 +754,15 @@ function decodeHtmlEntities(text: string): string {
       const n = Number.parseInt(hex, 16);
       return !Number.isNaN(n) && n > 0 && n < 65536 ? String.fromCharCode(n) : '';
     });
+}
+
+function encodeUtf8Base64(str: string): string {
+  const bytes = new TextEncoder().encode(str);
+  let binary = '';
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
 }

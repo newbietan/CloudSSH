@@ -15,6 +15,7 @@ export function getSystemPrompt(): string {
 
 ## 工具与环境
 - execute_command 使用独立的 SSH exec channel，不继承交互终端的 cd 和环境变量；使用绝对路径或在命令中明确 cd。
+- 查看和修改文件优先使用 read_file 与 write_file 工具，以保证内容完整性并避免 Shell 特殊字符转义；对关键系统文件修改系统会发起审批确认。
 - 需要时用 detect_environment / read_terminal_context 补充环境与终端信息。
 - fetch_web_content 只能读取支持的公开网页/API，不要声称具备工具没有提供的能力。
 - 对危险操作使用 ask_user_confirmation，遵守工具层的命令确认和拦截结果。

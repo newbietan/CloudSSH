@@ -25,7 +25,7 @@ import {
   verifyTurnstile,
   LOCAL_ADMIN_GITHUB_ID,
 } from './auth';
-import { HTML } from './html';
+import { createHtmlResponse } from './html-cache';
 import { handleVersionCheck } from './version-check';
 
 export { SSHSessionDO } from './durable-object';
@@ -375,15 +375,7 @@ export default {
         });
       }
 
-      return new Response(HTML, {
-        headers: {
-          'Content-Type': 'text/html;charset=UTF-8',
-          'X-Content-Type-Options': 'nosniff',
-          'X-Frame-Options': 'DENY',
-          'Referrer-Policy': 'strict-origin-when-cross-origin',
-          'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
-        },
-      });
+      return createHtmlResponse(request);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('Unhandled error in fetch handler:', msg);

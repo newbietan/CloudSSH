@@ -30,6 +30,7 @@ CloudSSH is a serverless Web SSH terminal built on Cloudflare Workers. Users con
 src/
 ├── worker/           # Cloudflare Worker entry and Durable Objects
 │   ├── index.ts      # Main worker entry (request routing, bounded in-memory SSH rate limiting)
+│   ├── html-cache.ts # HTML ETag 计算与 304 协商缓存响应构造
 │   ├── version-check.ts # 官方 main 版本检查、有界读取与缓存
 │   ├── durable-object.ts  # SSHSessionDO - manages SSH sessions
 │   ├── share-do.ts    # SSHShareDO - one-time capability lifecycle and share-only audit log
@@ -59,7 +60,7 @@ src/
 │   │   ├── checkpoint.ts # 标准 Responses 摘要早期对话并保留近期交互
 │   │   ├── memory-provider.ts # 读取服务器记忆、提交会话供后台提炼
 │   │   ├── memory.ts     # 单次 LLM 提炼自然语言工作历程与可复用知识
-│   │   ├── tools.ts      # 8 tool definitions, including read-only fetch_web_content
+│   │   ├── tools.ts      # 10 tool definitions, including read_file, write_file and read-only fetch_web_content
 │   │   ├── tool-executor.ts  # Tool dispatch, blocked command rejection, bounded SSRF-safe web reads
 │   │   ├── prompt.ts     # System prompt, long-task decomposition and step-by-step verification
 │   │   ├── safety.ts     # Two-layer security: blocked patterns + confirmation patterns

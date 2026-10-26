@@ -31,6 +31,16 @@ export const AGENT_TOOLS: ToolDefinition[] = [
   tool('fetch_web_content', '通过安全 HTTP/HTTPS 请求读取指定公开网页或 API 的文本内容（只读）。用于查阅公开技术文档、模型仓库页面、API 规范等。严格阻断内网和私网地址。', {
     url: { type: 'string', description: '待读取的公开 HTTP/HTTPS 网页或 API 地址' },
   }),
+  tool('read_file', '读取远程服务器上的文本文件内容（有界只读）。支持指定起始行号与最大读取行数。单次最多返回 64KB 内容。', {
+    path: { type: 'string', description: '要读取的远程文件绝对路径或相对路径' },
+    offset: { type: ['number', 'null'], description: '起始行号（从 1 开始，默认 1）', minimum: 1 },
+    limit: { type: ['number', 'null'], description: '读取的最大行数（默认 200，单次最多 1000 行且最大字节不超过 64KB）', minimum: 1, maximum: 1000 },
+  }),
+  tool('write_file', '向远程服务器写入文件内容。支持全量覆盖写入或局部补丁替换（patch 模式）。写入系统敏感文件或危险目录时将触发用户审批确认。', {
+    path: { type: 'string', description: '要写入的远程文件绝对路径或相对路径' },
+    content: { type: 'string', description: '要写入的文件内容；若提供 search 则为替换后的新内容' },
+    search: { type: ['string', 'null'], description: '可选：要被替换的原文本。若提供，则仅将文件中匹配的这段文本替换为 content；为 null 时全量覆盖写入' },
+  }),
 ];
 
 // Strict schemas are an upstream aid, with resilient boundary coercion for smaller/varying models.
