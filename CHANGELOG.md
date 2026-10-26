@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.0] - 2026-10-26
+
+### Added
+
+- **Cloudflare Zero Trust Access 认证支持 (#178)**：
+  - 支持在 Cloudflare 控制台 Worker 详情页顶部的「Access」选项卡中启用策略即可直接免密登录，无需配置 GitHub OAuth 或单管理员密码。
+  - 支持 Cloudflare 账号授权、邮箱一次性验证码（One-Time PIN）及团队配置的任意 IdP 身份提供商。
+  - 服务端自动感知合法的 `Cf-Access-Authenticated-User-Email` 标头（由 Cloudflare 边缘代理权威鉴权并清洗外部伪造头），按邮箱生成确定性安全哈希路由键，在底层为每个成员分配独立的 `UserDBDO` 实例（`github_id = -2`），实现多租户数据物理行级强隔离。
+  - 前端自适应 Access 模式：自动隐藏第三方登录表单，用户顶栏展示认证邮箱及首字母描边头像，点击退出登录自动重定向至 Cloudflare 官方 `/cdn-cgi/access/logout` 端点完成单点注销。
+- **Agent 原生文件读写与 Patch 补丁工具**：
+  - 新增 `read_file` 有界只读工具：支持按行偏移与行数限制精准读取远程文件，单次读取硬上限 64KB，内置空字节检测拒绝二进制文件。
+  - 新增 `write_file` 安全写入工具：支持全量覆盖与基于 Base64 纯净流的局部精准替换（Patch 模式），彻底规避传统 Shell 字符串拼接时单双引号、换行符、反引号及特殊变量被意外转义的问题。
+  - 多层安全拦截网：严禁对 `/dev/sd*`、`/proc`、`/sys` 等块设备和内核文件进行写入；对 `/etc/`、`/boot/`、`~/.ssh/authorized_keys`、定时任务等核心系统路径的写入，以及对 `/etc/shadow` 或私钥凭据的读取，强制唤起用户的 `agent_confirm` 审批弹窗。
+- **HTML 协商缓存与秒开优化**：
+  - Worker 入口下发稳定弱实体标签 `ETag: W/"..."` 与 `Last-Modified`，声明 `Cache-Control: no-cache, no-transform` 指令，防止 Cloudflare 边缘代理在动态压缩时剥离缓存标头。
+  - 当客户端发起条件请求时，服务端精准比对并响应 `304 Not Modified`（0 字节正文），二次复访无需重新下载 2MB+ HTML 产物，实现毫秒级加载。
+
+### Changed
+
+- **文档排版与指引完善**：
+  - 中英文 README 中将环境变量配置长表收拢至 `<details>` 折叠块，优化视觉排版。
+  - 更新 Cloudflare Zero Trust Access 启用指南，对齐最新版 Cloudflare Dashboard 的「Access」选项卡操作路径及四级认证模式优先级规则。
+- **全链路测试覆盖**：
+  - 补充 Cloudflare Access 模式解析、DO 路由隔离、幂等建档、注销重定向及 API 端点回归测试。
+  - 补充 HTML 协商缓存（ETag / Last-Modified / 304）及 Agent 文件读写安全拦截全套自动化测试用例。
+
 ## [2.8.3] - 2026-10-23
 
 ### Fixed
