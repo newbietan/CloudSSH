@@ -225,6 +225,9 @@ A fork can optionally use the built-in `Sync upstream` GitHub Actions workflow t
 
 All feature flags and security controls are managed through Worker environment variables configured in the Cloudflare Dashboard under **Settings → Variables and Secrets** (sensitive credentials should use the encrypted **Secret** type) and applied immediately upon the next deployment:
 
+<details>
+<summary><b>Click to expand the full environment variables table (IDLE_TIMEOUT, OAuth, Password Auth, CF Access, Sharing, etc.)</b></summary>
+
 | Environment Variable | Required | Default | Description | Recommendations & Notes |
 | --- | --- | --- | --- | --- |
 | `IDLE_TIMEOUT` | Optional | `30m` | User inactivity idle timeout duration. Automatically closes the session and releases the Durable Object when no keyboard input, SFTP transfer, or AI task occurs. | **Strongly recommended to keep default or configure**. Prevents abandoned tabs from burning through Cloudflare's daily 13,000 GB-s free DO quota. Supports `30m`, `1h`, `1800s`, `1800` (raw numbers parsed as seconds); set to `0` to disable; an in-terminal warning appears 60s before timeout, and pressing any key immediately resets the timer. Shipped by default via wrangler.toml `[vars]`; customize by editing the config file. |
@@ -245,6 +248,8 @@ All feature flags and security controls are managed through Worker environment v
 >
 > 1. **Encrypted Secret Storage**: In the Cloudflare Dashboard under *Settings → Variables and Secrets*, it is strongly recommended to store all sensitive variables containing passwords, Secrets, or Keys as **Secret** type. Secrets are stored in Cloudflare's dedicated encrypted storage layer and will not be overwritten when rebuilding or redeploying code.
 > 2. **Reserved Variables**: `MAX_CONNECTIONS` is declared as an interface placeholder for future connection budgeting; it is currently unread by runtime code, so do not rely on it.
+
+</details>
 
 #### Optional: Enable Cloudflare Zero Trust Access Login (Email OTP Passwordless)
 
