@@ -1,6 +1,6 @@
 // Agent orchestration inside SSHSessionDO. Responses is the only LLM protocol.
 import { normalizeResponseDiagnostics } from '../../agent-response-diagnostics';
-import { resolveAIModelBudgets } from '../../ai-model-policy';
+import { resolveModelBudget } from '../../ai-model-policy';
 import type { UnifiedServerMemory } from '../../server-memory-schema';
 import { AgentContext, boundedText, observation } from './context';
 import { prepareContextCheckpoint } from './checkpoint';
@@ -157,12 +157,11 @@ export class AgentCore {
       signal.throwIfAborted();
       if (!aiConfig) throw new ResponsesError('ai_not_configured');
       aiConfig = { ...aiConfig };
-      let budgets: ReturnType<typeof resolveAIModelBudgets>;
-      try {
-        budgets = resolveAIModelBudgets(aiConfig, {
-          context_window: this.config.inputTokenBudget, max_output_tokens: this.config.maxOutputTokens,
-        });
-      } catch { throw new ResponsesError('responses_limits'); }
+      let budgets = resolveModelBudget(aiConfig.model, aiConfig.budget_source === 'provider' ? {
+        context_window: aiConfig.context_window ?? undefined,
+        max_output_tokens: aiConfig.max_output_tokens ?? undefined,
+      } : undefined);
+      let narrowedContext = false;
       const client = new ResponsesClient({ ...aiConfig, ...budgets });
       if (this.boundConfig && (this.boundConfig.base_url !== client.baseUrl ||
         this.boundConfig.model !== aiConfig.model || this.boundConfig.api_key !== aiConfig.api_key ||
@@ -229,11 +228,23 @@ export class AgentCore {
         const input = context.buildInput();
         let streamed = false;
         purpose = 'main';
-        const response = await client.create({ purpose, instructions, input, stream: true,
-          tools: AGENT_TOOLS,
-          max_output_tokens: budgets.max_output_tokens, prompt_cache_key: context.cacheKey,
-          allowIncomplete: true }, signal,
-          delta => { streamed = true; this.emit(id, { subType: 'stream_chunk', content: delta }); });
+        let response: Awaited<ReturnType<ResponsesClient['create']>>;
+        try {
+          response = await client.create({ purpose, instructions, input, stream: true,
+            tools: AGENT_TOOLS,
+            max_output_tokens: budgets.max_output_tokens, prompt_cache_key: context.cacheKey,
+            allowIncomplete: true }, signal,
+            delta => { streamed = true; this.emit(id, { subType: 'stream_chunk', content: delta }); });
+        } catch (error) {
+          const exceeded = error instanceof ResponsesError && error.diagnostics.providerCode === 'context_length_exceeded';
+          const used = context.lastInputTokens || Math.floor(budgets.context_window * 0.75);
+          const nextWindow = Math.max(budgets.max_output_tokens + 8192, Math.floor(used * 0.9));
+          if (!exceeded || narrowedContext || nextWindow >= budgets.context_window) throw error;
+          narrowedContext = true;
+          budgets = { ...budgets, context_window: nextWindow };
+          client.narrowContextWindow(nextWindow);
+          continue;
+        }
         signal.throwIfAborted();
         this.addUsage(totals, response, 'main');
 

@@ -23,11 +23,13 @@ export class AgentContext {
   private terminal = '';
   private memory = '';
   private tokens = 0;
+  private reportedInputTokens = 0;
   private recent: ResponseInput[] = [];
   private openCalls = new Set<string>();
 
   get earliestEditableTurn(): number { return this.turns.keys().next().value ?? this.nextTurn; }
   get canCheckpoint(): boolean { return this.history.length > 0 && !this.openCalls.size; }
+  get lastInputTokens(): number { return this.reportedInputTokens; }
 
   beginTurn(message: string, userIndex?: number): void {
     if (this.openCalls.size) throw new ResponsesError('responses_invalid');
@@ -81,6 +83,7 @@ export class AgentContext {
     if (bytes(next) + response.calls.length * MAX_TOOL_RESULT_BYTES > MAX_CONTEXT_BYTES) throw new ResponsesError('responses_budget');
     this.history = next; this.pending = []; this.recent = [];
     for (const call of response.calls) this.openCalls.add(call.call_id);
+    this.reportedInputTokens = response.usage?.input_tokens ?? 0;
     this.tokens = Math.max(estimateTokens(next), response.usage
       ? response.usage.input_tokens + response.usage.output_tokens : 0);
     this.pruneTurns();
@@ -93,7 +96,10 @@ export class AgentContext {
 
   needsCheckpoint(budget: number, prefix: string): boolean {
     if (!this.history.length && this.summary) return !this.fitsBudget(budget, prefix);
-    return this.canCheckpoint && Math.max(this.tokens, estimateTokens(this.buildInput()) + estimateTokens(prefix)) + 2048 >= budget * 0.8;
+    const estimated = Math.max(this.tokens, estimateTokens(this.buildInput()) + estimateTokens(prefix));
+    const used = Math.max(estimated, this.reportedInputTokens);
+    const reserve = Math.min(4096, Math.floor(budget * 0.1));
+    return this.canCheckpoint && (used >= budget * 0.8 || used + reserve >= budget);
   }
 
   fitsBudget(budget: number, prefix: string, input = this.buildInput()): boolean {
@@ -119,10 +125,20 @@ export class AgentContext {
       }
     }
     if (group.length) groups.push(group);
-    let cut = Math.max(0, groups.length - 1);
-    if (cut > 0 && !groups[cut].some(item => 'type' in item && item.type !== 'function_call_output')) cut--;
-    while (cut > 0 && groups.length - cut < 3 && bytes(groups.slice(cut - 1).flat()) <= 24 * 1024) cut--;
-    return { older: groups.slice(0, cut).flat(), recent: groups.slice(cut).flat() };
+    const kept: ResponseInput[][] = [];
+    let size = 0;
+    for (let index = groups.length - 1; index >= 0; index--) {
+      const groupTokens = estimateTokens(groups[index]);
+      if (kept.length > 0 && size + groupTokens > 16_000) break;
+      kept.unshift(groups[index]);
+      size += groupTokens;
+      if (size >= 16_000) break;
+    }
+    if (!kept.length && groups.length) kept.push(groups[groups.length - 1]);
+    // Usage can exceed the byte estimate. Still summarize at least the oldest exchange.
+    if (kept.length === groups.length && groups.length > 1) kept.shift();
+    const cut = groups.length - kept.length;
+    return { older: groups.slice(0, cut).flat(), recent: kept.flat() };
   }
 
   /** Readable conversation for summarization and memory. Credential values are not masked. */

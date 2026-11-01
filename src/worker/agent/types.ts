@@ -105,6 +105,7 @@ export interface AIConfig {
   api_key: string;
   context_window?: number | null;
   max_output_tokens?: number | null;
+  budget_source?: 'provider' | 'model' | null;
 }
 
 export type AgentStatus = 'idle' | 'running';

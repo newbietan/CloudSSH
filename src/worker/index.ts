@@ -1,4 +1,5 @@
 import { normalizeAIBaseUrl } from '../ai-endpoint';
+import { readProviderModelLimits } from '../ai-model-policy';
 import {
   normalizeMobileShortcutsPayload,
   SHORTCUTS_MAX_BYTES,
@@ -1168,13 +1169,13 @@ async function handleAIModelsProxy(
       rawModels = data.models;
     }
 
-    const models: Array<{ id: string }> = rawModels
+    const models = rawModels
       .filter((m: any) => {
         const id = m.id || '';
         return !/embedding|whisper|tts|dall-e|moderation|rerank/i.test(id);
       })
-      .map((m: any) => ({ id: m.id }))
-      .sort((a: any, b: any) => a.id.localeCompare(b.id));
+      .map((m: any) => ({ id: m.id, ...readProviderModelLimits(m) }))
+      .sort((a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id));
 
     return Response.json({ models, fallback: false });
   } catch (e) {

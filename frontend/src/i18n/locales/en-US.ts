@@ -720,7 +720,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'aiConfig.budgets': 'Model token budgets (optional)',
   'aiConfig.contextWindow': 'Context window (tokens)',
   'aiConfig.maxOutputTokens': 'Output limit (including reasoning tokens)',
-  'aiConfig.budgetHint': 'Match your model; blank uses 64,000 / 8,192. Context: 8,192–1,000,000; output: 256–128,000 and less than context. Start a new Agent chat after changing these values.',
+  'aiConfig.budgetHint': 'This request is managed for the model: {context} / {output} tokens. A window reported by the provider model list is preferred. Start a new Agent chat after changing models.',
   'agent.errors.responses_http': 'Responses API request failed (HTTP {status}). Check your key, model, and provider capabilities.',
   'agent.errors.responses_chain': 'The stored response is unavailable. Start a new chat; completed commands will not be replayed.',
   'agent.errors.responses_invalid': 'The provider returned an invalid Responses payload. No incomplete tool call was executed.',

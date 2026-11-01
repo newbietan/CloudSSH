@@ -1,5 +1,5 @@
 import { normalizeAIBaseUrl } from '../ai-endpoint';
-import { resolveAIModelBudgets } from '../ai-model-policy';
+import { resolveModelBudget } from '../ai-model-policy';
 import { ServerMemoryStore } from './server-memory-store';
 import { distillMemory } from './agent/memory';
 import { ResponsesError } from './agent/responses-client';
@@ -115,7 +115,7 @@ function formatServerResponse(row: ServerRow) {
 type ShareMetaRow = { user_id: number; server_id: number; share_ref: string; status: string };
 type ThemeRow = { theme_data: string };
 type FingerprintRow = { fingerprint: string };
-type AIBudgetRow = { context_window?: number | null; max_output_tokens?: number | null };
+type AIBudgetRow = { context_window?: number | null; max_output_tokens?: number | null; budget_source?: string | null };
 type AIConfigRow = AIBudgetRow & { base_url: string; model: string; api_key_last4: string; updated_at: string };
 type AIConfigSecretRow = AIBudgetRow & { base_url: string; model: string; api_key_enc: string };
 
@@ -282,8 +282,9 @@ export class UserDBDO {
         model          TEXT NOT NULL,
         api_key_enc    TEXT NOT NULL,
         api_key_last4  TEXT,
-        context_window INTEGER NOT NULL DEFAULT 64000,
+        context_window INTEGER NOT NULL DEFAULT 128000,
         max_output_tokens INTEGER NOT NULL DEFAULT 8192,
+        budget_source TEXT,
         updated_at     TEXT DEFAULT (datetime('now'))
       );
 
@@ -356,6 +357,9 @@ export class UserDBDO {
     }
     if (!aiColumns.some((column: any) => column.name === 'max_output_tokens')) {
       this.db.exec('ALTER TABLE ai_configs ADD COLUMN max_output_tokens INTEGER NOT NULL DEFAULT 8192');
+    }
+    if (!aiColumns.some((column: any) => column.name === 'budget_source')) {
+      this.db.exec('ALTER TABLE ai_configs ADD COLUMN budget_source TEXT');
     }
 
     // === Migration: 给既有 servers 表追加 region / inferred_hint 列（幂等） ===
@@ -2400,7 +2404,7 @@ export class UserDBDO {
 
   private handleGetAIConfig(userId: number): Response {
     const rows = this.query<AIConfigRow>(
-      'SELECT base_url, model, api_key_last4, updated_at, context_window, max_output_tokens FROM ai_configs WHERE user_id = ?',
+      'SELECT base_url, model, api_key_last4, updated_at, context_window, max_output_tokens, budget_source FROM ai_configs WHERE user_id = ?',
       userId
     );
 
@@ -2417,6 +2421,7 @@ export class UserDBDO {
       updated_at: row.updated_at,
       context_window: row.context_window,
       max_output_tokens: row.max_output_tokens,
+      budget_source: row.budget_source ?? 'model',
     });
   }
 
@@ -2426,8 +2431,8 @@ export class UserDBDO {
       base_url: string;
       model: string;
       api_key?: string;
-      context_window?: number | null;
-      max_output_tokens?: number | null;
+      provider_context_window?: number | null;
+      provider_max_output_tokens?: number | null;
     }>();
 
     if (!body.user_id || !body.base_url || !body.model) {
@@ -2440,7 +2445,7 @@ export class UserDBDO {
       return Response.json({ error: 'Invalid Responses API address', code: 'responses_address' }, { status: 400 });
     }
     const existing = this.query<AIConfigSecretRow>(
-      'SELECT base_url, model, api_key_enc, context_window, max_output_tokens FROM ai_configs WHERE user_id = ?', body.user_id
+      'SELECT base_url, model, api_key_enc, context_window, max_output_tokens, budget_source FROM ai_configs WHERE user_id = ?', body.user_id
     );
     const hasExistingKey = existing.length > 0 && !!existing[0].api_key_enc;
     if (!body.api_key && hasExistingKey) {
@@ -2453,16 +2458,14 @@ export class UserDBDO {
       return Response.json({ error: '首次配置必须填写 API Key' }, { status: 400 });
     }
 
-    let budgets: ReturnType<typeof resolveAIModelBudgets>;
-    const sameModel = existing[0]?.model === body.model && existing[0]?.base_url === body.base_url;
-    try {
-      budgets = resolveAIModelBudgets({
-        context_window: body.context_window === undefined && sameModel ? existing[0]?.context_window : body.context_window,
-        max_output_tokens: body.max_output_tokens === undefined && sameModel ? existing[0]?.max_output_tokens : body.max_output_tokens,
-      });
-    } catch {
-      return Response.json({ error: 'Invalid AI token budgets', code: 'responses_limits' }, { status: 400 });
-    }
+    const keptProvider = existing[0]?.budget_source === 'provider' && existing[0]?.model === body.model
+      ? { context_window: existing[0].context_window ?? undefined, max_output_tokens: existing[0].max_output_tokens ?? undefined }
+      : undefined;
+    const hinted = body.provider_context_window != null || body.provider_max_output_tokens != null
+      ? { context_window: body.provider_context_window ?? undefined, max_output_tokens: body.provider_max_output_tokens ?? undefined }
+      : keptProvider;
+    const budgets = resolveModelBudget(body.model, hinted);
+    const budgetSource = hinted?.context_window === budgets.context_window ? 'provider' : 'model';
 
     let encrypted: string | null = null;
     let last4: string | null = null;
@@ -2474,24 +2477,26 @@ export class UserDBDO {
 
     if (encrypted === null) {
       this.db.exec(
-        `INSERT INTO ai_configs (user_id, base_url, model, api_key_enc, api_key_last4, context_window, max_output_tokens, updated_at)
-         VALUES (?, ?, ?, '', '', ?, ?, datetime('now'))
+        `INSERT INTO ai_configs (user_id, base_url, model, api_key_enc, api_key_last4, context_window, max_output_tokens, budget_source, updated_at)
+         VALUES (?, ?, ?, '', '', ?, ?, ?, datetime('now'))
          ON CONFLICT(user_id) DO UPDATE SET
            base_url = excluded.base_url,
            model = excluded.model,
            context_window = excluded.context_window,
            max_output_tokens = excluded.max_output_tokens,
+           budget_source = excluded.budget_source,
            updated_at = excluded.updated_at`,
         body.user_id,
         body.base_url,
         body.model,
         budgets.context_window,
-        budgets.max_output_tokens
+        budgets.max_output_tokens,
+        budgetSource
       );
     } else {
       this.db.exec(
-        `INSERT INTO ai_configs (user_id, base_url, model, api_key_enc, api_key_last4, context_window, max_output_tokens, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        `INSERT INTO ai_configs (user_id, base_url, model, api_key_enc, api_key_last4, context_window, max_output_tokens, budget_source, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
          ON CONFLICT(user_id) DO UPDATE SET
            base_url = excluded.base_url,
            model = excluded.model,
@@ -2499,6 +2504,7 @@ export class UserDBDO {
            api_key_last4 = excluded.api_key_last4,
            context_window = excluded.context_window,
            max_output_tokens = excluded.max_output_tokens,
+           budget_source = excluded.budget_source,
            updated_at = excluded.updated_at`,
         body.user_id,
         body.base_url,
@@ -2506,7 +2512,8 @@ export class UserDBDO {
         encrypted,
         last4,
         budgets.context_window,
-        budgets.max_output_tokens
+        budgets.max_output_tokens,
+        budgetSource
       );
     }
 
@@ -2515,7 +2522,7 @@ export class UserDBDO {
 
   private async handleGetAIConfigDecrypted(userId: number): Promise<Response> {
     const rows = this.query<AIConfigSecretRow>(
-      'SELECT base_url, model, api_key_enc, context_window, max_output_tokens FROM ai_configs WHERE user_id = ?',
+      'SELECT base_url, model, api_key_enc, context_window, max_output_tokens, budget_source FROM ai_configs WHERE user_id = ?',
       userId
     );
 
@@ -2534,8 +2541,9 @@ export class UserDBDO {
       base_url: row.base_url,
       model: row.model,
       api_key: decrypted,
-      ...(row.context_window != null ? { context_window: row.context_window } : {}),
-      ...(row.max_output_tokens != null ? { max_output_tokens: row.max_output_tokens } : {}),
+      context_window: row.context_window,
+      max_output_tokens: row.max_output_tokens,
+      budget_source: row.budget_source ?? 'model',
     });
   }
 

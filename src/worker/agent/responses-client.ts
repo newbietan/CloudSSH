@@ -282,10 +282,12 @@ export class ResponsesClient {
     }
     // Explicit allowlist: storage/chaining overrides can never be smuggled by a caller.
     const payload: Record<string, unknown> = {
-      model: this.config.model, store: false, input: request.input,
+      model: this.config.model, input: request.input,
       instructions: request.instructions, stream: request.stream,
       max_output_tokens: Math.min(request.max_output_tokens, this.budgets.max_output_tokens),
     };
+    // Keep store:false when the provider understands it. Omit the field if it rejects it; never flip to true.
+    if (!this.unsupported.has('store')) payload.store = false;
     if (!this.unsupported.has('truncation')) payload.truncation = 'disabled'; // API default is disabled.
     if (!this.unsupported.has('include')) payload.include = ['reasoning.encrypted_content'];
     if (request.prompt_cache_key && !this.unsupported.has('prompt_cache_key')) {
@@ -315,7 +317,7 @@ export class ResponsesClient {
     if (parameter === 'tools.strict') return Boolean(payload.tools);
     if (parameter === 'text.format') return Boolean(payload.text);
     if (parameter === 'reasoning' || parameter === 'reasoning.effort') return Boolean(payload.reasoning);
-    return ['prompt_cache_key', 'truncation', 'parallel_tool_calls', 'tool_choice', 'include'].includes(parameter) &&
+    return ['store', 'prompt_cache_key', 'truncation', 'parallel_tool_calls', 'tool_choice', 'include'].includes(parameter) &&
       Object.hasOwn(payload, parameter);
   }
 
@@ -328,6 +330,13 @@ export class ResponsesClient {
 
   /** Same serialized-body budget used by create(), for atomic checkpoint preflight. */
   canFit(request: ResponseRequest): boolean { return this.withinBudget(this.payload(request)); }
+
+  /** One-shot shrink after the provider reports the previous window was too large. */
+  narrowContextWindow(contextWindow: number): void {
+    if (contextWindow < this.budgets.context_window && contextWindow > this.budgets.max_output_tokens) {
+      this.budgets = { ...this.budgets, context_window: contextWindow };
+    }
+  }
 
   async create(request: ResponseRequest, signal: AbortSignal, onText?: (delta: string) => void): Promise<ModelResponse> {
     let requestId = crypto.randomUUID();
