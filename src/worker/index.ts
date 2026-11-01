@@ -28,6 +28,7 @@ import {
 } from './auth';
 import { createHtmlResponse } from './html-cache';
 import { handleVersionCheck } from './version-check';
+import { handleCloudflareSshCaSign } from './cf-ssh-ca';
 
 export { SSHSessionDO } from './durable-object';
 export { SSHShareDO } from './share-do';
@@ -358,6 +359,15 @@ export default {
         return handleVersionCheck(request);
       }
 
+      // ==================== Cloudflare SSH CA 签发代理 ====================
+
+      if (url.pathname === '/api/cf-ssh-ca/sign' && request.method === 'POST') {
+        if (!hasSameWebSocketOrigin(request, url)) {
+          return new Response('Forbidden', { status: 403 });
+        }
+        return handleCloudflareSshCaSign(request);
+      }
+
       // Return config info (includes GitHub auth availability)
       if (url.pathname === '/api/config') {
         const authMode = resolveAuthMode(env, request);
@@ -371,6 +381,7 @@ export default {
           sshSharingEnabled: isSSHSharingEnabled(env),
           authMode,
           cfAccessEmail,
+          cfAccessTeamName: env.CF_ACCESS_TEAM_NAME || '',
           // 浏览器预拉伸公开参数（盐非机密）；坏哈希时为 null
           passwordAuth: authMode === 'password' ? getPasswordAuthParams(env) : null,
           passwordHashInvalid:
@@ -630,11 +641,21 @@ async function handleServersRoute(request: Request, url: URL, env: Env): Promise
   const connectMatch = url.pathname.match(/^\/api\/servers\/(\d+)\/connect$/);
   if (connectMatch && request.method === 'POST') {
     const serverId = connectMatch[1];
+    let ephemeralCredential: string | undefined;
+    try {
+      const connectBody = await request.json<{ ephemeralCredential?: string }>();
+      if (typeof connectBody.ephemeralCredential === 'string' && connectBody.ephemeralCredential.length <= 64 * 1024) {
+        ephemeralCredential = connectBody.ephemeralCredential;
+      }
+    } catch {
+      /* 请求不带 JSON 正文属正常常规连接 */
+    }
+
     const tokenRes = await stub.fetch(
       new Request(`http://internal/internal/servers/${serverId}/connect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: user.id }),
+        body: JSON.stringify({ user_id: user.id, ephemeralCredential }),
       })
     );
 

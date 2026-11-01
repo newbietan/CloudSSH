@@ -4,6 +4,7 @@ import { getLocale, onLocaleChange, t } from './i18n';
 import { osDisplayName, osIconSvg } from './os-icons';
 import { parsePort } from './port';
 import { preparePrivateKey } from './private-key-import';
+import { requestCloudflareSshCertificate } from './cf-ssh-ca';
 import { populateRegionSelect, regionLabel } from './regions';
 import { ShareManager } from './share-manager';
 import type { SSHHostInfo } from './terminal';
@@ -35,6 +36,8 @@ export interface ServerConfig {
   cf_tunnel_host?: string | null;
   cf_access_client_id?: string | null;
   has_cf_access_client_secret?: boolean;
+  /** Cloudflare Zero Trust SSH CA 团队标识（非空表示使用原生 SSH CA 短期证书认证） */
+  cf_ssh_ca_team?: string | null;
   /** 最近连接成功的 Unix 毫秒时间戳 */
   last_connected_at?: number | null;
   created_at: string;
@@ -55,6 +58,7 @@ interface ServerSavePayload {
   cf_tunnel_host?: string;
   cf_access_client_id?: string;
   cf_access_client_secret?: string;
+  cf_ssh_ca_team?: string | null;
 }
 
 interface ServerSaveResponse {
@@ -185,7 +189,7 @@ export class ServerList {
   private onConnect: (wsUrl: string, serverName: string, hostInfo?: SSHHostInfo) => void;
   private editingServerId: number | null = null;
   private editingOriginalAuthMethod: ServerConfig['auth_method'] | null = null;
-  private modalAuthMode: 'password' | 'key' | 'none' = 'password';
+  private modalAuthMode: 'password' | 'key' | 'none' | 'cf_ca' = 'password';
   private modalTransportMode: 'direct' | 'cf_tunnel' = 'direct';
   private modalGeneration = 0;
   private clearCfAccessClientSecret = false;
@@ -376,6 +380,9 @@ export class ServerList {
     document
       .getElementById('modal-auth-tab-key')
       ?.addEventListener('click', () => this.setModalAuthMode('key'));
+    document
+      .getElementById('modal-auth-tab-cf-ca')
+      ?.addEventListener('click', () => this.setModalAuthMode('cf_ca'));
     document
       .getElementById('modal-auth-tab-none')
       ?.addEventListener('click', () => this.setModalAuthMode('none'));
@@ -586,12 +593,21 @@ export class ServerList {
   }
 
   private renderServerCard(server: ServerConfig, index = 0, animate = false): string {
-    const authIcon =
-      server.auth_method === 'none'
+    const isCfCa = Boolean(server.cf_ssh_ca_team);
+    const authIcon = isCfCa
+      ? 'verified_user'
+      : server.auth_method === 'none'
         ? 'person'
-        : server.auth_method === 'publickey' ? 'vpn_key' : 'password';
-    const authLabel =
-      server.auth_method === 'none' ? 'NONE' : server.auth_method === 'publickey' ? 'KEY' : 'PWD';
+        : server.auth_method === 'publickey'
+          ? 'vpn_key'
+          : 'password';
+    const authLabel = isCfCa
+      ? 'CF CA'
+      : server.auth_method === 'none'
+        ? 'NONE'
+        : server.auth_method === 'publickey'
+          ? 'KEY'
+          : 'PWD';
     const isTunnel = server.transport_type === 'cf_tunnel';
     const tunnelBadge = isTunnel
       ? `<span class="shrink-0 text-[10px] font-bold tracking-[0.1em] text-[var(--accent-secondary)] border border-[var(--accent-secondary)] px-1.5 py-0.5">${t('server.tunnelBadge')}</span>`
@@ -735,8 +751,23 @@ export class ServerList {
     }
 
     try {
+      let ephemeralCredential: string | undefined;
+      if (server.cf_ssh_ca_team) {
+        if (connectBtn) {
+          // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
+          connectBtn.innerHTML = `
+            <span class="material-symbols-outlined animate-spin" style="font-size: 14px;">progress_activity</span>
+            ${t('auth.cfMinting')}
+          `;
+        }
+        const creds = await requestCloudflareSshCertificate(server.cf_ssh_ca_team);
+        ephemeralCredential = `${creds.privateKey}\n${creds.certificate}`;
+      }
+
       const res = await fetch(`/api/servers/${serverId}/connect`, {
         method: 'POST',
+        headers: ephemeralCredential ? { 'Content-Type': 'application/json' } : undefined,
+        body: ephemeralCredential ? JSON.stringify({ ephemeralCredential }) : undefined,
       });
 
       if (!res.ok) {
@@ -762,6 +793,7 @@ export class ServerList {
         port: server.port,
         username: server.username,
         serverId: server.id,
+        cfSshCaTeam: server.cf_ssh_ca_team || undefined,
       });
     } catch (e) {
       notify(e instanceof Error ? e.message : String(e), {
@@ -856,12 +888,20 @@ export class ServerList {
       (document.getElementById('server-username') as HTMLInputElement).value = server.username;
       (document.getElementById('server-password') as HTMLInputElement).value = '';
       (document.getElementById('server-private-key') as HTMLTextAreaElement).value = '';
+      const cfCaInput = document.getElementById('server-cf-ca-team') as HTMLInputElement | null;
+      if (cfCaInput) cfCaInput.value = server.cf_ssh_ca_team || '';
       (document.getElementById('server-tags') as HTMLInputElement).value = (server.tags || []).join(
         ', '
       );
 
       this.setModalAuthMode(
-        server.auth_method === 'publickey' ? 'key' : server.auth_method === 'none' ? 'none' : 'password'
+        server.cf_ssh_ca_team
+          ? 'cf_ca'
+          : server.auth_method === 'publickey'
+            ? 'key'
+            : server.auth_method === 'none'
+              ? 'none'
+              : 'password'
       );
 
       const transport = server.transport_type === 'cf_tunnel' ? 'cf_tunnel' : 'direct';
@@ -918,6 +958,8 @@ export class ServerList {
       (document.getElementById('server-username') as HTMLInputElement).value = '';
       (document.getElementById('server-password') as HTMLInputElement).value = '';
       (document.getElementById('server-private-key') as HTMLTextAreaElement).value = '';
+      const cfCaInput = document.getElementById('server-cf-ca-team') as HTMLInputElement | null;
+      if (cfCaInput) cfCaInput.value = '';
       (document.getElementById('server-tags') as HTMLInputElement).value = '';
       this.setModalAuthMode('password');
       this.setModalTransportMode('direct');
@@ -1029,13 +1071,16 @@ export class ServerList {
     }
   }
 
-  private setModalAuthMode(mode: 'password' | 'key' | 'none'): void {
+  private setModalAuthMode(mode: 'password' | 'key' | 'none' | 'cf_ca'): void {
     this.modalAuthMode = mode;
-    for (const value of ['password', 'key', 'none'] as const) {
-      const tab = document.getElementById(`modal-auth-tab-${value}`)!;
-      tab.classList.toggle('auth-tab-active', mode === value);
-      tab.setAttribute('aria-pressed', String(mode === value));
-      document.getElementById(`modal-${value}-section`)!.style.display = mode === value ? '' : 'none';
+    for (const value of ['password', 'key', 'none', 'cf_ca'] as const) {
+      const tabId = value === 'cf_ca' ? 'modal-auth-tab-cf-ca' : `modal-auth-tab-${value}`;
+      const sectionId = value === 'cf_ca' ? 'modal-cf-ca-section' : `modal-${value}-section`;
+      const tab = document.getElementById(tabId);
+      const section = document.getElementById(sectionId);
+      tab?.classList.toggle('auth-tab-active', mode === value);
+      tab?.setAttribute('aria-pressed', String(mode === value));
+      if (section) section.style.display = mode === value ? '' : 'none';
     }
     const editingPassword =
       mode === 'password' &&
@@ -1080,12 +1125,17 @@ export class ServerList {
     for (const candidate of this.servers) {
       if (candidate.id === this.editingServerId) continue;
       if (candidate.transport_type === 'cf_tunnel') continue;
+      if (candidate.cf_ssh_ca_team) continue;
       const seen = new Set<number>();
       let current: ServerConfig | undefined = candidate;
       let depth = 0;
       let invalid = false;
       while (current) {
-        if (seen.has(current.id) || current.id === this.editingServerId) {
+        if (
+          seen.has(current.id) ||
+          current.id === this.editingServerId ||
+          current.cf_ssh_ca_team
+        ) {
           invalid = true;
           break;
         }
@@ -1190,12 +1240,30 @@ export class ServerList {
       return;
     }
 
-    const authMethod = this.modalAuthMode === 'key' ? 'publickey' : this.modalAuthMode;
+    const isCfCa = this.modalAuthMode === 'cf_ca';
+    let cfSshCaTeam: string | null = null;
+    if (isCfCa) {
+      const teamInput = document.getElementById('server-cf-ca-team') as HTMLInputElement | null;
+      cfSshCaTeam = teamInput?.value.trim() || '';
+      if (!cfSshCaTeam) {
+        notify(t('auth.cfTeamRequired'), {
+          title: t('server.detailsTitle'),
+          variant: 'warning',
+        });
+        teamInput?.focus();
+        return;
+      }
+    }
+
+    const authMethod =
+      this.modalAuthMode === 'key' || this.modalAuthMode === 'cf_ca'
+        ? 'publickey'
+        : this.modalAuthMode;
     const useEmptyPassword =
       authMethod === 'password' &&
       (document.getElementById('server-empty-password') as HTMLInputElement).checked;
     let credential =
-      authMethod === 'none' || useEmptyPassword
+      authMethod === 'none' || useEmptyPassword || isCfCa
         ? ''
         : authMethod === 'publickey' ? privateKey : password;
     const authMethodChanged =
@@ -1203,8 +1271,13 @@ export class ServerList {
       this.editingOriginalAuthMethod !== null &&
       authMethod !== this.editingOriginalAuthMethod;
 
-    // 只有私钥必须非空；编辑已有密码时留空仍保留原值，除非明确勾选设为空密码。
-    if (authMethod === 'publickey' && (!this.editingServerId || authMethodChanged) && !credential) {
+    // 只有非 CF CA 的常规私钥模式必须非空；编辑已有密码时留空仍保留原值，除非明确勾选设为空密码。
+    if (
+      authMethod === 'publickey' &&
+      !isCfCa &&
+      (!this.editingServerId || authMethodChanged) &&
+      !credential
+    ) {
       notify(
         authMethodChanged
           ? t('server.credentialRequiredAfterAuthChange')
@@ -1261,6 +1334,7 @@ export class ServerList {
         tags,
         transport_type: this.modalTransportMode,
         jump_server_id: isTunnel ? null : jumpServerId,
+        cf_ssh_ca_team: isCfCa ? cfSshCaTeam : null,
       };
       if (
         credential ||

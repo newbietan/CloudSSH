@@ -2,10 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 import type { SSHConnectionConfig } from '../../src/types';
 import { UserDBDO } from '../../src/worker/user-db';
 
+type JumpFixture = {
+  user_id: number;
+  jump_server_id: number | null;
+  cf_ssh_ca_team?: string | null;
+};
+
 class JumpSql {
-  constructor(
-    private readonly rows: Record<number, { user_id: number; jump_server_id: number | null }>
-  ) {}
+  constructor(private readonly rows: Record<number, JumpFixture>) {}
 
   exec(query: string, ...values: unknown[]): { toArray: () => unknown[] } {
     if (query.includes('PRAGMA table_info(servers)')) {
@@ -14,16 +18,18 @@ class JumpSql {
           ['region', 'inferred_hint', 'tags', 'os', 'jump_server_id'].map((name) => ({ name })),
       };
     }
-    if (query === 'SELECT user_id, jump_server_id FROM servers WHERE id = ?') {
+    if (query === 'SELECT user_id, jump_server_id, cf_ssh_ca_team FROM servers WHERE id = ?') {
       const row = this.rows[Number(values[0])];
-      return { toArray: () => (row ? [row] : []) };
+      return {
+        toArray: () => (row ? [{ ...row, cf_ssh_ca_team: row.cf_ssh_ca_team ?? null }] : []),
+      };
     }
     return { toArray: () => [] };
   }
 }
 
 function validate(
-  rows: Record<number, { user_id: number; jump_server_id: number | null }>,
+  rows: Record<number, JumpFixture>,
   targetId: number | null,
   jumpId: number | null
 ): string | null {
@@ -85,6 +91,22 @@ describe('UserDB jump chain validation', () => {
       )
     ).toContain('最多允许 3 级');
     expect(validate({ 1: { user_id: 8, jump_server_id: null } }, 9, 1)).toContain('其他用户');
+  });
+
+  it('拒绝把 Cloudflare SSH CA 服务器放进跳板链的任一跳', () => {
+    expect(
+      validate({ 1: { user_id: 7, jump_server_id: null, cf_ssh_ca_team: 'team' } }, 9, 1)
+    ).toContain('不支持作为跳板机');
+    expect(
+      validate(
+        {
+          1: { user_id: 7, jump_server_id: 2, cf_ssh_ca_team: null },
+          2: { user_id: 7, jump_server_id: null, cf_ssh_ca_team: 'team' },
+        },
+        9,
+        1
+      )
+    ).toContain('不支持作为跳板机');
   });
 });
 

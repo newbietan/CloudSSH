@@ -1531,7 +1531,8 @@ export class SSHSession {
           this.config.privateKey!,
           this.sessionID!,
           this.serverSigAlgs,
-          false
+          false,
+          this.config.certificate
         );
         break;
       case 'password':

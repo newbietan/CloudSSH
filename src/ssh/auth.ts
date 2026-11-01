@@ -8,6 +8,11 @@ import {
 } from '../types';
 import { concat, encodeString, encodeUint32, readUint32 } from './utils';
 import { type EcNamedCurve, type RsaComponents, parsePkcs1Rsa, parsePkcs8, parseSec1Ec } from './pkcs';
+import {
+  extractPrivateKeyAndCertificate,
+  parseOpenSshUserCertificate,
+  type UserCertificateInfo,
+} from './user-cert';
 
 // SSH key type constants
 const SSH_ED25519 = 'ssh-ed25519';
@@ -299,30 +304,64 @@ export class SSHAuth {
    * 默认（未提供 serverSigAlgs）使用 `rsa-sha2-256`，绝不再静默降级到 SHA-1。
    *
    * @param username            SSH 用户名
-   * @param privateKeyPEM       OpenSSH 私钥 PEM
+   * @param privateKeyPEM       OpenSSH 私钥 PEM（若同时包含证书单行，会自动提取）
    * @param sessionID           会话 ID（用于签名）
    * @param serverSigAlgs       服务端 SSH_MSG_EXT_INFO 的 server-sig-algs 列表
    * @param allowLegacyRsaSha1  是否允许 ssh-rsa(SHA-1) 兼容
+   * @param certificate         可选 OpenSSH 用户证书（单行文本、Base64 或 Uint8Array wire blob）
    */
   static async buildPublicKeyAuthRequest(
     username: string,
     privateKeyPEM: string,
     sessionID: Uint8Array,
     serverSigAlgs?: string[],
-    allowLegacyRsaSha1: boolean = false
+    allowLegacyRsaSha1: boolean = false,
+    certificate?: string | Uint8Array
   ): Promise<Uint8Array> {
+    // 自动兼容私钥文本中合并附带证书单行的情况
+    let effectiveKeyPem = privateKeyPEM;
+    let effectiveCert = certificate;
+    if (!effectiveCert && typeof privateKeyPEM === 'string') {
+      const extracted = extractPrivateKeyAndCertificate(privateKeyPEM);
+      effectiveKeyPem = extracted.privateKey;
+      effectiveCert = extracted.certificate;
+    }
+
     const { signingKey, publicKeyBlob, keyType, rsaPkcs8 } =
-      await SSHAuth.parsePrivateKey(privateKeyPEM);
+      await SSHAuth.parsePrivateKey(effectiveKeyPem);
+
+    // 若提供了用户证书，解析证书并校验私钥与证书匹配性
+    let certInfo: UserCertificateInfo | undefined;
+    if (effectiveCert) {
+      certInfo = parseOpenSshUserCertificate(effectiveCert);
+      if (!SSHAuth.bytesEqual(publicKeyBlob, certInfo.publicKeyBlob)) {
+        throw new Error('私钥与证书不匹配：证书公钥与私钥不一致');
+      }
+      // 不在客户端比对 principals。空列表表示任意用户；非空时 sshd 仍可用
+      // AuthorizedPrincipalsFile/Command 映射到不同 Unix 用户（Cloudflare 进阶配置）。
+    }
 
     // 确定 request / signature 外层算法名（公钥 blob 内部类型不变）
-    let requestAlgo = keyType;
+    let requestAlgo = certInfo ? certInfo.certType : keyType;
     let signatureAlgo = keyType;
 
     if (keyType === SSH_RSA) {
       const chosen = SSHAuth.selectRsaSigAlgorithm(serverSigAlgs, allowLegacyRsaSha1);
-      requestAlgo = chosen;
       signatureAlgo = chosen;
+      if (certInfo) {
+        requestAlgo =
+          chosen === 'rsa-sha2-512'
+            ? 'rsa-sha2-512-cert-v01@openssh.com'
+            : chosen === 'rsa-sha2-256'
+              ? 'rsa-sha2-256-cert-v01@openssh.com'
+              : 'ssh-rsa-cert-v01@openssh.com';
+      } else {
+        requestAlgo = chosen;
+      }
     }
+
+    // 证书认证时使用完整的证书 wire blob，普通认证使用裸公钥 blob
+    const outKeyBlob = certInfo ? certInfo.rawBlob : publicKeyBlob;
 
     // Build the request body (without signature first)
     const requestBody = concat(
@@ -332,7 +371,7 @@ export class SSHAuth {
       encodeString('publickey'),
       new Uint8Array([0x01]), // TRUE = has signature
       encodeString(requestAlgo),
-      encodeString(publicKeyBlob)
+      encodeString(outKeyBlob)
     );
 
     // Data to sign: session_id_string || request_body
@@ -385,6 +424,15 @@ export class SSHAuth {
 
     // Full auth packet: requestBody || string signature_blob
     return concat(requestBody, encodeString(signatureBlob));
+  }
+
+  /** 恒时/安全比较两个字节数组是否一致 */
+  private static bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) return false;
+    }
+    return true;
   }
 
   /**

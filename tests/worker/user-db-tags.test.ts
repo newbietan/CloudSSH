@@ -27,8 +27,8 @@ class FakeSql {
     if (query.includes('SELECT user_id FROM servers WHERE id')) {
       return { toArray: () => [{ user_id: 7 }] };
     }
-    if (query === 'SELECT user_id, jump_server_id FROM servers WHERE id = ?') {
-      return { toArray: () => [{ user_id: 7, jump_server_id: null }] };
+    if (query === 'SELECT user_id, jump_server_id, cf_ssh_ca_team FROM servers WHERE id = ?') {
+      return { toArray: () => [{ user_id: 7, jump_server_id: null, cf_ssh_ca_team: null }] };
     }
     if (query.startsWith('UPDATE servers SET')) {
       const tagsIndex = query.split(', ').findIndex((part) => part.includes('tags = ?'));

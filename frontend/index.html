@@ -807,12 +807,41 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 </button>
                 <button
                   type="button"
+                  id="modal-auth-tab-cf-ca"
+                  class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all"
+                  data-i18n="auth.cfSshCa"
+                >
+                  Cloudflare CA
+                </button>
+                <button
+                  type="button"
                   id="modal-auth-tab-none"
                   class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all"
                   data-i18n="auth.none"
                 ></button>
               </div>
               <p id="modal-none-section" class="text-xs text-muted" style="display: none" data-i18n="auth.noneHint"></p>
+              <div id="modal-cf-ca-section" style="display: none" class="space-y-2">
+                <label
+                  for="server-cf-ca-team"
+                  class="block text-xs font-bold tracking-[0.1em] text-muted mb-1"
+                  data-i18n="auth.cfTeamName"
+                  >Zero Trust 团队标识</label
+                >
+                <div class="flex items-center">
+                  <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px">verified_user</span>
+                  <input
+                    id="server-cf-ca-team"
+                    class="terminal-input text-[13px]"
+                    data-i18n-placeholder="auth.cfTeamNamePlaceholder"
+                    placeholder="mycompany"
+                    type="text"
+                    autocomplete="off"
+                  />
+                </div>
+                <p class="text-xs text-muted" data-i18n="auth.cfSshCaHint"></p>
+                <p class="text-[11px] text-muted opacity-80" data-i18n="auth.cfPrincipalHint"></p>
+              </div>
               <div id="modal-password-section">
                 <div class="flex items-center">
                   <span

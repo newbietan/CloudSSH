@@ -4,7 +4,7 @@ import { maskIPAddress } from './host-display';
 import { t } from './i18n';
 import { getNetworkQuality } from './network-quality';
 import { SFTPPanel } from './sftp-panel';
-import { SSHTerminal, type TerminalSelectionAnchor } from './terminal';
+import { SSHTerminal, type SSHHostInfo, type TerminalSelectionAnchor } from './terminal';
 import { notify } from './ui-feedback';
 
 export type TabState = 'connecting' | 'connected' | 'disconnected';
@@ -16,7 +16,7 @@ export interface TabInfo {
   sftpPanel: SFTPPanel | null;
   agentPanel: AgentPanel | null;
   containerEl: HTMLElement;
-  hostInfo?: { host: string; port: number; username?: string; serverId?: number };
+  hostInfo?: SSHHostInfo;
   state: TabState;
   cfLatency?: number;
   cfColo?: string;
@@ -96,7 +96,7 @@ export class TabManager {
 
   createTab(
     label: string,
-    hostInfo?: { host: string; port: number; username?: string; serverId?: number }
+    hostInfo?: SSHHostInfo
   ): TabInfo {
     const id = `tab-${++this.tabCounter}-${Date.now()}`;
 

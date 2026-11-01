@@ -316,6 +316,7 @@ export class SSHSessionDO {
       if (config.authMethod === 'none') {
         config.password = '';
         delete config.privateKey;
+        delete config.certificate;
       }
 
       const pendingSessionName = this.pendingSessionNames.get(ws);

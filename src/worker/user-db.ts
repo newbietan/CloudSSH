@@ -18,6 +18,8 @@ import { inferLocationHint } from './ip-geo';
 import { isDetectedOS } from './os-detect';
 import { deserializeServerRow, serializeServerTags } from './server-tags';
 import { isValidTunnelHostname } from './tunnel-stream';
+import { extractPrivateKeyAndCertificate } from '../ssh/user-cert';
+import { sanitizeTeamName } from './cf-ssh-ca';
 
 const AUTH_METHODS = new Set(['password', 'publickey', 'none']);
 const MAX_JUMP_HOSTS = 3;
@@ -44,6 +46,7 @@ interface StoredServerRow {
   cf_tunnel_host: string | null;
   cf_access_client_id: string | null;
   cf_access_client_secret: string | null;
+  cf_ssh_ca_team: string | null;
 }
 
 // ====== 行形状帮助类型：与 UserDBDO 内各 SELECT 列一一对应（配合 query<T> 消除逐处 as unknown as） ======
@@ -65,13 +68,18 @@ type ServerRow = {
   cf_tunnel_host: string | null;
   cf_access_client_id: string | null;
   has_cf_access_client_secret: number;
+  cf_ssh_ca_team: string | null;
   last_connected_at: number | null;
   created_at: string;
   updated_at: string;
 };
 type UserIdRow = { user_id: number };
 type LoginThrottleRow = { fail_count: number; locked_until: number; last_fail_at: number };
-type JumpRow = { user_id: number; jump_server_id: number | null };
+type JumpRow = {
+  user_id: number;
+  jump_server_id: number | null;
+  cf_ssh_ca_team: string | null;
+};
 type ServerEditRow = {
   user_id: number;
   host: string;
@@ -84,6 +92,7 @@ type ServerEditRow = {
   cf_tunnel_host: string | null;
   cf_access_client_id: string | null;
   cf_access_client_secret: string | null;
+  cf_ssh_ca_team: string | null;
 };
 type ServerNameRow = { name: string };
 
@@ -100,6 +109,7 @@ function formatServerResponse(row: ServerRow) {
     cf_tunnel_host: row.cf_tunnel_host || null,
     cf_access_client_id: row.cf_access_client_id || null,
     has_cf_access_client_secret: Boolean(row.has_cf_access_client_secret),
+    cf_ssh_ca_team: row.cf_ssh_ca_team || null,
   };
 }
 type ShareMetaRow = { user_id: number; server_id: number; share_ref: string; status: string };
@@ -232,6 +242,7 @@ export class UserDBDO {
         cf_tunnel_host TEXT DEFAULT NULL,
         cf_access_client_id TEXT DEFAULT NULL,
         cf_access_client_secret TEXT DEFAULT NULL,
+        cf_ssh_ca_team TEXT DEFAULT NULL,
         last_connected_at INTEGER DEFAULT NULL,
         created_at  TEXT DEFAULT (datetime('now')),
         updated_at  TEXT DEFAULT (datetime('now'))
@@ -379,6 +390,9 @@ export class UserDBDO {
     }
     if (!serverCols.some((c: any) => c.name === 'last_connected_at')) {
       this.db.exec('ALTER TABLE servers ADD COLUMN last_connected_at INTEGER DEFAULT NULL');
+    }
+    if (!serverCols.some((c: any) => c.name === 'cf_ssh_ca_team')) {
+      this.db.exec('ALTER TABLE servers ADD COLUMN cf_ssh_ca_team TEXT DEFAULT NULL');
     }
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_servers_jump ON servers(jump_server_id)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_servers_last_connected ON servers(user_id, last_connected_at DESC)');
@@ -922,7 +936,7 @@ export class UserDBDO {
       `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, jump_server_id,
               transport_type, cf_tunnel_host, cf_access_client_id,
               (cf_access_client_secret IS NOT NULL AND cf_access_client_secret != '') AS has_cf_access_client_secret,
-              last_connected_at, created_at, updated_at
+              cf_ssh_ca_team, last_connected_at, created_at, updated_at
        FROM servers WHERE user_id = ?
        ORDER BY (last_connected_at IS NULL) ASC, last_connected_at DESC, updated_at DESC`,
       userId
@@ -951,12 +965,13 @@ export class UserDBDO {
       if (depth > MAX_JUMP_HOSTS) return `最多允许 ${MAX_JUMP_HOSTS} 级 SSH 跳转`;
 
       const rows: JumpRow[] = this.query<JumpRow>(
-        'SELECT user_id, jump_server_id FROM servers WHERE id = ?',
+        'SELECT user_id, jump_server_id, cf_ssh_ca_team FROM servers WHERE id = ?',
         currentId
       );
       if (rows.length === 0) return '所选跳板服务器不存在';
       const row = rows[0];
       if (row.user_id !== userId) return '不能使用其他用户的服务器作为跳板';
+      if (row.cf_ssh_ca_team) return 'Cloudflare SSH CA 认证的服务器不支持作为跳板机';
       currentId = row.jump_server_id ?? null;
     }
     return null;
@@ -978,7 +993,13 @@ export class UserDBDO {
       cf_tunnel_host?: string;
       cf_access_client_id?: string;
       cf_access_client_secret?: string;
+      cf_ssh_ca_team?: string | null;
     }>();
+
+    let cleanCfSshCaTeam: string | null = null;
+    if (typeof body.cf_ssh_ca_team === 'string' && body.cf_ssh_ca_team.trim().length > 0) {
+      cleanCfSshCaTeam = sanitizeTeamName(body.cf_ssh_ca_team);
+    }
 
     const port = body.port ?? 22;
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -987,8 +1008,9 @@ export class UserDBDO {
     if (!AUTH_METHODS.has(body.auth_method)) {
       return Response.json({ error: '不支持的认证方式' }, { status: 400 });
     }
+    const isCfCa = Boolean(cleanCfSshCaTeam);
     if (
-      body.auth_method !== 'none' &&
+      body.auth_method !== 'none' && !isCfCa &&
       (typeof body.credential !== 'string' ||
         (body.auth_method === 'publickey' && body.credential.length === 0))
     ) {
@@ -1049,9 +1071,12 @@ export class UserDBDO {
     // 下游节点或隧道连接不需要推断区域。
     const region = jumpServerId === null ? requestedRegion : null;
 
-    // none 不保存密码/私钥；沿用现有 NOT NULL 列，无需数据库迁移。
+    // none 或 cf_ca 模式不强制要求保存密码/私钥；沿用现有 NOT NULL 列，无需数据库迁移。
+    const credentialToEncrypt = typeof body.credential === 'string' ? body.credential : '';
     const encrypted =
-      body.auth_method === 'none' ? '' : await this.encryptCredential(body.credential, body.user_id);
+      body.auth_method === 'none' || (isCfCa && !credentialToEncrypt)
+        ? ''
+        : await this.encryptCredential(credentialToEncrypt, body.user_id);
 
     // Auto 模式保存时一次性推断 locationHint，结果持久化入 inferred_hint 列
     // 手动区域已经能够直接决定调度，无需向 IPinfo 发送主机信息
@@ -1083,8 +1108,9 @@ export class UserDBDO {
       `INSERT INTO servers (
         user_id, name, host, port, username, credential, auth_method,
         region, inferred_hint, tags, jump_server_id,
-        transport_type, cf_tunnel_host, cf_access_client_id, cf_access_client_secret
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        transport_type, cf_tunnel_host, cf_access_client_id, cf_access_client_secret,
+        cf_ssh_ca_team
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       body.user_id,
       body.name,
       body.host,
@@ -1099,7 +1125,8 @@ export class UserDBDO {
       transportType,
       cleanTunnelHost,
       cfAccessClientId,
-      encCfAccessClientSecret
+      encCfAccessClientSecret,
+      cleanCfSshCaTeam
     );
 
     // 获取新创建的记录
@@ -1107,7 +1134,7 @@ export class UserDBDO {
       `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, jump_server_id,
               transport_type, cf_tunnel_host, cf_access_client_id,
               (cf_access_client_secret IS NOT NULL AND cf_access_client_secret != '') AS has_cf_access_client_secret,
-              last_connected_at, created_at, updated_at
+              cf_ssh_ca_team, last_connected_at, created_at, updated_at
        FROM servers WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
       body.user_id
     );
@@ -1136,11 +1163,12 @@ export class UserDBDO {
       cf_tunnel_host?: string;
       cf_access_client_id?: string;
       cf_access_client_secret?: string | null;
+      cf_ssh_ca_team?: string | null;
     }>();
 
-    // 验证服务器属于该用户（行形状：user_id/host/port/auth_method/region/inferred_hint/jump_server_id/transport_type/cf_tunnel_host/cf_access_client_id/cf_access_client_secret）
+    // 验证服务器属于该用户（行形状：user_id/host/port/auth_method/region/inferred_hint/jump_server_id/transport_type/cf_tunnel_host/cf_access_client_id/cf_access_client_secret/cf_ssh_ca_team）
     const existing = this.query<ServerEditRow>(
-      'SELECT user_id, host, port, auth_method, region, inferred_hint, jump_server_id, transport_type, cf_tunnel_host, cf_access_client_id, cf_access_client_secret FROM servers WHERE id = ?',
+      'SELECT user_id, host, port, auth_method, region, inferred_hint, jump_server_id, transport_type, cf_tunnel_host, cf_access_client_id, cf_access_client_secret, cf_ssh_ca_team FROM servers WHERE id = ?',
       serverId
     );
     if (existing.length === 0) return Response.json({ error: 'Server not found' }, { status: 404 });
@@ -1339,6 +1367,27 @@ export class UserDBDO {
       values.push(null);
     }
 
+    if (body.cf_ssh_ca_team !== undefined) {
+      const cleanTeam =
+        typeof body.cf_ssh_ca_team === 'string' && body.cf_ssh_ca_team.trim().length > 0
+          ? sanitizeTeamName(body.cf_ssh_ca_team)
+          : null;
+      if (cleanTeam) {
+        const referenced = this.query<{ id: number }>(
+          'SELECT id FROM servers WHERE jump_server_id = ? LIMIT 1',
+          serverId
+        );
+        if (referenced.length > 0) {
+          return Response.json(
+            { error: 'Cloudflare SSH CA 认证的服务器不支持作为跳板机' },
+            { status: 400 }
+          );
+        }
+      }
+      updates.push('cf_ssh_ca_team = ?');
+      values.push(cleanTeam);
+    }
+
     if (updates.length > 0) {
       // Credential encryption and region inference may yield; validate again
       // immediately before the write so concurrent updates cannot create a cycle.
@@ -1355,7 +1404,7 @@ export class UserDBDO {
       `SELECT id, user_id, name, host, port, username, auth_method, region, inferred_hint, tags, os, jump_server_id,
               transport_type, cf_tunnel_host, cf_access_client_id,
               (cf_access_client_secret IS NOT NULL AND cf_access_client_secret != '') AS has_cf_access_client_secret,
-              last_connected_at, created_at, updated_at
+              cf_ssh_ca_team, last_connected_at, created_at, updated_at
        FROM servers WHERE id = ?`,
       serverId
     );
@@ -1597,6 +1646,12 @@ export class UserDBDO {
     const pathSegments: string[] = [];
     for (let index = 0; index < chain.length; index++) {
       const server = chain[index];
+      if (index < chain.length - 1 && server.cf_ssh_ca_team) {
+        return Response.json(
+          { error: 'Cloudflare SSH CA 认证的服务器不支持作为跳板机' },
+          { status: 400 }
+        );
+      }
       const identity = index === 0 ? server.host : `jump:${pathSegments.join('>')}|${server.host}`;
       pathSegments.push(`${server.id}@${server.host}:${server.port}`);
       const known = this.db
@@ -1616,7 +1671,16 @@ export class UserDBDO {
         );
       }
     }
-    return { serverName: chain[chain.length - 1].name };
+    const target = chain[chain.length - 1];
+    if (target.cf_ssh_ca_team) {
+      return Response.json(
+        {
+          error: 'Cloudflare SSH CA 认证的服务器不支持创建一次性分享（临时凭据由登录设备动态持有）',
+        },
+        { status: 400 }
+      );
+    }
+    return { serverName: target.name };
   }
 
   private handleGetShare(shareId: string, userId: number): Response {
@@ -1909,7 +1973,7 @@ export class UserDBDO {
   // ==================== One-time-token 连接 ====================
 
   private async handleConnectServer(serverId: number, request: Request): Promise<Response> {
-    const body = await request.json<{ user_id: number }>();
+    const body = await request.json<{ user_id: number; ephemeralCredential?: string }>();
 
     // Resolve the saved relation into one bounded, immutable outer-to-target chain.
     const reversed: StoredServerRow[] = [];
@@ -1941,7 +2005,7 @@ export class UserDBDO {
           index === 0 ? server.host : `jump:${pathSegments.join('>')}|${server.host}`;
         pathSegments.push(`${server.id}@${server.host}:${server.port}`);
         const credential =
-          server.auth_method === 'none'
+          server.auth_method === 'none' || !server.credential
             ? ''
             : await this.decryptCredential(server.credential, body.user_id);
         const khRows = this.query<FingerprintRow>(
@@ -1973,21 +2037,28 @@ export class UserDBDO {
 
     // 生成 one-time-token
     const token = `${github_id}:${crypto.randomUUID()}`;
-    const jumpHosts: SSHJumpHostConfig[] = resolved.slice(0, -1).map((node) => ({
-      serverId: node.server.id,
-      name: node.server.name,
-      host: node.server.host,
-      port: node.server.port,
-      username: node.server.username,
-      password: node.server.auth_method === 'password' ? node.credential : '',
-      authMethod:
-        node.server.auth_method === 'none'
-          ? 'none'
-          : node.server.auth_method === 'publickey' ? 'publickey' : 'password',
-      privateKey: node.server.auth_method === 'publickey' ? node.credential : '',
-      expectedFingerprint: node.expectedFingerprint,
-      knownHostIdentity: node.identity,
-    }));
+    const jumpHosts: SSHJumpHostConfig[] = resolved.slice(0, -1).map((node) => {
+      const isPubkey = node.server.auth_method === 'publickey';
+      const keyCert = isPubkey ? extractPrivateKeyAndCertificate(node.credential) : undefined;
+      return {
+        serverId: node.server.id,
+        name: node.server.name,
+        host: node.server.host,
+        port: node.server.port,
+        username: node.server.username,
+        password: node.server.auth_method === 'password' ? node.credential : '',
+        authMethod:
+          node.server.auth_method === 'none'
+            ? 'none'
+            : isPubkey
+              ? 'publickey'
+              : 'password',
+        privateKey: keyCert ? keyCert.privateKey : '',
+        certificate: keyCert?.certificate,
+        expectedFingerprint: node.expectedFingerprint,
+        knownHostIdentity: node.identity,
+      };
+    });
     const targetNode = resolved[resolved.length - 1];
     const isTunnel = target.transport_type === 'cf_tunnel';
     let cfAccessClientSecret: string | undefined;
@@ -1997,6 +2068,15 @@ export class UserDBDO {
         body.user_id
       );
     }
+    const targetKeyCert =
+      target.auth_method === 'publickey'
+        ? extractPrivateKeyAndCertificate(
+            target.cf_ssh_ca_team && body.ephemeralCredential && body.ephemeralCredential.trim().length > 0
+              ? body.ephemeralCredential
+              : targetNode.credential
+          )
+        : undefined;
+
     const config: SSHConnectionConfig = {
       host: target.host,
       port: target.port,
@@ -2005,8 +2085,11 @@ export class UserDBDO {
       authMethod:
         target.auth_method === 'none'
           ? 'none'
-          : target.auth_method === 'publickey' ? 'publickey' : 'password',
-      privateKey: target.auth_method === 'publickey' ? targetNode.credential : '',
+          : target.auth_method === 'publickey'
+            ? 'publickey'
+            : 'password',
+      privateKey: targetKeyCert ? targetKeyCert.privateKey : '',
+      certificate: targetKeyCert?.certificate,
       expectedFingerprint: targetNode.expectedFingerprint,
       knownHostIdentity: targetNode.identity,
       userId: String(body.user_id),

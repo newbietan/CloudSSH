@@ -48,6 +48,8 @@ export interface SSHConnectionConfig {
   password: string;
   authMethod?: 'password' | 'publickey' | 'none';
   privateKey?: string;
+  /** 可选 OpenSSH 用户证书（单行文本或 Base64） */
+  certificate?: string;
   cols?: number;
   rows?: number;
   expectedFingerprint?: string;
@@ -113,6 +115,8 @@ export interface SSHJumpHostConfig {
   password: string;
   authMethod: 'password' | 'publickey' | 'none';
   privateKey: string;
+  /** 可选 OpenSSH 用户证书 */
+  certificate?: string;
   expectedFingerprint?: string;
   knownHostIdentity: string;
 }
@@ -193,6 +197,8 @@ export interface Env {
   ADMIN_PASSWORD_HASH?: string;
   // Cloudflare Zero Trust Access 认证模式支持（可选；未配置时若检测到 Cf-Access 标头亦可自动感知）
   CF_ACCESS?: string;
+  // Cloudflare Zero Trust Team 名称（可选；用于自动推断或预填 SSH CA 签发端点）
+  CF_ACCESS_TEAM_NAME?: string;
 }
 
 /** /api/config 下发的密码认证公开参数（盐与迭代数非机密，供浏览器预拉伸） */
@@ -238,6 +244,8 @@ export interface ServerConfig {
   cf_access_client_id?: string | null;
   /** 是否已保存 Cloudflare Zero Trust Access Service Token Secret */
   has_cf_access_client_secret?: boolean;
+  /** Cloudflare Zero Trust SSH CA 团队标识（非空表示使用原生 SSH CA 短期证书认证） */
+  cf_ssh_ca_team?: string | null;
   /** 最近连接成功的 Unix 毫秒时间戳 */
   last_connected_at?: number | null;
   created_at: string;

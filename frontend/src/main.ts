@@ -26,6 +26,7 @@ import {
 import { LiquidSegmentedThemeControl } from './theme-segmented';
 import { LiquidSegmentedDrawerControl } from './drawer-segmented';
 import { customThemeModal, customThemeStore } from './custom-theme-manager';
+import { requestCloudflareSshCertificate } from './cf-ssh-ca';
 import { notify } from './ui-feedback';
 import { initVersionNotice } from './version-notice';
 
@@ -110,10 +111,10 @@ function getTabManager(): TabManager {
         return;
       }
       try {
-        const ws = await requestSavedServerWebSocket(serverId);
+        const ws = await requestSavedServerWebSocket(serverId, tab.hostInfo?.cfSshCaTeam);
         const { terminal } = showTerminalWithNewTab(tab.label, tab.hostInfo);
         terminal.mount();
-        const reconnectFactory = () => requestSavedServerWebSocket(serverId);
+        const reconnectFactory = () => requestSavedServerWebSocket(serverId, tab.hostInfo?.cfSshCaTeam);
         terminal.connectWithWebSocket(ws, tab.hostInfo, { reconnectFactory });
       } catch (e) {
         notify(e instanceof Error ? e.message : String(e), { variant: 'danger' });
@@ -416,7 +417,9 @@ function showTerminalFromServer(wsUrl: string, serverName: string, hostInfo?: SS
   const ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
   const serverId = hostInfo?.serverId;
-  const reconnectFactory = serverId ? () => requestSavedServerWebSocket(serverId) : undefined;
+  const reconnectFactory = serverId
+    ? () => requestSavedServerWebSocket(serverId, hostInfo?.cfSshCaTeam)
+    : undefined;
   terminal.connectWithWebSocket(ws, hostInfo, { reconnectFactory });
 }
 
@@ -443,8 +446,21 @@ function showSharedTerminal(claim: ClaimedShare): void {
   terminal.connectWithWebSocket(socket, undefined, { resumeOnly: true });
 }
 
-async function requestSavedServerWebSocket(serverId: number): Promise<WebSocket> {
-  const response = await fetch(`/api/servers/${serverId}/connect`, { method: 'POST' });
+async function requestSavedServerWebSocket(
+  serverId: number,
+  cfSshCaTeam?: string | null
+): Promise<WebSocket> {
+  let ephemeralCredential: string | undefined;
+  if (cfSshCaTeam) {
+    const creds = await requestCloudflareSshCertificate(cfSshCaTeam);
+    ephemeralCredential = `${creds.privateKey}\n${creds.certificate}`;
+  }
+
+  const response = await fetch(`/api/servers/${serverId}/connect`, {
+    method: 'POST',
+    headers: ephemeralCredential ? { 'Content-Type': 'application/json' } : undefined,
+    body: ephemeralCredential ? JSON.stringify({ ephemeralCredential }) : undefined,
+  });
   if (!response.ok) {
     const contentType = response.headers.get('content-type') || '';
     const message = contentType.includes('application/json')
