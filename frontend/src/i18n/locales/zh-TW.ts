@@ -667,7 +667,6 @@ export const zhTW = {
   'aiConfig.budgets': '模型 Token 預算（選填）',
   'aiConfig.contextWindow': '上下文視窗（Token）',
   'aiConfig.maxOutputTokens': '單次輸出上限（含推理 Token）',
-  'aiConfig.budgetHint': '依模型自動管理本次請求：{context} / {output} Token。服務商若在模型清單中提供視窗則優先使用；更換模型後請建立新的 Agent 會話。',
   'agent.errors.responses_http': 'Responses API 請求失敗（HTTP {status}），請檢查金鑰、模型和服務商能力。',
   'agent.errors.responses_chain': '已存回應不可用，請建立新會話；已執行的命令不會自動重播。',
   'agent.errors.responses_invalid': '服務商回傳了無效的 Responses 資料，不完整的工具呼叫未被執行。',

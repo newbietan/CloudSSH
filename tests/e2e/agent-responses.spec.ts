@@ -327,11 +327,8 @@ test('model token budgets are derived and saved without resending the API key', 
     (window as any).__aiBudgetPanel = new module.AIConfigPanel();
     (window as any).__aiBudgetPanel.show();
   });
-  await expect(page.locator('#ai-budget-note')).toContainText('128,000');
-  await expect(page.locator('#ai-budget-note')).toContainText('8,192');
+  await expect(page.locator('#ai-budget-note')).toHaveCount(0);
   await page.locator('#ai-model').fill('gpt-6-luna');
-  await expect(page.locator('#ai-budget-note')).toContainText('1,000,000');
-  await expect(page.locator('#ai-budget-note')).toContainText('128,000');
   await page.locator('#ai-save-btn').click();
   await expect.poll(() => writes.length).toBe(1);
   expect(writes[0]).toMatchObject({ model: 'gpt-6-luna' });

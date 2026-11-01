@@ -1,7 +1,7 @@
 // AI Config panel — BYOK settings for LLM API
 
 import { normalizeAIBaseUrl } from '../../src/ai-endpoint';
-import { resolveModelBudget, type AIModelBudgets } from '../../src/ai-model-policy';
+import { type AIModelBudgets } from '../../src/ai-model-policy';
 import { responseErrorMessage } from './agent/response-errors';
 import { t, translateDocument } from './i18n';
 
@@ -116,7 +116,6 @@ export class AIConfigPanel {
             <div id="ai-fetch-status" class="text-[10px] mt-1 hidden"></div>
             <div class="text-[10px] text-muted mt-1" data-i18n="aiConfig.modelDiscoveryHint">${t('aiConfig.modelDiscoveryHint')}</div>
           </div>
-          <p id="ai-budget-note" class="text-[10px] text-muted" data-i18n="aiConfig.budgetHint"></p>
           <div class="pt-2 space-y-2">
             <div id="ai-config-error" class="text-[var(--error)] text-[11px] hidden"></div>
             <div id="ai-config-success" class="text-[var(--accent)] text-[11px] hidden"></div>
@@ -140,7 +139,6 @@ export class AIConfigPanel {
     this.modalEl.querySelector('#ai-save-btn')?.addEventListener('click', () => this.saveConfig());
 
     this.setupComboboxEvents();
-    this.refreshBudgetNote();
   }
 
   private setupComboboxEvents(): void {
@@ -152,7 +150,6 @@ export class AIConfigPanel {
     inputEl?.addEventListener('input', () => {
       this.updateClearButtonVisibility();
       this.clearStatus();
-      this.refreshBudgetNote();
       if (this.loadedModels.length > 0) {
         this.openDropdown(false);
       }
@@ -361,7 +358,6 @@ export class AIConfigPanel {
       if (inputEl) {
         inputEl.value = modelId;
         this.updateClearButtonVisibility();
-        this.refreshBudgetNote();
         this.clearStatus();
         inputEl.focus();
       }
@@ -395,7 +391,6 @@ export class AIConfigPanel {
             hintEl.textContent = t('aiConfig.currentKey', { last4: data.api_key_last4 });
           }
           this.updateClearButtonVisibility();
-          this.refreshBudgetNote();
         }
       }
     } catch {
@@ -499,17 +494,6 @@ export class AIConfigPanel {
       el.textContent = msg;
       el.className = `text-[10px] mt-1 ${isError ? 'text-[var(--error)]' : 'text-[var(--accent)]'}`;
     }
-  }
-
-  private refreshBudgetNote(): void {
-    const note = this.modalEl?.querySelector('#ai-budget-note');
-    const model = (this.modalEl?.querySelector('#ai-model') as HTMLInputElement | null)?.value.trim() || '';
-    const matched = this.loadedModels.find(item => item.id === model);
-    const budget = resolveModelBudget(model, matched);
-    if (note) note.textContent = t('aiConfig.budgetHint', {
-      context: budget.context_window.toLocaleString(),
-      output: budget.max_output_tokens.toLocaleString(),
-    });
   }
 
   private async saveConfig(): Promise<void> {

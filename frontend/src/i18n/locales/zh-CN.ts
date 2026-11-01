@@ -666,7 +666,6 @@ export const zhCN = {
   'aiConfig.budgets': '模型 Token 预算（可选）',
   'aiConfig.contextWindow': '上下文窗口（Token）',
   'aiConfig.maxOutputTokens': '单次输出上限（含推理 Token）',
-  'aiConfig.budgetHint': '按模型自动管理本次请求：{context} / {output} Token。服务商若在模型列表中提供窗口则优先使用；换模型后请新建 Agent 会话。',
   'agent.errors.responses_http': 'Responses API 请求失败（HTTP {status}），请检查密钥、模型和服务商能力。',
   'agent.errors.responses_chain': '已存响应不可用，请新建会话；已执行的命令不会自动重放。',
   'agent.errors.responses_invalid': '服务商返回了无效的 Responses 数据，不完整的工具调用未被执行。',
