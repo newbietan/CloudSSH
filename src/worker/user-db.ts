@@ -2144,6 +2144,7 @@ export class UserDBDO {
       knownHostIdentity: targetNode.identity,
       userId: String(body.user_id),
       githubId: String(github_id),
+      userDbRouteKey: tokenPrefix,
       serverId: target.id,
       os: target.os,
       locationHint,
