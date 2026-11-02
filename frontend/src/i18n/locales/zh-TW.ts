@@ -26,6 +26,10 @@ export const zhTW = {
   'feedback.success': '操作成功',
   'feedback.warning': '請注意',
   'feedback.danger': '操作失敗',
+  'api.htmlResponse':
+    '伺服器傳回了網頁而不是介面資料。若站台啟用了 Cloudflare Access，請重新整理頁面並重新登入後再試。',
+  'api.invalidResponse': '伺服器傳回了無法識別的內容（HTTP {status}）。',
+  'api.requestFailed': '請求失敗，請稍後重試。',
   'feedback.closeNotification': '關閉通知',
   'dialog.promptTitle': '請輸入',
   'dialog.confirmTitle': '確認操作',

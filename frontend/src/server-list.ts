@@ -1,3 +1,4 @@
+import { readApiJson } from './api-errors';
 import { copyTextToClipboard } from './clipboard';
 import { isValidTunnelHostname, maskIPAddress } from './host-display';
 import { getLocale, onLocaleChange, t } from './i18n';
@@ -783,20 +784,12 @@ export class ServerList {
 
       const res = await fetch(`/api/servers/${serverId}/connect`, {
         method: 'POST',
+        redirect: 'manual',
         headers: ephemeralCredential ? { 'Content-Type': 'application/json' } : undefined,
         body: ephemeralCredential ? JSON.stringify({ ephemeralCredential }) : undefined,
       });
 
-      if (!res.ok) {
-        const ct = res.headers.get('content-type') || '';
-        if (ct.includes('application/json')) {
-          const err = (await res.json()) as { error?: string };
-          throw new Error(err.error || 'Connection failed');
-        }
-        throw new Error(`服务器错误 (${res.status})`);
-      }
-
-      const { wsUrl } = (await res.json()) as { wsUrl: string };
+      const { wsUrl } = await readApiJson<{ wsUrl: string }>(res, 'api.requestFailed');
 
       // 连接凭证获取成功：记录最新连接时间并在最近连接排序下就地重置至首屏
       server.last_connected_at = Date.now();
@@ -1397,23 +1390,20 @@ export class ServerList {
       if (editingServerId) {
         res = await fetch(`/api/servers/${editingServerId}`, {
           method: 'PUT',
+          redirect: 'manual',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
       } else {
         res = await fetch('/api/servers', {
           method: 'POST',
+          redirect: 'manual',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
       }
 
-      if (!res.ok) {
-        const err = (await res.json()) as { error?: string };
-        throw new Error(err.error || 'Save failed');
-      }
-
-      const responseData = (await res.json()) as ServerSaveResponse;
+      const responseData = await readApiJson<ServerSaveResponse>(res, 'api.requestFailed');
       const debugLines = Array.isArray(responseData._debug)
         ? responseData._debug.filter((line): line is string => typeof line === 'string')
         : null;

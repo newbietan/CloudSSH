@@ -55,6 +55,10 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'feedback.success': 'Success',
   'feedback.warning': 'Attention',
   'feedback.danger': 'Operation failed',
+  'api.htmlResponse':
+    'The server returned a web page instead of API data. If this site uses Cloudflare Access, refresh the page and sign in again.',
+  'api.invalidResponse': 'The server returned an unreadable response (HTTP {status}).',
+  'api.requestFailed': 'The request failed. Try again shortly.',
   'feedback.closeNotification': 'Close notification',
   'dialog.promptTitle': 'Input required',
   'dialog.confirmTitle': 'Confirm action',

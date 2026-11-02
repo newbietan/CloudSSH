@@ -26,6 +26,10 @@ export const zhCN = {
   'feedback.success': '操作成功',
   'feedback.warning': '请注意',
   'feedback.danger': '操作失败',
+  'api.htmlResponse':
+    '服务器返回了网页而不是接口数据。若站点启用了 Cloudflare Access，请刷新页面并重新登录后再试。',
+  'api.invalidResponse': '服务器返回了无法识别的内容（HTTP {status}）。',
+  'api.requestFailed': '请求失败，请稍后重试。',
   'feedback.closeNotification': '关闭通知',
   'dialog.promptTitle': '请输入',
   'dialog.confirmTitle': '确认操作',
