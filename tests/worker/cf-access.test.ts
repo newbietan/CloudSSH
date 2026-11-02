@@ -5,6 +5,7 @@ import {
   connectTokenRouteKey,
   getAccessUserRouteKey,
   getAuthenticatedUser,
+  isSshIdentityAllowed,
   userDbRouteKey,
   getCFAccessEmail,
   handleLogout,
@@ -224,6 +225,13 @@ describe('Cloudflare Access (Zero Trust) Authentication', () => {
       const token = `${route}:${crypto.randomUUID()}`;
       expect(connectTokenRouteKey(token)).toBe(route);
       expect(connectTokenRouteKey('-2:abc')).toBe('-2');
+      expect(
+        isSshIdentityAllowed(
+          { GITHUB_ALLOWED_USER_IDS: '12345' } as Env,
+          CF_ACCESS_USER_GITHUB_ID
+        )
+      ).toBe(true);
+      expect(isSshIdentityAllowed({ GITHUB_ALLOWED_USER_IDS: '12345' } as Env, 999)).toBe(false);
     });
 
     it('returns null if request has no access email header in cf_access mode', async () => {

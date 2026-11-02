@@ -97,7 +97,7 @@ export function userDbRouteKey(user: UserInfo): string {
   return String(user.github_id);
 }
 
-export function isAccessUserRouteKey(value: string): boolean {
+function isAccessUserRouteKey(value: string): boolean {
   return ACCESS_USER_ROUTE_KEY_RE.test(value);
 }
 
@@ -264,10 +264,17 @@ function getGitHubAccessPolicy(env: Env): GitHubAccessPolicy {
   return { restricted: true, valid: true, allowedIds };
 }
 
-export function isGitHubUserAllowed(env: Env, githubId: string | number): boolean {
+function isGitHubUserAllowed(env: Env, githubId: string | number): boolean {
   const policy = getGitHubAccessPolicy(env);
   if (!policy.valid) return false;
   return !policy.restricted || policy.allowedIds.has(String(githubId));
+}
+
+/** 本地管理员与 Cloudflare Access 哨兵不是 GitHub 账号，不参与 GitHub 白名单。 */
+export function isSshIdentityAllowed(env: Env, githubId: string | number | null | undefined): boolean {
+  const id = String(githubId ?? '');
+  if (id === String(LOCAL_ADMIN_GITHUB_ID) || id === String(CF_ACCESS_USER_GITHUB_ID)) return true;
+  return isGitHubUserAllowed(env, id);
 }
 
 /**

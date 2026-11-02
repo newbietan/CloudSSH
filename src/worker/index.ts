@@ -20,7 +20,7 @@ import {
   handleLogout,
   handlePasswordLogin,
   isGitHubAuthRequired,
-  isGitHubUserAllowed,
+  isSshIdentityAllowed,
   getPasswordAuthParams,
   parseAdminPasswordHash,
   resolveAuthMode,
@@ -1424,7 +1424,7 @@ async function handleShareSSHConnection(
     return Response.json({ error: 'Invalid share session policy' }, { status: 500 });
   }
   // 本地管理员（密码模式）拥有的分享不受 GitHub 白名单约束
-  if (String(config.githubId ?? '') !== String(LOCAL_ADMIN_GITHUB_ID) && !isGitHubUserAllowed(env, config.githubId ?? '')) {
+  if (!isSshIdentityAllowed(env, config.githubId)) {
     return Response.json({ error: 'Share owner is no longer allowed' }, { status: 403 });
   }
 
@@ -1505,8 +1505,8 @@ async function handleTokenSSHConnection(
   }
 
   const config = await tokenRes.json<SSHConnectionConfig>();
-  // 本地管理员不适用 GitHub 白名单；GitHub 用户照常校验
-  if (String(config.githubId ?? '') !== String(LOCAL_ADMIN_GITHUB_ID) && !isGitHubUserAllowed(env, config.githubId ?? '')) {
+  // 本地管理员与 Access 哨兵不适用 GitHub 白名单；GitHub 用户照常校验
+  if (!isSshIdentityAllowed(env, config.githubId)) {
     return Response.json({ error: 'GitHub account is not allowed' }, { status: 403 });
   }
   if (authenticatedUser && String(authenticatedUser.github_id) !== String(config.githubId)) {
