@@ -26,6 +26,9 @@ import {
   resolveAuthMode,
   verifyTurnstile,
   LOCAL_ADMIN_GITHUB_ID,
+  CF_ACCESS_USER_GITHUB_ID,
+  userDbRouteKey,
+  connectTokenRouteKey,
 } from './auth';
 import { createHtmlResponse } from './html-cache';
 import { handleVersionCheck } from './version-check';
@@ -413,7 +416,7 @@ async function handleServersRoute(request: Request, url: URL, env: Env): Promise
     return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
 
-  const stub = getUserDBStub(env, user.github_id);
+  const stub = getUserDBStub(env, userDbRouteKey(user));
 
   // GET /api/servers
   if (url.pathname === '/api/servers' && request.method === 'GET') {
@@ -505,7 +508,7 @@ async function handleServersRoute(request: Request, url: URL, env: Env): Promise
             shareId,
             tokenHash: shareRef,
             ownerUserId: user.id,
-            ownerGithubId: String(user.github_id),
+            ownerGithubId: userDbRouteKey(user),
             serverId: Number(serverId),
             serverName: metadata.serverName,
             expiresAt,
@@ -661,7 +664,11 @@ async function handleServersRoute(request: Request, url: URL, env: Env): Promise
       new Request(`http://internal/internal/servers/${serverId}/connect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: user.id, ephemeralCredential }),
+        body: JSON.stringify({
+          user_id: user.id,
+          ephemeralCredential,
+          routeKey: userDbRouteKey(user),
+        }),
       })
     );
 
@@ -714,7 +721,7 @@ async function handleThemeRoute(request: Request, env: Env): Promise<Response> {
     return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
 
-  const stub = getUserDBStub(env, user.github_id);
+  const stub = getUserDBStub(env, userDbRouteKey(user));
 
   if (request.method === 'GET') {
     return stub.fetch(
@@ -806,7 +813,7 @@ async function handleMobileShortcutsRoute(request: Request, env: Env): Promise<R
     return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
 
-  const stub = getUserDBStub(env, user.github_id);
+  const stub = getUserDBStub(env, userDbRouteKey(user));
 
   if (request.method === 'GET') {
     return stub.fetch(
@@ -884,7 +891,7 @@ async function handleKnownHostsRoute(request: Request, url: URL, env: Env): Prom
     return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
 
-  const stub = getUserDBStub(env, user.github_id);
+  const stub = getUserDBStub(env, userDbRouteKey(user));
 
   // GET /api/known-hosts?host=X&port=Y  → 获取特定主机指纹
   // GET /api/known-hosts                 → 列出所有已知主机
@@ -937,7 +944,7 @@ async function handleSnippetsRoute(request: Request, url: URL, env: Env): Promis
   if (!user) {
     return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
-  const stub = getUserDBStub(env, user.github_id);
+  const stub = getUserDBStub(env, userDbRouteKey(user));
   if (url.pathname === '/api/snippets' && request.method === 'GET') {
     return stub.fetch(
       new Request(`http://internal/internal/snippets?user_id=${user.id}`, { method: 'GET' })
@@ -1025,7 +1032,7 @@ async function handleAIRoute(request: Request, url: URL, env: Env): Promise<Resp
     }
   }
 
-  const stub = getUserDBStub(env, user.github_id);
+  const stub = getUserDBStub(env, userDbRouteKey(user));
 
   // GET /api/ai/config — return current AI config (masked)
   if (url.pathname === '/api/ai/config' && request.method === 'GET') {
@@ -1343,7 +1350,7 @@ async function handleShareOwnerRoute(request: Request, url: URL, env: Env): Prom
   const match = url.pathname.match(/^\/api\/shares\/([^/]+)(?:\/audit)?$/);
   if (!match) return new Response('Not Found', { status: 404 });
   const shareId = decodeURIComponent(match[1]);
-  const ownerStub = getUserDBStub(env, user.github_id);
+  const ownerStub = getUserDBStub(env, userDbRouteKey(user));
   const metadataResponse = await ownerStub.fetch(
     new Request(
       `http://internal/internal/shares/${encodeURIComponent(shareId)}?user_id=${user.id}`,
@@ -1472,9 +1479,12 @@ async function handleTokenSSHConnection(
   }
 
   // 从 UserDBDO 消费 token，获取连接配置
-  const [routeKey] = token.split(':');
+  const routeKey = connectTokenRouteKey(token);
   if (!routeKey) {
     return Response.json({ error: 'Invalid token format' }, { status: 400 });
+  }
+  if (routeKey === String(CF_ACCESS_USER_GITHUB_ID)) {
+    return Response.json({ error: 'Connection token was issued for the wrong user database' }, { status: 403 });
   }
   // 双向模式门：密码模式仅放行本地管理员令牌；GitHub/匿名模式拒绝哨兵令牌
   // （防止模式切换前签发的一次性令牌在切换后仍可消费）
@@ -1502,6 +1512,15 @@ async function handleTokenSSHConnection(
   if (authenticatedUser && String(authenticatedUser.github_id) !== String(config.githubId)) {
     return Response.json(
       { error: 'Connection token does not belong to this GitHub account' },
+      { status: 403 }
+    );
+  }
+  if (
+    authenticatedUser?.github_id === CF_ACCESS_USER_GITHUB_ID &&
+    routeKey !== userDbRouteKey(authenticatedUser)
+  ) {
+    return Response.json(
+      { error: 'Connection token does not belong to this account' },
       { status: 403 }
     );
   }

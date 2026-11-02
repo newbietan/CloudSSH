@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Env, UserInfo } from '../../src/types';
 import {
   CF_ACCESS_USER_GITHUB_ID,
+  connectTokenRouteKey,
   getAccessUserRouteKey,
   getAuthenticatedUser,
+  userDbRouteKey,
   getCFAccessEmail,
   handleLogout,
   resolveAuthMode,
@@ -161,6 +163,67 @@ describe('Cloudflare Access (Zero Trust) Authentication', () => {
       expect(user?.github_id).toBe(CF_ACCESS_USER_GITHUB_ID);
       expect(requestedPath).toBe('/internal/access-user');
       expect(requestedBody).toEqual({ email: 'user@example.com' });
+    });
+
+    it('routes later API calls to the email database instead of github_id -2', async () => {
+      const names: string[] = [];
+      const env = makeEnv();
+      (env.USER_DB as any).idFromName = (name: string) => {
+        names.push(name);
+        return name;
+      };
+      (env.USER_DB as any).get = () => ({
+        fetch: async (req: Request) => {
+          const path = new URL(req.url).pathname;
+          if (path === '/internal/access-user') {
+            return Response.json({
+              id: 7,
+              github_id: CF_ACCESS_USER_GITHUB_ID,
+              username: 'user@example.com',
+              avatar_url: null,
+            });
+          }
+          if (path === '/internal/servers' && req.method === 'POST') {
+            const body = (await req.json()) as { user_id?: number };
+            return Response.json({ id: 1, user_id: body.user_id }, { status: 201 });
+          }
+          return new Response(`unexpected ${path}`, { status: 500 });
+        },
+      });
+
+      const res = await worker.fetch(
+        new Request('https://cloudssh.local/api/servers', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Cf-Access-Authenticated-User-Email': 'user@example.com',
+          },
+          body: JSON.stringify({
+            name: 'n',
+            host: 'ssh.example.com',
+            port: 22,
+            username: 'root',
+            auth_method: 'publickey',
+            cf_ssh_ca_team: 'my-team',
+          }),
+        }),
+        env
+      );
+
+      expect(res.status).toBe(201);
+      const route = getAccessUserRouteKey('user@example.com');
+      expect(names).toContain(route);
+      expect(names).not.toContain('-2');
+      expect(userDbRouteKey({
+        id: 7,
+        github_id: CF_ACCESS_USER_GITHUB_ID,
+        username: 'user@example.com',
+        avatar_url: null,
+        email: 'user@example.com',
+      })).toBe(route);
+      const token = `${route}:${crypto.randomUUID()}`;
+      expect(connectTokenRouteKey(token)).toBe(route);
+      expect(connectTokenRouteKey('-2:abc')).toBe('-2');
     });
 
     it('returns null if request has no access email header in cf_access mode', async () => {

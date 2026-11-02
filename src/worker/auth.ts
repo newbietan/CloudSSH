@@ -83,6 +83,39 @@ export function getAccessUserRouteKey(email: string): string {
   return `cf:${prefix}-${hash}`;
 }
 
+const ACCESS_USER_ROUTE_KEY_RE = /^cf:[a-z0-9]{0,20}-[0-9a-f]{16}$/;
+
+/** Access 用户的库不在哨兵 github_id=-2 上，而在按邮箱算出的路由键上。 */
+export function userDbRouteKey(user: UserInfo): string {
+  if (user.github_id === CF_ACCESS_USER_GITHUB_ID) {
+    const email = user.email?.trim() ?? '';
+    if (!email.includes('@')) {
+      throw new Error('Cloudflare Access user is missing a verified email');
+    }
+    return getAccessUserRouteKey(email);
+  }
+  return String(user.github_id);
+}
+
+export function isAccessUserRouteKey(value: string): boolean {
+  return ACCESS_USER_ROUTE_KEY_RE.test(value);
+}
+
+/**
+ * 一次性连接令牌是 `routeKey:secret`。Access 路由键本身含一个冒号，
+ * 因此 `cf:<prefix>-<hash>:<uuid>` 不能只取第一段。
+ */
+export function connectTokenRouteKey(token: string): string | null {
+  if (token.startsWith('cf:')) {
+    const parts = token.split(':');
+    if (parts.length !== 3) return null;
+    const routeKey = `cf:${parts[1]}`;
+    return isAccessUserRouteKey(routeKey) ? routeKey : null;
+  }
+  const routeKey = token.split(':')[0];
+  return routeKey || null;
+}
+
 /**
  * 认证模式解析（优先级）：
  * - ADMIN_PASSWORD_HASH 非空 → 密码模式（GitHub 配置原地保留但路由禁用）

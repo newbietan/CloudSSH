@@ -2013,7 +2013,7 @@ export class UserDBDO {
   // ==================== One-time-token 连接 ====================
 
   private async handleConnectServer(serverId: number, request: Request): Promise<Response> {
-    const body = await request.json<{ user_id: number; ephemeralCredential?: string }>();
+    const body = await request.json<{ user_id: number; ephemeralCredential?: string; routeKey?: string }>();
 
     // Resolve the saved relation into one bounded, immutable outer-to-target chain.
     const reversed: StoredServerRow[] = [];
@@ -2075,8 +2075,18 @@ export class UserDBDO {
     if (userRows.length === 0) return Response.json({ error: 'User not found' }, { status: 404 });
     const github_id = (userRows[0] as any).github_id;
 
+    // Access 用户的 github_id 恒为 -2，不能拿来定位用户库。令牌前缀必须是邮箱路由键。
+    let tokenPrefix = String(github_id);
+    if (github_id === CF_ACCESS_USER_GITHUB_ID) {
+      const routeKey = typeof body.routeKey === 'string' ? body.routeKey : '';
+      if (!/^cf:[a-z0-9]{0,20}-[0-9a-f]{16}$/.test(routeKey)) {
+        return Response.json({ error: 'Invalid access user route' }, { status: 400 });
+      }
+      tokenPrefix = routeKey;
+    }
+
     // 生成 one-time-token
-    const token = `${github_id}:${crypto.randomUUID()}`;
+    const token = `${tokenPrefix}:${crypto.randomUUID()}`;
     const jumpHosts: SSHJumpHostConfig[] = resolved.slice(0, -1).map((node) => {
       const isPubkey = node.server.auth_method === 'publickey';
       const keyCert = isPubkey ? extractPrivateKeyAndCertificate(node.credential) : undefined;

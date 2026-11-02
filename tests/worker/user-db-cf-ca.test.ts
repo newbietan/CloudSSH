@@ -7,6 +7,7 @@ class FakeSql {
   storedServer: Record<string, unknown> | null = null;
   referencedAsJump = false;
   throwOnInsert: string | null = null;
+  userGithubId = 12345;
   encryptionSecret = 'test-encryption-secret-1234567890';
 
   exec(query: string, ...values: unknown[]): { toArray: () => unknown[] } {
@@ -39,7 +40,7 @@ class FakeSql {
       return { toArray: () => [{ value: this.encryptionSecret }] };
     }
     if (query.includes('SELECT github_id FROM users WHERE id = ?')) {
-      return { toArray: () => [{ github_id: 12345 }] };
+      return { toArray: () => [{ github_id: this.userGithubId }] };
     }
     if (query.includes('SELECT fingerprint FROM known_hosts WHERE')) {
       return { toArray: () => [{ fingerprint: 'SHA256:trustedfingerprint' }] };
@@ -145,6 +146,37 @@ describe('UserDBDO - Cloudflare SSH CA integration', () => {
     const data = (await resp.json()) as any;
     expect(data.cf_ssh_ca_team).toBe('my-team');
     expect(data.auth_method).toBe('publickey');
+  });
+
+  it('issues an email-scoped connect token for an Access user', async () => {
+    const { db, sql } = createTestDO();
+    sql.userGithubId = -2;
+    sql.storedServer = {
+      id: 10,
+      user_id: 1,
+      name: 'CA Target',
+      host: 'node.example.com',
+      port: 22,
+      username: 'root',
+      credential: '',
+      auth_method: 'publickey',
+      cf_ssh_ca_team: 'my-team',
+      region: null,
+      inferred_hint: null,
+      jump_server_id: null,
+      transport_type: 'direct',
+    };
+    const routeKey = 'cf:userexamplecom-0123456789abcdef';
+    const resp = await db.fetch(
+      new Request('http://internal/internal/servers/10/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: 1, routeKey }),
+      })
+    );
+    expect(resp.status).toBe(200);
+    const { token } = (await resp.json()) as { token: string };
+    expect(token.startsWith(`${routeKey}:`)).toBe(true);
   });
 
   it('uses ephemeralCredential for connect token when server has cf_ssh_ca_team', async () => {
