@@ -455,6 +455,10 @@ export class UserDBDO {
       }
 
       // --- 服务器 CRUD ---
+      // 列表和保存都会读写 cf_ssh_ca_team；旧库若尚未迁移，先补列再查询。
+      if (path === '/internal/servers' || path.startsWith('/internal/servers/')) {
+        this.ensureCfSshCaTeamColumn();
+      }
       if (path === '/internal/servers' && request.method === 'GET') {
         const userIdStr = url.searchParams.get('user_id');
         if (!userIdStr) return Response.json({ error: 'Missing user_id' }, { status: 400 });
@@ -463,14 +467,16 @@ export class UserDBDO {
         return this.handleGetServers(userId);
       }
       if (path === '/internal/servers' && request.method === 'POST') {
-        return this.handleAddServer(request);
+        // 必须 await：async 函数里直接 return 被拒绝的 Promise 不会进入下面的 catch，
+        // Cloudflare 会把这次请求渲染成 Error 1101 页面。
+        return await this.handleAddServer(request);
       }
 
       // /internal/servers/:id
       const serverMatch = path.match(/^\/internal\/servers\/(\d+)$/);
       if (serverMatch) {
         const serverId = parseInt(serverMatch[1], 10);
-        if (request.method === 'PUT') return this.handleUpdateServer(serverId, request);
+        if (request.method === 'PUT') return await this.handleUpdateServer(serverId, request);
         if (request.method === 'DELETE') return this.handleDeleteServer(serverId, request);
       }
 
@@ -675,7 +681,11 @@ export class UserDBDO {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('[UserDB] Unhandled error:', msg);
-      return Response.json({ error: '服务器内部错误' }, { status: 500 });
+      const detail = msg.replace(/\s+/g, ' ').slice(0, 300);
+      return Response.json(
+        { error: detail ? `服务器内部错误：${detail}` : '服务器内部错误' },
+        { status: 500 }
+      );
     }
   }
 
@@ -981,7 +991,33 @@ export class UserDBDO {
     return null;
   }
 
+  private ensureCfSshCaTeamColumn(): void {
+    const cols = this.db.exec('PRAGMA table_info(servers)').toArray() as Array<{ name?: string }>;
+    const exists = cols.some((column) => column?.name === 'cf_ssh_ca_team');
+    if (exists) return;
+    try {
+      this.db.exec('ALTER TABLE servers ADD COLUMN cf_ssh_ca_team TEXT DEFAULT NULL');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/duplicate column name/i.test(msg)) throw e;
+    }
+  }
+
   private async handleAddServer(request: Request): Promise<Response> {
+    try {
+      return await this.insertServer(request);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[UserDB] add server failed:', msg);
+      return Response.json(
+        { error: `保存服务器失败：${msg.replace(/\s+/g, ' ').slice(0, 300)}` },
+        { status: 500 }
+      );
+    }
+  }
+
+  private async insertServer(request: Request): Promise<Response> {
+    this.ensureCfSshCaTeamColumn();
     const body = await request.json<{
       user_id: number;
       name: string;

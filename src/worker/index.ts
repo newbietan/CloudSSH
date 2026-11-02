@@ -220,7 +220,8 @@ export default {
       // ==================== Servers Routes (需认证) ====================
 
       if (url.pathname === '/api/servers' || url.pathname.startsWith('/api/servers/')) {
-        return handleServersRoute(request, url, env);
+        // await 后 DO 抛出的异常才能被本函数的 catch 转成 JSON，而不是边缘的 1101 页面。
+        return await handleServersRoute(request, url, env);
       }
 
       // ==================== Theme Routes（登录用户跨环境同步） ====================
@@ -394,7 +395,11 @@ export default {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('Unhandled error in fetch handler:', msg);
-      return Response.json({ error: 'Internal Server Error' }, { status: 500 });
+      const detail = msg.replace(/\s+/g, ' ').slice(0, 300);
+      return Response.json(
+        { error: detail ? `Internal Server Error: ${detail}` : 'Internal Server Error' },
+        { status: 500 }
+      );
     }
   },
 };

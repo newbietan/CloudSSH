@@ -6,6 +6,7 @@ class FakeSql {
   statements: Array<{ query: string; values: unknown[] }> = [];
   storedServer: Record<string, unknown> | null = null;
   referencedAsJump = false;
+  throwOnInsert: string | null = null;
   encryptionSecret = 'test-encryption-secret-1234567890';
 
   exec(query: string, ...values: unknown[]): { toArray: () => unknown[] } {
@@ -44,6 +45,7 @@ class FakeSql {
       return { toArray: () => [{ fingerprint: 'SHA256:trustedfingerprint' }] };
     }
     if (query.startsWith('INSERT INTO servers')) {
+      if (this.throwOnInsert) throw new Error(this.throwOnInsert);
       this.storedServer = {
         id: 1,
         user_id: values[0],
@@ -95,6 +97,31 @@ function createTestDO() {
 }
 
 describe('UserDBDO - Cloudflare SSH CA integration', () => {
+  it('保存时 SQL 异常返回 JSON，而不是让 Durable Object 请求拒绝', async () => {
+    const { db, sql } = createTestDO();
+    sql.throwOnInsert = 'no such column: cf_ssh_ca_team';
+
+    const resp = await db.fetch(
+      new Request('http://internal/internal/servers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: 1,
+          name: 'My CA Server',
+          host: 'ca-node.example.com',
+          port: 22,
+          username: 'root',
+          auth_method: 'publickey',
+          cf_ssh_ca_team: 'my-team',
+        }),
+      })
+    );
+
+    expect(resp.status).toBe(500);
+    const data = (await resp.json()) as { error?: string };
+    expect(data.error).toContain('no such column: cf_ssh_ca_team');
+  });
+
   it('saves server with cf_ssh_ca_team and permits empty credential', async () => {
     const { db } = createTestDO();
 
