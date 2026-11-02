@@ -189,6 +189,8 @@ export class ServerList {
   private onConnect: (wsUrl: string, serverName: string, hostInfo?: SSHHostInfo) => void;
   private editingServerId: number | null = null;
   private editingOriginalAuthMethod: ServerConfig['auth_method'] | null = null;
+  /** 入口隐藏时保留已存团队标识，避免普通编辑把 cf_ssh_ca_team 清成 null。 */
+  private editingOriginalCfTeam: string | null = null;
   private modalAuthMode: 'password' | 'key' | 'none' | 'cf_ca' = 'password';
   private modalTransportMode: 'direct' | 'cf_tunnel' = 'direct';
   private modalGeneration = 0;
@@ -199,6 +201,8 @@ export class ServerList {
   private currentPage = 1;
   private pageSize = currentServerPageSize();
   private sharingEnabled = false;
+  /** 与连接表单一致：只有 Cloudflare Access 登录才显示 SSH CA 入口。 */
+  private cfSshCaEnabled = false;
   private readonly shareManager = new ShareManager();
 
   constructor(
@@ -431,11 +435,24 @@ export class ServerList {
     try {
       const response = await fetch('/api/config');
       if (!response.ok) return;
-      const config = (await response.json()) as { sshSharingEnabled?: boolean };
+      const config = (await response.json()) as {
+        sshSharingEnabled?: boolean;
+        authMode?: string;
+      };
       this.sharingEnabled = config.sshSharingEnabled === true;
+      this.cfSshCaEnabled = config.authMode === 'cf_access';
+      this.applyCfSshCaAvailability();
     } catch {
       this.sharingEnabled = false;
+      this.cfSshCaEnabled = false;
+      this.applyCfSshCaAvailability();
     }
+  }
+
+  private applyCfSshCaAvailability(): void {
+    document
+      .getElementById('modal-auth-tab-cf-ca')
+      ?.classList.toggle('hidden', !this.cfSshCaEnabled);
   }
 
   // ==================== 渲染服务器卡片 ====================
@@ -593,7 +610,7 @@ export class ServerList {
   }
 
   private renderServerCard(server: ServerConfig, index = 0, animate = false): string {
-    const isCfCa = Boolean(server.cf_ssh_ca_team);
+    const isCfCa = this.cfSshCaEnabled && Boolean(server.cf_ssh_ca_team);
     const authIcon = isCfCa
       ? 'verified_user'
       : server.auth_method === 'none'
@@ -857,6 +874,8 @@ export class ServerList {
     this.modalGeneration++;
     this.editingServerId = mode === 'edit' && server ? server.id : null;
     this.editingOriginalAuthMethod = mode === 'edit' && server ? server.auth_method : null;
+    this.editingOriginalCfTeam =
+      mode === 'edit' && server?.cf_ssh_ca_team ? server.cf_ssh_ca_team : null;
 
     const modal = document.getElementById('server-modal');
     const title = document.getElementById('modal-title');
@@ -895,7 +914,7 @@ export class ServerList {
       );
 
       this.setModalAuthMode(
-        server.cf_ssh_ca_team
+        this.cfSshCaEnabled && server.cf_ssh_ca_team
           ? 'cf_ca'
           : server.auth_method === 'publickey'
             ? 'key'
@@ -1072,6 +1091,7 @@ export class ServerList {
   }
 
   private setModalAuthMode(mode: 'password' | 'key' | 'none' | 'cf_ca'): void {
+    if (mode === 'cf_ca' && !this.cfSshCaEnabled) return;
     this.modalAuthMode = mode;
     for (const value of ['password', 'key', 'none', 'cf_ca'] as const) {
       const tabId = value === 'cf_ca' ? 'modal-auth-tab-cf-ca' : `modal-auth-tab-${value}`;
@@ -1334,8 +1354,15 @@ export class ServerList {
         tags,
         transport_type: this.modalTransportMode,
         jump_server_id: isTunnel ? null : jumpServerId,
-        cf_ssh_ca_team: isCfCa ? cfSshCaTeam : null,
       };
+      const preserveHiddenCfCa =
+        !this.cfSshCaEnabled &&
+        Boolean(this.editingOriginalCfTeam) &&
+        authMethod === 'publickey' &&
+        !authMethodChanged;
+      if (!preserveHiddenCfCa) {
+        body.cf_ssh_ca_team = isCfCa ? cfSshCaTeam : null;
+      }
       if (
         credential ||
         (authMethod === 'password' && (!this.editingServerId || authMethodChanged || useEmptyPassword))

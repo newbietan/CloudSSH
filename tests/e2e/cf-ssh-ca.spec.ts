@@ -1,7 +1,7 @@
 import { expect, test } from './fixtures';
 import { blockOptionalThirdPartyAssets } from './helpers';
 
-test('匿名连接表单：支持切换到 Cloudflare CA 模式并自动预填 Team 标识与身份标记', async ({ page }) => {
+test('非 Access 登录不展示 Cloudflare CA 入口', async ({ page }) => {
   await blockOptionalThirdPartyAssets(page);
   await page.route('**/api/user/theme', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '{"theme":null}' })
@@ -17,6 +17,37 @@ test('匿名连接表单：支持切换到 Cloudflare CA 模式并自动预填 T
         githubAuthRequired: false,
         sshSharingEnabled: false,
         authMode: 'anonymous',
+        cfAccessEmail: 'alice@company.com',
+        cfAccessTeamName: 'my-org',
+      }),
+    })
+  );
+  await page.route('**/api/auth/me', (route) =>
+    route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Unauthorized"}' })
+  );
+
+  await page.goto('/?lang=zh-CN');
+
+  await expect(page.locator('#auth-tab-cf-ca')).toBeHidden();
+  await expect(page.locator('#auth-cf-ca-section')).toBeHidden();
+});
+
+test('Access 登录下连接表单可切换到 Cloudflare CA 并预填团队标识', async ({ page }) => {
+  await blockOptionalThirdPartyAssets(page);
+  await page.route('**/api/user/theme', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"theme":null}' })
+  );
+  await page.route('**/api/config', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        turnstileEnabled: false,
+        sitekey: '',
+        githubAuthEnabled: true,
+        githubAuthRequired: false,
+        sshSharingEnabled: false,
+        authMode: 'cf_access',
         cfAccessEmail: 'alice@company.com',
         cfAccessTeamName: 'my-org',
       }),
@@ -66,7 +97,7 @@ test('服务器列表：支持配置与保存 Cloudflare SSH CA 认证模式并�
         githubAuthEnabled: true,
         githubAuthRequired: false,
         sshSharingEnabled: false,
-        authMode: 'github',
+        authMode: 'cf_access',
       }),
     })
   );

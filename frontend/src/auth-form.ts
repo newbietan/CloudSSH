@@ -120,8 +120,10 @@ export class ConnectionForm {
       };
       this.turnstileEnabled = config.turnstileEnabled;
       this.turnstileSitekey = config.sitekey;
+      this.cfSshCaEnabled = config.authMode === 'cf_access';
+      this.applyCfSshCaAvailability();
 
-      if (config.cfAccessEmail) {
+      if (this.cfSshCaEnabled && config.cfAccessEmail) {
         const badge = document.getElementById('cf-ca-access-badge');
         const emailSpan = document.getElementById('cf-ca-access-email');
         if (badge && emailSpan) {
@@ -129,7 +131,7 @@ export class ConnectionForm {
           badge.classList.remove('hidden');
         }
       }
-      if (config.cfAccessTeamName) {
+      if (this.cfSshCaEnabled && config.cfAccessTeamName) {
         const teamInput = document.getElementById('cf-ca-team') as HTMLInputElement | null;
         if (teamInput && !teamInput.value) {
           teamInput.value = config.cfAccessTeamName;
@@ -594,7 +596,7 @@ export class ConnectionForm {
           <div class="flex gap-2 mb-3">
             <button type="button" id="auth-tab-password" class="auth-tab auth-tab-active px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all" data-i18n="common.password">密码</button>
             <button type="button" id="auth-tab-key" class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all" data-i18n="common.privateKey">私钥</button>
-            <button type="button" id="auth-tab-cf-ca" class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all" data-i18n="auth.cfSshCa">Cloudflare CA</button>
+            <button type="button" id="auth-tab-cf-ca" class="auth-tab hidden px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all" data-i18n="auth.cfSshCa">Cloudflare CA</button>
             <button type="button" id="auth-tab-none" class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all" data-i18n="auth.none"></button>
           </div>
           <p id="auth-none-section" class="text-xs text-muted" style="display:none;" data-i18n="auth.noneHint"></p>
@@ -719,8 +721,18 @@ export class ConnectionForm {
   }
 
   private authMode: 'password' | 'key' | 'none' | 'cf_ca' = 'password';
+  /** 仅 Cloudflare Access 登录模式展示 SSH CA；其他模式没有 Access JWT，入口直接隐藏。 */
+  private cfSshCaEnabled = false;
+
+  private applyCfSshCaAvailability(): void {
+    document.getElementById('auth-tab-cf-ca')?.classList.toggle('hidden', !this.cfSshCaEnabled);
+    if (!this.cfSshCaEnabled && this.authMode === 'cf_ca') {
+      this.setAuthMode('password');
+    }
+  }
 
   private setAuthMode(mode: 'password' | 'key' | 'none' | 'cf_ca'): void {
+    if (mode === 'cf_ca' && !this.cfSshCaEnabled) return;
     this.authMode = mode;
     for (const value of ['password', 'key', 'none', 'cf_ca'] as const) {
       const tabId = value === 'cf_ca' ? 'auth-tab-cf-ca' : `auth-tab-${value}`;
@@ -759,7 +771,7 @@ export class ConnectionForm {
       itemEl.className =
         'flex justify-between items-center text-xs p-2 border border-dim bg-surface/50 hover:bg-surface hover:border-[var(--accent)] transition-all cursor-pointer group relative';
 
-      const isCfCa = (item.authMethod as string) === 'cf_ca';
+      const isCfCa = this.cfSshCaEnabled && (item.authMethod as string) === 'cf_ca';
       const authLabel =
         item.authMethod === 'none'
           ? 'NONE'
@@ -820,7 +832,7 @@ export class ConnectionForm {
       anonRegionSelect.value = item.region || '';
     }
 
-    if ((item.authMethod as string) === 'cf_ca') {
+    if (this.cfSshCaEnabled && (item.authMethod as string) === 'cf_ca') {
       this.setAuthMode('cf_ca');
       const teamInput = document.getElementById('cf-ca-team') as HTMLInputElement | null;
       if (teamInput && (item as any).cfTeamName) {
@@ -968,6 +980,10 @@ export class ConnectionForm {
 
     let cfTeamName: string | undefined;
     if (this.authMode === 'cf_ca') {
+      if (!this.cfSshCaEnabled) {
+        this.setAuthMode('password');
+        return;
+      }
       remember = false;
       const teamInput = document.getElementById('cf-ca-team') as HTMLInputElement | null;
       cfTeamName = teamInput?.value.trim() || '';
