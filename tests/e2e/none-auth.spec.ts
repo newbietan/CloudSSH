@@ -41,7 +41,9 @@ test('匿名 none 连接不发送残留凭据，重连及历史恢复保持认�
   await page.locator('#private-key').fill('must-not-send-key');
   await page.locator('#auth-tab-none').click();
   await expect(page.locator('#auth-none-section')).toBeVisible();
-  await expect(page.locator('#auth-none-section')).toContainText('用户名可能就是访问凭据');
+  await expect(page.locator('#auth-none-section')).toContainText(
+    '仅适用于允许 SSH none 认证的服务器，不发送密码或私钥。'
+  );
   await expect(page.locator('#password')).toBeHidden();
   await expect(page.locator('#private-key')).toBeHidden();
   await page.locator('#connect-btn').click();

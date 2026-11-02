@@ -400,6 +400,10 @@ export class ServerList {
     document
       .getElementById('server-jump-host')
       ?.addEventListener('change', () => this.updateRegionControls());
+    document.getElementById('server-cf-access-toggle')?.addEventListener('click', () => {
+      const fields = document.getElementById('server-cf-access-fields');
+      this.setCfAccessFieldsOpen(fields?.classList.contains('hidden') ?? true);
+    });
     document
       .getElementById('server-cf-clear-secret-btn')
       ?.addEventListener('click', () => this.handleClearCfSecret());
@@ -1043,6 +1047,7 @@ export class ServerList {
       if (jumpSection) jumpSection.style.display = 'none';
       if (regionSection) regionSection.style.display = '';
       if (cfAccessSection) cfAccessSection.classList.remove('hidden');
+      this.setCfAccessFieldsOpen(false);
       if (hostLabel) hostLabel.textContent = t('server.tunnelHost');
       if (hostInput) hostInput.placeholder = t('server.tunnelHostPlaceholder');
     } else {
@@ -1061,6 +1066,15 @@ export class ServerList {
     hostField?.classList.toggle('sm:col-span-3', !isTunnel);
 
     this.updateRegionControls();
+  }
+
+  private setCfAccessFieldsOpen(open: boolean): void {
+    const fields = document.getElementById('server-cf-access-fields');
+    const toggle = document.getElementById('server-cf-access-toggle');
+    const chevron = document.getElementById('server-cf-access-chevron');
+    fields?.classList.toggle('hidden', !open);
+    toggle?.setAttribute('aria-expanded', String(open));
+    if (chevron) chevron.textContent = open ? 'expand_less' : 'expand_more';
   }
 
   private handleClearCfSecret(): void {
@@ -1173,7 +1187,6 @@ export class ServerList {
     const jumpSelect = document.getElementById('server-jump-host') as HTMLSelectElement | null;
     const regionSelect = document.getElementById('server-region') as HTMLSelectElement | null;
     const inferredInfo = document.getElementById('server-region-inferred');
-    const tunnelHint = document.getElementById('server-region-tunnel-hint');
     if (!jumpSelect || !regionSelect || !inferredInfo) return;
 
     const isTunnel = this.modalTransportMode === 'cf_tunnel';
@@ -1182,11 +1195,9 @@ export class ServerList {
       regionSelect.classList.remove('cursor-not-allowed', 'opacity-60');
       inferredInfo.textContent = '';
       inferredInfo.classList.add('hidden');
-      tunnelHint?.classList.remove('hidden');
       return;
     }
 
-    tunnelHint?.classList.add('hidden');
     inferredInfo.classList.remove('hidden');
 
     const usesJumpHost = jumpSelect.value !== '';

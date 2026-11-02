@@ -608,8 +608,6 @@ export class ConnectionForm {
                 <input id="cf-ca-team" class="terminal-input text-[13px]" data-i18n-placeholder="auth.cfTeamNamePlaceholder" placeholder="mycompany" type="text" autocomplete="off">
               </div>
             </div>
-            <p class="text-xs text-muted" data-i18n="auth.cfSshCaHint"></p>
-            <p class="text-[11px] text-muted opacity-80" data-i18n="auth.cfPrincipalHint"></p>
             <div id="cf-ca-access-badge" class="hidden text-[11px] text-[var(--accent)] flex items-center gap-1.5 p-2 border border-dim bg-surface/40">
               <span class="material-symbols-outlined" style="font-size: 14px;">check_circle</span>
               <span id="cf-ca-access-email"></span>

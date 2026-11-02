@@ -155,16 +155,13 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'server.useEmptyPassword': 'Set an empty password',
   'auth.validationPrivateKey': 'Enter a private key.',
   'auth.none': 'None',
-  'auth.noneHint': 'Only for servers accepting SSH none authentication. No password or private key is sent. Your username may grant access: keep it secret. Connection history is stored on this device.',
+  'auth.noneHint': 'Only for servers accepting SSH none authentication. No password or private key is sent.',
   'auth.cfSshCa': 'CF SSH CA',
-  'auth.cfSshCaHint': 'Use Cloudflare Zero Trust SSH CA to generate short-lived ECDSA certificates automatically in the browser.',
   'auth.cfTeamName': 'Zero Trust Team Name',
   'auth.cfTeamNamePlaceholder': 'e.g. mycompany (omit .cloudflareaccess.com)',
   'auth.cfAccessDetected': 'Cloudflare Access identity detected ({email})',
   'auth.cfMinting': 'Requesting Cloudflare SSH certificate…',
   'auth.cfTeamRequired': 'Please enter the Cloudflare Zero Trust team name.',
-  'auth.cfPrincipalHint':
-    'Usually the username is the email prefix (for example jdoe). If it differs from the certificate principal, the server AuthorizedPrincipals policy decides; the client does not reject early.',
   'auth.readKeyFailed': 'Could not read the private key file.',
   'auth.readKeyTitle': 'Could not read file',
   'auth.removeHistory': 'Remove from history',
@@ -246,8 +243,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'server.cfAccessTitle': 'Cloudflare Zero Trust Credentials (Optional)',
   'server.cfClientId': 'Service Token Client ID',
   'server.cfClientSecret': 'Service Token Client Secret',
-  'server.cfAccessHint':
-    'Required if Access policy is configured for this hostname in Cloudflare Zero Trust',
   'server.tunnelBadge': 'CF Tunnel',
   'server.regionTunnel': 'Cloudflare Tunnel',
   'server.savedTunnel': 'Saved. Will connect via Cloudflare Tunnel.',
@@ -258,9 +253,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'server.reenterSecretOnClone': 'Re-enter Client Secret for clone',
   'server.cloneSecretHint':
     'For security, the existing Service Token Secret is not exported. Please re-enter it for the cloned server.',
-  'server.tunnelRegionHint':
-    'Selecting the region nearest to your internal server is recommended to reduce latency; Auto uses the connection entrypoint',
-  'region.auto': 'Auto (detected when saved)',
+  'region.auto': 'Auto (choose manually in some cases)',
   'region.autoShort': 'Auto',
   'region.wnam': 'North America — West',
   'region.enam': 'North America — East',
