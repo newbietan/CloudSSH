@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.0] - 2026-11-03
+
+### Added
+
+- **OpenSSH 用户证书认证（关联 Issue：#181）**：支持 Ed25519、ECDSA P-256/P-384/P-521 与 RSA-SHA2 用户证书，可在私钥文本中附带证书或通过独立字段提交；检查用户类型、有效期及私钥匹配，最终 principal 授权由目标服务器决定，兼容通过 AuthorizedPrincipals 映射已有 Unix 用户。可使用 step-ca、Vault 等外部签发的证书，不包含这些 CA 的自动签发或管理服务。
+- **Cloudflare 原生 SSH CA**：Access 登录下支持在浏览器生成临时 ECDSA P-256 密钥并申请短期证书，私钥不写入浏览器持久化存储，连接时交给 Worker 完成 SSH 签名。支持保存团队标识、克隆会话及重连时重新签发；CA 服务器不能作为跳板机或创建一次性分享。中英文 README 提供服务器配置教程和 AI 助手提示词。
+
+### Changed
+
+- **Agent 自动模型预算**：移除手填上下文与输出 Token 预算，优先采用服务商模型列表中的窗口字段，否则按已知模型前缀选择；未知模型使用 128,000/8,192。接近容量时摘要较早对话并保留最近约 16,000 Token 的完整工具交互；服务商报告上下文超限时，本次任务有界降低窗口并重新压缩。
+- **连接表单精简**：可选 Cloudflare Access Service Token 凭据默认折叠，点击展开；精简 SSH CA、none 认证及区域说明，自动区域选项改为“自动（部分场景需手动选择）”，同步三语词条。
+- **Access 升级注意**：使用覆盖完整站点域名、API 与 WebSocket 的 hostname-based 自托管 Access 应用，并保护或关闭其他公开入口。当前 Worker 级 Access 不支持 WebSocket；`CF_ACCESS=true` 仅强制认证模式，不能代替边缘访问策略。
+- **Access 用户库路由变更**：邮箱路由改用 `cf-` 加 SHA-256 前 128 位。旧路由下的数据不会自动迁移或删除，升级后 Access 用户可能看到新的空用户空间，需要重新添加记录或人工迁移；GitHub 与单管理员用户库保持不变。
+
+### Fixed
+
+- **Access 保存与连接失败**：统一 API、连接令牌、系统识别和 Agent 配置/记忆的邮箱用户库路由，修复保存服务器外键失败、图标刷新丢失及 Access 用户被 GitHub 白名单误拦截的问题；普通服务器分享兑换从库内所有者身份计算路由，不再依赖浏览器补传。
+- **接口错误展示**：保存/更新正确等待数据库操作并兼容旧表字段；遇到 Access 登录页等 HTML 响应时显示明确提示，不再直接展示 JSON 解析异常。
+- **小窗口默认预算**：服务商只报告小上下文而缺少有效输出上限时，默认输出取窗口的四分之一且不超过 8192，避免 8K 模型仅剩 1 Token 输入空间。
+- **CA 签发竞态**：申请证书期间阻止重复提交；认证模式代际、主机、端口、用户名或团队变化后丢弃迟到结果，避免使用过期表单信息开连接。
+
+### Security
+
+- **Access 身份可信性**：通过 Workers 运行时 `ctx.access.getIdentity()` 获取已验证身份，不再把客户端邮箱请求头当作认证依据；身份读取有界等待，无邮箱或读取失败时拒绝认证，不降级为 GitHub 登录。
+- **认证模式与账号边界**：密码/Access 模式禁用 GitHub OAuth；连接令牌须符合当前模式，并在消费前核对登录者的完整用户库路由。SSH CA 签发代理同时要求同源请求、Access 模式及已验证身份。
+- **租户隔离与错误回显**：用 SHA-256 路由替代旧 FNV 路由，不同邮箱不能改写同一库身份；Worker/UserDB 意外异常仅返回通用 JSON 500，不回显或记录原始异常正文。
+- **配置安全指引**：教程要求备份并保留已有 CA 和授权记录，区分全局指令与用户 Match 块，校验成功后才重载 SSH，并提示不同邮箱域名可能存在相同 principal 前缀。
+
 ## [2.9.0] - 2026-10-26
 
 ### Added
