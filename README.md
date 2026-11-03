@@ -251,11 +251,11 @@ Fork 仓库可以按需使用内置的 `Sync upstream` GitHub Actions 工作流�
 
 可以通过 Cloudflare Access 的账号授权、邮箱一次性验证码（One-Time PIN）或团队 IdP 登录，无需另配 GitHub OAuth 或固定密码：
 
-1. 在 **Zero Trust → Access → Applications** 创建 **Self-hosted** 应用，绑定 CloudSSH 站点的完整域名，覆盖页面、`/api/*` 和 WebSocket 路径，不要只保护登录页。
+1. 可在 Worker 详情页的 **Access** 面板配置访问策略，或在 **Zero Trust → Access → Applications** 创建 **Self-hosted** 应用。确保实际生效的策略覆盖 CloudSSH 站点的页面、`/api/*` 和 WebSocket 路径，不要只保护登录页。
 2. 添加允许访问的邮箱或受控团队域名规则；其他可访问入口（包括 `workers.dev`）也须保护，不使用的入口应关闭。
 3. 访问站点完成 Access 验证。CloudSSH 从 Workers 运行时的 `ctx.access.getIdentity()` 获取已验证身份，自动按邮箱隔离用户库；不信任客户端传来的邮箱头或未经验证的 JWT。无需另配 AUD 或验证密钥，退出登录会转到 `/cdn-cgi/access/logout`。
 
-> **WebSocket 限制**：当前 Worker 详情页 **Access** 选项卡提供的 Worker 级保护不支持 WebSocket，会使 SSH 升级返回 403。请使用上述 hostname-based 自托管应用，见 [Cloudflare 官方说明](https://developers.cloudflare.com/workers/configuration/cloudflare-access/)。`CF_ACCESS=true` 仅强制要求 Access 身份，不能代替在 Cloudflare 配置访问策略；缺少运行时身份时会拒绝登录。
+> **配置与连接检查**：从 Worker 面板配置 Access 后已能正常登录和连接 SSH 的实例，无需迁移到另一种配置方式。面板入口不等于实际生效的策略类型；[Cloudflare 官方文档](https://developers.cloudflare.com/workers/configuration/cloudflare-access/) 对 Worker-level 策略另有 WebSocket 限制说明，域名/路径策略也可能优先生效。若页面可访问而 SSH 返回 403，应核对生效策略、WebSocket 目标域名与路径、Origin 和登录会话，不要仅凭配置入口判断原因。`CF_ACCESS=true` 仅强制要求已验证的 Access 身份，不能代替边缘访问策略；缺少运行时身份时会拒绝登录。
 
 > **多认证模式优先级说明**：`ADMIN_PASSWORD_HASH`（密码优先） > `CF_ACCESS` / 自动感知（Access 模式） > `GitHub OAuth` > 匿名模式。若同时开启，以更高优先级的模式为准。
 

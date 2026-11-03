@@ -251,11 +251,11 @@ All feature flags and security controls are managed through Worker environment v
 
 Sign in through Cloudflare Access using Cloudflare account authorization, email One-Time PIN, or your team's identity provider, without a separate GitHub OAuth setup or fixed password:
 
-1. Create a **Self-hosted** application in **Zero Trust → Access → Applications** for the full CloudSSH hostname. Protect the page, `/api/*`, and WebSocket paths, not just a login page.
+1. Configure a policy in the Worker's **Access** panel, or create a **Self-hosted** application in **Zero Trust → Access → Applications**. Ensure the effective policy covers the CloudSSH page, `/api/*`, and WebSocket paths, not just a login page.
 2. Allow trusted emails or controlled team domains. Protect every reachable entry point, including `workers.dev`, or disable unused entry points.
 3. Open the site and authenticate. CloudSSH obtains verified identity from the Workers runtime's `ctx.access.getIdentity()` and isolates databases by email. Client-provided email headers and unverified JWTs are not identity evidence. No additional AUD or verification key configuration is needed; Sign Out redirects to `/cdn-cgi/access/logout`.
 
-> **WebSocket limitation**: Worker-level protection enabled from the Worker's **Access** tab currently rejects WebSocket upgrades with 403. Use the hostname-based self-hosted application above; see [Cloudflare's documentation](https://developers.cloudflare.com/workers/configuration/cloudflare-access/). `CF_ACCESS=true` requires an Access identity but does not configure an Access policy. Login is rejected without a verified runtime identity.
+> **Configuration and connection checks**: If Access configured through the Worker panel already supports login and SSH connections, no migration is needed. The configuration entry point does not identify the effective policy type: [Cloudflare's documentation](https://developers.cloudflare.com/workers/configuration/cloudflare-access/) separately describes WebSocket restrictions for Worker-level policies, and hostname/path policies may take precedence. If the page loads but SSH returns 403, check the effective policy, WebSocket hostname/path, Origin, and login session instead of attributing the failure solely to the panel used. `CF_ACCESS=true` requires a verified Access identity but does not configure an edge policy; login is rejected without that runtime identity.
 
 > **Auth Mode Priority**: `ADMIN_PASSWORD_HASH` (password first) > `CF_ACCESS` / auto-detected (Access mode) > `GitHub OAuth` > Anonymous mode. When multiple configurations coexist, the higher priority mode is authoritative.
 

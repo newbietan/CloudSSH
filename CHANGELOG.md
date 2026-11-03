@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Agent 自动模型预算**：移除手填上下文与输出 Token 预算，优先采用服务商模型列表中的窗口字段，否则按已知模型前缀选择；未知模型使用 128,000/8,192。接近容量时摘要较早对话并保留最近约 16,000 Token 的完整工具交互；服务商报告上下文超限时，本次任务有界降低窗口并重新压缩。
 - **连接表单精简**：可选 Cloudflare Access Service Token 凭据默认折叠，点击展开；精简 SSH CA、none 认证及区域说明，自动区域选项改为“自动（部分场景需手动选择）”，同步三语词条。
-- **Access 升级注意**：使用覆盖完整站点域名、API 与 WebSocket 的 hostname-based 自托管 Access 应用，并保护或关闭其他公开入口。当前 Worker 级 Access 不支持 WebSocket；`CF_ACCESS=true` 仅强制认证模式，不能代替边缘访问策略。
+- **Access 升级注意**：确保实际生效的 Access 策略覆盖站点页面、API 与 WebSocket，并保护或关闭其他公开入口。Worker 面板配置已能正常使用的实例无需迁移；WebSocket 兼容性按实际策略类型与连接结果核查，不按面板入口一概判断。`CF_ACCESS=true` 仅强制认证模式，不能代替边缘访问策略。
 - **Access 用户库路由变更**：邮箱路由改用 `cf-` 加 SHA-256 前 128 位。旧路由下的数据不会自动迁移或删除，升级后 Access 用户可能看到新的空用户空间，需要重新添加记录或人工迁移；GitHub 与单管理员用户库保持不变。
 
 ### Fixed
