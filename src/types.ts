@@ -48,6 +48,8 @@ export interface SSHConnectionConfig {
   password: string;
   authMethod?: 'password' | 'publickey' | 'none';
   privateKey?: string;
+  /** 可选 OpenSSH 用户证书（单行文本或 Base64） */
+  certificate?: string;
   cols?: number;
   rows?: number;
   expectedFingerprint?: string;
@@ -55,6 +57,11 @@ export interface SSHConnectionConfig {
   knownHostIdentity?: string;
   userId?: string;
   githubId?: string;
+  /**
+   * UserDBDO 路由键。GitHub / 管理员与 githubId 相同；
+   * Access 用户是邮箱路由键，不能用哨兵 githubId `-2`。
+   */
+  userDbRouteKey?: string;
   /** 已保存服务器的记录 ID（token 路径下由 handleConnectServer 填充，供 OS 检测持久化） */
   serverId?: number;
   /** 已检测并持久化的操作系统标识（已设置则连接时跳过重复检测） */
@@ -113,6 +120,8 @@ export interface SSHJumpHostConfig {
   password: string;
   authMethod: 'password' | 'publickey' | 'none';
   privateKey: string;
+  /** 可选 OpenSSH 用户证书 */
+  certificate?: string;
   expectedFingerprint?: string;
   knownHostIdentity: string;
 }
@@ -191,8 +200,10 @@ export interface Env {
   // 置空/删除即刻退回 GitHub 模式；verifier = SHA-256(PBKDF2(password, salt, iterations))。
   // 浏览器端执行 PBKDF2 预拉伸（server relief），Worker 侧仅做一次 SHA-256 比对（Free 套餐 CPU 安全）。
   ADMIN_PASSWORD_HASH?: string;
-  // Cloudflare Zero Trust Access 认证模式支持（可选；未配置时若检测到 Cf-Access 标头亦可自动感知）
+  // 强制 Cloudflare Access 模式（可选；运行时 ctx.access 自动感知，绝不信任原始身份标头）
   CF_ACCESS?: string;
+  // Cloudflare Zero Trust Team 名称（可选；用于自动推断或预填 SSH CA 签发端点）
+  CF_ACCESS_TEAM_NAME?: string;
 }
 
 /** /api/config 下发的密码认证公开参数（盐与迭代数非机密，供浏览器预拉伸） */
@@ -238,6 +249,8 @@ export interface ServerConfig {
   cf_access_client_id?: string | null;
   /** 是否已保存 Cloudflare Zero Trust Access Service Token Secret */
   has_cf_access_client_secret?: boolean;
+  /** Cloudflare Zero Trust SSH CA 团队标识（非空表示使用原生 SSH CA 短期证书认证） */
+  cf_ssh_ca_team?: string | null;
   /** 最近连接成功的 Unix 毫秒时间戳 */
   last_connected_at?: number | null;
   created_at: string;

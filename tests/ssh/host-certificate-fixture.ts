@@ -106,3 +106,15 @@ export async function createHostCertificate(
   const blob = concat(signed, encodeString(options.caSignature ?? await ca.sign(signed)));
   return { blob, signed, host, ca };
 }
+
+export async function createUserCertificate(
+  options: CertificateOptions = {},
+  material?: { host: TestSigningKey; ca: TestSigningKey }
+) {
+  return createHostCertificate({
+    type: 1,
+    principals: options.principals ?? encodeString('testuser'),
+    ...options,
+  }, material);
+}
+

@@ -1531,7 +1531,8 @@ export class SSHSession {
           this.config.privateKey!,
           this.sessionID!,
           this.serverSigAlgs,
-          false
+          false,
+          this.config.certificate
         );
         break;
       case 'password':
@@ -2888,6 +2889,7 @@ export class SSHSession {
         serverId: this.config.serverId,
         userId: this.userId,
         githubId: this.githubId,
+        userDbRouteKey: this.config.userDbRouteKey,
         env: this.env,
         executeCommand: (cmd, timeout) => this.executeAgentCommand(cmd, timeout),
         onOSDetected: (detected) => {
@@ -2982,13 +2984,19 @@ export class SSHSession {
       const gid = this.githubId;
       const env = this.env;
       if (serverId && uid && gid && env) {
-        memoryProvider = createAgentMemoryProvider(env, gid, uid, serverId);
+        memoryProvider = createAgentMemoryProvider(
+          env,
+          this.config.userDbRouteKey || gid,
+          uid,
+          serverId
+        );
       }
 
       this.agentCore = new AgentCore(
         this.terminalContext,
         (msg: any) => this.sendAgentFrame(msg),
-        async (uId: string) => this.fetchAgentAIConfig(uId, this.githubId!),
+        async (uId: string) =>
+          this.fetchAgentAIConfig(uId, this.config.userDbRouteKey || this.githubId!),
         async (command: string, timeout: number, signal?: AbortSignal) =>
           this.executeAgentCommand(command, timeout, signal),
         async (command: string, reason: string, signal?: AbortSignal) =>

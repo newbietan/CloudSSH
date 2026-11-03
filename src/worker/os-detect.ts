@@ -155,6 +155,8 @@ export interface DetectRemoteOSContext {
   serverId: number;
   userId: string;
   githubId: string;
+  /** 覆盖 githubId 作为 UserDBDO 名称。Access 会话必须传邮箱路由键。 */
+  userDbRouteKey?: string;
   env?: Env | null;
   executeCommand: (command: string, timeout: number) => Promise<{ stdout: string }>;
   onOSDetected?: (os: string) => void;
@@ -179,7 +181,8 @@ export async function detectAndPersistRemoteOS(
     if (ctx.env) {
       try {
         const userDb = ctx.env.USER_DB as any;
-        const stub = userDb.get(userDb.idFromName(ctx.githubId));
+        const routeKey = ctx.userDbRouteKey || ctx.githubId;
+        const stub = userDb.get(userDb.idFromName(routeKey));
         const res = await stub.fetch(
           new Request(`http://internal/internal/servers/${ctx.serverId}/os`, {
             method: 'PUT',
@@ -189,9 +192,11 @@ export async function detectAndPersistRemoteOS(
         );
         if (!res.ok) {
           ctx.sendDebug?.(`OS detect persist failed: ${res.status}`);
+          return null;
         }
       } catch (e) {
         ctx.sendDebug?.(`OS detect persist error: ${e instanceof Error ? e.message : String(e)}`);
+        return null;
       }
     }
 

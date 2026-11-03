@@ -310,18 +310,15 @@ for (const [locale, fallback, paused] of [
   });
 }
 
-test('model token budgets load, validate, save and reset without resending the saved API key', async ({ page }) => {
+test('model token budgets are derived and saved without resending the API key', async ({ page }) => {
   await mockAnonymousSession(page);
   const writes: any[] = [];
-  let config = { configured: true, base_url: 'https://api.example.com/v1', model: 'model-test',
-    api_key_last4: 'last', context_window: 16_384, max_output_tokens: 1024 };
+  const config = { configured: true, base_url: 'https://api.example.com/v1', model: 'model-test',
+    api_key_last4: 'last', context_window: 128_000, max_output_tokens: 8192, budget_source: 'model' };
   await page.route('**/api/ai/config', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: config });
     if (route.request().method() !== 'PUT') return route.fallback();
-    const body = route.request().postDataJSON();
-    writes.push(body);
-    config = { ...config, ...body, context_window: body.context_window ?? 64_000,
-      max_output_tokens: body.max_output_tokens ?? 8192 };
+    writes.push(route.request().postDataJSON());
     return route.fulfill({ json: { success: true } });
   });
   await page.goto('/?lang=en-US');
@@ -330,27 +327,14 @@ test('model token budgets load, validate, save and reset without resending the s
     (window as any).__aiBudgetPanel = new module.AIConfigPanel();
     (window as any).__aiBudgetPanel.show();
   });
-  await page.locator('[data-i18n="aiConfig.budgets"]').click();
-  await expect(page.locator('#ai-context-window')).toHaveValue('16384');
-  await expect(page.locator('#ai-max-output-tokens')).toHaveValue('1024');
-  await page.locator('#ai-max-output-tokens').fill('16384');
-  await page.locator('#ai-save-btn').click();
-  await expect(page.locator('#ai-config-error')).toContainText('Invalid token budgets');
-  expect(writes).toHaveLength(0);
-  await page.locator('#ai-context-window').fill('32768');
-  await page.locator('#ai-max-output-tokens').fill('2048');
+  await expect(page.locator('#ai-budget-note')).toHaveCount(0);
+  await page.locator('#ai-model').fill('gpt-6-luna');
   await page.locator('#ai-save-btn').click();
   await expect.poll(() => writes.length).toBe(1);
-  expect(writes[0]).toMatchObject({ context_window: 32_768, max_output_tokens: 2048 });
+  expect(writes[0]).toMatchObject({ model: 'gpt-6-luna' });
   expect(writes[0]).not.toHaveProperty('api_key');
+  expect(writes[0]).not.toHaveProperty('context_window');
   await expect(page.locator('#ai-config-modal')).toBeHidden();
-  await page.evaluate(() => (window as any).__aiBudgetPanel.show());
-  await expect(page.locator('#ai-context-window')).toHaveValue('32768');
-  await page.locator('#ai-context-window').fill('');
-  await page.locator('#ai-max-output-tokens').fill('');
-  await page.locator('#ai-save-btn').click();
-  await expect.poll(() => writes.length).toBe(2);
-  expect(writes[1]).toMatchObject({ context_window: null, max_output_tokens: null });
 });
 
 test('confirmation buttons and closure frames bind to one ID, even for identical commands', async ({ page }) => {

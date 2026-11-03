@@ -1188,24 +1188,21 @@ describe('安全 — 一次性 token 与接缝鉴权', () => {
     expect(sshSessionStub.fetch).not.toHaveBeenCalled();
   });
 
-  it('伪造的 connect token → 403 Invalid or expired connection token', async () => {
+  it.each([
+    ['forged_token_xyz', 400],
+    ['123:forged_token_xyz', 403],
+  ])('伪造 connect token %s → %s；格式错误时不访问用户库', async (token, status) => {
     const worker = await loadWorker();
-    const env = makeEnv({
-      userDbStub: makeDOStub(() => new Response('{"error":"invalid"}', { status: 403 })),
+    const userDbStub = makeDOStub(() => new Response('{"error":"invalid"}', { status: 403 }));
+    const env = makeEnv({ userDbStub });
+    const req = makeRequest(`/api/ssh?token=${token}`, {
+      headers: { Upgrade: 'websocket', Origin: 'https://cloudssh.test' },
     });
-
-    const req = makeRequest('/api/ssh?token=forged_token_xyz', {
-      headers: {
-        Upgrade: 'websocket',
-        Origin: 'https://cloudssh.test',
-      },
-    });
-
     const res = await worker.fetch(req, env);
-
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(status);
     const data = await res.json();
     expect((data as { error?: string }).error).toMatch(/token|无效|expired/i);
+    expect(userDbStub.fetch).toHaveBeenCalledTimes(status === 400 ? 0 : 1);
   });
 
   it('SFTP attach 缺 session 参数 → 403 Missing SFTP attach token', async () => {

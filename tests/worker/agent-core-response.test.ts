@@ -84,7 +84,7 @@ describe('AgentCore Responses delivery and context', () => {
   });
 
   it('applies model budgets and requires a fresh chat when they change', async () => {
-    const config = { ...aiConfig, context_window: 32_768, max_output_tokens: 2048 };
+    const config = { ...aiConfig, context_window: 32_768, max_output_tokens: 2048, budget_source: 'provider' as const };
     const { agent, frames } = setup({ aiConfig: config });
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(reply('resp_budget'));
     await agent.handleAgentStart('1', 'Inspect');
@@ -96,7 +96,7 @@ describe('AgentCore Responses delivery and context', () => {
   });
 
   it('compacts with summarization at budget boundary and preserves tool history on continuation error', async () => {
-    const { agent, frames } = setup();
+    const { agent, frames } = setup({ aiConfig: { ...aiConfig, context_window: 64_000, budget_source: 'provider' as const } });
     seedOlderHistory(agent);
     let requests = 0;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
@@ -224,7 +224,7 @@ describe('AgentCore Responses delivery and context', () => {
   });
 
   it('uses application-level compaction at the budget boundary without orphan outputs', async () => {
-    const { agent } = setup();
+    const { agent } = setup({ aiConfig: { ...aiConfig, context_window: 64_000, budget_source: 'provider' as const } });
     seedOlderHistory(agent);
     const requests: any[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {

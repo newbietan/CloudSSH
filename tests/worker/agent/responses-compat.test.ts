@@ -133,7 +133,6 @@ describe('Bounded, explicit capability fallback', () => {
   it.each([
     ['invalid_request_error', 'model', 'invalid request'],
     ['context_length_exceeded', 'prompt_cache_key', 'unsupported prompt_cache_key in evidence'],
-    ['unsupported_parameter', 'store', 'Use store:true'],
     ['unsupported_parameter', 'tools', 'tools not supported'],
     ['invalid_api_key', 'prompt_cache_key', 'unsupported prompt_cache_key'],
     ['unsupported_value', 'max_output_tokens', 'maximum is 4096'],
@@ -141,6 +140,16 @@ describe('Bounded, explicit capability fallback', () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ error: { code, param, message } }), { status: 400 }));
     await expect(new ResponsesClient(aiConfig).create(request, signal())).rejects.toMatchObject({ code: 'responses_http', status: 400 });
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('omits store when a provider rejects the field and never flips it to true', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(unsupported('store')).mockResolvedValueOnce(complete());
+    await new ResponsesClient(aiConfig).create(request, signal());
+    const first = JSON.parse(fetch.mock.calls[0][1]!.body as string);
+    const next = JSON.parse(fetch.mock.calls[1][1]!.body as string);
+    expect(first.store).toBe(false);
+    expect(next).not.toHaveProperty('store');
+    expect(next.input).toEqual(first.input);
   });
 
   it('stops when a supposedly unsupported option is already absent', async () => {

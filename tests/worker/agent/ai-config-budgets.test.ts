@@ -11,7 +11,7 @@ class ConfigSql {
   exec(query: string, ...values: unknown[]) {
     this.statements.push({ query, values });
     if (query === 'PRAGMA table_info(ai_configs)') {
-      return { toArray: () => this.migrated ? [{ name: 'context_window' }, { name: 'max_output_tokens' }] : [] };
+      return { toArray: () => this.migrated ? [{ name: 'context_window' }, { name: 'max_output_tokens' }, { name: 'budget_source' }] : [] };
     }
     if (query.startsWith('SELECT') && query.includes('FROM ai_configs WHERE user_id = ?')) {
       return { toArray: () => values[0] === 7 && this.row ? [this.row] : [] };
@@ -22,7 +22,7 @@ class ConfigSql {
       this.row = { ...this.row, base_url: values[1], model: values[2],
         api_key_enc: keepKey ? this.row?.api_key_enc : values[3],
         api_key_last4: keepKey ? this.row?.api_key_last4 : values[4],
-        context_window: values[index], max_output_tokens: values[index + 1] };
+        context_window: values[index], max_output_tokens: values[index + 1], budget_source: values[index + 2] };
     }
     return { toArray: () => [] };
   }
@@ -40,39 +40,28 @@ function put(db: UserDBDO, values: Record<string, unknown> = {}) {
 describe('AI configuration model budgets', () => {
   it('upgrades old SQLite rows idempotently without Wrangler DO migrations', () => {
     const old = setup(false).sql;
-    expect(old.statements.filter(item => item.query.startsWith('ALTER TABLE ai_configs'))).toHaveLength(2);
+    expect(old.statements.filter(item => item.query.startsWith('ALTER TABLE ai_configs'))).toHaveLength(3);
     expect(setup(true).sql.statements.some(item => item.query.startsWith('ALTER TABLE ai_configs'))).toBe(false);
   });
-  it('saves limits while retaining an unchanged encrypted key', async () => {
+  it('derives limits from the model and keeps a provider-reported window', async () => {
     const { db, sql } = setup();
-    expect((await put(db, { context_window: 16_384, max_output_tokens: 1024 })).status).toBe(200);
-    expect(sql.row).toMatchObject({ context_window: 16_384, max_output_tokens: 1024, api_key_enc: 'encrypted-existing' });
+    expect((await put(db, { provider_context_window: 16_384, provider_max_output_tokens: 1024 })).status).toBe(200);
+    expect(sql.row).toMatchObject({
+      context_window: 16_384, max_output_tokens: 1024, budget_source: 'provider', api_key_enc: 'encrypted-existing',
+    });
     const publicConfig = await db.fetch(new Request('http://internal/internal/ai-config?user_id=7'));
     const data = await publicConfig.json();
-    expect(data).toMatchObject({ context_window: 16_384, max_output_tokens: 1024 });
+    expect(data).toMatchObject({ context_window: 16_384, max_output_tokens: 1024, budget_source: 'provider' });
     expect(JSON.stringify(data)).not.toContain('encrypted-existing');
     expect((await db.fetch(new Request('http://internal/internal/ai-config?user_id=8'))).status).toBe(200);
     await expect((await db.fetch(new Request('http://internal/internal/ai-config?user_id=8'))).json()).resolves.toEqual({ configured: false });
   });
-  it('preserves omitted budgets, resets explicit null and clears old-model limits on a model change', async () => {
+  it('ignores handwritten budgets and recomputes when the model changes', async () => {
     const { db, sql } = setup();
-    await put(db);
-    expect(sql.row).toMatchObject({ context_window: 32_768, max_output_tokens: 2048 });
-    await put(db, { context_window: null, max_output_tokens: null });
-    expect(sql.row).toMatchObject({ context_window: 64_000, max_output_tokens: 8192 });
     await put(db, { context_window: 16_384, max_output_tokens: 1024 });
-    await put(db, { model: 'another-model' });
-    expect(sql.row).toMatchObject({ context_window: 64_000, max_output_tokens: 8192 });
-  });
-  it.each([
-    { context_window: '32000' }, { max_output_tokens: false },
-    { context_window: 8192, max_output_tokens: 8192 }, { max_output_tokens: -1 },
-  ])('rejects invalid budgets before writing: %j', async invalid => {
-    const { db, sql } = setup();
-    const response = await put(db, invalid);
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toMatchObject({ code: 'responses_limits' });
-    expect(sql.statements.some(item => item.query.startsWith('INSERT INTO ai_configs'))).toBe(false);
+    expect(sql.row).toMatchObject({ context_window: 128_000, max_output_tokens: 8192, budget_source: 'model' });
+    await put(db, { model: 'gpt-6-luna' });
+    expect(sql.row).toMatchObject({ context_window: 1_000_000, max_output_tokens: 128_000, budget_source: 'model' });
   });
   it('still requires a new key after an address change, including budget-only writes', async () => {
     const { db, sql } = setup();
@@ -91,8 +80,8 @@ describe('AI configuration model budgets', () => {
     const { db, sql } = setup();
     sql.row = null;
     const encrypt = vi.spyOn(db as any, 'encryptCredential').mockResolvedValue('encrypted-new');
-    expect((await put(db, { api_key: 'new-private-key', context_window: 16_384, max_output_tokens: 1024 })).status).toBe(200);
+    expect((await put(db, { api_key: 'new-private-key', model: 'deepseek-v4-pro' })).status).toBe(200);
     expect(encrypt).toHaveBeenCalledWith('new-private-key', 7);
-    expect(sql.row).toMatchObject({ api_key_enc: 'encrypted-new', context_window: 16_384, max_output_tokens: 1024 });
+    expect(sql.row).toMatchObject({ api_key_enc: 'encrypted-new', context_window: 1_000_000, max_output_tokens: 128_000, budget_source: 'model' });
   });
 });

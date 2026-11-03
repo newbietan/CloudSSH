@@ -58,7 +58,7 @@ describe('Responses protocol and execution boundary', () => {
   });
 
   it('preflights the exact serialized payload including output reserve without sending a request', async () => {
-    const client = new ResponsesClient(aiConfig);
+    const client = new ResponsesClient({ ...aiConfig, context_window: 64_000 });
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sse([{ type: 'response.completed', response: responseObject('done') }]));
     expect(client.canFit(request)).toBe(true);
     const oversized = { ...request, instructions: '界'.repeat(60_000) };

@@ -2129,6 +2129,10 @@ html[data-ui-motion='none'] .auth-aurora::after {
 }
 
 /* Auth tab buttons */
+.auth-tab.hidden {
+  display: none;
+}
+
 .auth-tab {
   border: 1px solid var(--border-strong);
   border-radius: var(--control-radius);

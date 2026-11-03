@@ -1,7 +1,7 @@
 // AI Config panel — BYOK settings for LLM API
 
 import { normalizeAIBaseUrl } from '../../src/ai-endpoint';
-import { resolveAIModelBudgets } from '../../src/ai-model-policy';
+import { type AIModelBudgets } from '../../src/ai-model-policy';
 import { responseErrorMessage } from './agent/response-errors';
 import { t, translateDocument } from './i18n';
 
@@ -9,7 +9,7 @@ export class AIConfigPanel {
   private modalEl: HTMLElement | null = null;
   private hasConfiguredKey = false;
   private savedBaseUrl = '';
-  private loadedModels: string[] = [];
+  private loadedModels: Array<{ id: string } & Partial<AIModelBudgets>> = [];
   private isDropdownOpen = false;
   private outsideClickListener: ((e: MouseEvent) => void) | null = null;
 
@@ -67,7 +67,7 @@ export class AIConfigPanel {
                   <input
                     id="ai-model"
                     class="terminal-input w-full text-[13px] pr-14 font-mono"
-                    placeholder="gpt-4o-mini"
+                    placeholder="gpt-6-luna"
                     type="text"
                     required
                     autocomplete="off"
@@ -116,20 +116,6 @@ export class AIConfigPanel {
             <div id="ai-fetch-status" class="text-[10px] mt-1 hidden"></div>
             <div class="text-[10px] text-muted mt-1" data-i18n="aiConfig.modelDiscoveryHint">${t('aiConfig.modelDiscoveryHint')}</div>
           </div>
-          <details class="text-xs text-muted">
-            <summary class="cursor-pointer" data-i18n="aiConfig.budgets"></summary>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-              <div>
-                <label for="ai-context-window" class="block mb-2" data-i18n="aiConfig.contextWindow"></label>
-                <input id="ai-context-window" type="number" min="8192" max="1000000" step="1" placeholder="64000" class="terminal-input text-[13px]" aria-describedby="ai-budget-hint">
-              </div>
-              <div>
-                <label for="ai-max-output-tokens" class="block mb-2" data-i18n="aiConfig.maxOutputTokens"></label>
-                <input id="ai-max-output-tokens" type="number" min="256" max="128000" step="1" placeholder="8192" class="terminal-input text-[13px]" aria-describedby="ai-budget-hint">
-              </div>
-            </div>
-            <p id="ai-budget-hint" class="text-[10px] mt-2" data-i18n="aiConfig.budgetHint"></p>
-          </details>
           <div class="pt-2 space-y-2">
             <div id="ai-config-error" class="text-[var(--error)] text-[11px] hidden"></div>
             <div id="ai-config-success" class="text-[var(--accent)] text-[11px] hidden"></div>
@@ -312,7 +298,7 @@ export class AIConfigPanel {
     let list = this.loadedModels;
     const trimmed = filterText.trim().toLowerCase();
     if (!forceFull && trimmed) {
-      list = this.loadedModels.filter((m) => m.toLowerCase().includes(trimmed));
+      list = this.loadedModels.filter((m) => m.id.toLowerCase().includes(trimmed));
     }
 
     if (list.length === 0) {
@@ -326,9 +312,9 @@ export class AIConfigPanel {
     const currentVal = inputEl?.value.trim() || '';
     let selectedEl: HTMLElement | null = null;
 
-    for (const modelId of list) {
-      const isSelected = modelId === currentVal;
-      const itemEl = this.createOptionElement(modelId, isSelected, inputEl);
+    for (const model of list) {
+      const isSelected = model.id === currentVal;
+      const itemEl = this.createOptionElement(model.id, isSelected, inputEl);
       if (isSelected) {
         selectedEl = itemEl;
       }
@@ -399,10 +385,6 @@ export class AIConfigPanel {
           const hintEl = this.modalEl?.querySelector('#ai-key-hint');
           if (baseUrlEl) baseUrlEl.value = data.base_url || '';
           if (modelEl) modelEl.value = data.model || '';
-          const contextEl = this.modalEl?.querySelector('#ai-context-window') as HTMLInputElement;
-          const outputEl = this.modalEl?.querySelector('#ai-max-output-tokens') as HTMLInputElement;
-          if (contextEl) contextEl.value = data.context_window == null ? '' : String(data.context_window);
-          if (outputEl) outputEl.value = data.max_output_tokens == null ? '' : String(data.max_output_tokens);
           this.savedBaseUrl = data.base_url || '';
           this.hasConfiguredKey = Boolean(data.api_key_last4);
           if (hintEl && data.api_key_last4) {
@@ -476,9 +458,9 @@ export class AIConfigPanel {
         return;
       }
 
-      const models: Array<{ id: string }> = data.models || [];
-      const modelIds = models.map((m) => m.id);
-      this.loadedModels = modelIds;
+      const models: Array<{ id: string } & Partial<AIModelBudgets>> = data.models || [];
+      this.loadedModels = models.filter(model => typeof model.id === 'string' && model.id);
+      const modelIds = this.loadedModels.map(model => model.id);
 
       if (modelIds.length > 0) {
         const currentVal = modelEl?.value.trim() || '';
@@ -547,24 +529,15 @@ export class AIConfigPanel {
       return;
     }
 
-    const contextEl = this.modalEl?.querySelector('#ai-context-window') as HTMLInputElement;
-    const outputEl = this.modalEl?.querySelector('#ai-max-output-tokens') as HTMLInputElement;
-    const budgets = {
-      context_window: contextEl.value === '' ? null : contextEl.valueAsNumber,
-      max_output_tokens: outputEl.value === '' ? null : outputEl.valueAsNumber,
-    };
-    try { resolveAIModelBudgets(budgets); }
-    catch {
-      if (errorEl) { errorEl.textContent = responseErrorMessage('responses_limits'); errorEl.classList.remove('hidden'); }
-      return;
-    }
+    const matched = this.loadedModels.find(item => item.id === model);
     try {
       const body: { base_url: string; model: string; api_key?: string;
-        context_window: number | null; max_output_tokens: number | null } = {
+        provider_context_window?: number; provider_max_output_tokens?: number } = {
         base_url: baseUrl,
         model,
-        ...budgets,
       };
+      if (typeof matched?.context_window === 'number') body.provider_context_window = matched.context_window;
+      if (typeof matched?.max_output_tokens === 'number') body.provider_max_output_tokens = matched.max_output_tokens;
       if (apiKey) body.api_key = apiKey;
 
       const res = await fetch('/api/ai/config', {

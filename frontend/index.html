@@ -719,18 +719,30 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
             </div>
             <div
               id="server-cf-access-section"
-              class="hidden space-y-4 pt-2 pb-2 border-t border-b border-dim"
+              class="hidden pt-2 pb-2 border-t border-b border-dim"
             >
-              <div
-                class="text-[11px] font-bold tracking-[0.05em] text-[var(--accent-secondary)] flex items-center gap-1.5"
+              <button
+                type="button"
+                id="server-cf-access-toggle"
+                class="w-full text-left text-[11px] font-bold tracking-[0.05em] text-[var(--accent-secondary)] flex items-center gap-1.5 cursor-pointer"
+                aria-expanded="false"
+                aria-controls="server-cf-access-fields"
               >
                 <span class="material-symbols-outlined" style="font-size: 16px"
                   >security</span
                 >
-                <span data-i18n="server.cfAccessTitle"
+                <span class="flex-1" data-i18n="server.cfAccessTitle"
                   >Cloudflare Zero Trust 访问凭据 (可选)</span
                 >
-              </div>
+                <span
+                  id="server-cf-access-chevron"
+                  class="material-symbols-outlined"
+                  style="font-size: 18px"
+                  aria-hidden="true"
+                  >expand_more</span
+                >
+              </button>
+              <div id="server-cf-access-fields" class="hidden space-y-4 pt-3">
               <div>
                 <label
                   for="server-cf-client-id"
@@ -775,11 +787,6 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                   class="hidden text-[10px] text-[var(--accent-secondary)] mt-1"
                 ></div>
               </div>
-              <div
-                class="text-[10px] text-muted"
-                data-i18n="server.cfAccessHint"
-              >
-                若在 Cloudflare Zero Trust 中为该域名开启了 Access 策略，需填入 Service Token
               </div>
             </div>
             <div>
@@ -807,12 +814,39 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 </button>
                 <button
                   type="button"
+                  id="modal-auth-tab-cf-ca"
+                  class="auth-tab hidden px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all"
+                  data-i18n="auth.cfSshCa"
+                >
+                  Cloudflare CA
+                </button>
+                <button
+                  type="button"
                   id="modal-auth-tab-none"
                   class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all"
                   data-i18n="auth.none"
                 ></button>
               </div>
               <p id="modal-none-section" class="text-xs text-muted" style="display: none" data-i18n="auth.noneHint"></p>
+              <div id="modal-cf-ca-section" style="display: none" class="space-y-2">
+                <label
+                  for="server-cf-ca-team"
+                  class="block text-xs font-bold tracking-[0.1em] text-muted mb-1"
+                  data-i18n="auth.cfTeamName"
+                  >Zero Trust 团队标识</label
+                >
+                <div class="flex items-center">
+                  <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px">verified_user</span>
+                  <input
+                    id="server-cf-ca-team"
+                    class="terminal-input text-[13px]"
+                    data-i18n-placeholder="auth.cfTeamNamePlaceholder"
+                    placeholder="mycompany"
+                    type="text"
+                    autocomplete="off"
+                  />
+                </div>
+              </div>
               <div id="modal-password-section">
                 <div class="flex items-center">
                   <span
@@ -873,20 +907,13 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 "
               >
                 <option value="" data-i18n="region.auto">
-                  自动（保存时由系统推断）
+                  自动（部分场景需手动选择）
                 </option>
               </select>
               <div
                 id="server-region-inferred"
                 class="text-[10px] text-muted mt-1"
               ></div>
-              <div
-                id="server-region-tunnel-hint"
-                class="hidden text-[10px] text-muted mt-1"
-                data-i18n="server.tunnelRegionHint"
-              >
-                建议手动选择离内网主机物理位置最近的区域以降低隧道延迟；选择自动将由连接时的接入点决定
-              </div>
             </div>
             <div class="pt-2">
               <button

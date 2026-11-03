@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { prepareContextCheckpoint } from '../../../src/worker/agent/checkpoint';
 import { AgentContext } from '../../../src/worker/agent/context';
 import { MAX_CONTEXT_BYTES, bytes } from '../../../src/worker/agent/context-limits';
 import type { ModelResponse, ResponseFunctionCall } from '../../../src/worker/agent/types';
@@ -42,6 +43,38 @@ describe('Conversation context', () => {
     context.beginTurn('Continue');
     expect(context.buildInput()).toContainEqual(call);
     expect(context.buildInput()).toContainEqual({ type: 'function_call_output', call_id: call.call_id, output: 'actual command result' });
+  });
+
+  it('folds recent exchanges until the next request fits instead of pausing a long task', async () => {
+    const context = new AgentContext();
+    context.beginTurn('Inspect disks repeatedly');
+    for (let i = 0; i < 4; i++) {
+      const call = functionCall(`call_${i}`, 'execute_command', { command: `df_${i}` });
+      accept(context, response(`resp_${i}`, '', [call]));
+      context.toolResult(call, 'x'.repeat(30_000));
+    }
+    const before = context.buildInput();
+    const checkpoint = await prepareContextCheckpoint({
+      context,
+      client: { canFit: () => true, create: async () => { throw new Error('summary unavailable'); } } as never,
+      signal: new AbortController().signal,
+      canContinue: input => bytes(input) < 12_000,
+      onUsage: () => {},
+    });
+    const continued = context.checkpointSegment(checkpoint.summary, checkpoint.recent);
+    expect(bytes(continued)).toBeLessThan(12_000);
+    expect(JSON.stringify(checkpoint.recent)).toContain('call_3');
+    expect(JSON.stringify(checkpoint.recent)).not.toContain('x'.repeat(30_000));
+    expect(context.buildInput()).toEqual(before);
+
+    await expect(prepareContextCheckpoint({
+      context,
+      client: { canFit: () => false, create: async () => { throw new Error('summary unavailable'); } } as never,
+      signal: new AbortController().signal,
+      canContinue: () => false,
+      onUsage: () => {},
+    })).rejects.toMatchObject({ code: 'responses_budget' });
+    expect(context.buildInput()).toEqual(before);
   });
 
   it('does not turn missing token usage into a byte-sized token count', () => {

@@ -199,13 +199,9 @@ flowchart TB
 4. **Access the App**: After successful deployment, access via the default domain `https://cloudssh.<your-subdomain>.workers.dev`.
 5. **Bind Custom Domain** (Optional): Go to Worker Settings → Domains & Routes → Add, enter your domain and confirm.
 
-> **Note**: To deploy a test environment, repeat the above steps on the `test` branch to create a separate Worker (e.g., `cloudssh-test`). The Durable Objects data between both environments is completely isolated.
-
 ##### Update Notices
 
 The project checks the official `main` branch for a newer stable version in the background; when a new version is available, a dismissible hint is displayed. Click to view the changelog; upgrading is entirely at the deployer's discretion by syncing the repository and redeploying. Nothing is automatically refreshed, upgraded, or disconnected. Dismissing a version does not hide later releases.
-
-The Worker reads public version metadata from a fixed official GitHub URL without forwarding user credentials or server information. Successful checks are cached for six hours; failures silently back off for 15 minutes and never affect normal use.
 
 ##### Optional: Automatically Sync Upstream Releases (Auto Update)
 
@@ -236,7 +232,7 @@ All feature flags and security controls are managed through Worker environment v
 | `BASE_URL` | Required if login enabled | None | Full public origin URL of the deployed application (e.g. `https://ssh.example.com`), used to construct OAuth authorization redirect callbacks. | Must exactly match the Authorization callback URL domain configured in your GitHub OAuth App, without trailing slashes `/`. Falls back to the request Host header if omitted. |
 | `GITHUB_ALLOWED_USER_IDS` | Optional | None (unrestricted) | Comma-separated allowlist of GitHub **numeric user IDs** permitted to sign in (e.g. `83105156,6236783`). | **Core security control for private instances**. When unset, any GitHub user can log in; once set, non-allowlisted users are rejected (fails closed). Obtain your numeric ID by visiting `https://api.github.com/users/<username>` and checking the `id` field. |
 | `ADMIN_PASSWORD_HASH` | Required if password login enabled | None | Single-admin password sign-in credential (format: `pbkdf2$sha256$<iterations>$<salt>$<verifier>`; generate in-browser from your own custom password via the “Admin password sign-in setup” link at the bottom of the auth form, or locally via `pnpm run hash-password`). Any non-empty value enables password mode: mutually exclusive with GitHub login and takes precedence; the instance then admits only the local admin account, with feature parity to GitHub login. | **Sensitive credential; always set as Secret type**. Clear or remove the variable to instantly revert to GitHub login (GitHub configuration and data are untouched); changing the value rotates the password and immediately invalidates all existing sessions. Password mode does not change anonymous SSH behavior — combine with `REQUIRE_GITHUB_AUTH=true` to force login; enable Turnstile on public deployments for brute-force protection. |
-| `CF_ACCESS` | Optional | Auto-detected | Cloudflare Zero Trust Access authentication mode switch. Automatically takes effect when policies are enabled in the Worker's "Access" tab in the Dashboard, or can be explicitly set to `true`. | When enabled, no GitHub OAuth or password is required; users sign in directly via Cloudflare Access (Cloudflare account auth, email OTP, etc.). Multi-user accounts are naturally isolated. |
+| `CF_ACCESS` | Optional | Auto-detected | Automatically enabled by a runtime-verified Access identity. Set to `true` to reject login when that identity is missing. | When enabled, no GitHub OAuth or password is required; users sign in directly via Cloudflare Access (Cloudflare account auth, email OTP, etc.). Multi-user accounts are naturally isolated. |
 | `REQUIRE_GITHUB_AUTH` | Optional | `false` | Whether to require sign-in (GitHub or single-admin password session both satisfy) for all terminal connections. When set to `true`, anonymous direct SSH access is completely disabled. | **Recommended for public deployments**. Prevents unauthorized visitors from using your Worker as an open outbound SSH jump proxy. Shipped by default via wrangler.toml `[vars]`; customize by editing the config file. |
 | `TURNSTILE_SITEKEY` | Optional | None | Cloudflare Turnstile human-verification public Site Key. | Public key. Used together with `TURNSTILE_SECRET`. Turnstile verification is automatically disabled if either variable is omitted or empty. |
 | `TURNSTILE_SECRET` | Optional | None | Cloudflare Turnstile human-verification Secret Key used for server-side verification token validation. | **Sensitive credential; recommend storing as Secret type**. Effectively blocks automated crawlers, botnets, and credential stuffing. Not deployed by default (opt in yourself); on Git/CLI-deployed instances, configure via the Dashboard Secret type — secrets are not overwritten by wrangler deploys. |
@@ -253,14 +249,13 @@ All feature flags and security controls are managed through Worker environment v
 
 #### Optional: Enable Cloudflare Zero Trust Access Login
 
-Don't want to configure GitHub OAuth, and don't want to memorize a password? You can enable Cloudflare Access directly on your Worker in the Cloudflare Dashboard, signing in seamlessly via Cloudflare account authorization, email One-Time PIN (OTP), or team identity providers:
+Sign in through Cloudflare Access using Cloudflare account authorization, email One-Time PIN, or your team's identity provider, without a separate GitHub OAuth setup or fixed password:
 
-1. **Open Access Settings**: In the Cloudflare Dashboard ➔ **Workers & Pages** ➔ Select your Worker (e.g. `cloudssh`) ➔ Click the **Access** tab at the top.
-2. **Enable Policy**: In the Worker Access card, enable or manage access policies, adding rules for permitted users (e.g. specific emails, domain suffixes like `@company.com`, or configured identity providers), and save.
-3. **Open the Site**: Visit CloudSSH, complete the Cloudflare Access verification, and immediately land on your dashboard!
-   - **Zero Manual Configuration**: The system automatically detects Cloudflare edge identity headers — no need to copy complex team domains or AUD tags.
-   - **Multi-Tenant Data Isolation**: Each verified email is assigned an isolated SQLite database partition; multiple team members can use the instance without interference.
-   - **Single Logout**: Clicking Sign Out redirects to Cloudflare's official Access logout endpoint (`/cdn-cgi/access/logout`), terminating the edge session.
+1. Create a **Self-hosted** application in **Zero Trust → Access → Applications** for the full CloudSSH hostname. Protect the page, `/api/*`, and WebSocket paths, not just a login page.
+2. Allow trusted emails or controlled team domains. Protect every reachable entry point, including `workers.dev`, or disable unused entry points.
+3. Open the site and authenticate. CloudSSH obtains verified identity from the Workers runtime's `ctx.access.getIdentity()` and isolates databases by email. Client-provided email headers and unverified JWTs are not identity evidence. No additional AUD or verification key configuration is needed; Sign Out redirects to `/cdn-cgi/access/logout`.
+
+> **WebSocket limitation**: Worker-level protection enabled from the Worker's **Access** tab currently rejects WebSocket upgrades with 403. Use the hostname-based self-hosted application above; see [Cloudflare's documentation](https://developers.cloudflare.com/workers/configuration/cloudflare-access/). `CF_ACCESS=true` requires an Access identity but does not configure an Access policy. Login is rejected without a verified runtime identity.
 
 > **Auth Mode Priority**: `ADMIN_PASSWORD_HASH` (password first) > `CF_ACCESS` / auto-detected (Access mode) > `GitHub OAuth` > Anonymous mode. When multiple configurations coexist, the higher priority mode is authoritative.
 
@@ -330,10 +325,6 @@ With GitHub OAuth enabled, users can log in with their GitHub account and save/m
 | `REQUIRE_GITHUB_AUTH=true` only | All GitHub users       | Disabled                         |
 | Both settings                   | Allowlisted users only | Disabled (private-instance mode) |
 
-1. **Redeploy**: Save the variables and redeploy the existing Worker. The Durable Object migration in the repository initializes the required classes and database; deleting the existing Worker is not required.
-
-> **Access Policy Note**: After `GITHUB_ALLOWED_USER_IDS` changes, existing sessions are checked again and become invalid on their next request; `REQUIRE_GITHUB_AUTH=true` depends on GitHub OAuth, so configure the Client ID, Client Secret, and `BASE_URL` together.
-
 ##### Using One-Time SSH Sharing
 
 1. Configure GitHub OAuth, set `ENABLE_SSH_SHARING=true` on the Worker, and redeploy.
@@ -368,6 +359,62 @@ When adding or editing a server, choose the **Cloudflare Tunnel** transport mode
    - **Connection Region**: Selecting the region nearest to your internal server is recommended (e.g., `Asia-Pacific` for Asian hosts) to instantiate the Durable Object nearby and eliminate cross-ocean triangular routing;
    - **Zero Trust Credentials (Optional)**: If Access policy is enabled for this hostname in Cloudflare Zero Trust, provide the Service Token's Client ID and Client Secret; one-click clearing is supported when the secret is no longer needed.
 3. **Connection & Experience**: Upon connection, the status bar displays dual-segment latency (`CF-XXX` for Cloudflare to tunnel handshake, `RTT` for browser to Cloudflare edge), with full terminal, SFTP online editing, and AI Agent features available.
+
+##### Configure a Target Server for Cloudflare SSH CA
+
+**Cloudflare CA** is available only with Access login. The browser creates an ephemeral key, and the Access application protecting this site signs a short-lived certificate. Its principal is the email local-part; the CloudSSH username is an existing Unix account. The following instructions target Linux OpenSSH: replace `<UNIX_USER>` and `<EMAIL_PREFIX>` first. This authentication cannot supply jump-host credentials or one-time shares.
+
+1. **Get the correct public key**: Open [Zero Trust](https://one.dash.cloudflare.com/) → **Access controls → Service credentials → SSH → Add a certificate**, select the Access application protecting the **CloudSSH site**, and generate and copy the full **CA public key**. Do not select “SSH with Access for Infrastructure”. Restrict Access policy to trusted emails: identical email local-parts on different domains produce the same principal and cannot be distinguished by this server mapping.
+2. **Back up and trust the CA**: Keep your current SSH session open. Back up `/etc/ssh/sshd_config` and any existing files you will modify. Add the complete public key with `sudoedit /etc/ssh/cloudflare_ca.pub`; **preserve existing keys and other CAs, never truncate the file**. Set ownership to `root:root` and mode to `644`. If `TrustedUserCAKeys` already exists, reuse its file and add the key there. Otherwise put these directives in the main configuration's global section, before the first `Match`:
+
+   ```text
+   PubkeyAuthentication yes
+   TrustedUserCAKeys /etc/ssh/cloudflare_ca.pub
+   ```
+
+3. **Map the existing username**: When the username differs from the email prefix, append this block at the **end** of `/etc/ssh/sshd_config`, never before remaining global directives:
+
+   ```text
+   Match User <UNIX_USER>
+       AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u
+   ```
+
+   ```bash
+   sudo install -d -o root -g root -m 755 /etc/ssh/auth_principals
+   sudoedit /etc/ssh/auth_principals/<UNIX_USER>
+   # Add <EMAIL_PREFIX> on its own line; keep existing grants, do not write the full email
+   sudo chown root:root /etc/ssh/auth_principals/<UNIX_USER>
+   sudo chmod 644 /etc/ssh/auth_principals/<UNIX_USER>
+   ```
+
+   Review effective settings when `Match` or `AuthorizedPrincipalsFile/Command` already exists; reuse the existing policy rather than adding conflicting directives. Skip mapping if the username already matches and no other principal restriction applies.
+4. **Check, then reload**: Verify public-key authentication is `yes` and the CA path is correct. The principal path should be the path above when mapped, or usually `none` without mapping:
+
+   ```bash
+   sudo sshd -t
+   sudo sshd -T -C user=<UNIX_USER> | grep -Ei 'pubkeyauthentication|trustedusercakeys|authorizedprincipalsfile|authorizedprincipalscommand'
+   # Run only after reviewing the result; use the sshd service on RHEL/CentOS
+   sudo sshd -t && sudo systemctl reload ssh
+   ```
+
+   Keep the original session and existing password/key login until a new connection works. In CloudSSH, enter `<UNIX_USER>`, the Zero Trust team name without `.cloudflareaccess.com`, and select **Cloudflare CA**.
+
+For failures, read `sudo journalctl -u ssh -n 30` (or `sshd`). For `name is not a listed principal`, check the certificate principal, authorization file/command, paths and permissions. For `Invalid user`, check the Unix account. For an untrusted CA, verify the application's public key; also check certificate expiry and the server clock.
+
+<details>
+<summary><b>Prompt for an AI assistant</b></summary>
+
+```text
+Help configure Cloudflare SSH CA on Linux OpenSSH for one existing Unix account. First ask for the Unix username, Access email local-part, and the complete public-key line of the CA associated with the Access application protecting CloudSSH (not SSH with Access for Infrastructure). Never ask for a CA private key, JWT or Service Token.
+
+Keep the current session open. Inspect sshd_config, Include, Match, and effective sshd -T settings, then back up existing files before editing. Do not create users, change the port, disable existing login methods, or overwrite other CA keys/grants. Reuse the existing TrustedUserCAKeys file and add the key; otherwise use /etc/ssh/cloudflare_ca.pub (root:root, 644) and configure PubkeyAuthentication yes and TrustedUserCAKeys before the first Match.
+
+When the Unix username differs from the email prefix, reuse existing principal policy or append Match User <UNIX_USER> with AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u at the end of the main configuration. The authorization file contains one allowed email prefix per line; preserve existing entries. Directory mode 755, file mode 644, both root:root. Skip mapping if the username already matches and no other restriction applies. Never put a Match block before remaining global directives.
+
+Run sshd -t, then sshd -T -C user=<UNIX_USER> and review effective values. On validation failure, stop and restore this change. Only then reload with sshd -t && systemctl reload ssh (service sshd on RHEL/CentOS). Keep the original session until a new connection succeeds. Remind me to restrict Access policy to trusted emails, since identical prefixes on different domains cannot be distinguished by principal alone. Finally state the CloudSSH username, team name, and basic troubleshooting steps.
+```
+
+</details>
 
 #### AI Agent: Responses API Configuration and Sessions
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { localizedApiError } from '../frontend/src/api-errors';
+import { localizedApiError, readApiJson } from '../frontend/src/api-errors';
 import { t } from '../frontend/src/i18n';
 
 describe('localizedApiError', () => {
@@ -23,5 +23,30 @@ describe('localizedApiError', () => {
     expect(localizedApiError({}, 'share.claimFailed')).toBe(t('share.claimFailed'));
     expect(localizedApiError(null, 'share.claimFailed')).toBe(t('share.claimFailed'));
     expect(localizedApiError(undefined, 'share.loadFailed')).toBe(t('share.loadFailed'));
+  });
+});
+
+describe('readApiJson', () => {
+  it('把 HTML 文档换成 Access 提示，而不是 JSON 解析异常', async () => {
+    const response = new Response('<!DOCTYPE html><html><body>login</body></html>', {
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+    });
+    await expect(readApiJson(response, 'api.requestFailed')).rejects.toThrow(t('api.htmlResponse'));
+  });
+
+  it('重定向视为被登录页拦截', async () => {
+    const response = new Response(null, { status: 302, headers: { location: '/cdn-cgi/access/login' } });
+    await expect(readApiJson(response, 'api.requestFailed')).rejects.toThrow(t('api.htmlResponse'));
+  });
+
+  it('JSON 错误仍走本地化，成功响应原样返回', async () => {
+    const failed = new Response(JSON.stringify({ error: 'This share link has expired' }), {
+      status: 400,
+    });
+    await expect(readApiJson(failed, 'api.requestFailed')).rejects.toThrow(t('share.errorLinkExpired'));
+
+    const ok = new Response(JSON.stringify({ id: 1 }), { status: 200 });
+    await expect(readApiJson<{ id: number }>(ok, 'api.requestFailed')).resolves.toEqual({ id: 1 });
   });
 });

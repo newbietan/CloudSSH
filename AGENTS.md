@@ -14,7 +14,7 @@
 
 CloudSSH is a serverless Web SSH terminal built on Cloudflare Workers. Users connect to SSH servers through a browser-based terminal UI with integrated SFTP file management and AI Agent assistant.
 
-当前版本：`2.9.0`；根目录与 `frontend/package.json` 版本必须同步，更新说明见 `CHANGELOG.md`。
+当前版本：`2.10.0`；根目录与 `frontend/package.json` 版本必须同步，更新说明见 `CHANGELOG.md`。
 
 ## Architecture
 
@@ -49,6 +49,7 @@ src/
 │   ├── server-tags.ts # 服务器标签规范化与 SQLite JSON 序列化
 │   ├── os-detect.ts  # 远端操作系统输出解析、规范 key 与持久化白名单
 │   ├── auth.ts       # 认证模式解析（单管理员密码/GitHub 互斥）+ OAuth 流程 + Session 中间件 + 密码登录
+│   ├── cf-ssh-ca.ts  # Cloudflare Zero Trust SSH CA 证书签发代理
 │   ├── dns-check.ts  # DNS-over-HTTPS 解析 + 统一 IP 块检查（DNS rebinding 防重绑定 SSRF 防护）
 │   ├── ip-geo.ts     # 保存直连服务器时 IPinfo 区域推断，映射为 DO locationHint
 │   ├── agent/        # AI Agent system
@@ -82,6 +83,7 @@ src/
 │   ├── keys.ts       # Key derivation per RFC 4253
 │   ├── host-key.ts   # 有界主机密钥/Ed25519、RSA-SHA2、ECDSA 证书解析、算法绑定与裸公钥 TOFU 指纹
 │   ├── utils.ts      # Binary utilities
+│   ├── user-cert.ts  # OpenSSH 用户证书解析、提取、Principals/有效期校验与私钥匹配
 │   ├── sftp.ts       # SFTP v3 client implementation
 │   ├── sftp-reader.ts # SFTP v3 长度先校验的有界字段游标
 │   └── sftp-types.ts # SFTP protocol constants and types
@@ -125,6 +127,7 @@ frontend/
 │   ├── mobile-input.ts    # Pure iOS IME diff and one-shot modifier helpers
 │   ├── known-hosts.ts     # 已验证主机指纹消息校验、本地/云端 TOFU 持久化
 │   ├── device-identity.ts # 分享会话秒级恢复设备非可导出 ECDSA P-256 身份密钥生成与持久化校验
+│   ├── cf-ssh-ca.ts       # 浏览器端 ECDSA P-256 临时密钥对生成与 Cloudflare SSH CA 签发客户端
 │   ├── tab-manager.ts     # Tab manager (多会话协调、双击重命名、右键上下文菜单、返回终端联动)
 │   ├── sftp-panel.ts      # SFTP file manager UI (多选/批量/面包屑导航/多维排序/新建文件)
 │   ├── sftp-editor-session.ts # SFTP 在线编辑协调器（挂载、只读呈现、冲突比对与覆盖上传）
@@ -302,6 +305,7 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 | `/api/health` | GET | No | Health check |
 | `/api/version` | GET | No | 官方 main 最新稳定版本（缓存元数据，失败返回 latestVersion: null） |
 | `/api/config` | GET | No | Feature flags (turnstile, GitHub auth enabled) |
+| `/api/cf-ssh-ca/sign` | POST | Same-Origin | Cloudflare Zero Trust 原生 SSH CA 证书签发代理 |
 
 ## Testing
 
@@ -422,7 +426,7 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
 40. **Responses Agent：个人运维助手，不是审计平台** - 使用标准 `/responses` 与 `store:false`，本地维护普通对话和原生工具调用；不依赖服务商响应链或 `/responses/compact`。保留标准 reasoning 续接字段与 assistant phase，但不展示或写入长期记忆；真实 item ID/call_id 不伪造，工具调用只在完整完成且参数有效后执行。停止/替换任务先清理旧 exec，历史编辑不撤销远端操作。任务上限固定为 175 步，不再根据进度评分反复扩展。
 
-    **上下文**：默认 64,000/8,192 Token（输出含推理），AI 设置可调整窗口与输出上限；改配置后新建会话。接近容量时仅摘要较早对话，保留近期完整工具交互；摘要最多 20 秒、1,500 输出 Token，失败使用已有摘要和近期对话继续。无法容纳续接时保留原历史。`context-limits.ts` 统一估算，2.5 bytes/token 仅为启发式，不能把字节直接视为 Token。不保留独立 ExecutionJournal、任务证据包或永久执行事实检查点。
+    **上下文**：预算按模型决定，不让用户手填。服务商模型列表里的窗口字段优先，否则用近两年模型前缀，未知模型为 128,000/8,192。服务商只报告小上下文而未报告有效输出上限时，默认输出取 min(8192, 窗口/4)，避免 8K 窗口被输出预算吃空；有效的服务商输出上限仍优先。接近容量时摘要较早对话，保留最近约 16,000 Token 的工具交互；摘要最多 20 秒、1,500 输出 Token。摘要后若仍放不下，继续折叠更早交互并缩短最新工具输出。服务商报上下文超限时，本次任务降一档窗口并再压缩一次。`store:false` 保持本地完整输入；对方不认识该字段就省略，不改成 `store:true`。`context-limits.ts` 的 2.5 bytes/token 只是没有用量时的后备。不保留独立 ExecutionJournal、任务证据包或永久执行事实检查点。
 
     **浏览器中断草稿隔离**：30 分钟草稿仅按稳定 `github_id` + `serverId` 保存（本地管理员为 `-1`），不能用各分片可能相同的 `user.id` 或单独的 `serverId`；身份缺失或匿名时禁止读写。启动删除无法确认归属的旧无用户 key，绝不迁移到当前账号；退出关闭原账号面板并清理其全部服务器草稿，销毁后的迟到帧不得重建草稿。身份从认证响应经 `TabManager` 传入面板，换号时关闭旧标签，保留同账号中断恢复、完成清理与原有 TTL。`tests/agent-session-draft.test.ts` / `e2e/agent-responses.spec.ts` 覆盖命名空间、同浏览器换号、登出和迟到帧。
 
@@ -440,7 +444,9 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
 44. **可选版本更新提示** - 运行版本从根 `package.json` 构建时导入（根/前端版本保持同步），与官方 `main/package.json` 的稳定 SemVer 数值比较，不按字符串或提交数比较，不依赖 GitHub Releases/Tags，也不提示降级或预发布版本。`GET /api/version` 只向固定官方 raw GitHub URL 请求公开版本元数据（不转发用户头部/凭据；必须使用 Workers 支持的 `redirect: 'manual'` 并拒绝 3xx，不得使用会在 Workers 中直接抛错的 `'error'` 模式），读取上限 16KiB、4s 超时，Worker isolate 去重/缓存并使用 Cloudflare fetch 缓存；成功缓存 6h、失败退避 15min，失败只返回 null。前端非阻塞同源读取，5s 超时，localStorage/内存缓存与跨标签页忽略同步；可见页面按缓存到期检查，隐藏/离线不检查，恢复可见/在线时重试。连接页在“连接参数”标题后展示紧凑版本徽标及可忽略的小提示，不再单独占用底部空间；标题区支持三语与窄屏自然换行，不能挤压语言切换或溢出卡片。用户空间/桌面终端仍使用页脚，移动终端放进“更多”菜单，分享认领页不检查；忽略仅针对该新版，下一个新版可再次提示。不弹窗、不自动更新/刷新/跳转、不影响 SSH/SFTP/Agent；更新日志链接为固定官方地址，三语文案随语言切换。
 
-45. **Cloudflare Zero Trust Access 认证模式** - 支持在 Cloudflare Dashboard 一键为 Worker 启用 Access（如 Email OTP 邮箱验证码登录）。Worker 自动感知已认证的 `Cf-Access-Authenticated-User-Email` 标头（该标头受 Cloudflare 边缘代理权威保护，外部伪造会被入口清洗），生成固定 `<=40` 字符的确定性路由键 `cf:<sanitized-prefix>-<hash>` 路由至专属 UserDBDO 实例（`github_id = -2`），实现多租户物理行级隔离；模式优先级：`ADMIN_PASSWORD_HASH`（密码优先） > `cf_access`（Access 自动感知） > `github` / 匿名；前端自动展示邮箱与首字母头像，退出登录重定向至 `/cdn-cgi/access/logout` 单点注销。
+45. **Cloudflare Zero Trust Access 认证模式** - 通过 hostname-based Self-hosted Access 应用保护本站完整域名（页面、API 和 WebSocket），并保护/关闭其他公开入口；当前 Worker 级 Access 不支持 WebSocket，不作为推荐部署路径。Worker 入口通过 `ctx.access.getIdentity()` 读取运行时已验证身份（4s 有界等待），以 Request 弱映射传递给认证逻辑，不信任原始邮箱/JWT 头；Access 上下文无邮箱或查询失败仍维持 Access 模式并拒绝登录，不降级 GitHub。`CF_ACCESS=true` 只是强制模式门，不能代替边缘策略。路由键保持 `cf-` 加邮箱 SHA-256 前 128 位（35 字符），`github_id=-2` 仅为库内哨兵；不同邮箱不能改写同一库身份。模式优先级：密码 > Access > GitHub/匿名。GitHub OAuth 在 Access/密码模式均禁用；一次性令牌须符合当前模式，并在消费前核对登录者的完整路由键。分享配置从库内所有者邮箱推导路由，无需接收者提供。前端显示邮箱及首字母头像，退出转 `/cdn-cgi/access/logout`。Worker/UserDB 意外异常仅返回通用 JSON 500，不回显或记录异常原文。
+
+46. **OpenSSH 用户证书认证与 Cloudflare 原生 SSH CA** - 支持出示 `*-cert-v01@openssh.com` OpenSSH 用户证书（Ed25519、ECDSA P-256/384/521 与 RSA-SHA2-256/512）完成 SSH 用户认证（RFC 4252 §7 与 PROTOCOL.certkeys）。证书必须为用户类型（`type = 1`），在有效时间范围内，且公钥必须与提供的私钥严格匹配。提供两级体验：① 协议层兼容：在私钥框中可同时附带用户证书（单行文本），或在 API 中分别传递，支持外部已签发证书（如 step-ca、Vault 或手动 CA）；② Cloudflare 原生 SSH CA 自动化：前端本地使用 WebCrypto 瞬时生成 ECDSA P-256 临时公私钥，经同源代理 `/api/cf-ssh-ca/sign` 调用 Cloudflare 官方 `/cdn-cgi/access/cert_sign` 获取短期证书（在 `cf_access` 模式下自动携带已认证的 Access JWT；公网受信任 HTTPS 证书，无私有自签 Root CA 拦截风险），私钥用完即在浏览器内存销毁、不落盘、不持久化；已保存服务器配置支持设置 `cf_ssh_ca_team`，发起连接时自动签发并通过 `ephemeralCredential` 传递，实现零静态密钥维护的 Zero Trust 单点登录。客户端不因登录名不在证书 principals 中而提前拒绝：空 principals 表示任意用户，非空时 sshd 仍可用 AuthorizedPrincipalsFile/Command 映射到不同 Unix 用户（Cloudflare 简单配置的 principal 通常是邮箱前缀）。配置了 `cf_ssh_ca_team` 的服务器不能出现在跳板链的任一跳，也不能在仍被其他服务器引用为跳板时改成该模式；此类服务器同样不能创建一次性分享。连接表单与服务器编辑里的 Cloudflare CA 入口仅在 `authMode === 'cf_access'` 时显示；GitHub、密码和匿名模式默认隐藏。入口隐藏时，编辑已有 CA 服务器且未改认证方式，不得把已存 `cf_ssh_ca_team` 清空。签发代理在后端也要求 Access 模式和已验证邮箱，不能只依赖前端隐藏；连接表单在签发期间禁止重复提交，并在模式代际、主机、端口、用户名或团队变化后丢弃迟到证书。
 
 ## SSH 兼容增强边界
 

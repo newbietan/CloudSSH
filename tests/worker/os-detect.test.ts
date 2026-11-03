@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { DETECT_OS_COMMAND, isDetectedOS, parseDetectedOS } from '../../src/worker/os-detect';
+import {
+  DETECT_OS_COMMAND,
+  detectAndPersistRemoteOS,
+  isDetectedOS,
+  parseDetectedOS,
+} from '../../src/worker/os-detect';
 
 describe('parseDetectedOS', () => {
   it('解析 Ubuntu 的 /etc/os-release', () => {
@@ -71,6 +76,39 @@ PRETTY_NAME="My OS"`;
     expect(DETECT_OS_COMMAND).toContain('uname -s');
     expect(DETECT_OS_COMMAND).toContain('echo %OS%');
     expect(DETECT_OS_COMMAND).not.toContain('/etc/*-release');
+  });
+
+  it('Access 会话把操作系统写进邮箱路由库，而不是哨兵 -2', async () => {
+    const names: string[] = [];
+    let persistedUserId = '';
+    const env = {
+      USER_DB: {
+        idFromName: (name: string) => {
+          names.push(name);
+          return name;
+        },
+        get: () => ({
+          fetch: async (req: Request) => {
+            const body = (await req.json()) as { user_id?: number };
+            persistedUserId = String(body.user_id ?? '');
+            return Response.json({ success: true });
+          },
+        }),
+      },
+    };
+
+    const os = await detectAndPersistRemoteOS({
+      serverId: 4,
+      userId: '7',
+      githubId: '-2',
+      userDbRouteKey: 'cf:2597417538qqcom-a76a843584a0743d',
+      env: env as any,
+      executeCommand: async () => ({ stdout: 'ID=ubuntu\n' }),
+    });
+
+    expect(os).toBe('ubuntu');
+    expect(names).toEqual(['cf:2597417538qqcom-a76a843584a0743d']);
+    expect(persistedUserId).toBe('7');
   });
 
   it('仅允许已识别的规范 key 持久化', () => {

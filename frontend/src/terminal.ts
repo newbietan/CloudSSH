@@ -59,6 +59,8 @@ export interface SSHHostInfo {
   username?: string;
   /** 登录用户保存的服务器 ID，用于断线后重新申请一次性连接令牌。 */
   serverId?: number;
+  /** Cloudflare Zero Trust SSH CA 团队标识（用于断线重连或克隆时重新签发短期证书） */
+  cfSshCaTeam?: string | null;
 }
 
 export type ReconnectWebSocketFactory = () => Promise<WebSocket>;
@@ -70,6 +72,7 @@ export interface SSHConnectionConfig {
   password?: string;
   authMethod?: 'password' | 'publickey' | 'none';
   privateKey?: string;
+  certificate?: string;
   expectedFingerprint?: string;
   /** 匿名路径手动覆盖的区域偏好（保存服务器路径不使用此字段） */
   locationHint?: string;
@@ -1054,6 +1057,7 @@ export class SSHTerminal {
             password: config.password,
             authMethod: config.authMethod,
             privateKey: config.privateKey,
+            certificate: config.certificate,
             expectedFingerprint: config.expectedFingerprint,
             ...this.getTerminalSize(),
           })

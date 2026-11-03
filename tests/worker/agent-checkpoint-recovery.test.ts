@@ -11,7 +11,7 @@ function setup(contextWindow = 64_000) {
   const frames: any[] = [];
   const exec = vi.fn(async (command: string) => ({ stdout: 'observed output', stderr: '', exitCode: command === 'inspect_43' ? 1 : 0 }));
   const agent = new AgentCore(new TerminalContext(), frame => frames.push(frame),
-    async () => ({ ...aiConfig, context_window: contextWindow }), exec, async () => false);
+    async () => ({ ...aiConfig, context_window: contextWindow, budget_source: 'provider' as const }), exec, async () => false);
   return { agent, frames, exec };
 }
 
