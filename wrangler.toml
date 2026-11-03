@@ -27,7 +27,8 @@ watch_dir = "."
 # - BASE_URL（OAuth 回调地址，需与实际域名一致）
 # - ADMIN_PASSWORD_HASH（单管理员密码登录；`pnpm run hash-password` 生成，非空即启用密码模式，
 #   与 GitHub OAuth 互斥且优先级更高；置空/删除即刻退回 GitHub 模式；务必设为 Secret 类型）
-# - CF_ACCESS（可选；Cloudflare Zero Trust Access 认证模式，在 Dashboard 域名旁一键启用 Access 即可自动感知）
+# - CF_ACCESS（可选；true 强制要求 ctx.access 已验证身份；请用 hostname-based Access 保护完整域名，
+#   Worker 级 Access 不支持 WebSocket。未设置时也自动感知运行时身份，不信任邮箱请求头）
 
 [[durable_objects.bindings]]
 name = "SSH_SESSION"

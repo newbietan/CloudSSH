@@ -26,6 +26,17 @@ describe('AI model budgets and safe diagnostics', () => {
   ])('rejects invalid limits without coercing types: %j', value => {
     expect(() => resolveAIModelBudgets(value)).toThrow();
   });
+  it.each([undefined, 0, 8192, 128_001])('leaves input room for an 8K provider window without usable output metadata: %s', output => {
+    const budget = resolveModelBudget('small-model', { context_window: 8192, max_output_tokens: output });
+    expect(budget).toEqual({ context_window: 8192, max_output_tokens: 2048 });
+    expect(budget.context_window - budget.max_output_tokens).toBe(6144);
+  });
+  it('keeps a valid provider output limit and normal-window defaults', () => {
+    expect(resolveModelBudget('small-model', { context_window: 8192, max_output_tokens: 1024 }))
+      .toEqual({ context_window: 8192, max_output_tokens: 1024 });
+    expect(resolveModelBudget('model', { context_window: 128_000 }))
+      .toEqual({ context_window: 128_000, max_output_tokens: 8192 });
+  });
   it('drops unknown metadata and all free-form provider text', () => {
     expect(normalizeResponseDiagnostics({ purpose: 'memory', stage: 'parse', requestId,
       parameter: 'input', providerCode: 'context_length_exceeded', message: 'SECRET', arbitrary: 'SECRET' }))

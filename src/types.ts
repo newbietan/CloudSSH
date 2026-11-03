@@ -200,7 +200,7 @@ export interface Env {
   // 置空/删除即刻退回 GitHub 模式；verifier = SHA-256(PBKDF2(password, salt, iterations))。
   // 浏览器端执行 PBKDF2 预拉伸（server relief），Worker 侧仅做一次 SHA-256 比对（Free 套餐 CPU 安全）。
   ADMIN_PASSWORD_HASH?: string;
-  // Cloudflare Zero Trust Access 认证模式支持（可选；未配置时若检测到 Cf-Access 标头亦可自动感知）
+  // 强制 Cloudflare Access 模式（可选；运行时 ctx.access 自动感知，绝不信任原始身份标头）
   CF_ACCESS?: string;
   // Cloudflare Zero Trust Team 名称（可选；用于自动推断或预填 SSH CA 签发端点）
   CF_ACCESS_TEAM_NAME?: string;

@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import type { Env } from '../../src/types';
+import { describe, expect, it, vi } from 'vitest';
+import type { Env, SSHConnectionConfig } from '../../src/types';
+import { getAccessUserRouteKey } from '../../src/worker/auth';
 import { UserDBDO } from '../../src/worker/user-db';
 
 class FakeSql {
@@ -10,6 +11,7 @@ class FakeSql {
   userGithubId = 12345;
   encryptionSecret = 'test-encryption-secret-1234567890';
   accessUser: { id: number; github_id: number; username: string; avatar_url: null } | null = null;
+  claimedShare: Record<string, unknown> | null = null;
 
   exec(query: string, ...values: unknown[]): { toArray: () => unknown[] } {
     this.statements.push({ query, values });
@@ -42,6 +44,12 @@ class FakeSql {
     }
     if (query.includes('SELECT github_id FROM users WHERE id = ?')) {
       return { toArray: () => [{ github_id: this.userGithubId }] };
+    }
+    if (query.includes('SELECT username FROM users WHERE id = ?')) {
+      return { toArray: () => this.accessUser ? [{ username: this.accessUser.username }] : [] };
+    }
+    if (query.includes('FROM ssh_shares WHERE id = ?')) {
+      return { toArray: () => this.claimedShare ? [this.claimedShare] : [] };
     }
     if (query.includes('FROM users WHERE github_id = ?')) {
       return { toArray: () => (this.accessUser ? [this.accessUser] : []) };
@@ -137,7 +145,8 @@ describe('UserDBDO - Cloudflare SSH CA integration', () => {
 
     expect(resp.status).toBe(500);
     const data = (await resp.json()) as { error?: string };
-    expect(data.error).toContain('no such column: cf_ssh_ca_team');
+    expect(data.error).toBe('保存服务器失败');
+    expect(JSON.stringify(data)).not.toContain('cf_ssh_ca_team');
   });
 
   it('saves server with cf_ssh_ca_team and permits empty credential', async () => {
@@ -189,6 +198,7 @@ describe('UserDBDO - Cloudflare SSH CA integration', () => {
   it('issues an email-scoped connect token for an Access user', async () => {
     const { db, sql } = createTestDO();
     sql.userGithubId = -2;
+    sql.accessUser = { id: 1, github_id: -2, username: 'user@example.com', avatar_url: null };
     sql.storedServer = {
       id: 10,
       user_id: 1,
@@ -204,7 +214,7 @@ describe('UserDBDO - Cloudflare SSH CA integration', () => {
       jump_server_id: null,
       transport_type: 'direct',
     };
-    const routeKey = 'cf-0123456789abcdef0123456789abcdef';
+    const routeKey = await getAccessUserRouteKey('user@example.com');
     const resp = await db.fetch(
       new Request('http://internal/internal/servers/10/connect', {
         method: 'POST',
@@ -215,6 +225,37 @@ describe('UserDBDO - Cloudflare SSH CA integration', () => {
     expect(resp.status).toBe(200);
     const { token } = (await resp.json()) as { token: string };
     expect(token.startsWith(`${routeKey}:`)).toBe(true);
+  });
+
+  it('Access-owned ordinary shares derive the owner route without a browser routeKey', async () => {
+    const { db, sql } = createTestDO();
+    sql.userGithubId = -2;
+    sql.accessUser = { id: 1, github_id: -2, username: 'owner@example.com', avatar_url: null };
+    sql.storedServer = { id: 10, user_id: 1, name: 'Shared', host: 'node.example.com', port: 22,
+      username: 'developer', auth_method: 'none', credential: '', jump_server_id: null };
+    sql.claimedShare = { user_id: 1, server_id: 10, share_ref: 'share-ref', status: 'claimed' };
+    const res = await db.fetch(new Request('http://internal/internal/servers/10/share-config', {
+      method: 'POST', body: JSON.stringify({ user_id: 1, share_id: 'share-id', share_ref: 'share-ref',
+        session_expires_at: Date.now() + 60_000 }),
+    }));
+    expect(res.status).toBe(200);
+    const config = await res.json() as SSHConnectionConfig;
+    expect(config.userDbRouteKey).toBe(await getAccessUserRouteKey('owner@example.com'));
+    expect(config.githubId).toBe('-2');
+    expect(config.sessionPolicy?.allowAgent).toBe(false);
+    expect(config.sessionPolicy?.shareRef).toBe('share-ref');
+    const denied = await db.fetch(new Request('http://internal/internal/servers/10/connect', {
+      method: 'POST', body: JSON.stringify({ user_id: 1, routeKey: await getAccessUserRouteKey('other@example.com') }),
+    }));
+    expect(denied.status).toBe(403);
+  });
+
+  it('does not expose unexpected database failures', async () => {
+    const { db, sql } = createTestDO();
+    vi.spyOn(sql, 'exec').mockImplementationOnce(() => { throw new Error('secret-schema-token'); });
+    const res = await db.fetch(new Request('http://internal/internal/servers?user_id=1'));
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: '服务器内部错误' });
   });
 
   it('uses ephemeralCredential for connect token when server has cf_ssh_ca_team', async () => {

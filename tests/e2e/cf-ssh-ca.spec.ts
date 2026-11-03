@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { blockOptionalThirdPartyAssets } from './helpers';
 
@@ -154,4 +155,91 @@ test('服务器列表：支持配置与保存 Cloudflare SSH CA 认证模式并�
   await expect(page.locator('#modal-auth-tab-cf-ca')).toHaveClass(/auth-tab-active/);
   await expect(page.locator('#modal-cf-ca-section')).toBeVisible();
   await expect(page.locator('#server-cf-ca-team')).toHaveValue('my-org');
+});
+
+async function openCaForm(page: Page): Promise<void> {
+  await blockOptionalThirdPartyAssets(page);
+  await page.route('**/api/config', route => route.fulfill({ json: {
+    turnstileEnabled: false, githubAuthEnabled: false, githubAuthRequired: false,
+    authMode: 'cf_access', cfAccessTeamName: 'my-org',
+  } }));
+  await page.route('**/api/auth/me', route => route.fulfill({ status: 401, json: { error: 'Unauthorized' } }));
+  await page.route('**/api/known-hosts?**', route => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 401, json: { error: 'Unauthorized' } });
+  });
+  await page.goto('/?lang=zh-CN');
+  await expect(page.locator('#auth-tab-cf-ca')).toBeVisible();
+  await page.locator('#host').fill('ssh.example.com');
+  await page.locator('#username').fill('developer');
+  await page.locator('#auth-tab-cf-ca').click();
+}
+
+for (const changed of ['host', 'username', 'port', 'team', 'mode'] as const) {
+  test(`CA 签发期间禁止重复提交，${changed} 改变后丢弃迟到证书`, async ({ page }) => {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let signRequests = 0;
+    let sockets = 0;
+    await page.route('**/api/cf-ssh-ca/sign', async route => {
+      expect(route.request().method()).toBe('POST');
+      signRequests++;
+      await gate;
+      await route.fulfill({ json: { certificate: 'late-certificate' } });
+    });
+    await page.routeWebSocket('**/api/ssh*', socket => { sockets++; socket.close(); });
+    await openCaForm(page);
+    await page.locator('#connect-btn').click();
+    await expect.poll(() => signRequests).toBe(1);
+    await expect(page.locator('#connect-btn')).toBeDisabled();
+    await page.locator('#connection-form').evaluate(form => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    if (changed === 'mode') {
+      await page.locator('#auth-tab-password').click();
+      await page.locator('#auth-tab-cf-ca').click();
+    } else {
+      const target = changed === 'team' ? '#cf-ca-team' : `#${changed}`;
+      await page.locator(target).fill(changed === 'port' ? '2222' : 'changed-value');
+    }
+    const response = page.waitForResponse('**/api/cf-ssh-ca/sign');
+    release();
+    await response;
+    await expect(page.locator('#connect-btn')).toBeEnabled();
+    await expect(page.locator('#auth-section')).toBeVisible();
+    expect(signRequests).toBe(1);
+    expect(sockets).toBe(0);
+    expect(await page.evaluate(() => localStorage.getItem('cloudssh_recent_connections'))).toBeNull();
+  });
+}
+
+test('CA 正常签发只开一个连接且临时私钥不写入历史', async ({ page }) => {
+  const configs: Array<Record<string, unknown>> = [];
+  let signRequests = 0;
+  await page.route('**/api/cf-ssh-ca/sign', route => {
+    expect(route.request().method()).toBe('POST');
+    signRequests++;
+    return route.fulfill({ json: { certificate: 'short-lived-certificate' } });
+  });
+  await page.routeWebSocket('**/api/ssh*', socket => {
+    socket.onMessage(data => {
+      if (typeof data !== 'string') return;
+      const message = JSON.parse(data);
+      if (message.host) {
+        configs.push(message);
+        socket.send(JSON.stringify({ type: 'status', event: 'auth_success', message: '' }));
+        socket.send(JSON.stringify({ type: 'status', event: 'shell_ready', message: '' }));
+      }
+    });
+  });
+  await openCaForm(page);
+  await page.locator('#remember-me').check();
+  await page.locator('#connect-btn').click();
+  await expect.poll(() => configs.length).toBe(1);
+  expect(signRequests).toBe(1);
+  expect(configs[0]).toMatchObject({ authMethod: 'publickey', certificate: 'short-lived-certificate' });
+  const history = await page.evaluate(() => localStorage.getItem('cloudssh_recent_connections'));
+  expect(history).not.toContain('PRIVATE KEY');
+  expect(history).not.toContain('encryptedCred');
+  expect(history).not.toContain('short-lived-certificate');
 });

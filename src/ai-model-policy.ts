@@ -80,7 +80,8 @@ export function resolveModelBudget(
   if (inRange(hintedContext, 8192, 1_000_000)) {
     const output = inRange(hintedOutput, 256, 128_000) && hintedOutput < hintedContext
       ? hintedOutput
-      : Math.min(DEFAULT_AI_MODEL_BUDGETS.max_output_tokens, hintedContext - 1);
+      // Missing/invalid output metadata must leave room for instructions, tools and observations.
+      : Math.min(DEFAULT_AI_MODEL_BUDGETS.max_output_tokens, Math.floor(hintedContext / 4));
     return { context_window: hintedContext, max_output_tokens: output };
   }
   const id = normalizeModelId(model);

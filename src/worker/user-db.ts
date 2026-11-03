@@ -13,7 +13,7 @@ import {
   type SSHConnectionConfig,
   type SSHJumpHostConfig,
 } from '../types';
-import { CF_ACCESS_USER_GITHUB_ID, LOCAL_ADMIN_GITHUB_ID, isAccessUserRouteKey } from './auth';
+import { CF_ACCESS_USER_GITHUB_ID, LOCAL_ADMIN_GITHUB_ID, getAccessUserRouteKey } from './auth';
 import { inferLocationHint } from './ip-geo';
 import { isDetectedOS } from './os-detect';
 import { deserializeServerRow, serializeServerTags } from './server-tags';
@@ -483,13 +483,13 @@ export class UserDBDO {
       // /internal/servers/:id/connect
       const connectMatch = path.match(/^\/internal\/servers\/(\d+)\/connect$/);
       if (connectMatch && request.method === 'POST') {
-        return this.handleConnectServer(parseInt(connectMatch[1], 10), request);
+        return await this.handleConnectServer(parseInt(connectMatch[1], 10), request);
       }
 
       // /internal/servers/:id/share-config —— 仅由 SSHShareDO 兑换一次性分享时调用
       const shareConfigMatch = path.match(/^\/internal\/servers\/(\d+)\/share-config$/);
       if (shareConfigMatch && request.method === 'POST') {
-        return this.handleShareConnectionConfig(parseInt(shareConfigMatch[1], 10), request);
+        return await this.handleShareConnectionConfig(parseInt(shareConfigMatch[1], 10), request);
       }
 
       // /internal/servers/:id/shares —— 分享元数据归所有者 UserDBDO 管理
@@ -678,14 +678,9 @@ export class UserDBDO {
       }
 
       return Response.json({ error: 'Not Found' }, { status: 404 });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error('[UserDB] Unhandled error:', msg);
-      const detail = msg.replace(/\s+/g, ' ').slice(0, 300);
-      return Response.json(
-        { error: detail ? `服务器内部错误：${detail}` : '服务器内部错误' },
-        { status: 500 }
-      );
+    } catch {
+      console.error('[UserDB] request failed');
+      return Response.json({ error: '服务器内部错误' }, { status: 500 });
     }
   }
 
@@ -1004,13 +999,9 @@ export class UserDBDO {
   private async handleAddServer(request: Request): Promise<Response> {
     try {
       return await this.insertServer(request);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error('[UserDB] add server failed:', msg);
-      return Response.json(
-        { error: `保存服务器失败：${msg.replace(/\s+/g, ' ').slice(0, 300)}` },
-        { status: 500 }
-      );
+    } catch {
+      console.error('[UserDB] add server failed');
+      return Response.json({ error: '保存服务器失败' }, { status: 500 });
     }
   }
 
@@ -2073,14 +2064,17 @@ export class UserDBDO {
     if (userRows.length === 0) return Response.json({ error: 'User not found' }, { status: 404 });
     const github_id = (userRows[0] as any).github_id;
 
-    // Access 用户的 github_id 恒为 -2，不能拿来定位用户库。令牌前缀必须是邮箱路由键。
+    // Derive Access routing from the stored owner, including share redemption without a browser routeKey.
     let tokenPrefix = String(github_id);
     if (github_id === CF_ACCESS_USER_GITHUB_ID) {
-      const routeKey = typeof body.routeKey === 'string' ? body.routeKey : '';
-      if (!isAccessUserRouteKey(routeKey)) {
-        return Response.json({ error: 'Invalid access user route' }, { status: 400 });
+      const owner = this.one<{ username: string }>('SELECT username FROM users WHERE id = ?', body.user_id);
+      if (!owner?.username || !owner.username.includes('@')) {
+        return Response.json({ error: 'Invalid access user identity' }, { status: 403 });
       }
-      tokenPrefix = routeKey;
+      tokenPrefix = await getAccessUserRouteKey(owner.username);
+      if (body.routeKey !== undefined && body.routeKey !== tokenPrefix) {
+        return Response.json({ error: 'Access route does not match the owner' }, { status: 403 });
+      }
     }
 
     // 生成 one-time-token

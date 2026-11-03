@@ -232,7 +232,7 @@ Fork 仓库可以按需使用内置的 `Sync upstream` GitHub Actions 工作流�
 | `BASE_URL`                | 启用登录时必填     | 无                       | 部署站点的完整公网访问根地址（如 `https://ssh.example.com`），用于生成 OAuth 授权回调跳转。                                                                                                                                                                                                        | 域名必须与 GitHub OAuth App 中的 Authorization callback URL 完全一致，末尾**不要**加斜杠 `/`。未配置时降级使用请求上下文 Host。                                                                                                                                                                   |
 | `GITHUB_ALLOWED_USER_IDS` | 可选               | 无（不限制）             | 允许登录系统的 GitHub **数字用户 ID** 白名单列表，多个 ID 以英文逗号分隔（如 `83105156,6236783`）。                                                                                                                                                                                                | **私有化部署核心防线**。未配置时任何 GitHub 用户均可登录；一旦配置，仅白名单用户允许登录（fail-closed 机制）。数字 ID 可访问 `https://api.github.com/users/<username>` 查看 `id` 字段获取。                                                                                                       |
 | `ADMIN_PASSWORD_HASH`     | 启用密码登录时必填 | 无                       | 单管理员密码登录凭据（格式：`pbkdf2$sha256$<迭代数>$<盐>$<校验值>`，用自定义密码在浏览器内生成——匿名实例页尾入口或任意实例 `#password-setup` 路由——或本地 `pnpm run hash-password`）。非空即启用密码模式：与 GitHub 登录互斥且优先级更高，全实例仅本地管理员一个账号，功能与 GitHub 登录完全一致。 | **敏感凭据，务必设为 Secret 类型**。置空/删除即刻退回 GitHub 登录模式（GitHub 配置与数据零影响）；换新值 = 修改密码（所有已登录会话立即失效）。密码模式不改变匿名 SSH 行为，需强制登录请配合 `REQUIRE_GITHUB_AUTH=true`；公网部署建议同时开启 Turnstile 防爆破。                                  |
-| `CF_ACCESS`               | 可选               | 自动感知                 | Cloudflare Zero Trust Access 认证模式开关。在控制台 Worker 详情页的「Access」选项卡中启用策略即可自动生效，亦可显式设为 `true`。                                                                                                                                                                   | 开启后无需配置 GitHub OAuth 或密码，直接通过 Cloudflare Access（如账号授权、邮箱验证码等）登入系统。多用户天然隔离。                                                                                                                                                                              |
+| `CF_ACCESS`               | 可选               | 自动感知                 | 检测到运行时已验证的 Access 身份时自动启用；显式设为 `true` 时缺少该身份即拒绝登录。                                                                                                                                                                   | 开启后无需配置 GitHub OAuth 或密码，直接通过 Cloudflare Access（如账号授权、邮箱验证码等）登入系统。多用户天然隔离。                                                                                                                                                                              |
 | `REQUIRE_GITHUB_AUTH`     | 可选               | `false`                  | 是否强制登录后才可使用 SSH 终端（GitHub 或单管理员密码会话均满足）。设为 `true` 时彻底禁用匿名直连入口。                                                                                                                                                                                           | **公网部署防被蹭推荐开启**。若不希望未授权访客将你的 Worker 用作公开 SSH 代理节点，建议配置为 `true` 并配合白名单使用。wrangler.toml `[vars]` 随部署默认下发，自定义请改配置文件。                                                                                                                |
 | `TURNSTILE_SITEKEY`       | 可选               | 无                       | Cloudflare Turnstile 人机验证的前端公开 Site Key。                                                                                                                                                                                                                                                 | 公开密钥。与 `TURNSTILE_SECRET` 配合使用，在未配置或配置任一为空时人机验证功能自动禁用。                                                                                                                                                                                                          |
 | `TURNSTILE_SECRET`        | 可选               | 无                       | Cloudflare Turnstile 人机验证的服务端 Secret Key，用于校验前端回传的人机验证 Token。                                                                                                                                                                                                               | **敏感密钥，建议保存为 Secret 类型**。开启后可有效拦截自动化扫描脚本、批量机器人和恶意滥用。默认不部署（自行选择加入）；经 Git/CLI 部署的实例建议用 Dashboard Secret 类型配置——Secret 不受 wrangler 部署覆盖。                                                                                    |
@@ -249,14 +249,13 @@ Fork 仓库可以按需使用内置的 `Sync upstream` GitHub Actions 工作流�
 
 #### 可选：启用 Cloudflare Zero Trust Access 登录
 
-不想配置 GitHub OAuth，也不想记住固定密码？可以在 Cloudflare 控制台直接为 Worker 一键开启 Cloudflare Access，支持通过 Cloudflare 账号授权、邮箱一次性验证码（One-Time PIN）或团队 IdP 免密登录：
+可以通过 Cloudflare Access 的账号授权、邮箱一次性验证码（One-Time PIN）或团队 IdP 登录，无需另配 GitHub OAuth 或固定密码：
 
-1. **进入 Access 配置**：在 Cloudflare Dashboard ➔ **Workers 和 Pages** ➔ 点击你的 Worker（如 `cloudssh`）➔ 点击顶部的 **Access** 选项卡。
-2. **启用策略**：在 Worker 策略卡片中点击启用或管理策略，添加允许访问的规则（例如指定具体的个人邮箱、邮箱域名后缀 `@company.com` 或已绑定的登录提供商），保存生效。
-3. **打开站点**：访问 CloudSSH 站点，完成 Cloudflare Access 身份验证后即可直接进入系统！
-   - **零手动配置**：系统自动感知 Cloudflare 边缘鉴权标头，无需手动在 Worker 中填写复杂的团队域名或 AUD 密钥。
-   - **多租户数据隔离**：每个通过验证的邮箱自动分配独立的云端数据库切片，多成员使用互不影响。
-   - **单点注销**：点击退出登录自动重定向至 Cloudflare 官方注销端点 `/cdn-cgi/access/logout`，清理 Access 边缘会话。
+1. 在 **Zero Trust → Access → Applications** 创建 **Self-hosted** 应用，绑定 CloudSSH 站点的完整域名，覆盖页面、`/api/*` 和 WebSocket 路径，不要只保护登录页。
+2. 添加允许访问的邮箱或受控团队域名规则；其他可访问入口（包括 `workers.dev`）也须保护，不使用的入口应关闭。
+3. 访问站点完成 Access 验证。CloudSSH 从 Workers 运行时的 `ctx.access.getIdentity()` 获取已验证身份，自动按邮箱隔离用户库；不信任客户端传来的邮箱头或未经验证的 JWT。无需另配 AUD 或验证密钥，退出登录会转到 `/cdn-cgi/access/logout`。
+
+> **WebSocket 限制**：当前 Worker 详情页 **Access** 选项卡提供的 Worker 级保护不支持 WebSocket，会使 SSH 升级返回 403。请使用上述 hostname-based 自托管应用，见 [Cloudflare 官方说明](https://developers.cloudflare.com/workers/configuration/cloudflare-access/)。`CF_ACCESS=true` 仅强制要求 Access 身份，不能代替在 Cloudflare 配置访问策略；缺少运行时身份时会拒绝登录。
 
 > **多认证模式优先级说明**：`ADMIN_PASSWORD_HASH`（密码优先） > `CF_ACCESS` / 自动感知（Access 模式） > `GitHub OAuth` > 匿名模式。若同时开启，以更高优先级的模式为准。
 
@@ -361,59 +360,56 @@ SSH 跳转不需要额外环境变量，但必须启用 GitHub OAuth 并使用�
 
 ##### 配置目标服务器使用 Cloudflare SSH CA
 
-仅当 CloudSSH 站点本身使用 Cloudflare Access 登录时，连接表单才会出现 **Cloudflare CA**。浏览器会临时生成密钥，由保护该站点的 Access 应用签发短期证书；证书身份固定为邮箱 `@` 前缀。CloudSSH 中填写的是目标机上已有的 Unix 用户名。两者相同无需映射；不同时，只为该用户增加一条 principal 映射。此方式不能用于跳板或一次性分享。
+仅在 CloudSSH 使用 Access 登录时提供 **Cloudflare CA**。浏览器临时生成密钥，由保护本站的 Access 应用签发短期证书；principal 是邮箱 `@` 前缀，CloudSSH 用户名则是已有 Unix 账户。以下以 Linux OpenSSH 为例，先替换 `<UNIX_USER>` 和 `<EMAIL_PREFIX>`；此认证不能作为跳板机凭据，也不能创建一次性分享。
 
-1. 打开 [Cloudflare Zero Trust](https://one.dash.cloudflare.com/) → **Access controls** → **Service credentials** → **SSH** → **Add a certificate**。在 **Application** 中选择保护 CloudSSH 站点的 Access 应用，生成后复制 **CA public key**（一整行，类似 `ecdsa-sha2-nistp256 AAAA... open-ssh-ca@cloudflareaccess.org`）。不要使用名为 “SSH with Access for Infrastructure” 的证书。
-2. 在目标机器上信任这把公钥，并把邮箱前缀映射到已有用户。将 `<UNIX_USER>` 换成该用户，`<EMAIL_PREFIX>` 换成邮箱 `@` 前的部分：
+1. **获取正确的公钥**：进入 [Zero Trust](https://one.dash.cloudflare.com/) → **Access controls → Service credentials → SSH → Add a certificate**，选择保护 **CloudSSH 站点**的 Access 应用，生成并复制整行 **CA public key**。不要选 “SSH with Access for Infrastructure”。Access 策略只允许受信任的邮箱；不同域名的相同邮箱前缀会得到同名 principal，不能靠服务器映射区分。
+2. **备份并信任 CA**：保留当前 SSH 会话，备份 `/etc/ssh/sshd_config` 及即将修改的已有文件。用 `sudoedit /etc/ssh/cloudflare_ca.pub` 添加整行公钥，**保留已有公钥，不要清空文件或覆盖其他 CA**；设置属主 `root:root`、权限 `644`。如果已有 `TrustedUserCAKeys`，沿用其文件路径并添加新公钥。否则在主配置的全局区域（第一个 `Match` 之前）设置：
 
-   ```bash
-   sudo install -o root -g root -m 644 /dev/null /etc/ssh/cloudflare_ca.pub
-   # 将 CA 公钥原样写入 /etc/ssh/cloudflare_ca.pub
-
-   sudo tee /etc/ssh/sshd_config.d/cloudflare-ca.conf >/dev/null <<'EOF'
+   ```text
    PubkeyAuthentication yes
    TrustedUserCAKeys /etc/ssh/cloudflare_ca.pub
+   ```
+
+3. **映射已有用户名**：如果用户名与邮箱前缀不同，在 `/etc/ssh/sshd_config` **末尾**添加以下块，不要放到仍有全局指令的配置开头：
+
+   ```text
    Match User <UNIX_USER>
        AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u
-   EOF
+   ```
 
+   ```bash
    sudo install -d -o root -g root -m 755 /etc/ssh/auth_principals
-   echo '<EMAIL_PREFIX>' | sudo tee /etc/ssh/auth_principals/<UNIX_USER>
+   sudoedit /etc/ssh/auth_principals/<UNIX_USER>
+   # 在文件中添加一行 <EMAIL_PREFIX>，保留已有授权行，不写完整邮箱
    sudo chown root:root /etc/ssh/auth_principals/<UNIX_USER>
    sudo chmod 644 /etc/ssh/auth_principals/<UNIX_USER>
    ```
 
-   若用户名已经等于邮箱前缀，删除 `Match` 与 `AuthorizedPrincipalsFile` 两行，不必创建映射文件。若 `/etc/ssh/sshd_config` 没有在开头引入 `sshd_config.d`，把同样的指令放到主配置中最先被读取的位置。
-
-3. 校验通过后再重载。Debian/Ubuntu 的服务名是 `ssh`，RHEL/CentOS 是 `sshd`：
+   已有 `Match` 或 `AuthorizedPrincipalsFile/Command` 时先核查生效配置，沿用原策略，不重复添加冲突指令。用户名等于前缀且没有其他 principal 限制时，可跳过映射。
+4. **检查后重载**：先执行以下命令，确认公钥认证为 `yes`，CA 路径正确；启用映射时 principal 路径应为上述路径，未启用时通常为 `none`：
 
    ```bash
    sudo sshd -t
-   sudo sshd -T -C user=<UNIX_USER> | grep -Ei 'pubkeyauthentication|trustedusercakeys|authorizedprincipalsfile'
-   sudo systemctl reload ssh
+   sudo sshd -T -C user=<UNIX_USER> | grep -Ei 'pubkeyauthentication|trustedusercakeys|authorizedprincipalsfile|authorizedprincipalscommand'
+   # 确认结果正确后再执行；RHEL/CentOS 将 ssh 换为 sshd
+   sudo sshd -t && sudo systemctl reload ssh
    ```
 
-   预期分别为 `yes`、`/etc/ssh/cloudflare_ca.pub` 和 `/etc/ssh/auth_principals/%u`。
+   用新连接验证成功前，不要关闭原会话或禁用已有密码/密钥登录。CloudSSH 中用户名填 `<UNIX_USER>`，团队标识填 Zero Trust 团队名（不含 `.cloudflareaccess.com`），认证方式选 **Cloudflare CA**。
 
-4. 在 CloudSSH 中，用户名填 `<UNIX_USER>`，团队标识填 Zero Trust 团队名（不含 `.cloudflareaccess.com`），认证方式选择 **Cloudflare CA**。
-
-认证失败时查看 `sudo journalctl -u ssh -n 30`（或 `sshd`）：`name is not a listed principal` 表示映射文件缺少邮箱前缀或属主不是 root；`Invalid user` 表示该 Unix 用户不存在；证书签名失败或 unknown CA 表示公钥不是这个 Access 应用的 CA。
+失败时查看 `sudo journalctl -u ssh -n 30`（或 `sshd`）：`name is not a listed principal` 检查证书 principal、授权文件/命令及文件路径和权限；`Invalid user` 检查 Unix 账户；CA 不受信任则核对应用公钥，也检查证书有效期和服务器时间。
 
 <details>
 <summary><b>发给 AI 助手的配置提示词</b></summary>
 
 ```text
-请在这台 Linux 服务器上配置 OpenSSH，使其信任 Cloudflare Access 为指定应用签发的短期 SSH 证书，并允许一个已有 Unix 用户登录。开始前先向我索取三项信息：已有 Unix 用户名、Access 邮箱 @ 前的 principal、保护 CloudSSH 站点的 Access 应用的 CA 公钥整行。不要自行创建用户，不要关闭密码或其他现有登录方式，不要改 SSH 端口，不要使用「SSH with Access for Infrastructure」的 CA。
+请帮我在 Linux OpenSSH 上配置 Cloudflare SSH CA，让一个已有 Unix 用户登录。先索取：Unix 用户名、Access 邮箱前缀、保护 CloudSSH 站点的 Access 应用的 CA 公钥整行（不要使用 SSH with Access for Infrastructure 的 CA）。不要索取 CA 私钥、JWT 或 Service Token。
 
-公钥原样写入 /etc/ssh/cloudflare_ca.pub，所有者 root:root，权限 644。优先使用 /etc/ssh/sshd_config.d/cloudflare-ca.conf；若主配置没有在开头 Include 该目录，则把指令放到主配置中最先生效的位置。配置内容为：
-PubkeyAuthentication yes
-TrustedUserCAKeys /etc/ssh/cloudflare_ca.pub
-Match User <UNIX_USER>
-    AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u
+保留当前连接；检查现有 sshd_config、Include、Match 和 sshd -T 的有效值，备份要修改的已有文件。不要创建用户、改变端口、关闭现有登录方式，或覆盖原 CA/授权行。已有 TrustedUserCAKeys 时复用其文件并追加公钥，否则使用 /etc/ssh/cloudflare_ca.pub（root:root、644），在第一个 Match 前配置 PubkeyAuthentication yes 和 TrustedUserCAKeys。
 
-创建 /etc/ssh/auth_principals/<UNIX_USER>，里面只写一行邮箱前缀。目录 755、文件 644，均属 root:root。若用户名已经等于邮箱前缀，则不要添加 Match 和映射文件。
+用户名与邮箱前缀不同时，复用原 principal 策略，或在主配置末尾添加 Match User <UNIX_USER> 及 AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u。授权文件每行一个允许的邮箱前缀，保留原授权；目录 755、文件 644，均 root:root。用户名已匹配且没有其他限制则不必映射。不要把 Match 块插到后面仍有全局指令的位置。
 
-执行 sshd -t。通过后再用 sshd -T -C user=<UNIX_USER> 确认 pubkeyauthentication 为 yes，trustedusercakeys 指向该公钥，authorizedprincipalsfile 为上述路径。最后 reload SSH 服务：Debian/Ubuntu 用 ssh，RHEL/CentOS 用 sshd。不要在校验失败时重载。完成后说明 CloudSSH 应填写的用户名，以及 principal 不匹配、Invalid user、unknown CA 分别代表什么。
+先 sshd -t，再 sshd -T -C user=<UNIX_USER> 核对生效值；不通过就停止并恢复本次修改。确认后才用 sshd -t && systemctl reload ssh（RHEL/CentOS 用 sshd 服务）重载。验证新连接成功前保留原连接。提醒我 Access 规则须限制受信任邮箱，同名前缀不同域名不能仅凭 principal 区分。最后说明 CloudSSH 中应填的用户名、团队标识及常见排错步骤。
 ```
 
 </details>

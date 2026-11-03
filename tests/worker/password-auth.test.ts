@@ -637,7 +637,7 @@ describe('密码认证 — GitHub 路由权威禁用', () => {
     const res = await worker.fetch(makeRequest('/api/auth/github'), env);
     expect(res.status).toBe(501);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toMatch(/password auth mode/i);
+    expect(body.error).toMatch(/current authentication mode/i);
     // 不得跳转 GitHub
     expect(res.headers.get('Location')).toBeNull();
   });

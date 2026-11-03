@@ -14,6 +14,8 @@ import { ALLOWED_LOCATION_HINTS, type Env, type SSHConnectionConfig } from '../t
 import {
   getAuthenticatedUser,
   getCFAccessEmail,
+  initializeAccessIdentity,
+  isConnectTokenRouteAllowed,
   handleGetMe,
   handleGitHubAuth,
   handleGitHubCallback,
@@ -25,8 +27,6 @@ import {
   parseAdminPasswordHash,
   resolveAuthMode,
   verifyTurnstile,
-  LOCAL_ADMIN_GITHUB_ID,
-  CF_ACCESS_USER_GITHUB_ID,
   userDbRouteKey,
   connectTokenRouteKey,
 } from './auth';
@@ -180,8 +180,13 @@ function validateRegion(v: string | null | undefined): string | undefined {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: Env,
+    ctx?: Pick<ExecutionContext, 'access'>
+  ): Promise<Response> {
     try {
+      await initializeAccessIdentity(request, ctx);
       const url = new URL(request.url);
 
       // ==================== Auth Routes ====================
@@ -370,7 +375,10 @@ export default {
         if (!hasSameWebSocketOrigin(request, url)) {
           return new Response('Forbidden', { status: 403 });
         }
-        return handleCloudflareSshCaSign(request);
+        if (resolveAuthMode(env, request) !== 'cf_access' || !getCFAccessEmail(request)) {
+          return Response.json({ error: 'Cloudflare Access authentication required' }, { status: 401 });
+        }
+        return await handleCloudflareSshCaSign(request);
       }
 
       // Return config info (includes GitHub auth availability)
@@ -395,14 +403,9 @@ export default {
       }
 
       return createHtmlResponse(request);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error('Unhandled error in fetch handler:', msg);
-      const detail = msg.replace(/\s+/g, ' ').slice(0, 300);
-      return Response.json(
-        { error: detail ? `Internal Server Error: ${detail}` : 'Internal Server Error' },
-        { status: 500 }
-      );
+    } catch {
+      console.error('Worker request failed');
+      return Response.json({ error: 'Internal Server Error' }, { status: 500 });
     }
   },
 };
@@ -1228,8 +1231,9 @@ async function handleSSHConnection(request: Request, env: Env): Promise<Response
     return new Response('Forbidden', { status: 403 });
   }
 
-  if (isGitHubAuthRequired(env) && !(await getAuthenticatedUser(request, env))) {
-    return Response.json({ error: 'GitHub authentication required' }, { status: 401 });
+  if ((isGitHubAuthRequired(env) || resolveAuthMode(env, request) === 'cf_access') &&
+      !(await getAuthenticatedUser(request, env))) {
+    return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
 
   const sessionName = `session:${Date.now()}:${crypto.randomUUID()}`;
@@ -1272,8 +1276,9 @@ async function handleResumeSSHConnection(
 
   // 与 direct / one-time-token 升级路径保持一致的强制 GitHub 登录门禁：
   // REQUIRE_GITHUB_AUTH=true 时 resume 凭据不能替代有效会话。
-  if (isGitHubAuthRequired(env) && !(await getAuthenticatedUser(request, env))) {
-    return Response.json({ error: 'GitHub authentication required' }, { status: 401 });
+  if ((isGitHubAuthRequired(env) || resolveAuthMode(env, request) === 'cf_access') &&
+      !(await getAuthenticatedUser(request, env))) {
+    return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
 
   const doId = env.SSH_SESSION.idFromName(sessionName);
@@ -1472,10 +1477,11 @@ async function handleTokenSSHConnection(
     return new Response('Forbidden', { status: 403 });
   }
 
-  const githubAuthRequired = isGitHubAuthRequired(env);
-  const authenticatedUser = githubAuthRequired ? await getAuthenticatedUser(request, env) : null;
-  if (githubAuthRequired && !authenticatedUser) {
-    return Response.json({ error: 'GitHub authentication required' }, { status: 401 });
+  const authMode = resolveAuthMode(env, request);
+  const loginRequired = isGitHubAuthRequired(env) || authMode === 'cf_access';
+  const authenticatedUser = loginRequired ? await getAuthenticatedUser(request, env) : null;
+  if (loginRequired && !authenticatedUser) {
+    return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
 
   // 从 UserDBDO 消费 token，获取连接配置
@@ -1483,13 +1489,12 @@ async function handleTokenSSHConnection(
   if (!routeKey) {
     return Response.json({ error: 'Invalid token format' }, { status: 400 });
   }
-  if (routeKey === String(CF_ACCESS_USER_GITHUB_ID)) {
-    return Response.json({ error: 'Connection token was issued for the wrong user database' }, { status: 403 });
-  }
-  // 双向模式门：密码模式仅放行本地管理员令牌；GitHub/匿名模式拒绝哨兵令牌
-  // （防止模式切换前签发的一次性令牌在切换后仍可消费）
-  if (resolveAuthMode(env) === 'password' ? routeKey !== String(LOCAL_ADMIN_GITHUB_ID) : routeKey === String(LOCAL_ADMIN_GITHUB_ID)) {
+  if (!isConnectTokenRouteAllowed(authMode, routeKey)) {
     return Response.json({ error: 'Connection token was issued under a different auth mode' }, { status: 403 });
+  }
+  // Check ownership before consuming: another account must not invalidate this one-time token.
+  if (authenticatedUser && routeKey !== await userDbRouteKey(authenticatedUser)) {
+    return Response.json({ error: 'Connection token does not belong to this account' }, { status: 403 });
   }
   const stub = getUserDBStub(env, routeKey);
   const tokenRes = await stub.fetch(
@@ -1512,15 +1517,6 @@ async function handleTokenSSHConnection(
   if (authenticatedUser && String(authenticatedUser.github_id) !== String(config.githubId)) {
     return Response.json(
       { error: 'Connection token does not belong to this GitHub account' },
-      { status: 403 }
-    );
-  }
-  if (
-    authenticatedUser?.github_id === CF_ACCESS_USER_GITHUB_ID &&
-    routeKey !== await userDbRouteKey(authenticatedUser)
-  ) {
-    return Response.json(
-      { error: 'Connection token does not belong to this account' },
       { status: 403 }
     );
   }

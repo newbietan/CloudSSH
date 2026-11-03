@@ -719,6 +719,7 @@ export class ConnectionForm {
   }
 
   private authMode: 'password' | 'key' | 'none' | 'cf_ca' = 'password';
+  private connectionGeneration = 0;
   /** 仅 Cloudflare Access 登录模式展示 SSH CA；其他模式没有 Access JWT，入口直接隐藏。 */
   private cfSshCaEnabled = false;
 
@@ -731,6 +732,7 @@ export class ConnectionForm {
 
   private setAuthMode(mode: 'password' | 'key' | 'none' | 'cf_ca'): void {
     if (mode === 'cf_ca' && !this.cfSshCaEnabled) return;
+    this.connectionGeneration++;
     this.authMode = mode;
     for (const value of ['password', 'key', 'none', 'cf_ca'] as const) {
       const tabId = value === 'cf_ca' ? 'auth-tab-cf-ca' : `auth-tab-${value}`;
@@ -998,20 +1000,31 @@ export class ConnectionForm {
         // pi-lens-ignore: no-inner-html
         statusTextEl.innerHTML = `<span class="w-2 h-2 bg-primary-container animate-pulse inline-block"></span> ${t('auth.cfMinting')}`;
       }
+      const generation = this.connectionGeneration;
+      const isCurrent = () => generation === this.connectionGeneration && this.authMode === 'cf_ca' &&
+        this.cfSshCaEnabled && !document.getElementById('auth-section')!.classList.contains('hidden') &&
+        (document.getElementById('host') as HTMLInputElement).value === hostInput &&
+        (document.getElementById('username') as HTMLInputElement).value === username &&
+        parsePort(portInput.value) === port && teamInput?.value.trim() === cfTeamName;
+      connectButton.disabled = true;
       try {
         const creds = await requestCloudflareSshCertificate(cfTeamName);
+        if (!isCurrent()) return;
         selectedPrivateKey = creds.privateKey;
         certificate = creds.certificate;
       } catch (err: any) {
-        notify(err.message || '申请证书失败', {
+        if (!isCurrent()) return;
+        notify(err.message || t('server.connectFailed'), {
           title: t('server.connectFailed'),
           variant: 'danger',
         });
-        if (statusTextEl) {
+        return;
+      } finally {
+        connectButton.disabled = false;
+        if (statusTextEl && !document.getElementById('auth-section')!.classList.contains('hidden')) {
           // pi-lens-ignore: no-inner-html
           statusTextEl.innerHTML = `<span class="w-2 h-2 bg-surface-dot inline-block"></span> ${t('auth.statusOffline')}`;
         }
-        return;
       }
     }
 
