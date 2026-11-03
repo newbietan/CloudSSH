@@ -199,13 +199,9 @@ flowchart TB
 4. **Access the App**: After successful deployment, access via the default domain `https://cloudssh.<your-subdomain>.workers.dev`.
 5. **Bind Custom Domain** (Optional): Go to Worker Settings → Domains & Routes → Add, enter your domain and confirm.
 
-> **Note**: To deploy a test environment, repeat the above steps on the `test` branch to create a separate Worker (e.g., `cloudssh-test`). The Durable Objects data between both environments is completely isolated.
-
 ##### Update Notices
 
 The project checks the official `main` branch for a newer stable version in the background; when a new version is available, a dismissible hint is displayed. Click to view the changelog; upgrading is entirely at the deployer's discretion by syncing the repository and redeploying. Nothing is automatically refreshed, upgraded, or disconnected. Dismissing a version does not hide later releases.
-
-The Worker reads public version metadata from a fixed official GitHub URL without forwarding user credentials or server information. Successful checks are cached for six hours; failures silently back off for 15 minutes and never affect normal use.
 
 ##### Optional: Automatically Sync Upstream Releases (Auto Update)
 
@@ -330,10 +326,6 @@ With GitHub OAuth enabled, users can log in with their GitHub account and save/m
 | `REQUIRE_GITHUB_AUTH=true` only | All GitHub users       | Disabled                         |
 | Both settings                   | Allowlisted users only | Disabled (private-instance mode) |
 
-1. **Redeploy**: Save the variables and redeploy the existing Worker. The Durable Object migration in the repository initializes the required classes and database; deleting the existing Worker is not required.
-
-> **Access Policy Note**: After `GITHUB_ALLOWED_USER_IDS` changes, existing sessions are checked again and become invalid on their next request; `REQUIRE_GITHUB_AUTH=true` depends on GitHub OAuth, so configure the Client ID, Client Secret, and `BASE_URL` together.
-
 ##### Using One-Time SSH Sharing
 
 1. Configure GitHub OAuth, set `ENABLE_SSH_SHARING=true` on the Worker, and redeploy.
@@ -368,6 +360,63 @@ When adding or editing a server, choose the **Cloudflare Tunnel** transport mode
    - **Connection Region**: Selecting the region nearest to your internal server is recommended (e.g., `Asia-Pacific` for Asian hosts) to instantiate the Durable Object nearby and eliminate cross-ocean triangular routing;
    - **Zero Trust Credentials (Optional)**: If Access policy is enabled for this hostname in Cloudflare Zero Trust, provide the Service Token's Client ID and Client Secret; one-click clearing is supported when the secret is no longer needed.
 3. **Connection & Experience**: Upon connection, the status bar displays dual-segment latency (`CF-XXX` for Cloudflare to tunnel handshake, `RTT` for browser to Cloudflare edge), with full terminal, SFTP online editing, and AI Agent features available.
+
+##### Configure a Target Server for Cloudflare SSH CA
+
+The **Cloudflare CA** option appears only when the CloudSSH site itself uses Cloudflare Access login. The browser generates an ephemeral key, and the Access application protecting that site signs a short-lived certificate. The certificate principal is always the email local-part. The username entered in CloudSSH is an existing Unix account on the target. No mapping is required when they match; otherwise add one principal mapping for that user. CA servers cannot be jump hosts or one-time shares.
+
+1. Open [Cloudflare Zero Trust](https://one.dash.cloudflare.com/) → **Access controls** → **Service credentials** → **SSH** → **Add a certificate**. Under **Application**, select the Access application that protects the CloudSSH site, generate the certificate, and copy its **CA public key** (one line, such as `ecdsa-sha2-nistp256 AAAA... open-ssh-ca@cloudflareaccess.org`). Do not use the certificate named “SSH with Access for Infrastructure”.
+2. On the target, trust that public key and map the email prefix to the existing user. Replace `<UNIX_USER>` with that account and `<EMAIL_PREFIX>` with the part before `@`:
+
+   ```bash
+   sudo install -o root -g root -m 644 /dev/null /etc/ssh/cloudflare_ca.pub
+   # Write the CA public key to /etc/ssh/cloudflare_ca.pub unchanged
+
+   sudo tee /etc/ssh/sshd_config.d/cloudflare-ca.conf >/dev/null <<'EOF'
+   PubkeyAuthentication yes
+   TrustedUserCAKeys /etc/ssh/cloudflare_ca.pub
+   Match User <UNIX_USER>
+       AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u
+   EOF
+
+   sudo install -d -o root -g root -m 755 /etc/ssh/auth_principals
+   echo '<EMAIL_PREFIX>' | sudo tee /etc/ssh/auth_principals/<UNIX_USER>
+   sudo chown root:root /etc/ssh/auth_principals/<UNIX_USER>
+   sudo chmod 644 /etc/ssh/auth_principals/<UNIX_USER>
+   ```
+
+   If the username already equals the email prefix, omit the `Match` and `AuthorizedPrincipalsFile` lines and do not create a mapping file. If `/etc/ssh/sshd_config` does not include `sshd_config.d` at the top, place the same directives where they are read first.
+3. Validate before reloading. The service is `ssh` on Debian/Ubuntu and `sshd` on RHEL/CentOS:
+
+   ```bash
+   sudo sshd -t
+   sudo sshd -T -C user=<UNIX_USER> | grep -Ei 'pubkeyauthentication|trustedusercakeys|authorizedprincipalsfile'
+   sudo systemctl reload ssh
+   ```
+
+   Expect `yes`, `/etc/ssh/cloudflare_ca.pub`, and `/etc/ssh/auth_principals/%u`.
+4. In CloudSSH, enter `<UNIX_USER>`, the Zero Trust team name without `.cloudflareaccess.com`, and select **Cloudflare CA**.
+
+If authentication fails, read `sudo journalctl -u ssh -n 30` (or `sshd`). `name is not a listed principal` means the mapping file lacks the email prefix or is not owned by root. `Invalid user` means that Unix account does not exist. A signature failure or unknown CA means the public key is not the CA for this Access application.
+
+<details>
+<summary><b>Prompt for an AI assistant</b></summary>
+
+```text
+Configure OpenSSH on this Linux server to trust the short-lived SSH CA of the Cloudflare Access application protecting CloudSSH, and allow one existing Unix user to log in. Before changing anything, ask me for the existing Unix username, the Access email local-part (principal), and the full CA public-key line. Do not create a user, disable password or any existing login method, change the SSH port, or use the “SSH with Access for Infrastructure” CA.
+
+Write the public key unchanged to /etc/ssh/cloudflare_ca.pub, owner root:root, mode 644. Prefer /etc/ssh/sshd_config.d/cloudflare-ca.conf. If the main config does not Include that directory first, put the directives where they take effect first. Use:
+PubkeyAuthentication yes
+TrustedUserCAKeys /etc/ssh/cloudflare_ca.pub
+Match User <UNIX_USER>
+    AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u
+
+Create /etc/ssh/auth_principals/<UNIX_USER> containing only the email prefix. Directory mode 755, file mode 644, both root:root. If the username already equals the prefix, do not add Match or the mapping file.
+
+Run sshd -t. Then run sshd -T -C user=<UNIX_USER> and confirm pubkeyauthentication is yes, trustedusercakeys points at that file, and authorizedprincipalsfile is the path above. Reload SSH only after validation succeeds: service ssh on Debian/Ubuntu, sshd on RHEL/CentOS. Finally state the username to enter in CloudSSH, and what a principal mismatch, Invalid user, and unknown CA each mean.
+```
+
+</details>
 
 #### AI Agent: Responses API Configuration and Sessions
 
