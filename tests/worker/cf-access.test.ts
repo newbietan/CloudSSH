@@ -83,18 +83,19 @@ describe('Cloudflare Access (Zero Trust) Authentication', () => {
   });
 
   describe('getAccessUserRouteKey', () => {
-    it('generates a stable, case-insensitive route key starting with cf:', () => {
-      const key1 = getAccessUserRouteKey('Alice@Example.COM');
-      const key2 = getAccessUserRouteKey('alice@example.com');
+    it('generates a stable, case-insensitive route key without embedding the email', async () => {
+      const key1 = await getAccessUserRouteKey('Alice@Example.COM');
+      const key2 = await getAccessUserRouteKey('alice@example.com');
       expect(key1).toBe(key2);
-      expect(key1.startsWith('cf:')).toBe(true);
-      expect(key1.length).toBeLessThanOrEqual(40);
+      expect(key1).toMatch(/^cf-[0-9a-f]{32}$/);
+      expect(key1.includes(':')).toBe(false);
     });
 
-    it('produces different route keys for different emails', () => {
-      const keyA = getAccessUserRouteKey('alice@example.com');
-      const keyB = getAccessUserRouteKey('bob@example.com');
+    it('does not collide emails that only differ inside the same length', async () => {
+      const keyA = await getAccessUserRouteKey('alice@example.com');
+      const keyB = await getAccessUserRouteKey('alica@example.com');
       expect(keyA).not.toBe(keyB);
+      expect('alice@example.com'.length).toBe('alica@example.com'.length);
     });
   });
 
@@ -212,10 +213,10 @@ describe('Cloudflare Access (Zero Trust) Authentication', () => {
       );
 
       expect(res.status).toBe(201);
-      const route = getAccessUserRouteKey('user@example.com');
+      const route = await getAccessUserRouteKey('user@example.com');
       expect(names).toContain(route);
       expect(names).not.toContain('-2');
-      expect(userDbRouteKey({
+      expect(await userDbRouteKey({
         id: 7,
         github_id: CF_ACCESS_USER_GITHUB_ID,
         username: 'user@example.com',
@@ -225,6 +226,7 @@ describe('Cloudflare Access (Zero Trust) Authentication', () => {
       const token = `${route}:${crypto.randomUUID()}`;
       expect(connectTokenRouteKey(token)).toBe(route);
       expect(connectTokenRouteKey('-2:abc')).toBe('-2');
+      expect(connectTokenRouteKey('cf:userexamplecom-0123456789abcdef:abc')).toBeNull();
       expect(
         isSshIdentityAllowed(
           { GITHUB_ALLOWED_USER_IDS: '12345' } as Env,

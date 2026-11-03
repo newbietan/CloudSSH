@@ -67,26 +67,24 @@ export function getCFAccessEmail(request: Request): string | null {
 
 /**
  * 生成基于邮箱的确定性 UserDBDO 路由键。
- * 格式为 cf:<sanitized-prefix>-<64bit-fnv1a-hash>，长度严格 <= 40 字符（远低于 DO 64 字节上限）。
+ * 格式为 `cf-` 加 SHA-256 前 128 位。邮箱是 ASCII，旧的 FNV 高半段只随长度变化，
+ * 32 位碰撞会把两个 Access 用户送进同一个库。
  */
-export function getAccessUserRouteKey(email: string): string {
+export async function getAccessUserRouteKey(email: string): Promise<string> {
   const clean = email.toLowerCase().trim();
-  let h1 = 0x811c9dc5;
-  let h2 = 0x27d4eb2f;
-  for (let i = 0; i < clean.length; i++) {
-    const c = clean.charCodeAt(i);
-    h1 = Math.imul(h1 ^ c, 0x01000193);
-    h2 = Math.imul(h2 ^ (c >>> 8), 0x01000193);
-  }
-  const hash = `${(h1 >>> 0).toString(16).padStart(8, '0')}${(h2 >>> 0).toString(16).padStart(8, '0')}`;
-  const prefix = clean.replace(/[^a-z0-9]/g, '').slice(0, 20);
-  return `cf:${prefix}-${hash}`;
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(clean));
+  const hex = [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, 32);
+  // 路由键不含冒号，连接令牌仍是 `routeKey:secret`。不用邮箱前缀，避免把身份写进 DO 名称。
+  return `cf-${hex}`;
 }
 
-const ACCESS_USER_ROUTE_KEY_RE = /^cf:[a-z0-9]{0,20}-[0-9a-f]{16}$/;
+const ACCESS_USER_ROUTE_KEY_RE = /^cf-[0-9a-f]{32}$/;
 
 /** Access 用户的库不在哨兵 github_id=-2 上，而在按邮箱算出的路由键上。 */
-export function userDbRouteKey(user: UserInfo): string {
+export async function userDbRouteKey(user: UserInfo): Promise<string> {
   if (user.github_id === CF_ACCESS_USER_GITHUB_ID) {
     const email = user.email?.trim() ?? '';
     if (!email.includes('@')) {
@@ -97,23 +95,20 @@ export function userDbRouteKey(user: UserInfo): string {
   return String(user.github_id);
 }
 
-function isAccessUserRouteKey(value: string): boolean {
+export function isAccessUserRouteKey(value: string): boolean {
   return ACCESS_USER_ROUTE_KEY_RE.test(value);
 }
 
 /**
- * 一次性连接令牌是 `routeKey:secret`。Access 路由键本身含一个冒号，
- * 因此 `cf:<prefix>-<hash>:<uuid>` 不能只取第一段。
+ * 一次性连接令牌是 `routeKey:secret`。Access 路由键是 `cf-` 加 32 位十六进制，
+ * 不含冒号，因此只取第一段。旧的 `cf:<prefix>-<fnv>` 键已废弃。
  */
 export function connectTokenRouteKey(token: string): string | null {
-  if (token.startsWith('cf:')) {
-    const parts = token.split(':');
-    if (parts.length !== 3) return null;
-    const routeKey = `cf:${parts[1]}`;
-    return isAccessUserRouteKey(routeKey) ? routeKey : null;
-  }
+  if (token.startsWith('cf:')) return null;
   const routeKey = token.split(':')[0];
-  return routeKey || null;
+  if (!routeKey) return null;
+  if (routeKey.startsWith('cf-') && !isAccessUserRouteKey(routeKey)) return null;
+  return routeKey;
 }
 
 /**
@@ -315,7 +310,7 @@ export async function getAuthenticatedUser(request: Request, env: Env): Promise<
   if (mode === 'cf_access') {
     const email = getCFAccessEmail(request);
     if (!email) return null;
-    const routeKey = getAccessUserRouteKey(email);
+    const routeKey = await getAccessUserRouteKey(email);
     const stub = getUserDBStub(env, routeKey);
     const res = await stub.fetch(
       new Request('http://internal/internal/access-user', {

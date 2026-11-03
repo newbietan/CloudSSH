@@ -13,7 +13,7 @@ import {
   type SSHConnectionConfig,
   type SSHJumpHostConfig,
 } from '../types';
-import { CF_ACCESS_USER_GITHUB_ID, LOCAL_ADMIN_GITHUB_ID } from './auth';
+import { CF_ACCESS_USER_GITHUB_ID, LOCAL_ADMIN_GITHUB_ID, isAccessUserRouteKey } from './auth';
 import { inferLocationHint } from './ip-geo';
 import { isDetectedOS } from './os-detect';
 import { deserializeServerRow, serializeServerTags } from './server-tags';
@@ -753,12 +753,10 @@ export class UserDBDO {
     );
     if (existing.length > 0) {
       if (existing[0].username !== cleanEmail) {
-        this.db.exec(
-          "UPDATE users SET username = ?, updated_at = datetime('now') WHERE github_id = ?",
-          cleanEmail,
-          CF_ACCESS_USER_GITHUB_ID
+        return Response.json(
+          { error: 'Access identity does not match this user database' },
+          { status: 403 }
         );
-        existing[0].username = cleanEmail;
       }
       return Response.json(existing[0]);
     }
@@ -2079,7 +2077,7 @@ export class UserDBDO {
     let tokenPrefix = String(github_id);
     if (github_id === CF_ACCESS_USER_GITHUB_ID) {
       const routeKey = typeof body.routeKey === 'string' ? body.routeKey : '';
-      if (!/^cf:[a-z0-9]{0,20}-[0-9a-f]{16}$/.test(routeKey)) {
+      if (!isAccessUserRouteKey(routeKey)) {
         return Response.json({ error: 'Invalid access user route' }, { status: 400 });
       }
       tokenPrefix = routeKey;

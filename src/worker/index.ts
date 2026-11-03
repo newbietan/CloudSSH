@@ -416,7 +416,7 @@ async function handleServersRoute(request: Request, url: URL, env: Env): Promise
     return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
 
-  const stub = getUserDBStub(env, userDbRouteKey(user));
+  const stub = getUserDBStub(env, await userDbRouteKey(user));
 
   // GET /api/servers
   if (url.pathname === '/api/servers' && request.method === 'GET') {
@@ -508,7 +508,7 @@ async function handleServersRoute(request: Request, url: URL, env: Env): Promise
             shareId,
             tokenHash: shareRef,
             ownerUserId: user.id,
-            ownerGithubId: userDbRouteKey(user),
+            ownerGithubId: await userDbRouteKey(user),
             serverId: Number(serverId),
             serverName: metadata.serverName,
             expiresAt,
@@ -667,7 +667,7 @@ async function handleServersRoute(request: Request, url: URL, env: Env): Promise
         body: JSON.stringify({
           user_id: user.id,
           ephemeralCredential,
-          routeKey: userDbRouteKey(user),
+          routeKey: await userDbRouteKey(user),
         }),
       })
     );
@@ -721,7 +721,7 @@ async function handleThemeRoute(request: Request, env: Env): Promise<Response> {
     return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
 
-  const stub = getUserDBStub(env, userDbRouteKey(user));
+  const stub = getUserDBStub(env, await userDbRouteKey(user));
 
   if (request.method === 'GET') {
     return stub.fetch(
@@ -813,7 +813,7 @@ async function handleMobileShortcutsRoute(request: Request, env: Env): Promise<R
     return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
 
-  const stub = getUserDBStub(env, userDbRouteKey(user));
+  const stub = getUserDBStub(env, await userDbRouteKey(user));
 
   if (request.method === 'GET') {
     return stub.fetch(
@@ -891,7 +891,7 @@ async function handleKnownHostsRoute(request: Request, url: URL, env: Env): Prom
     return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
 
-  const stub = getUserDBStub(env, userDbRouteKey(user));
+  const stub = getUserDBStub(env, await userDbRouteKey(user));
 
   // GET /api/known-hosts?host=X&port=Y  → 获取特定主机指纹
   // GET /api/known-hosts                 → 列出所有已知主机
@@ -944,7 +944,7 @@ async function handleSnippetsRoute(request: Request, url: URL, env: Env): Promis
   if (!user) {
     return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
-  const stub = getUserDBStub(env, userDbRouteKey(user));
+  const stub = getUserDBStub(env, await userDbRouteKey(user));
   if (url.pathname === '/api/snippets' && request.method === 'GET') {
     return stub.fetch(
       new Request(`http://internal/internal/snippets?user_id=${user.id}`, { method: 'GET' })
@@ -1032,7 +1032,7 @@ async function handleAIRoute(request: Request, url: URL, env: Env): Promise<Resp
     }
   }
 
-  const stub = getUserDBStub(env, userDbRouteKey(user));
+  const stub = getUserDBStub(env, await userDbRouteKey(user));
 
   // GET /api/ai/config — return current AI config (masked)
   if (url.pathname === '/api/ai/config' && request.method === 'GET') {
@@ -1350,7 +1350,7 @@ async function handleShareOwnerRoute(request: Request, url: URL, env: Env): Prom
   const match = url.pathname.match(/^\/api\/shares\/([^/]+)(?:\/audit)?$/);
   if (!match) return new Response('Not Found', { status: 404 });
   const shareId = decodeURIComponent(match[1]);
-  const ownerStub = getUserDBStub(env, userDbRouteKey(user));
+  const ownerStub = getUserDBStub(env, await userDbRouteKey(user));
   const metadataResponse = await ownerStub.fetch(
     new Request(
       `http://internal/internal/shares/${encodeURIComponent(shareId)}?user_id=${user.id}`,
@@ -1517,7 +1517,7 @@ async function handleTokenSSHConnection(
   }
   if (
     authenticatedUser?.github_id === CF_ACCESS_USER_GITHUB_ID &&
-    routeKey !== userDbRouteKey(authenticatedUser)
+    routeKey !== await userDbRouteKey(authenticatedUser)
   ) {
     return Response.json(
       { error: 'Connection token does not belong to this account' },

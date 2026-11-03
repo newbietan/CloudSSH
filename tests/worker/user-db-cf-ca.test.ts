@@ -9,6 +9,7 @@ class FakeSql {
   throwOnInsert: string | null = null;
   userGithubId = 12345;
   encryptionSecret = 'test-encryption-secret-1234567890';
+  accessUser: { id: number; github_id: number; username: string; avatar_url: null } | null = null;
 
   exec(query: string, ...values: unknown[]): { toArray: () => unknown[] } {
     this.statements.push({ query, values });
@@ -41,6 +42,22 @@ class FakeSql {
     }
     if (query.includes('SELECT github_id FROM users WHERE id = ?')) {
       return { toArray: () => [{ github_id: this.userGithubId }] };
+    }
+    if (query.includes('FROM users WHERE github_id = ?')) {
+      return { toArray: () => (this.accessUser ? [this.accessUser] : []) };
+    }
+    if (query.startsWith('INSERT INTO users')) {
+      this.accessUser = {
+        id: 1,
+        github_id: values[0] as number,
+        username: String(values[1]),
+        avatar_url: null,
+      };
+      return { toArray: () => [] };
+    }
+    if (query.startsWith('UPDATE users SET username')) {
+      if (this.accessUser) this.accessUser.username = String(values[0]);
+      return { toArray: () => [] };
     }
     if (query.includes('SELECT fingerprint FROM known_hosts WHERE')) {
       return { toArray: () => [{ fingerprint: 'SHA256:trustedfingerprint' }] };
@@ -148,6 +165,27 @@ describe('UserDBDO - Cloudflare SSH CA integration', () => {
     expect(data.auth_method).toBe('publickey');
   });
 
+  it('rejects a second Access email that lands in the same database', async () => {
+    const { db, sql } = createTestDO();
+    const first = await db.fetch(
+      new Request('http://internal/internal/access-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'alice@example.com' }),
+      })
+    );
+    expect(first.status).toBe(200);
+    const second = await db.fetch(
+      new Request('http://internal/internal/access-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'bob@example.com' }),
+      })
+    );
+    expect(second.status).toBe(403);
+    expect(sql.accessUser?.username).toBe('alice@example.com');
+  });
+
   it('issues an email-scoped connect token for an Access user', async () => {
     const { db, sql } = createTestDO();
     sql.userGithubId = -2;
@@ -166,7 +204,7 @@ describe('UserDBDO - Cloudflare SSH CA integration', () => {
       jump_server_id: null,
       transport_type: 'direct',
     };
-    const routeKey = 'cf:userexamplecom-0123456789abcdef';
+    const routeKey = 'cf-0123456789abcdef0123456789abcdef';
     const resp = await db.fetch(
       new Request('http://internal/internal/servers/10/connect', {
         method: 'POST',
