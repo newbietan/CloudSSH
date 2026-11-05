@@ -1489,6 +1489,8 @@ export class SFTPPanel {
     } finally {
       this.downloadActive = false;
       this.downloadCancelRequested = false;
+      this.downloadChunks = [];
+      this.downloadFilename = '';
     }
   }
 

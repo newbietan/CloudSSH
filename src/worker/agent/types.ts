@@ -90,6 +90,8 @@ export interface ExecResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+  /** A bounded capture omitted output; never use it as a complete file snapshot. */
+  truncated?: boolean;
 }
 
 export interface AgentConfig {
@@ -115,7 +117,7 @@ export interface AgentFrame {
   type: 'agent_frame';
   subType: 'run_start' | 'run_end' | 'thinking' | 'executing' | 'response' | 'error'
     | 'confirm_required' | 'stream_chunk' | 'stream_end'
-    | 'memory_updated' | 'memory_status' | 'context_status' | 'reset_done';
+    | 'memory_updated' | 'memory_status' | 'context_status' | 'reset_done' | 'state';
   [key: string]: unknown;
 }
 

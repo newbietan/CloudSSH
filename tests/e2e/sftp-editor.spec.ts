@@ -20,6 +20,7 @@ async function openEditorMinimal(page: Page): Promise<void> {
   await page.evaluate(async ({ fileBytes, mtime }: EditorEvalArgs) => {
     const sftpModule = await (window as any).eval("import('/src/sftp-panel.ts')");
     const panel = new sftpModule.SFTPPanel(() => null);
+    (window as any).__sftpEditorMinimalPanel = panel;
     (panel as any).visible = true;
     (panel as any).sftpReady = true;
     (panel as any).sendJSON = (frame: Record<string, unknown>) => {
@@ -64,6 +65,45 @@ function wrapState(page: Page): Promise<boolean> {
 
 // 注意：page.evaluate 的回调在浏览器上下文执行，所有数据必须经参数传入，
 // 不能闭包引用本文件的常量（DEFAULT_MTIME 经 args.mtime 传递）。
+
+test('保存期间继续输入的内容保持未保存，第二次保存才更新基线', async ({ page }) => {
+  await openEditorMinimal(page);
+  await page.evaluate(() => {
+    const coordinator = (window as any).__sftpEditorMinimalPanel.editorCoordinator;
+    const snapshot = coordinator.getActiveEditor();
+    coordinator.statRemote = async () => ({ ok: true, mtime: snapshot.mtime, size: snapshot.size });
+    (window as any).__editorSaves = [];
+    coordinator.ctx.enqueueUploadTask = async (file: File) => {
+      const content = await file.text();
+      return new Promise<boolean>((resolve) => {
+        (window as any).__finishEditorSave = () => resolve(true);
+        (window as any).__editorSaves.push(content);
+      });
+    };
+  });
+  const content = page.locator('.cm-content');
+  const save = page.locator('.remote-editor__button--save');
+  await content.click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.insertText('first snapshot\n');
+  await save.click();
+  await expect.poll(() => page.evaluate(() => (window as any).__editorSaves)).toEqual(['first snapshot\n']);
+  await content.click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.insertText('typed while uploading\n');
+  await page.evaluate(() => (window as any).__finishEditorSave());
+
+  await expect(save).toBeEnabled();
+  await expect.poll(() => page.evaluate(() =>
+    (window as any).__sftpEditorMinimalPanel.activeEditor.handle.isDirty())).toBe(true);
+  await save.click();
+  await expect.poll(() => page.evaluate(() => (window as any).__editorSaves))
+    .toEqual(['first snapshot\n', 'typed while uploading\n']);
+  await page.evaluate(() => (window as any).__finishEditorSave());
+  await expect(save).toBeDisabled();
+  await expect.poll(() => page.evaluate(() =>
+    (window as any).__sftpEditorMinimalPanel.activeEditor.handle.isDirty())).toBe(false);
+});
 
 test('在线编辑器打开文件并保存（无冲突）', async ({ page }) => {
   await mockAnonymousSession(page);

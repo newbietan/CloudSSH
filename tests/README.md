@@ -155,6 +155,7 @@ OpenSSH 覆盖七种裸钥/证书协商、PTY/Shell、exec 与 SFTP；Go 网关�
 - 多标签操作：双击内联重命名、空值与失焦恢复、右键菜单项与外部点击关闭
 - Agent 终端选区附件与快捷诊断 Prompt 气泡点击填入
 - Responses 前端任务生命周期：正文结束继续运行、run_end 才结束、requestId 隔离过期帧、中文/繁中/英文错误与留存提示
+- Agent 短线恢复（`agent-recovery.spec.ts`，Chromium + WebKit；`worker/agent-session-sync.test.ts`）：真实 WebSocket close → session_resumed → 状态同步保留原面板；离线期间任务完成且工具只执行一次；重复恢复的文本去重、旧同步响应隔离、待确认操作人工恢复、暂停 Auto 倒计时、状态未知时仍能停止、换号销毁旧面板及全新 Shell 不接管原任务。
 - Agent 草稿账号隔离（`agent-session-draft.test.ts` / `e2e/agent-responses.spec.ts`）：稳定 GitHub ID + 服务器 ID 命名空间、本地管理员、缺失身份禁用、同浏览器换号同局部 ID 不串号、原账号恢复、过期/归属不匹配拒绝、旧无用户草稿删除，以及真实前端退出链路清理与迟到消息不重建。
 - 终端选区复制与焦点恢复
 - 认证挑战对话框、移动端后台连接恢复与分享会话领取

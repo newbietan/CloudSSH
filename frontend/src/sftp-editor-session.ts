@@ -339,7 +339,7 @@ export class SFTPEditorCoordinator {
       session.mtime = -1;
       session.size = -1;
     }
-    session.handle.markSaved();
+    session.handle.markSaved(content);
     notify(t('sftp.editorSaved', { name: session.filename }), { variant: 'success' });
     return true;
   }

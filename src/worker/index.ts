@@ -189,6 +189,15 @@ export default {
       await initializeAccessIdentity(request, ctx);
       const url = new URL(request.url);
 
+      // SameSite cookies also reach sibling origins. Reject browser-originated
+      // cross-origin writes, while retaining existing non-browser API clients.
+      if (url.pathname.startsWith('/api/') && !['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
+        const origin = request.headers.get('Origin');
+        if (origin !== null && origin !== url.origin) {
+          return Response.json({ error: 'Forbidden' }, { status: 403 });
+        }
+      }
+
       // ==================== Auth Routes ====================
 
       if (url.pathname === '/api/auth/github') {
@@ -1274,12 +1283,15 @@ async function handleResumeSSHConnection(
     return new Response('Forbidden', { status: 403 });
   }
 
-  // 与 direct / one-time-token 升级路径保持一致的强制 GitHub 登录门禁：
-  // REQUIRE_GITHUB_AUTH=true 时 resume 凭据不能替代有效会话。
-  if ((isGitHubAuthRequired(env) || resolveAuthMode(env, request) === 'cf_access') &&
-      !(await getAuthenticatedUser(request, env))) {
+  const accessMode = resolveAuthMode(env, request) === 'cf_access';
+  const loginRequired = isGitHubAuthRequired(env) || accessMode;
+  const authenticated = loginRequired ? await getAuthenticatedUser(request, env) : null;
+  // Access lookup failures remain fail-closed. A public share recipient, however,
+  // may resume only a device-bound share; the DO checks its actual stored policy.
+  if (accessMode && !authenticated) {
     return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
+  const shareResumeOnly = loginRequired && !authenticated;
 
   const doId = env.SSH_SESSION.idFromName(sessionName);
   const stub = env.SSH_SESSION.get(doId);
@@ -1293,6 +1305,8 @@ async function handleResumeSSHConnection(
   headers.set('x-cloudflare-colo', (request as any).cf?.colo || 'UNKNOWN');
   headers.delete('x-ssh-config');
   headers.delete('x-share-device-key');
+  headers.delete('x-ssh-share-resume-only');
+  if (shareResumeOnly) headers.set('x-ssh-share-resume-only', 'true');
 
   return stub.fetch(new Request(doUrl.toString(), { headers }));
 }

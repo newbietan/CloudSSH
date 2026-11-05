@@ -214,6 +214,7 @@ export class AgentExecChannel {
         stdout: notes.length > 0 ? `${stdout}\n${notes.join('\n')}\n` : stdout,
         stderr,
         exitCode: this.exitCode,
+        truncated: notes.length > 0,
       });
     }
   }

@@ -94,7 +94,12 @@ function makeUserDbStub(options: { lockThrottle?: boolean } = {}) {
       calls.push(path);
 
       if (path === '/internal/login-throttle') {
-        const { action } = (await req.json()) as { action: string };
+        const { action, valid } = (await req.json()) as { action: string; valid?: boolean };
+        if (action === 'attempt') {
+          if (options.lockThrottle) return Response.json({ allowed: false, retryAfterSec: 300 });
+          throttle.failCount = valid ? 0 : throttle.failCount + 1;
+          return Response.json({ allowed: true, retryAfterSec: 0 });
+        }
         if (action === 'check') {
           if (options.lockThrottle) {
             return Response.json({ locked: true, retryAfterSec: 300 });
@@ -470,7 +475,7 @@ describe('密码认证 — 登录端点', () => {
     expect(random).toHaveLength(64);
   });
 
-  it('错误密钥 → 401 + 节流失败计数入账（DO fail 动作）', async () => {
+  it('错误密钥 → 401 + 节流失败计数原子入账（DO attempt 动作）', async () => {
     const worker = await loadWorker();
     const { hash } = await makeAdminHash('correct-password');
     const stub = makeUserDbStub();
@@ -889,6 +894,35 @@ function jsonRequest(url: string, init: RequestInit): Request {
 }
 
 describe('UserDB — 登录节流状态机', () => {
+  it('limits concurrent Worker logins through the real DO state machine, including correct passwords during lockout', async () => {
+    const worker = await loadWorker();
+    const { hash, key } = await makeAdminHash('correct-password');
+    const sql = new FakeSql();
+    const db = createUserDB(sql);
+    const env = makeEnv({ ADMIN_PASSWORD_HASH: hash });
+    env.USER_DB = {
+      idFromName: () => 'admin', get: () => ({ fetch: (request: Request) => db.fetch(request) }),
+    } as unknown as Env['USER_DB'];
+    const login = (stretchedKey: string) => worker.fetch(makeRequest('/api/auth/password/login', {
+      method: 'POST', headers: { Origin: 'https://cloudssh.test' }, body: { key: stretchedKey },
+    }), env);
+
+    const responses = await Promise.all(Array.from({ length: 20 }, () => login(b64url(new Uint8Array(32)))));
+    expect(responses.filter(response => response.status === 401)).toHaveLength(5);
+    expect(responses.filter(response => response.status === 429)).toHaveLength(15);
+    expect(sql.throttle.fail_count).toBe(5);
+    expect((await login(key)).status).toBe(429);
+    expect(sql.sessions).toHaveLength(0);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(sql.throttle.locked_until + 1);
+    try {
+      expect((await login(key)).status).toBe(200);
+      expect(sql.throttle.fail_count).toBe(0);
+      expect(sql.sessions).toHaveLength(1);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it('建表语句包含 login_throttle 单行表', () => {
     const sql = new FakeSql();
     createUserDB(sql);
