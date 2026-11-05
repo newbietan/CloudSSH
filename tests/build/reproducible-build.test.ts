@@ -35,10 +35,15 @@ describe('reproducible build and deployment gate', () => {
     const testIndex = deployWorkflow.indexOf('pnpm test');
     const buildIndex = deployWorkflow.indexOf('pnpm run build:frontend');
     const e2eIndex = deployWorkflow.indexOf('pnpm run test:e2e');
-    const deployIndex = deployWorkflow.indexOf('pnpm run deploy:test');
+    const deployIndexes = [...deployWorkflow.matchAll(
+      /run: pnpm exec wrangler deploy(?: --env test)?\r?$/gm
+    )].map((match) => match.index ?? -1);
+    expect(deployIndexes).toHaveLength(2);
 
-    const steps = [installIndex, typecheckIndex, testIndex, buildIndex, e2eIndex, deployIndex];
-    expect(steps.every((index) => index >= 0)).toBe(true);
-    expect(steps).toEqual([...steps].sort((a, b) => a - b));
+    for (const deployIndex of deployIndexes) {
+      const steps = [installIndex, typecheckIndex, testIndex, buildIndex, e2eIndex, deployIndex];
+      expect(steps.every((index) => index >= 0)).toBe(true);
+      expect(steps).toEqual([...steps].sort((a, b) => a - b));
+    }
   });
 });

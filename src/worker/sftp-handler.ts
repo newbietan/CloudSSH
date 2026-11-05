@@ -568,9 +568,15 @@ export class SFTPHandler {
     let offset = 0;
     while (true) {
       this.throwIfDownloadCancelled();
-      const chunkData = await this.readBlock(handle, offset, DOWNLOAD_CHUNK_SIZE);
+      // Probe at most one byte beyond the limit, so an exactly-full file may
+      // still finish successfully at EOF without buffering another whole chunk.
+      const length = Math.min(DOWNLOAD_CHUNK_SIZE, MAX_SFTP_FILE_SIZE - offset + 1);
+      const chunkData = await this.readBlock(handle, offset, length);
       this.throwIfDownloadCancelled();
       if (chunkData.length === 0) break;
+      if (chunkData.length > MAX_SFTP_FILE_SIZE - offset) {
+        throw new Error(`文件过大，最大支持 ${formatFileSize(MAX_SFTP_FILE_SIZE)}`);
+      }
 
       this.sendBinary(chunkData);
       offset += chunkData.length;

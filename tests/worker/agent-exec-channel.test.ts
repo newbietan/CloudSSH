@@ -18,6 +18,7 @@ describe('AgentExecChannel — 输出捕获有界化（防止 docker logs 等大
     ch.onClose();
 
     const result = await ch.getClosedPromise();
+    expect(result.truncated).toBe(false);
     expect(result.stdout).toBe('hello world\n');
     expect(result.stderr).toBe('warn\n');
     expect(result.exitCode).toBe(0);
@@ -36,6 +37,7 @@ describe('AgentExecChannel — 输出捕获有界化（防止 docker logs 等大
     ch.onClose();
 
     const result = await ch.getClosedPromise();
+    expect(result.truncated).toBe(true);
     expect(result.stdout.startsWith('a'.repeat(128 * 1024))).toBe(true);
     expect(result.stdout).toContain('输出过长已截断');
     expect(result.stdout).toContain('省略中间 128.0KB');
@@ -61,6 +63,7 @@ describe('AgentExecChannel — 输出捕获有界化（防止 docker logs 等大
     ch.onExitStatus(1);
     ch.onClose();
     const result = await ch.getClosedPromise();
+    expect(result.truncated).toBe(true);
     expect(result.stdout).toContain('安全上限');
     expect(result.stdout).toContain('通道已强制关闭');
     expect(result.exitCode).toBe(1);

@@ -20,6 +20,14 @@ describe('Fork 工作流执行策略', () => {
     }
   );
 
+  it('deploys the already-tested frontend artifact without rebuilding it with deployment secrets', () => {
+    const deploy = readWorkflow('deploy.yml');
+    expect(deploy.match(/run: pnpm run build:frontend/g)).toHaveLength(1);
+    expect(deploy.match(/run: pnpm exec wrangler deploy(?: --env test)?$/gm)).toHaveLength(2);
+    expect(deploy).not.toContain('run: pnpm run deploy');
+    expect(deploy.indexOf('run: pnpm run test:e2e')).toBeLessThan(deploy.indexOf('run: pnpm exec wrangler deploy'));
+  });
+
   it('Fork 可直接手动同步，定时同步需要显式开启', () => {
     const sync = readWorkflow('sync-upstream.yml');
     expect(sync).toMatch(/^  workflow_dispatch:$/m);

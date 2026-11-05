@@ -423,6 +423,11 @@ export class SSHSessionDO {
       return resumeReject(404, 'Session expired or not found');
     }
 
+    const policy = detached.session.getSessionPolicy();
+    if (request.headers.get('x-ssh-share-resume-only') === 'true' && policy?.source !== 'share') {
+      return resumeReject(401, 'Authentication required');
+    }
+
     // 容忍一代旧 token：弱网下轮换帧可能随新连接一起丢失，客户端会携带
     // 上一代 token 重试；直接锁死会造成永久 403。新旧两代均需过后续校验。
     const currentResumeToken = detached.resumeToken;
@@ -437,7 +442,6 @@ export class SSHSessionDO {
     }
 
     // 分享会话附加策略校验：绝对过期复核 + 设备绑定挑战验签。
-    const policy = detached.session.getSessionPolicy();
     if (policy?.source === 'share') {
       if (Date.now() >= policy.sessionExpiresAt) {
         // 宽限期内到达分享会话绝对结束时间：立即终结，不再允许恢复。

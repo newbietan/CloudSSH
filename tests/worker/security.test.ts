@@ -88,6 +88,36 @@ afterEach(() => {
 // 1. auth.ts — OAuth 回调 CSRF 防护
 // =====================================================================
 
+describe('Cookie API 写请求的同源边界', () => {
+  it.each([
+    ['POST', '/api/servers'], ['PUT', '/api/servers/7'], ['DELETE', '/api/servers/7'],
+    ['POST', '/api/known-hosts'], ['POST', '/api/snippets'], ['PUT', '/api/user/theme'],
+    ['POST', '/api/auth/logout'],
+  ])('rejects same-site cross-origin %s %s before using a session', async (method, path) => {
+    const worker = await loadWorker();
+    const userDbStub = makeDOStub(() => Response.json({ id: 1, github_id: 42 }));
+    const response = await worker.fetch(makeRequest(path, {
+      method,
+      headers: { Origin: 'https://other.cloudssh.test', 'Content-Type': 'text/plain' },
+      cookies: { session: '42:valid-session' },
+      body: { name: 'server', host: 'ssh.example.com', port: 22, username: 'alice', auth_method: 'none' },
+    }), makeEnv({ userDbStub }));
+    expect(response.status).toBe(403);
+    expect(userDbStub.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, 'https://cloudssh.test'])('preserves API writes with Origin=%s', async (origin) => {
+    const worker = await loadWorker();
+    const userDbStub = makeDOStub(() => Response.json({ id: 1, github_id: 42 }));
+    const response = await worker.fetch(makeRequest('/api/servers', {
+      method: 'POST', headers: origin ? { Origin: origin } : {},
+      cookies: { session: '42:valid-session' }, body: { name: 'server' },
+    }), makeEnv({ userDbStub }));
+    expect(response.status).toBe(200);
+    expect(userDbStub.fetch).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('内部 SSH 头部只能由 Worker 权威注入', () => {
   it.each([
     '/api/ssh',

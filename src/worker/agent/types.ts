@@ -90,6 +90,8 @@ export interface ExecResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+  /** A bounded capture omitted output; never use it as a complete file snapshot. */
+  truncated?: boolean;
 }
 
 export interface AgentConfig {

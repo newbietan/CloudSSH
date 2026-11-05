@@ -208,6 +208,42 @@ function resumeRequest(params: Record<string, string> = {}): Request {
 }
 
 describe('SSHSessionDO Share Resume Device-Binding Security', () => {
+  it.each(['signed-share', 'unsigned-share', 'regular', 'access-without-identity', 'signed-in-regular'] as const)
+    ('enforces Worker login and authoritative DO share policy: %s', async (scenario) => {
+      const { default: worker } = await import('../../src/worker/index');
+      const { doInstance } = createDo();
+      const device = await makeDeviceKeyPair();
+      const { session } = scenario === 'regular' || scenario === 'signed-in-regular'
+        ? createRegularSession() : createShareSession(Date.now() + 600_000);
+      await detachSession(doInstance, session, { devicePubKey: device.publicKeyB64 });
+      const original = scenario === 'unsigned-share' ? resumeRequest() : await signedResumeRequest(device);
+      const headers = new Headers(original.headers);
+      headers.set('Origin', 'https://cloudssh.dev');
+      // External headers may neither exempt a normal session nor restrict a signed-in one.
+      headers.set('x-ssh-share-resume-only', scenario === 'signed-in-regular' ? 'true' : 'false');
+      if (scenario === 'signed-in-regular') headers.set('Cookie', 'session=123:valid-session');
+      const forward = vi.fn((request: Request) => doInstance.fetch(request));
+      const env = {
+        REQUIRE_GITHUB_AUTH: 'true',
+        ...(scenario === 'access-without-identity' ? { CF_ACCESS: 'true' } : {}),
+        SSH_SESSION: { idFromName: () => SESSION_ID, get: () => ({ fetch: forward }) },
+        USER_DB: { idFromName: () => 'user', get: () => ({
+          fetch: async () => Response.json({ id: 1, github_id: 123 }),
+        }) },
+      };
+      try {
+        const response = await worker.fetch(new Request(original, { headers }), env as never);
+        const expected = scenario === 'signed-share' || scenario === 'signed-in-regular' ? 101
+          : scenario === 'unsigned-share' ? 403 : 401;
+        expect(response.status).toBe(expected);
+        if (scenario === 'access-without-identity') expect(forward).not.toHaveBeenCalled();
+      } finally {
+        session.close(true);
+        const record = (doInstance as any).detachedSessions.get(SESSION_ID);
+        if (record) clearTimeout(record.graceTimeout);
+      }
+    });
+
   it('accepts a valid device-signed resume, rotates the token and restores the SFTP URL', async () => {
     const { doInstance, internal } = createDo();
     const device = await makeDeviceKeyPair();

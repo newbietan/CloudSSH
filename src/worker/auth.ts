@@ -673,19 +673,30 @@ export async function handlePasswordLogin(request: Request, env: Env): Promise<R
     }
   }
 
-  // 登录节流（哨兵 DO 持久化，跨 isolate 权威；命中锁定直接拒绝，不泄露更多信息）
+  // 验证只需一次 SHA-256；预拉伸仍完全在浏览器执行，保持恒时比对。
+  const keyBytes = b64urlToBytes(key);
+  if (!keyBytes || keyBytes.length !== 32) {
+    return Response.json({ error: 'Invalid key format' }, { status: 400 });
+  }
+  const keyDigest = new Uint8Array(await crypto.subtle.digest('SHA-256', keyBytes));
+  const valid = timingSafeEqualBytes(keyDigest, parsedHash.verifier);
+
+  // 在同一次 DO 操作里检查锁定并记录结果，避免并发请求一起穿过 check。
   const throttleRes = await stub.fetch(
     new Request('http://internal/internal/login-throttle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'check' }),
+      body: JSON.stringify({ action: 'attempt', valid }),
     })
   );
   if (!throttleRes.ok) {
     return Response.json({ error: 'Internal error' }, { status: 500 });
   }
-  const throttle = await throttleRes.json<{ locked: boolean; retryAfterSec: number }>();
-  if (throttle.locked) {
+  const throttle = await throttleRes.json<{ allowed: boolean; retryAfterSec: number }>();
+  if (typeof throttle.allowed !== 'boolean') {
+    return Response.json({ error: 'Internal error' }, { status: 500 });
+  }
+  if (!throttle.allowed) {
     console.warn(`[Auth] password_login result=denied reason=lockout ip=${clientIP}`);
     return Response.json(
       { error: 'Too many failed attempts', retryAfterSec: throttle.retryAfterSec },
@@ -695,33 +706,12 @@ export async function handlePasswordLogin(request: Request, env: Env): Promise<R
       }
     );
   }
-
-  // 验证预拉伸密钥：SHA-256(key) 恒时比对 verifier
-  const keyBytes = b64urlToBytes(key);
-  if (!keyBytes || keyBytes.length !== 32) {
-    return Response.json({ error: 'Invalid key format' }, { status: 400 });
-  }
-  const keyDigest = new Uint8Array(await crypto.subtle.digest('SHA-256', keyBytes));
-  if (!timingSafeEqualBytes(keyDigest, parsedHash.verifier)) {
-    await stub.fetch(
-      new Request('http://internal/internal/login-throttle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'fail' }),
-      })
-    );
+  if (!valid) {
     console.warn(`[Auth] password_login result=denied reason=bad_key ip=${clientIP}`);
     return Response.json({ error: 'Invalid password' }, { status: 401 });
   }
 
-  // 登录成功：重置节流 → upsert 本地管理员 → 创建会话
-  await stub.fetch(
-    new Request('http://internal/internal/login-throttle', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'reset' }),
-    })
-  );
+  // 登录成功：节流已重置 → upsert 本地管理员 → 创建会话
 
   const userRes = await stub.fetch(
     new Request('http://internal/internal/local-admin-user', {

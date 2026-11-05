@@ -100,6 +100,8 @@ const IDLE_WATCHDOG_CHECK_MS = 10_000;
 const IDLE_WATCHDOG_GRACE_MS = 60_000;
 // 浏览器→服务器终端输入队列上限：浏览器卡死时防止 channelDataQueue 无界堆积。
 const MAX_INPUT_QUEUE_BYTES = 4 * 1024 * 1024;
+const MAX_SSH_VERSION_PREAMBLE_BYTES = 64 * 1024;
+const MAX_SSH_IDENTIFICATION_BYTES = 255; // RFC 4253 §4.2, including CRLF.
 
 type ActiveAuthMethod = 'none' | 'password' | 'publickey' | 'keyboard-interactive';
 
@@ -209,6 +211,7 @@ export class SSHSession {
   private hostKeyType: string = 'unknown';
 
   private versionRawBuffer: Uint8Array = new Uint8Array(0);
+  private versionPreambleBytes = 0;
   private negotiatedCipherC2S: string = 'aes128-gcm@openssh.com';
   private negotiatedCipherS2C: string = 'aes128-gcm@openssh.com';
   private negotiatedMacC2S: string = 'none';
@@ -513,11 +516,15 @@ export class SSHSession {
               }
             }
 
-            if (lfIndex === -1) {
-              break;
+            const lineEnd = lfIndex === -1 ? this.versionRawBuffer.length : lfIndex + 1;
+            if (this.versionPreambleBytes + lineEnd - scanOffset > MAX_SSH_VERSION_PREAMBLE_BYTES) {
+              this.sendError('SSH 版本交换前导数据超过大小限制', 'packet_error');
+              this.close(true);
+              return;
             }
+            if (lfIndex === -1) break;
 
-            const lineBytes = this.versionRawBuffer.subarray(scanOffset, lfIndex + 1);
+            const lineBytes = this.versionRawBuffer.subarray(scanOffset, lineEnd);
             scanOffset = lfIndex + 1;
 
             let lineStr = this.textDecoder.decode(lineBytes);
@@ -525,16 +532,22 @@ export class SSHSession {
             if (lineStr.endsWith('\r')) lineStr = lineStr.slice(0, -1);
 
             if (lineStr.startsWith('SSH-')) {
+              if (lineBytes.length > MAX_SSH_IDENTIFICATION_BYTES) {
+                this.sendError('SSH 版本标识超过 255 字节', 'packet_error');
+                this.close(true);
+                return;
+              }
               this.transport.handleVersionExchange(`${lineStr}\r\n`);
               remaining = this.versionRawBuffer.subarray(scanOffset);
               versionFound = true;
               break;
-            } else {
             }
+            this.versionPreambleBytes += lineBytes.length;
           }
 
           if (versionFound) {
             this.versionRawBuffer = new Uint8Array(0);
+            this.versionPreambleBytes = 0;
             this.sendStatus('版本交换完成，正在密钥协商...', 'version_ready');
             this.state = 'kex';
             await this.startKEX();
@@ -3440,6 +3453,7 @@ export class SSHSession {
     this.closed = true;
     this.packetParser.clear();
     this.versionRawBuffer = new Uint8Array(0);
+    this.versionPreambleBytes = 0;
     this.terminalOutputGuard.dispose();
     this.detachedBuffer.clear();
     this.notifyShareSessionClosed(normal);

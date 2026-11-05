@@ -43,34 +43,40 @@ export class DirectTcpipStream {
   }
 
   private flushReadable(): void {
-    if (this.closed || this.readClosed || !this.controller) return;
+    if (!this.controller) return;
     while (this.pendingReads.length > 0 && (this.controller.desiredSize ?? 0) > 0) {
       const data = this.pendingReads.shift()!;
       this.controller.enqueue(data);
-      // Replenish the SSH receive window only as the nested consumer pulls.
-      this.onRead(data.length);
+      // No more window adjustments are needed after the remote end has finished.
+      if (!this.readClosed) this.onRead(data.length);
+    }
+    if (this.readClosed && this.pendingReads.length === 0) {
+      this.controller.close();
+      this.controller = null;
     }
   }
 
   remoteClose(error?: Error): void {
     if (this.closed) return;
     this.closed = true;
-    this.pendingReads = [];
-    if (error) this.controller?.error(error);
-    else this.controller?.close();
-    this.controller = null;
+    this.readClosed = true;
+    if (error) {
+      this.pendingReads = [];
+      this.controller?.error(error);
+      this.controller = null;
+    } else {
+      this.flushReadable();
+    }
   }
 
   remoteEof(): void {
     if (this.closed || this.readClosed) return;
     this.readClosed = true;
-    this.pendingReads = [];
-    this.controller?.close();
-    this.controller = null;
+    this.flushReadable();
   }
 
   close(): void {
-    if (this.closed) return;
+    const notifyRemote = !this.closed;
     this.closed = true;
     this.pendingReads = [];
     try {
@@ -79,6 +85,6 @@ export class DirectTcpipStream {
       /* 流可能已终断，关闭重复调用可忽略 */
     }
     this.controller = null;
-    void this.closeChannel().catch(() => {});
+    if (notifyRemote) void this.closeChannel().catch(() => {});
   }
 }

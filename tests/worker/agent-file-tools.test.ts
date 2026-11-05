@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { SSHChannel } from '../../src/ssh/channel';
+import { AgentExecChannel } from '../../src/worker/agent/exec-channel';
 import {
   isBlockedFilePath,
   needsFileReadConfirmation,
@@ -235,6 +237,45 @@ describe('ToolExecutor: write_file', () => {
   });
 
   describe('patch mode (search provided)', () => {
+    it('refuses to overwrite a file when the real exec capture has discarded its middle', async () => {
+      const channel = new AgentExecChannel(7, new SSHChannel());
+      const original = new TextEncoder().encode('UNIQUE\n' + 'x'.repeat(600_000));
+      for (let offset = 0; offset < original.length; offset += 32_768) {
+        channel.onData(original.subarray(offset, offset + 32_768));
+      }
+      channel.onExitStatus(0);
+      channel.onClose();
+      const captured = await channel.getClosedPromise();
+      expect(captured.stdout).toContain('输出过长已截断');
+      const { executor, execCommand } = makeExecutor(async () => captured);
+
+      const result = JSON.parse(await executor.execute('write_file', {
+        path: '/home/user/large.conf', search: 'UNIQUE', content: 'CHANGED',
+      }));
+
+      expect(execCommand).toHaveBeenCalledTimes(1);
+      expect(result.success).not.toBe(true);
+      expect(result.error).toContain('截断');
+    });
+
+    it.each(['price=$&', "prefix=$`; suffix=$'", 'literal=$$ and $1\n下一行'])
+      ('preserves replacement text literally: %s', async (replacement) => {
+        const { executor, execCommand } = makeExecutor(async (command) =>
+          command.includes('cat')
+            ? { stdout: 'before OLD after\n', stderr: '', exitCode: 0 }
+            : { stdout: '1\n', stderr: '', exitCode: 0 });
+
+        const result = JSON.parse(await executor.execute('write_file', {
+          path: '/home/user/config', search: 'OLD', content: replacement,
+        }));
+
+        expect(result.success).toBe(true);
+        const writeCommand = execCommand.mock.calls[1][0];
+        const base64 = writeCommand.match(/printf '%s' '([^']*)'/)![1];
+        expect(Buffer.from(base64, 'base64').toString('utf8'))
+          .toBe(`before ${replacement} after\n`);
+      });
+
     it('returns error if search text is not in file', async () => {
       const { executor } = makeExecutor(async (cmd) => {
         if (cmd.includes('cat')) {

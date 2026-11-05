@@ -807,11 +807,28 @@ export class UserDBDO {
    * - reset：登录成功后清零
    */
   private async handleLoginThrottle(request: Request): Promise<Response> {
-    const { action } = await request.json<{ action: string }>();
+    const body = await request.json<{ action: string; valid?: boolean }>();
+    let action = body.action;
+    const attempt = action === 'attempt';
 
     this.db.exec(
       'INSERT OR IGNORE INTO login_throttle (id, fail_count, locked_until, last_fail_at) VALUES (1, 0, 0, 0)'
     );
+
+    if (attempt) {
+      if (typeof body.valid !== 'boolean') {
+        return Response.json({ error: 'Invalid login result' }, { status: 400 });
+      }
+      const row = this.query<LoginThrottleRow>(
+        'SELECT fail_count, locked_until, last_fail_at FROM login_throttle WHERE id = 1'
+      )[0];
+      const remaining = (row?.locked_until ?? 0) - Date.now();
+      if (remaining > 0) {
+        return Response.json({ allowed: false, retryAfterSec: Math.ceil(remaining / 1000) });
+      }
+      // No await between the authoritative check and its fail/reset update.
+      action = body.valid ? 'reset' : 'fail';
+    }
 
     if (action === 'check') {
       const row = this.query<LoginThrottleRow>(
@@ -850,7 +867,7 @@ export class UserDBDO {
         now
       );
       const locked = lockedUntil > now;
-      return Response.json({
+      return Response.json(attempt ? { allowed: true, retryAfterSec: 0 } : {
         locked,
         retryAfterSec: locked ? Math.ceil((lockedUntil - now) / 1000) : 0,
       });
@@ -860,7 +877,9 @@ export class UserDBDO {
       this.db.exec(
         'UPDATE login_throttle SET fail_count = 0, locked_until = 0, last_fail_at = 0 WHERE id = 1'
       );
-      return Response.json({ locked: false, retryAfterSec: 0 });
+      return Response.json(attempt
+        ? { allowed: true, retryAfterSec: 0 }
+        : { locked: false, retryAfterSec: 0 });
     }
 
     return Response.json({ error: 'Invalid action' }, { status: 400 });

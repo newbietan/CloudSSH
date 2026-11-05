@@ -657,6 +657,10 @@ export class ToolExecutor {
       return JSON.stringify({ error: `读取待修改文件失败: ${msg}`, path });
     }
 
+    if (readRes.truncated) {
+      return JSON.stringify({ error: '读取结果已截断，为避免丢失原文件内容，已取消修改', path });
+    }
+
     if (readRes.stdout.includes('__NOT_FOUND__') || readRes.exitCode !== 0) {
       return JSON.stringify({ error: '待修改的文件不存在或非普通文件', path });
     }
@@ -679,7 +683,7 @@ export class ToolExecutor {
       });
     }
 
-    const patchedContent = originalContent.replace(search, replace);
+    const patchedContent = originalContent.replace(search, () => replace);
     return this.writeContentToFile(path, patchedContent, signal, { patched: true });
   }
 
