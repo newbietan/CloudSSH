@@ -1,3 +1,4 @@
+import { emptyAgentSessionState } from '../agent-session-state';
 import {
   getCipherSpec,
   getMacAlgorithmsForCipher,
@@ -252,6 +253,7 @@ export class SSHSession {
   private pendingAgentConfirmation: {
     id: string;
     command: string;
+    reason: string;
     resolve: (approved: boolean) => void;
     signal?: AbortSignal;
     onAbort: () => void;
@@ -2219,6 +2221,11 @@ export class SSHSession {
           return;
         }
 
+        if (parsed.type === 'agent_sync') {
+          this.sendAgentState(parsed.syncId);
+          return;
+        }
+
         // Agent messages
         // agent_stop / agent_confirm 已由 durable-object.ts 在 webSocketMessage 入口
         // 提前拦截并通过 handleAgentControl 同步处理，不再到达此处。
@@ -2984,6 +2991,7 @@ export class SSHSession {
         this.sendAgentFrame({
           type: 'agent_frame',
           subType: 'error',
+          code: 'agent_busy',
           message: 'Agent 正在运行中，请先停止当前任务',
         });
         return;
@@ -3029,6 +3037,20 @@ export class SSHSession {
         ? requestedTimezone
         : undefined;
     void this.agentCore.handleAgentStart(effectiveUserId, userMessage, locale, timezone, userIndex, requestId);
+  }
+
+  private sendAgentState(syncId: unknown): void {
+    if (this.closed || this.isDetached() || !this.userId || this.config.sessionPolicy?.source === 'share' ||
+      (this.state !== 'ready' && this.state !== 'rekey') ||
+      typeof syncId !== 'string' || !syncId || syncId.length > 64) return;
+    const state = this.agentCore?.getSessionState() ?? emptyAgentSessionState();
+    const pending = this.pendingAgentConfirmation;
+    if (pending) {
+      state.phase = 'waiting_confirmation';
+      state.confirmation = { confirmationId: pending.id, command: pending.command, reason: pending.reason };
+    }
+    // Read-only synchronization is neither user activity nor task execution.
+    this.sendAgentFrame({ type: 'agent_frame', subType: 'state', syncId, state });
   }
 
   /**
@@ -3225,7 +3247,7 @@ export class SSHSession {
       const onAbort = () => {
         if (this.pendingAgentConfirmation?.id === id) this.finishAgentConfirmation(false);
       };
-      this.pendingAgentConfirmation = { id, command, resolve, signal, onAbort };
+      this.pendingAgentConfirmation = { id, command, reason, resolve, signal, onAbort };
       signal?.addEventListener('abort', onAbort, { once: true });
       this.sendAgentFrame({
         type: 'agent_frame', subType: 'confirm_required', confirmationId: id, command, reason,

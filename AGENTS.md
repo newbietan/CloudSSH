@@ -91,6 +91,7 @@ src/
 ├── ai-endpoint.ts    # Responses API 根地址校验与规范化纯函数
 ├── ai-model-policy.ts # 前后端共享的模型上下文/输出 Token 预算与范围校验
 ├── agent-response-diagnostics.ts # 调用阶段、参数、错误码与本地请求 UUID 的共享诊断白名单
+├── agent-session-state.ts # 同一 SSH 会话内 Agent 短线恢复状态类型、32K 字符上限与前端校验
 ├── server-memory-schema.ts # Unified server memory schema for work logs and knowledge entries
 ├── share-resume-schema.ts  # One-time share session re-attach challenge and resume token schema
 ├── sftp-upload-policy.ts   # Browser/Worker shared bounded upload windows, write concurrency and progress ACK policy
@@ -427,6 +428,8 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 40. **Responses Agent：个人运维助手，不是审计平台** - 使用标准 `/responses` 与 `store:false`，本地维护普通对话和原生工具调用；不依赖服务商响应链或 `/responses/compact`。保留标准 reasoning 续接字段与 assistant phase，但不展示或写入长期记忆；真实 item ID/call_id 不伪造，工具调用只在完整完成且参数有效后执行。停止/替换任务先清理旧 exec，历史编辑不撤销远端操作。任务上限固定为 175 步，不再根据进度评分反复扩展。
 
     **上下文**：预算按模型决定，不让用户手填。服务商模型列表里的窗口字段优先，否则用近两年模型前缀，未知模型为 128,000/8,192。服务商只报告小上下文而未报告有效输出上限时，默认输出取 min(8192, 窗口/4)，避免 8K 窗口被输出预算吃空；有效的服务商输出上限仍优先。接近容量时摘要较早对话，保留最近约 16,000 Token 的工具交互；摘要最多 20 秒、1,500 输出 Token。摘要后若仍放不下，继续折叠更早交互并缩短最新工具输出。服务商报上下文超限时，本次任务降一档窗口并再压缩一次。`store:false` 保持本地完整输入；对方不认识该字段就省略，不改成 `store:true`。`context-limits.ts` 的 2.5 bytes/token 只是没有用量时的后备。不保留独立 ExecutionJournal、任务证据包或永久执行事实检查点。
+
+    **同一 SSH 会话短线恢复**：异常断线且可重连时保留并挂起 AgentPanel（SFTP 仍沿用关闭/重建语义）；`session_resumed` 与全新 `shell_ready` 必须显式区分，只有前者可恢复原任务，新 Shell 销毁旧面板并提示，换号/关闭标签同样销毁。恢复后通过当前 WebSocket 的一次 `agent_sync(syncId)` → `agent_frame/state` 获取服务端权威状态，5s 无有效回应显示重试同步/停止入口，不轮询、不刷新用户空闲计时，不将未知 JSON 转成 Shell 输入；匿名/分享不返回 Agent 状态。同步先恢复 `requestId/runId` 再接收旧任务帧，`textId` 防止重复追加回复；Core 只在内存保留当前阶段、工具名、步数、最近结果/错误码及最多 32,000 字符回复，不含配置、工具参数或 reasoning，不建执行日志、不跨新 SSH 会话续跑。等待中的确认按原 `confirmationId`/命令/原因恢复；同步期间禁止批准，恢复的确认一律人工决定，隐藏面板延后展示而不静默拒绝，正常在线 Auto 的 3s 语义不变。停止复用原协议，但界面必须等待服务端结束或状态确认才能恢复发送；busy 错误触发同步而非把前端假置空闲，原新请求不得自动重发。Chromium/WebKit 的 `e2e/agent-recovery.spec.ts` 和 `worker/agent-session-sync.test.ts` 覆盖真实 socket 事件、离线结束、工具不重跑、确认与账号隔离。
 
     **浏览器中断草稿隔离**：30 分钟草稿仅按稳定 `github_id` + `serverId` 保存（本地管理员为 `-1`），不能用各分片可能相同的 `user.id` 或单独的 `serverId`；身份缺失或匿名时禁止读写。启动删除无法确认归属的旧无用户 key，绝不迁移到当前账号；退出关闭原账号面板并清理其全部服务器草稿，销毁后的迟到帧不得重建草稿。身份从认证响应经 `TabManager` 传入面板，换号时关闭旧标签，保留同账号中断恢复、完成清理与原有 TTL。`tests/agent-session-draft.test.ts` / `e2e/agent-responses.spec.ts` 覆盖命名空间、同浏览器换号、登出和迟到帧。
 

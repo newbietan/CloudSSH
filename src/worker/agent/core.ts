@@ -1,5 +1,6 @@
 // Agent orchestration inside SSHSessionDO. Responses is the only LLM protocol.
 import { normalizeResponseDiagnostics } from '../../agent-response-diagnostics';
+import { emptyAgentSessionState, MAX_AGENT_RECOVERY_TEXT_CHARS, type AgentSessionState } from '../../agent-session-state';
 import { resolveModelBudget } from '../../ai-model-policy';
 import type { UnifiedServerMemory } from '../../server-memory-schema';
 import { AgentContext, boundedText, observation } from './context';
@@ -50,6 +51,7 @@ export class AgentCore {
   private activeRun: Promise<void> | null = null;
   private runId = 0;
   private requestId?: string;
+  private recovery = emptyAgentSessionState();
   private boundConfig: AIConfig | null = null;
   private config: AgentConfig;
   private loopTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -79,10 +81,13 @@ export class AgentCore {
 
   getStatus(): string { return this.state.status; }
 
+  getSessionState(): AgentSessionState { return { ...this.recovery }; }
+
   async handleAgentStart(userId: string, message: string, locale: AgentLocale = 'zh-CN', timezone?: string, userIndex?: number, requestId?: string): Promise<void> {
     const previous = this.activeRun;
     this.agentAbort('superseded');
     const id = ++this.runId;
+    this.recovery = { ...emptyAgentSessionState(id, requestId ?? null), phase: 'thinking' };
     const controller = new AbortController();
     this.abortController = controller;
     // Drain old exec/confirmation cleanup before a replacement task can open another SSH exec channel.
@@ -92,6 +97,7 @@ export class AgentCore {
   }
 
   agentAbort(reason = 'connection_closed'): void {
+    if (this.state.status === 'running') this.recovery.phase = 'stopping';
     this.abortController.abort(reason);
     this.state.status = 'idle';
     this.pauseTimeout();
@@ -100,6 +106,7 @@ export class AgentCore {
   resetSession(): void {
     this.agentAbort('reset');
     ++this.runId;
+    this.recovery = emptyAgentSessionState(this.runId);
     this.context = new AgentContext();
     this.state = { status: 'idle', iteration: 0 };
     this.boundConfig = null;
@@ -107,7 +114,51 @@ export class AgentCore {
   }
 
   private emit(id: number, frame: Record<string, unknown>): void {
-    if (id === this.runId) this.sendToFrontend({ type: 'agent_frame', runId: id, requestId: this.requestId, ...frame });
+    if (id !== this.runId) return;
+    const view = this.recovery;
+    switch (frame.subType) {
+      case 'run_start': case 'thinking':
+        view.phase = 'thinking';
+        if (typeof frame.iteration === 'number') view.iteration = frame.iteration;
+        break;
+      case 'executing':
+        view.phase = 'executing';
+        view.tool = typeof frame.tool === 'string' ? frame.tool : undefined;
+        break;
+      case 'stream_chunk':
+        if (view.textComplete) {
+          view.textId++;
+          view.text = '';
+          view.textComplete = false;
+          view.textTruncated = false;
+          view.messageKey = undefined;
+        }
+        this.recoverText(view.text + String(frame.content ?? ''));
+        break;
+      case 'stream_end': case 'response':
+        if (frame.subType === 'response' || view.textComplete) view.textId++;
+        view.textTruncated = false;
+        this.recoverText(typeof frame.content === 'string' ? frame.content : '');
+        view.textComplete = true;
+        view.messageKey = frame.messageKey === 'agent.stopped' || frame.messageKey === 'agent.iterationLimit'
+          ? frame.messageKey : undefined;
+        break;
+      case 'error':
+        view.errorCode = typeof frame.code === 'string' ? frame.code : 'responses_failed';
+        view.errorStatus = typeof frame.status === 'number' ? frame.status : undefined;
+        break;
+      case 'run_end':
+        view.phase = 'idle';
+        view.outcome = frame.outcome as RunOutcome;
+        break;
+    }
+    this.sendToFrontend({ type: 'agent_frame', runId: id, requestId: this.requestId,
+      textId: view.textId, ...frame });
+  }
+
+  private recoverText(text: string): void {
+    this.recovery.textTruncated ||= text.length > MAX_AGENT_RECOVERY_TEXT_CHARS;
+    this.recovery.text = text.slice(-MAX_AGENT_RECOVERY_TEXT_CHARS);
   }
 
   private resetTimeout(controller: AbortController): void {
