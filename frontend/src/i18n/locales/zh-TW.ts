@@ -451,6 +451,8 @@ export const zhTW = {
   'sftp.connected': 'SFTP 已連線',
   'sftp.disconnected': 'SFTP 已斷開',
   'sftp.invalidResponse': '收到無效的 SFTP 回應',
+  'sftp.linkResolveFailed': '無法存取軟連結目標，連結可能已失效或無存取權限。',
+  'sftp.linkResolveTimeout': '檢查軟連結目標逾時，請重試。',
   'sftp.websocketError': 'SFTP WebSocket 連線錯誤',
   'sftp.connectionClosed': 'SFTP 連線已關閉',
   'sftp.uploading': '正在上傳：{name}',

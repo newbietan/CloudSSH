@@ -495,6 +495,8 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'sftp.connected': 'SFTP connected',
   'sftp.disconnected': 'SFTP disconnected',
   'sftp.invalidResponse': 'Received an invalid SFTP response',
+  'sftp.linkResolveFailed': 'Cannot access the symlink target. The link may be broken or access denied.',
+  'sftp.linkResolveTimeout': 'Checking the symlink target timed out. Please try again.',
   'sftp.websocketError': 'SFTP WebSocket connection error',
   'sftp.connectionClosed': 'SFTP connection closed',
   'sftp.uploading': 'Uploading: {name}',

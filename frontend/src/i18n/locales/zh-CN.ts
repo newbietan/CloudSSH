@@ -450,6 +450,8 @@ export const zhCN = {
   'sftp.connected': 'SFTP 已连接',
   'sftp.disconnected': 'SFTP 已断开',
   'sftp.invalidResponse': '收到无效的 SFTP 响应',
+  'sftp.linkResolveFailed': '无法访问软链接目标，链接可能已失效或无访问权限。',
+  'sftp.linkResolveTimeout': '检查软链接目标超时，请重试。',
   'sftp.websocketError': 'SFTP WebSocket 连接错误',
   'sftp.connectionClosed': 'SFTP 连接已关闭',
   'sftp.uploading': '正在上传：{name}',

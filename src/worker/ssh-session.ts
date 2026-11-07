@@ -2314,13 +2314,20 @@ export class SSHSession {
   }
 
   private async handleSFTPMessage(msg: any): Promise<void> {
+    const requestId =
+      msg.type === 'sftp_stat' &&
+      typeof msg.requestId === 'string' &&
+      msg.requestId.length > 0 &&
+      msg.requestId.length <= 64
+        ? msg.requestId
+        : undefined;
     if (this.state !== 'ready') {
-      this.sendSFTPError(this.getSFTPOperation(msg.type), 'SSH 连接未就绪');
+      this.sendSFTPError(this.getSFTPOperation(msg.type), 'SSH 连接未就绪', requestId);
       return;
     }
 
     if (this.config.sessionPolicy?.source === 'share' && !this.config.sessionPolicy.allowSftp) {
-      this.sendSFTPError(this.getSFTPOperation(msg.type), '当前分享会话不允许使用 SFTP');
+      this.sendSFTPError(this.getSFTPOperation(msg.type), '当前分享会话不允许使用 SFTP', requestId);
       return;
     }
 
@@ -2330,7 +2337,7 @@ export class SSHSession {
     }
 
     if (!this.sftpHandler) {
-      this.sendSFTPError(this.getSFTPOperation(msg.type), 'SFTP 未初始化，请先发送 sftp_init');
+      this.sendSFTPError(this.getSFTPOperation(msg.type), 'SFTP 未初始化，请先发送 sftp_init', requestId);
       return;
     }
 
@@ -2341,7 +2348,7 @@ export class SSHSession {
         await this.sftpHandler.listDirectory(msg.path || '.');
         break;
       case 'sftp_stat':
-        await this.sftpHandler.stat(msg.path);
+        await this.sftpHandler.stat(msg.path, requestId);
         break;
       case 'sftp_download':
         await this.sftpHandler.downloadFile(msg.path);
@@ -2552,8 +2559,13 @@ export class SSHSession {
     );
   }
 
-  private sendSFTPError(operation: string, message: string): void {
-    this.sendSFTPJSON({ type: 'sftp_error', operation, message });
+  private sendSFTPError(operation: string, message: string, requestId?: string): void {
+    this.sendSFTPJSON({
+      type: 'sftp_error',
+      operation,
+      message,
+      ...(requestId ? { requestId } : {}),
+    });
   }
 
   private sendSFTPJSON(msg: any): void {

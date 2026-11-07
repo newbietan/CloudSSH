@@ -18,6 +18,7 @@ import {
 } from './sftp-helpers';
 import { updateSelection } from './sftp-selection';
 import { Deferred, UploadWaiter } from './sftp-transfer';
+import { SFTPLinkResolver } from './sftp-link-resolver';
 import { attachDrawerSwipeToClose } from './drawer-swipe';
 import {
   confirmDeleteItems,
@@ -94,6 +95,11 @@ export class SFTPPanel {
   private downloadCancelRequested: boolean = false;
   private downloadQueueGeneration: number = 0;
   private readonly editorCoordinator: SFTPEditorCoordinator;
+  private readonly linkResolver = new SFTPLinkResolver(
+    (message) => this.sendJSON(message),
+    (reason) =>
+      this.showError(t(reason === 'timeout' ? 'sftp.linkResolveTimeout' : 'sftp.linkResolveFailed'))
+  );
 
   get activeEditor(): ActiveEditorSession | null {
     return this.editorCoordinator.getActiveEditor();
@@ -538,6 +544,7 @@ export class SFTPPanel {
       };
 
       ws.onerror = () => {
+        this.linkResolver.cancel();
         const message = t('sftp.websocketError');
         this.stopHeartbeat();
         this.connectingPromise = null;
@@ -558,6 +565,7 @@ export class SFTPPanel {
         this.connectingPromise = null;
 
         if (!this.closedByPanel.has(ws)) {
+          this.linkResolver.cancel();
           const message = t('sftp.connectionClosed');
           this.initializing = false;
           this.sftpReady = false;
@@ -603,6 +611,7 @@ export class SFTPPanel {
   }
 
   private closeWebSocket(code?: number, reason?: string): void {
+    this.linkResolver.cancel();
     this.stopHeartbeat();
     if (this.sftpWsRetryTimer) {
       clearTimeout(this.sftpWsRetryTimer);
@@ -626,6 +635,7 @@ export class SFTPPanel {
 
   // Handle messages from the backend
   handleMessage(msg: any): void {
+    if (this.linkResolver.handleMessage(msg)) return;
     switch (msg.type) {
       case 'sftp_ready':
         this.initializing = false;
@@ -701,6 +711,7 @@ export class SFTPPanel {
         this.onDeleteResult(msg.path);
         break;
       case 'sftp_closed': {
+        this.linkResolver.cancel();
         const message = t('sftp.connectionClosed');
         this.initializing = false;
         this.sftpReady = false;
@@ -776,6 +787,7 @@ export class SFTPPanel {
 
   // Navigation
   private navigate(path: string): void {
+    this.linkResolver.cancel();
     this.showLoading();
     this.clearSelection();
     this.sendJSON({ type: 'sftp_list', path });
@@ -802,6 +814,7 @@ export class SFTPPanel {
 
   // Directory listing results
   private onListResult(path: string, entries: SFTPFileEntry[], isTruncated?: boolean): void {
+    this.linkResolver.cancel();
     this.currentPath = path;
     this.entries = entries;
 
@@ -884,17 +897,7 @@ export class SFTPPanel {
       el.addEventListener('dblclick', () => {
         const target = el as HTMLElement;
         const idx = parseInt(target.dataset.idx!, 10);
-        const entry = sorted[idx];
-        if (entry.isDir) {
-          this.navigate(
-            this.currentPath === '/' ? `/${entry.name}` : `${this.currentPath}/${entry.name}`
-          );
-          return;
-        }
-        // 双击智能“打开”：可编辑候选先尝试编辑器，明确不可编辑（超大/二进制/无法解码）时自动转下载
-        const path =
-          this.currentPath === '/' ? `/${entry.name}` : `${this.currentPath}/${entry.name}`;
-        void this.openEditorForFile(path, entry.name, entry.size, { fallbackToDownload: true });
+        void this.openEntry(sorted[idx]);
       });
 
       // Right-click context menu
@@ -993,13 +996,7 @@ export class SFTPPanel {
         label: t('sftp.contextOpen'),
         icon: 'open_in_new',
         action: () => {
-          if (entry.isDir) {
-            this.navigate(
-              this.currentPath === '/' ? `/${entry.name}` : `${this.currentPath}/${entry.name}`
-            );
-          } else {
-            this.downloadEntries([entry]);
-          }
+          void this.openEntry(entry, 'download');
         },
       });
       if (!entry.isDir) {
@@ -1007,11 +1004,7 @@ export class SFTPPanel {
           label: t('sftp.contextEdit'),
           icon: 'edit_note',
           action: () => {
-            void this.openEditorForFile(
-              this.currentPath === '/' ? `/${entry.name}` : `${this.currentPath}/${entry.name}`,
-              entry.name,
-              entry.size
-            );
+            void this.openEntry(entry, 'edit');
           },
         });
       }
@@ -1559,9 +1552,35 @@ export class SFTPPanel {
   private editSelected(): void {
     const selected = [...this.selectedEntries.values()];
     if (selected.length !== 1 || selected[0].isDir) return;
-    const entry = selected[0];
+    void this.openEntry(selected[0], 'edit');
+  }
+
+  private async openEntry(
+    entry: SFTPFileEntry,
+    action: 'open' | 'download' | 'edit' = 'open'
+  ): Promise<void> {
+    this.linkResolver.cancel();
+    if (!this.visible || !this.sftpReady) return;
     const path = this.currentPath === '/' ? `/${entry.name}` : `${this.currentPath}/${entry.name}`;
-    void this.openEditorForFile(path, entry.name, entry.size);
+    let isDir = entry.isDir;
+    let size = entry.size;
+    if (entry.isLink) {
+      const target = await this.linkResolver.resolve(path);
+      if (!target) return;
+      isDir = target.type === 'dir';
+      size = target.size;
+    }
+
+    // Target type is only for opening; never mutate isDir/type used by link deletion.
+    if (isDir) {
+      this.navigate(path);
+    } else if (action === 'download') {
+      this.queueDownloadFile(path, entry.name);
+    } else {
+      await this.openEditorForFile(path, entry.name, size, {
+        fallbackToDownload: action === 'open',
+      });
+    }
   }
 
   private openEditorForFile(
