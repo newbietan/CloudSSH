@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.2] - 2026-11-07
+
+### Fixed
+
+- **SFTP 目录软链接（关联 Issue：#186）**：双击、右键打开和编辑入口按需查询软链接目标类型，正确进入目标目录，不再误当文件编辑；支持 `/bin → /usr/bin`、绝对、相对及多级软链接，保留 `/root/to_dir` 等逻辑路径和返回上级行为。
+- **SFTP 文件软链接**：按目标文件的实际大小沿用在线编辑与串行下载流程，保留超大文件、二进制文件的下载回退；删除操作仍仅删除链接本身，不递归进入目标目录。
+- **软链接查询状态**：以请求 ID 和原路径隔离目标查询，导航、面板关闭或连接切换时取消待决打开，避免迟到响应干扰编辑器保存检查；失效、无权限及超时提供三语错误提示。
+
+### Changed
+
+- **软链接回归覆盖**：补充目标类型识别、逻辑路径、请求隔离与清理的单元测试，以及目录进入、文件编辑/下载、返回上级和删除安全的浏览器回归，同步项目维护约束。
+
 ## [2.10.1] - 2026-11-05
 
 ### Fixed
