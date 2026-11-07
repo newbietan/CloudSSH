@@ -14,7 +14,7 @@
 
 CloudSSH is a serverless Web SSH terminal built on Cloudflare Workers. Users connect to SSH servers through a browser-based terminal UI with integrated SFTP file management and AI Agent assistant.
 
-当前版本：`2.10.1`；根目录与 `frontend/package.json` 版本必须同步，更新说明见 `CHANGELOG.md`。
+当前版本：`2.10.2`；根目录与 `frontend/package.json` 版本必须同步，更新说明见 `CHANGELOG.md`。
 
 ## Architecture
 
@@ -136,6 +136,7 @@ frontend/
 │   ├── sftp-transfer.ts   # SFTP 传输控制器与异步同步原语（UploadWaiter / Deferred）
 │   ├── sha256-stream.ts   # 上传与续传前缀的常量内存流式 SHA-256
 │   ├── sftp-helpers.ts    # SFTP 面包屑解析、多维排序与格式化辅助纯函数
+│   ├── sftp-link-resolver.ts # 软链接按需 STAT、请求绑定与取消/超时清理
 │   ├── code-editor.ts     # CodeMirror 6 modal wrapper for SFTP online editing (theme-variable highlighting)
 │   ├── editor-content.ts  # Online editing pure helpers (binary sniff, UTF-8/GB18030 decode, BOM/EOL round-trip)
 │   ├── sftp-selection.ts  # Pure multi-selection state model
@@ -440,6 +441,8 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
     **协议与诊断**：仅对明确不支持的可选参数有界兼容，不移除 `store:false`、工具或凭据边界；保留 HTTP 瞬时重试和完整完成语义。Base URL 绑定及同源校验不变。普通错误仅简短本地化展示，详细白名单诊断仍只在 `DEBUG_MODE=true` 时输出网页终端，不输出原始服务商错误。详见 `docs/agent-context-memory.md`。
 
 41. **SFTP 上传续传、下载上限、校验与目录删除** - 下载保持 500MiB 上限，stat 为 0/未知时也必须按实际读取字节检查；恰好到达上限时最多探测额外 1 字节区分 EOF 与超限，超限报错并关闭句柄，不发送额外数据。前端下载结束/失败/取消统一释放分片和文件名，不能在队列空闲时保留大文件内存。上传按远端已写入大小续传，失败或取消时保留部分文件；浏览器通过 `sha256-stream.ts` 流式计算完整文件（含续传前缀）哈希，不得恢复整文件内存读取。上传完成后在远端校验工具可用时比对 SHA-256，不可用时不因校验本身阻止成功。直连/隧道窗口与 ACK 必须使用共享策略（见 #38），4 秒 ACK 等待恢复仍受最大窗口限制，不得无限放开。非空目录删除先尝试 `rmdir`，通用 `Failure` 才触发递归遍历；它不是 `ENOTEMPTY` 的确切证明，权限等失败仍应报告。目录句柄必须关闭，跳过 `.` / `..`，拒绝带路径分隔符/NUL 的子条目，符号链接按文件删除而非递归进入。`SFTPDeleteBudget` 整棵树共享上限：50,000 条目、16MiB 累计条目估算内存、100,000 次请求（含预留 CLOSE）、深度 64、5 分钟；每目录最多 10,000 条目与 8MiB 估算内存，READDIR 最多 1024 次、连续 3 次空批次即失败。截断/预算耗尽必须明确报错，不对截断目录做部分删除；此前已完成的兄弟目录/文件删除不会回滚。deadline 传入 OPENDIR/READDIR/REMOVE/RMDIR 请求等待，超时后最多额外 5s 做一次句柄清理；清理失败仍不能保证远端句柄成功释放。UI 列表保留 2000 条上限，计数恰好到上限时再读 EOF 区分完整与截断。
+
+    **SFTP 软链接导航（#186）**：双击、右键打开与编辑入口仅对所打开的软链接按需 `STAT`（跟随链接），目录进入、文件按目标大小沿用编辑/串行下载；不为整份目录列表逐项查询。`SFTPLinkResolver` 最多保留一个 15s 在途请求，使用随机 `requestId` 与原路径绑定，Worker 成功及错误响应均回传有界 ID；带 ID 的迟到响应不得交给编辑器的无 ID 冲突检查。导航、面板隐藏/销毁和连接切换/关闭均取消待决打开。绝对路径直接 `OPENDIR` 并原样返回，保留 `/root/to_dir` 等逻辑路径及返回上级语义；仅初始主目录/相对路径使用 `REALPATH`。目标类型只用于打开，不得改写目录条目的 `type/isDir/isLink`，删除目录链接始终发送 `sftp_delete` 删除链接本身，绝不能据目标类型触发递归删除。
 
 42. **SSH/SFTP 入站解析收敛** - SSH 版本交换的前导数据累计最多 64KiB，标识行含换行最多 255 字节；后续同块 KEX 数据不计入前导预算，超限正常关闭并发出不可自动重试的 `packet_error`。SSH `nextPacket()` 的 `null` 仅表示报文未收齐；GCM/CTR 解密失败必须抛错，由会话层关闭 TCP/WebSocket 并清空解析缓冲，不得在认证失败后继续堆积或分发剩余报文；当前前端将 `packet_error` 视为不可重试错误，避免畸形服务器导致无限自动重连。SFTP v3 使用 `SFTPReader` 在读整数/切片/推进 offset 前校验边界；单报文体 ≤1MiB、接收缓冲 ≤2MiB、NAME 单包 ≤10,000 条且受剩余字节约束、filename/longname 各 ≤16KiB、HANDLE ≤256 字节。STATUS 的消息与语言字段必须完整，扩展属性按 v3 标志有界读取，不支持的版本/标志及不匹配请求的响应失败关闭。协议错误拒绝所有待决请求、清理其计时器/缓冲，并经会话层终止连接；目录枚举另外受 #41 的计数、估算内存和时间预算约束。
 

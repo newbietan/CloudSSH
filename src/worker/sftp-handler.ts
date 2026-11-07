@@ -221,12 +221,19 @@ export class SFTPHandler {
     this.uploadError = null;
   }
 
-  private sendError(operation: SFTPOperation, message: string, code?: string): void {
-    if (code) {
-      this.sendJSON({ type: 'sftp_error', operation, message, code });
-    } else {
-      this.sendJSON({ type: 'sftp_error', operation, message });
-    }
+  private sendError(
+    operation: SFTPOperation,
+    message: string,
+    code?: string,
+    requestId?: string
+  ): void {
+    this.sendJSON({
+      type: 'sftp_error',
+      operation,
+      message,
+      ...(code ? { code } : {}),
+      ...(requestId ? { requestId } : {}),
+    });
   }
 
   private trackUploadWrite(writePromise: Promise<void>): Promise<void> {
@@ -334,31 +341,24 @@ export class SFTPHandler {
     try {
       if (this.debugEnabled) this.sendDebug(`[SFTP] listDirectory: path="${path}"`);
 
-      // Handle ~ as home directory - use realpath(".") to get current dir
-      let resolvePath = path;
-      if (path === '~' || path === '~/') {
-        resolvePath = '.';
-        if (this.debugEnabled) this.sendDebug(`[SFTP] ~ detected, using "." to get home dir`);
-      }
-
-      // Resolve absolute path first
-      const realPathResp = await this.sftp.realpath(resolvePath);
-      const realPathType = realPathResp[0];
+      // Only resolve home/relative paths. REALPATH would replace an absolute
+      // symlink path with its target and break logical breadcrumbs/back navigation.
       let resolvedPath = path;
-      if (realPathType === SSH_FXP_NAME) {
-        const entries = this.sftp.parseNameResponse(realPathResp);
-        if (this.debugEnabled)
-          this.sendDebug(
-            `[SFTP] realpath entries: ${JSON.stringify(entries.map((e) => e.filename))}`
-          );
-        if (entries.length > 0) {
-          resolvedPath = entries[0].filename;
-          if (this.debugEnabled) this.sendDebug(`[SFTP] resolved path: "${resolvedPath}"`);
+      if (!path.startsWith('/')) {
+        const resolvePath = path === '~' || path === '~/' ? '.' : path;
+        const realPathResp = await this.sftp.realpath(resolvePath);
+        const realPathType = realPathResp[0];
+        if (realPathType === SSH_FXP_NAME) {
+          const entries = this.sftp.parseNameResponse(realPathResp);
+          if (entries.length > 0) {
+            resolvedPath = entries[0].filename;
+            if (this.debugEnabled) this.sendDebug(`[SFTP] resolved path: "${resolvedPath}"`);
+          }
+        } else if (realPathType === SSH_FXP_STATUS) {
+          const status = this.sftp.parseStatusResponse(realPathResp);
+          if (this.debugEnabled)
+            this.sendDebug(`[SFTP] realpath failed: code=${status.code}, msg=${status.message}`);
         }
-      } else if (realPathType === SSH_FXP_STATUS) {
-        const status = this.sftp.parseStatusResponse(realPathResp);
-        if (this.debugEnabled)
-          this.sendDebug(`[SFTP] realpath failed: code=${status.code}, msg=${status.message}`);
       }
 
       // Open directory
@@ -403,10 +403,10 @@ export class SFTPHandler {
     }
   }
 
-  // Stat a file
-  async stat(path: string): Promise<void> {
+  // STAT follows symlinks; optional IDs isolate link opening from editor conflict checks.
+  async stat(path: string, requestId?: string): Promise<void> {
     if (!this.ready) {
-      this.sendError('stat', 'SFTP 未就绪');
+      this.sendError('stat', 'SFTP 未就绪', undefined, requestId);
       return;
     }
 
@@ -416,16 +416,28 @@ export class SFTPHandler {
 
       if (type === SSH_FXP_STATUS) {
         const status = this.sftp.parseStatusResponse(resp);
-        this.sendError('stat', status.message);
+        this.sendError('stat', status.message, undefined, requestId);
         return;
       }
 
       if (type === SSH_FXP_ATTRS) {
         const attrs = this.sftp.parseAttrsResponse(resp);
-        this.sendJSON({ type: 'sftp_stat_result', path, attrs: this.formatAttrs(attrs) });
+        this.sendJSON({
+          type: 'sftp_stat_result',
+          path,
+          attrs: this.formatAttrs(attrs),
+          ...(requestId ? { requestId } : {}),
+        });
+      } else {
+        this.sendError('stat', '获取文件信息失败', undefined, requestId);
       }
     } catch (e) {
-      this.sendError('stat', '获取文件信息失败: ' + (e instanceof Error ? e.message : String(e)));
+      this.sendError(
+        'stat',
+        '获取文件信息失败: ' + (e instanceof Error ? e.message : String(e)),
+        undefined,
+        requestId
+      );
     }
   }
 
