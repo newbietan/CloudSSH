@@ -70,7 +70,9 @@ test('内置主题切换 UI 风格但保持服务器列表结构稳定', async (
   await expect(card).toHaveCSS('border-radius', '21px');
   await expect(terminalSelector).toHaveValue('liquid-glass');
   expect(
-    await page.evaluate(() => getComputedStyle(document.body, '::before').backgroundImage)
+    await page.locator('.app-background').evaluate((layer) =>
+      getComputedStyle(layer, '::before').backgroundImage
+    )
   ).toContain('radial-gradient');
 });
 

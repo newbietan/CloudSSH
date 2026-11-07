@@ -365,6 +365,31 @@ describe('Standard 主题入口和编辑器', () => {
     expect(appHtml).toContain('Liquid Glass');
   });
 
+  it('背景裁剪层独立于应用内容，漂移只通过 transform 合成且不降低材质配置', () => {
+    expect(appHtml.match(/class="app-background" aria-hidden="true"/g)).toHaveLength(1);
+    expect(appHtml).toMatch(/class="app-background" aria-hidden="true"><\/div>\s*<div id="app">/);
+
+    const keyframes = appCss.match(/@keyframes theme-bg-drift \{([\s\S]*?)\n\}/)?.[1];
+    expect(keyframes).toBeDefined();
+    const declarations = keyframes!.replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(declarations.match(/transform:/g)).toHaveLength(2);
+    expect(declarations).not.toMatch(/background-position|filter:|opacity:/);
+    expect(appCss).toContain('animation: theme-bg-drift 35s ease-in-out infinite alternate');
+    expect(appCss).toContain("html[data-ui-motion='none'] .app-background::before");
+    expect(appCss).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(appCss).not.toMatch(/will-change:\s*(?:background|filter)/);
+
+    expect(BUILT_IN_BACKGROUND['liquid-glass']).toEqual({
+      type: 'mesh',
+      stops: ['#a2d2ff', '#d8b4fe', '#ffc8dd', '#bde0fe', '#ffdfba'],
+      angle: 135,
+      scrim: 0.35,
+      animation: 'drift',
+    });
+    expect(UI_STYLE_PRESETS.liquid).toMatchObject({ blur: 'strong', motion: 'full' });
+    expect(BUILT_IN_EFFECTS['liquid-glass']).toEqual({ glow: 0.35 });
+  });
+
   it('Pages 保持独立，应用为登录用户同步自定义主题并保留旧版平滑迁移', () => {
     expect(editorHtml).not.toContain('/api/user/theme');
     // 旧版内置主题在恢复时平滑迁移到当前内置主题，避免静默回退到默认主题
