@@ -149,6 +149,7 @@ OpenSSH 覆盖七种裸钥/证书协商、PTY/Shell、exec 与 SFTP；Go 网关�
 
 - API 隔离守卫（`api-isolation.spec.ts`，Chromium + WebKit）：自动基础 JSON Mock、同 context 多页面、用例覆盖、未知 API/未声明写操作失败、查询值脱敏、`route.continue()` 绕过时的 501 JSON 与守卫失败。
 - 主题云端同步（`theme-sync.spec.ts` / `theme-styles.spec.ts`）：GET 多主题库与 activeId 恢复、PUT 载荷和云端状态、带 id 的 DELETE 与本地回退；GET 503/网络错误保留本地选择、PUT/DELETE 失败返回 false，不将本地成功等同于云端成功。
+- 主题背景合成（`theme-background.spec.ts`，Chromium + WebKit 移动端）：保留 Liquid Glass 原有玻璃材质、光晕与 35s 往返轨迹；关键帧仅含 `transform`，六个时刻与旧背景逐帧截图对照（允许轻微栅格采样误差）；覆盖高 DPR 末端、滚动/缩放、主题切换、自定义遮罩/噪点、系统减少动态与 `motion=none`。此处断言渲染/视觉契约，不以易受机器负载影响的 GPU 百分比作为 CI 门禁。
 - 匿名连接表单 axe 检查
 - 服务器弹窗的基本对话框语义、初始焦点和 Escape 关闭
 - 服务器标签筛选、分页与配置快速克隆

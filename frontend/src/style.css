@@ -224,38 +224,50 @@ body {
 
 /* ==================== Theme V3：背景层 / 效果 / 版式缩放 ==================== */
 
-/* 背景层：固定全屏伪元素承载渐变栈；--app-bg-stack 为 none 时与 V2 纯色完全一致 */
-body::before {
-  content: '';
+/* 独立的视口裁剪层，不包裹应用内容，避免改变终端 fixed 抽屉的包含块。
+   渐变仅绘制到背景纹理；--app-bg-stack 为 none 时仍由 body 的纯色兜底。 */
+.app-background {
   position: fixed;
   inset: 0;
   z-index: -1;
+  overflow: hidden;
   pointer-events: none;
+}
+
+.app-background::before {
+  content: '';
+  position: absolute;
+  inset: 0;
   background-image: var(--app-bg-stack, none);
 }
 
-/* 环境背景漂移：主题显式声明 drift 时启用；motion=none 与系统级减少动态时停止 */
-html[data-bg-animation='drift'] body::before {
-  background-size: 130% 130%;
+/* 保留原来的 130% 渐变尺度、35s 缓动与往返轨迹，但只移动预绘制纹理，
+   不再逐帧修改 background-position、重绘全屏渐变。额外 1px 过扫描防止
+   高 DPR / 非整数视口尺寸在行程末端露出底边；它不增加动画位移。 */
+html[data-bg-animation='drift'] .app-background::before {
+  inset: 0 calc(-30% - 1px) calc(-30% - 1px) 0;
+  background-size: 100% 100%;
   animation: theme-bg-drift 35s ease-in-out infinite alternate;
 }
 
-html[data-ui-motion='none'] body::before {
+html[data-ui-motion='none'] .app-background::before {
   animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html[data-bg-animation='drift'] body::before {
+  html[data-bg-animation='drift'] .app-background::before {
     animation: none;
   }
 }
 
 @keyframes theme-bg-drift {
-  0% {
-    background-position: 0% 0%;
+  from {
+    transform: translate3d(0, 0, 0);
   }
-  100% {
-    background-position: 100% 100%;
+  to {
+    /* 旧 background-position: 100% 的位移为 -30% 视口，换算为
+       130% 纹理自身的 3/13；减去过扫描像素，避免多移动 1px。 */
+    transform: translate3d(calc((1px - 100%) * 3 / 13), calc((1px - 100%) * 3 / 13), 0);
   }
 }
 
