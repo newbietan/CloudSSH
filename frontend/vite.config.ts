@@ -29,6 +29,11 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       emptyOutDir: true,
+      // 本地字体（Material Symbols 裁剪版 + JetBrains Mono）以 base64
+      // 内联进 CSS，以便 scripts/build-html.js 把整份 CSS 内联进 Worker 的 html.ts。
+      // 当前 Worker 未配置静态资源服务，public/ 字体不会随 Worker 发布，字体必须放
+      // frontend/src/assets/ 并走 Vite 资源管线，不能放 public/。
+      assetsInlineLimit: 100 * 1024,
       modulePreload: {
         polyfill: false,
       },

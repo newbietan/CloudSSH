@@ -238,6 +238,8 @@ The frontend is **NOT** served separately in production. The build process:
 
 **Important**: `src/worker/html.ts` is auto-generated. Never edit it directly - changes will be overwritten.
 
+字体自托管于 `frontend/src/assets/fonts/`：Vite 将两个 WOFF2 内联到 CSS（`assetsInlineLimit: 100 * 1024`），Worker HTML 不依赖字体 CDN 或静态路由。`scripts/sync-theme-editor.js` 同步共享字体 CSS、字体及许可证到 `docs/theme-editor/fonts/`。新增图标后须运行 `scripts/subset-material-symbols.py` 并同步编辑器，提交裁剪字体与清单；普通构建不下载字体。详细步骤见 `docs/local-fonts.md`。
+
 ## Durable Objects
 
 Three Durable Objects handle state:
