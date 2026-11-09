@@ -2,7 +2,7 @@
 
 ## 适用版本与范围
 
-字体本地化沿用 CloudSSH v2.10.2 的单 HTML 构建方式，不改认证方式、Durable Object 绑定或迁移。
+自 CloudSSH v2.10.3 起，字体与图标随项目分发，沿用单 HTML 构建方式；无需更改认证方式、Durable Object 绑定或迁移。
 
 - Worker 主站的 Material Symbols Outlined 图标、JetBrains Mono 字体全部来自仓库文件，最终以内联 data URL 随 HTML 返回。
 - 独立主题编辑器改用 `docs/theme-editor/fonts/` 中的同源字体，构建时由 `scripts/sync-theme-editor.js` 同步。
