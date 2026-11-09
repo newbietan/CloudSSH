@@ -63,6 +63,8 @@ export class SFTPPanel {
   private renderedEntries: SFTPFileEntry[] = [];
   private sortOptions: SFTPSortOptions = { field: 'name', direction: 'asc' };
   private selectedEntries: Map<string, SFTPFileEntry> = new Map();
+  private entryRows = new Map<string, HTMLElement>();
+  private highlightedNames = new Set<string>();
   private selectionAnchorIndex: number | null = null;
   private pendingDeleteCount = 0;
   private getWebSocketUrl: GetSFTPWebSocketUrlFn;
@@ -147,6 +149,7 @@ export class SFTPPanel {
       translateDocument(this.container);
       this.hideContextMenu();
     });
+    this.bindEntryEvents();
     this.bindKeyboard();
   }
 
@@ -319,6 +322,44 @@ export class SFTPPanel {
     translateDocument(panel);
 
     return panel;
+  }
+
+  /** One listener set per panel; refreshed/sorted rows use the current rendered index. */
+  private bindEntryEvents(): void {
+    const entriesContainer = this.container.querySelector<HTMLElement>('#sftp-entries')!;
+    const entryIndex = (event: Event): number | null => {
+      let target = event.target;
+      if (target instanceof Node && !(target instanceof Element)) target = target.parentElement;
+      if (!(target instanceof Element)) return null;
+      const row = target.closest<HTMLElement>('.sftp-entry');
+      if (!row || row.parentElement !== entriesContainer) return null;
+      const index = Number(row.dataset.idx);
+      return Number.isInteger(index) && index >= 0 && index < this.renderedEntries.length
+        ? index
+        : null;
+    };
+    entriesContainer.addEventListener('click', (event) => {
+      const index = entryIndex(event);
+      if (index === null) return;
+      this.selectEntry(index, {
+        additive: event.ctrlKey || event.metaKey,
+        range: event.shiftKey,
+      });
+    });
+    entriesContainer.addEventListener('dblclick', (event) => {
+      const index = entryIndex(event);
+      if (index !== null) void this.openEntry(this.renderedEntries[index]);
+    });
+    entriesContainer.addEventListener('contextmenu', (event) => {
+      const index = entryIndex(event);
+      if (index === null) return;
+      event.preventDefault();
+      const entry = this.renderedEntries[index];
+      if (!this.selectedEntries.has(entry.name)) {
+        this.selectEntry(index, { additive: false, range: false });
+      }
+      this.showContextMenu(event.clientX, event.clientY, entry);
+    });
   }
 
   private bindKeyboard(): void {
@@ -842,6 +883,9 @@ export class SFTPPanel {
   private renderEntries(): void {
     const entriesContainer = this.container.querySelector('#sftp-entries')!;
     const emptyState = this.container.querySelector('#sftp-empty')!;
+    this.entryRows.clear();
+    this.highlightedNames.clear();
+    this.renderedEntries = [];
 
     if (this.entries.length === 0) {
       entriesContainer.innerHTML = '';
@@ -883,36 +927,11 @@ export class SFTPPanel {
       )
       .join('');
 
-    // Bind click events
-    entriesContainer.querySelectorAll('.sftp-entry').forEach((el) => {
-      el.addEventListener('click', (e) => {
-        const target = el as HTMLElement;
-        const idx = parseInt(target.dataset.idx!, 10);
-        this.selectEntry(idx, {
-          additive: (e as MouseEvent).ctrlKey || (e as MouseEvent).metaKey,
-          range: (e as MouseEvent).shiftKey,
-        });
-      });
-
-      el.addEventListener('dblclick', () => {
-        const target = el as HTMLElement;
-        const idx = parseInt(target.dataset.idx!, 10);
-        void this.openEntry(sorted[idx]);
-      });
-
-      // Right-click context menu
-      el.addEventListener('contextmenu', (e: Event) => {
-        const me = e as MouseEvent;
-        me.preventDefault();
-        const target = el as HTMLElement;
-        const idx = parseInt(target.dataset.idx!, 10);
-        const entry = sorted[idx];
-        if (!this.selectedEntries.has(entry.name)) {
-          this.selectEntry(idx, { additive: false, range: false });
-        }
-        this.showContextMenu(me.clientX, me.clientY, entry);
-      });
-    });
+    // Rebuild only the row lookup; delegated listeners stay on the stable parent.
+    for (const element of entriesContainer.children) {
+      const row = element as HTMLElement;
+      this.entryRows.set(row.dataset.name || '', row);
+    }
     this.syncSelectionUI();
   }
 
@@ -954,11 +973,20 @@ export class SFTPPanel {
   }
 
   private syncSelectionUI(): void {
-    this.container.querySelectorAll<HTMLElement>('.sftp-entry').forEach((element) => {
-      const selected = this.selectedEntries.has(element.dataset.name || '');
-      element.classList.toggle('bg-surface-variant', selected);
-      element.setAttribute('aria-selected', String(selected));
-    });
+    const selectedNames = new Set(this.selectedEntries.keys());
+    for (const name of this.highlightedNames) {
+      if (selectedNames.has(name)) continue;
+      const row = this.entryRows.get(name);
+      row?.classList.remove('bg-surface-variant');
+      row?.setAttribute('aria-selected', 'false');
+    }
+    for (const name of selectedNames) {
+      if (this.highlightedNames.has(name)) continue;
+      const row = this.entryRows.get(name);
+      row?.classList.add('bg-surface-variant');
+      row?.setAttribute('aria-selected', 'true');
+    }
+    this.highlightedNames = selectedNames;
   }
 
   private updateActionButtons(): void {
@@ -2019,6 +2047,8 @@ export class SFTPPanel {
     this.editorCoordinator.dispose();
     this.closeWebSocket(1000, 'SFTP panel disposed');
     document.removeEventListener('keydown', this.keydownHandler);
+    this.entryRows.clear();
+    this.highlightedNames.clear();
     this.container.remove();
   }
 }
