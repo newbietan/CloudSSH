@@ -153,6 +153,7 @@ OpenSSH 覆盖七种裸钥/证书协商、PTY/Shell、exec 与 SFTP；Go 网关�
 - 本地字体（`local-fonts.spec.ts`，Chromium + WebKit 移动端）：开发页、实际 Worker 内联 HTML 与 Pages 编辑器相对路径，全部图标连字、字重与 FILL 图形变化、无 Google Fonts 请求、Worker 无独立字体请求。`build/font-assets.test.ts` 验证缺失/外链/独立字体产物会阻断构建，生产构建测试保护定向强制内联策略。
 - 匿名连接表单 axe 检查
 - 服务器弹窗的基本对话框语义、初始焦点和 Escape 关闭
+- 服务器表单布局（`server-modal-layout.spec.ts`，Chromium + WebKit）：四个内置主题 × 三种语言的桌面双栏与常见高度免滚动；密码/私钥/none/Cloudflare CA、隧道与展开 Service Token、320/390/768px 窄屏、短窗口固定操作栏与重开滚动复位、自定义最大字号回退；端口为五位数字时预留原生数字控件空间，新增/编辑仍以数字保存且保留 1–65535/整数/必填校验；匿名连接页共用端口布局。
 - 服务器标签筛选、分页与配置快速克隆
 - 多标签操作：双击内联重命名、空值与失焦恢复、右键菜单项与外部点击关闭
 - Agent 终端选区附件与快捷诊断 Prompt 气泡点击填入

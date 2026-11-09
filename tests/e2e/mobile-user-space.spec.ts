@@ -144,12 +144,14 @@ test('移动端服务器卡片不会被长文本撑宽且表单弹窗在视口�
     .evaluate((panel) => {
       const rect = panel.getBoundingClientRect();
       const input = document.getElementById('server-name')!;
+      const fields = panel.querySelector<HTMLElement>('.server-modal-fields')!;
       return {
         top: Math.round(rect.top),
         bottom: Math.round(rect.bottom),
-        clientHeight: panel.clientHeight,
-        scrollHeight: panel.scrollHeight,
-        overflowY: getComputedStyle(panel).overflowY,
+        clientHeight: fields.clientHeight,
+        scrollHeight: fields.scrollHeight,
+        overflowY: getComputedStyle(fields).overflowY,
+        panelOverflowY: getComputedStyle(panel).overflowY,
         inputFontSize: getComputedStyle(input).fontSize,
       };
     });
@@ -158,7 +160,15 @@ test('移动端服务器卡片不会被长文本撑宽且表单弹窗在视口�
   expect(modalLayout.bottom).toBeLessThanOrEqual(568);
   expect(modalLayout.scrollHeight).toBeGreaterThan(modalLayout.clientHeight);
   expect(modalLayout.overflowY).toBe('auto');
+  expect(modalLayout.panelOverflowY).toBe('hidden');
   expect(modalLayout.inputFontSize).toBe('16px');
+  await page.locator('#server-modal .server-modal-fields').evaluate((fields) => {
+    fields.scrollTop = fields.scrollHeight;
+  });
+  expect(await page.locator('#server-modal .server-modal-fields').evaluate((fields) => fields.scrollTop)).toBeGreaterThan(0);
+  await expect(page.locator('#server-region')).toBeInViewport({ ratio: 1 });
+  await expect(page.locator('#modal-close-btn')).toBeInViewport({ ratio: 1 });
+  await expect(page.locator('#server-submit-btn')).toBeInViewport({ ratio: 1 });
 
   await page.setViewportSize({ width: 568, height: 320 });
   await expect
