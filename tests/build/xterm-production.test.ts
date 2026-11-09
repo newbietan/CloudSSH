@@ -11,12 +11,20 @@ describe('frontend production build', () => {
   let outDir: string;
   let bundle = '';
   let css = '';
+  let emittedAssetNames: string[] = [];
+  let shouldInlineFont: (filePath: string, content: Buffer) => boolean | undefined;
 
   beforeAll(async () => {
     outDir = await mkdtemp(path.join(tmpdir(), 'cloudssh-vite-'));
     const frontendRequire = createRequire(path.join(frontendDir, 'package.json'));
     const viteEntry = frontendRequire.resolve('vite');
-    const { build } = await import(pathToFileURL(viteEntry).href);
+    const { build, loadConfigFromFile } = await import(pathToFileURL(viteEntry).href);
+    const loaded = await loadConfigFromFile(
+      { command: 'build', mode: 'production' },
+      path.join(frontendDir, 'vite.config.ts')
+    );
+    shouldInlineFont = loaded?.config.build?.assetsInlineLimit;
+    if (typeof shouldInlineFont !== 'function') throw new Error('Missing explicit font inline policy');
     const result = await build({
       root: frontendDir,
       configFile: path.join(frontendDir, 'vite.config.ts'),
@@ -29,6 +37,7 @@ describe('frontend production build', () => {
 
     const outputs = Array.isArray(result) ? result : [result];
     const items = outputs.flatMap((output) => ('output' in output ? output.output : []));
+    emittedAssetNames = items.map((item) => item.fileName);
     bundle = items
       .filter((item) => item.type === 'chunk')
       .map((item) => item.code)
@@ -37,10 +46,27 @@ describe('frontend production build', () => {
       .filter((item) => item.type === 'asset' && item.fileName.endsWith('.css'))
       .map((item) => String(item.source))
       .join('\n');
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (outDir) await rm(outDir, { recursive: true, force: true });
+  });
+
+  it('inlines both local fonts for the single-HTML Worker without external font requests', () => {
+    expect([...css.matchAll(/data:font\/woff2;base64,/g)]).toHaveLength(2);
+    expect(css).not.toMatch(/fonts\.(?:googleapis|gstatic)\.com/);
+    expect(css).not.toMatch(/url\(["']?(?!data:)[^)]*\.woff2/);
+    expect(emittedAssetNames.filter((name) => /\.woff2?$/.test(name))).toEqual([]);
+    expect(css).toMatch(/font-family:["']?Material Symbols Outlined/);
+  });
+
+  it('forces only the two Worker fonts inline even above the old 100KiB threshold', () => {
+    const largeAsset = Buffer.alloc(256 * 1024);
+    for (const filename of ['material-symbols-outlined-subset.woff2', 'jetbrains-mono.woff2']) {
+      expect(shouldInlineFont(path.join(frontendDir, 'src/assets/fonts', filename), largeAsset)).toBe(true);
+    }
+    expect(shouldInlineFont(path.join(frontendDir, 'src/assets/large-image.png'), largeAsset)).toBeUndefined();
+    expect(shouldInlineFont(path.join(frontendDir, 'src/assets/fonts/other.woff2'), largeAsset)).toBeUndefined();
   });
 
   it('preserves the xterm requestMode local declaration', () => {

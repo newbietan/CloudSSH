@@ -1009,6 +1009,8 @@ export class ServerList {
 
     modal.classList.remove('hidden');
     modal.classList.add('flex');
+    const fields = modal.querySelector<HTMLElement>('.server-modal-fields');
+    if (fields) fields.scrollTop = 0;
 
     // Focus synchronously once visible: a delayed callback can steal focus from a
     // field the user has already started editing, or from a newer dialog.
@@ -1062,8 +1064,7 @@ export class ServerList {
     // 隐藏时同步移除 required，避免空值阻断表单校验（保存时端口回落 22，仅作存储记录）
     if (portField) portField.style.display = isTunnel ? 'none' : '';
     if (portInput) portInput.required = !isTunnel;
-    hostField?.classList.toggle('sm:col-span-4', isTunnel);
-    hostField?.classList.toggle('sm:col-span-3', !isTunnel);
+    hostField?.classList.toggle('ssh-host-field-wide', isTunnel);
 
     this.updateRegionControls();
   }

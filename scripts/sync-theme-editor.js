@@ -5,6 +5,20 @@ const rootDir = path.resolve(__dirname, '..');
 const themeSourcePath = path.join(rootDir, 'frontend', 'src', 'theme.ts');
 const editorPath = path.join(rootDir, 'docs', 'theme-editor', 'index.html');
 
+// Pages 与 Worker 共用同一份字体/CSS；仅同步已提交资源，构建不访问字体 CDN。
+const fontsSourceDir = path.join(rootDir, 'frontend', 'src', 'assets', 'fonts');
+const fontsTargetDir = path.join(rootDir, 'docs', 'theme-editor', 'fonts');
+fs.mkdirSync(fontsTargetDir, { recursive: true });
+for (const filename of [
+  'fonts.css',
+  'material-symbols-outlined-subset.woff2',
+  'jetbrains-mono.woff2',
+  'Material-Symbols-LICENSE.txt',
+  'JetBrains-Mono-OFL.txt',
+]) {
+  fs.copyFileSync(path.join(fontsSourceDir, filename), path.join(fontsTargetDir, filename));
+}
+
 const themeSource = fs.readFileSync(themeSourcePath, 'utf8');
 let editorHtml = fs.readFileSync(editorPath, 'utf8');
 

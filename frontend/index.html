@@ -74,14 +74,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     <meta name="color-scheme" content="dark light" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>CloudSSH</title>
-    <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap"
-      rel="stylesheet"
-    />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
-      rel="stylesheet"
-    />
+    <!-- 字体已本地化：见 frontend/src/assets/fonts/fonts.css 的 @font-face，不再请求 Google Fonts。 -->
     <link rel="stylesheet" href="/src/style.css" />
     <script
       src="https://challenges.cloudflare.com/turnstile/v0/api.js"
@@ -90,6 +83,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     ></script>
   </head>
   <body class="min-h-screen font-body text-sm">
+    <div class="app-background" aria-hidden="true"></div>
     <div id="app">
       <!-- Login Page (匿名连接) -->
       <div
@@ -526,13 +520,13 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
       >
         <div class="modal-overlay absolute inset-0" id="modal-backdrop"></div>
         <div
-          class="responsive-modal-panel cyber-box p-6 shadow-2xl relative z-10 w-full max-w-md mx-4"
+          class="responsive-modal-panel server-modal-panel cyber-box p-6 shadow-2xl relative z-10 w-full"
         >
           <div
             class="theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent-secondary)] to-transparent opacity-50"
           ></div>
           <div
-            class="flex items-center justify-between mb-6 pb-4 border-b border-dim"
+            class="server-modal-header flex items-center justify-between pb-4 border-b border-dim"
           >
             <span
               id="modal-title"
@@ -553,7 +547,9 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
               >
             </button>
           </div>
-          <form id="server-form" class="space-y-4">
+          <form id="server-form" class="server-modal-form">
+            <div class="server-modal-fields">
+            <div class="server-identity-fields">
             <div>
               <label
                 for="server-name"
@@ -599,13 +595,17 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 使用逗号分隔，最多 10 个标签
               </div>
             </div>
+            </div>
+            <div class="server-settings-columns">
+            <section class="server-settings-section" aria-labelledby="server-transport-label">
             <div>
               <label
+                id="server-transport-label"
                 class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
                 data-i18n="server.transportMode"
                 >网络连接</label
               >
-              <div class="flex gap-2 mb-1">
+              <div class="server-choice-tabs mb-1">
                 <button
                   type="button"
                   id="modal-transport-tab-direct"
@@ -624,8 +624,8 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 </button>
               </div>
             </div>
-            <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <div class="sm:col-span-3" id="server-host-field">
+            <div class="ssh-endpoint-fields">
+              <div class="ssh-host-field" id="server-host-field">
                 <label
                   for="server-host"
                   id="server-host-label"
@@ -644,7 +644,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                   />
                 </div>
               </div>
-              <div class="sm:col-span-1" id="server-port-field">
+              <div class="ssh-port-field" id="server-port-field">
                 <label
                   for="server-port"
                   class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
@@ -742,7 +742,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                   >expand_more</span
                 >
               </button>
-              <div id="server-cf-access-fields" class="hidden space-y-4 pt-3">
+              <div id="server-cf-access-fields" class="server-service-token-fields hidden pt-3">
               <div>
                 <label
                   for="server-cf-client-id"
@@ -759,7 +759,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 />
               </div>
               <div>
-                <div class="flex items-center justify-between mb-2">
+                <div class="flex flex-wrap items-center justify-between gap-1 mb-2">
                   <label
                     for="server-cf-client-secret"
                     class="block text-xs font-bold tracking-[0.1em] text-muted"
@@ -789,13 +789,16 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
               </div>
               </div>
             </div>
+            </section>
+            <section class="server-settings-section" aria-labelledby="server-auth-label">
             <div>
               <label
+                id="server-auth-label"
                 class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
                 data-i18n="auth.method"
                 >认证方式</label
               >
-              <div class="flex gap-2 mb-3">
+              <div class="server-choice-tabs mb-3">
                 <button
                   type="button"
                   id="modal-auth-tab-password"
@@ -915,7 +918,10 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 class="text-[10px] text-muted mt-1"
               ></div>
             </div>
-            <div class="pt-2">
+            </section>
+            </div>
+            </div>
+            <div class="server-modal-actions">
               <button
                 id="server-submit-btn"
                 class="cyber-button w-full py-3 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-2 bg-primary text-on-primary"

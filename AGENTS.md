@@ -14,7 +14,7 @@
 
 CloudSSH is a serverless Web SSH terminal built on Cloudflare Workers. Users connect to SSH servers through a browser-based terminal UI with integrated SFTP file management and AI Agent assistant.
 
-当前版本：`2.10.2`；根目录与 `frontend/package.json` 版本必须同步，更新说明见 `CHANGELOG.md`。
+当前版本：`2.10.3`；根目录与 `frontend/package.json` 版本必须同步，更新说明见 `CHANGELOG.md`。
 
 ## Architecture
 
@@ -238,6 +238,8 @@ The frontend is **NOT** served separately in production. The build process:
 
 **Important**: `src/worker/html.ts` is auto-generated. Never edit it directly - changes will be overwritten.
 
+字体自托管于 `frontend/src/assets/fonts/`：Vite 仅对两个指定 WOFF2 强制内联，其他资源沿用默认阈值；`scripts/font-assets.js` 在写入 Worker HTML 前校验完整字体字节、拒绝独立字体产物与外部 font-face URL，避免子集增长后静默部署坏字体。Worker HTML 不依赖字体 CDN 或静态路由。`scripts/sync-theme-editor.js` 同步共享字体 CSS、字体及许可证到 `docs/theme-editor/fonts/`。新增图标后须运行 `scripts/subset-material-symbols.py` 并同步编辑器，提交裁剪字体与清单；普通构建不下载字体。`tests/e2e/local-fonts.spec.ts` 在 Chromium/WebKit 移动端覆盖开发页、实际 Worker 内联 HTML 与 Pages 目录资源，并校验连字、字重与 FILL 轴。详细步骤见 `docs/local-fonts.md`。
+
 ## Durable Objects
 
 Three Durable Objects handle state:
@@ -381,7 +383,7 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 10. **Tailwind is built locally** - `frontend/postcss.config.cjs` and `frontend/tailwind.config.cjs` generate Tailwind CSS during Vite builds. Do not reintroduce `cdn.tailwindcss.com`; keep content scan paths and theme variable mappings synchronized when adding frontend source locations or theme tokens.
 11. **Builds never install dependencies** - run `pnpm install --frozen-lockfile` before build/deploy. `scripts/build-html.js` requires exactly one JS and one CSS bundle so every production asset is inlined deterministically.
 12. **Server list organization** - server tags are stored as normalized JSON in SQLite, filtered client-side, and rendered with responsive pagination（桌面端每页 6 张、平板 6 张、移动端 3 张，三档常量见 `frontend/src/server-list.ts`）。Search/tag changes must reset pagination to page 1.
-13. **SFTP selection model** - file selection supports single, Cmd/Ctrl toggle, Shift range and select-all. Batch download reuses the sequential download queue; batch delete waits for all delete/rmdir results before refreshing.
+13. **SFTP selection model** - file selection supports single, Cmd/Ctrl toggle, Shift range and select-all. 列表的 click/dblclick/contextmenu 仅在稳定父容器绑定一次，按当前渲染索引解析嵌套点击目标；按名称缓存行节点与已呈现选区，只对变化行同步 class/ARIA。排序、刷新、空目录须重建/清空索引，销毁须释放缓存，保留既有选择算法和键盘语义。`sftp-list-selection.spec.ts` 在 Chromium/WebKit 覆盖行为与确定性工作量，不以机器相关的毫秒数作为 CI 门禁。Batch download reuses the sequential download queue; batch delete waits for all delete/rmdir results before refreshing.
 14. **Agent terminal selection context** - “Ask AI assistant” attaches one immutable selection snapshot per tab and never sends it by itself. New selections replace the pending snapshot; successful sends and session teardown clear it. Preserve the untrusted-data/non-authorization boundary in `terminal-selection-context.ts`.
 15. **Region inference privacy** - Saving or changing a Cloudflare-direct server host calls the third-party IPinfo service and persists the inferred locationHint. Servers with `jump_server_id` are downstream nodes: never query their hosts, ignore and clear their own region hints, and infer once if they later become direct Auto entries. Keep the provider name and disclosure synchronized across README/code comments; failures must continue to fall back to Cloudflare's default placement.
 16. **Theme editor ownership** - The full visual editor and JSON export live in `docs/theme-editor/index.html` for GitHub Pages and never authenticate against CloudSSH. `scripts/sync-theme-editor.js` keeps its built-in colors, resolved appearance presets, background layers and effect presets aligned with `frontend/src/theme.ts`; the application and Worker share Theme V4 validation through `src/theme-schema.ts` (appearance enums + V3 background/effects/typography modules, all declarative and whitelist-validated). The application supports uploading and managing multiple custom themes (up to 20, each ≤64KB), synchronizing via `/api/user/theme` (GET/PUT/DELETE) for signed-in users, while anonymous themes remain local in `localStorage`. 自定义主题多套管理与分段条常驻：分段控制器默认常驻 5 项（4 个内置 + 1 个 Custom），移除了独立上传按钮；点击 Custom 时若检测到未上传过主题则呼出管理弹窗引导上传，已有主题时直接应用当前活跃主题，已激活状态下再次点击 Custom 按钮唤起管理弹窗（支持多套主题预览切换、新主题拖拽/点击上传、单个主题确认删除）；切换到内置主题时保留已上传的主题库资产，仅在用户主动删除主题时同步删除（支持 `DELETE /api/user/theme?id=xxx`）；当全部自定义主题被删除时自动优雅回退至默认内置主题。V3 effect/background layers are driven by CSS variables and data attributes only — no user CSS/JS is ever evaluated, and background gradients compose exclusively from whitelist-validated color stops.
@@ -448,11 +450,15 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
 43. **前端微交互、弹簧引擎与移动端手势边界** - 统一 Spring 物理弹簧引擎（`frontend/src/spring.ts`）通过 Euler 数值积分求解刚度与阻尼，提供 `snapTo` 与 `settled`，供主题/抽屉液态分段器与各类微交互共享，严禁私自重复实现；抽屉面板移动端触摸右滑关闭（`frontend/src/drawer-swipe.ts`）严格以 `headerSelector` 限定在头部，规避 iOS Safari 屏幕左缘系统返回手势冲突，且与列表纵向滚动明确隔离（纵向位移判定后即刻交还原生滚动），关闭时统一路由原面板的 `hide()`/`close()` 语义，保持在途传输中断（AGENTS.md #37）与清理逻辑；主视图切换过渡（`#terminal-section`）必须保持仅纯透明度淡入，严禁添加带 `transform` 的动画以防破坏其内部 `position: fixed` 抽屉面板的包含块（containing block）基准；所有微动效全量接入 `@media (prefers-reduced-motion: reduce)` 与 `data-ui-motion` 档位收敛；卡片指针聚光灯通过 rAF 节流直接写入 CSS 变量并在粗指针设备上跳过注册；骨架屏必须携带 `aria-busy` 与 `aria-hidden` 无障碍属性；SFTP 列表仅在行数 ≤150 时启用交错入场动画以防大目录并发卡顿。
 
+    **主题背景性能（#185）**：应用背景由 `frontend/index.html` 中与 `#app` 平级的 `.app-background[aria-hidden="true"]` 固定裁剪层承载，渐变位于其 `::before`，不能把该层变成应用/终端的祖先。漂移使用预绘制的约 130% 纹理 + `transform` 合成，保留 35s `ease-in-out` 往返与 30% 视口位移；额外 1px 过扫描仅防高 DPR 末端露边，不增加行程。不要改回逐帧 `background-position`、降低模糊/透明/光晕、限帧或给全站滥加 `will-change`。静态/纯色、自定义背景与原有噪点叠层仍使用同一白名单变量；`motion=none` 和系统减少动态保持原有静止语义。`tests/e2e/theme-background.spec.ts` 在 Chromium / WebKit 移动端校验关键帧、滚动/缩放、主题切换与旧实现六个时刻的截图（允许少量栅格采样误差），不将消除主线程重绘等同于 GPU 零成本。
+
 44. **可选版本更新提示** - 运行版本从根 `package.json` 构建时导入（根/前端版本保持同步），与官方 `main/package.json` 的稳定 SemVer 数值比较，不按字符串或提交数比较，不依赖 GitHub Releases/Tags，也不提示降级或预发布版本。`GET /api/version` 只向固定官方 raw GitHub URL 请求公开版本元数据（不转发用户头部/凭据；必须使用 Workers 支持的 `redirect: 'manual'` 并拒绝 3xx，不得使用会在 Workers 中直接抛错的 `'error'` 模式），读取上限 16KiB、4s 超时，Worker isolate 去重/缓存并使用 Cloudflare fetch 缓存；成功缓存 6h、失败退避 15min，失败只返回 null。前端非阻塞同源读取，5s 超时，localStorage/内存缓存与跨标签页忽略同步；可见页面按缓存到期检查，隐藏/离线不检查，恢复可见/在线时重试。连接页在“连接参数”标题后展示紧凑版本徽标及可忽略的小提示，不再单独占用底部空间；标题区支持三语与窄屏自然换行，不能挤压语言切换或溢出卡片。用户空间/桌面终端仍使用页脚，移动终端放进“更多”菜单，分享认领页不检查；忽略仅针对该新版，下一个新版可再次提示。不弹窗、不自动更新/刷新/跳转、不影响 SSH/SFTP/Agent；更新日志链接为固定官方地址，三语文案随语言切换。
 
 45. **Cloudflare Zero Trust Access 认证模式** - 可通过 Worker Access 面板或 hostname-based Self-hosted 应用配置，须确保实际生效策略保护本站页面、API 和 WebSocket，并保护/关闭其他公开入口。面板入口不能等同于实际策略类型；官方 Worker-level WebSocket 限制与域名/路径优先级须结合具体部署核查，不得断言所有面板配置均不可用，也不要求迁移已验证可用的实例。Worker 入口通过 `ctx.access.getIdentity()` 读取运行时已验证身份（4s 有界等待），以 Request 弱映射传递给认证逻辑，不信任原始邮箱/JWT 头；Access 上下文无邮箱或查询失败仍维持 Access 模式并拒绝登录，不降级 GitHub。`CF_ACCESS=true` 只是强制模式门，不能代替边缘策略。路由键保持 `cf-` 加邮箱 SHA-256 前 128 位（35 字符），`github_id=-2` 仅为库内哨兵；不同邮箱不能改写同一库身份。模式优先级：密码 > Access > GitHub/匿名。GitHub OAuth 在 Access/密码模式均禁用；一次性令牌须符合当前模式，并在消费前核对登录者的完整路由键。分享配置从库内所有者邮箱推导路由，无需接收者提供。前端显示邮箱及首字母头像，退出转 `/cdn-cgi/access/logout`。Worker/UserDB 意外异常仅返回通用 JSON 500，不回显或记录异常原文。
 
 46. **OpenSSH 用户证书认证与 Cloudflare 原生 SSH CA** - 支持出示 `*-cert-v01@openssh.com` OpenSSH 用户证书（Ed25519、ECDSA P-256/384/521 与 RSA-SHA2-256/512）完成 SSH 用户认证（RFC 4252 §7 与 PROTOCOL.certkeys）。证书必须为用户类型（`type = 1`），在有效时间范围内，且公钥必须与提供的私钥严格匹配。提供两级体验：① 协议层兼容：在私钥框中可同时附带用户证书（单行文本），或在 API 中分别传递，支持外部已签发证书（如 step-ca、Vault 或手动 CA）；② Cloudflare 原生 SSH CA 自动化：前端本地使用 WebCrypto 瞬时生成 ECDSA P-256 临时公私钥，经同源代理 `/api/cf-ssh-ca/sign` 调用 Cloudflare 官方 `/cdn-cgi/access/cert_sign` 获取短期证书（在 `cf_access` 模式下自动携带已认证的 Access JWT；公网受信任 HTTPS 证书，无私有自签 Root CA 拦截风险），私钥用完即在浏览器内存销毁、不落盘、不持久化；已保存服务器配置支持设置 `cf_ssh_ca_team`，发起连接时自动签发并通过 `ephemeralCredential` 传递，实现零静态密钥维护的 Zero Trust 单点登录。客户端不因登录名不在证书 principals 中而提前拒绝：空 principals 表示任意用户，非空时 sshd 仍可用 AuthorizedPrincipalsFile/Command 映射到不同 Unix 用户（Cloudflare 简单配置的 principal 通常是邮箱前缀）。配置了 `cf_ssh_ca_team` 的服务器不能出现在跳板链的任一跳，也不能在仍被其他服务器引用为跳板时改成该模式；此类服务器同样不能创建一次性分享。连接表单与服务器编辑里的 Cloudflare CA 入口仅在 `authMode === 'cf_access'` 时显示；GitHub、密码和匿名模式默认隐藏。入口隐藏时，编辑已有 CA 服务器且未改认证方式，不得把已存 `cf_ssh_ca_team` 清空。签发代理在后端也要求 Access 模式和已验证邮箱，不能只依赖前端隐藏；连接表单在签发期间禁止重复提交，并在模式代际、主机、端口、用户名或团队变化后丢弃迟到证书。
+
+47. **服务器弹窗响应式布局** - 新增/编辑/克隆共用 `#server-modal`：≥900px 使用最高 64rem 的双栏（名称/标签并排、连接与认证分栏），窄屏单列。只有 `.server-modal-fields` 滚动，标题和保存操作保持可达；每次打开清零字段滚动位置，短窗口与放大字号不能通过裁掉内容来伪造无滚动。主站连接表单与弹窗共用 `.ssh-endpoint-fields`，≥480px 为端口预留 9rem，保留原生数字控件和 1–65535 校验；隧道模式通过 `.ssh-host-field-wide` 让域名占满整行，并继续隐藏端口、移除 required。触屏/≤520px 的弹窗输入字号不低于 16px。布局规则不覆盖主题材质/颜色；可折叠 Service Token 字段的 grid 必须保留 `:not(.hidden)` 门控，不能把隐藏凭据区域意外展开。`server-modal-layout.spec.ts` 覆盖四主题、三语言、桌面/短窗口/窄屏、认证/隧道、五位端口与自定义大字号回退。
 
 ## SSH 兼容增强边界
 
@@ -540,8 +546,9 @@ CLI: `npx wrangler secret set <SECRET_NAME>`
      - `frontend/package.json` 中的 `"version": "X.Y.Z"`（与根目录保持一致）。
      - `CHANGELOG.md` 头部追加最新的更新日志（格式需为 `## [X.Y.Z] - YYYY-MM-DD`）。
    - 必须遵循 [Keep a Changelog](https://keepachangelog.com/) 规范组织内容。
-2. **README 导航链接维护**：
+2. **README 导航与贡献者名单维护**：
    - `README.md` 中的 `更新日志` 链接与 `README_en.md` 中的 `Changelog` 跳转超链接必须保持正常。
+   - 贡献者名单仅记录通过 PR 贡献的用户，须核对 PR 与实际贡献，中英文同步；不要仅凭 Issue、评论、建议或 Git 作者名新增贡献者。对于 Issue 报告、建议、讨论与测试反馈，应在名单之外统一致谢，不逐个列名或单独点名感谢仅 Issue 反馈者；中英文 README 与发布 PR 保持一致。历史 PR 即使以 Closed 结束，仍可在有实际贡献记录时保留对应作者并引用 PR；Issue 编号可作为变更关联保留，不将其报告者计入名单。
 3. **发布流程（从版本指定到上线，按顺序执行）**：
    1. 用户明确指定发布版本号（如 v1.10.1）后，AI 按第 1 条更新版本文件与 CHANGELOG，并提交推送：
       - 提交信息遵循 `release: 发布 vX.Y.Z <主题>版本` 格式（主题概括本次版本的核心改动，如 `release: 发布 v1.10.2 工作流和文档更新版本`），正文注明本次版本更新要点与验证结果（typecheck / test / verify）。

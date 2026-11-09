@@ -1,3 +1,5 @@
+@import './assets/fonts/fonts.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -222,38 +224,50 @@ body {
 
 /* ==================== Theme V3：背景层 / 效果 / 版式缩放 ==================== */
 
-/* 背景层：固定全屏伪元素承载渐变栈；--app-bg-stack 为 none 时与 V2 纯色完全一致 */
-body::before {
-  content: '';
+/* 独立的视口裁剪层，不包裹应用内容，避免改变终端 fixed 抽屉的包含块。
+   渐变仅绘制到背景纹理；--app-bg-stack 为 none 时仍由 body 的纯色兜底。 */
+.app-background {
   position: fixed;
   inset: 0;
   z-index: -1;
+  overflow: hidden;
   pointer-events: none;
+}
+
+.app-background::before {
+  content: '';
+  position: absolute;
+  inset: 0;
   background-image: var(--app-bg-stack, none);
 }
 
-/* 环境背景漂移：主题显式声明 drift 时启用；motion=none 与系统级减少动态时停止 */
-html[data-bg-animation='drift'] body::before {
-  background-size: 130% 130%;
+/* 保留原来的 130% 渐变尺度、35s 缓动与往返轨迹，但只移动预绘制纹理，
+   不再逐帧修改 background-position、重绘全屏渐变。额外 1px 过扫描防止
+   高 DPR / 非整数视口尺寸在行程末端露出底边；它不增加动画位移。 */
+html[data-bg-animation='drift'] .app-background::before {
+  inset: 0 calc(-30% - 1px) calc(-30% - 1px) 0;
+  background-size: 100% 100%;
   animation: theme-bg-drift 35s ease-in-out infinite alternate;
 }
 
-html[data-ui-motion='none'] body::before {
+html[data-ui-motion='none'] .app-background::before {
   animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html[data-bg-animation='drift'] body::before {
+  html[data-bg-animation='drift'] .app-background::before {
     animation: none;
   }
 }
 
 @keyframes theme-bg-drift {
-  0% {
-    background-position: 0% 0%;
+  from {
+    transform: translate3d(0, 0, 0);
   }
-  100% {
-    background-position: 100% 100%;
+  to {
+    /* 旧 background-position: 100% 的位移为 -30% 视口，换算为
+       130% 纹理自身的 3/13；减去过扫描像素，避免多移动 1px。 */
+    transform: translate3d(calc((1px - 100%) * 3 / 13), calc((1px - 100%) * 3 / 13), 0);
   }
 }
 
@@ -1105,6 +1119,171 @@ select optgroup {
    自动最小尺寸（约等于 size 属性宽度）会在窄弹窗中把同级控件顶出面板。 */
 .responsive-modal-panel .terminal-input {
   min-width: 0;
+}
+
+/* Reserve real space for five port digits, themed padding and native number controls.
+   Shared by saved-server dialogs and the anonymous connection form. */
+.ssh-endpoint-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.ssh-endpoint-fields > *,
+.ssh-endpoint-fields .terminal-input {
+  min-width: 0;
+}
+
+.ssh-endpoint-fields .flex > span {
+  flex-shrink: 0;
+}
+
+.ssh-port-field .terminal-input {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 480px) {
+  .ssh-endpoint-fields {
+    grid-template-columns: minmax(0, 1fr) 9rem;
+  }
+
+  .ssh-host-field-wide {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Keep theme materials intact; only this dialog's geometry and scrolling change. */
+#server-modal .server-modal-panel {
+  display: flex;
+  flex-direction: column;
+  max-width: 38rem;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.server-modal-header,
+.server-modal-actions {
+  flex-shrink: 0;
+}
+
+.server-modal-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.server-modal-fields {
+  min-height: 0;
+  min-width: 0;
+  margin: 0 -4px;
+  padding: 18px 4px 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.server-identity-fields,
+.server-settings-columns,
+.server-settings-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+  align-content: start;
+}
+
+.server-identity-fields {
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.server-identity-fields > *,
+.server-settings-section > * {
+  min-width: 0;
+}
+
+.server-settings-section + .server-settings-section {
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+}
+
+.server-choice-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.server-choice-tabs .auth-tab {
+  max-width: 100%;
+  min-height: var(--control-min-height);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.server-service-token-fields:not(.hidden) {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.server-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+#server-modal #server-submit-btn {
+  width: auto;
+  min-width: 12rem;
+  max-width: 100%;
+  min-height: 40px;
+}
+
+@media (min-width: 900px) {
+  #server-modal .server-modal-panel {
+    max-width: 64rem;
+  }
+
+  .server-identity-fields,
+  .server-settings-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 24px;
+  }
+
+  .server-settings-section + .server-settings-section {
+    padding-top: 0;
+    padding-inline-start: 24px;
+    border-top: 0;
+    border-inline-start: 1px solid var(--border);
+  }
+
+  .server-service-token-fields:not(.hidden) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  #server-modal #server-submit-btn {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 520px), (pointer: coarse) {
+  #server-modal .terminal-input {
+    font-size: 16px;
+  }
+
+  #server-modal .auth-tab,
+  #server-modal #server-submit-btn {
+    min-height: 44px;
+  }
 }
 
 #server-grid {

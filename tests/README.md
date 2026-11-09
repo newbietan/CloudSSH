@@ -149,8 +149,11 @@ OpenSSH 覆盖七种裸钥/证书协商、PTY/Shell、exec 与 SFTP；Go 网关�
 
 - API 隔离守卫（`api-isolation.spec.ts`，Chromium + WebKit）：自动基础 JSON Mock、同 context 多页面、用例覆盖、未知 API/未声明写操作失败、查询值脱敏、`route.continue()` 绕过时的 501 JSON 与守卫失败。
 - 主题云端同步（`theme-sync.spec.ts` / `theme-styles.spec.ts`）：GET 多主题库与 activeId 恢复、PUT 载荷和云端状态、带 id 的 DELETE 与本地回退；GET 503/网络错误保留本地选择、PUT/DELETE 失败返回 false，不将本地成功等同于云端成功。
+- 主题背景合成（`theme-background.spec.ts`，Chromium + WebKit 移动端）：保留 Liquid Glass 原有玻璃材质、光晕与 35s 往返轨迹；关键帧仅含 `transform`，六个时刻与旧背景逐帧截图对照（允许轻微栅格采样误差）；覆盖高 DPR 末端、滚动/缩放、主题切换、自定义遮罩/噪点、系统减少动态与 `motion=none`。此处断言渲染/视觉契约，不以易受机器负载影响的 GPU 百分比作为 CI 门禁。
+- 本地字体（`local-fonts.spec.ts`，Chromium + WebKit 移动端）：开发页、实际 Worker 内联 HTML 与 Pages 编辑器相对路径，全部图标连字、字重与 FILL 图形变化、无 Google Fonts 请求、Worker 无独立字体请求。`build/font-assets.test.ts` 验证缺失/外链/独立字体产物会阻断构建，生产构建测试保护定向强制内联策略。
 - 匿名连接表单 axe 检查
 - 服务器弹窗的基本对话框语义、初始焦点和 Escape 关闭
+- 服务器表单布局（`server-modal-layout.spec.ts`，Chromium + WebKit）：四个内置主题 × 三种语言的桌面双栏与常见高度免滚动；密码/私钥/none/Cloudflare CA、隧道与展开 Service Token、320/390/768px 窄屏、短窗口固定操作栏与重开滚动复位、自定义最大字号回退；端口为五位数字时预留原生数字控件空间，新增/编辑仍以数字保存且保留 1–65535/整数/必填校验；匿名连接页共用端口布局。
 - 服务器标签筛选、分页与配置快速克隆
 - 多标签操作：双击内联重命名、空值与失焦恢复、右键菜单项与外部点击关闭
 - Agent 终端选区附件与快捷诊断 Prompt 气泡点击填入
@@ -161,12 +164,28 @@ OpenSSH 覆盖七种裸钥/证书协商、PTY/Shell、exec 与 SFTP；Go 网关�
 - 认证挑战对话框、移动端后台连接恢复与分享会话领取
 - IME 回归（`ios-ime.spec.ts` / `agent-responses.spec.ts`，Chromium + WebKit）：终端通过真实 xterm `onData` → Shell 就绪门控 → trzsz → 模拟 socket 验证拼音不泄漏、最终中文只发送一次、确认 Enter 不执行及下一次 Enter 立即可用；覆盖提交后紧接标点、Agent 主输入框/内联编辑的 composition/isComposing/229 保护、Shift+Enter、失焦恢复及文本对话框
 - SFTP 覆盖确认、路径面包屑、表头排序、新建文件、主题样式与 UI 回归
+- SFTP 列表选择（`sftp-list-selection.spec.ts`，Chromium + WebKit）：嵌套点击、Ctrl/Cmd、Shift、右键多选保持、排序/刷新后双击目标与高亮、全选/Escape、空目录与销毁重建；2000 项目录检查固定父容器监听与差量 ARIA 写入，附带非门禁计时证据。
 - 终端抽屉分段切换器：桌面端胶囊轮廓与可辨识边缘、双边异步物理弹簧滑块位移、PC 隐藏移动端更多操作按钮、三大抽屉宽度统一、匿名模式隐藏 AI Agent（display: none）与登录同步解锁
 - 移动端终端交互与用户空间：紧凑顶栏与菜单入口、视口与软键盘动态适配、单指滑动历史、字号响应式断点、移动端抽屉平行入口与 AI 设置弹窗无横向溢出
 - tmux 触摸滚轮（`terminal-touch-scroll.spec.ts`，Chromium + WebKit）：VT200/drag/any 与 SGR/旧式二进制/像素编码、双向滚动、原始面板坐标、Ctrl 状态保留、Shell/连接门控、选区优先、取消/模式切换/断连清理与报文数量上限
 - 终端焦点报告（`terminal-focus-report.spec.ts`，Chromium + WebKit）：真实 Ctrl/Alt 按钮与焦点切换、DECSET 1004、Ctrl+B/方向键、bracketed paste、Shell/连接门控及 iOS IME 回退/去重
 - UI 与样式回归：Liquid Glass 下 AI 模型下拉面板与设置面板滚动能力（overflow 简写防回归）、窄视口弹窗横向溢出消除、主题化滚动条兜底与 .no-scrollbar 样式
 - AI 模型下拉选择（Combobox 展开、选项切换、清空、免密拉取与浅色/暗色主题自适应切换）
+
+### SFTP 列表有限优化的测量
+
+运行 `CI=true pnpm exec playwright test sftp-list-selection.spec.ts --workers=1`，在报告附件 `sftp-list-work` 查看工作量和计时。计时前还原计数插桩；只断言工作量，不用毫秒阈值阻断 CI。
+
+以 `7296477` 为基线，本次 Apple M2 的 2000 项目录对照：
+
+| 项目 | 优化前 | 优化后 |
+| --- | --- | --- |
+| 目录事件监听 | 每次渲染注册 6000 个 | 每面板固定 3 个，刷新不再注册 |
+| 首次单选 / 换选 / 重复点击的 ARIA 写入 | 2000 / 2000 / 2000 | 1 / 2 / 0 |
+| Chromium 同步渲染中位数 / 点击均值 | 14.9ms / 0.70ms | 13.1ms / 0.039ms |
+| WebKit 移动项目同步渲染中位数 / 点击均值 | 33ms / 0.52ms | 30ms / 0.06ms |
+
+这些是一次本机同步 JS 调用对照，不代表完整帧耗时、端到端延迟或其他设备的固定收益。列表仍完整渲染，未引入虚拟列表，未改变排序、选择算法、样式或上传/下载协议。
 
 ## 当前限制
 
