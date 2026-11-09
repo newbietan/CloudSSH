@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, normalizePath } from 'vite';
 import { e2eApiIsolation } from './e2e-server';
 
 export default defineConfig(({ mode }) => {
@@ -29,6 +29,14 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       emptyOutDir: true,
+      // Worker 不提供独立字体路由：即使子集增长，也必须内联这两个字体。
+      // 其他资源保留 Vite 默认阈值，不扩大全局内联范围。
+      assetsInlineLimit: (filePath) =>
+        /\/src\/assets\/fonts\/(?:material-symbols-outlined-subset|jetbrains-mono)\.woff2$/.test(
+          normalizePath(filePath)
+        )
+          ? true
+          : undefined,
       modulePreload: {
         polyfill: false,
       },

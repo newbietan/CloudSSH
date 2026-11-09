@@ -238,6 +238,8 @@ The frontend is **NOT** served separately in production. The build process:
 
 **Important**: `src/worker/html.ts` is auto-generated. Never edit it directly - changes will be overwritten.
 
+字体自托管于 `frontend/src/assets/fonts/`：Vite 仅对两个指定 WOFF2 强制内联，其他资源沿用默认阈值；`scripts/font-assets.js` 在写入 Worker HTML 前校验完整字体字节、拒绝独立字体产物与外部 font-face URL，避免子集增长后静默部署坏字体。Worker HTML 不依赖字体 CDN 或静态路由。`scripts/sync-theme-editor.js` 同步共享字体 CSS、字体及许可证到 `docs/theme-editor/fonts/`。新增图标后须运行 `scripts/subset-material-symbols.py` 并同步编辑器，提交裁剪字体与清单；普通构建不下载字体。`tests/e2e/local-fonts.spec.ts` 在 Chromium/WebKit 移动端覆盖开发页、实际 Worker 内联 HTML 与 Pages 目录资源，并校验连字、字重与 FILL 轴。详细步骤见 `docs/local-fonts.md`。
+
 ## Durable Objects
 
 Three Durable Objects handle state:
