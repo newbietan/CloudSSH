@@ -568,7 +568,11 @@ Thank you to the following contributors for improving CloudSSH's code, compatibi
 | [DAVID TB (@tbdavid2019)](https://github.com/tbdavid2019) | Contributed Traditional Chinese (zh-TW) interface and localized dictionary, expanding frontend language switching and theme editor support (#147) |
 | [Zhao Hailong (@GrothKeiran)](https://github.com/GrothKeiran) | Self-hosted fonts and icons for the app and theme editor, icon subsetting scripts and manifest, licenses, and single-HTML build integration ([#188](https://github.com/newbietan/CloudSSH/pull/188)) |
 
-This list includes only users who contributed through Pull Requests, with summaries based on their PRs and the changes actually adopted. Issue-only reports, comments, or suggestions do not qualify for inclusion or separate acknowledgements in this section. One contributor may appear under multiple historical Git author names or email addresses. See [GitHub Contributors](https://github.com/newbietan/CloudSSH/graphs/contributors) for the complete commit record. Issues and Pull Requests are welcome.
+The list above records users who contributed through Pull Requests, with summaries based on their PRs and the changes actually adopted. One contributor may appear under multiple historical Git author names or email addresses. See [GitHub Contributors](https://github.com/newbietan/CloudSSH/graphs/contributors) for the complete commit record. Issues and Pull Requests are welcome.
+
+### Community Thanks
+
+We also thank everyone who reports problems through Issues, suggests improvements, joins discussions, helps test CloudSSH, and shares feedback. Your support continually improves the project's compatibility, stability, and user experience.
 
 <a id="sponsor"></a>
 

@@ -566,7 +566,11 @@ test 分支（开发/测试）  ──合并──>  main 分支（生产）
 | [DAVID TB (@tbdavid2019)](https://github.com/tbdavid2019) | 贡献繁体中文（台灣）界面与本地化词典，扩展前端语言切换与主题编辑器繁中支持（#147）                                       |
 | [Zhao Hailong (@GrothKeiran)](https://github.com/GrothKeiran) | 主站与主题编辑器的字体/图标本地化、图标子集裁剪脚本与清单、许可证及单 HTML 构建适配（[#188](https://github.com/newbietan/CloudSSH/pull/188)） |
 
-名单仅记录通过 Pull Request 贡献的用户，贡献说明依据 PR 与实际采纳的改动整理；仅提交 Issue、评论或建议的用户不列入名单，也不在本章节另行致谢。同一贡献者在历史中可能使用过不同的 Git 作者名称或邮箱。完整提交记录请参阅 [GitHub Contributors](https://github.com/newbietan/CloudSSH/graphs/contributors)。欢迎通过 Issue 和 Pull Request 参与项目建设。
+以上名单记录通过 Pull Request 贡献的用户，贡献说明依据 PR 与实际采纳的改动整理。同一贡献者在历史中可能使用过不同的 Git 作者名称或邮箱。完整提交记录请参阅 [GitHub Contributors](https://github.com/newbietan/CloudSSH/graphs/contributors)。欢迎通过 Issue 和 Pull Request 参与项目建设。
+
+### 社区致谢
+
+同时感谢所有通过 Issue 报告问题、提出建议、参与讨论以及帮助测试和反馈的朋友。你们的支持持续推动 CloudSSH 改善兼容性、稳定性与使用体验。
 
 <a id="sponsor"></a>
 
