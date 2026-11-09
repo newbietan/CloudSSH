@@ -23,6 +23,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa  # v4
         with:
@@ -49,7 +51,19 @@ jobs:
         run: pnpm run build:frontend
 
       - name: Browser E2E and accessibility tests
+        id: e2e
         run: pnpm run test:e2e
+
+      - name: Upload browser test reports
+        if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: playwright-report-${{ github.ref_name }}-${{ github.run_attempt }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: warn
 
       - name: Deploy verified artifact (test)
         if: github.ref == 'refs/heads/test'

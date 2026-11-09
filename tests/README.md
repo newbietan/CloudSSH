@@ -86,7 +86,24 @@ pnpm run verify
 - 业务接口与所有 PUT/POST/DELETE 必须在触发交互前显式 Mock，并核对请求方法、路径/参数、载荷和结果。页面级 `page.route()` 优先于 context 默认值；不处理的方法应 `route.fallback()`，不能统一返回成功。
 - 未声明的 API 会被中止并记录。即使应用 `catch` 后继续运行，fixture 清理阶段仍令测试失败，报告中附 `unmocked-api-requests`，只记录方法和路径，不记录查询值/正文/凭据。手工创建独立 context 时应调用 `installApiMocks()` 并在关闭后检查其守卫。
 - Playwright 始终启动全新 `--mode e2e --strictPort` Vite，不复用普通开发服务器；4173 被占用时明确失败，不漂移端口。E2E 不运行 8787 后端；漏到服务器的 `/api` 请求返回带标记的 **501 JSON**，而不是 SPA 的 **200 HTML**，页面 `route.continue()` 的绕过也会被守卫识别。普通开发仍保留 Worker 代理。
-- E2E 验证不能只查控制台是否有 `ECONNREFUSED`：须确认测试退出码、守卫检查和完整 stdout/stderr。比较耗时时保持机器、浏览器项目、worker 数和重试设置一致。
+- E2E 验证不能只查控制台是否有 `ECONNREFUSED`：须确认测试退出码、守卫检查和完整 stdout/stderr。常规耗时比较须保持机器、浏览器项目、worker 数和重试设置一致；评估并发变更时仅改变 worker 数，并分别保留报告。
+
+## E2E CI 并发与报告
+
+- CI 默认使用 **2 个 worker**，本地默认并发仍由 Playwright 决定。所有 Chromium / WebKit 项目及用例范围不变；CI 保留最多 2 次重试、首次重试记录 trace、失败时截图，不启用全程 trace 或录像。
+- CI 生成 `playwright-report/index.html` 与 `test-results/results.json`。`deploy.yml` 在 E2E 实际执行成功或失败后、部署密钥注入前，将 `playwright-report/` 与 `test-results/` 一并上传，保留 **7 天**；取消或 E2E 未执行时不上传。报告名包含分支与运行尝试编号，避免重跑时覆盖；启动失败且尚无文件时只警告，但原测试失败仍阻止部署。
+- 在 Actions 对应运行的 **Artifacts** 中下载 `playwright-report-<branch>-<attempt>`。解压后运行 `pnpm exec playwright show-report <解压目录>/playwright-report` 查看每条用例、耗时、重试和附件；JSON 中的 `stats` / `suites` 可用于汇总与分文件分析。报告包含测试页面及模拟数据，请勿在 E2E 中使用真实凭据。
+- E2E 不设置 `continue-on-error`；上传报告成功不代表测试成功。任一门禁失败仍阻断部署，部署沿用已验证的同一份前端产物，不在配置部署 Secrets 后重新构建。
+
+```bash
+# 单 worker 对照 / 排查并发问题（也可将 CI 配置回退为 1）
+CI=true pnpm exec playwright test --workers=1
+
+# 两 worker 验证；每次运行会重建报告，比较前请先另存上一份
+CI=true pnpm exec playwright test --workers=2
+```
+
+基线参考：v2.10.3 的 457 项浏览器用例（456 通过、1 跳过），单 worker 的 [main CI](https://github.com/newbietan/CloudSSH/actions/runs/42570709206) 为 17 分 06 秒，[test CI](https://github.com/newbietan/CloudSSH/actions/runs/42570913350) 为 16 分 46 秒；这不是其他机器的固定时长。两 worker 应在同类 runner、相同浏览器版本与用例范围下观察多轮耗时、重试/偶发失败及 OOM。收益不足或出现新增竞态时回退单 worker，保留报告能力；不削减覆盖、放宽超时或跳过失败来换速度。
 
 ## 当前覆盖范围
 
