@@ -15,6 +15,7 @@ from urllib.request import urlopen
 
 from fontTools import subset
 from fontTools.ttLib import TTFont
+from fontTools.ttLib.tables._f_v_a_r import table__f_v_a_r
 
 ROOT = Path(__file__).resolve().parent.parent
 FONTS = ROOT / 'frontend/src/assets/fonts'
@@ -56,7 +57,10 @@ def used_icons(catalog):
 
 
 def check():
-    manifest = json.loads(MANIFEST.read_text(encoding='utf-8'))
+    try:
+        manifest = json.loads(MANIFEST.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit('无法读取图标清单，请检查文件或重新裁剪。') from error
     needed = used_icons(manifest['catalog'])
     font = TTFont(OUTPUT)
     missing = set(needed) - ligatures(font).keys()
@@ -66,7 +70,10 @@ def check():
         raise SystemExit('图标清单与源码不一致，请重新裁剪。')
     if hashlib.sha256(OUTPUT.read_bytes()).hexdigest() != manifest['sha256']:
         raise SystemExit('字体 SHA-256 与清单不一致。')
-    axes = {axis.axisTag for axis in font['fvar'].axes}
+    fvar = font.get('fvar')
+    if not isinstance(fvar, table__f_v_a_r):
+        raise SystemExit('字体缺少有效的可变轴表。')
+    axes = {axis.axisTag for axis in fvar.axes}
     if not {'FILL', 'wght'} <= axes:
         raise SystemExit('字体丢失 FILL/wght 可变轴。')
     print(f'通过：{len(needed)} 个图标的连字、SHA-256、FILL/wght 可变轴均有效。')
@@ -96,13 +103,15 @@ def main():
     glyphs = {catalog[name] for name in icons}
     glyph_order = set(font.getGlyphOrder())
     glyphs.update({name + '.fill' for name in list(glyphs) if name + '.fill' in glyph_order})
-    options = subset.Options()
-    options.flavor = 'woff2'
-    options.layout_features = ['rlig', 'liga', 'rvrn', 'kern']
-    # 否则连字闭包会把完整图标集拉回；所需变体已在上面显式纳入。
-    options.layout_closure = False
-    options.hinting = False
-    options.name_IDs = ['*']
+    # 通过库的选项接口设置特殊值（如 name_IDs=['*']），避免依赖默认属性的推断类型。
+    # 禁用连字闭包，否则会把完整图标集拉回；所需变体已在上面显式纳入。
+    options = subset.Options(
+        flavor='woff2',
+        layout_features=['rlig', 'liga', 'rvrn', 'kern'],
+        layout_closure=False,
+        hinting=False,
+        name_IDs=['*'],
+    )
     subsetter = subset.Subsetter(options)
     subsetter.populate(glyphs=glyphs, unicodes=[ord(c) for c in 'abcdefghijklmnopqrstuvwxyz0123456789_ '])
     subsetter.subset(font)

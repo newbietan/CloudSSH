@@ -12,12 +12,19 @@ describe('frontend production build', () => {
   let bundle = '';
   let css = '';
   let emittedAssetNames: string[] = [];
+  let shouldInlineFont: (filePath: string, content: Buffer) => boolean | undefined;
 
   beforeAll(async () => {
     outDir = await mkdtemp(path.join(tmpdir(), 'cloudssh-vite-'));
     const frontendRequire = createRequire(path.join(frontendDir, 'package.json'));
     const viteEntry = frontendRequire.resolve('vite');
-    const { build } = await import(pathToFileURL(viteEntry).href);
+    const { build, loadConfigFromFile } = await import(pathToFileURL(viteEntry).href);
+    const loaded = await loadConfigFromFile(
+      { command: 'build', mode: 'production' },
+      path.join(frontendDir, 'vite.config.ts')
+    );
+    shouldInlineFont = loaded?.config.build?.assetsInlineLimit;
+    if (typeof shouldInlineFont !== 'function') throw new Error('Missing explicit font inline policy');
     const result = await build({
       root: frontendDir,
       configFile: path.join(frontendDir, 'vite.config.ts'),
@@ -51,6 +58,15 @@ describe('frontend production build', () => {
     expect(css).not.toMatch(/url\(["']?(?!data:)[^)]*\.woff2/);
     expect(emittedAssetNames.filter((name) => /\.woff2?$/.test(name))).toEqual([]);
     expect(css).toMatch(/font-family:["']?Material Symbols Outlined/);
+  });
+
+  it('forces only the two Worker fonts inline even above the old 100KiB threshold', () => {
+    const largeAsset = Buffer.alloc(256 * 1024);
+    for (const filename of ['material-symbols-outlined-subset.woff2', 'jetbrains-mono.woff2']) {
+      expect(shouldInlineFont(path.join(frontendDir, 'src/assets/fonts', filename), largeAsset)).toBe(true);
+    }
+    expect(shouldInlineFont(path.join(frontendDir, 'src/assets/large-image.png'), largeAsset)).toBeUndefined();
+    expect(shouldInlineFont(path.join(frontendDir, 'src/assets/fonts/other.woff2'), largeAsset)).toBeUndefined();
   });
 
   it('preserves the xterm requestMode local declaration', () => {

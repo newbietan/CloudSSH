@@ -2,7 +2,7 @@
 
 ## 适用版本与范围
 
-本次修改基于 CloudSSH v2.10.2（`8e22808`），不改应用版本、认证方式、Durable Object 绑定或迁移。
+字体本地化沿用 CloudSSH v2.10.2 的单 HTML 构建方式，不改认证方式、Durable Object 绑定或迁移。
 
 - Worker 主站的 Material Symbols Outlined 图标、JetBrains Mono 字体全部来自仓库文件，最终以内联 data URL 随 HTML 返回。
 - 独立主题编辑器改用 `docs/theme-editor/fonts/` 中的同源字体，构建时由 `scripts/sync-theme-editor.js` 同步。
@@ -12,20 +12,15 @@
 
 ## 为什么需要内联
 
-Cloudflare Workers 支持静态资源托管，但本项目没有配置静态资源绑定。本次沿用单 HTML 的现有结构，不新增资源路由。`scripts/build-html.js` 仅把 JS、CSS、favicon 写进 `src/worker/html.ts`，不会为字体文件提供 HTTP 路由。字体因此放在 `frontend/src/assets/fonts/`，通过 Vite 的 `assetsInlineLimit` 变成 CSS 内的 data URL；不必新增静态路由、R2 或 KV。
+Cloudflare Workers 支持静态资源托管，但本项目没有配置静态资源绑定。本次沿用单 HTML 的现有结构，不新增资源路由。`scripts/build-html.js` 仅把 JS、CSS、favicon 写进 `src/worker/html.ts`，不会为字体文件提供 HTTP 路由。字体因此放在 `frontend/src/assets/fonts/`，通过 Vite 的定向 `assetsInlineLimit` 回调强制变成 CSS 内的 data URL，不受文件大小阈值影响；其他资源仍使用默认阈值，不必新增静态路由、R2 或 KV。构建脚本会在写入 HTML 前校验两个字体的完整字节、拒绝独立字体产物和外部 font-face URL，异常即终止构建。
 
 `src/worker/html.ts` 是生成文件，不要手工修改。本仓库当前实际跟踪了该文件；重新构建后它会产生相应变更。只检查此文件的 gzip 大小不能代表整个 Worker 的上传大小，必须额外运行 Wrangler dry-run。
 
-## 原压缩包的问题
+## 图标覆盖与加载取舍
 
-原 `cloudssh-local-fonts.zip` 的内联思路可用，但扫描器只匹配单引号字符串：
+维护脚本保守扫描两套应用的 HTML/TS/JS 词元，与上游实际连字名称求交集（包含动态使用、别名与少量保守多纳入项），再校验裁剪后的真实连字表。普通 Vitest 通过生成的名称目录与字体 SHA-256 检查新增图标是否已纳入。
 
-- 主站现有静态模板中 22 个图标不在该包的字体内，包括 `lock`、`share`、`history`、`arrow_back`、`shield` 等。
-- 主题编辑器另有 11 个静态图标不在该字体内，且在线字体链接没有移除。
-- 没有携带两套字体的完整许可证。
-- ZIP 包有 `cloudssh-local-fonts/` 外层目录，直接在仓库根目录解压并不会按说明覆盖文件。
-
-新脚本保守扫描两套应用的 HTML/TS/JS 词元，与上游实际连字名称求交集，保留 272 个名称（包含动态使用与部分别名/保守多纳入的名称），再校验裁剪后的真实连字表。普通 Vitest 通过生成的名称目录与字体 SHA-256 检查新增图标是否已纳入。
+内联字体会增加 HTML 的传输大小，换取不依赖第三方字体服务的稳定加载；不能仅用 HTML 大小判断旧 CDN 方案与本地方案的端到端速度。JetBrains Mono 保留 latin 子集，其他字符继续使用系统字体回退。
 
 ## 构建与验证
 
@@ -40,6 +35,8 @@ pnpm exec playwright install chromium webkit
 pnpm run test:e2e
 pnpm exec wrangler deploy --dry-run --env="" --outdir .cache/worker-dry-run
 ```
+
+`tests/e2e/local-fonts.spec.ts` 在 Chromium 和 WebKit 移动端核验开发页、实际生成的 Worker HTML，以及按真实目录映射的 Pages 编辑器与字体资源。覆盖全部清单连字、字重、FILL 图形变化、无 Google Fonts 请求与 Worker 不请求独立字体资源；字体族断言允许浏览器序列化引号的差异。运行这些 E2E 前须先执行 `build:frontend`，避免验证过期的生成 HTML。
 
 若机器较慢，可降低 Vitest/Playwright 并发：
 
@@ -62,7 +59,7 @@ pnpm exec playwright test --workers=2
 - 部署：`pnpm exec wrangler deploy --env=""`（默认生产配置）；也可使用包含构建的 `pnpm run deploy`，不要与前一步重复构建。
 - `wrangler.toml` 普通 `[vars]` 会按配置重新下发，先确认与你的现有设置一致；保留原有 Secrets。
 
-本 Fork 的 GitHub Actions 部署工作流仍要求 `github.repository_owner == 'newbietan'`，因此推送到 GrothKeiran/CloudSSH **不等于** GitHub Actions 会部署。不要为了本次字体改动随意移除该限制；Cloudflare Dashboard Git 集成与这些 Actions 是两套独立机制。
+官方 GitHub Actions 部署工作流要求 `github.repository_owner == 'newbietan'`，其他所有者的 Fork 不执行部署任务。不要为了字体改动移除该限制；Cloudflare Dashboard Git 集成与这些 Actions 是两套独立机制。
 
 遵循仓库约定，改动放在 `test` 分支，生产 `main` 由用户审核 PR 后合入。若 Cloudflare 绑定的是 `main`，只推送 `test` 不会更新生产站点。
 
@@ -73,7 +70,7 @@ pnpm exec wrangler whoami
 pnpm run deploy
 ```
 
-本次检查时本机 Wrangler 未登录，因此本地构建/dry-run 成功不代表生产部署成功；需要先由账号持有人完成 Cloudflare 授权，或使用已有 Dashboard Git 集成。
+本地构建/dry-run 成功不代表生产部署成功；实际部署仍需账号持有人的 Cloudflare 授权或已有 Dashboard Git 集成。
 
 ## 新增图标后如何更新
 

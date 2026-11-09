@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { assertInlinedFonts } = require('./font-assets');
 
 const rootDir = path.resolve(__dirname, '..');
 const frontendDir = path.join(rootDir, 'frontend');
@@ -50,6 +51,7 @@ try {
 
   const jsContent = fs.readFileSync(path.join(assetsDir, jsFiles[0]), 'utf8');
   const cssContent = fs.readFileSync(path.join(assetsDir, cssFiles[0]), 'utf8');
+  assertInlinedFonts(cssContent, files, path.join(frontendDir, 'src', 'assets', 'fonts'));
 
   // 4. Inline favicon.svg as base64 data URL
   const faviconPath = path.join(frontendDir, 'public', 'favicon.svg');
