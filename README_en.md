@@ -564,13 +564,11 @@ Thank you to the following contributors for improving CloudSSH's code, compatibi
 | [TanXin (@newbietan)](https://github.com/newbietan)  | Project creator and maintainer; Cloudflare Serverless architecture, SSH/SFTP, AI Agent, security, theming, and engineering infrastructure                                   |
 | [David xu (@xqdoo00o)](https://github.com/xqdoo00o)  | Dropbear compatibility, migration to trzsz file transfer, PTY sizing, and session exit/reconnection improvements                                                            |
 | [vonl1 (@vonl1)](https://github.com/vonl1)           | Terminal selection auto-copy, Vim-compatible right-click paste, masked IPv4/IPv6 display with quick full-address copy, and automatic server OS detection with branded icons |
-| [Leon Xu (@xuthuslei)](https://github.com/xuthuslei) | Fixed encryption-state transitions and packet parsing when `SSH_MSG_NEWKEYS` and the first encrypted packet arrive in the same TCP chunk; fixed the v1.11.0 jump-host authentication-timing regression (#108) |
+| [Leon Xu (@xuthuslei)](https://github.com/xuthuslei) | Provided fixes for coalesced `SSH_MSG_NEWKEYS` packet parsing ([PR #88](https://github.com/newbietan/CloudSSH/pull/88)) and jump-host authentication timing ([PR #109](https://github.com/newbietan/CloudSSH/pull/109)) |
 | [DAVID TB (@tbdavid2019)](https://github.com/tbdavid2019) | Contributed Traditional Chinese (zh-TW) interface and localized dictionary, expanding frontend language switching and theme editor support (#147) |
 | [Zhao Hailong (@GrothKeiran)](https://github.com/GrothKeiran) | Self-hosted fonts and icons for the app and theme editor, icon subsetting scripts and manifest, licenses, and single-HTML build integration ([#188](https://github.com/newbietan/CloudSSH/pull/188)) |
 
-Additional thanks to [@insoxin](https://github.com/insoxin) for reporting the Liquid Glass background performance issue in [Issue #185](https://github.com/newbietan/CloudSSH/issues/185), which prompted the background compositing optimization.
-
-The list and contribution summaries are based on Git history and accepted Pull Requests; one contributor may appear under multiple historical Git author names or email addresses. See [GitHub Contributors](https://github.com/newbietan/CloudSSH/graphs/contributors) for the complete record. Issues and Pull Requests are welcome.
+This list includes only users who contributed through Pull Requests, with summaries based on their PRs and the changes actually adopted. Issue-only reports, comments, or suggestions do not qualify for inclusion or separate acknowledgements in this section. One contributor may appear under multiple historical Git author names or email addresses. See [GitHub Contributors](https://github.com/newbietan/CloudSSH/graphs/contributors) for the complete commit record. Issues and Pull Requests are welcome.
 
 <a id="sponsor"></a>
 
