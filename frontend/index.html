@@ -84,7 +84,36 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
   </head>
   <body class="min-h-screen font-body text-sm">
     <div class="app-background" aria-hidden="true"></div>
-    <div id="app">
+    <!-- 运行时配置与身份确认前，应用内容不可见、不可聚焦，也不进入无障碍树。 -->
+    <div id="app-loading" class="min-h-screen flex items-center justify-center p-6">
+      <main class="w-full max-w-md text-center" aria-label="CloudSSH">
+        <div class="text-3xl font-bold text-primary tracking-tighter mb-8">CloudSSH</div>
+        <div class="cyber-box p-6 min-h-[320px] flex items-center justify-center">
+          <div
+            id="app-loading-status"
+            class="space-y-5 text-muted"
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+          >
+            <span class="app-loading-spinner" aria-hidden="true"></span>
+            <p data-i18n="app.loading">正在加载配置与登录状态…</p>
+          </div>
+          <div id="app-loading-error" class="hidden space-y-5" role="alert">
+            <p class="text-muted" data-i18n="app.loadFailed">
+              暂时无法加载页面，请检查网络后重试。
+            </p>
+            <button
+              id="app-loading-retry"
+              type="button"
+              class="cyber-button text-primary px-5 py-2"
+              data-i18n="app.retry"
+            >重试</button>
+          </div>
+        </div>
+      </main>
+    </div>
+    <div id="app" hidden inert aria-hidden="true">
       <!-- Login Page (匿名连接) -->
       <div
         id="auth-section"

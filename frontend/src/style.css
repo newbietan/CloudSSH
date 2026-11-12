@@ -10,6 +10,42 @@
   box-sizing: border-box;
 }
 
+/* Native hidden also protects the initial HTML before JavaScript has chosen a page. */
+#app[hidden] {
+  display: none;
+}
+
+.app-loading-spinner {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: app-loading-spin 1s linear infinite;
+}
+
+#app-loading-retry {
+  min-height: 44px;
+}
+
+@keyframes app-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+html[data-ui-motion='none'] .app-loading-spinner,
+html[data-ui-motion='reduced'] .app-loading-spinner {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-loading-spinner {
+    animation: none;
+  }
+}
+
 /* Material Symbols 字体不可用时，避免图标名称按普通文本撑破布局。 */
 .material-symbols-outlined {
   display: inline-block;

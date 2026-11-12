@@ -5,8 +5,14 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
-  reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
+  workers: process.env.CI ? 2 : undefined,
+  reporter: process.env.CI
+    ? [
+        ['github'],
+        ['html', { open: 'never' }],
+        ['json', { outputFile: 'test-results/results.json' }],
+      ]
+    : 'list',
   use: {
     baseURL: 'http://127.0.0.1:4173',
     trace: 'on-first-retry',
@@ -23,7 +29,7 @@ export default defineConfig({
       testMatch: [
         /(?:agent-responses|agent-recovery|api-isolation|auth-challenge|none-auth|connection-recovery|ios-ime|sftp-panel-actions|version-notice)\.spec\.ts/,
         /terminal-(?:touch-scroll|focus-report)\.spec\.ts/,
-        /(?:theme-background|local-fonts|sftp-list-selection|server-modal-layout)\.spec\.ts/,
+        /(?:theme-background|local-fonts|sftp-list-selection|server-modal-layout|app-bootstrap)\.spec\.ts/,
       ],
       use: { ...devices['iPhone 13'] },
     },
