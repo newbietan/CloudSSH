@@ -1,6 +1,7 @@
 // 渲染模板中的 innerHTML 站点均带 `pi-lens-ignore: no-inner-html` 内联抑制：
 // 动态值均经 escapeHtml 转义或来自可信 i18n 词条，无用户输入直插；
 // GitHub Actions 质量门禁不含该规则（AGENTS.md #27）。
+import type { AppConfig } from './app-bootstrap';
 import { onLocaleChange, t, translateDocument } from './i18n';
 import { openAdminHashGeneratorDialog } from './admin-hash-generator';
 import { loadKnownFingerprint } from './known-hosts';
@@ -67,6 +68,8 @@ async function decryptCredentials(
 }
 
 export interface ConnectionFormOptions {
+  /** 首屏已经确认的运行时配置，禁止先渲染匿名表单再异步替换。 */
+  config: AppConfig;
   /** 获取 TabManager 实例 */
   getTabManager: () => TabManager;
 }
@@ -84,7 +87,7 @@ export class ConnectionForm {
 
   constructor(options: ConnectionFormOptions) {
     this.options = options;
-    this.render();
+    this.renderConfiguredForm(options.config);
     onColorSchemeChange((colorScheme) => {
       if (
         this.turnstileEnabled &&
@@ -95,8 +98,6 @@ export class ConnectionForm {
         this.renderTurnstile();
       }
     });
-    this.loadSavedCredentials();
-    this.checkTurnstileConfig();
     onLocaleChange(() => {
       const select = document.getElementById('anon-region') as HTMLSelectElement | null;
       if (select) populateRegionSelect(select, select.value);
@@ -104,87 +105,56 @@ export class ConnectionForm {
     });
   }
 
-  private async checkTurnstileConfig(): Promise<void> {
-    try {
-      const response = await fetch('/api/config');
-      const config = (await response.json()) as {
-        turnstileEnabled: boolean;
-        sitekey: string;
-        githubAuthEnabled: boolean;
-        githubAuthRequired: boolean;
-        authMode?: 'password' | 'cf_access' | 'github' | 'anonymous';
-        cfAccessEmail?: string | null;
-        cfAccessTeamName?: string;
-        passwordAuth?: { kdf: string; iterations: number; salt: string } | null;
-        passwordHashInvalid?: boolean;
+  private renderConfiguredForm(config: AppConfig): void {
+    this.turnstileEnabled = config.turnstileEnabled;
+    this.turnstileSitekey = config.sitekey || '';
+    this.cfSshCaEnabled = config.authMode === 'cf_access';
+
+    // Select the final panel before creating any credential inputs or reading local history.
+    if (config.authMode === 'password') {
+      if (config.passwordHashInvalid || !config.passwordAuth) {
+        this.renderAdminHashInvalid();
+        return;
+      }
+      this.passwordAuthParams = {
+        iterations: config.passwordAuth.iterations,
+        salt: config.passwordAuth.salt,
       };
-      this.turnstileEnabled = config.turnstileEnabled;
-      this.turnstileSitekey = config.sitekey;
-      this.cfSshCaEnabled = config.authMode === 'cf_access';
-      this.applyCfSshCaAvailability();
-
-      if (this.cfSshCaEnabled && config.cfAccessEmail) {
-        const badge = document.getElementById('cf-ca-access-badge');
-        const emailSpan = document.getElementById('cf-ca-access-email');
-        if (badge && emailSpan) {
-          emailSpan.textContent = t('auth.cfAccessDetected', { email: config.cfAccessEmail });
-          badge.classList.remove('hidden');
-        }
-      }
-      if (this.cfSshCaEnabled && config.cfAccessTeamName) {
-        const teamInput = document.getElementById('cf-ca-team') as HTMLInputElement | null;
-        if (teamInput && !teamInput.value) {
-          teamInput.value = config.cfAccessTeamName;
-        }
-      }
-
-      // Cloudflare Access 模式：由 Cloudflare 边缘网关接管身份，不渲染外部登录表单
-      if (config.authMode === 'cf_access') {
-        return;
-      }
-
-      // 单管理员密码模式：登录入口整体替换（与 GitHub 入口互斥，不并列展示）。
-      // 哈希损坏 → fail closed 错误面板（与后端坏哈希拒绝登录的语义对齐）
-      if (config.authMode === 'password') {
-        if (config.passwordHashInvalid || !config.passwordAuth) {
-          this.renderAdminHashInvalid();
-          return;
-        }
-        this.passwordAuthParams = {
-          iterations: config.passwordAuth.iterations,
-          salt: config.passwordAuth.salt,
-        };
-        if (config.githubAuthRequired) {
-          this.renderAdminAuthRequired();
-          return;
-        }
-        if (this.turnstileEnabled && this.turnstileSitekey) {
-          this.renderTurnstile();
-        }
-        this.renderAdminLoginButton();
-        return;
-      }
-
       if (config.githubAuthRequired) {
-        this.renderGitHubAuthRequired(config.githubAuthEnabled);
+        this.renderAdminAuthRequired();
         return;
       }
-      if (this.turnstileEnabled && this.turnstileSitekey) {
-        this.renderTurnstile();
-      }
-      // 渲染 GitHub 登录按钮（仅当 OAuth 已配置时）
-      if (config.githubAuthEnabled) {
-        this.renderGitHubLoginButton();
-      }
-      // 入口可见性（模式感知）：仅匿名模式（未配置任何登录方式）保留页脚入口——
-      // 密码模式的自然受众，保持零配置可发现性；GitHub 模式隐藏入口（升级后
-      // 界面零变化），切换密码模式经 #password-setup 路由（README 引导）
-      if (config.authMode === 'anonymous') {
-        this.renderAdminHashGenEntry();
-      }
-    } catch {
-      // Config endpoint not available, skip Turnstile
+    } else if (config.authMode !== 'cf_access' && config.githubAuthRequired) {
+      this.renderGitHubAuthRequired(config.githubAuthEnabled);
+      return;
     }
+
+    this.render();
+    this.applyCfSshCaAvailability();
+    void this.loadSavedCredentials();
+    if (this.cfSshCaEnabled && config.cfAccessEmail) {
+      const badge = document.getElementById('cf-ca-access-badge');
+      const emailSpan = document.getElementById('cf-ca-access-email');
+      if (badge && emailSpan) {
+        emailSpan.textContent = t('auth.cfAccessDetected', { email: config.cfAccessEmail });
+        badge.classList.remove('hidden');
+      }
+    }
+    if (this.cfSshCaEnabled && config.cfAccessTeamName) {
+      const teamInput = document.getElementById('cf-ca-team') as HTMLInputElement | null;
+      if (teamInput && !teamInput.value) teamInput.value = config.cfAccessTeamName;
+    }
+
+    // Access owns its external login flow; preserve the existing SSH CA form behavior.
+    if (config.authMode === 'cf_access') return;
+    if (this.turnstileEnabled && this.turnstileSitekey) this.renderTurnstile();
+    if (config.authMode === 'password') {
+      this.renderAdminLoginButton();
+    } else if (config.githubAuthEnabled) {
+      this.renderGitHubLoginButton();
+    }
+    // GitHub deployments keep the existing #password-setup-only generator entry.
+    if (config.authMode === 'anonymous') this.renderAdminHashGenEntry();
   }
 
   private renderGitHubAuthRequired(githubAuthEnabled: boolean): void {

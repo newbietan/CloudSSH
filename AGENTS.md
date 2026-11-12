@@ -104,6 +104,7 @@ src/
 frontend/
 ├── src/
 │   ├── main.ts            # Frontend entry point (路由、theme、i18n、事件处理、Esc 快速返回终端)
+│   ├── app-bootstrap.ts   # 首屏配置/身份并行读取、10s 超时与失败关闭，确认后一次展示正确页面
 │   ├── version-notice.ts  # 非阻塞版本检测、缓存与可忽略的三语页脚提示
 │   ├── terminal.ts        # xterm.js terminal setup (search, dynamic RTT latency, log export, 选区->Agent)
 │   ├── terminal-layout.ts # 响应式终端字体与视口尺寸（桌面/平板/移动）
@@ -460,6 +461,8 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 46. **OpenSSH 用户证书认证与 Cloudflare 原生 SSH CA** - 支持出示 `*-cert-v01@openssh.com` OpenSSH 用户证书（Ed25519、ECDSA P-256/384/521 与 RSA-SHA2-256/512）完成 SSH 用户认证（RFC 4252 §7 与 PROTOCOL.certkeys）。证书必须为用户类型（`type = 1`），在有效时间范围内，且公钥必须与提供的私钥严格匹配。提供两级体验：① 协议层兼容：在私钥框中可同时附带用户证书（单行文本），或在 API 中分别传递，支持外部已签发证书（如 step-ca、Vault 或手动 CA）；② Cloudflare 原生 SSH CA 自动化：前端本地使用 WebCrypto 瞬时生成 ECDSA P-256 临时公私钥，经同源代理 `/api/cf-ssh-ca/sign` 调用 Cloudflare 官方 `/cdn-cgi/access/cert_sign` 获取短期证书（在 `cf_access` 模式下自动携带已认证的 Access JWT；公网受信任 HTTPS 证书，无私有自签 Root CA 拦截风险），私钥用完即在浏览器内存销毁、不落盘、不持久化；已保存服务器配置支持设置 `cf_ssh_ca_team`，发起连接时自动签发并通过 `ephemeralCredential` 传递，实现零静态密钥维护的 Zero Trust 单点登录。客户端不因登录名不在证书 principals 中而提前拒绝：空 principals 表示任意用户，非空时 sshd 仍可用 AuthorizedPrincipalsFile/Command 映射到不同 Unix 用户（Cloudflare 简单配置的 principal 通常是邮箱前缀）。配置了 `cf_ssh_ca_team` 的服务器不能出现在跳板链的任一跳，也不能在仍被其他服务器引用为跳板时改成该模式；此类服务器同样不能创建一次性分享。连接表单与服务器编辑里的 Cloudflare CA 入口仅在 `authMode === 'cf_access'` 时显示；GitHub、密码和匿名模式默认隐藏。入口隐藏时，编辑已有 CA 服务器且未改认证方式，不得把已存 `cf_ssh_ca_team` 清空。签发代理在后端也要求 Access 模式和已验证邮箱，不能只依赖前端隐藏；连接表单在签发期间禁止重复提交，并在模式代际、主机、端口、用户名或团队变化后丢弃迟到证书。
 
 47. **服务器弹窗响应式布局** - 新增/编辑/克隆共用 `#server-modal`：≥900px 使用最高 64rem 的双栏（名称/标签并排、连接与认证分栏），窄屏单列。只有 `.server-modal-fields` 滚动，标题和保存操作保持可达；每次打开清零字段滚动位置，短窗口与放大字号不能通过裁掉内容来伪造无滚动。主站连接表单与弹窗共用 `.ssh-endpoint-fields`，≥480px 为端口预留 9rem，保留原生数字控件和 1–65535 校验；隧道模式通过 `.ssh-host-field-wide` 让域名占满整行，并继续隐藏端口、移除 required。触屏/≤520px 的弹窗输入字号不低于 16px。布局规则不覆盖主题材质/颜色；可折叠 Service Token 字段的 grid 必须保留 `:not(.hidden)` 门控，不能把隐藏凭据区域意外展开。`server-modal-layout.spec.ts` 覆盖四主题、三语言、桌面/短窗口/窄屏、认证/隧道、五位端口与自定义大字号回退。
+
+48. **首屏初始化与强制登录防闪烁（#192）** - 初始 HTML 使用 `#app[hidden][inert][aria-hidden]` 隔离未决页面，独立 `#app-loading` 展示主题自适应、三语和减少动态友好的加载状态；不能先展示匿名连接表单再替换为登录面板。`app-bootstrap.ts` 同时读取 `/api/config` 与 `/api/auth/me`（同源、no-store），共享 10s deadline 覆盖响应正文，任一失败取消另一请求；仅身份接口 401 表示未登录，网络/HTTP/JSON/必要字段异常均停留错误页并允许手动单次重试，不降级匿名、不缓存认证策略。`ConnectionForm` 直接接收已确认配置，只渲染最终模式，强制登录/坏哈希面板不创建 SSH 凭据输入或读取本地连接历史。分享认领和独立终端路由仍绕过这两次读取并显式解除加载态；`#password-setup` 不受配置失败阻断。`app-bootstrap.test.ts` 与 Chromium/WebKit 的 `e2e/app-bootstrap.spec.ts` 覆盖脚本加载前、慢响应/刷新、已登录、失败/超时/迟到响应、重试、三语和动态偏好。
 
 ## SSH 兼容增强边界
 

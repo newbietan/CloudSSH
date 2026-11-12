@@ -16,6 +16,7 @@ tests/
 ├── agent-session-draft.test.ts # Agent 草稿用户命名空间、旧格式清理与退出清理
 ├── agent-terminal-selection.test.ts # 终端选区附件和非授权安全边界
 ├── api-errors.test.ts          # API 错误信息边界与状态码
+├── app-bootstrap.test.ts      # 首屏配置/身份并行读取、失败关闭与共享超时清理
 ├── auth-challenge-dialog.test.ts # RFC 4256 认证挑战对话框交互
 ├── clipboard.test.ts              # Clipboard API 与旧版复制回退
 ├── editor-content.test.ts         # 在线编辑内容解码、BOM/换行符与嗅探
@@ -87,6 +88,12 @@ pnpm run verify
 - 未声明的 API 会被中止并记录。即使应用 `catch` 后继续运行，fixture 清理阶段仍令测试失败，报告中附 `unmocked-api-requests`，只记录方法和路径，不记录查询值/正文/凭据。手工创建独立 context 时应调用 `installApiMocks()` 并在关闭后检查其守卫。
 - Playwright 始终启动全新 `--mode e2e --strictPort` Vite，不复用普通开发服务器；4173 被占用时明确失败，不漂移端口。E2E 不运行 8787 后端；漏到服务器的 `/api` 请求返回带标记的 **501 JSON**，而不是 SPA 的 **200 HTML**，页面 `route.continue()` 的绕过也会被守卫识别。普通开发仍保留 Worker 代理。
 - E2E 验证不能只查控制台是否有 `ECONNREFUSED`：须确认测试退出码、守卫检查和完整 stdout/stderr。常规耗时比较须保持机器、浏览器项目、worker 数和重试设置一致；评估并发变更时仅改变 worker 数，并分别保留报告。
+
+## 首屏加载与强制登录回归
+
+- `app-bootstrap.test.ts` 验证配置和身份请求并行、仅 401 代表未登录、无效配置/身份拒绝、失败取消另一请求、10s 请求/正文超时，以及重试重新读取而非沿用旧策略。
+- `e2e/app-bootstrap.spec.ts` 在 Chromium 和 WebKit 移动端覆盖脚本尚未加载的初始 HTML、两个接口的不同完成顺序与刷新；通过 MutationObserver 确认强制登录期间从未创建匿名连接表单，而非仅验证最终截图。
+- 浏览器测试还覆盖已登录页面、HTTP/网络/JSON 失败、超时与迟到响应、单次重试、三语/主题/减少动态、分享认领绕过加载和配置失败时仍可使用的密码设置路由。使用受控 Promise 和浏览器时钟，不以机器相关毫秒数作为闪烁门禁。
 
 ## E2E CI 并发与报告
 

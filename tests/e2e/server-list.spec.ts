@@ -178,15 +178,22 @@ test('有无标签的同排服务器卡片将操作按钮对齐到底部', async
 
   const positions = await page
     .locator('.server-card:nth-child(-n+3) .server-card-actions')
-    .evaluateAll((elements) =>
-      elements.map((element) => {
+    .evaluateAll(async (elements) => {
+      // Visibility does not imply that staggered transform animations have settled.
+      await document.fonts.ready;
+      await Promise.all(elements.flatMap((element) =>
+        element.closest('.server-card')!.getAnimations().map((animation) =>
+          animation.finished.catch(() => {})
+        )
+      ));
+      return elements.map((element) => {
         const rect = element.getBoundingClientRect();
         return {
           top: Math.round(rect.top),
           bottom: Math.round(rect.bottom),
         };
-      })
-    );
+      });
+    });
 
   expect(new Set(positions.map(({ top }) => top)).size).toBe(1);
   expect(new Set(positions.map(({ bottom }) => bottom)).size).toBe(1);

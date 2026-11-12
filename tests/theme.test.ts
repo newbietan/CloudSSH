@@ -367,7 +367,12 @@ describe('Standard 主题入口和编辑器', () => {
 
   it('背景裁剪层独立于应用内容，漂移只通过 transform 合成且不降低材质配置', () => {
     expect(appHtml.match(/class="app-background" aria-hidden="true"/g)).toHaveLength(1);
-    expect(appHtml).toMatch(/class="app-background" aria-hidden="true"><\/div>\s*<div id="app">/);
+    expect(appHtml).toMatch(
+      /class="app-background" aria-hidden="true"><\/div>\s*(?:<!--[\s\S]*?-->\s*)?<div id="app-loading"/
+    );
+    expect(appHtml).toMatch(
+      /<\/main>\s*<\/div>\s*<div id="app" hidden inert aria-hidden="true">/
+    );
 
     const keyframes = appCss.match(/@keyframes theme-bg-drift \{([\s\S]*?)\n\}/)?.[1];
     expect(keyframes).toBeDefined();
