@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.4] - 2026-11-12
+
+### Fixed
+
+- **强制登录首屏闪烁（关联 Issue：#192）**：修复首次打开或刷新页面时，匿名 SSH 连接表单短暂出现后才切换到强制登录面板的问题；配置与身份确认前不展示未决页面，强制登录及密码哈希损坏时不创建 SSH 凭据输入，已登录用户也不再先看到连接页。
+
+### Changed
+
+- **首屏加载体验**：并行读取运行时配置与登录状态，完成后直接展示正确页面；提供适配主题、三语和减少动态偏好的加载提示。请求及响应正文共用 10 秒超时，网络、HTTP 或数据异常时显示手动重试入口，不误降级为匿名模式；连接表单和服务器列表复用已确认配置，保留分享认领、独立终端和密码设置入口。
+- **浏览器 CI 与诊断报告**：CI 使用两个 Playwright worker 并保留原有重试和失败阻断部署策略；生成 HTML/JSON 报告，在浏览器测试实际执行成功或失败后、部署密钥注入前上传报告与附件，保留七天，取消或未执行时不上传。
+- **回归与维护说明**：补充脚本加载前、慢网络与刷新、强制登录、已登录、失败/超时/迟到响应、重试和三语动态偏好的 Chromium/WebKit 回归；卡片静态布局断言等待真实字体与入场动画完成，不使用固定延时或放宽对齐要求，同步测试说明和项目维护约束。
+
 ## [2.10.3] - 2026-11-09
 
 ### Fixed
