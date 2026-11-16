@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.1] - 2026-11-16
+
+### Security
+
+- **MCP 临时文件创建权限（关联 PR：#196）**：SFTP OPEN 在创建临时文件时原子指定 `0600`，消除依赖后续 chmod 收紧权限的窗口，避免共享目录中的其他本地用户提前取得读取句柄。保留独占创建、已有普通文件权限恢复、哈希冲突检查与原子替换语义，其他 SFTP 调用默认行为不变。
+
+### Fixed
+
+- **MCP SFTP 初始化异常**：同时等待 INIT 写入与版本协商，修复写入失败后清理版本等待 Promise 时出现未处理拒绝的问题；失败仍向调用方报告，并释放流锁和计时器，不增加自动重试。
+- **移动端助手返回按钮**：带文字的返回按钮不再使用通用图标按钮的固定尺寸，正常窄屏保留完整单行标签，标题优先截断而非裁剪操作按钮；≤380px 显示返回箭头并保留完整无障碍名称，桌面关闭图标及原关闭行为不变。
+
+### Changed
+
+- **针对性回归**：补充 OPEN 报文权限与默认兼容性、INIT 写入失败及资源清理测试；Chromium/WebKit 覆盖三语、四主题、320/375/380/381/390/520px 返回按钮尺寸、无障碍名称与关闭行为，避免扩大修改为新的权限系统、重试机制或布局重构。
+
 ## [2.11.0] - 2026-11-16
 
 ### Added
