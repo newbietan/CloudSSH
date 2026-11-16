@@ -120,6 +120,62 @@ test('MCP and Agent share header, field and footer components in all themes', as
   expect(colors.size).toBeGreaterThanOrEqual(3);
 });
 
+for (const [locale, caption] of [['zh-CN', '返回终端'], ['zh-TW', '返回終端'], ['en-US', 'Back to terminal']]) {
+  test(`Agent mobile back button fits narrow screens without squeezing its label (${locale})`, async ({ page }) => {
+    await setup(page);
+    await page.route('**/api/servers/1/memory', route => route.request().method() === 'GET'
+      ? route.fulfill({ json: { workLogs: [], knowledge: [] } }) : route.fallback());
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/?lang=${locale}`);
+    await expect(page.locator('#app')).toBeVisible();
+    await page.evaluate(async () => {
+      const { AgentPanel } = await (window as any).eval("import('/src/agent/agent-panel.ts')");
+      const panel = new AgentPanel(document.body, true, 1, 42);
+      panel.render(); panel.show();
+      (window as any).__mobileBackAgent = panel;
+      await document.fonts.ready;
+    });
+    const button = page.locator('#agent-close-btn');
+    const label = button.locator('.agent-back-label');
+    await expect(label).toHaveText(caption);
+    await expect(button).toHaveAttribute('aria-label', caption);
+    for (const theme of ['standard-dark', 'standard-light', 'cyberpunk', 'liquid-glass']) {
+      await page.evaluate(async name => {
+        const { applyBuiltInTheme } = await (window as any).eval("import('/src/theme.ts')");
+        applyBuiltInTheme(name);
+      }, theme);
+      for (const width of [320, 375, 380, 381, 390, 520]) {
+        await page.setViewportSize({ width, height: 844 });
+        if (width <= 380) await expect(label).toBeHidden();
+        else await expect(label).toBeVisible();
+        await expect(button.locator('.agent-mobile-back.material-symbols-outlined')).toBeVisible();
+        await expect(button.locator('.agent-desktop-close')).toBeHidden();
+        await expect.poll(() => button.evaluate(node => {
+          const rect = node.getBoundingClientRect();
+          const label = node.querySelector('.agent-back-label')!;
+          const text = label.getBoundingClientRect();
+          const header = node.closest('.assistant-panel-header')!;
+          const hidden = getComputedStyle(label).display === 'none';
+          return {
+            touchTarget: rect.height >= 40 && rect.width >= 40,
+            singleLine: hidden || text.height <= parseFloat(getComputedStyle(label).lineHeight) + 1,
+            horizontalFit: hidden || (text.left >= rect.left - 1 && text.right <= rect.right + 1),
+            verticalFit: hidden || (text.top >= rect.top - 1 && text.bottom <= rect.bottom + 1),
+            headerFit: header.scrollWidth <= header.clientWidth + 1,
+          };
+        }), { message: `${locale}, ${theme}, ${width}px: label must fit its button and header` })
+          .toEqual({ touchTarget: true, singleLine: true, horizontalFit: true, verticalFit: true, headerFit: true });
+      }
+    }
+    await page.setViewportSize({ width: 1280, height: 844 });
+    await expect(label).toBeHidden();
+    await expect(button.locator('.agent-desktop-close')).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await button.click();
+    await expect(page.locator('#agent-panel')).toBeHidden();
+  });
+}
+
 test('Access replacements make the form dirty, but merely opening or confirming the saved settings does not', async ({ page }) => {
   const state = await setup(page); state.info = { ...state.info, configured: true, id: 'singleton', hasAccessCredentials: true };
   state.access = { clientId, clientSecret: secret };

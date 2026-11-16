@@ -44,8 +44,7 @@ export async function withMcpSftp<T>(
   try {
     const ready = client.waitForVersion();
     client.setDebugCallback(() => {}, false);
-    await writer.write(client.buildInit());
-    await ready;
+    await Promise.all([writer.write(client.buildInit()), ready]);
     return await operation(client);
   } finally {
     client.dispose();
@@ -169,7 +168,7 @@ export async function mcpWrite(
   }
   const temp = `${path}.cloudssh-${crypto.randomUUID()}.tmp`;
   const handle = sftp.parseHandleResponse(
-    await sftp.openFile(temp, SSH_FXF_WRITE | SSH_FXF_CREAT | SSH_FXF_EXCL)
+    await sftp.openFile(temp, SSH_FXF_WRITE | SSH_FXF_CREAT | SSH_FXF_EXCL, 0o600)
   );
   let closed = false;
   let renamed = false;

@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SFTPClient } from '../../src/ssh/sftp';
-import { mcpList, mcpRead, mcpWrite } from '../../src/worker/mcp-sftp';
+import { mcpList, mcpRead, mcpWrite, withMcpSftp } from '../../src/worker/mcp-sftp';
 import { mcpHash } from '../../src/mcp-schema';
 
 function file(content: string, exists = true) {
@@ -23,6 +23,36 @@ function file(content: string, exists = true) {
   };
   return { client, sftp: client as unknown as SFTPClient };
 }
+afterEach(() => vi.useRealTimers());
+
+describe('MCP SFTP initialization', () => {
+  it('handles INIT write rejection and version cleanup without an unhandled rejection', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let input!: ReadableStreamDefaultController<Uint8Array>;
+    const readable = new ReadableStream<Uint8Array>({ start(controller) { input = controller; } });
+    const failure = new Error('init_write_failed');
+    const writable = new WritableStream<Uint8Array>({ write() { throw failure; } });
+    const close = vi.fn(() => input.close());
+    const session = { openSftpStream: async () => ({ readable, writable, close }), close: vi.fn() };
+    const operation = vi.fn();
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      await expect(withMcpSftp(session as unknown as Parameters<typeof withMcpSftp>[0], operation))
+        .rejects.toBe(failure);
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(operation).not.toHaveBeenCalled();
+      expect(close).toHaveBeenCalledOnce();
+      expect(readable.locked).toBe(false);
+      expect(writable.locked).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+  });
+});
+
 describe('bounded MCP SFTP text operations', () => {
   it('reads byte slices without splitting UTF-8 and provides hashes only for full files', async () => {
     const { sftp, client } = file('a你b');
@@ -42,7 +72,7 @@ describe('bounded MCP SFTP text operations', () => {
   it('creates via an exclusive temporary file, without truncating the destination', async () => {
     const { sftp, client } = file('', false);
     expect(await mcpWrite(sftp, '/file', 'hello')).toMatchObject({ writtenBytes: 5 });
-    expect(client.openFile).toHaveBeenCalledWith(expect.stringMatching(/^\/file\.cloudssh-.*\.tmp$/), 2 | 8 | 32);
+    expect(client.openFile).toHaveBeenCalledWith(expect.stringMatching(/^\/file\.cloudssh-.*\.tmp$/), 2 | 8 | 32, 0o600);
     expect(client.rename).toHaveBeenCalledOnce();
     expect(client.atomicRename).not.toHaveBeenCalled();
     expect(client.setPermissions).toHaveBeenCalledWith(expect.any(String), 0o600);
@@ -54,6 +84,7 @@ describe('bounded MCP SFTP text operations', () => {
     expect(client.writeFile).not.toHaveBeenCalled();
     await mcpWrite(sftp, '/file', 'new', await mcpHash('original'));
     expect(client.atomicRename).toHaveBeenCalledOnce();
+    expect(client.openFile).toHaveBeenCalledWith(expect.stringMatching(/^\/file\.cloudssh-.*\.tmp$/), 2 | 8 | 32, 0o600);
     expect(client.setPermissions).toHaveBeenCalledWith(expect.any(String), 0o640);
   });
   it('rejects symlinks and unsupported atomic replacement, and cleans up failed temporary writes', async () => {

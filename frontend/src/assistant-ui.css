@@ -40,14 +40,17 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  padding: 0;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--on-surface-variant);
   cursor: pointer;
+}
+/* The Agent's labelled mobile back button keeps its responsive sizing from style.css. */
+.assistant-panel-header .assistant-icon-action:not(.agent-close-button) {
+  width: 28px;
+  height: 28px;
+  padding: 0;
 }
 .assistant-icon-action:hover {
   color: var(--accent);
