@@ -7,10 +7,16 @@ on:
       - "docs/**"
   workflow_dispatch:
 
+# Pages has a single destination. Serialize publication without cancelling an in-flight deploy.
+concurrency:
+  group: cloudssh-pages
+  cancel-in-progress: false
+
 jobs:
   deploy:
     if: github.repository_owner == 'newbietan'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pages: write
@@ -18,6 +24,8 @@ jobs:
     steps:
       # actions/checkout@v4.4.0
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
 
       - name: Setup Pages
         # actions/configure-pages@v4

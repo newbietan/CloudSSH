@@ -30,6 +30,7 @@ import { customThemeModal, customThemeStore } from './custom-theme-manager';
 import { requestCloudflareSshCertificate } from './cf-ssh-ca';
 import { notify } from './ui-feedback';
 import { initVersionNotice } from './version-notice';
+import { McpManager } from './mcp-manager';
 
 // ==================== 全局状态 ====================
 
@@ -49,6 +50,13 @@ const snippetManager = new SnippetManager({
   getTerminal: () => tabManager?.getActiveTab()?.terminal ?? null,
   isAuthenticated: () => isLoggedIn && !sharedSessionMode,
   onStateChange: () => syncDrawerSegmentedControl(),
+});
+
+const mcpManager = new McpManager(() => {
+  if (!isLoggedIn || sharedSessionMode) return null;
+  const tab = tabManager?.getActiveTab();
+  const session = tab?.terminal.getMcpSession();
+  return tab && session ? { ...session, label: tab.label } : null;
 });
 
 function setUserSpaceMenuOpen(open: boolean): void {
@@ -262,6 +270,7 @@ function deactivateTerminalView(): void {
 }
 
 function showAuthSection(): void {
+  mcpManager.setIdentity(null);
   if (!appConfig) return;
   deactivateTerminalView();
   document.getElementById('auth-section')!.classList.remove('hidden');
@@ -287,6 +296,7 @@ function showAuthSection(): void {
 
 function showUserSpace(user: InitialUser, config: AppConfig): void {
   deactivateTerminalView();
+  mcpManager.setIdentity(`${user.github_id}:${user.username}`);
   const previousGithubId = currentGithubId;
   isLoggedIn = true;
   currentGithubId = user.github_id;
@@ -1024,6 +1034,7 @@ async function init(): Promise<void> {
   const drawerBar = document.getElementById('terminal-drawer-segmented-bar');
   if (drawerBar) {
     initTerminalDrawerControl();
+  mcpManager.init();
   }
   initMobileDrawerButtons();
 

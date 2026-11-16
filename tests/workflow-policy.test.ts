@@ -31,7 +31,7 @@ describe('Fork 工作流执行策略', () => {
     expect(deploy).not.toMatch(/^\s*continue-on-error:\s*true/m);
     expect(deploy).not.toMatch(/run: pnpm run test:e2e[^\n]*\|\|/);
     expect(
-      deploy.match(/^        if: github.ref == 'refs\/heads\/(?:test|main)'$/gm)
+      deploy.match(/^        if: github.event_name == 'push' && github.ref == 'refs\/heads\/(?:test|main)'$/gm)
     ).toHaveLength(2);
   });
 
@@ -48,6 +48,59 @@ describe('Fork 工作流执行策略', () => {
     expect(sync).toContain('"repos/${REPOSITORY}/merge-upstream"');
     expect(sync).toContain('-f branch=main');
     expect(sync).not.toContain('secrets.');
+  });
+});
+
+describe('CI 验证和部署边界', () => {
+  it('PR 和手动执行都经过完整验证，但部署步骤仅允许 test/main 的 push', () => {
+    const deploy = readWorkflow('deploy.yml');
+    expect(deploy).toContain('  pull_request:\n    branches: [test, main]');
+    expect(deploy).toMatch(/^  workflow_dispatch:$/m);
+    expect(deploy).not.toContain('pull_request_target');
+    for (const command of ['typecheck', 'test:e2e', 'build:frontend']) {
+      expect(deploy).toContain(`run: pnpm run ${command}`);
+    }
+    expect(deploy).toContain('run: pnpm test');
+    const sections = deploy.split('      - name: Deploy verified artifact').slice(1);
+    expect(sections).toHaveLength(2);
+    for (const section of sections) {
+      expect(section).toContain("if: github.event_name == 'push' && github.ref == 'refs/heads/");
+      expect(section).toContain('CLOUDFLARE_API_TOKEN:');
+    }
+    expect(deploy.slice(0, deploy.indexOf('      - name: Deploy verified artifact'))).not.toContain('secrets.');
+  });
+
+  it('将昂贵浏览器安装放在快速检查和构建之后，保留全部浏览器', () => {
+    const deploy = readWorkflow('deploy.yml');
+    const browsers = deploy.indexOf('run: pnpm exec playwright install --with-deps chromium webkit');
+    expect(browsers).toBeGreaterThan(deploy.indexOf('run: pnpm run typecheck'));
+    expect(browsers).toBeGreaterThan(deploy.indexOf('run: pnpm test'));
+    expect(browsers).toBeGreaterThan(deploy.indexOf('run: pnpm run build:frontend'));
+    expect(browsers).toBeLessThan(deploy.indexOf('run: pnpm run test:e2e'));
+  });
+
+  it('只取消过期 PR 校验，不中途取消 Worker 或 Pages 部署，并限制 job 时长', () => {
+    const deploy = readWorkflow('deploy.yml');
+    expect(deploy).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
+    expect(deploy).toContain('timeout-minutes: 30');
+    const pages = readWorkflow('github-pages.yml');
+    expect(pages).toContain('group: cloudssh-pages\n  cancel-in-progress: false');
+    expect(pages).toContain('timeout-minutes: 10');
+    expect(pages).toContain('persist-credentials: false');
+  });
+
+  it('互操作 push/PR 均覆盖 MCP 和共享传输的相关变更', () => {
+    const interop = readWorkflow('ssh-interop.yml');
+    expect(interop).toContain('  pull_request:\n    branches: [test, main]');
+    const triggers = interop.split('\n# This workflow')[0];
+    for (const path of ['src/worker/mcp-*.ts', 'src/mcp-schema.ts', 'src/worker/direct-tcpip-stream.ts',
+      'src/worker/tunnel-stream.ts', 'src/worker/dns-check.ts', 'src/worker/agent/exec-channel.ts',
+      'src/types.ts', 'tests/worker/mcp*.test.ts', 'pnpm-workspace.yaml']) {
+      expect(triggers.split(`'${path}'`)).toHaveLength(3);
+    }
+    expect(interop).toContain('cancel-in-progress: true');
+    expect(interop).toContain('os: [ubuntu-24.04, macos-15]');
+    expect(interop).not.toContain('secrets.');
   });
 });
 
@@ -79,7 +132,7 @@ describe('浏览器 CI 并发与报告策略', () => {
     expect(upload).toContain(`if: \${{ !cancelled() && steps.e2e.outcome != 'skipped' }}`);
     expect(upload).toMatch(/uses: actions\/upload-artifact@[a-f0-9]{40} /);
     expect(upload).toContain(
-      `name: playwright-report-\${{ github.ref_name }}-\${{ github.run_attempt }}`
+      `name: playwright-report-\${{ github.run_id }}-\${{ github.run_attempt }}`
     );
     expect(upload).toContain('path: |\n            playwright-report/\n            test-results/');
     expect(upload).toContain('retention-days: 7');

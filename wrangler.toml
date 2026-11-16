@@ -42,6 +42,9 @@ class_name = "UserDBDO"
 name = "SSH_SHARE"
 class_name = "SSHShareDO"
 
+[[durable_objects.bindings]]
+name = "MCP_EXECUTION"
+class_name = "MCPExecutionDO"
 # 首次部署及后续迁移通过 migration tag 初始化 SQLite Durable Object 类；
 # 已有环境新增或变更 DO 类时必须追加新的、不可复用的 migration tag
 [[migrations]]
@@ -52,6 +55,9 @@ new_sqlite_classes = ["SSHSessionDO", "UserDBDO"]
 tag = "v2"
 new_sqlite_classes = ["SSHShareDO"]
 
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["MCPExecutionDO"]
 # ========== Test 环境 ==========
 # test 分支部署到独立 Worker；DO 类绑定相同，但实例与数据和生产环境隔离
 # 自定义域名请在 Cloudflare Dashboard 中手动绑定
@@ -77,3 +83,6 @@ class_name = "UserDBDO"
 [[env.test.durable_objects.bindings]]
 name = "SSH_SHARE"
 class_name = "SSHShareDO"
+[[env.test.durable_objects.bindings]]
+name = "MCP_EXECUTION"
+class_name = "MCPExecutionDO"

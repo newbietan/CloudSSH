@@ -63,6 +63,7 @@ export class SFTPClient {
   private recvBuffer: Uint8Array = new Uint8Array(0);
   private recvOffset: number = 0;
   private version: number = 0;
+  private atomicRenameSupported = false;
   private sendData: ((data: Uint8Array) => void) | null = null;
   private debugFn: ((message: string) => void) | null = null;
   private debugEnabled: boolean = false;
@@ -181,8 +182,9 @@ export class SFTPClient {
       this.version = reader.uint32();
       if (this.version !== SFTP_VERSION) throw new Error('Unsupported SFTP version');
       while (reader.remaining > 0) {
-        reader.stringBytes(); // extension name
-        reader.stringBytes(); // extension data
+        const name = this.textDecoder.decode(reader.stringBytes());
+        const value = this.textDecoder.decode(reader.stringBytes());
+        if (name === 'posix-rename@openssh.com' && value === '1') this.atomicRenameSupported = true;
       }
       this.debug(() => `[SFTP] VERSION: ${this.version}`);
 
@@ -217,7 +219,7 @@ export class SFTPClient {
     const expected = req.type === SSH_FXP_OPEN || req.type === SSH_FXP_OPENDIR
       ? SSH_FXP_HANDLE : req.type === SSH_FXP_READ ? SSH_FXP_DATA
       : req.type === SSH_FXP_READDIR || req.type === SSH_FXP_REALPATH ? SSH_FXP_NAME
-      : req.type === SSH_FXP_STAT ? SSH_FXP_ATTRS : SSH_FXP_STATUS;
+      : req.type === SSH_FXP_STAT || req.type === 7 ? SSH_FXP_ATTRS : SSH_FXP_STATUS;
     if (type !== SSH_FXP_STATUS && type !== expected) {
       throw new Error('SFTP response does not match request');
     }
@@ -366,6 +368,19 @@ export class SFTPClient {
     return this.sendRequest(reqId, SSH_FXP_STAT, payload);
   }
 
+  async lstat(path: string): Promise<Uint8Array> {
+    return this.sendRequest(this.nextRequestId(), 7, encodeString(path));
+  }
+
+  async setPermissions(path: string, permissions: number): Promise<Uint8Array> {
+    const pathBytes = encodeString(path);
+    const payload = new Uint8Array(pathBytes.length + 8);
+    payload.set(pathBytes);
+    writeUint32(payload, pathBytes.length, SSH_FILEXFER_ATTR_PERMISSIONS);
+    writeUint32(payload, pathBytes.length + 4, permissions);
+    return this.sendRequest(this.nextRequestId(), 9, payload);
+  }
+
   // SSH_FXP_OPEN
   async openFile(path: string, flags: number): Promise<Uint8Array> {
     const reqId = this.nextRequestId();
@@ -459,6 +474,17 @@ export class SFTPClient {
     payload.set(oldBytes);
     payload.set(newBytes, oldBytes.length);
     return this.sendRequest(reqId, SSH_FXP_RENAME, payload);
+  }
+
+  supportsAtomicRename(): boolean { return this.atomicRenameSupported; }
+
+  async atomicRename(oldPath: string, newPath: string): Promise<Uint8Array> {
+    if (!this.atomicRenameSupported) throw new Error('atomic_replace_unsupported');
+    const fields = [encodeString('posix-rename@openssh.com'), encodeString(oldPath), encodeString(newPath)];
+    const payload = new Uint8Array(fields.reduce((size, field) => size + field.length, 0));
+    let offset = 0;
+    for (const field of fields) { payload.set(field, offset); offset += field.length; }
+    return this.sendRequest(this.nextRequestId(), 200, payload);
   }
 
   // SSH_FXP_REALPATH

@@ -8,26 +8,49 @@ on:
       - 'src/ssh/**'
       - 'src/worker/ssh-session.ts'
       - 'src/worker/ssh-interactive-auth.ts'
+      - 'src/worker/direct-tcpip-stream.ts'
+      - 'src/worker/tunnel-stream.ts'
+      - 'src/worker/dns-check.ts'
+      - 'src/worker/agent/exec-channel.ts'
+      - 'src/worker/mcp-*.ts'
+      - 'src/mcp-schema.ts'
+      - 'src/types.ts'
       # Includes the test-only Go workspace and gateway module.
       - 'tests/interop/**'
       - 'tests/ssh/**'
+      - 'tests/worker/mcp*.test.ts'
       - 'tests/tsconfig.worker.json'
       - 'package.json'
       - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - '.github/workflows/ssh-interop.yml'
   pull_request:
-    branches: [test]
+    branches: [test, main]
     paths:
       - 'src/ssh/**'
       - 'src/worker/ssh-session.ts'
       - 'src/worker/ssh-interactive-auth.ts'
+      - 'src/worker/direct-tcpip-stream.ts'
+      - 'src/worker/tunnel-stream.ts'
+      - 'src/worker/dns-check.ts'
+      - 'src/worker/agent/exec-channel.ts'
+      - 'src/worker/mcp-*.ts'
+      - 'src/mcp-schema.ts'
+      - 'src/types.ts'
       # Includes the test-only Go workspace and gateway module.
       - 'tests/interop/**'
       - 'tests/ssh/**'
+      - 'tests/worker/mcp*.test.ts'
       - 'tests/tsconfig.worker.json'
       - 'package.json'
       - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - '.github/workflows/ssh-interop.yml'
+
+# This workflow has no deployment or secrets; obsolete runs can be safely cancelled.
+concurrency:
+  group: cloudssh-interop-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

@@ -579,6 +579,12 @@ export class SSHTerminal {
     this.notifySelectionChanged();
   }
 
+  getMcpSession(): { session: string; serverId: number } | null {
+    if (this.resumeOnlyMode || !this.sessionReady || !this.activeSessionId || !this.lastHostInfo?.serverId ||
+      this.ws?.readyState !== WebSocket.OPEN) return null;
+    return { session: this.activeSessionId, serverId: this.lastHostInfo.serverId };
+  }
+
   getSFTPWebSocketUrl(): string | null {
     return this.sftpAttachUrl;
   }

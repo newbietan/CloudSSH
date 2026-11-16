@@ -49,6 +49,9 @@ src/
 │   ├── server-tags.ts # 服务器标签规范化与 SQLite JSON 序列化
 │   ├── os-detect.ts  # 远端操作系统输出解析、规范 key 与持久化白名单
 │   ├── auth.ts       # 认证模式解析（单管理员密码/GitHub 互斥）+ OAuth 流程 + Session 中间件 + 密码登录
+│   ├── mcp.ts / mcp-auth.ts / mcp-tools.ts # 无状态 MCP、个人 Token 入口与工具 schema
+│   ├── mcp-execution.ts # MCPExecutionDO：无头 exec/SFTP 与短空闲有界连接池
+│   ├── mcp-store.ts / mcp-sftp.ts # Token 摘要、近期活动与有界文本文件操作
 │   ├── cf-ssh-ca.ts  # Cloudflare Zero Trust SSH CA 证书签发代理
 │   ├── dns-check.ts  # DNS-over-HTTPS 解析 + 统一 IP 块检查（DNS rebinding 防重绑定 SSRF 防护）
 │   ├── ip-geo.ts     # 保存直连服务器时 IPinfo 区域推断，映射为 DO locationHint
@@ -88,6 +91,7 @@ src/
 │   ├── sftp-reader.ts # SFTP v3 长度先校验的有界字段游标
 │   └── sftp-types.ts # SFTP protocol constants and types
 ├── version.ts        # 构建版本、稳定版语义比较与更新检测共享常量
+├── mcp-schema.ts     # 个人 MCP 权限、预算、Token 输入与有界请求读取
 ├── ai-endpoint.ts    # Responses API 根地址校验与规范化纯函数
 ├── ai-model-policy.ts # 前后端共享的模型上下文/输出 Token 预算与范围校验
 ├── agent-response-diagnostics.ts # 调用阶段、参数、错误码与本地请求 UUID 的共享诊断白名单
@@ -160,6 +164,7 @@ frontend/
 │   ├── snippet-manager.ts # 命令片段库面板（云端/本地双后端、参数占位符录入、搜索/复制、填入/填入并执行、编辑/删除）
 │   ├── snippet-variables.ts # 命令片段 {{var}} 参数占位符提取与安全替换纯函数
 │   ├── snippet-store.ts   # 片段存储层（RemoteSnippetStore + LocalSnippetStore + 错误映射）
+│   ├── mcp-manager.ts / mcp-manager.css # 外部助手 Token 管理、主动终端输出共享与近期活动
 │   ├── ai-config.ts       # AI model configuration modal (Combobox 下拉、免密安全拉取与主题自适应)
 │   ├── i18n/
 │   │   ├── index.ts        # 语言解析、词条查询（t）与 locale 变更通知
@@ -243,7 +248,7 @@ The frontend is **NOT** served separately in production. The build process:
 
 ## Durable Objects
 
-Three Durable Objects handle state:
+Four Durable Objects handle state:
 
 1. **SSHSessionDO** (`src/worker/durable-object.ts`)
    - Manages WebSocket ↔ TCP socket connections
@@ -257,6 +262,11 @@ Three Durable Objects handle state:
 3. **SSHShareDO** (`src/worker/share-do.ts`)
    - Owns one random capability's one-time claim, short-lived connection ticket, expiry, and revocation state
    - Stores the append-only lifecycle, SFTP, and terminal-output audit log for that share session
+
+4. **MCPExecutionDO** (`src/worker/mcp-execution.ts`)
+   - Each personal token owns an isolated pool of at most two headless SSH connections
+   - One operation per server, no unbounded queue; idle connections expire through Alarm after about 60 seconds
+   - Bound via `MCP_EXECUTION` in both environments; append-only SQLite migration `v3`
 
 ## Environment Variables
 
@@ -311,6 +321,11 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 | `/api/version` | GET | No | 官方 main 最新稳定版本（缓存元数据，失败返回 latestVersion: null） |
 | `/api/config` | GET | No | Feature flags (turnstile, GitHub auth enabled) |
 | `/api/cf-ssh-ca/sign` | POST | Same-Origin | Cloudflare Zero Trust 原生 SSH CA 证书签发代理 |
+| `/mcp` | POST | Personal Bearer Token | 无状态 Streamable HTTP：server_list / ssh_exec / sftp_list / sftp_read / sftp_write / session_output；GET/DELETE 返回 405 |
+| `/api/mcp/tokens` | GET/POST | Yes | 列出元数据或创建仅一次明文展示的个人 Token |
+| `/api/mcp/tokens/:id` | DELETE | Yes | 撤销 Token，并尽力关闭其执行连接 |
+| `/api/mcp/context` | POST | Yes | 所有者主动开启/关闭或查询单标签页最近输出共享 |
+| `/api/mcp/activity` | GET | Yes | 有界近期活动摘要，不含命令/输出，不是审计 |
 
 ## Testing
 
@@ -408,7 +423,7 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
 28. **Frontend i18n** - 所有面向用户的文案走 `frontend/src/i18n` 的 `t()` / `data-i18n` / `data-i18n-title` / `data-i18n-placeholder` 管线并同步 `locales/zh-CN.ts`、`zh-TW.ts` 与 `en-US.ts`；语言解析支持 URL 参数、localStorage（`cloudssh_locale`）与浏览器语言回退。新增文案时保持多端词条对齐，勿硬编码中文到模板字符串。
 
-29. **CI paths-ignore 作用域** - `deploy.yml` 当前使用 `**/*.md` 与 `**/*.png` 等跨目录模式，因此仅修改根目录或 `tests/` 等子目录 Markdown/图片均不会触发部署。标准 glob 中 `*` 不匹配 `/`，若将来改回 `*.md` 则仅覆盖根目录，不能沿用当前跨目录口径。修改 `deploy.yml` 本身会触发校验运行。
+29. **CI paths-ignore 作用域** - `deploy.yml` 的 push 触发当前使用 `**/*.md` 与 `**/*.png` 等跨目录模式，因此仅修改根目录或 `tests/` 等子目录 Markdown/图片均不会触发部署。标准 glob 中 `*` 不匹配 `/`，若将来改回 `*.md` 则仅覆盖根目录，不能沿用当前跨目录口径。修改 `deploy.yml` 本身会触发校验运行。PR（目标 test/main）不做 paths-ignore，避免文档 PR 因跳过必需检查而永久 pending；手动触发同样只验证。只有 test/main 的 push 可注入部署 Secrets 并部署，不能凭分支名让 workflow_dispatch 部署。
 
 30. **Agent exec 输出有界性（弱网 OOM 防线）** - `AgentExecChannel` 对 exec 通道 stdout/stderr 执行有界捕获：合计 4MB 硬上限（`MAX_EXEC_CAPTURE_BYTES`，超限不再续 SSH window 并由会话层关闭通道击杀远端命令，如无界输出的 `docker logs`），保留头 128KB + 尾 256KB 环形视图并附加截断说明，`onData/onExtendedData` 的布尔返回值控制 window 续期，改动时勿恢复无界累积。exec 结果通过 `truncated` 标志标明任何输出缺失，`write_file(search)` 遇到截断快照必须拒绝覆盖，不能把保留头尾或截断提示写回原文件；替换内容通过回调字面返回，避免 `$&`/`$'` 等 JS 替换序列展开。守卫不只此一层：`docker_manage(logs)` 强制 `--tail 200` 且拒绝 `-f/--follow`；工具结果序列化进 LLM 前经 64K 字符中间截断；socket 写带 60s deadline（适配高延迟传输，超时关底层 socket 解挂）；独立于写路径的被动 idle 看门狗（60s 无入站数据即关闭）与终端输入队列 4MB 上限共同限制弱网积压，勿移除任一防线。**已连接终端输出**独立经 `TerminalOutputGuard` 统计当前 WebSocket 发出但未接收确认的 stdout+stderr 字节，总计不得超过 4MiB；超限或有积压且 60s 无有效 ACK 进展时关闭完整 SSH 会话（code 1000，`output_backlog_closed`，不自动重连），不再转发/续 SSH window。Workers WebSocket 无可用 `bufferedAmount`/drain 指标，因此使用随机代际 ID + 累计字节 `terminal_output_ack`；重复、旧代际、超前/非法 ACK 无效，ACK 不算用户活动。detach 取消该计时器，reattach 轮换代际并把 128KiB 回放计入新连接额度。该限制是传输积压上限，不是会话总输出上限，也不保证 xterm 渲染/文件落盘完成或限制畅通链路的持续输出成本；旧前端无 ACK 时也会触发闸门，升级后须刷新页面。
 
@@ -464,6 +479,8 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
 48. **首屏初始化与强制登录防闪烁（#192）** - 初始 HTML 使用 `#app[hidden][inert][aria-hidden]` 隔离未决页面，独立 `#app-loading` 展示主题自适应、三语和减少动态友好的加载状态；不能先展示匿名连接表单再替换为登录面板。`app-bootstrap.ts` 同时读取 `/api/config` 与 `/api/auth/me`（同源、no-store），共享 10s deadline 覆盖响应正文，任一失败取消另一请求；仅身份接口 401 表示未登录，网络/HTTP/JSON/必要字段异常均停留错误页并允许手动单次重试，不降级匿名、不缓存认证策略。`ConnectionForm` 直接接收已确认配置，只渲染最终模式，强制登录/坏哈希面板不创建 SSH 凭据输入或读取本地连接历史。分享认领和独立终端路由仍绕过这两次读取并显式解除加载态；`#password-setup` 不受配置失败阻断。`app-bootstrap.test.ts` 与 Chromium/WebKit 的 `e2e/app-bootstrap.spec.ts` 覆盖脚本加载前、慢响应/刷新、已登录、失败/超时/迟到响应、重试、三语和动态偏好。
 
+49. **个人 MCP 接入（#194）** - `/mcp` 使用根运行时依赖 `@modelcontextprotocol/sdk` 的 Web Standards 无状态 Streamable HTTP 和 `zod`；不引入 Node HTTP 服务或已弃用的 McpAgent，不实现 OAuth/持久协议会话/自动重放。网页登录只负责签发/撤销个人 Token，MCP 必须验证独立 Bearer（仅存 SHA-256 摘要），绑定完整所有者路由、认证模式/密码代际、最多 100 个已保存服务器 ID、read/write/exec/context 权限、1–365 天有效期，每用户最多 20 个有效 Token、每 Token 120 请求/分钟。只允许已保存配置，由 UserDB 解析所有权、凭据和不可变跳板链；不导出凭据、不接受任意目标、要求每跳已有指纹且严格验签。交互式认证/浏览器临时 Cloudflare SSH CA 不支持无人值守，缺指纹或需人工步骤必须显式失败，不能自动信任/降级；Access 机器请求仍需运行时已验证的边缘上下文，不信任邮箱头，也不豁免 Access 保护。exec 是明确预授权的任意命令能力，不是只读或逐条网页审批；现有命令阻断仅防误操作，不是沙箱。共享 SSHSession 的非 PTY exec 与独立 SFTP subsystem，不共享网页 Shell/上传状态机，不调用内置 Agent/记忆。MCPExecutionDO 每 Token 最多两条连接，每服务器一操作，约 60s 空闲释放；配置/凭据/指纹变化重建，整次操作≤90s、命令≤60s，取消/超时/撤销尽力关通道，不能承诺终止全部子进程或回滚，未知结果不得自动重试。文本≤64KiB，目录≤200 条/约64KiB/32批；覆盖普通文件须原文件完整哈希与 OpenSSH 原子 rename，临时文件 EXCL 创建，不先清空目标；保留 rwx 但不保证 inode/owner/ACL/xattr，哈希检查不是事务锁。终端上下文仅所有者显式共享的已保存服务器标签页（最多30min，断线取消），随机会话定位不是恢复凭据，读取仍受服务器/context权限约束；有界快照不是屏幕或完整历史，不允许终端输入，不刷新空闲。网页明文配置不落盘，关闭/换号/退出销毁；面板可见时才刷新活动。活动仅名称/服务器/工具/时间/状态，每用户≤100条、约24h由 UserDB Alarm清理，不存参数/输出、不作永久审计；与记忆共用最早Alarm，禁止覆盖更早唤醒。详见 `docs/mcp.md`，新增绑定需 `v3` 迁移，不删除现有数据。
+
 ## SSH 兼容增强边界
 
 - `frontend/package.json` 的 `bcrypt-pbkdf@1.0.2` 仅用于浏览器解锁，不是生产 SSH 协议库。支持 OpenSSH bcrypt + AES-CTR 与 PKCS#8 PBES2/PBKDF2 + AES-CBC；口令不上传、不持久化，解锁私钥仍进入 Worker 签名。匿名导入关闭凭据记忆；保存服务器必须单独同意按既有账号加密存储（非独立 KMS），编辑器代际变化后禁止迟到解锁结果提交。预算与许可见 `docs/ssh-compatibility.md`，不要无界执行用户提供的 KDF 参数。
@@ -480,7 +497,7 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 | Production | `cloudssh` | `main` | `<name>.workers.dev` + 自定义域名 |
 | Test | `cloudssh-test` | `test` | `<name>-test.workers.dev` + 自定义域名 |
 
-两个环境的 Durable Objects（SSHSessionDO、UserDBDO、SSHShareDO）数据完全隔离。
+两个环境的 Durable Objects（SSHSessionDO、UserDBDO、SSHShareDO、MCPExecutionDO）数据完全隔离。
 
 ### 部署方式
 
@@ -504,12 +521,14 @@ pnpm run deploy:test     # 部署 test 环境
 
 官方 CI（`deploy.yml` / `github-pages.yml` / `ssh-interop.yml`）所有 job 均在分配 runner / 展开 matrix 前通过 `github.repository_owner == 'newbietan'` 限定维护者仓库，勿改为 `github.actor` 判断：外部贡献者向官方仓库提交 PR 时仍需正常检查。其他所有者的 Fork 不运行部署、Pages 或互操作 CI；GitHub 可能保留 Skipped 记录，但不执行 runner 任务。Cloudflare 面板 / Git 集成部署独立于这些工作流，无需启用 Actions 或配置 CI 的 Cloudflare Secrets。`tests/workflow-policy.test.ts` 逐个检查非同步工作流的 job 级 owner 限制，新增工作流须沿用该策略。
 
+- 指向维护者仓库 `test` / `main` 的 PR，以及手动执行 → 完整验证但绝不部署；Fork PR 代码仅在无 Secrets 的步骤中运行，禁止改成 `pull_request_target` 执行未信任代码
+- Worker CI 并发按事件与 PR/分支分组，仅取消过期 PR 验证；push 部署不在途取消，30 分钟 job 上限。互操作无 Secrets/部署，可取消旧运行；Pages 同一目标串行发布、10 分钟 job 上限
 - 维护者仓库 `test` 分支 push → 自动部署到 `cloudssh-test`
 - 维护者仓库 `main` 分支 push → 自动部署到 `cloudssh`
 - 维护者仓库 `docs/**` 变更 → 发布 GitHub Pages 主题编辑器（`github-pages.yml`）
 - Fork 仅按需运行上游 `main` 同步（`sync-upstream.yml`）：手动执行无需变量；定时同步默认关闭，仅 `AUTO_SYNC_UPSTREAM=true` 开启，删除或设为 `false` 即关闭
 
-> 部署门禁（`deploy.yml`）依次执行：冻结锁文件安装 → Playwright 浏览器安装 → `typecheck` → `test` → `build:frontend` → `test:e2e` → 上传浏览器报告 → 按分支部署；任一环节失败即阻断部署。E2E 失败仍尝试上传报告，不放行部署。CI 部署步骤直接执行 `pnpm exec wrangler deploy [--env test]`，复用已通过测试的前端内联产物，不在注入部署 Secrets 后重复构建；本地 `deploy`/`deploy:test` 脚本仍保留一键构建部署。
+> 部署门禁（`deploy.yml`）依次执行：冻结锁文件安装 → `typecheck` → `test` → `build:frontend` → Playwright 浏览器安装 → `test:e2e` → 上传浏览器报告 → 按分支部署；任一环节失败即阻断部署。E2E 失败仍尝试上传报告，不放行部署。CI 部署步骤直接执行 `pnpm exec wrangler deploy [--env test]`，复用已通过测试的前端内联产物，不在注入部署 Secrets 后重复构建；本地 `deploy`/`deploy:test` 脚本仍保留一键构建部署。
 
 ### 自定义域名
 

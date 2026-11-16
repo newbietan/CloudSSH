@@ -55,12 +55,16 @@ export type AuthMode = 'password' | 'cf_access' | 'github' | 'anonymous';
 
 /** Only runtime-authenticated Access invocations may establish an identity. Never trust HTTP headers. */
 const accessIdentities = new WeakMap<Request, string | null>();
+const verifiedAccessContexts = new WeakSet<Request>();
+/** Machine tokens still require a successfully verified edge context in Access mode. */
+export function hasVerifiedAccessContext(request: Request): boolean { return verifiedAccessContexts.has(request); }
 
 export async function initializeAccessIdentity(
   request: Request,
   ctx?: Pick<ExecutionContext, 'access'>
 ): Promise<void> {
   accessIdentities.delete(request);
+  verifiedAccessContexts.delete(request);
   if (!ctx?.access) return;
   // Keep Access mode on lookup failure or service identities without an email: no GitHub fallback.
   accessIdentities.set(request, null);
@@ -70,6 +74,7 @@ export async function initializeAccessIdentity(
       ctx.access.getIdentity(),
       new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), 4000); }),
     ]);
+    if (identity && typeof identity === 'object') verifiedAccessContexts.add(request);
     const email = identity?.email;
     if (typeof email === 'string' && email.length <= 254 && /^[^\s@]+@[^\s@]+$/.test(email.trim())) {
       accessIdentities.set(request, email.trim().toLowerCase());
