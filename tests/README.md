@@ -117,11 +117,13 @@ CI=true pnpm exec playwright test --workers=2
 
 ## 个人 MCP 接入回归
 
-- `tests/worker/mcp.test.ts`：真实官方 MCP Client 初始化/列工具/调用、Token 摘要存储、所有权/认证模式/过期/撤销、请求大小及近期活动上限。
+- `tests/worker/mcp.test.ts`：真实官方 MCP Client 初始化/列工具/调用、唯一配置的AES-GCM回读、幂等并发生成、永久稳定令牌、旧摘要迁移、逐服务器授权/清空权限、认证模式与请求/活动预算。
 - `mcp-execution.test.ts`：严格验签与无头连接、配置变化重建、短连接复用、并发拒绝、取消、撤销复查、隧道重定向/解析地址防护和 Alarm 清理。
 - `mcp-context.test.ts` / `mcp-ssh-channels.test.ts`：标签页显式共享的所有者/路由/服务器隔离、到期/断线失效、不刷新空闲，以及独立 subsystem 与 exec 超时清理。
 - `mcp-sftp.test.ts`：UTF-8 字节边界、二进制拒绝、目录预算、临时文件、哈希冲突与原子替换。
-- `tests/e2e/mcp.spec.ts`：Chromium / WebKit 移动端三语界面、Token 明文关闭清理/撤销、真实终端事件产生上下文参数、显式共享/停止、匿名隐藏和 axe。
+- `tests/e2e/mcp.spec.ts` / `mcp-access.spec.ts`：Chromium / WebKit 移动端三语界面、唯一配置生成/重复复制/保存逐服务器权限、显式共享/停止、匿名隐藏和axe；Access精简引导与加密保存后的显式回读、明文不进浏览器存储、关闭/模式切换清理，四主题材质/固定操作栏及默认折叠活动。
+- `tests/worker/mcp-management.test.ts`：元数据与显式POST导出分离、权限更新失效旧连接池、无DELETE/旧令牌接口、所有者鉴权。
+- `mcp-client-config.test.ts`：普通模式只生成 Bearer，Access 添加独立的两个请求头，凭据格式/大小边界和固定 SVG 几何；`agent-responses.spec.ts` 覆盖助手 SVG 与完成/取消/恢复状态切换。
 - 显式 `CLOUDSSH_SSHD_INTEROP=1 pnpm exec vitest run tests/interop/sshd.test.ts` 还验证真实 OpenSSH 上的无 Shell exec、独立 SFTP 创建/读取/原子替换；不改系统 SSH 配置。
 
 详见 [MCP 接入和限制](../docs/mcp.md)。协议测试不等同于所有 Claude Code/Cursor 版本的实机验证；Access 边缘准入与实际 Cloudflare 部署需单独验证。

@@ -12,6 +12,7 @@ import {
   type UnifiedServerMemory,
 } from '../../../src/server-memory-schema';
 import { copyTextToClipboard } from '../clipboard';
+import { assistantIconMarkup, createAssistantIcon } from '../assistant-icons';
 import { attachDrawerSwipeToClose } from '../drawer-swipe';
 import { getLocale, onLocaleChange, t, translateDocument } from '../i18n';
 import { confirmAction, notify } from '../ui-feedback';
@@ -356,7 +357,7 @@ export class AgentPanel {
       <div class="flex flex-col w-full h-full bg-[var(--bg)] border-l border-[var(--border)] text-on-surface overflow-hidden relative">
         <div class="agent-panel-header flex items-center justify-between px-4 h-12 border-b border-[var(--border)] bg-[var(--bg-elevated)] shrink-0">
           <div class="flex items-center gap-2 min-w-0">
-            <span class="material-symbols-outlined text-[var(--accent-secondary)]" style="font-size: 18px; font-variation-settings: 'FILL' 1;">smart_toy</span>
+            <span class="text-[var(--accent-secondary)]" style="font-size: 18px;">${assistantIconMarkup('agent')}</span>
             <span class="agent-panel-title text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)] truncate" data-i18n="agent.title">AI Agent 助手</span>
           </div>
           <div class="flex items-center gap-1.5">
@@ -885,11 +886,7 @@ export class AgentPanel {
       if (this.thinkingStatusEl) {
         this.thinkingStatusEl.textContent = `${t('agent.abortedBadge')} (${this.thinkingStepCount})`;
       }
-      const mainIcon = this.thinkingProcessEl.querySelector('.tp-icon') as HTMLElement | null;
-      if (mainIcon) {
-        mainIcon.textContent = 'cancel';
-        mainIcon.style.color = 'var(--error)';
-      }
+      this.setThinkingProcessIcon('cancel');
     }
 
     if (this.streamingEl) {
@@ -997,13 +994,21 @@ export class AgentPanel {
       });
   }
 
+  private setThinkingProcessIcon(icon: 'agent' | 'done' | 'cancel'): void {
+    const node = this.thinkingProcessEl?.querySelector<HTMLElement>('.tp-icon');
+    if (!node) return;
+    node.classList.toggle('material-symbols-outlined', icon !== 'agent');
+    node.style.color = icon === 'cancel' ? 'var(--error)' : '';
+    if (icon === 'agent') node.replaceChildren(createAssistantIcon('agent'));
+    else node.textContent = icon === 'done' ? 'check_circle' : 'cancel';
+  }
+
   private reactivateThinkingProcess(): void {
     if (!this.thinkingProcessEl || !this.thinkingIsDone) return;
     this.thinkingIsDone = false;
     this.thinkingProcessEl.classList.remove('tp-done', 'tp-expanded');
 
-    const mainIcon = this.thinkingProcessEl.querySelector('.tp-icon') as HTMLElement | null;
-    if (mainIcon) mainIcon.textContent = 'smart_toy';
+    this.setThinkingProcessIcon('agent');
 
     const dots = this.thinkingProcessEl.querySelector('.thinking-dots') as HTMLElement | null;
     if (dots) dots.style.display = '';
@@ -1056,7 +1061,7 @@ export class AgentPanel {
     container.innerHTML = `
       <button class="tp-accordion" type="button">
         <span class="tp-chevron material-symbols-outlined">expand_more</span>
-        <span class="tp-icon material-symbols-outlined" style="font-variation-settings:'FILL' 1;">smart_toy</span>
+        <span class="tp-icon">${assistantIconMarkup('agent')}</span>
         <span class="tp-status">${t('agent.thinking')}</span>
         <div class="thinking-dots">
           <span class="w-1 h-1 rounded-full bg-[var(--agent-agent-color)] animate-bounce" style="animation-delay:0ms;"></span>
@@ -1122,7 +1127,7 @@ export class AgentPanel {
     const icon =
       tool === 'execute_command' || tool === 'terminal'
         ? '<span class="material-symbols-outlined tp-step-icon" style="font-variation-settings:\'FILL\' 0;">terminal</span>'
-        : '<span class="material-symbols-outlined tp-step-icon" style="font-variation-settings:\'FILL\' 1;">smart_toy</span>';
+        : `<span class="tp-step-icon">${assistantIconMarkup('agent')}</span>`;
 
     // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     stepEl.innerHTML = `${icon}<span class="tp-step-label">${escapeHtml(label)}</span>`;
@@ -1184,8 +1189,7 @@ export class AgentPanel {
       });
     }
 
-    const mainIcon = this.thinkingProcessEl.querySelector('.tp-icon') as HTMLElement | null;
-    if (mainIcon) mainIcon.textContent = 'check_circle';
+    this.setThinkingProcessIcon('done');
 
     const dots = this.thinkingProcessEl.querySelector('.thinking-dots') as HTMLElement | null;
     if (dots) dots.style.display = 'none';
@@ -1234,7 +1238,7 @@ export class AgentPanel {
       el.className = 'agent-message agent-response';
 
       const themeColor = 'var(--agent-agent-color)';
-      const roleIcon = `<span class="material-symbols-outlined text-[15px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">smart_toy</span>`;
+      const roleIcon = `<span class="text-[15px]" style="color:${themeColor};">${assistantIconMarkup('agent')}</span>`;
 
       // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
       el.innerHTML = `
@@ -1485,8 +1489,7 @@ export class AgentPanel {
       this.thinkingIsDone = false;
       this.thinkingProcessEl.classList.remove('tp-done');
 
-      const mainIcon = this.thinkingProcessEl.querySelector('.tp-icon') as HTMLElement | null;
-      if (mainIcon) mainIcon.textContent = 'smart_toy';
+      this.setThinkingProcessIcon('agent');
 
       const dots = this.thinkingProcessEl.querySelector('.thinking-dots') as HTMLElement | null;
       if (dots) dots.style.display = '';
@@ -1520,7 +1523,7 @@ export class AgentPanel {
     const roleIcon = isUser
       ? `<span class="material-symbols-outlined text-[15px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">person</span>`
       : isAgent
-        ? `<span class="material-symbols-outlined text-[15px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">smart_toy</span>`
+        ? `<span class="text-[15px]" style="color:${themeColor};">${assistantIconMarkup('agent')}</span>`
         : isExecuting
           ? `<span class="material-symbols-outlined text-[15px]" style="color:${themeColor};font-variation-settings:'FILL' 0;">terminal</span>`
           : `<span class="material-symbols-outlined text-[15px]" style="color:${themeColor};font-variation-settings:'FILL' 1;">error</span>`;

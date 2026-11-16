@@ -164,7 +164,9 @@ frontend/
 │   ├── snippet-manager.ts # 命令片段库面板（云端/本地双后端、参数占位符录入、搜索/复制、填入/填入并执行、编辑/删除）
 │   ├── snippet-variables.ts # 命令片段 {{var}} 参数占位符提取与安全替换纯函数
 │   ├── snippet-store.ts   # 片段存储层（RemoteSnippetStore + LocalSnippetStore + 错误映射）
-│   ├── mcp-manager.ts / mcp-manager.css # 外部助手 Token 管理、主动终端输出共享与近期活动
+│   ├── mcp-manager.ts / mcp-manager.css # 外部助手 Token 管理、Access 专属接入引导、终端输出共享与近期活动
+│   ├── mcp-client-config.ts # 双层认证配置组装，账户凭据加密回读后显式复制
+│   ├── assistant-icons.ts # 内置 AI 对话星芒 / 外部 MCP 连接节点的固定 SVG 几何与 DOM 渲染
 │   ├── ai-config.ts       # AI model configuration modal (Combobox 下拉、免密安全拉取与主题自适应)
 │   ├── i18n/
 │   │   ├── index.ts        # 语言解析、词条查询（t）与 locale 变更通知
@@ -322,8 +324,8 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 | `/api/config` | GET | No | Feature flags (turnstile, GitHub auth enabled) |
 | `/api/cf-ssh-ca/sign` | POST | Same-Origin | Cloudflare Zero Trust 原生 SSH CA 证书签发代理 |
 | `/mcp` | POST | Personal Bearer Token | 无状态 Streamable HTTP：server_list / ssh_exec / sftp_list / sftp_read / sftp_write / session_output；GET/DELETE 返回 405 |
-| `/api/mcp/tokens` | GET/POST | Yes | 列出元数据或创建仅一次明文展示的个人 Token |
-| `/api/mcp/tokens/:id` | DELETE | Yes | 撤销 Token，并尽力关闭其执行连接 |
+| `/api/mcp/config` | GET/POST/PUT | Yes | 唯一配置元数据、首次幂等生成或修改逐服务器权限；无到期/撤销 |
+| `/api/mcp/config/credentials` | POST | Yes | 所有者明确复制/查看时解密返回保存的凭据，普通GET不下发 |
 | `/api/mcp/context` | POST | Yes | 所有者主动开启/关闭或查询单标签页最近输出共享 |
 | `/api/mcp/activity` | GET | Yes | 有界近期活动摘要，不含命令/输出，不是审计 |
 
@@ -479,7 +481,7 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
 48. **首屏初始化与强制登录防闪烁（#192）** - 初始 HTML 使用 `#app[hidden][inert][aria-hidden]` 隔离未决页面，独立 `#app-loading` 展示主题自适应、三语和减少动态友好的加载状态；不能先展示匿名连接表单再替换为登录面板。`app-bootstrap.ts` 同时读取 `/api/config` 与 `/api/auth/me`（同源、no-store），共享 10s deadline 覆盖响应正文，任一失败取消另一请求；仅身份接口 401 表示未登录，网络/HTTP/JSON/必要字段异常均停留错误页并允许手动单次重试，不降级匿名、不缓存认证策略。`ConnectionForm` 直接接收已确认配置，只渲染最终模式，强制登录/坏哈希面板不创建 SSH 凭据输入或读取本地连接历史。分享认领和独立终端路由仍绕过这两次读取并显式解除加载态；`#password-setup` 不受配置失败阻断。`app-bootstrap.test.ts` 与 Chromium/WebKit 的 `e2e/app-bootstrap.spec.ts` 覆盖脚本加载前、慢响应/刷新、已登录、失败/超时/迟到响应、重试、三语和动态偏好。
 
-49. **个人 MCP 接入（#194）** - `/mcp` 使用根运行时依赖 `@modelcontextprotocol/sdk` 的 Web Standards 无状态 Streamable HTTP 和 `zod`；不引入 Node HTTP 服务或已弃用的 McpAgent，不实现 OAuth/持久协议会话/自动重放。网页登录只负责签发/撤销个人 Token，MCP 必须验证独立 Bearer（仅存 SHA-256 摘要），绑定完整所有者路由、认证模式/密码代际、最多 100 个已保存服务器 ID、read/write/exec/context 权限、1–365 天有效期，每用户最多 20 个有效 Token、每 Token 120 请求/分钟。只允许已保存配置，由 UserDB 解析所有权、凭据和不可变跳板链；不导出凭据、不接受任意目标、要求每跳已有指纹且严格验签。交互式认证/浏览器临时 Cloudflare SSH CA 不支持无人值守，缺指纹或需人工步骤必须显式失败，不能自动信任/降级；Access 机器请求仍需运行时已验证的边缘上下文，不信任邮箱头，也不豁免 Access 保护。exec 是明确预授权的任意命令能力，不是只读或逐条网页审批；现有命令阻断仅防误操作，不是沙箱。共享 SSHSession 的非 PTY exec 与独立 SFTP subsystem，不共享网页 Shell/上传状态机，不调用内置 Agent/记忆。MCPExecutionDO 每 Token 最多两条连接，每服务器一操作，约 60s 空闲释放；配置/凭据/指纹变化重建，整次操作≤90s、命令≤60s，取消/超时/撤销尽力关通道，不能承诺终止全部子进程或回滚，未知结果不得自动重试。文本≤64KiB，目录≤200 条/约64KiB/32批；覆盖普通文件须原文件完整哈希与 OpenSSH 原子 rename，临时文件 EXCL 创建，不先清空目标；保留 rwx 但不保证 inode/owner/ACL/xattr，哈希检查不是事务锁。终端上下文仅所有者显式共享的已保存服务器标签页（最多30min，断线取消），随机会话定位不是恢复凭据，读取仍受服务器/context权限约束；有界快照不是屏幕或完整历史，不允许终端输入，不刷新空闲。网页明文配置不落盘，关闭/换号/退出销毁；面板可见时才刷新活动。活动仅名称/服务器/工具/时间/状态，每用户≤100条、约24h由 UserDB Alarm清理，不存参数/输出、不作永久审计；与记忆共用最早Alarm，禁止覆盖更早唤醒。详见 `docs/mcp.md`，新增绑定需 `v3` 迁移，不删除现有数据。
+49. **账户唯一 MCP 配置（#194）** - 每登录账户只生成一次长期令牌，无名称/天数/多Token/撤销/轮换入口。`mcp_configs.user_id` 主键确保唯一，并发生成幂等；旧摘要令牌无法恢复，新验证器不接受，首次生成提示更新客户端并清理账户旧记录。个人令牌与 Access Service Token 沿用账户 AES-GCM 加密回读，根密钥仍在同一 DB（不是独立 KMS）；用户已同意保存完整配置，不再沿用早期“Access不上传/只存摘要”语义。GET `/api/mcp/config` 只返回元数据、不改变绑定；POST首次生成、PUT逐服务器grants，POST `/api/mcp/config/credentials` 仅已登录所有者明确复制/查看时解密，旧多Token和DELETE接口移除。不写浏览器存储/日志；关闭/换号/模式变化清理明文及迟到响应。仅cf_access展示精简的Service Token/Service Auth引导，已保存时折叠；确认勾选不是边缘验证，不能用Bypass，本站与SSH隧道凭据有别。read/write/exec/context逐服务器校验，工具列表并集不是全局权限；权限更新后尽力关闭旧执行池，握手后/派发前再检查，旧清理不得删除替代的新连接。令牌在授权修改/凭据变更后保持不变，认证模式/完整路由/allowlist仍校验；密码换代先拒绝旧绑定，所有者显式POST复制/保存可恢复同一令牌，GET不得恢复。每配置120请求/分钟、最多100服务器，两条短连接、每服务器一次操作、60s空闲、命令≤60s/整次≤90s。保留严格TOFU、SSRF、16KiB隧道载体分帧、非PTYexec/独立SFTP与所有输出预算；交互认证/浏览器CA不可无人值守，未知结果不重放，取消不保证回滚或杀尽子进程。SFTP文本≤64KiB、目录≤200条/约64KiB/32批；覆盖哈希+原子rename，非事务锁，不保证inode元数据。终端上下文仅显式共享且逐服务器授权，30min/断线失效，不输入、不刷新空闲。窗口使用主题变量和统一液态材质，近期操作及每条明细默认折叠，仅展开且可见时刷新；活动≤100条/约24h，Alarm与记忆共用最早唤醒，不存命令/输出，不作永久审计。固定SVG图标保留三语无障碍及思考状态恢复。详见 `docs/mcp.md`；设置表幂等创建，沿用v3 DO绑定，不新增migration、不删除已有Worker。
 
 ## SSH 兼容增强边界
 

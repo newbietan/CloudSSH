@@ -11,7 +11,7 @@ import { checkHostResolved } from './dns-check';
 import { SSHSession, type SSHSessionClient } from './ssh-session';
 import { isValidTunnelHostname, TunnelWebSocketStream } from './tunnel-stream';
 import { mcpDatabase } from './mcp-auth';
-import { hasMcpScope, mcpTool } from './mcp-tools';
+import { hasMcpServerScope, mcpTool } from './mcp-tools';
 import { isBlockedCommand } from './agent/safety';
 import { mcpList, mcpRead, mcpWrite, withMcpSftp } from './mcp-sftp';
 
@@ -66,7 +66,7 @@ export class MCPExecutionDO {
     if (this.connections.size) await this.state.storage.setAlarm(now + MCP_CONNECTION_IDLE_MS);
   }
   async fetch(request: Request): Promise<Response> {
-    if (new URL(request.url).pathname === '/revoke') {
+    if (new URL(request.url).pathname === '/invalidate') {
       for (const connection of this.connections.values()) closeConnection(connection);
       this.connections.clear();
       await this.state.storage.deleteAlarm();
@@ -96,8 +96,7 @@ export class MCPExecutionDO {
     if (
       !spec ||
       !parsed?.success ||
-      !hasMcpScope(principal.scopes, body.tool) ||
-      !principal.serverIds.includes(Number(body.args.server_id))
+      !hasMcpServerScope(principal, body.tool, Number(body.args.server_id))
     )
       return Response.json({ error: 'forbidden' }, { status: 403 });
     const args = parsed.data as Record<string, any>;
@@ -199,6 +198,9 @@ export class MCPExecutionDO {
           modeTag: body.modeTag,
         });
         if (!check.ok) throw new Error('unauthorized');
+        const currentPrincipal = await check.json<McpPrincipal>();
+        if (!hasMcpServerScope(currentPrincipal, body.tool, serverId))
+          throw new Error('unauthorized');
         controller.signal.throwIfAborted();
         dispatched = true;
         if (body.tool === 'ssh_exec') {
@@ -281,7 +283,7 @@ export class MCPExecutionDO {
       current.busy = false;
       current.lastUsed = Date.now();
       if (failed || controller.signal.aborted) {
-        this.connections.delete(serverId);
+        if (this.connections.get(serverId) === current) this.connections.delete(serverId);
         closeConnection(current);
       }
       controller.signal.removeEventListener('abort', onAbort);

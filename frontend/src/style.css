@@ -57,6 +57,34 @@ html[data-ui-motion='reduced'] .app-loading-spinner {
   white-space: nowrap;
 }
 
+/* First-party assistant glyphs share geometry across navigation and streamed messages. */
+.assistant-icon,
+[data-assistant-icon] {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
+.assistant-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 4px;
+  border-radius: var(--control-radius);
+}
+.assistant-icon-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.assistant-icon-button [data-assistant-icon],
+.assistant-entry-icon,
+.mobile-more-menu [data-assistant-icon] {
+  font-size: 20px;
+}
+
 :root {
   --bg: #0a0a0a;
   --bg-surface: #121212;
@@ -3505,7 +3533,7 @@ html[data-ui-style="liquid"] .server-card:active {
   }
 }
 
-html[data-ui-style="liquid"] :is(.app-dialog__panel, .remote-editor__panel, .auth-challenge-dialog__panel) {
+html[data-ui-style="liquid"] :is(.app-dialog__panel, .remote-editor__panel, .auth-challenge-dialog__panel, .mcp-dialog__panel) {
   background: color-mix(in srgb, var(--bg-surface) 60%, rgba(255, 255, 255, 0.35));
   -webkit-backdrop-filter: blur(32px) saturate(200%) contrast(115%) brightness(108%);
   backdrop-filter: blur(32px) saturate(200%) contrast(115%) brightness(108%);

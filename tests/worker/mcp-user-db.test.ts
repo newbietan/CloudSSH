@@ -27,8 +27,9 @@ function fixture() {
 describe('MCP saved configuration and shared Alarm integration', () => {
   it('resolves only owned saved servers, requires existing trust, and does not issue browser tokens or reorder servers', async () => {
     const f = fixture();
-    const created = await f.call({ action: 'create', input: { name: 'test', serverIds: [1], scopes: ['exec'], days: 1 } });
-    const { token } = await created.json() as { token: string };
+    const created = await f.call({ action: 'create', input: { grants: [{ serverId: 1, scopes: ['exec'] }] } });
+    expect(created.ok).toBe(true);
+    const { token } = await (await f.call({ action: 'credentials' })).json() as { token: string };
     const missing = await f.call({ action: 'config', token, serverId: 1 });
     expect(missing.status).toBe(409);
     expect(await missing.json()).toMatchObject({ error: 'host_verification_required' });

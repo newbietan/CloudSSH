@@ -1,16 +1,16 @@
-# 外部 AI 助手 / Personal MCP access
+# 个人 MCP 配置 / Personal MCP configuration
 
-CloudSSH 提供 `/mcp` Streamable HTTP 端点，让 Claude Code、Cursor 等支持远程 HTTP、自定义 Bearer 头的客户端使用已保存服务器。它是个人服务器的操作入口，不是终端接管、第二套 Agent 或审计平台；不需要配置 CloudSSH 内置 AI 的模型或 API Key。
+CloudSSH 为每个登录账户提供**唯一、长期有效**的 MCP 配置。只生成一次，之后可重复复制、修改逐服务器权限；不需要客户端名称或有效天数，不提供多令牌、撤销或轮换入口。无需配置 CloudSSH 内置 AI 的模型。
 
-## 启用与接入
+## 接入
 
-1. 正常登录 CloudSSH（管理员密码、GitHub 或 Cloudflare Access）。匿名用户不能创建 Token。
-2. 保存服务器，并先在网页完成连接及主机指纹确认。目标及每个跳板都必须已有对应路由的可信指纹。
-3. 点击用户空间或终端工具栏的「外部助手」（移动终端在「更多」中）。
-4. 输入客户端名称，勾选服务器、权限与 1–365 天有效期，生成 Token。最多 20 个未过期 Token。
-5. 将一次性显示的配置保存到客户端的**私有 MCP 配置**。关闭面板后无法找回明文，只能撤销后重新生成。不要提交到 Git，也不要把管理员密码、登录 Cookie 或 SSH 私钥填到客户端。
+1. 登录后先在网页连接已保存服务器，确认目标及每个跳板的主机指纹。
+2. 点击连接节点形状的「外部助手」图标，按服务器勾选读取、写入、执行、终端上下文权限。不同服务器可以不同；未勾选任何权限的服务器不能被 MCP 操作。
+3. **仅 CF Access 登录**：展开 Access 连接，按控制台/官方文档链接为保护**本站**的 Access 应用创建 Service Token，并用 **Service Auth** 策略允许它（不是普通 Allow 或 Bypass）。填写 Client ID / Secret 并确认策略；这些不是 SSH 隧道服务器的凭据。
+4. 点击「生成唯一配置」。以后点击「复制 MCP 配置」即可重复获取相同令牌；需要手动检查时使用「查看配置」。
+5. 保存到 Claude Code、Cursor 等支持远程 HTTP 与自定义请求头的客户端**私有配置**中，不要提交到 Git。
 
-例如 Claude Code 的私有配置或 Cursor 的用户级 MCP 配置：
+普通模式：
 
 ```json
 {
@@ -18,99 +18,87 @@ CloudSSH 提供 `/mcp` Streamable HTTP 端点，让 Claude Code、Cursor 等支�
     "cloudssh": {
       "type": "http",
       "url": "https://your-cloudssh.example/mcp",
-      "headers": {
-        "Authorization": "Bearer <一次性显示的个人 Token>"
-      }
+      "headers": { "Authorization": "Bearer <唯一个人令牌>" }
     }
   }
 }
 ```
 
-Claude Code 也可通过 `claude mcp add --transport http cloudssh https://your-cloudssh.example/mcp --header 'Authorization: Bearer <TOKEN>'` 添加；注意明文命令可能留在 Shell 历史中，优先编辑私有配置。
+Access 模式自动增加 `CF-Access-Client-Id` / `CF-Access-Client-Secret`，仍保留 CloudSSH Bearer 令牌。两层认证缺一不可；普通认证模式不展示 Access 字段。Access Service Token 自身的到期时间仍由 Cloudflare 控制：到期或变更时，在本模块填写新凭据、保存，再重新复制配置到客户端，**不会改变个人 MCP 令牌**。策略确认是操作提示，不是 CloudSSH 对边缘策略的自动验证。
 
-本版本使用官方 MCP TypeScript SDK 的 Web Standards 无状态 Streamable HTTP（JSON 响应）。客户端可以初始化、列出工具并调用工具，不分配持久 `Mcp-Session-Id`；GET/DELETE 返回 405，不提供旧式 HTTP+SSE 独立端点、响应回放或协议 Tasks。兼容验证包含官方 SDK Client 的真实协议调用，不等同于已经逐个实机验证所有 Claude Code / Cursor 版本。
+## 保存与权限修改
 
-仅支持显式 Bearer Token，不实现 MCP OAuth 发现、授权码流程或客户端注册；只支持 OAuth 的客户端需要等后续适配，不能复制浏览器 Cookie 绕过。
+- 个人令牌和 Access 凭据按账户使用既有 AES-GCM 机制加密保存在 UserDB SQLite；打开面板只读权限等元数据，明确点击复制/查看时才通过已登录的 POST 接口解密返回。
+- 这是可回读加密，不再是旧版“只保存令牌摘要”和“Access 凭据不上传”的模式。根密钥仍在同一数据库的 `system_config.encryption_secret`，**不是独立 Secret/KMS，也不能抵御整库或运行时失陷**。
+- 不写入浏览器 localStorage/sessionStorage。关闭窗口、退出、换号或认证模式变化会销毁本地明文及中止请求；用户主动复制后的系统剪贴板由用户管理。
+- 修改各服务器的权限并「保存修改」，令牌不变。服务端逐次检查当前授权，命令/SFTP 在握手后、真正执行前再次核对；权限保存后尽力关闭原执行池，在途操作已经发生的副作用不会回滚。
+- 可以取消全部服务器权限，使配置暂时没有远端操作能力；唯一令牌本身保留，之后仍可重新授权。
+- 长期令牌**没有撤销/轮换接口**，请妥善保护。账号/认证模式/路由及 GitHub allowlist 边界仍检查；管理员密码轮换会先拒绝旧绑定，所有者重新登录后明确复制/查看或保存配置可重新绑定，令牌本身不变。换登录方式不合并不同账号的数据。
 
-## 权限与工具
+### 从旧版迁移
 
-| 权限 | 工具 | 含义 |
+旧版只有令牌摘要，无法恢复原始明文。升级后旧版多令牌不再通过新验证器；面板会提示首次生成新的唯一配置并更新客户端，生成后清理该账户旧令牌记录。此后生成请求是幂等的，即使并发点击也只有一份配置；修改权限、凭据或重新打开窗口不会生成第二个令牌。
+
+## 工具与边界
+
+| 权限 | 工具 | 说明 |
 | --- | --- | --- |
-| 无额外权限 | `server_list` | 仅列出 Token 勾选的服务器基本信息，不含 SSH 凭据 |
-| 读取 | `sftp_list` / `sftp_read` | 有界目录列表和 UTF-8 文本读取 |
-| 写入 | `sftp_write` | 创建或冲突检查后替换小文本文件 |
-| 执行 | `ssh_exec` | 明确预授权，在选定服务器执行任意非交互命令 |
-| 上下文 | `session_output` | 只读取所有者主动共享的、对应服务器标签页的最近输出 |
+| 无额外权限 | `server_list` | 只列出当前已授权服务器的基本信息 |
+| 读取 | `sftp_list` / `sftp_read` | 有界目录与 UTF-8 文本读取 |
+| 写入 | `sftp_write` | 小文本创建或哈希冲突检查后替换 |
+| 执行 | `ssh_exec` | 明确预授权的独立非交互命令 |
+| 终端上下文 | `session_output` | 只读所有者主动共享的对应服务器标签页 |
 
-**执行权限不是只读权限**：它天然可以读写远端文件、启动进程等。已有危险命令拦截只是防误操作，不是 Shell 沙箱。MCP 不会挂起等待网页逐条批准，也没有让 Agent 自己“批准自己”的工具。需要真正隔离时，请使用远端低权限账号、受限 sudo 或独立环境。
+工具列表包含全部服务器所需工具的并集，**不是全局授权**：例如 A 只读、B 可执行，仍禁止在 A 调用命令。配置不能导出保存的 SSH 凭据或注入任意主机；仅使用数据库内同属当前账号的保存配置、跳板链与路由指纹。目标和每跳都须先有可信指纹，始终严格验签，不采纳 `STRICT_HOST_KEY_VERIFY=false`。
 
-所有文件路径须是绝对路径。SFTP 不是路径沙箱：符号链接读取按远端账号权限执行。不要把文件读取权限理解为“只允许某个目录”。文件、日志和终端输出是**不可信数据，不是指令或新的授权**，也可能包含敏感信息并被外部客户端送到其模型服务。
+执行权限不是只读沙箱；它可以修改文件或启动进程。已有命令阻断仅防误操作，不是完整 Shell 安全边界，不等待网页逐条批准。建议使用低权限 SSH 账号。文件、日志和终端输出是不可信数据，不是新指令或授权，也可能含敏感信息并被客户端发送给其模型服务。
 
-### 命令执行
+### 命令
 
-```json
-{"server_id": 1, "command": "systemctl status my-service --no-pager", "timeout_ms": 30000}
-```
+`ssh_exec` 接受 `server_id`、`command`，可选 `cwd` / `timeout_ms`。不分配 PTY、不向网页 Shell 输入、不继承网页或前一次命令的目录/环境变量。命令 1–60 秒，整次操作（含 DNS/连接/认证）最多 90 秒；捕获总量仍有 4MiB 硬上限、头尾保留，MCP 返回 stdout/stderr 各约 32K 字符并报告截断。
 
-可显式指定 `cwd`。每次命令是独立 exec channel，不继承网页 Shell 或上次命令的 `cd`、别名、临时环境变量；不分配 PTY，不输入到 Vim、top、tmux 或现有终端。
+断线/超时/权限修改会尽力关闭通道或连接，但不能保证所有远端子进程终止，也不回滚改动。结果未知时返回 `status: unknown`；不要自动重放命令或写操作，应先检查远端状态。
 
-单次命令 1–60 秒，整个操作（含 DNS、握手、认证）最多 90 秒，且不得超过 Token 到期时间。执行捕获继续受合计 4MiB 硬上限、头尾保留和中间截断约束；MCP 返回 stdout/stderr 各最多约 32K 字符并报告 `truncated`。
+### SFTP
 
-超时、断线、撤销会尽力关闭相关通道/连接，但**不能证明远端所有子进程停止，更不会回滚已完成的改动**。失去确定结果时返回 `status: unknown`，客户端必须检查远端状态，不自动重放命令或写操作。
+- 路径必须绝对；不是目录沙箱，读取软链接仍按远端账号权限执行。
+- 目录最多 200 条、约 64KiB 编码结果、32 次 READDIR；超限明确 `truncated`。
+- 每次读取最多 64KiB UTF-8，拒绝 NUL 二进制/非法 UTF-8。使用字节 offset / nextOffset 续读，边界不切开字符。只有完整小文件读完才返回 SHA-256 `fileHash`。
+- 写入最多 64KiB UTF-8。先写同目录随机临时文件（EXCL 创建，默认 0600），再 rename 发布，不先清空目标。
+- 覆盖已有普通文件必须有 `expected_hash`，并要求 OpenSSH `posix-rename@openssh.com` 扩展；上传前后复核哈希，拒绝软链接/目录/特殊权限位目标。
+- 保留普通 rwx 位，但不保证原 inode、owner/group、ACL、xattr 或硬链接关系。哈希检查有竞态窗口，不是远端事务锁；失败可能留下临时文件。
 
-### 文件读取与写入
+## 终端上下文和近期操作
 
-- `sftp_list` 最多 200 条、约 64KiB 编码结果、32 次 READDIR；超过预算返回 `truncated`，不会假称完整目录。
-- `sftp_read` 每次最多 64KiB UTF-8 文本，拒绝 NUL 二进制和非法 UTF-8。以字节 `offset` / `nextOffset` 分段，边界不截断 UTF-8 字符；偏移本身也须是字符边界。
-- 完整读完 ≤64KiB 文件时返回 `fileHash`（SHA-256）；分段/不完整读取的哈希为 null。
-- `sftp_write` 内容最多 64KiB UTF-8。新文件先写同目录随机临时文件（EXCL 创建，权限 0600），再用 SFTP v3 rename 发布；不先清空目标文件。
-- 覆盖已有普通文件必须提供 `expected_hash`，并要求服务端提供 `posix-rename@openssh.com` 原子替换扩展。上传前后比对原文件哈希，冲突则拒绝。目录、软链接和带特殊权限位的目标不支持覆盖。
-- 覆盖保留普通 rwx 权限位；替换产生新 inode，**不保证保留原 owner/group、ACL、xattr 或硬链接关系**。需要这些语义时，使用明确授权的远端命令或原网页工作流。
-- 两次哈希检查不是远端 compare-and-swap 锁，仍有竞态窗口；不能保证与人同时修改文件时绝对无冲突。中断可能残留临时文件，清理也是尽力而为。
+「当前标签页的终端上下文」默认折叠。打开后可显式共享最近输出并将 `server_id` / `context_id` 交给助手。仍需该服务器的上下文权限；单次最多 30 分钟，断线/关闭会话后取消。只读约 200 行、16K 字符的有界缓冲，不是屏幕、录像或完整历史，不允许输入，不暴露恢复令牌，不刷新用户空闲。
 
-## 主动共享终端上下文
+「近期外部操作」及其中每条记录**默认全部折叠**，用户展开后查看工具、时间、服务器和状态；只有展开且页面可见时约每 5 秒刷新。最多 100 条/约 24 小时，由 UserDB Alarm 清理；不保存命令参数、路径、文件内容或输出，不是永久审计，也不会送入 Agent 长期记忆。活动投递尽力而为，未收到结束状态的旧运行项显示结果未知。
 
-1. 在一个已连接的**已保存服务器**标签页打开「外部助手」。
-2. 点击「共享最近输出」，将显示的 `server_id` / `context_id` 参数交给外部助手。
-3. 客户端还必须持有该服务器的上下文权限，才能调用 `session_output`。
-4. 可随时「停止共享」。单次共享最长 30 分钟；断线、标签页关闭或新会话会使共享失效。重连后需重新开启。
+## 连接、协议与故障排查
 
-共享读取只返回服务端有界缓冲中的最近输出（最多 200 行、约 16K 字符）；不是 xterm 当前屏幕、完整历史、录像或终端输入权限。不会暴露会话恢复 Token；也不会自动发现全部在线标签页。读取和查看共享状态不刷新用户空闲时间。重新打开面板会查询服务端权威状态，避免误以为已失效的共享仍有效。
+每个账户唯一配置对应独立 MCPExecutionDO，最多保留两台服务器的连接，每台一次操作、不建无限队列，约 60 秒空闲释放。配置/凭据/指纹变化重连；一次失败操作不自动重试。每配置最多 120 个 MCP HTTP 请求/分钟，超限 429。
 
-## 连接与活动生命周期
+端点必须是精确 `/mcp`，使用官方 SDK 的无状态 Streamable HTTP（JSON 响应），不分配持久 MCP session；GET/DELETE 返回 405，不实现 OAuth/旧 SSE/Tasks/重放。只有 OAuth 的客户端不在此版本范围内。协议测试使用官方 SDK Client，不代表已经实机验证所有客户端版本。
 
-每个 Token 使用独立 MCPExecutionDO：最多保留 2 个服务器连接，每台服务器同一时刻只执行 1 个操作，不建立无限队列。连续调用可复用配置/凭据/指纹均未改变的 SSH 连接；空闲约 60 秒由 Alarm 释放。配置变化会重新连接，失效连接不会在一次失败操作内自动重试。仍可能产生 Workers / Durable Objects 运行费用。
+- `Unexpected content type: text/html`：先排查 Access 登录重定向、Service Auth 策略、是否确实发送两个 Access 请求头，以及 URL 是否误用了根路径或 `/mcp/`。也可能是 WAF 挑战；不要直接关闭验证。
+- JSON 401：排查个人令牌、账号/认证模式和 Access 运行时已验证身份上下文。Access 凭据不能用邮箱头或浏览器 Cookie 冒充。
+- `host_verification_required`：先回网页验证目标/跳板指纹。
+- `interactive_auth_required`：OTP/键盘交互或浏览器临时 Cloudflare SSH CA 不支持无人值守。
 
-网页面板显示近期客户端名称、服务器、工具名、时间和完成状态。仅在面板打开且页面可见时约每 5 秒刷新；关闭/退出中止请求与计时器。不把状态文字插入交互终端。
+保留直连、最多三级跳板和 Cloudflare Tunnel 的 SSRF、端口及加密后 16KiB 载体分帧边界。Access 机器客户端必须通过边缘准入，并向 Worker 提供可验证的运行时身份上下文，不能因个人 Token 而豁免。
 
-活动记录每用户最多 100 条，约 24 小时后由 UserDB Alarm 清理（平台调度可能延迟）；与原 Agent 记忆 Alarm 共用最早唤醒时间。**不保存命令参数、路径、文件内容或 stdout/stderr**，不调用模型提炼 MCP 记忆，也不是永久审计。部署/异常后未收到结束结果的旧运行项显示为“结果未知”。活动投递尽力而为，不是操作成功与否的权威证明。
+## 部署与存储
 
-每个有效 Token 最多 120 个 MCP HTTP 请求/分钟（包括初始化和工具列表）；超出返回 429。Token 只存摘要，撤销后拒绝新请求，并尽力中止该 Token 的在途操作。管理员密码轮换使旧 Token 失效；认证模式切换、GitHub allowlist 及完整 Access 所有者路由都重新校验。网页退出不撤销独立个人 Token，需要在面板显式撤销。
+沿用 `MCP_EXECUTION → MCPExecutionDO` 绑定和 `v3` migration，不删除 Worker，不改写旧 migration。账户设置新增 `mcp_configs` SQLite 表，`user_id` 主键确保单配置；应用 schema 幂等创建，不需要新的 DO migration。缺少绑定时 MCP 返回 503，原网页 SSH 行为不变。
 
-## Cloudflare Access 与认证限制
-
-应用 Token 不能绕过 Cloudflare Access。若 Access 保护完整域名，需为机器客户端配置经过验证的边缘准入（例如适用部署中明确允许的 Service Auth 策略及 `CF-Access-Client-Id` / `CF-Access-Client-Secret` 请求头），并**同时**保留 CloudSSH Bearer Token。不要为了 MCP 放开站点、信任客户端自报邮箱或复用用户 Cookie。
-
-在 Access 模式中，Worker 必须获得运行时已验证的 Access 身份上下文。Service Token 不需要伪造用户邮箱：CloudSSH Token 绑定原所有者完整 `cf-…` 路由。若运行时不提供有效机器身份上下文或查询失败，请求仍会被拒绝；应核查具体边缘部署，而不是关闭验证。
-
-支持可无人值守的已保存 password / publickey / none 认证，以及现有直连、跳板链和 Cloudflare Tunnel。SSRF、端口限制、隧道加密后 16KiB 分帧继续生效；严格验证目标和每跳的已知主机密钥，MCP 不采纳 `STRICT_HOST_KEY_VERIFY=false`。
-
-需要 OTP / 键盘交互、多因素密码提示或浏览器临时私钥的服务器不在本版本无人值守范围内；尤其 `cf_ssh_ca_team` 服务器明确返回 `interactive_auth_required`。未确认指纹返回 `host_verification_required`，需回网页核实。不能自动信任新指纹、持久化新证书私钥或降级其他认证方法。
-
-## 部署
-
-`wrangler.toml` 的 production / test 环境均新增 `MCP_EXECUTION → MCPExecutionDO` 绑定，以及新的 `v3` SQLite DO migration。CLI/CI 正常部署会迁移，**不要删除现有 Worker 或改写旧 migration tag**。Dashboard-only 部署也需配置新绑定并正确迁移类；缺少绑定时 MCP 返回 503，原网页 SSH 保持原行为。
-
-根目录新增运行时依赖 `@modelcontextprotocol/sdk` 与 `zod`，使用 Web Standards transport，不引入 Node HTTP 服务、第三方 SSH 库或 Cloudflare `McpAgent`。浏览器仍使用原单 JS / 单 CSS 内联构建，不加载外部 MCP 脚本。
+管理接口：`GET/POST/PUT /api/mcp/config` 读取元数据、首次幂等生成、修改授权；`POST /api/mcp/config/credentials` 明确导出加密保存的客户端凭据；没有 DELETE。旧 `/api/mcp/tokens` 不再使用。终端上下文与近期活动接口保持不变。
 
 ## English summary
 
-Use **External assistants** after signing in to create a one-time personal Bearer token for selected saved servers and read/write/exec/context capabilities. Add `https://your-instance/mcp` with the Authorization header to a compatible private client configuration. This is stateless Streamable HTTP, not OAuth, legacy SSE, terminal takeover or a second model loop.
+Each signed-in account has one permanent MCP configuration, generated once with no client name, expiry, revoke or rotate controls. Assign read/write/exec/context independently to each saved server and save changes without changing the token. Unchecking all grants disables remote operations while retaining the configuration.
 
-Connect in the browser first to verify every hop's host key. Headless authentication must not require human interaction; Cloudflare SSH CA browser-issued credentials are unsupported. Exec is advance authorization for arbitrary commands, never a read-only sandbox or browser-by-browser approval workflow. Files/output can contain secrets sent to external models.
+The personal token and optional site Access Service Token are stored recoverably with the existing account AES-GCM mechanism. The root key remains in the same database, not an independent KMS. Opening settings fetches metadata only; an explicit copy/view POST decrypts credentials. No browser storage is used, and closing or changing identity/auth mode discards local plaintext. Protect the permanent token and your private client configuration. Cloudflare Service Token expiry is separate: update its credentials and copy again when necessary.
 
-Each token can reuse up to two isolated SSH connections, one operation per server, with about a 60-second idle lifetime. Operations are bounded and never automatically replayed after uncertainty. Closing channels cannot guarantee termination of all remote subprocesses or roll back effects. Text reads/writes are limited to 64KiB; replacements require an expected hash, a regular file and the OpenSSH atomic-rename extension, without an absolute race-free locking guarantee or preservation of inode metadata.
+Legacy digest-only tokens cannot be recovered and are no longer accepted. Generate the new singleton once and update the client; subsequent generation calls are idempotent. Tool discovery is a union, but authorization is enforced per server and rechecked before dispatch. Permission edits stop old pools best effort, never roll back remote effects.
 
-Share a connected saved tab's recent output explicitly for at most 30 minutes. Disconnecting ends sharing; reads are bounded, do not refresh user activity and cannot type into the terminal. A context ID is not a resume credential and still requires a token with matching server/context permission.
-
-The visible panel refreshes bounded recent operation summaries; no command payloads or output are retained. Activity is capped at 100 entries per owner and scheduled for cleanup after about 24 hours, not permanent audit. Cloudflare Access edge admission remains separate from the application token and must provide runtime-verified identity. Deploy the new `MCP_EXECUTION` binding and append-only `v3` migration without deleting existing data.
+The theme-adaptive compact window uses native disclosures: recent activity and every record start collapsed, with reads/polling only while expanded and visible. Independent non-PTY exec/SFTP, explicit short-lived terminal output sharing, strict host trust, Access edge admission and bounded operation budgets remain unchanged.

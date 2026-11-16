@@ -6,7 +6,7 @@ import { readMcpJson, type McpPrincipal } from '../mcp-schema';
 import type { Env } from '../types';
 import { getAuthenticatedUser, userDbRouteKey } from './auth';
 import { authenticateMcp, executionName, mcpDatabase, mcpModeTag } from './mcp-auth';
-import { MCP_TOOLS, hasMcpScope } from './mcp-tools';
+import { MCP_TOOLS, hasMcpScope, hasMcpServerScope } from './mcp-tools';
 
 const contextPattern = /^session:\d{10,16}:[0-9a-f-]{36}$/;
 function jsonError(error: string, status: number) {
@@ -29,26 +29,25 @@ export async function handleMcpManagement(request: Request, env: Env): Promise<R
   if (!modeTag) return jsonError('unauthorized', 401);
   const path = new URL(request.url).pathname;
   const base = { userId: user.id, routeKey, modeTag };
-  if (path === '/api/mcp/tokens' && request.method === 'GET')
-    return mcpDatabase(env, routeKey, { ...base, action: 'list' });
-  if (path === '/api/mcp/tokens' && request.method === 'POST') {
-    return mcpDatabase(env, routeKey, {
+  if (path === '/api/mcp/config' && request.method === 'GET')
+    return mcpDatabase(env, routeKey, { ...base, action: 'settings' });
+  if (path === '/api/mcp/config/credentials' && request.method === 'POST')
+    return mcpDatabase(env, routeKey, { ...base, action: 'credentials' });
+  if (path === '/api/mcp/config' && ['POST', 'PUT'].includes(request.method)) {
+    const result = await mcpDatabase(env, routeKey, {
       ...base,
-      action: 'create',
+      action: request.method === 'POST' ? 'create' : 'update',
       input: await readMcpJson(request),
     });
-  }
-  const revoke = /^\/api\/mcp\/tokens\/([0-9a-f-]{36})$/.exec(path);
-  if (revoke && request.method === 'DELETE') {
-    // Removing authorization is authoritative even if the best-effort active connection teardown fails.
-    const result = await mcpDatabase(env, routeKey, { ...base, action: 'revoke', id: revoke[1] });
-    if (result.ok) {
+    if (result.ok && request.method === 'PUT') {
+      const info = await result.clone().json<{ id: string }>();
+      // Save is authoritative; stop old operations/pools best effort after permission changes.
       try {
         await env.MCP_EXECUTION.get(
-          env.MCP_EXECUTION.idFromName(executionName({ routeKey, id: revoke[1] }))
-        ).fetch(new Request('https://internal/revoke', { method: 'POST' }));
+          env.MCP_EXECUTION.idFromName(executionName({ routeKey, id: info.id }))
+        ).fetch(new Request('https://internal/invalidate', { method: 'POST' }));
       } catch {
-        /* expires/idle deadline remains */
+        /* next requests recheck the stored grants */
       }
     }
     return result;
@@ -89,8 +88,19 @@ async function executeTool(
       token,
       modeTag: principal.modeTag,
     });
-  if (!principal.serverIds.includes(Number(args.server_id))) return jsonError('forbidden', 403);
+  if (!hasMcpServerScope(principal, name, Number(args.server_id)))
+    return jsonError('forbidden', 403);
   if (name === 'session_output') {
+    const checked = await mcpDatabase(env, principal.routeKey, {
+      action: 'verify',
+      token,
+      modeTag: principal.modeTag,
+    });
+    if (
+      !checked.ok ||
+      !hasMcpServerScope(await checked.json<McpPrincipal>(), name, Number(args.server_id))
+    )
+      return jsonError('forbidden', 403);
     // Snapshot reads do not connect, create an execution session, or refresh user activity.
     return contextRequest(env, String(args.context_id), {
       userId: principal.userId,

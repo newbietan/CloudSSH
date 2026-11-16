@@ -18,6 +18,32 @@ async function mount(page: import('@playwright/test').Page, locale = 'zh-CN') {
   });
 }
 
+test('assistant SVG remains consistent through thinking, completion, cancellation and reactivation', async ({ page }) => {
+  await mount(page);
+  await expect(page.locator('.agent-panel-header svg[data-assistant-glyph="agent"]')).toBeAttached();
+  await page.evaluate(() => {
+    const { panel, sent } = (window as any).__responsesAgent;
+    panel.sendMessage('Inspect without running tools');
+    const requestId = sent.at(-1).requestId;
+    panel.handleAgentFrame({ subType: 'run_start', runId: 1, requestId });
+    panel.handleAgentFrame({ subType: 'thinking', runId: 1, requestId, iteration: 0 });
+  });
+  await expect(page.locator('.tp-icon svg[data-assistant-glyph="agent"]')).toBeAttached();
+  await page.evaluate(() => {
+    const { panel, sent } = (window as any).__responsesAgent;
+    panel.handleAgentFrame({ subType: 'run_end', runId: 1, requestId: sent.at(-1).requestId, outcome: 'completed' });
+  });
+  await expect(page.locator('.tp-icon')).toHaveText('check_circle');
+  await expect(page.locator('.tp-icon')).toHaveClass(/material-symbols-outlined/);
+  await page.evaluate(() => (window as any).__responsesAgent.panel.reactivateThinkingProcess());
+  await expect(page.locator('.tp-icon svg[data-assistant-glyph="agent"]')).toBeAttached();
+  await expect(page.locator('.tp-icon')).not.toHaveClass(/material-symbols-outlined/);
+  await page.evaluate(() => (window as any).__responsesAgent.panel.markLastActiveMessageAborted());
+  await expect(page.locator('.tp-icon')).toHaveText('cancel');
+  await page.evaluate(() => (window as any).__responsesAgent.panel.reactivateThinkingProcess());
+  await expect(page.locator('.tp-icon svg[data-assistant-glyph="agent"]')).toBeAttached();
+});
+
 test('Responses text completion does not finish the task; run_end does', async ({ page }) => {
   await mount(page);
   await page.locator('#agent-input').fill('检查服务器');

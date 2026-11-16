@@ -6,151 +6,172 @@ import { McpStore } from '../../src/worker/mcp-store';
 import { handleMcp } from '../../src/worker/mcp';
 import { initializeAccessIdentity } from '../../src/worker/auth';
 import { authenticateMcp } from '../../src/worker/mcp-auth';
-import { mcpTokenRoute, parseMcpTokenInput, readMcpJson } from '../../src/mcp-schema';
+import { mcpTokenRoute, parseMcpConfigInput, readMcpJson } from '../../src/mcp-schema';
 import type { Env } from '../../src/types';
 
 function fixture() {
   const db = new DatabaseSync(':memory:');
-  db.exec('CREATE TABLE servers (id INTEGER PRIMARY KEY, user_id INTEGER); INSERT INTO servers VALUES(1,7),(2,8)');
+  db.exec('CREATE TABLE servers (id INTEGER PRIMARY KEY, user_id INTEGER); INSERT INTO servers VALUES(1,7),(2,8),(3,7)');
   const sql = { exec(query: string, ...params: unknown[]) {
-    const statement = db.prepare(query);
-    return { toArray: () => statement.all(...params as never[]) as Record<string, unknown>[] };
+    const result = db.prepare(query).all(...params as never[]) as Record<string, unknown>[];
+    return { toArray: () => result };
   } };
-  // DO SQL executes eagerly; sqlite statements do not.
-  const eager = { exec(query: string, ...params: unknown[]) {
-    const result = sql.exec(query, ...params).toArray(); return { toArray: () => result };
-  } };
-  const store = new McpStore(eager);
+  const key = crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']) as Promise<CryptoKey>;
+  const encrypt = async (plain: string) => {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await key, new TextEncoder().encode(plain)));
+    return Buffer.from(iv).toString('base64') + ':' + Buffer.from(encrypted).toString('base64');
+  };
+  const decrypt = async (value: string) => {
+    const [iv, data] = value.split(':');
+    return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: Buffer.from(iv, 'base64') }, await key, Buffer.from(data, 'base64')));
+  };
+  const store = new McpStore(sql, encrypt, decrypt);
   const execute = vi.fn(async () => Response.json({ stdout: 'ok', stderr: '', exitCode: 0 }));
   const internal = vi.fn(async (request: Request) => {
     const body = await request.json() as any;
     const principal = await store.verify(body.token, body.modeTag);
     if (!principal) return Response.json({ error: 'unauthorized' }, { status: 401 });
-    return Response.json(body.action === 'servers' ? [{ id: 1, name: 'test' }] : principal);
+    if (body.action === 'authorize' && !store.consumeRequest(principal.id)) return Response.json({ error: 'rate_limited' }, { status: 429 });
+    return Response.json(body.action === 'servers' ? principal.serverIds.map(id => ({ id, name: 'test' })) : principal);
   });
   const env = { GITHUB_CLIENT_ID: 'test', GITHUB_CLIENT_SECRET: 'test',
     USER_DB: { idFromName: (name: string) => name, get: () => ({ fetch: internal }) },
     MCP_EXECUTION: { idFromName: (name: string) => name, get: () => ({ fetch: execute }) },
   } as unknown as Env;
-  return { db, store, env, execute, internal };
+  const create = async (input: unknown = { grants: [{ serverId: 1, scopes: ['read', 'context'] }] }, route = '42', mode = 'github') => {
+    const info = await store.create(7, route, mode, input);
+    return { info, ...(await store.credentials(7, route, mode)) };
+  };
+  return { db, store, env, execute, create };
 }
-const input = { name: 'Claude Code', serverIds: [1], scopes: ['read', 'context'], days: 30 };
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+const input = { grants: [{ serverId: 1, scopes: ['read', 'context'] }] };
 
-describe('personal MCP authorization storage', () => {
-  it('stores only a digest; isolates owner, route and auth mode; supports expiry and revocation', async () => {
-    const { store, db } = fixture();
-    const issued = await store.create(7, '42', 'github', input);
-    expect(mcpTokenRoute(issued.token)).toBe('42');
-    expect(JSON.stringify(db.prepare('SELECT * FROM mcp_tokens').all())).not.toContain(issued.token);
-    expect((await store.verify(issued.token, 'github'))?.userId).toBe(7);
-    expect(await store.verify(issued.token.replace('mcp_42:', 'mcp_43:'), 'github')).toBeNull();
-    expect(await store.verify(issued.token, 'cf_access')).toBeNull();
-    expect(store.list(8)).toEqual([]);
-    expect(JSON.stringify(store.list(7))).not.toContain('token_hash');
-    store.revoke(issued.id, 8);
-    expect(await store.verify(issued.token, 'github')).not.toBeNull();
-    store.revoke(issued.id, 7);
-    expect(await store.verify(issued.token, 'github')).toBeNull();
-    const expired = await store.create(7, '-1', 'password:generation1', input);
-    expect(await store.verify(expired.token, 'password:generation2')).toBeNull();
-    vi.spyOn(Date, 'now').mockReturnValue(expired.expiresAt);
-    expect(await store.verify(expired.token, 'password:generation1')).toBeNull();
-    vi.restoreAllMocks(); db.close();
+describe('singleton encrypted MCP configuration', () => {
+  it('generates once, encrypts recoverable credentials and preserves the same token indefinitely', async () => {
+    const { store, db, create } = fixture();
+    const first = await create();
+    const again = await create();
+    expect(again.token).toBe(first.token);
+    expect(again.info.id).toBe(first.info.id);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM mcp_configs').get()!.n).toBe(1);
+    expect(JSON.stringify(db.prepare('SELECT * FROM mcp_configs').all())).not.toContain(first.token);
+    expect(JSON.stringify(store.get(7, '42', 'github'))).not.toContain(first.token);
+    expect(mcpTokenRoute(first.token)).toBe('42');
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 10 * 365 * 86400_000);
+    expect(await store.verify(first.token, 'github')).not.toBeNull();
+    expect(await store.verify(first.token, 'cf_access')).toBeNull();
+    expect(() => store.get(7, '43', 'github')).toThrow('invalid_identity');
+    expect(store.get(8, '43', 'github').configured).toBe(false);
+    db.close();
   });
-  it('rejects cross-owner servers, empty grants, oversized configuration and excessive tokens', async () => {
-    const { store, db } = fixture();
-    await expect(store.create(7, '42', 'github', { ...input, serverIds: [2] })).rejects.toThrow();
-    for (const bad of [{ ...input, scopes: ['admin'] }, { ...input, days: 0 }, { ...input, serverIds: [] }])
-      expect(() => parseMcpTokenInput(bad)).toThrow();
-    for (let i = 0; i < 20; i++) await store.create(7, '42', 'github', input);
-    await expect(store.create(7, '42', 'github', input)).rejects.toThrow('token_limit'); db.close();
+  it('concurrent first generation is idempotent and does not replace grants or token', async () => {
+    const { create, db } = fixture();
+    const [a, b] = await Promise.all([create(), create()]);
+    expect(a.token).toBe(b.token);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM mcp_configs').get()!.n).toBe(1);
+    db.close();
   });
-  it('limits valid requests in one authoritative window', async () => {
-    const { store, db } = fixture();
-    const issued = await store.create(7, '42', 'github', input);
-    for (let i = 0; i < 120; i++) expect(store.consumeRequest(issued.id)).toBe(true);
-    expect(store.consumeRequest(issued.id)).toBe(false);
-    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_001);
-    expect(store.consumeRequest(issued.id)).toBe(true);
-    expect(store.consumeRequest('missing')).toBe(false);
-    vi.restoreAllMocks(); db.close();
+  it('updates individual server grants and allows removing all access without rotating the token', async () => {
+    const { create, store, db } = fixture();
+    const { token } = await create();
+    await store.update(7, '42', 'github', { grants: [{ serverId: 1, scopes: ['read'] }, { serverId: 3, scopes: ['exec'] }] });
+    expect((await store.verify(token, 'github'))!.grants).toEqual([{ serverId: 1, scopes: ['read'] }, { serverId: 3, scopes: ['exec'] }]);
+    await store.update(7, '42', 'github', { grants: [] });
+    expect((await store.verify(token, 'github'))!.serverIds).toEqual([]);
+    expect((await store.credentials(7, '42', 'github')).token).toBe(token);
+    db.close();
   });
-  it('expires activity and never regresses a completed row to running', () => {
+  it('requires explicitly owned servers and rejects duplicate or malformed grants', async () => {
     const { store, db } = fixture();
-    const item = { id: 'op', client: 'Claude Code', serverId: 1, tool: 'ssh_exec', status: 'success' as const,
-      startedAt: Date.now(), finishedAt: Date.now() };
-    store.record(7, item);
-    store.record(7, { ...item, status: 'running', finishedAt: null });
-    expect(store.activity(7)[0].status).toBe('success');
-    expect(store.cleanup()).toBe(item.startedAt + 86_400_000);
-    vi.spyOn(Date, 'now').mockReturnValue(item.startedAt + 86_400_000);
-    expect(store.cleanup()).toBeNull();
-    expect(store.activity(7)).toEqual([]);
-    vi.restoreAllMocks(); db.close();
+    await expect(store.create(7, '42', 'github', { grants: [{ serverId: 2, scopes: ['read'] }] })).rejects.toThrow('server_not_found');
+    for (const bad of [{ grants: [{ serverId: 1, scopes: ['admin'] }] }, { grants: [{ serverId: 1, scopes: [] }] },
+      { grants: [{ serverId: 1, scopes: ['read'] }, { serverId: 1, scopes: ['exec'] }] }, { grants: Array(101).fill({ serverId: 1, scopes: ['read'] }) }])
+      expect(() => parseMcpConfigInput(bad)).toThrow();
+    db.close();
   });
-  it('bounds activity and does not persist payloads; stale running entries become unknown', () => {
-    const { store, db } = fixture();
-    for (let i = 0; i < 105; i++) store.record(7, { id: String(i), client: 'Cursor', serverId: 1,
-      tool: 'ssh_exec', status: 'running', startedAt: Date.now() - 180_000 + i, finishedAt: null });
-    expect(store.activity(7)).toHaveLength(100);
-    expect(store.activity(7)[0].status).toBe('unknown');
-    expect(store.activity(8)).toEqual([]); db.close();
+  it('encrypts Access credentials and can update them without changing the personal token', async () => {
+    const { create, store, db } = fixture();
+    const route = `cf-${'a'.repeat(32)}`;
+    const first = await create({ ...input, access: { clientId: 'service.access', clientSecret: 'ACCESS-SECRET' } }, route, 'cf_access');
+    expect(JSON.stringify(db.prepare('SELECT * FROM mcp_configs').all())).not.toContain('ACCESS-SECRET');
+    expect((await store.credentials(7, route, 'cf_access')).access!.clientSecret).toBe('ACCESS-SECRET');
+    await store.update(7, route, 'cf_access', { ...input, access: { clientId: 'new.access', clientSecret: 'NEW-SECRET' } });
+    expect(await store.credentials(7, route, 'cf_access')).toEqual({ token: first.token, access: { clientId: 'new.access', clientSecret: 'NEW-SECRET' } });
+    db.close();
+  });
+  it('never accepts legacy digest-only tokens and removes legacy rows on explicit first generation', async () => {
+    const { create, store, db } = fixture();
+    db.prepare(`INSERT INTO mcp_tokens(id,token_hash,user_id,name,server_ids,scopes,route_key,mode_tag,expires_at,created_at)
+      VALUES('old','digest',7,'old','[1]','["exec"]','42','github',9999999999999,1)`).run();
+    expect(store.get(7, '42', 'github').legacy).toBe(true);
+    expect(await store.verify(`mcp_42:${'a'.repeat(64)}`, 'github')).toBeNull();
+    await create();
+    expect(db.prepare('SELECT COUNT(*) AS n FROM mcp_tokens').get()!.n).toBe(0);
+    db.close();
+  });
+  it('password rotation rejects the old binding until the owner explicitly copies the same saved token', async () => {
+    const { create, store, db } = fixture();
+    const first = await create(input, '-1', 'password:one');
+    expect(await store.verify(first.token, 'password:two')).toBeNull();
+    store.get(7, '-1', 'password:two');
+    expect(await store.verify(first.token, 'password:two')).toBeNull();
+    expect((await store.credentials(7, '-1', 'password:two')).token).toBe(first.token);
+    expect(await store.verify(first.token, 'password:two')).not.toBeNull();
+    db.close();
+  });
+  it('keeps request budgets and bounded expiring activity, never regressing completed rows', async () => {
+    const { create, store, db } = fixture();
+    const { info } = await create();
+    for (let i = 0; i < 120; i++) expect(store.consumeRequest(info.id!)).toBe(true);
+    expect(store.consumeRequest(info.id!)).toBe(false);
+    for (let i = 0; i < 105; i++) store.record(7, { id: String(i), client: 'MCP', serverId: 1, tool: 'ssh_exec', status: 'success', startedAt: Date.now() + i, finishedAt: Date.now() });
+    store.record(7, { id: '104', client: 'MCP', serverId: 1, tool: 'ssh_exec', status: 'running', startedAt: Date.now(), finishedAt: null });
+    expect(store.activity(7)).toHaveLength(100); expect(store.activity(7)[0].status).toBe('success');
+    expect(store.activity(8)).toEqual([]);
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 86401_000);
+    expect(store.cleanup()).toBeNull(); expect(store.activity(7)).toEqual([]);
+    db.close();
   });
 });
 
-describe('stateless Streamable HTTP with real MCP client', () => {
-  it('initializes, lists authorized tools, calls tools and refuses unauthorized servers with no execution', async () => {
-    const { store, env, execute, db } = fixture();
-    const issued = await store.create(7, '42', 'github', input);
+describe('real MCP client with live per-server authorization', () => {
+  it('lists the union of tools but enforces each server grant independently and observes edits', async () => {
+    const { store, env, execute, create, db } = fixture();
+    const { token } = await create({ grants: [{ serverId: 1, scopes: ['read', 'context'] }, { serverId: 3, scopes: ['exec'] }] });
     const transport = new StreamableHTTPClientTransport(new URL('https://cloudssh.test/mcp'), {
-      requestInit: { headers: { Authorization: `Bearer ${issued.token}` } },
+      requestInit: { headers: { Authorization: `Bearer ${token}` } },
       fetch: async (url, init) => handleMcp(new Request(url as string, init), env),
     });
-    const client = new Client({ name: 'regression', version: '1.0.0' });
-    await client.connect(transport);
-    const tools = await client.listTools();
-    expect(tools.tools.map(tool => tool.name)).toEqual(['server_list', 'sftp_list', 'sftp_read', 'session_output']);
-    expect((await client.callTool({ name: 'server_list', arguments: {} })).isError).toBe(false);
-    expect((await client.callTool({ name: 'sftp_read', arguments: { server_id: 2, path: '/etc/test' } })).isError).toBe(true);
-    expect((await client.callTool({ name: 'sftp_read', arguments: { server_id: 1, path: 'relative' } })).isError).toBe(true);
+    const client = new Client({ name: 'regression', version: '1.0.0' }); await client.connect(transport);
+    expect((await client.listTools()).tools.map(t => t.name)).toEqual(['server_list', 'ssh_exec', 'sftp_list', 'sftp_read', 'session_output']);
+    expect((await client.callTool({ name: 'ssh_exec', arguments: { server_id: 1, command: 'pwd' } })).isError).toBe(true);
+    expect((await client.callTool({ name: 'sftp_read', arguments: { server_id: 3, path: '/file' } })).isError).toBe(true);
     expect(execute).not.toHaveBeenCalled();
-    expect((await client.callTool({ name: 'sftp_read', arguments: { server_id: 1, path: '/etc/test' } })).isError).toBe(false);
-    expect(execute).toHaveBeenCalledOnce();
-    store.revoke(issued.id, 7);
-    await expect(client.listTools()).rejects.toThrow();
+    expect((await client.callTool({ name: 'ssh_exec', arguments: { server_id: 3, command: 'pwd' } })).isError).toBe(false);
+    await store.update(7, '42', 'github', { grants: [] });
+    expect((await client.listTools()).tools.map(t => t.name)).toEqual(['server_list']);
     await client.close(); db.close();
   });
-  it('requires its own bearer token, rejects browser cross-origin requests and mode changes, permits CLI without Origin', async () => {
-    const { store, env, db } = fixture();
-    const issued = await store.create(7, '42', 'github', input);
-    const request = (headers: Record<string, string>) => new Request('https://cloudssh.test/mcp', { method: 'POST', headers,
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) });
-    expect((await handleMcp(request({ Cookie: 'session=fake' }), env)).status).toBe(401);
-    expect((await handleMcp(request({ Authorization: `Bearer ${issued.token}`, Origin: 'https://evil.test' }), env)).status).toBe(403);
-    expect((await handleMcp(request({ Authorization: `Bearer ${issued.token}` }), { ...env, GITHUB_ALLOWED_USER_IDS: '43' })).status).toBe(401);
-    expect((await handleMcp(request({ Authorization: `Bearer ${issued.token}` }), { ...env, ADMIN_PASSWORD_HASH: 'invalid' })).status).toBe(401);
-    expect((await handleMcp(new Request('https://cloudssh.test/mcp', { headers: { Authorization: `Bearer ${issued.token}` } }), env)).status).toBe(405);
+  it('requires Bearer, rejects cross-origin, mode changes and disallowed identities', async () => {
+    const { create, env, db } = fixture(); const { token } = await create();
+    const req = (headers: Record<string, string>) => new Request('https://cloudssh.test/mcp', { method: 'POST', headers, body: '{}' });
+    expect((await handleMcp(req({ Cookie: 'session=fake' }), env)).status).toBe(401);
+    expect((await handleMcp(req({ Authorization: `Bearer ${token}`, Origin: 'https://evil.test' }), env)).status).toBe(403);
+    expect((await handleMcp(req({ Authorization: `Bearer ${token}` }), { ...env, GITHUB_ALLOWED_USER_IDS: '43' })).status).toBe(401);
+    expect((await handleMcp(req({ Authorization: `Bearer ${token}` }), { ...env, ADMIN_PASSWORD_HASH: 'invalid' })).status).toBe(401);
     db.close();
   });
-  it('requires verified runtime Access admission even for personal tokens; never trusts email headers', async () => {
-    const { store, env, db } = fixture();
-    const route = `cf-${'a'.repeat(32)}`;
-    const issued = await store.create(7, route, 'cf_access', input);
-    const accessEnv = { ...env, CF_ACCESS: 'true' };
-    const request = () => new Request('https://cloudssh.test/mcp', { method: 'POST',
-      headers: { Authorization: `Bearer ${issued.token}`, 'Cf-Access-Authenticated-User-Email': 'spoofed@example.com' } });
-    expect(await authenticateMcp(request(), accessEnv)).toBeNull();
-    const verified = request();
-    await initializeAccessIdentity(verified, { access: { getIdentity: async () => ({ user_uuid: 'service-identity' }) } } as never);
-    expect(await authenticateMcp(verified, accessEnv)).toMatchObject({ principal: { routeKey: route } });
-    const failed = request();
-    await initializeAccessIdentity(failed, { access: { getIdentity: async () => { throw new Error('unavailable'); } } } as never);
-    expect(await authenticateMcp(failed, accessEnv)).toBeNull();
-    db.close();
+  it('still requires runtime-verified Access admission rather than email headers', async () => {
+    const { create, env, db } = fixture(); const route = `cf-${'a'.repeat(32)}`;
+    const { token } = await create({ ...input, access: { clientId: 'id', clientSecret: 'secret' } }, route, 'cf_access');
+    const req = () => new Request('https://cloudssh.test/mcp', { headers: { Authorization: `Bearer ${token}`, 'Cf-Access-Authenticated-User-Email': 'spoof@example.com' } });
+    expect(await authenticateMcp(req(), { ...env, CF_ACCESS: 'true' })).toBeNull();
+    const verified = req(); await initializeAccessIdentity(verified, { access: { getIdentity: async () => ({ user_uuid: 'service' }) } } as never);
+    expect(await authenticateMcp(verified, { ...env, CF_ACCESS: 'true' })).toMatchObject({ principal: { routeKey: route } }); db.close();
   });
-  it('rejects oversized request bodies even without Content-Length', async () => {
-    const request = new Request('https://test/mcp', { method: 'POST', body: 'a'.repeat(512 * 1024 + 1) });
-    await expect(readMcpJson(request)).rejects.toThrow('body_too_large');
+  it('rejects oversized bodies without Content-Length', async () => {
+    await expect(readMcpJson(new Request('https://test/mcp', { method: 'POST', body: 'a'.repeat(512 * 1024 + 1) }))).rejects.toThrow('body_too_large');
   });
 });

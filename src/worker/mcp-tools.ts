@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MCP_MAX_TEXT_BYTES, type McpScope } from '../mcp-schema';
+import { MCP_MAX_TEXT_BYTES, type McpScope, type McpPrincipal } from '../mcp-schema';
 const server = z.number().int().positive().safe();
 const path = z
   .string()
@@ -96,6 +96,14 @@ export const MCP_TOOLS = [
 ] as const;
 export function mcpTool(name: string) {
   return MCP_TOOLS.find((tool) => tool.name === name);
+}
+export function hasMcpServerScope(
+  principal: Pick<McpPrincipal, 'grants'>,
+  name: string,
+  serverId: number
+): boolean {
+  const grant = principal.grants.find((item) => item.serverId === serverId);
+  return !!grant && hasMcpScope(grant.scopes, name);
 }
 export function hasMcpScope(scopes: McpScope[], name: string): boolean {
   const tool = mcpTool(name);

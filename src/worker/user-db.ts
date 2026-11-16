@@ -149,7 +149,9 @@ export class UserDBDO {
     this.mcpState = state;
     this.db = (state.storage as any).sql;
     this.initSchema();
-    this.mcpStore = new McpStore(this.db);
+    this.mcpStore = new McpStore(this.db,
+      (value, userId) => this.encryptCredential(value, userId),
+      (value, userId) => this.decryptCredential(value, userId));
     this.memoryStore = new ServerMemoryStore(this.db,
       callback => typeof (state.storage as any).transactionSync === 'function'
         ? (state.storage as any).transactionSync(callback) : callback(),
@@ -2225,12 +2227,13 @@ export class UserDBDO {
     const body = await request.json<{ action: string; userId: number; routeKey: string; modeTag: string;
       token: string; id: string; input: unknown; serverId: number; activity: McpActivity }>();
     const store = this.mcpStore;
-    if (body.action === 'list') return Response.json(store.list(body.userId));
-    if (body.action === 'create') {
-      try { return Response.json(await store.create(body.userId, body.routeKey, body.modeTag, body.input)); }
-      catch { return Response.json({ error: 'invalid_token_configuration' }, { status: 400 }); }
+    if (['settings', 'create', 'update', 'credentials'].includes(body.action)) {
+      try {
+        if (body.action === 'settings') return Response.json(store.get(body.userId, body.routeKey, body.modeTag));
+        if (body.action === 'credentials') return Response.json(await store.credentials(body.userId, body.routeKey, body.modeTag));
+        return Response.json(await store[body.action === 'create' ? 'create' : 'update'](body.userId, body.routeKey, body.modeTag, body.input));
+      } catch { return Response.json({ error: 'invalid_mcp_configuration' }, { status: 400 }); }
     }
-    if (body.action === 'revoke') { store.revoke(body.id, body.userId); return Response.json({ success: true }); }
     if (body.action === 'activity') return Response.json(store.activity(body.userId));
     // This internal route is reachable only via a DO binding, never a public URL.
     if (body.action === 'record') {

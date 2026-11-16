@@ -6,18 +6,36 @@ export const MCP_MAX_BODY_BYTES = 512 * 1024;
 export const MCP_OPERATION_MS = 90_000;
 export const MCP_CONNECTION_IDLE_MS = 60_000;
 export const MCP_CONTEXT_TTL_MS = 30 * 60_000;
-export interface McpTokenInfo {
-  id: string;
-  name: string;
-  serverIds: number[];
+export interface McpGrant {
+  serverId: number;
   scopes: McpScope[];
-  expiresAt: number;
-  createdAt: number;
 }
-export interface McpPrincipal extends McpTokenInfo {
+export interface McpAccessCredentials {
+  clientId: string;
+  clientSecret: string;
+}
+export interface McpConfigInfo {
+  configured: boolean;
+  id: string | null;
+  grants: McpGrant[];
+  hasAccessCredentials: boolean;
+  legacy: boolean;
+}
+export interface McpSavedCredentials {
+  token: string;
+  access?: McpAccessCredentials;
+}
+export interface McpPrincipal {
+  id: string;
   userId: number;
   routeKey: string;
   modeTag: string;
+  grants: McpGrant[];
+  serverIds: number[];
+  scopes: McpScope[];
+  name: string;
+  expiresAt: number;
+  createdAt: number;
 }
 export interface McpActivity {
   id: string;
@@ -28,37 +46,40 @@ export interface McpActivity {
   startedAt: number;
   finishedAt: number | null;
 }
-export function parseMcpTokenInput(value: unknown): {
-  name: string;
-  serverIds: number[];
-  scopes: McpScope[];
-  days: number;
+export function parseMcpConfigInput(value: unknown): {
+  grants: McpGrant[];
+  access?: McpAccessCredentials;
 } {
   if (!value || typeof value !== 'object') throw new Error('invalid_arguments');
   const v = value as Record<string, unknown>;
-  if (
-    typeof v.name !== 'string' ||
-    !v.name.trim() ||
-    v.name.trim().length > 50 ||
-    !Array.isArray(v.serverIds) ||
-    !v.serverIds.length ||
-    v.serverIds.length > 100 ||
-    v.serverIds.some((id) => !Number.isSafeInteger(id) || id <= 0) ||
-    !Array.isArray(v.scopes) ||
-    !v.scopes.length ||
-    v.scopes.some((s) => !MCP_SCOPES.includes(s as McpScope)) ||
-    !Number.isInteger(v.days) ||
-    (v.days as number) < 1 ||
-    (v.days as number) > 365
-  ) {
-    throw new Error('invalid_arguments');
+  if (!Array.isArray(v.grants) || v.grants.length > 100) throw new Error('invalid_grants');
+  const seen = new Set<number>();
+  const grants = v.grants.map((item) => {
+    if (
+      !item ||
+      typeof item !== 'object' ||
+      !Number.isSafeInteger(item.serverId) ||
+      item.serverId <= 0 ||
+      seen.has(item.serverId) ||
+      !Array.isArray(item.scopes) ||
+      !item.scopes.length ||
+      item.scopes.length > 4 ||
+      item.scopes.some((scope: unknown) => !MCP_SCOPES.includes(scope as McpScope))
+    )
+      throw new Error('invalid_grants');
+    seen.add(item.serverId);
+    return { serverId: item.serverId as number, scopes: [...new Set(item.scopes)] as McpScope[] };
+  });
+  let access: McpAccessCredentials | undefined;
+  if (v.access !== undefined) {
+    if (!v.access || typeof v.access !== 'object') throw new Error('invalid_access');
+    const a = v.access as Record<string, unknown>;
+    const valid = (s: unknown, max: number): s is string =>
+      typeof s === 'string' && s.length > 0 && s.length <= max && /^[\x21-\x7e]+$/.test(s);
+    if (!valid(a.clientId, 512) || !valid(a.clientSecret, 4096)) throw new Error('invalid_access');
+    access = { clientId: a.clientId, clientSecret: a.clientSecret };
   }
-  return {
-    name: v.name.trim(),
-    serverIds: [...new Set(v.serverIds)],
-    scopes: [...new Set(v.scopes)] as McpScope[],
-    days: v.days as number,
-  };
+  return { grants, ...(access ? { access } : {}) };
 }
 export function mcpTokenRoute(token: string): string | null {
   return /^mcp_(-1|[1-9]\d{0,19}|cf-[0-9a-f]{32}):[0-9a-f]{64}$/.exec(token)?.[1] ?? null;
