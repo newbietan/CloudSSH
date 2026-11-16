@@ -18,6 +18,7 @@
     <a href="CHANGELOG.md">Changelog</a> ·
     <a href="#contributors">Contributors</a> ·
     <a href="#sponsor">Sponsor</a> ·
+    <a href="#special-thanks">Special Thanks</a> ·
     <a href="#license">License</a>
   </p>
   <p>
@@ -62,6 +63,7 @@
   - [Local Development](#local-development)
 - [Contributors](#contributors)
 - [Sponsor](#sponsor)
+- [Special Thanks](#special-thanks)
 - [License](#license)
 
 </details>
@@ -131,15 +133,15 @@
   - **Compatibility & Diagnostics**: Model capabilities vary; bounded compatibility changes apply only to explicitly unsupported optional parameters, and incomplete tool calls are not executed. Errors stay concise; detailed diagnostics appear in the web terminal only with `DEBUG_MODE=true`. Model configuration retains its custom dropdown, same-address discovery using saved credentials, and Base URL binding. Requests use `store:false`; verify the provider's actual retention policy.
 - **Quality Gates**: Before deploying either `test` or `main`, GitHub Actions performs frozen-lockfile installation, Worker/frontend type checking, unit and integration tests, reproducible frontend builds, Playwright browser E2E, and axe accessibility regression. Any failure blocks deployment. Pull requests targeting `test`/`main` and manual runs execute the same checks without deployment credentials or deployment; only branch pushes deploy to the corresponding test/production environment.
 
-</details>
-
-<a id="architecture"></a>
-
 ### External AI assistants (MCP)
 
 After signing in, open the connection-node **External AI assistant MCP settings** icon to generate one permanent account configuration with independently editable permissions per server, repeatable copying and no revocation control. Compatible clients such as Claude Code and Cursor can use `https://your-instance/mcp` for independent commands and bounded SFTP text operations. Explicitly share recent output from a terminal tab and expand recent operation records in the panel; idle connections are released automatically.
 
 Exec is advance authorization, not a read-only sandbox or per-command browser approval. The endpoint neither takes over your interactive terminal nor exports stored SSH credentials. Verify every hop's host key first; interactive authentication and browser-issued CA credentials are unsupported. Cloudflare Access sign-in shows a dedicated Service Token / Service Auth guide; the entered credentials are included alongside the personal token in the client configuration, stored with the personal token using recoverable account encryption. The key remains in the same database, not an independent KMS. Legacy digest-only tokens require one new configuration. Other sign-in modes do not show this setup. See [MCP setup, limits and DO migration](docs/mcp.md).
+
+</details>
+
+<a id="architecture"></a>
 
 ## Architecture
 
@@ -591,6 +593,14 @@ If CloudSSH has been helpful to your workflow or projects, consider sponsoring t
 <a href="https://afdian.com/a/newbietan" target="_blank">
   <img src="https://pic1.afdiancdn.com/static/img/welcome/button-sponsorme.png" alt="Sponsor on Afdian" width="200">
 </a>
+
+<a id="special-thanks"></a>
+
+## Special Thanks
+
+Special thanks to those who financially support CloudSSH's ongoing maintenance and development. Your encouragement helps keep the project moving forward!
+
+- [爱发电用户_54858](https://afdian.com/u/548581badf2b11f1b8e152540025c377) — Thank you for supporting this project through Afdian.
 
 <a id="license"></a>
 

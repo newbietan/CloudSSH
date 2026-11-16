@@ -18,6 +18,7 @@
     <a href="CHANGELOG.md">更新日志</a> ·
     <a href="#contributors">贡献者</a> ·
     <a href="#sponsor">赞助支持</a> ·
+    <a href="#special-thanks">特别感谢</a> ·
     <a href="#license">开源协议</a>
   </p>
   <p>
@@ -62,6 +63,7 @@
   - [本地开发](#本地开发)
 - [贡献者](#contributors)
 - [赞助支持](#sponsor)
+- [特别感谢](#special-thanks)
 - [开源协议](#license)
 
 </details>
@@ -131,15 +133,15 @@
   - **兼容与诊断**：模型能力因服务商而异，仅对明确不支持的可选参数做有界兼容；不执行未完成的工具调用。普通错误简短显示，详细诊断仅在 `DEBUG_MODE=true` 时输出网页终端。模型配置保留自定义下拉选择、同地址已存密钥拉取模型列表及 Base URL 绑定。请求使用 `store:false`，实际留存政策仍需核对服务商。
 - **工程质量门禁**：GitHub Actions 在 `test` 与 `main` 分支部署前依次执行冻结锁文件安装、Worker/前端类型检查、单元与集成测试、可复现前端构建、Playwright 浏览器 E2E 和 axe 无障碍回归；任一环节失败都会阻止部署。指向 `test`/`main` 的 PR 和手动运行同样执行验证，但不会部署或注入 Cloudflare 部署凭据；只有对应分支的 push 才按测试/生产环境分流部署。
 
-</details>
-
-<a id="architecture"></a>
-
 ### 外部 AI 助手（MCP）
 
 登录后点击连接节点形状的「外部AI助手MCP设置」图标，可为 Claude Code、Cursor 等客户端生成账户唯一的长期 MCP 配置，按服务器独立调整权限并随时重复复制，不提供撤销入口，通过 `https://你的实例/mcp` 使用独立命令执行和有界 SFTP 文本操作。终端标签页可主动共享最近输出；网页面板的近期操作默认折叠，短空闲后自动释放连接。
 
 执行权限是明确预授权，不是只读沙箱或逐条网页审批；不接管交互终端，不导出保存的 SSH 凭据。需要先确认所有跳的主机指纹，不支持需人工认证或浏览器临时 CA 私钥的服务器。Cloudflare Access 登录会显示专属 Service Token / Service Auth 引导，填写凭据后生成同时携带 Access 与个人 Token 的客户端配置；个人令牌与 Access 凭据按账户加密保存以便重复复制，密钥仍在同一数据库，并非独立 KMS。旧摘要令牌需首次重新生成配置。其他登录模式不展示该引导。配置、限制和新增 DO 迁移见 [MCP 接入说明](docs/mcp.md)。
+
+</details>
+
+<a id="architecture"></a>
 
 ## 架构说明
 
@@ -589,6 +591,14 @@ test 分支（开发/测试）  ──合并──>  main 分支（生产）
 <a href="https://afdian.com/a/newbietan" target="_blank">
   <img src="https://pic1.afdiancdn.com/static/img/welcome/button-sponsorme.png" alt="在爱发电赞助我" width="200">
 </a>
+
+<a id="special-thanks"></a>
+
+## 特别感谢
+
+特别感谢以下朋友通过打赏支持 CloudSSH 的持续维护与开发，你们的鼓励是项目不断前进的动力！
+
+- [爱发电用户_54858](https://afdian.com/u/548581badf2b11f1b8e152540025c377) — 感谢你通过爱发电打赏支持本项目。
 
 <a id="license"></a>
 
