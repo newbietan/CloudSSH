@@ -26,6 +26,14 @@ CloudSSH 为每个登录账户提供**唯一、长期有效**的 MCP 配置。�
 
 Access 模式自动增加 `CF-Access-Client-Id` / `CF-Access-Client-Secret`，仍保留 CloudSSH Bearer 令牌。两层认证缺一不可；普通认证模式不展示 Access 字段。Access Service Token 自身的到期时间仍由 Cloudflare 控制：到期或变更时，在本模块填写新凭据、保存，再重新复制配置到客户端，**不会改变个人 MCP 令牌**。策略确认是操作提示，不是 CloudSSH 对边缘策略的自动验证。
 
+### Access 准入与用户身份
+
+Cloudflare 运行时的原生 `ctx.access`（含有效 `aud`）代表本次 Worker 调用已通过 Access 认证；它与 `getIdentity()` 是否提供用户资料是两件事。精确 `/mcp` 只要求原生准入与个人 MCP Token 数据库验证，不读取用户邮箱，也不等待用户资料接口。Service Token 不提供用户资料不会因此被误判为个人令牌无效。
+
+网页登录、MCP 配置/凭据导出与 CA 签发仍必须取得有效邮箱，查询失败或没有邮箱继续拒绝，不降级 GitHub。`CF_ACCESS=true` 只选择模式，不能代替边缘准入；仅携带邮箱/JWT/Service Token 请求头、没有可信原生上下文的请求仍被拒绝。不得改为检查请求头是否存在，或用 Bypass 绕过 Access。
+
+参见 [Cloudflare Workers Access 文档](https://developers.cloudflare.com/workers/configuration/cloudflare-access/)。
+
 ## 保存与权限修改
 
 - 个人令牌和 Access 凭据按账户使用既有 AES-GCM 机制加密保存在 UserDB SQLite；打开面板只读权限等元数据，明确点击复制/查看时才通过已登录的 POST 接口解密返回。
@@ -81,11 +89,12 @@ Access 模式自动增加 `CF-Access-Client-Id` / `CF-Access-Client-Secret`，�
 端点必须是精确 `/mcp`，使用官方 SDK 的无状态 Streamable HTTP（JSON 响应），不分配持久 MCP session；GET/DELETE 返回 405，不实现 OAuth/旧 SSE/Tasks/重放。只有 OAuth 的客户端不在此版本范围内。协议测试使用官方 SDK Client，不代表已经实机验证所有客户端版本。
 
 - `Unexpected content type: text/html`：先排查 Access 登录重定向、Service Auth 策略、是否确实发送两个 Access 请求头，以及 URL 是否误用了根路径或 `/mcp/`。也可能是 WAF 挑战；不要直接关闭验证。
-- JSON 401：排查个人令牌、账号/认证模式和 Access 运行时已验证身份上下文。Access 凭据不能用邮箱头或浏览器 Cookie 冒充。
+- JSON 401：不能仅凭 `unauthorized` 断言个人 Token 无效。Access 原生准入缺失、令牌/模式不匹配和数据库查询失败都可能在认证阶段返回 401。先核对目标部署与 Access 策略，不要盲目更换长期令牌。网页登录 Cookie 不能代替个人 Bearer，原始邮箱/JWT 头不能冒充原生准入。
+- 开启 `DEBUG_MODE=true` 后，可在 Worker 日志查看 `mcp.auth.denied`：`access_context_missing` 为无可信原生上下文或 aud 非法；`invalid_bearer` 为令牌格式错误；`auth_mode_unavailable` 为当前认证模式不可用；`account_mode_mismatch` 为账户类型/模式/allowlist 不匹配；`credential_rejected` 为数据库拒绝凭据；`credential_lookup_failed` 为凭据后端路由缺失或服务异常。日志仅含固定原因码，每 isolate 每 60 秒最多 20 条，不输出凭据、身份、异常正文；客户端仍只收到统一 401。429 仍表示现有请求预算限制。
 - `host_verification_required`：先回网页验证目标/跳板指纹。
 - `interactive_auth_required`：OTP/键盘交互或浏览器临时 Cloudflare SSH CA 不支持无人值守。
 
-保留直连、最多三级跳板和 Cloudflare Tunnel 的 SSRF、端口及加密后 16KiB 载体分帧边界。Access 机器客户端必须通过边缘准入，并向 Worker 提供可验证的运行时身份上下文，不能因个人 Token 而豁免。
+保留直连、最多三级跳板和 Cloudflare Tunnel 的 SSRF、端口及加密后 16KiB 载体分帧边界。Access 机器客户端必须通过边缘准入，Worker 验证当前调用的可信原生 `ctx.access` 与有效 `aud`，不能因个人 Token 而豁免；原生准入不要求 `getIdentity()` 返回用户资料。
 
 ## 部署与存储
 
@@ -96,6 +105,8 @@ Access 模式自动增加 `CF-Access-Client-Id` / `CF-Access-Client-Secret`，�
 ## English summary
 
 Each signed-in account has one permanent MCP configuration, generated once with no client name, expiry, revoke or rotate controls. Assign read/write/exec/context independently to each saved server and save changes without changing the token. Unchecking all grants disables remote operations while retaining the configuration.
+
+Access admission is separate from browser identity. The exact `/mcp` endpoint requires trusted native `ctx.access` with a valid audience plus the personal token's database verification; it skips user-profile lookup. Browser login, settings/credential export and CA signing still require a verified email. A mode flag or raw request headers cannot establish admission. Debug-only rejection logs contain fixed reason codes and are bounded to 20 entries per isolate per 60 seconds; no credentials, identities or upstream bodies are logged, and public 401 responses stay generic.
 
 The personal token and optional site Access Service Token are stored recoverably with the existing account AES-GCM mechanism. The root key remains in the same database, not an independent KMS. Opening settings fetches metadata only; an explicit copy/view POST decrypts credentials. No browser storage is used, and closing or changing identity/auth mode discards local plaintext. Protect the permanent token and your private client configuration. Cloudflare Service Token expiry is separate: update its credentials and copy again when necessary.
 

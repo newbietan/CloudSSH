@@ -6,6 +6,7 @@ import { McpStore } from '../../src/worker/mcp-store';
 import { handleMcp } from '../../src/worker/mcp';
 import { initializeAccessIdentity } from '../../src/worker/auth';
 import { authenticateMcp } from '../../src/worker/mcp-auth';
+import worker from '../../src/worker/index';
 import { mcpTokenRoute, parseMcpConfigInput, readMcpJson } from '../../src/mcp-schema';
 import type { Env } from '../../src/types';
 
@@ -43,7 +44,7 @@ function fixture() {
     const info = await store.create(7, route, mode, input);
     return { info, ...(await store.credentials(7, route, mode)) };
   };
-  return { db, store, env, execute, create };
+  return { db, store, env, execute, create, internal };
 }
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 const input = { grants: [{ serverId: 1, scopes: ['read', 'context'] }] };
@@ -168,9 +169,70 @@ describe('real MCP client with live per-server authorization', () => {
     const { token } = await create({ ...input, access: { clientId: 'id', clientSecret: 'secret' } }, route, 'cf_access');
     const req = () => new Request('https://cloudssh.test/mcp', { headers: { Authorization: `Bearer ${token}`, 'Cf-Access-Authenticated-User-Email': 'spoof@example.com' } });
     expect(await authenticateMcp(req(), { ...env, CF_ACCESS: 'true' })).toBeNull();
-    const verified = req(); await initializeAccessIdentity(verified, { access: { getIdentity: async () => ({ user_uuid: 'service' }) } } as never);
+    const verified = req(); await initializeAccessIdentity(verified, { access: { aud: 'test-app', getIdentity: async () => ({ user_uuid: 'service' }) } });
     expect(await authenticateMcp(verified, { ...env, CF_ACCESS: 'true' })).toMatchObject({ principal: { routeKey: route } }); db.close();
   });
+  it.each(['undefined', 'throws', 'never'])('supports native Access machine admission with no user profile (%s) through the Worker and SDK', async result => {
+    const { create, env, store, internal, execute, db } = fixture();
+    const route = `cf-${'a'.repeat(32)}`;
+    const { token } = await create({ ...input, access: { clientId: 'service.access', clientSecret: 'private-access-secret' } }, route, 'cf_access');
+    const getIdentity = vi.fn(async () => {
+      if (result === 'throws') throw new Error('private-identity-error');
+      if (result === 'never') return new Promise<CloudflareAccessIdentity>(() => {});
+      return undefined;
+    });
+    const ctx = { access: { aud: 'test-app', getIdentity } };
+    const client = new Client({ name: 'access-machine-regression', version: '1.0.0' });
+    const transport = new StreamableHTTPClientTransport(new URL('https://cloudssh.test/mcp'), {
+      requestInit: { headers: { Authorization: `Bearer ${token}`, 'CF-Access-Client-Id': 'service.access', 'CF-Access-Client-Secret': 'private-access-secret' } },
+      fetch: async (url, init) => worker.fetch(new Request(url as string, init), { ...env, REQUIRE_GITHUB_AUTH: 'true' }, ctx),
+    });
+    try {
+      await client.connect(transport);
+      expect((await client.listTools()).tools.map(t => t.name)).toContain('server_list');
+      const servers = await client.callTool({ name: 'server_list', arguments: {} });
+      expect(servers.isError).not.toBe(true);
+      expect(JSON.parse((servers.content as Array<{ text: string }>)[0].text)).toEqual([{ id: 1, name: 'test' }]);
+      expect((await client.callTool({ name: 'sftp_read', arguments: { server_id: 2, path: '/file' } })).isError).toBe(true);
+      expect(execute).not.toHaveBeenCalled();
+      await store.update(7, route, 'cf_access', { grants: [] });
+      expect((await client.listTools()).tools.map(t => t.name)).toEqual(['server_list']);
+      expect((await store.credentials(7, route, 'cf_access')).token).toBe(token);
+      expect(internal).toHaveBeenCalled();
+      expect(getIdentity).not.toHaveBeenCalled();
+    } finally {
+      await client.close(); db.close();
+    }
+  });
+
+  it('native Access admission still rejects bad Bearers, account modes and absent native context', async () => {
+    const { create, env, internal, db } = fixture(); const route = `cf-${'a'.repeat(32)}`;
+    const { token } = await create({ ...input, access: { clientId: 'id', clientSecret: 'secret' } }, route, 'cf_access');
+    const ctx = { access: { aud: 'test-app', getIdentity: vi.fn(async () => undefined) } };
+    const req = (bearer: string) => new Request('https://cloudssh.test/mcp', { method: 'POST', body: '{}', headers: {
+      Authorization: `Bearer ${bearer}`, 'CF-Access-Client-Id': 'id', 'CF-Access-Client-Secret': 'secret',
+      'Cf-Access-Jwt-Assertion': 'forged-jwt', 'Cf-Access-Authenticated-User-Email': 'spoof@example.com',
+    } });
+    try {
+      const changed = token.slice(0, -1) + (token.endsWith('a') ? 'b' : 'a');
+      for (const bad of ['malformed', changed, `mcp_42:${'a'.repeat(64)}`]) {
+        const res = await worker.fetch(req(bad), env, ctx);
+        expect(res.status).toBe(401);
+        expect(await res.json()).toEqual({ error: 'unauthorized' });
+      }
+      internal.mockClear();
+      for (const overrides of [{ CF_ACCESS: 'true' }, { CF_ACCESS: 'true', REQUIRE_GITHUB_AUTH: 'true' }, {}]) {
+        expect((await worker.fetch(req(token), { ...env, ...overrides })).status).toBe(401);
+      }
+      expect(internal).not.toHaveBeenCalled();
+      for (const aud of ['', ' ', 'aud\n', undefined]) {
+        expect((await worker.fetch(req(token), env, { access: { aud, getIdentity: ctx.access.getIdentity } } as never)).status).toBe(401);
+      }
+      expect(internal).not.toHaveBeenCalled();
+      expect(ctx.access.getIdentity).not.toHaveBeenCalled();
+    } finally { db.close(); }
+  });
+
   it('rejects oversized bodies without Content-Length', async () => {
     await expect(readMcpJson(new Request('https://test/mcp', { method: 'POST', body: 'a'.repeat(512 * 1024 + 1) }))).rejects.toThrow('body_too_large');
   });

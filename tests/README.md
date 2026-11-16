@@ -117,7 +117,9 @@ CI=true pnpm exec playwright test --workers=2
 
 ## 个人 MCP 接入回归
 
-- `tests/worker/mcp.test.ts`：真实官方 MCP Client 初始化/列工具/调用、唯一配置的AES-GCM回读、幂等并发生成、永久稳定令牌、旧摘要迁移、逐服务器授权/清空权限、认证模式与请求/活动预算。
+- `tests/worker/mcp.test.ts`：真实官方 MCP Client 初始化/列工具/调用、唯一配置的AES-GCM回读、幂等并发生成、永久稳定令牌、旧摘要迁移、逐服务器授权/清空权限、认证模式与请求/活动预算。通过真实 Worker 入口验证 Access 机器准入：用户资料缺失/异常/悬挂不阻断 MCP，也不触发身份查询；错误 Token、无原生上下文、伪造头和非法 aud 仍拒绝。
+- `tests/worker/cf-access.test.ts`：区分原生准入与浏览器身份，只有精确 `/mcp` 跳过资料读取；配置管理/凭据导出/CA 签发仍要求有效邮箱，缺失/异常不回退 GitHub，请求克隆/重新初始化不继承旧准入。
+- `tests/worker/mcp-auth-diagnostics.test.ts`：固定认证拒绝原因码、DEBUG 默认关闭、每 isolate 每60秒20条日志上限及时间回退，不记录凭据/身份/上游正文，429预算响应不误报为凭据失效。
 - `mcp-execution.test.ts`：严格验签与无头连接、配置变化重建、短连接复用、并发拒绝、取消、撤销复查、隧道重定向/解析地址防护和 Alarm 清理。
 - `mcp-context.test.ts` / `mcp-ssh-channels.test.ts`：标签页显式共享的所有者/路由/服务器隔离、到期/断线失效、不刷新空闲，以及独立 subsystem 与 exec 超时清理。
 - `mcp-sftp.test.ts`：UTF-8 字节边界、二进制拒绝、目录预算、临时文件、哈希冲突与原子替换。
