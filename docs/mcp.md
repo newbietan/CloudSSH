@@ -72,7 +72,7 @@ Cloudflare 运行时的原生 `ctx.access`（含有效 `aud`）代表本次 Work
 - 路径必须绝对；不是目录沙箱，读取软链接仍按远端账号权限执行。
 - 目录最多 200 条、约 64KiB 编码结果、32 次 READDIR；超限明确 `truncated`。
 - 每次读取最多 64KiB UTF-8，拒绝 NUL 二进制/非法 UTF-8。使用字节 offset / nextOffset 续读，边界不切开字符。只有完整小文件读完才返回 SHA-256 `fileHash`。
-- 写入最多 64KiB UTF-8。先写同目录随机临时文件（EXCL 创建，默认 0600），再 rename 发布，不先清空目标。
+- 写入最多 64KiB UTF-8。先写同目录随机临时文件（EXCL 创建，在 OPEN 请求中原子指定 0600，而非创建后再收紧权限），再 rename 发布，不先清空目标。
 - 覆盖已有普通文件必须有 `expected_hash`，并要求 OpenSSH `posix-rename@openssh.com` 扩展；上传前后复核哈希，拒绝软链接/目录/特殊权限位目标。
 - 保留普通 rwx 位，但不保证原 inode、owner/group、ACL、xattr 或硬链接关系。哈希检查有竞态窗口，不是远端事务锁；失败可能留下临时文件。
 

@@ -382,17 +382,18 @@ export class SFTPClient {
   }
 
   // SSH_FXP_OPEN
-  async openFile(path: string, flags: number): Promise<Uint8Array> {
+  async openFile(path: string, flags: number, permissions?: number): Promise<Uint8Array> {
     const reqId = this.nextRequestId();
     const pathBytes = encodeString(path);
-    // pflags(4) + attrs(4 for flags=0)
-    const payload = new Uint8Array(pathBytes.length + 4 + 4);
+    // pflags(4) + attribute flags(4) + optional creation permissions(4).
+    const payload = new Uint8Array(pathBytes.length + 8 + (permissions === undefined ? 0 : 4));
     let offset = 0;
     payload.set(pathBytes, offset);
     offset += pathBytes.length;
     writeUint32(payload, offset, flags);
     offset += 4;
-    writeUint32(payload, offset, 0); // no attributes
+    writeUint32(payload, offset, permissions === undefined ? 0 : SSH_FILEXFER_ATTR_PERMISSIONS);
+    if (permissions !== undefined) writeUint32(payload, offset + 4, permissions);
     return this.sendRequest(reqId, SSH_FXP_OPEN, payload);
   }
 

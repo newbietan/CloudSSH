@@ -5208,9 +5208,10 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
     padding-right: max(12px, env(safe-area-inset-right));
   }
 
-  /* 头部右侧按钮组收紧，为标题腾出空间 */
+  /* Keep action widths intact; the title can truncate instead of clipping the back button. */
   .agent-panel-header > div:last-child {
     gap: 4px;
+    flex-shrink: 0;
   }
 
   .agent-panel-title {
@@ -5258,6 +5259,13 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
      display: block（(0,3,0)），否则桌面 X 图标在移动端泄漏并被挤出屏幕 */
   .agent-header-btn .material-symbols-outlined.agent-desktop-close {
     display: none;
+  }
+
+  /* At extra-narrow widths, keep the arrow and full accessible name without squeezing the label. */
+  @media (max-width: 380px) {
+    .agent-header-btn .agent-back-label {
+      display: none;
+    }
   }
 
   /* 快捷提示词方块：移动端换行自适应铺满，不再横向滚动裁切 */

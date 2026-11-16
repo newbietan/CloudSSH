@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MAX_SFTP_PACKET_BYTES, MAX_SFTP_RECEIVE_BYTES, SFTPClient } from '../../src/ssh/sftp';
-import { SSH_FXP_ATTRS, SSH_FXP_DATA, SSH_FXP_HANDLE, SSH_FXP_NAME,
-  SSH_FXP_STATUS, SSH_FXP_VERSION } from '../../src/ssh/sftp-types';
+import { SSH_FILEXFER_ATTR_PERMISSIONS, SSH_FXP_ATTRS, SSH_FXP_DATA, SSH_FXP_HANDLE,
+  SSH_FXP_NAME, SSH_FXP_OPEN, SSH_FXP_STATUS, SSH_FXP_VERSION } from '../../src/ssh/sftp-types';
 import { concat, encodeString, encodeUint32, writeUint32 } from '../../src/ssh/utils';
 
 function body(type: number, id: number, ...parts: Uint8Array[]) {
@@ -75,6 +75,25 @@ describe('SFTP v3 bounded decoding', () => {
     expect(() => client.processReceivedPackets()).toThrow('does not match');
     expect(await pending).toBeInstanceOf(Error);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each([undefined, 0o600, 0])('encodes OPEN permissions %s at creation without changing default requests', async permissions => {
+    const client = new SFTPClient();
+    const send = vi.fn();
+    client.setSendCallback(send);
+    const path = '/tmp/private-file';
+    const flags = 2 | 8 | 32;
+    const pending = client.openFile(path, flags, permissions);
+    const attrs = permissions === undefined
+      ? encodeUint32(0)
+      : concat(encodeUint32(SSH_FILEXFER_ATTR_PERMISSIONS), encodeUint32(permissions));
+    expect(send).toHaveBeenCalledWith(frame(body(SSH_FXP_OPEN, 1,
+      encodeString(path), encodeUint32(flags), attrs)));
+    client.feed(frame(body(SSH_FXP_HANDLE, 1, encodeString('handle'))));
+    client.processReceivedPackets();
+    expect(client.parseHandleResponse(await pending)).toEqual(new TextEncoder().encode('handle'));
+    expect(vi.getTimerCount()).toBe(0);
+    client.dispose();
   });
 
   it('a synchronous send failure leaves no request timer behind', async () => {
