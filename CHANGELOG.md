@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.0] - 2026-11-16
+
+### Added
+
+- **外部 MCP 助手接入（关联 Issue：#194）**：提供账户唯一、长期有效的个人 MCP 配置，通过标准 Streamable HTTP `/mcp` 端点接入支持自定义请求头的外部客户端，无需配置内置 AI 模型。支持按保存的服务器独立授予读取、写入、执行和终端上下文权限，重复复制配置或修改授权不改变个人令牌。
+- **独立 SSH 与 SFTP 工具**：提供 `server_list`、非交互 `ssh_exec`、有界 UTF-8 文本 `sftp_list` / `sftp_read` / `sftp_write`；复用已保存凭据与跳板/隧道配置，严格校验目标和每跳主机指纹。文件替换要求哈希冲突检查，命令和文件操作不接管浏览器交互终端，短空闲后自动释放有界连接池。
+- **主动终端上下文与近期操作**：所有者可显式共享指定标签页的近期输出，通过 `session_output` 提供有界只读上下文；分享限时且随断线失效。设置面板提供默认折叠的近期操作记录，不保存命令参数、路径、文件内容或输出，不作为永久审计。
+- **Cloudflare Access 客户端引导**：Access 登录下提供 Service Token / Service Auth 设置引导，生成同时携带 Access 凭据与个人 Bearer 的客户端配置；凭据按账户加密保存，仅在用户明确复制或查看时回读，不写入浏览器持久化存储。
+
+### Changed
+
+- **助手界面与配置交互**：内置 AI 与 MCP 设置共用主题自适应的标题、输入、按钮和页脚组件，统一图标与三语文案；按逐服务器授权集合检测未保存修改，支持恢复原值、失败重试与紧凑可滚动日志，适配桌面和移动端。
+- **CI 与回归覆盖**：PR 和手动运行执行验证，仅 `test` / `main` 的 push 可部署；补充并发、超时、报告命名及 SSH 互操作触发路径，先执行类型检查、测试与构建再安装浏览器。新增 MCP 协议、权限隔离、连接生命周期、文件冲突、Access 认证及 Chromium/WebKit 界面回归。
+- **部署与升级说明**：新增 `MCPExecutionDO`、`MCP_EXECUTION` 绑定和追加式 `v3` 迁移，部署时须保留已有迁移和用户数据。开发阶段旧摘要令牌不能恢复，需在设置中生成新的唯一配置并更新客户端；接入、预算与限制详见 `docs/mcp.md`。
+
+### Fixed
+
+- **Access 机器身份认证**：精确 `/mcp` 端点区分可信原生 Access 准入与浏览器用户资料，不因 Service Token 缺少邮箱而提前拒绝；网页登录、配置管理和 CA 签发继续要求有效邮箱。补充仅调试模式启用、限量且不含凭据的认证拒绝原因诊断。
+
+### Security
+
+- **MCP 授权与执行边界**：逐服务器检查当前权限，并在连接后、执行前复核；保留账号/认证模式隔离、SSRF 防护、严格主机验证及有界输出。执行权限属于预授权，不是只读沙箱或逐条网页审批；结果未知的命令和写入不自动重放。
+- **长期凭据限制**：个人 MCP 令牌没有到期、撤销或轮换入口，可取消全部服务器权限使其失去远端操作能力。个人令牌与 Access 凭据使用现有 AES-GCM 存储，根密钥仍在同一数据库，不是独立 KMS；请勿将客户端私有配置提交到 Git。不支持 OAuth-only 客户端、需人工交互认证或浏览器临时 CA 私钥的服务器。
+
 ## [2.10.4] - 2026-11-12
 
 ### Fixed
