@@ -5,7 +5,7 @@ CloudSSH 为每个登录账户提供**唯一、长期有效**的 MCP 配置。�
 ## 接入
 
 1. 登录后先在网页连接已保存服务器，确认目标及每个跳板的主机指纹。
-2. 点击连接节点形状的「外部助手」图标，按服务器勾选读取、写入、执行、终端上下文权限。不同服务器可以不同；未勾选任何权限的服务器不能被 MCP 操作。
+2. 点击连接节点形状的「外部AI助手MCP设置」图标，按服务器勾选读取、写入、执行、终端上下文权限。不同服务器可以不同；未勾选任何权限的服务器不能被 MCP 操作。
 3. **仅 CF Access 登录**：展开 Access 连接，按控制台/官方文档链接为保护**本站**的 Access 应用创建 Service Token，并用 **Service Auth** 策略允许它（不是普通 Allow 或 Bypass）。填写 Client ID / Secret 并确认策略；这些不是 SSH 隧道服务器的凭据。
 4. 点击「生成唯一配置」。以后点击「复制 MCP 配置」即可重复获取相同令牌；需要手动检查时使用「查看配置」。
 5. 保存到 Claude Code、Cursor 等支持远程 HTTP 与自定义请求头的客户端**私有配置**中，不要提交到 Git。
@@ -31,7 +31,7 @@ Access 模式自动增加 `CF-Access-Client-Id` / `CF-Access-Client-Secret`，�
 - 个人令牌和 Access 凭据按账户使用既有 AES-GCM 机制加密保存在 UserDB SQLite；打开面板只读权限等元数据，明确点击复制/查看时才通过已登录的 POST 接口解密返回。
 - 这是可回读加密，不再是旧版“只保存令牌摘要”和“Access 凭据不上传”的模式。根密钥仍在同一数据库的 `system_config.encryption_secret`，**不是独立 Secret/KMS，也不能抵御整库或运行时失陷**。
 - 不写入浏览器 localStorage/sessionStorage。关闭窗口、退出、换号或认证模式变化会销毁本地明文及中止请求；用户主动复制后的系统剪贴板由用户管理。
-- 修改各服务器的权限并「保存修改」，令牌不变。服务端逐次检查当前授权，命令/SFTP 在握手后、真正执行前再次核对；权限保存后尽力关闭原执行池，在途操作已经发生的副作用不会回滚。
+- 修改各服务器的权限并「保存修改」，令牌不变。未改动时按钮禁用，改动后启用，恢复原值或保存成功后重新禁用；首次生成不受此限制。服务端逐次检查当前授权，命令/SFTP 在握手后、真正执行前再次核对；权限保存后尽力关闭原执行池，在途操作已经发生的副作用不会回滚。
 - 可以取消全部服务器权限，使配置暂时没有远端操作能力；唯一令牌本身保留，之后仍可重新授权。
 - 长期令牌**没有撤销/轮换接口**，请妥善保护。账号/认证模式/路由及 GitHub allowlist 边界仍检查；管理员密码轮换会先拒绝旧绑定，所有者重新登录后明确复制/查看或保存配置可重新绑定，令牌本身不变。换登录方式不合并不同账号的数据。
 
@@ -70,9 +70,9 @@ Access 模式自动增加 `CF-Access-Client-Id` / `CF-Access-Client-Secret`，�
 
 ## 终端上下文和近期操作
 
-「当前标签页的终端上下文」默认折叠。打开后可显式共享最近输出并将 `server_id` / `context_id` 交给助手。仍需该服务器的上下文权限；单次最多 30 分钟，断线/关闭会话后取消。只读约 200 行、16K 字符的有界缓冲，不是屏幕、录像或完整历史，不允许输入，不暴露恢复令牌，不刷新用户空闲。
+「共享当前终端上下文」默认折叠。打开后可显式共享最近输出并将 `server_id` / `context_id` 交给助手。仍需该服务器的上下文权限；单次最多 30 分钟，断线/关闭会话后取消。只读约 200 行、16K 字符的有界缓冲，不是屏幕、录像或完整历史，不允许输入，不暴露恢复令牌，不刷新用户空闲。
 
-「近期外部操作」及其中每条记录**默认全部折叠**，用户展开后查看工具、时间、服务器和状态；只有展开且页面可见时约每 5 秒刷新。最多 100 条/约 24 小时，由 UserDB Alarm 清理；不保存命令参数、路径、文件内容或输出，不是永久审计，也不会送入 Agent 长期记忆。活动投递尽力而为，未收到结束状态的旧运行项显示结果未知。
+「MCP操作日志」整体默认折叠，展开后直接显示小字号、等宽单行日志，不再逐条折叠；每行依次为完整起始日期时间、结束时间、服务器、状态和工具名，跨日结束显示完整日期。一次展示最多100条，日志区域可滚动；只有展开且页面可见时约每5秒刷新。最多 100 条/约 24 小时，由 UserDB Alarm 清理；不保存命令参数、路径、文件内容或输出，不是永久审计，也不会送入 Agent 长期记忆。活动投递尽力而为，未收到结束状态的旧运行项显示结果未知。
 
 ## 连接、协议与故障排查
 
@@ -101,4 +101,4 @@ The personal token and optional site Access Service Token are stored recoverably
 
 Legacy digest-only tokens cannot be recovered and are no longer accepted. Generate the new singleton once and update the client; subsequent generation calls are idempotent. Tool discovery is a union, but authorization is enforced per server and rechecked before dispatch. Permission edits stop old pools best effort, never roll back remote effects.
 
-The theme-adaptive compact window uses native disclosures: recent activity and every record start collapsed, with reads/polling only while expanded and visible. Independent non-PTY exec/SFTP, explicit short-lived terminal output sharing, strict host trust, Access edge admission and bounded operation budgets remain unchanged.
+MCP settings and the built-in Agent share assistant-ui.css components for surfaces, headers, inputs, actions and footers, not only theme colors. Save stays disabled for unchanged saved permissions and becomes disabled again after restoration or a successful save. The theme-adaptive compact window keeps the activity section collapsed initially. Expanding it shows up to 100 compact monospace log lines with a time range, server, status and tool, without per-record disclosures. Reads/polling happen only while expanded and visible. Independent non-PTY exec/SFTP, explicit short-lived terminal output sharing, strict host trust, Access edge admission and bounded operation budgets remain unchanged.

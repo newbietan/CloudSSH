@@ -51,8 +51,10 @@ async function openPanel(page: Page) {
 
 test('one permanent configuration: generate once, repeatedly copy, change separate server permissions, and reopen without rotation', async ({ page }) => {
   const state = await setup(page);
+  state.info.legacy = true;
   await page.goto('/?lang=en-US'); await openPanel(page);
   const dialog = page.locator('#mcp-dialog');
+  await expect(dialog.locator('[data-i18n="mcp.compactIntro"], [data-i18n="mcp.legacyHint"], [data-i18n="mcp.help"], [data-i18n="mcp.shortSafety"]')).toHaveCount(0);
   await expect(page.locator('input[name="name"], input[name="days"], #mcp-token-list, #mcp-access-guide')).toHaveCount(0);
   await expect(dialog).not.toContainText('Revoke');
   await expect(page.locator('#mcp-copy-config')).toBeDisabled();
@@ -62,10 +64,12 @@ test('one permanent configuration: generate once, repeatedly copy, change separa
   await expect.poll(() => state.created).toBe(1);
   expect(state.writes[0]).toEqual({ grants: [{ serverId: 1, scopes: ['read'] }, { serverId: 3, scopes: ['exec'] }] });
   await expect(page.locator('#mcp-copy-config')).toBeEnabled(); expect(state.exports).toBe(0);
+  await expect(page.locator('#mcp-save-config')).toBeDisabled();
   await page.locator('#mcp-copy-config').click();
   await expect.poll(() => page.evaluate(() => (window as any).__mcpCopies.length)).toBe(1);
   await page.locator('#mcp-copy-config').click();
   await expect.poll(() => page.evaluate(() => (window as any).__mcpCopies.length)).toBe(2);
+  await expect(page.locator('#mcp-save-config')).toBeDisabled();
   const copies = await page.evaluate(() => (window as any).__mcpCopies);
   expect(copies[0]).toBe(copies[1]); expect(JSON.parse(copies[0]).mcpServers.cloudssh.headers.Authorization).toBe(`Bearer ${token}`);
   await page.locator('input[data-server-id="1"][value="context"]').check();
@@ -88,6 +92,26 @@ test('one permanent configuration: generate once, repeatedly copy, change separa
   expect(await page.evaluate(() => JSON.stringify([localStorage, sessionStorage]))).not.toContain(token);
 });
 
+test('saved grants stay disabled until changed; reverting, exports and failed saves preserve the baseline', async ({ page }) => {
+  const state = await setup(page); state.info = { ...empty(), configured: true, id, grants: [{ serverId: 1, scopes: ['read'] }] };
+  let started = false; let release!: () => void;
+  const pause = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/mcp/config/credentials', async route => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    started = true; await pause; await route.fulfill({ json: { token } });
+  });
+  await page.goto('/?lang=en-US'); await openPanel(page);
+  const save = page.locator('#mcp-save-config'); const write = page.locator('input[data-server-id="1"][value="write"]');
+  await expect(save).toBeDisabled(); await expect(save).toHaveAttribute('title', 'No unsaved changes');
+  await write.check(); await expect(save).toBeEnabled(); await write.uncheck(); await expect(save).toBeDisabled();
+  await page.locator('#mcp-copy-config').click(); await expect.poll(() => started).toBe(true);
+  await write.check(); await expect(save).toBeDisabled();
+  release(); await expect(save).toBeEnabled();
+  await page.route('**/api/mcp/config', route => route.request().method() === 'PUT' ? route.fulfill({ status: 500, json: { error: 'failed' } }) : route.fallback());
+  await save.click(); await expect(page.locator('#mcp-dialog [role="status"]')).toContainText('Request failed');
+  await expect(save).toBeEnabled(); await write.uncheck(); await expect(save).toBeDisabled();
+});
+
 test('closing a pending export cancels the request and never restores plaintext or copies a late result', async ({ page }) => {
   const state = await setup(page); state.info = { ...empty(), configured: true, id, grants: [{ serverId: 1, scopes: ['read'] }] };
   let started = false; let release!: () => void;
@@ -105,19 +129,43 @@ test('closing a pending export cancels the request and never restores plaintext 
   expect(await page.evaluate(() => JSON.stringify([localStorage, sessionStorage]))).not.toContain(token);
 });
 
-test('activity records and each operation default to collapsed; reads are lazy and stop when collapsed', async ({ page }) => {
-  const state = await setup(page); await page.goto('/?lang=en-US'); await openPanel(page);
+test('expanded activity shows two compact log lines without nested disclosures; collapsing stops reads', async ({ page }) => {
+  const state = await setup(page); await page.goto('/?lang=zh-CN');
+  const started = await page.evaluate(() => new Date(2026, 10, 16, 17, 3, 13).getTime());
+  await page.route('**/api/mcp/activity', route => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    state.activityReads++;
+    return route.fulfill({ json: [
+      { id: 'op-b', client: 'MCP', serverId: 3, tool: 'ssh_exec', status: 'success', startedAt: started, finishedAt: started + 1000 },
+      { id: 'op-a', client: 'MCP', serverId: 1, tool: 'ssh_exec', status: 'success', startedAt: started - 6000, finishedAt: started - 3000 },
+    ] });
+  });
+  await openPanel(page);
   const section = page.locator('#mcp-activity-section');
   await expect(section).not.toHaveAttribute('open', ''); expect(state.activityReads).toBe(0);
   await section.locator(':scope > summary').click();
-  await expect(section.locator('.mcp-operation')).toHaveCount(1);
-  await expect(section.locator('.mcp-operation')).not.toHaveAttribute('open', '');
-  await expect(section.locator('.mcp-operation > p')).toBeHidden();
-  await section.locator('.mcp-operation > summary').click();
-  await expect(section.locator('.mcp-operation > p')).toContainText('sftp_read');
+  const rows = section.getByRole('listitem');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toHaveText(/2026\/11\/16 17:03:13 — 17:03:14\s+Personal server 3 · 已完成\s+ssh_exec/);
+  await expect(rows.nth(1)).toHaveText(/2026\/11\/16 17:03:07 — 17:03:10\s+Personal server 1 · 已完成\s+ssh_exec/);
+  await expect(section.locator('#mcp-activity-list details, #mcp-activity-list summary')).toHaveCount(0);
+  expect(await rows.first().evaluate(node => parseFloat(getComputedStyle(node).fontSize))).toBeLessThan(13);
+  expect(await rows.first().evaluate(node => node.getBoundingClientRect().height)).toBeLessThan(28);
+  expect(await page.locator('#mcp-dialog').evaluate(node => node.scrollWidth > node.clientWidth + 1)).toBe(false);
   await section.locator(':scope > summary').click();
   const count = state.activityReads;
   await page.clock.install(); await page.clock.runFor(6000); expect(state.activityReads).toBe(count);
+});
+
+test('activity log exposes all 100 bounded records in a scrollable area', async ({ page }) => {
+  await setup(page);
+  await page.route('**/api/mcp/activity', route => route.request().method() === 'GET' ? route.fulfill({ json:
+    Array.from({ length: 100 }, (_, index) => ({ id: `log-${index}`, client: 'MCP', serverId: 1, tool: 'ssh_exec',
+      status: 'success', startedAt: Date.now() - index * 2000, finishedAt: Date.now() - index * 2000 + 1000 })) }) : route.fallback());
+  await page.goto('/?lang=en-US'); await openPanel(page);
+  await page.locator('#mcp-activity-section > summary').click();
+  await expect(page.locator('#mcp-activity-list').getByRole('listitem')).toHaveCount(100);
+  expect(await page.locator('#mcp-activity-list').evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true);
 });
 
 test('explicit context sharing still checks server state on reopen', async ({ page }) => {
@@ -153,10 +201,11 @@ test('explicit context sharing still checks server state on reopen', async ({ pa
   expect(JSON.stringify(updates)).not.toContain('not-a-context-token');
 });
 
-for (const [locale, title] of [['zh-CN', '外部助手'], ['zh-TW', '外部助理'], ['en-US', 'External assistants']]) {
+for (const [locale, title] of [['zh-CN', '外部AI助手MCP设置'], ['zh-TW', '外部AI助理MCP設定'], ['en-US', 'External AI assistant MCP settings']]) {
   test(`compact singleton panel and accessible icons (${locale})`, async ({ page }) => {
     await setup(page); await page.goto(`/?lang=${locale}`); await openPanel(page);
     await expect(page.locator('#mcp-title')).toHaveText(title);
+    await expect(page.locator('#mcp-dialog [data-i18n="mcp.compactIntro"], #mcp-dialog [data-i18n="mcp.help"]')).toHaveCount(0);
     await expect(page.locator('#user-space-header-actions [data-mcp-open]')).toHaveAttribute('aria-label', title);
     await expect(page.locator('#ai-config-btn svg[data-assistant-glyph="agent"]')).toBeAttached();
     expect(await page.locator('#mcp-dialog').evaluate(node => node.scrollWidth > node.clientWidth + 1)).toBe(false);

@@ -121,7 +121,8 @@ CI=true pnpm exec playwright test --workers=2
 - `mcp-execution.test.ts`：严格验签与无头连接、配置变化重建、短连接复用、并发拒绝、取消、撤销复查、隧道重定向/解析地址防护和 Alarm 清理。
 - `mcp-context.test.ts` / `mcp-ssh-channels.test.ts`：标签页显式共享的所有者/路由/服务器隔离、到期/断线失效、不刷新空闲，以及独立 subsystem 与 exec 超时清理。
 - `mcp-sftp.test.ts`：UTF-8 字节边界、二进制拒绝、目录预算、临时文件、哈希冲突与原子替换。
-- `tests/e2e/mcp.spec.ts` / `mcp-access.spec.ts`：Chromium / WebKit 移动端三语界面、唯一配置生成/重复复制/保存逐服务器权限、显式共享/停止、匿名隐藏和axe；Access精简引导与加密保存后的显式回读、明文不进浏览器存储、关闭/模式切换清理，四主题材质/固定操作栏及默认折叠活动。
+- `tests/e2e/mcp.spec.ts` / `mcp-access.spec.ts`：Chromium / WebKit 移动端三语界面、唯一配置生成/重复复制/保存逐服务器权限、显式共享/停止、匿名隐藏和axe；Access精简引导与加密保存后的显式回读、明文不进浏览器存储、关闭/模式切换清理，四主题共享Agent/MCP组件的标题/输入/页脚尺寸与材料一致性、无改动/恢复/保存/复制/失败的按钮状态及默认折叠日志。
+- `mcp-config-draft.test.ts`：授权集合顺序不构成修改，逐服务器变化/撤销授权/恢复原值比较，不改变原始基线。
 - `tests/worker/mcp-management.test.ts`：元数据与显式POST导出分离、权限更新失效旧连接池、无DELETE/旧令牌接口、所有者鉴权。
 - `mcp-client-config.test.ts`：普通模式只生成 Bearer，Access 添加独立的两个请求头，凭据格式/大小边界和固定 SVG 几何；`agent-responses.spec.ts` 覆盖助手 SVG 与完成/取消/恢复状态切换。
 - 显式 `CLOUDSSH_SSHD_INTEROP=1 pnpm exec vitest run tests/interop/sshd.test.ts` 还验证真实 OpenSSH 上的无 Shell exec、独立 SFTP 创建/读取/原子替换；不改系统 SSH 配置。

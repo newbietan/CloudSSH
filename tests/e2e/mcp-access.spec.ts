@@ -75,8 +75,16 @@ for (const [locale, caption] of [['zh-CN', 'Cloudflare Access 连接'], ['zh-TW'
   });
 }
 
-test('all four themes apply modal radius, shadow and glass material while actions stay reachable', async ({ page }) => {
-  await setup(page); await page.goto('/?lang=en-US'); await open(page);
+test('MCP and Agent share header, field and footer components in all themes', async ({ page }) => {
+  await setup(page);
+  await page.route('**/api/servers/1/memory', route => route.request().method() === 'GET' ? route.fulfill({ json: { workLogs: [], knowledge: [] } }) : route.fallback());
+  await page.goto('/?lang=en-US'); await expect(page.locator('#app')).toBeVisible();
+  await open(page);
+  await page.evaluate(async () => {
+    const { AgentPanel } = await (window as any).eval("import('/src/agent/agent-panel.ts')");
+    const panel = new AgentPanel(document.body, true, 1, 42); panel.render(); panel.show();
+    (window as any).__sharedUiAgent = panel;
+  });
   const colors = new Set<string>();
   for (const theme of ['standard-dark', 'standard-light', 'cyberpunk', 'liquid-glass']) {
     await page.evaluate(async name => { const { applyBuiltInTheme } = await (window as any).eval("import('/src/theme.ts')"); applyBuiltInTheme(name); }, theme);
@@ -85,11 +93,45 @@ test('all four themes apply modal radius, shadow and glass material while action
         radius: parseFloat(css.borderTopLeftRadius), shadow: css.boxShadow, filter: css.backdropFilter };
     });
     colors.add(style.background);
+    const components = await page.evaluate(() => {
+      const css = (selector: string, keys: string[]) => {
+        const style = getComputedStyle(document.querySelector(selector)!);
+        return keys.map(key => style.getPropertyValue(key));
+      };
+      return {
+        mcpHeader: css('.mcp-dialog .assistant-panel-header', ['height','padding-left','background-color','border-bottom-color']),
+        agentHeader: css('#agent-panel .assistant-panel-header', ['height','padding-left','background-color','border-bottom-color']),
+        mcpTitle: css('#mcp-title', ['font-family','font-size','font-weight','letter-spacing','color']),
+        agentTitle: css('#agent-panel .assistant-panel-title', ['font-family','font-size','font-weight','letter-spacing','color']),
+        mcpField: css('#mcp-access-client-id', ['font-size','border-radius','padding','background-color','border-bottom-color']),
+        agentField: css('#agent-input', ['font-size','border-radius','padding','background-color','border-bottom-color']),
+        mcpFooter: css('.mcp-actions', ['background-color','border-top-color']),
+        agentFooter: css('#agent-panel .assistant-panel-footer', ['background-color','border-top-color']),
+      };
+    });
+    expect(components.mcpHeader).toEqual(components.agentHeader);
+    expect(components.mcpTitle).toEqual(components.agentTitle);
+    expect(components.mcpField).toEqual(components.agentField);
+    expect(components.mcpFooter).toEqual(components.agentFooter);
     if (theme === 'liquid-glass') { expect(style.filter).toContain('blur'); expect(style.radius).toBeGreaterThan(0); expect(style.background).toContain('0.96'); }
     await expect(page.locator('#mcp-save-config')).toBeVisible();
     expect(await page.locator('#mcp-dialog').evaluate(node => node.scrollWidth > node.clientWidth + 1)).toBe(false);
   }
   expect(colors.size).toBeGreaterThanOrEqual(3);
+});
+
+test('Access replacements make the form dirty, but merely opening or confirming the saved settings does not', async ({ page }) => {
+  const state = await setup(page); state.info = { ...state.info, configured: true, id: 'singleton', hasAccessCredentials: true };
+  state.access = { clientId, clientSecret: secret };
+  await page.goto('/?lang=en-US'); await open(page);
+  const save = page.locator('#mcp-save-config');
+  await expect(save).toBeDisabled(); await page.locator('#mcp-access-guide > summary').click();
+  await expect(save).toBeDisabled(); await page.locator('#mcp-access-policy-confirmed').check();
+  await expect(save).toBeDisabled();
+  await page.locator('#mcp-access-client-id').fill('new.access'); await expect(save).toBeEnabled();
+  await page.locator('#mcp-access-client-id').fill(''); await expect(save).toBeDisabled();
+  await page.locator('#mcp-access-client-id').fill('new.access'); await page.locator('#mcp-access-client-secret').fill('new-secret');
+  await save.click(); await expect.poll(() => state.writes.length).toBe(1); await expect(save).toBeDisabled();
 });
 
 test('ordinary sign-in does not show or require Access credentials', async ({ page }) => {

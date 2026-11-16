@@ -27,35 +27,18 @@
   border: 1px solid var(--border-strong);
   border-radius: var(--modal-radius);
   box-shadow: var(--shadow-modal);
-  background: var(--bg-elevated);
 }
 .mcp-dialog::backdrop {
   background: var(--modal-overlay);
 }
-/* Keep credential text readable even if native-dialog backdrop blur is not painted.
-   Palette, glass border/filter, radius and shadow still come from the active theme. */
-html[data-ui-style="liquid"] .mcp-dialog .mcp-dialog__panel {
-  background: color-mix(in srgb, var(--bg) 96%, transparent);
-}
-.mcp-dialog__panel > header {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 1rem;
-  border-bottom: 1px solid var(--border);
-}
 .mcp-dialog h2 {
   flex: 1;
   min-width: 0;
-  font-weight: 600;
 }
 .mcp-dialog h3 {
+  font-size: 12px;
   font-weight: 600;
   margin: 0.5rem 0;
-}
-.mcp-dialog__panel > header > .assistant-icon {
-  font-size: 22px;
 }
 .mcp-body {
   min-height: 0;
@@ -152,13 +135,6 @@ html[data-ui-style="liquid"] .mcp-dialog .mcp-dialog__panel {
 .mcp-dialog textarea {
   width: 100%;
   min-width: 0;
-  padding: 0.6rem;
-  font: inherit;
-  font-size: max(16px, 1em);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--control-radius);
-  background: var(--bg-surface);
-  color: var(--on-surface);
 }
 .mcp-dialog textarea {
   resize: vertical;
@@ -169,47 +145,24 @@ html[data-ui-style="liquid"] .mcp-dialog .mcp-dialog__panel {
   flex-shrink: 0;
   justify-content: flex-end;
   gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  border-top: 1px solid var(--border);
 }
-.mcp-dialog button {
-  min-height: 40px;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--control-radius);
-  background: var(--bg-surface);
-  color: var(--on-surface);
-  font: inherit;
-  font-size: 0.8125rem;
-  cursor: pointer;
-}
-.mcp-dialog button:hover:not(:disabled) {
-  border-color: var(--accent);
-}
-.mcp-dialog button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-#mcp-save-config {
-  background: var(--accent);
-  color: var(--on-accent);
-  border-color: var(--accent);
-}
-.mcp-dialog :focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+#mcp-activity-list {
+  max-height: min(20rem, 45dvh);
+  overflow: auto;
 }
 .mcp-dialog .mcp-operation {
-  font-size: 0.8125rem;
-}
-.mcp-operation > p {
-  padding-left: 1rem;
-  overflow-wrap: anywhere;
+  min-width: max-content;
+  padding: 0.2rem 0;
+  font-family: var(--font-code);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.6;
+  white-space: nowrap;
 }
 @media (pointer: coarse), (max-width: 520px) {
   .mcp-dialog label,
   .mcp-dialog summary,
-  .mcp-dialog button {
+  .mcp-dialog .assistant-action {
     min-height: 44px;
   }
 }

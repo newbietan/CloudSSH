@@ -1,5 +1,5 @@
 import './mcp-manager.css';
-import { t, type TranslationKey } from './i18n';
+import { getLocale, t, type TranslationKey } from './i18n';
 import { copyTextToClipboard } from './clipboard';
 import type {
   McpActivity,
@@ -12,6 +12,8 @@ import { MCP_SCOPES } from '../../src/mcp-schema';
 import type { AppConfig } from './app-bootstrap';
 import { createAssistantIcon } from './assistant-icons';
 import { buildMcpClientConfig, normalizeMcpAccessCredentials } from './mcp-client-config';
+import { equalMcpGrants } from './mcp-config-draft';
+import './assistant-ui.css';
 
 interface ContextTarget {
   session: string;
@@ -32,6 +34,7 @@ function element<K extends keyof HTMLElementTagNameMap>(
 function button(key: TranslationKey, action: () => void): HTMLButtonElement {
   const node = element('button', key);
   node.type = 'button';
+  node.className = 'assistant-action';
   node.addEventListener('click', action);
   return node;
 }
@@ -114,21 +117,32 @@ export class McpManager {
     dialog.className = 'mcp-dialog';
     dialog.setAttribute('aria-labelledby', 'mcp-title');
     const header = element('header');
+    header.className = 'assistant-panel-header';
     const title = element('h2', 'mcp.title');
     title.id = 'mcp-title';
-    header.append(
-      createAssistantIcon('mcp'),
-      title,
-      button('common.close', () => this.close())
-    );
+    title.className = 'assistant-panel-title';
+    const icon = createAssistantIcon('mcp');
+    icon.classList.add('assistant-panel-icon');
+    const close = button('common.close', () => this.close());
+    close.className = 'assistant-icon-action';
+    close.removeAttribute('data-i18n');
+    close.setAttribute('aria-label', t('common.close'));
+    close.title = t('common.close');
+    close.dataset.i18nAriaLabel = close.dataset.i18nTitle = 'common.close';
+    const closeIcon = element('span');
+    closeIcon.className = 'material-symbols-outlined';
+    closeIcon.setAttribute('aria-hidden', 'true');
+    closeIcon.textContent = 'close';
+    close.replaceChildren(closeIcon);
+    header.append(icon, title, close);
     const body = element('div');
     body.className = 'mcp-body';
     this.status = element('p');
     this.status.setAttribute('role', 'status');
     this.status.textContent = t('mcp.loading');
-    body.append(element('p', 'mcp.compactIntro'), this.status);
+    body.append(this.status);
     const panel = element('div');
-    panel.className = 'mcp-dialog__panel';
+    panel.className = 'mcp-dialog__panel assistant-shell assistant-panel-surface';
     panel.append(header, body);
     dialog.append(panel);
     this.dialog = dialog;
@@ -144,7 +158,7 @@ export class McpManager {
         this.api<McpConfigInfo>('/api/mcp/config'),
       ]);
       if (generation !== this.generation) return;
-      this.message(info.legacy ? 'mcp.legacyHint' : 'mcp.permanentHint');
+      this.status!.textContent = '';
       this.buildConfiguration(body, servers, info);
       this.buildContext(body);
       this.buildActivity(body, servers);
@@ -193,30 +207,64 @@ export class McpManager {
       this.authMode === 'cf_access'
         ? this.buildAccessGuide(form, !info.hasAccessCredentials)
         : null;
-    const help = disclosure('mcp.help');
-    help.append(element('p', 'mcp.shortSafety'));
-    form.append(help);
     const configArea = element('div');
     configArea.id = 'mcp-config-preview';
     const footer = element('footer');
-    footer.className = 'mcp-actions';
+    footer.className = 'mcp-actions assistant-panel-footer';
     const copy = button('mcp.copyConfig', () => void exportConfig(false));
     copy.id = 'mcp-copy-config';
+    copy.className = 'assistant-action';
     const view = button('mcp.viewConfig', () => void exportConfig(true));
     view.id = 'mcp-view-config';
+    view.className = 'assistant-action';
     const save = element('button', info.configured ? 'mcp.savePermissions' : 'mcp.generate');
     save.type = 'submit';
     save.id = 'mcp-save-config';
+    save.className = 'assistant-action assistant-accent-control';
     save.setAttribute('form', form.id);
+    const readGrants = (): McpGrant[] =>
+      servers.flatMap((server) => {
+        const scopes = controls
+          .filter((input) => input.dataset.serverId === String(server.id) && input.checked)
+          .map((input) => input.value as McpScope);
+        return scopes.length ? [{ serverId: server.id, scopes }] : [];
+      });
+    let busy = false;
+    const dirty = () =>
+      !info.configured ||
+      !equalMcpGrants(readGrants(), info.grants) ||
+      !!(
+        access &&
+        (!info.hasAccessCredentials ||
+          access.clientId.value.trim() ||
+          access.clientSecret.value.trim())
+      );
     const syncButtons = () => {
-      copy.disabled = view.disabled = !info.configured;
+      const exportDisabled = busy || !info.configured;
+      if (copy.disabled !== exportDisabled) copy.disabled = exportDisabled;
+      if (view.disabled !== exportDisabled) view.disabled = exportDisabled;
+      const saveDisabled = busy || !dirty();
+      if (save.disabled !== saveDisabled) save.disabled = saveDisabled;
+      save.setAttribute('aria-busy', String(busy));
+      save.title = t(
+        info.configured && !dirty()
+          ? 'mcp.noChanges'
+          : info.configured
+            ? 'mcp.savePermissions'
+            : 'mcp.generate'
+      );
       save.dataset.i18n = info.configured ? 'mcp.savePermissions' : 'mcp.generate';
-      save.textContent = t(save.dataset.i18n as TranslationKey);
+      const label = t(save.dataset.i18n as TranslationKey);
+      if (save.textContent !== label) save.textContent = label;
     };
+    form.addEventListener('input', syncButtons);
+    form.addEventListener('change', syncButtons);
     syncButtons();
     footer.append(view, copy, save);
     const exportConfig = async (preview: boolean) => {
-      copy.disabled = view.disabled = save.disabled = true;
+      if (busy) return;
+      busy = true;
+      syncButtons();
       try {
         const textPromise = this.api<McpSavedCredentials>('/api/mcp/config/credentials', {
           method: 'POST',
@@ -235,6 +283,7 @@ export class McpManager {
           label.append(element('span', 'mcp.clientConfig'));
           const output = element('textarea');
           output.readOnly = true;
+          output.className = 'terminal-input assistant-field';
           output.id = 'mcp-client-config';
           output.rows = 9;
           output.value = text;
@@ -256,7 +305,7 @@ export class McpManager {
         if (generation === this.generation) this.message('mcp.error');
       } finally {
         if (generation === this.generation) {
-          save.disabled = false;
+          busy = false;
           syncButtons();
         }
       }
@@ -264,12 +313,7 @@ export class McpManager {
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       if (save.disabled) return;
-      const grants: McpGrant[] = servers.flatMap((server) => {
-        const scopes = controls
-          .filter((input) => input.dataset.serverId === String(server.id) && input.checked)
-          .map((input) => input.value as McpScope);
-        return scopes.length ? [{ serverId: server.id, scopes }] : [];
-      });
+      const grants = readGrants();
       let credentials: ReturnType<typeof normalizeMcpAccessCredentials> | undefined;
       if (
         access &&
@@ -286,7 +330,8 @@ export class McpManager {
           return;
         }
       }
-      save.disabled = copy.disabled = view.disabled = true;
+      busy = true;
+      syncButtons();
       controls.forEach((input) => {
         input.disabled = true;
       });
@@ -327,7 +372,7 @@ export class McpManager {
               input.disabled = false;
             });
             if (access) access.fieldset.disabled = false;
-            save.disabled = false;
+            busy = false;
             syncButtons();
           }
         }
@@ -362,10 +407,12 @@ export class McpManager {
     const legend = element('legend', 'mcp.access.credentials');
     fieldset.append(legend);
     const clientId = element('input');
+    clientId.className = 'terminal-input assistant-field';
     clientId.id = 'mcp-access-client-id';
     clientId.type = 'text';
     clientId.maxLength = 512;
     const clientSecret = element('input');
+    clientSecret.className = 'terminal-input assistant-field';
     clientSecret.id = 'mcp-access-client-secret';
     clientSecret.type = 'password';
     clientSecret.maxLength = 4096;
@@ -402,6 +449,7 @@ export class McpManager {
       let expires = 0;
       let loaded = false;
       const code = element('textarea');
+      code.className = 'terminal-input assistant-field';
       code.readOnly = true;
       code.rows = 3;
       code.hidden = true;
@@ -462,10 +510,13 @@ export class McpManager {
     section.id = 'mcp-activity-section';
     const list = element('div');
     list.id = 'mcp-activity-list';
+    list.setAttribute('role', 'list');
+    list.setAttribute('aria-label', t('mcp.activity'));
+    list.dataset.i18nAriaLabel = 'mcp.activity';
+    list.tabIndex = 0;
     section.append(list);
     parent.append(section);
     const generation = this.generation;
-    const expanded = new Set<string>();
     let refreshId = 0;
     const refresh = async (id: number) => {
       if (id !== refreshId || generation !== this.generation || !section.open) return;
@@ -475,19 +526,33 @@ export class McpManager {
           if (id !== refreshId || generation !== this.generation || !section.open) return;
           list.replaceChildren();
           if (!items.length) list.append(element('p', 'mcp.noActivity'));
-          for (const item of items.slice(0, 30)) {
-            const record = element('details');
+          const dateTime = new Intl.DateTimeFormat(getLocale(), {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+          });
+          const time = new Intl.DateTimeFormat(getLocale(), {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+          });
+          for (const item of items.slice(0, 100)) {
+            const record = element('div');
             record.className = 'mcp-operation';
-            record.open = expanded.has(item.id);
-            const summary = element('summary');
-            summary.textContent = `${new Date(item.startedAt).toLocaleTimeString()} · ${servers.find((s) => s.id === item.serverId)?.name ?? item.serverId} · ${t(`mcp.status.${item.status}`)}`;
-            const detail = element('p');
-            detail.textContent = `${item.tool} · ${item.client} · ${new Date(item.startedAt).toLocaleString()}${item.finishedAt ? ` — ${new Date(item.finishedAt).toLocaleTimeString()}` : ''}`;
-            record.append(summary, detail);
-            record.addEventListener('toggle', () => {
-              if (record.isConnected)
-                record.open ? expanded.add(item.id) : expanded.delete(item.id);
-            });
+            record.setAttribute('role', 'listitem');
+            const start = new Date(item.startedAt);
+            const end = item.finishedAt === null ? null : new Date(item.finishedAt);
+            const period =
+              dateTime.format(start) +
+              (end
+                ? ` — ${end.toDateString() === start.toDateString() ? time.format(end) : dateTime.format(end)}`
+                : '');
+            record.textContent = `${period}  ${servers.find((s) => s.id === item.serverId)?.name ?? item.serverId} · ${t(`mcp.status.${item.status}`)}  ${item.tool}`;
             list.append(record);
           }
         } catch {
