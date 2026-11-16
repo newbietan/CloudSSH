@@ -3,6 +3,7 @@ import type { Env, UserInfo } from '../../src/types';
 import {
   CF_ACCESS_USER_GITHUB_ID,
   initializeAccessIdentity,
+  hasVerifiedAccessContext,
   isConnectTokenRouteAllowed,
   connectTokenRouteKey,
   getAccessUserRouteKey,
@@ -87,6 +88,77 @@ describe('Cloudflare Access (Zero Trust) Authentication', () => {
           })
         )
       ).toBeNull();
+    });
+  });
+
+  describe('native admission versus browser identity', () => {
+    it.each(['undefined', 'throws', 'never'])('skips user-profile lookup on exact /mcp (%s)', async result => {
+      const getIdentity = vi.fn(async () => {
+        if (result === 'throws') throw new Error('private-upstream-error');
+        if (result === 'never') return new Promise<CloudflareAccessIdentity>(() => {});
+        return undefined;
+      });
+      const req = new Request('https://cloudssh.local/mcp?transport=http');
+      await initializeAccessIdentity(req, { access: { aud: 'test-app', getIdentity } });
+      expect(hasVerifiedAccessContext(req)).toBe(true);
+      expect(getIdentity).not.toHaveBeenCalled();
+      expect(getCFAccessEmail(req)).toBeNull();
+      expect(resolveAuthMode({} as Env, req)).toBe('cf_access');
+      expect(await getAuthenticatedUser(req, makeEnv())).toBeNull();
+    });
+
+    it.each(['/mcp/', '/mcp-other', '/api/mcp/config', '/api/mcp/config/credentials', '/api/auth/me', '/api/cf-ssh-ca/sign'])(
+      'still resolves browser identity on %s', async path => {
+        const getIdentity = vi.fn(async () => ({ email: 'owner@example.com' }));
+        const req = new Request(`https://cloudssh.local${path}`);
+        await initializeAccessIdentity(req, { access: { aud: 'test-app', getIdentity } });
+        expect(getIdentity).toHaveBeenCalledOnce();
+        expect(getCFAccessEmail(req)).toBe('owner@example.com');
+        expect(hasVerifiedAccessContext(req)).toBe(true);
+      }
+    );
+
+    it.each([undefined, null, '', ' ', 'aud\n', 0, 'a'.repeat(257)])('rejects a malformed runtime audience (%j)', async aud => {
+      const getIdentity = vi.fn(async () => ({ email: 'owner@example.com' }));
+      const req = new Request('https://cloudssh.local/api/auth/me');
+      await initializeAccessIdentity(req, { access: { aud, getIdentity } } as never);
+      expect(hasVerifiedAccessContext(req)).toBe(false);
+      expect(getIdentity).not.toHaveBeenCalled();
+      expect(getCFAccessEmail(req)).toBeNull();
+      expect(resolveAuthMode({} as Env, req)).toBe('cf_access');
+      expect(await getAuthenticatedUser(req, makeEnv())).toBeNull();
+    });
+
+    it('never transfers or retains admission across requests or reinitialization', async () => {
+      const req = new Request('https://cloudssh.local/api/auth/me');
+      await initializeAccessIdentity(req, accessContext());
+      expect(hasVerifiedAccessContext(req)).toBe(true);
+      expect(hasVerifiedAccessContext(req.clone())).toBe(false);
+      expect(getCFAccessEmail(req.clone())).toBeNull();
+      await initializeAccessIdentity(req);
+      expect(hasVerifiedAccessContext(req)).toBe(false);
+      expect(getCFAccessEmail(req)).toBeNull();
+      expect(resolveAuthMode({} as Env, req)).toBe('anonymous');
+    });
+
+    it.each(['undefined', 'throws'])('native admission alone cannot log a browser in (%s)', async result => {
+      const getIdentity = vi.fn(async () => {
+        if (result === 'throws') throw new Error('private-upstream-error');
+        return undefined;
+      });
+      const ctx = { access: { aud: 'test-app', getIdentity } };
+      const env = makeEnv({ GITHUB_CLIENT_ID: 'client', GITHUB_CLIENT_SECRET: 'secret', MCP_EXECUTION: {} as never });
+      for (const path of ['/api/auth/me', '/api/mcp/config', '/api/mcp/config/credentials', '/api/cf-ssh-ca/sign']) {
+        const req = new Request(`https://cloudssh.local${path}`, {
+          method: path.endsWith('credentials') || path.endsWith('sign') ? 'POST' : 'GET',
+          headers: { Origin: 'https://cloudssh.local' },
+        });
+        const res = await worker.fetch(req, env, ctx);
+        expect(res.status).toBe(401);
+        expect(hasVerifiedAccessContext(req)).toBe(true);
+        expect(getCFAccessEmail(req)).toBeNull();
+        expect(resolveAuthMode(env, req)).toBe('cf_access');
+      }
     });
   });
 

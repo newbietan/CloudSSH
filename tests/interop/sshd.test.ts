@@ -7,6 +7,7 @@ import { Readable, Writable } from 'node:stream';
 import { once } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import { SSHSession } from '../../src/worker/ssh-session';
+import { withMcpSftp, mcpRead, mcpWrite, mcpList } from '../../src/worker/mcp-sftp';
 import { readFileSync } from 'node:fs';
 
 // Opt-in: this starts a loopback-only sshd using the current OS account and public test keys.
@@ -16,6 +17,7 @@ const sshd = process.env.CLOUDSSH_SSHD_BINARY || '/usr/sbin/sshd';
 const fixtures = resolve(__dirname, '../ssh/fixtures');
 const cases = [
   ['ssh-ed25519', 'id_ed25519', false],
+  ['ssh-ed25519', 'id_ed25519', false, true],
   ['ssh-ed25519-cert-v01@openssh.com', 'id_ed25519', true],
   ['rsa-sha2-256-cert-v01@openssh.com', 'id_rsa_2048', true],
   ['rsa-sha2-512-cert-v01@openssh.com', 'id_rsa_2048', true],
@@ -45,7 +47,7 @@ async function stop(child: ChildProcess | undefined): Promise<void> {
 }
 
 describe.skipIf(!enabled)('real OpenSSH loopback interoperability', () => {
-  it.each(cases)('authenticates, opens PTY/Shell, executes and reads SFTP with %s', async (algorithm, keyName, certificate) => {
+  it.each(cases)('authenticates, opens PTY/Shell, executes and reads SFTP with %s', async (algorithm, keyName, certificate, headless: boolean = false) => {
     const directory = mkdtempSync(join(tmpdir(), 'cloudssh-interop-'));
     let child: ChildProcess | undefined;
     let session: SSHSession | undefined;
@@ -100,14 +102,29 @@ describe.skipIf(!enabled)('real OpenSSH loopback interoperability', () => {
       }, {
         host: '127.0.0.1', port, username, password: '', authMethod: 'publickey',
         privateKey: readFileSync(join(fixtures, 'id_ed25519'), 'utf8'),
-      });
+      }, true, false, undefined, undefined, undefined, undefined,
+      { openShellOnAuth: !headless, ownsWebSocket: !headless, allowKeyboardInteractive: false });
       await session.startHandshake();
-      await vi.waitFor(() => expect(messages.some((message) => message.event === 'shell_ready')).toBe(true),
+      if (headless) await session.waitUntilAuthenticated();
+      else await vi.waitFor(() => expect(messages.some((message) => message.event === 'shell_ready')).toBe(true),
         { timeout: 7000, interval: 25 });
       const internal = session as any;
       expect(internal.negotiatedHostKeyAlgorithm).toBe(algorithm);
       const result = await internal.executeAgentCommand('printf CLOUDSSH_INTEROP_OK', 5000);
       expect(result).toMatchObject({ stdout: 'CLOUDSSH_INTEROP_OK', exitCode: 0 });
+      if (headless) {
+        await withMcpSftp(session, async sftp => {
+          const path = join(directory, 'mcp-text.txt');
+          await mcpWrite(sftp, path, 'MCP first 你好');
+          const first = await mcpRead(sftp, path);
+          expect(first.content).toBe('MCP first 你好');
+          await mcpWrite(sftp, path, 'MCP replacement', first.fileHash!);
+          expect((await mcpRead(sftp, path)).content).toBe('MCP replacement');
+          expect((await mcpList(sftp, directory, 100)).entries.some(entry => entry.name === 'mcp-text.txt')).toBe(true);
+        });
+        expect(messages.some(message => message.event === 'shell_ready')).toBe(false);
+        return;
+      }
       await internal.openSFTPChannel();
       await vi.waitFor(() => expect(internal.sftpHandler?.sftp?.version).toBe(3), { timeout: 5000 });
       const attrs = await internal.sftpHandler.sftp.stat(directory);

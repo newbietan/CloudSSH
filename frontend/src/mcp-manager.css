@@ -1,0 +1,184 @@
+[data-mcp-open].hidden {
+  display: none;
+}
+.mcp-dialog {
+  width: min(44rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  margin: auto;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  color: var(--on-surface);
+  font: inherit;
+  font-family: var(--font-ui);
+}
+.mcp-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.mcp-dialog__panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  max-height: inherit;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--modal-radius);
+  box-shadow: var(--shadow-modal);
+}
+.mcp-dialog::backdrop {
+  background: var(--modal-overlay);
+}
+.mcp-dialog h2 {
+  flex: 1;
+  min-width: 0;
+}
+.mcp-dialog h3 {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0.5rem 0;
+}
+.mcp-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.75rem 1rem;
+}
+.mcp-body > p {
+  margin: 0 0 0.5rem;
+}
+.mcp-body p {
+  font-size: 0.8125rem;
+  color: var(--on-surface-variant);
+  line-height: 1.55;
+}
+.mcp-body [role="status"]:empty {
+  display: none;
+}
+.mcp-dialog details {
+  border-top: 1px solid var(--border);
+  padding: 0.65rem 0;
+}
+.mcp-dialog details > p {
+  margin: 0.5rem 0;
+}
+.mcp-dialog summary {
+  cursor: pointer;
+  min-height: 32px;
+  line-height: 1.5;
+  padding: 0.25rem 0;
+  overflow-wrap: anywhere;
+}
+.mcp-dialog details[open] > summary {
+  color: var(--accent);
+}
+.mcp-dialog fieldset {
+  min-width: 0;
+}
+.mcp-server-grant {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--control-radius);
+  padding: 0.35rem 0.65rem 0.65rem;
+  margin: 0.75rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+}
+.mcp-server-grant legend {
+  max-width: 100%;
+  padding: 0 0.3rem;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+.mcp-dialog label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 36px;
+  font-size: 0.8125rem;
+}
+.mcp-dialog input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+.mcp-access-fields {
+  display: grid;
+  gap: 0.65rem;
+  border: 0;
+  padding: 0.5rem 0;
+}
+.mcp-access-fields > label:not(:last-child),
+#mcp-config-preview > label {
+  flex-direction: column;
+  align-items: stretch;
+}
+.mcp-access-fields legend {
+  font-size: 0.8125rem;
+  color: var(--on-surface-variant);
+}
+.mcp-access-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 0.5rem 0;
+  font-size: 0.8125rem;
+}
+.mcp-access-links a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.mcp-dialog input:not([type="checkbox"]),
+.mcp-dialog textarea {
+  width: 100%;
+  min-width: 0;
+}
+.mcp-dialog textarea {
+  resize: vertical;
+}
+.mcp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+#mcp-activity-list {
+  max-height: min(20rem, 45dvh);
+  overflow: auto;
+}
+.mcp-dialog .mcp-operation {
+  min-width: max-content;
+  padding: 0.2rem 0;
+  font-family: var(--font-code);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+@media (pointer: coarse), (max-width: 520px) {
+  .mcp-dialog label,
+  .mcp-dialog summary,
+  .mcp-dialog .assistant-action {
+    min-height: 44px;
+  }
+}
+@media (max-width: 520px) {
+  .mcp-dialog {
+    width: calc(100vw - 1rem);
+    max-height: calc(100dvh - 1rem);
+  }
+  .mcp-body {
+    padding: 0.75rem;
+  }
+  .mcp-actions {
+    padding: 0.75rem;
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+  .mcp-actions > button {
+    flex: 1 1 auto;
+  }
+}

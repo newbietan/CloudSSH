@@ -1,6 +1,10 @@
 name: Deploy to Cloudflare Workers
 
 on:
+  # Pull requests and manual runs validate only; deployment requires an actual branch push.
+  pull_request:
+    branches: [test, main]
+  workflow_dispatch:
   push:
     branches: [test, main]
     paths-ignore:
@@ -15,10 +19,16 @@ on:
       - "**/*.svg"
       - "AGENTS.md"
 
+# Cancel obsolete PR checks, but never interrupt a running deployment.
+concurrency:
+  group: cloudssh-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   deploy:
     if: github.repository_owner == 'newbietan'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -38,9 +48,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps chromium webkit
-
       - name: Type check
         run: pnpm run typecheck
 
@@ -50,6 +57,10 @@ jobs:
       - name: Build frontend
         run: pnpm run build:frontend
 
+      # Fail inexpensive checks and the build before downloading browser binaries.
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium webkit
+
       - name: Browser E2E and accessibility tests
         id: e2e
         run: pnpm run test:e2e
@@ -58,7 +69,7 @@ jobs:
         if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: playwright-report-${{ github.ref_name }}-${{ github.run_attempt }}
+          name: playwright-report-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             playwright-report/
             test-results/
@@ -66,14 +77,14 @@ jobs:
           if-no-files-found: warn
 
       - name: Deploy verified artifact (test)
-        if: github.ref == 'refs/heads/test'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/test'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm exec wrangler deploy --env test
 
       - name: Deploy verified artifact (production)
-        if: github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -129,11 +129,17 @@
   - **Readable Work Logs & Simple Background Retries**: The LLM summarizes normal conversation into readable work history and reusable knowledge; related work can merge within 30 minutes. Conversation is persisted in SQLite and processed by UserDBDO Alarms, including after disconnection or instance restart. Failed extraction receives up to three additional retries, then the task is removed on success or exhaustion. No separate evidence package, execution ledger, dual queue, receipt framework, or notification polling. See [context and memory](docs/agent-context-memory.md).
   - **Long-Task Context Summaries**: Older conversation is summarized through standard `/responses` calls while recent complete tool exchanges are retained. No `/responses/compact` dependency. Context/output budgets default to 64,000/8,192 tokens and are configurable; start a new Agent chat after changes.
   - **Compatibility & Diagnostics**: Model capabilities vary; bounded compatibility changes apply only to explicitly unsupported optional parameters, and incomplete tool calls are not executed. Errors stay concise; detailed diagnostics appear in the web terminal only with `DEBUG_MODE=true`. Model configuration retains its custom dropdown, same-address discovery using saved credentials, and Base URL binding. Requests use `store:false`; verify the provider's actual retention policy.
-- **Quality Gates**: Before deploying either `test` or `main`, GitHub Actions performs frozen-lockfile installation, Worker/frontend type checking, unit and integration tests, reproducible frontend builds, Playwright browser E2E, and axe accessibility regression. Any failure blocks deployment.
+- **Quality Gates**: Before deploying either `test` or `main`, GitHub Actions performs frozen-lockfile installation, Worker/frontend type checking, unit and integration tests, reproducible frontend builds, Playwright browser E2E, and axe accessibility regression. Any failure blocks deployment. Pull requests targeting `test`/`main` and manual runs execute the same checks without deployment credentials or deployment; only branch pushes deploy to the corresponding test/production environment.
 
 </details>
 
 <a id="architecture"></a>
+
+### External AI assistants (MCP)
+
+After signing in, open the connection-node **External AI assistant MCP settings** icon to generate one permanent account configuration with independently editable permissions per server, repeatable copying and no revocation control. Compatible clients such as Claude Code and Cursor can use `https://your-instance/mcp` for independent commands and bounded SFTP text operations. Explicitly share recent output from a terminal tab and expand recent operation records in the panel; idle connections are released automatically.
+
+Exec is advance authorization, not a read-only sandbox or per-command browser approval. The endpoint neither takes over your interactive terminal nor exports stored SSH credentials. Verify every hop's host key first; interactive authentication and browser-issued CA credentials are unsupported. Cloudflare Access sign-in shows a dedicated Service Token / Service Auth guide; the entered credentials are included alongside the personal token in the client configuration, stored with the personal token using recoverable account encryption. The key remains in the same database, not an independent KMS. Legacy digest-only tokens require one new configuration. Other sign-in modes do not show this setup. See [MCP setup, limits and DO migration](docs/mcp.md).
 
 ## Architecture
 

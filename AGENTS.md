@@ -14,7 +14,7 @@
 
 CloudSSH is a serverless Web SSH terminal built on Cloudflare Workers. Users connect to SSH servers through a browser-based terminal UI with integrated SFTP file management and AI Agent assistant.
 
-当前版本：`2.10.4`；根目录与 `frontend/package.json` 版本必须同步，更新说明见 `CHANGELOG.md`。
+当前版本：`2.11.0`；根目录与 `frontend/package.json` 版本必须同步，更新说明见 `CHANGELOG.md`。
 
 ## Architecture
 
@@ -49,6 +49,9 @@ src/
 │   ├── server-tags.ts # 服务器标签规范化与 SQLite JSON 序列化
 │   ├── os-detect.ts  # 远端操作系统输出解析、规范 key 与持久化白名单
 │   ├── auth.ts       # 认证模式解析（单管理员密码/GitHub 互斥）+ OAuth 流程 + Session 中间件 + 密码登录
+│   ├── mcp.ts / mcp-auth.ts / mcp-tools.ts # 无状态 MCP、个人 Token 入口与工具 schema
+│   ├── mcp-execution.ts # MCPExecutionDO：无头 exec/SFTP 与短空闲有界连接池
+│   ├── mcp-store.ts / mcp-sftp.ts # Token 摘要、近期活动与有界文本文件操作
 │   ├── cf-ssh-ca.ts  # Cloudflare Zero Trust SSH CA 证书签发代理
 │   ├── dns-check.ts  # DNS-over-HTTPS 解析 + 统一 IP 块检查（DNS rebinding 防重绑定 SSRF 防护）
 │   ├── ip-geo.ts     # 保存直连服务器时 IPinfo 区域推断，映射为 DO locationHint
@@ -88,6 +91,7 @@ src/
 │   ├── sftp-reader.ts # SFTP v3 长度先校验的有界字段游标
 │   └── sftp-types.ts # SFTP protocol constants and types
 ├── version.ts        # 构建版本、稳定版语义比较与更新检测共享常量
+├── mcp-schema.ts     # 个人 MCP 权限、预算、Token 输入与有界请求读取
 ├── ai-endpoint.ts    # Responses API 根地址校验与规范化纯函数
 ├── ai-model-policy.ts # 前后端共享的模型上下文/输出 Token 预算与范围校验
 ├── agent-response-diagnostics.ts # 调用阶段、参数、错误码与本地请求 UUID 的共享诊断白名单
@@ -160,6 +164,11 @@ frontend/
 │   ├── snippet-manager.ts # 命令片段库面板（云端/本地双后端、参数占位符录入、搜索/复制、填入/填入并执行、编辑/删除）
 │   ├── snippet-variables.ts # 命令片段 {{var}} 参数占位符提取与安全替换纯函数
 │   ├── snippet-store.ts   # 片段存储层（RemoteSnippetStore + LocalSnippetStore + 错误映射）
+│   ├── mcp-manager.ts / mcp-manager.css # 外部助手 Token 管理、Access 专属接入引导、终端输出共享与近期活动
+│   ├── mcp-client-config.ts # 双层认证配置组装，账户凭据加密回读后显式复制
+│   ├── assistant-icons.ts # 内置 AI 对话星芒 / 外部 MCP 连接节点的固定 SVG 几何与 DOM 渲染
+│   ├── assistant-ui.css # Agent/MCP 共用面板、标题栏、输入、按钮和页脚组件
+│   ├── mcp-config-draft.ts # 授权集合语义比较（顺序不构成改动），保存按钮状态基线
 │   ├── ai-config.ts       # AI model configuration modal (Combobox 下拉、免密安全拉取与主题自适应)
 │   ├── i18n/
 │   │   ├── index.ts        # 语言解析、词条查询（t）与 locale 变更通知
@@ -243,7 +252,7 @@ The frontend is **NOT** served separately in production. The build process:
 
 ## Durable Objects
 
-Three Durable Objects handle state:
+Four Durable Objects handle state:
 
 1. **SSHSessionDO** (`src/worker/durable-object.ts`)
    - Manages WebSocket ↔ TCP socket connections
@@ -257,6 +266,11 @@ Three Durable Objects handle state:
 3. **SSHShareDO** (`src/worker/share-do.ts`)
    - Owns one random capability's one-time claim, short-lived connection ticket, expiry, and revocation state
    - Stores the append-only lifecycle, SFTP, and terminal-output audit log for that share session
+
+4. **MCPExecutionDO** (`src/worker/mcp-execution.ts`)
+   - Each personal token owns an isolated pool of at most two headless SSH connections
+   - One operation per server, no unbounded queue; idle connections expire through Alarm after about 60 seconds
+   - Bound via `MCP_EXECUTION` in both environments; append-only SQLite migration `v3`
 
 ## Environment Variables
 
@@ -311,6 +325,11 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 | `/api/version` | GET | No | 官方 main 最新稳定版本（缓存元数据，失败返回 latestVersion: null） |
 | `/api/config` | GET | No | Feature flags (turnstile, GitHub auth enabled) |
 | `/api/cf-ssh-ca/sign` | POST | Same-Origin | Cloudflare Zero Trust 原生 SSH CA 证书签发代理 |
+| `/mcp` | POST | Personal Bearer Token | 无状态 Streamable HTTP：server_list / ssh_exec / sftp_list / sftp_read / sftp_write / session_output；GET/DELETE 返回 405 |
+| `/api/mcp/config` | GET/POST/PUT | Yes | 唯一配置元数据、首次幂等生成或修改逐服务器权限；无到期/撤销 |
+| `/api/mcp/config/credentials` | POST | Yes | 所有者明确复制/查看时解密返回保存的凭据，普通GET不下发 |
+| `/api/mcp/context` | POST | Yes | 所有者主动开启/关闭或查询单标签页最近输出共享 |
+| `/api/mcp/activity` | GET | Yes | 有界近期活动摘要，不含命令/输出，不是审计 |
 
 ## Testing
 
@@ -408,7 +427,7 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
 28. **Frontend i18n** - 所有面向用户的文案走 `frontend/src/i18n` 的 `t()` / `data-i18n` / `data-i18n-title` / `data-i18n-placeholder` 管线并同步 `locales/zh-CN.ts`、`zh-TW.ts` 与 `en-US.ts`；语言解析支持 URL 参数、localStorage（`cloudssh_locale`）与浏览器语言回退。新增文案时保持多端词条对齐，勿硬编码中文到模板字符串。
 
-29. **CI paths-ignore 作用域** - `deploy.yml` 当前使用 `**/*.md` 与 `**/*.png` 等跨目录模式，因此仅修改根目录或 `tests/` 等子目录 Markdown/图片均不会触发部署。标准 glob 中 `*` 不匹配 `/`，若将来改回 `*.md` 则仅覆盖根目录，不能沿用当前跨目录口径。修改 `deploy.yml` 本身会触发校验运行。
+29. **CI paths-ignore 作用域** - `deploy.yml` 的 push 触发当前使用 `**/*.md` 与 `**/*.png` 等跨目录模式，因此仅修改根目录或 `tests/` 等子目录 Markdown/图片均不会触发部署。标准 glob 中 `*` 不匹配 `/`，若将来改回 `*.md` 则仅覆盖根目录，不能沿用当前跨目录口径。修改 `deploy.yml` 本身会触发校验运行。PR（目标 test/main）不做 paths-ignore，避免文档 PR 因跳过必需检查而永久 pending；手动触发同样只验证。只有 test/main 的 push 可注入部署 Secrets 并部署，不能凭分支名让 workflow_dispatch 部署。
 
 30. **Agent exec 输出有界性（弱网 OOM 防线）** - `AgentExecChannel` 对 exec 通道 stdout/stderr 执行有界捕获：合计 4MB 硬上限（`MAX_EXEC_CAPTURE_BYTES`，超限不再续 SSH window 并由会话层关闭通道击杀远端命令，如无界输出的 `docker logs`），保留头 128KB + 尾 256KB 环形视图并附加截断说明，`onData/onExtendedData` 的布尔返回值控制 window 续期，改动时勿恢复无界累积。exec 结果通过 `truncated` 标志标明任何输出缺失，`write_file(search)` 遇到截断快照必须拒绝覆盖，不能把保留头尾或截断提示写回原文件；替换内容通过回调字面返回，避免 `$&`/`$'` 等 JS 替换序列展开。守卫不只此一层：`docker_manage(logs)` 强制 `--tail 200` 且拒绝 `-f/--follow`；工具结果序列化进 LLM 前经 64K 字符中间截断；socket 写带 60s deadline（适配高延迟传输，超时关底层 socket 解挂）；独立于写路径的被动 idle 看门狗（60s 无入站数据即关闭）与终端输入队列 4MB 上限共同限制弱网积压，勿移除任一防线。**已连接终端输出**独立经 `TerminalOutputGuard` 统计当前 WebSocket 发出但未接收确认的 stdout+stderr 字节，总计不得超过 4MiB；超限或有积压且 60s 无有效 ACK 进展时关闭完整 SSH 会话（code 1000，`output_backlog_closed`，不自动重连），不再转发/续 SSH window。Workers WebSocket 无可用 `bufferedAmount`/drain 指标，因此使用随机代际 ID + 累计字节 `terminal_output_ack`；重复、旧代际、超前/非法 ACK 无效，ACK 不算用户活动。detach 取消该计时器，reattach 轮换代际并把 128KiB 回放计入新连接额度。该限制是传输积压上限，不是会话总输出上限，也不保证 xterm 渲染/文件落盘完成或限制畅通链路的持续输出成本；旧前端无 ACK 时也会触发闸门，升级后须刷新页面。
 
@@ -456,13 +475,15 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
 44. **可选版本更新提示** - 运行版本从根 `package.json` 构建时导入（根/前端版本保持同步），与官方 `main/package.json` 的稳定 SemVer 数值比较，不按字符串或提交数比较，不依赖 GitHub Releases/Tags，也不提示降级或预发布版本。`GET /api/version` 只向固定官方 raw GitHub URL 请求公开版本元数据（不转发用户头部/凭据；必须使用 Workers 支持的 `redirect: 'manual'` 并拒绝 3xx，不得使用会在 Workers 中直接抛错的 `'error'` 模式），读取上限 16KiB、4s 超时，Worker isolate 去重/缓存并使用 Cloudflare fetch 缓存；成功缓存 6h、失败退避 15min，失败只返回 null。前端非阻塞同源读取，5s 超时，localStorage/内存缓存与跨标签页忽略同步；可见页面按缓存到期检查，隐藏/离线不检查，恢复可见/在线时重试。连接页在“连接参数”标题后展示紧凑版本徽标及可忽略的小提示，不再单独占用底部空间；标题区支持三语与窄屏自然换行，不能挤压语言切换或溢出卡片。用户空间/桌面终端仍使用页脚，移动终端放进“更多”菜单，分享认领页不检查；忽略仅针对该新版，下一个新版可再次提示。不弹窗、不自动更新/刷新/跳转、不影响 SSH/SFTP/Agent；更新日志链接为固定官方地址，三语文案随语言切换。
 
-45. **Cloudflare Zero Trust Access 认证模式** - 可通过 Worker Access 面板或 hostname-based Self-hosted 应用配置，须确保实际生效策略保护本站页面、API 和 WebSocket，并保护/关闭其他公开入口。面板入口不能等同于实际策略类型；官方 Worker-level WebSocket 限制与域名/路径优先级须结合具体部署核查，不得断言所有面板配置均不可用，也不要求迁移已验证可用的实例。Worker 入口通过 `ctx.access.getIdentity()` 读取运行时已验证身份（4s 有界等待），以 Request 弱映射传递给认证逻辑，不信任原始邮箱/JWT 头；Access 上下文无邮箱或查询失败仍维持 Access 模式并拒绝登录，不降级 GitHub。`CF_ACCESS=true` 只是强制模式门，不能代替边缘策略。路由键保持 `cf-` 加邮箱 SHA-256 前 128 位（35 字符），`github_id=-2` 仅为库内哨兵；不同邮箱不能改写同一库身份。模式优先级：密码 > Access > GitHub/匿名。GitHub OAuth 在 Access/密码模式均禁用；一次性令牌须符合当前模式，并在消费前核对登录者的完整路由键。分享配置从库内所有者邮箱推导路由，无需接收者提供。前端显示邮箱及首字母头像，退出转 `/cdn-cgi/access/logout`。Worker/UserDB 意外异常仅返回通用 JSON 500，不回显或记录异常原文。
+45. **Cloudflare Zero Trust Access 认证模式** - 可通过 Worker Access 面板或 hostname-based Self-hosted 应用配置，须确保实际生效策略保护本站页面、API 和 WebSocket，并保护/关闭其他公开入口。面板入口不能等同于实际策略类型；官方 Worker-level WebSocket 限制与域名/路径优先级须结合具体部署核查，不得断言所有面板配置均不可用，也不要求迁移已验证可用的实例。Worker 入口将原生 Access 准入与浏览器邮箱身份分离：仅当前调用的可信 `ctx.access` 及非空有界 `aud` 可标记准入；`CF_ACCESS` 或任何请求头都不能生成该标记。浏览器路径通过 `ctx.access.getIdentity()` 读取邮箱（4s 有界等待），以 Request 弱映射传递给认证逻辑，不信任原始邮箱/JWT 头；Access 上下文无邮箱或查询失败仍维持 Access 模式并拒绝网页登录，不降级 GitHub。仅精确 `/mcp` 跳过用户资料查询，机器调用仍必须同时满足原生 Access 准入与个人 MCP Token 数据库校验，不能因 Service Token 不提供用户资料而拒绝，也不能把机器准入用于网页登录/管理接口/CA 签发。`CF_ACCESS=true` 只是强制模式门，不能代替边缘策略。路由键保持 `cf-` 加邮箱 SHA-256 前 128 位（35 字符），`github_id=-2` 仅为库内哨兵；不同邮箱不能改写同一库身份。模式优先级：密码 > Access > GitHub/匿名。GitHub OAuth 在 Access/密码模式均禁用；一次性令牌须符合当前模式，并在消费前核对登录者的完整路由键。分享配置从库内所有者邮箱推导路由，无需接收者提供。前端显示邮箱及首字母头像，退出转 `/cdn-cgi/access/logout`。Worker/UserDB 意外异常仅返回通用 JSON 500，不回显或记录异常原文。
 
 46. **OpenSSH 用户证书认证与 Cloudflare 原生 SSH CA** - 支持出示 `*-cert-v01@openssh.com` OpenSSH 用户证书（Ed25519、ECDSA P-256/384/521 与 RSA-SHA2-256/512）完成 SSH 用户认证（RFC 4252 §7 与 PROTOCOL.certkeys）。证书必须为用户类型（`type = 1`），在有效时间范围内，且公钥必须与提供的私钥严格匹配。提供两级体验：① 协议层兼容：在私钥框中可同时附带用户证书（单行文本），或在 API 中分别传递，支持外部已签发证书（如 step-ca、Vault 或手动 CA）；② Cloudflare 原生 SSH CA 自动化：前端本地使用 WebCrypto 瞬时生成 ECDSA P-256 临时公私钥，经同源代理 `/api/cf-ssh-ca/sign` 调用 Cloudflare 官方 `/cdn-cgi/access/cert_sign` 获取短期证书（在 `cf_access` 模式下自动携带已认证的 Access JWT；公网受信任 HTTPS 证书，无私有自签 Root CA 拦截风险），私钥用完即在浏览器内存销毁、不落盘、不持久化；已保存服务器配置支持设置 `cf_ssh_ca_team`，发起连接时自动签发并通过 `ephemeralCredential` 传递，实现零静态密钥维护的 Zero Trust 单点登录。客户端不因登录名不在证书 principals 中而提前拒绝：空 principals 表示任意用户，非空时 sshd 仍可用 AuthorizedPrincipalsFile/Command 映射到不同 Unix 用户（Cloudflare 简单配置的 principal 通常是邮箱前缀）。配置了 `cf_ssh_ca_team` 的服务器不能出现在跳板链的任一跳，也不能在仍被其他服务器引用为跳板时改成该模式；此类服务器同样不能创建一次性分享。连接表单与服务器编辑里的 Cloudflare CA 入口仅在 `authMode === 'cf_access'` 时显示；GitHub、密码和匿名模式默认隐藏。入口隐藏时，编辑已有 CA 服务器且未改认证方式，不得把已存 `cf_ssh_ca_team` 清空。签发代理在后端也要求 Access 模式和已验证邮箱，不能只依赖前端隐藏；连接表单在签发期间禁止重复提交，并在模式代际、主机、端口、用户名或团队变化后丢弃迟到证书。
 
 47. **服务器弹窗响应式布局** - 新增/编辑/克隆共用 `#server-modal`：≥900px 使用最高 64rem 的双栏（名称/标签并排、连接与认证分栏），窄屏单列。只有 `.server-modal-fields` 滚动，标题和保存操作保持可达；每次打开清零字段滚动位置，短窗口与放大字号不能通过裁掉内容来伪造无滚动。主站连接表单与弹窗共用 `.ssh-endpoint-fields`，≥480px 为端口预留 9rem，保留原生数字控件和 1–65535 校验；隧道模式通过 `.ssh-host-field-wide` 让域名占满整行，并继续隐藏端口、移除 required。触屏/≤520px 的弹窗输入字号不低于 16px。布局规则不覆盖主题材质/颜色；可折叠 Service Token 字段的 grid 必须保留 `:not(.hidden)` 门控，不能把隐藏凭据区域意外展开。`server-modal-layout.spec.ts` 覆盖四主题、三语言、桌面/短窗口/窄屏、认证/隧道、五位端口与自定义大字号回退。
 
 48. **首屏初始化与强制登录防闪烁（#192）** - 初始 HTML 使用 `#app[hidden][inert][aria-hidden]` 隔离未决页面，独立 `#app-loading` 展示主题自适应、三语和减少动态友好的加载状态；不能先展示匿名连接表单再替换为登录面板。`app-bootstrap.ts` 同时读取 `/api/config` 与 `/api/auth/me`（同源、no-store），共享 10s deadline 覆盖响应正文，任一失败取消另一请求；仅身份接口 401 表示未登录，网络/HTTP/JSON/必要字段异常均停留错误页并允许手动单次重试，不降级匿名、不缓存认证策略。`ConnectionForm` 直接接收已确认配置，只渲染最终模式，强制登录/坏哈希面板不创建 SSH 凭据输入或读取本地连接历史。分享认领和独立终端路由仍绕过这两次读取并显式解除加载态；`#password-setup` 不受配置失败阻断。`app-bootstrap.test.ts` 与 Chromium/WebKit 的 `e2e/app-bootstrap.spec.ts` 覆盖脚本加载前、慢响应/刷新、已登录、失败/超时/迟到响应、重试、三语和动态偏好。
+
+49. **账户唯一 MCP 配置（#194）** - 每登录账户只生成一次长期令牌，无名称/天数/多Token/撤销/轮换入口。`mcp_configs.user_id` 主键确保唯一，并发生成幂等；旧摘要令牌无法恢复，新验证器不接受，首次生成提示更新客户端并清理账户旧记录。个人令牌与 Access Service Token 沿用账户 AES-GCM 加密回读，根密钥仍在同一 DB（不是独立 KMS）；用户已同意保存完整配置，不再沿用早期“Access不上传/只存摘要”语义。GET `/api/mcp/config` 只返回元数据、不改变绑定；POST首次生成、PUT逐服务器grants，POST `/api/mcp/config/credentials` 仅已登录所有者明确复制/查看时解密，旧多Token和DELETE接口移除。不写浏览器存储/日志；关闭/换号/模式变化清理明文及迟到响应。仅cf_access展示精简的Service Token/Service Auth引导，已保存时折叠；确认勾选不是边缘验证，不能用Bypass，本站与SSH隧道凭据有别。MCP 验证可信原生 Access 准入，不依赖 getIdentity 返回用户资料，仍校验个人令牌/模式/账户与逐服务器权限；无原生上下文或非法 aud 必须拒绝。DEBUG_MODE=true 时仅记录 mcp.auth.denied 的固定原因码（上下文缺失/令牌格式/模式/凭据拒绝/后端查询失败），每 isolate 每60秒最多20条，不包含请求头、令牌、身份、异常正文；对外仍返回统一401，不用诊断放宽认证。read/write/exec/context逐服务器校验，工具列表并集不是全局权限；权限更新后尽力关闭旧执行池，握手后/派发前再检查，旧清理不得删除替代的新连接。令牌在授权修改/凭据变更后保持不变，认证模式/完整路由/allowlist仍校验；密码换代先拒绝旧绑定，所有者显式POST复制/保存可恢复同一令牌，GET不得恢复。每配置120请求/分钟、最多100服务器，两条短连接、每服务器一次操作、60s空闲、命令≤60s/整次≤90s。保留严格TOFU、SSRF、16KiB隧道载体分帧、非PTYexec/独立SFTP与所有输出预算；交互认证/浏览器CA不可无人值守，未知结果不重放，取消不保证回滚或杀尽子进程。SFTP文本≤64KiB、目录≤200条/约64KiB/32批；覆盖哈希+原子rename，非事务锁，不保证inode元数据。终端上下文仅显式共享且逐服务器授权，30min/断线失效，不输入、不刷新空闲。设置名为「外部AI助手MCP设置」，上下文区为「共享当前终端上下文」，活动区为「MCP操作日志」，三语同步。Agent/MCP 实际共用 assistant-ui.css 的表面、48px标题栏、标题/图标、输入、主色操作和页脚，不能只调主题色。已有配置无修改时保存禁用，按服务器/权限集合语义判断，恢复原值/保存成功重建基线；复制/失败/忙碌状态不能误启用，Access仅填入替换凭据才构成改动，首次生成仍可用。窗口使用主题变量和统一液态材质，近期操作整体默认折叠，展开后是最多100条小字号等宽单行日志（时间范围/服务器/状态/工具），无逐条折叠，列表可滚动，仅展开且可见时刷新；活动≤100条/约24h，Alarm与记忆共用最早唤醒，不存命令/输出，不作永久审计。固定SVG图标保留三语无障碍及思考状态恢复。详见 `docs/mcp.md`；设置表幂等创建，沿用v3 DO绑定，不新增migration、不删除已有Worker。
 
 ## SSH 兼容增强边界
 
@@ -480,7 +501,7 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 | Production | `cloudssh` | `main` | `<name>.workers.dev` + 自定义域名 |
 | Test | `cloudssh-test` | `test` | `<name>-test.workers.dev` + 自定义域名 |
 
-两个环境的 Durable Objects（SSHSessionDO、UserDBDO、SSHShareDO）数据完全隔离。
+两个环境的 Durable Objects（SSHSessionDO、UserDBDO、SSHShareDO、MCPExecutionDO）数据完全隔离。
 
 ### 部署方式
 
@@ -504,12 +525,14 @@ pnpm run deploy:test     # 部署 test 环境
 
 官方 CI（`deploy.yml` / `github-pages.yml` / `ssh-interop.yml`）所有 job 均在分配 runner / 展开 matrix 前通过 `github.repository_owner == 'newbietan'` 限定维护者仓库，勿改为 `github.actor` 判断：外部贡献者向官方仓库提交 PR 时仍需正常检查。其他所有者的 Fork 不运行部署、Pages 或互操作 CI；GitHub 可能保留 Skipped 记录，但不执行 runner 任务。Cloudflare 面板 / Git 集成部署独立于这些工作流，无需启用 Actions 或配置 CI 的 Cloudflare Secrets。`tests/workflow-policy.test.ts` 逐个检查非同步工作流的 job 级 owner 限制，新增工作流须沿用该策略。
 
+- 指向维护者仓库 `test` / `main` 的 PR，以及手动执行 → 完整验证但绝不部署；Fork PR 代码仅在无 Secrets 的步骤中运行，禁止改成 `pull_request_target` 执行未信任代码
+- Worker CI 并发按事件与 PR/分支分组，仅取消过期 PR 验证；push 部署不在途取消，30 分钟 job 上限。互操作无 Secrets/部署，可取消旧运行；Pages 同一目标串行发布、10 分钟 job 上限
 - 维护者仓库 `test` 分支 push → 自动部署到 `cloudssh-test`
 - 维护者仓库 `main` 分支 push → 自动部署到 `cloudssh`
 - 维护者仓库 `docs/**` 变更 → 发布 GitHub Pages 主题编辑器（`github-pages.yml`）
 - Fork 仅按需运行上游 `main` 同步（`sync-upstream.yml`）：手动执行无需变量；定时同步默认关闭，仅 `AUTO_SYNC_UPSTREAM=true` 开启，删除或设为 `false` 即关闭
 
-> 部署门禁（`deploy.yml`）依次执行：冻结锁文件安装 → Playwright 浏览器安装 → `typecheck` → `test` → `build:frontend` → `test:e2e` → 上传浏览器报告 → 按分支部署；任一环节失败即阻断部署。E2E 失败仍尝试上传报告，不放行部署。CI 部署步骤直接执行 `pnpm exec wrangler deploy [--env test]`，复用已通过测试的前端内联产物，不在注入部署 Secrets 后重复构建；本地 `deploy`/`deploy:test` 脚本仍保留一键构建部署。
+> 部署门禁（`deploy.yml`）依次执行：冻结锁文件安装 → `typecheck` → `test` → `build:frontend` → Playwright 浏览器安装 → `test:e2e` → 上传浏览器报告 → 按分支部署；任一环节失败即阻断部署。E2E 失败仍尝试上传报告，不放行部署。CI 部署步骤直接执行 `pnpm exec wrangler deploy [--env test]`，复用已通过测试的前端内联产物，不在注入部署 Secrets 后重复构建；本地 `deploy`/`deploy:test` 脚本仍保留一键构建部署。
 
 ### 自定义域名
 

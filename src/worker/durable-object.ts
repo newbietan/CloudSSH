@@ -113,6 +113,14 @@ export class SSHSessionDO {
     } catch {
       return new Response('Invalid request', { status: 400 });
     }
+    if (url.pathname === '/internal/mcp-context' && request.method === 'POST') {
+      const input = await request.json<{ userId: number; routeKey: string; serverId: number; enabled?: boolean; inspect?: boolean; lastLines?: number }>();
+      for (const session of this.sessions.values()) {
+        const result = session.mcpContext(input);
+        if (result) return Response.json(result);
+      }
+      return Response.json({ error: 'context_unavailable' }, { status: 404 });
+    }
     if (url.pathname === '/internal/revoke-share' && request.method === 'POST') {
       const body = await request.json<{ shareId?: string }>();
       if (!body.shareId) return new Response('Invalid share', { status: 400 });

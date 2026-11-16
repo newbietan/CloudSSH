@@ -1,4 +1,6 @@
 import { normalizeAIBaseUrl } from '../ai-endpoint';
+import { McpStore } from './mcp-store';
+import type { McpActivity } from '../mcp-schema';
 import { resolveModelBudget } from '../ai-model-policy';
 import { ServerMemoryStore } from './server-memory-store';
 import { distillMemory } from './agent/memory';
@@ -129,6 +131,9 @@ type AIConfigSecretRow = AIBudgetRow & { base_url: string; model: string; api_ke
  * - One-time-token 生成与消费（安全传递凭据）
  */
 export class UserDBDO {
+  private mcpStore: McpStore;
+  private alarmSchedule: Promise<void> = Promise.resolve();
+  private mcpState: DurableObjectState;
   private env: Env;
   private db: any; // SqlStorage (DO SQLite)
   // one-time-token 内存存储：token → { config, expiresAt }
@@ -141,23 +146,46 @@ export class UserDBDO {
 
   constructor(state: DurableObjectState, env: Env) {
     this.env = env;
+    this.mcpState = state;
     this.db = (state.storage as any).sql;
     this.initSchema();
+    this.mcpStore = new McpStore(this.db,
+      (value, userId) => this.encryptCredential(value, userId),
+      (value, userId) => this.decryptCredential(value, userId));
     this.memoryStore = new ServerMemoryStore(this.db,
       callback => typeof (state.storage as any).transactionSync === 'function'
         ? (state.storage as any).transactionSync(callback) : callback(),
       (value, userId) => this.encryptCredential(value, userId),
       (value, userId) => this.decryptCredential(value, userId),
-      async at => { if (typeof state.storage.setAlarm === 'function') await state.storage.setAlarm(at); });
+      async at => { await this.scheduleMcpAlarm(at); });
     // Old pending rows become recoverable after deployment/reconstruction, without a live SSH tab.
     if (typeof state.blockConcurrencyWhile === 'function') {
-      state.blockConcurrencyWhile(() => this.memoryStore.rearm());
+      state.blockConcurrencyWhile(async () => {
+        await this.memoryStore.rearm();
+        await this.scheduleMcpAlarm();
+      });
     }
   }
 
   async alarm(): Promise<void> {
     if (!this.memoryRun) this.memoryRun = this.processMemoryTask().finally(() => { this.memoryRun = null; });
-    await this.memoryRun;
+    try { await this.memoryRun; }
+    finally { await this.scheduleMcpAlarm(); }
+  }
+
+  /** Keep the earliest memory or activity deadline; no second background queue. */
+  private scheduleMcpAlarm(memoryDue?: number): Promise<void> {
+    const work = async () => {
+      const storage = this.mcpState.storage;
+      const cleanupDue = this.mcpStore.cleanup();
+      if (typeof storage.setAlarm !== 'function') return;
+      const current = typeof storage.getAlarm === 'function' ? await storage.getAlarm() : null;
+      const due = [cleanupDue, memoryDue, current].filter((value): value is number => value != null);
+      if (due.length) await storage.setAlarm(Math.max(Date.now() + 1, Math.min(...due)));
+    };
+    const scheduled = this.alarmSchedule.then(work);
+    this.alarmSchedule = scheduled.catch(() => {});
+    return scheduled;
   }
 
   private async processMemoryTask(): Promise<void> {
@@ -426,6 +454,10 @@ export class UserDBDO {
     try {
       const url = new URL(request.url);
       const path = url.pathname;
+
+      if (path === '/internal/mcp' && request.method === 'POST') {
+        return await this.handleMcp(request);
+      }
 
       // --- 用户管理 ---
       if (path === '/internal/oauth-user' && request.method === 'POST') {
@@ -2020,7 +2052,7 @@ export class UserDBDO {
 
   // ==================== One-time-token 连接 ====================
 
-  private async handleConnectServer(serverId: number, request: Request): Promise<Response> {
+  private async handleConnectServer(serverId: number, request: Request, configOnly = false): Promise<Response> {
     const body = await request.json<{ user_id: number; ephemeralCredential?: string; routeKey?: string }>();
 
     // Resolve the saved relation into one bounded, immutable outer-to-target chain.
@@ -2046,6 +2078,9 @@ export class UserDBDO {
 
     const chain = reversed.reverse();
     const target = chain[chain.length - 1];
+    if (configOnly && chain.some(server => server.cf_ssh_ca_team)) {
+      return Response.json({ error: 'interactive_auth_required' }, { status: 409 });
+    }
     const pathSegments: string[] = [];
     const resolved = await Promise.all(
       chain.map(async (server, index) => {
@@ -2072,10 +2107,13 @@ export class UserDBDO {
       })
     );
 
+    if (configOnly && resolved.some(node => !node.expectedFingerprint)) {
+      return Response.json({ error: 'host_verification_required' }, { status: 409 });
+    }
     const outermost = chain[0];
     const locationHint = outermost.region || outermost.inferred_hint || undefined;
 
-    this.db.exec('UPDATE servers SET last_connected_at = ? WHERE id = ?', Date.now(), serverId);
+    if (!configOnly) this.db.exec('UPDATE servers SET last_connected_at = ? WHERE id = ?', Date.now(), serverId);
 
     const userRows = this.db
       .exec('SELECT github_id FROM users WHERE id = ?', body.user_id)
@@ -2166,6 +2204,8 @@ export class UserDBDO {
       cfAccessClientSecret: isTunnel ? cfAccessClientSecret : undefined,
     };
 
+    if (configOnly) return Response.json(config);
+
     // 防止 token 数量无限增长
     if (this.connectTokens.size >= UserDBDO.MAX_CONNECT_TOKENS) {
       this.cleanExpiredTokens();
@@ -2181,6 +2221,44 @@ export class UserDBDO {
     });
 
     return Response.json({ token });
+  }
+
+  private async handleMcp(request: Request): Promise<Response> {
+    const body = await request.json<{ action: string; userId: number; routeKey: string; modeTag: string;
+      token: string; id: string; input: unknown; serverId: number; activity: McpActivity }>();
+    const store = this.mcpStore;
+    if (['settings', 'create', 'update', 'credentials'].includes(body.action)) {
+      try {
+        if (body.action === 'settings') return Response.json(store.get(body.userId, body.routeKey, body.modeTag));
+        if (body.action === 'credentials') return Response.json(await store.credentials(body.userId, body.routeKey, body.modeTag));
+        return Response.json(await store[body.action === 'create' ? 'create' : 'update'](body.userId, body.routeKey, body.modeTag, body.input));
+      } catch { return Response.json({ error: 'invalid_mcp_configuration' }, { status: 400 }); }
+    }
+    if (body.action === 'activity') return Response.json(store.activity(body.userId));
+    // This internal route is reachable only via a DO binding, never a public URL.
+    if (body.action === 'record') {
+      store.record(body.userId, body.activity);
+      await this.scheduleMcpAlarm();
+      return Response.json({ success: true });
+    }
+    const principal = await store.verify(body.token, body.modeTag);
+    if (!principal) return Response.json({ error: 'unauthorized' }, { status: 401 });
+    if (body.action === 'authorize' && !store.consumeRequest(principal.id)) {
+      return Response.json({ error: 'rate_limited' }, { status: 429 });
+    }
+    if (body.action === 'verify' || body.action === 'authorize') return Response.json(principal);
+    if (body.action === 'servers') {
+      const result = await this.handleGetServers(principal.userId).json<Record<string, unknown>[]>();
+      return Response.json(result.filter(server => principal.serverIds.includes(Number(server.id)))
+        .map(server => ({ id: server.id, name: server.name, tags: server.tags, os: server.os,
+          unattended: !server.cf_ssh_ca_team })));
+    }
+    if (body.action === 'config' && principal.serverIds.includes(body.serverId)) {
+      this.ensureCfSshCaTeamColumn();
+      return this.handleConnectServer(body.serverId, new Request('http://internal/config', { method: 'POST',
+        body: JSON.stringify({ user_id: principal.userId, routeKey: principal.routeKey }) }), true);
+    }
+    return Response.json({ error: 'forbidden' }, { status: 403 });
   }
 
   private async handleConsumeToken(request: Request): Promise<Response> {

@@ -33,6 +33,8 @@ import {
 import { createHtmlResponse } from './html-cache';
 import { handleVersionCheck } from './version-check';
 import { handleCloudflareSshCaSign } from './cf-ssh-ca';
+import { handleMcp, handleMcpManagement } from './mcp';
+export { MCPExecutionDO } from './mcp-execution';
 
 export { SSHSessionDO } from './durable-object';
 export { SSHShareDO } from './share-do';
@@ -196,6 +198,14 @@ export default {
         if (origin !== null && origin !== url.origin) {
           return Response.json({ error: 'Forbidden' }, { status: 403 });
         }
+      }
+
+      if (url.pathname === '/mcp') return await handleMcp(request, env);
+      if (url.pathname.startsWith('/api/mcp/')) {
+        const response = await handleMcpManagement(request, env);
+        const headers = new Headers(response.headers);
+        headers.set('Cache-Control', 'no-store');
+        return new Response(response.body, { status: response.status, headers });
       }
 
       // ==================== Auth Routes ====================

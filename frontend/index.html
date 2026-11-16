@@ -224,17 +224,19 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
             <div id="user-info" class="flex items-center gap-3">
               <!-- 动态渲染：头像 + 用户名 -->
             </div>
+            <button type="button" data-mcp-open class="user-space-menu-action assistant-icon-button hidden" data-i18n-title="mcp.title" data-i18n-aria-label="mcp.title" aria-label="External AI assistant MCP settings" title="External AI assistant MCP settings">
+              <span data-assistant-icon="mcp" aria-hidden="true"></span>
+              <span class="user-space-action-label" data-i18n="mcp.title">External AI assistant MCP settings</span>
+            </button>
             <button
               id="ai-config-btn"
               class="user-space-menu-action hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center"
               data-i18n-title="agent.settings"
+              data-i18n-aria-label="agent.settings"
+              aria-label="AI Agent settings"
               title="AI Agent 设置"
             >
-              <span
-                class="material-symbols-outlined"
-                style="font-variation-settings: 'FILL' 0"
-                >psychology</span
-              >
+              <span class="assistant-entry-icon" data-assistant-icon="agent" aria-hidden="true"></span>
               <span class="user-space-action-label" data-i18n="agent.settings"
                 >AI Agent 设置</span
               >
@@ -1050,14 +1052,13 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 data-i18n-title="terminal.agent"
                 title="AI Agent 助手"
               >
-                <span
-                  class="material-symbols-outlined drawer-btn-icon"
-                  style="font-variation-settings: 'FILL' 0"
-                  >psychology</span
-                >
+                <span class="drawer-btn-icon" data-assistant-icon="agent" aria-hidden="true"></span>
                 <span class="drawer-btn-label" data-i18n="terminal.drawer.agent">Agent</span>
               </button>
             </div>
+            <button type="button" data-mcp-open class="desktop-terminal-action assistant-icon-button hidden" data-i18n-title="mcp.title" data-i18n-aria-label="mcp.title" aria-label="External AI assistant MCP settings" title="External AI assistant MCP settings">
+              <span data-assistant-icon="mcp" aria-hidden="true"></span>
+            </button>
             <button
               id="search-btn"
               class="desktop-terminal-action hover:opacity-80 transition-opacity cursor-pointer p-1 flex items-center justify-center"
@@ -1128,6 +1129,9 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 <option value="__custom__" data-i18n="theme.custom">Custom</option>
               </select>
             </label>
+            <button type="button" data-mcp-open class="hidden" data-i18n-title="mcp.title" data-i18n-aria-label="mcp.title" aria-label="External AI assistant MCP settings" title="External AI assistant MCP settings">
+              <span data-assistant-icon="mcp" aria-hidden="true"></span><span data-i18n="mcp.title">External AI assistant MCP settings</span>
+            </button>
             <button id="mobile-search-btn" type="button">
               <span class="material-symbols-outlined" aria-hidden="true"
                 >search</span
@@ -1149,9 +1153,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
               ><span data-i18n="terminal.sftp">SFTP 文件管理器</span>
             </button>
             <button id="mobile-agent-btn" type="button" class="hidden">
-              <span class="material-symbols-outlined" aria-hidden="true"
-                >psychology</span
-              ><span data-i18n="terminal.agent">AI Agent 助手</span>
+              <span data-assistant-icon="agent" aria-hidden="true"></span><span data-i18n="terminal.agent">AI Agent 助手</span>
             </button>
             <button id="mobile-export-btn" type="button">
               <span class="material-symbols-outlined" aria-hidden="true"

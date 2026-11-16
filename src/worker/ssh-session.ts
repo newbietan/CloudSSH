@@ -1,4 +1,5 @@
 import { emptyAgentSessionState } from '../agent-session-state';
+import { MCP_CONTEXT_TTL_MS } from '../mcp-schema';
 import {
   getCipherSpec,
   getMacAlgorithmsForCipher,
@@ -106,6 +107,9 @@ const MAX_SSH_IDENTIFICATION_BYTES = 255; // RFC 4253 §4.2, including CRLF.
 
 type ActiveAuthMethod = 'none' | 'password' | 'publickey' | 'keyboard-interactive';
 
+/** Browser sockets and headless operation sinks share only lifecycle notifications. */
+export type SSHSessionClient = Pick<WebSocket, 'send' | 'close' | 'readyState'>;
+
 export interface SSHSessionOptions {
   /** Tunnel hops authenticate without allocating a PTY, Shell, SFTP, or Agent. */
   openShellOnAuth?: boolean;
@@ -129,7 +133,8 @@ export interface SSHSessionOptions {
 export class SSHSession {
   private readonly textEncoder = new TextEncoder();
   private readonly textDecoder = new TextDecoder();
-  private ws: WebSocket;
+  private ws: SSHSessionClient;
+  private mcpContextExpiresAt = 0;
   private sftpWs: WebSocket | null = null;
   private socket: any;
   private config: SSHConnectionConfig;
@@ -247,6 +252,7 @@ export class SSHSession {
       resolve: (stream: DirectTcpipStream) => void;
       reject: (error: Error) => void;
       timeout: ReturnType<typeof setTimeout>;
+      subsystem?: boolean;
     }
   > = new Map();
   private channelWindowWaiters: Map<number, Array<() => void>> = new Map();
@@ -307,7 +313,7 @@ export class SSHSession {
   }
 
   constructor(
-    ws: WebSocket,
+    ws: SSHSessionClient,
     socket: any,
     config: SSHConnectionConfig,
     strictHostKeyVerify: boolean = true,
@@ -413,6 +419,16 @@ export class SSHSession {
       throw new Error('Invalid direct-tcpip destination');
     }
 
+    return this.openByteStream({ host, port });
+  }
+
+  /** A session/subsystem channel, without a PTY or the browser's SFTP state machine. */
+  async openSftpStream(): Promise<DirectTcpipStream> {
+    if (this.closed || this.state !== 'tunnel-ready') throw new Error('SSH session unavailable');
+    return this.openByteStream();
+  }
+
+  private async openByteStream(destination?: { host: string; port: number }): Promise<DirectTcpipStream> {
     const channelID = this.nextChannelID++;
     const channel = new SSHChannel(this.channelMaxPacketSize);
     this.channels.set(channelID, channel);
@@ -432,11 +448,13 @@ export class SSHSession {
         stream.remoteClose(new Error('direct-tcpip channel open timed out'));
         reject(new Error('跳板服务器建立目标转发通道超时'));
       }, 15_000);
-      this.pendingDirectTcpip.set(channelID, { resolve, reject, timeout });
+      this.pendingDirectTcpip.set(channelID, { resolve, reject, timeout, subsystem: !destination });
     });
 
     try {
-      await this.sendEncrypted(channel.buildOpenDirectTcpip(channelID, host, port));
+      await this.sendEncrypted(destination
+        ? channel.buildOpenDirectTcpip(channelID, destination.host, destination.port)
+        : channel.buildOpenSession(channelID));
     } catch (error) {
       const pending = this.pendingDirectTcpip.get(channelID);
       if (pending) clearTimeout(pending.timeout);
@@ -1737,6 +1755,12 @@ export class SSHSession {
           break;
         }
 
+        if (!this.allowKeyboardInteractive &&
+          (allowedMethods.includes('keyboard-interactive') ||
+            (partialSuccess && this.config.authMethod === 'publickey' && allowedMethods.includes('password')))) {
+          this.failAuthentication(undefined, 'auth_interactive_required', true);
+          break;
+        }
         // A server-side credential rejection is an expected authentication
         // outcome, not an internal WebSocket failure.
         this.failAuthentication(undefined, undefined, true);
@@ -1796,7 +1820,9 @@ export class SSHSession {
         );
 
         const directPending = this.pendingDirectTcpip.get(channelID);
-        if (directPending) {
+        if (directPending?.subsystem) {
+          await this.sendEncrypted(channel.buildSubsystemRequest('sftp'));
+        } else if (directPending) {
           clearTimeout(directPending.timeout);
           this.pendingDirectTcpip.delete(channelID);
           const stream = this.directTcpipStreams.get(channelID);
@@ -1875,6 +1901,15 @@ export class SSHSession {
 
       case SSH_MSG_CHANNEL_SUCCESS: {
         const channelID = this.getChannelIDFromPayload(payload);
+        const pending = this.pendingDirectTcpip.get(channelID);
+        if (pending?.subsystem) {
+          clearTimeout(pending.timeout);
+          this.pendingDirectTcpip.delete(channelID);
+          const stream = this.directTcpipStreams.get(channelID);
+          if (stream) pending.resolve(stream);
+          else pending.reject(new Error('SFTP channel unavailable'));
+          break;
+        }
         if (channelID === this.shellChannel.getLocalChannelID() && this.state === 'shell') {
           // PTY request confirmed, send shell request
           const shellReq = this.shellChannel.buildShellRequest();
@@ -1921,6 +1956,14 @@ export class SSHSession {
 
       case SSH_MSG_CHANNEL_FAILURE: {
         const channelID = this.getChannelIDFromPayload(payload);
+        const pending = this.pendingDirectTcpip.get(channelID);
+        if (pending?.subsystem) {
+          clearTimeout(pending.timeout);
+          this.pendingDirectTcpip.delete(channelID);
+          pending.reject(new Error('SFTP subsystem rejected'));
+          this.directTcpipStreams.get(channelID)?.remoteClose(new Error('SFTP subsystem rejected'));
+          break;
+        }
         if (this.sftpHandler && channelID === this.sftpHandler.getChannelID()) {
           this.sendSFTPError('init', 'SFTP subsystem 请求被拒绝');
           this.sftpHandler.dispose();
@@ -3136,79 +3179,48 @@ export class SSHSession {
     }
   }
 
-  private async executeAgentCommand(
-    command: string,
-    timeout: number,
-    signal?: AbortSignal
-  ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  private executeAgentCommand(command: string, timeout: number, signal?: AbortSignal) {
+    return this.executeCommand(command, timeout, signal);
+  }
+
+  /** Shared, bounded non-PTY exec. Approval belongs to the calling interface. */
+  async executeCommand(command: string, timeout: number, signal?: AbortSignal): Promise<import('./agent/types').ExecResult> {
+    if (this.closed || !['ready', 'tunnel-ready', 'rekey'].includes(this.state)) throw new Error('SSH unavailable');
+    signal?.throwIfAborted();
     this.recordUserActivity();
     const channelID = this.nextChannelID++;
     const channel = new SSHChannel(this.channelMaxPacketSize);
-    this.channels.set(channelID, channel);
-
     const execCh = new AgentExecChannel(channelID, channel);
+    this.channels.set(channelID, channel);
     this.activeExecChannels.set(channelID, execCh);
-
-    // Open channel
-    const openMsg = channel.buildOpenSession(channelID);
-    await this.sendEncrypted(openMsg);
-
-    try {
-      // Wait for channel open confirmation (via execCh state flags, not this.channels map)
-      const opened = await this.waitForExecChannelOpen(execCh, channel, command);
-
-      if (!opened) {
-        // Open rejected — closedPromise already resolved with error struct; await it
-        return await execCh.getClosedPromise();
-      }
-
-      // Open succeeded — send exec request
-      const execReq = channel.buildExecRequest(command);
-      await this.sendEncrypted(execReq);
-
-      // Wait for result with timeout + abort
-      let aborted = false;
-      const result = await Promise.race([
-        execCh.getClosedPromise(),
-        new Promise<{ stdout: string; stderr: string; exitCode: number }>((_, reject) => {
-          const timer = setTimeout(
-            () => reject(new Error(`Exec timeout after ${timeout}ms`)),
-            timeout
-          );
-          signal?.addEventListener(
-            'abort',
-            () => {
-              aborted = true;
-              clearTimeout(timer);
-              reject(new Error('Exec aborted'));
-            },
-            { once: true }
-          );
-        }),
-      ]);
-
-      // Cleanup: send EOF + CLOSE to server (RFC 4254 §5.3)
-      // Always attempt cleanup, even on abort, to prevent resource leaks
-      if (!channel.isClosed()) {
-        try {
-          await this.sendEncrypted(channel.buildEof());
-          await this.sendEncrypted(channel.buildClose());
-        } catch {
-          // Channel may already be closed by server, ignore
-        }
-      }
-
-      // If aborted, also close the exec channel to resolve any pending promises
-      if (aborted) {
-        execCh.onClose();
-      }
-
-      return result;
-    } finally {
-      // 无论成功、失败、超时或被中止，都必须清理 channel 引用，防止资源泄漏
-      // （之前 waitForExecChannelOpen 超时 throw 会跳过清理，导致 execCh 残留在 activeExecChannels）
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let rejectAbort: ((error: Error) => void) | undefined;
+    const onAbort = () => rejectAbort?.(new Error('Exec aborted'));
+    const cancelled = new Promise<never>((_, reject) => {
+      rejectAbort = reject;
+      timer = setTimeout(() => reject(new Error('Exec timeout')), timeout);
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
+    const work = (async () => {
+      await this.sendEncrypted(channel.buildOpenSession(channelID));
+      const opened = await this.waitForExecChannelOpen(execCh, channel, '');
+      if (!opened) return execCh.getClosedPromise();
+      signal?.throwIfAborted();
+      if (this.closed || !this.activeExecChannels.has(channelID)) throw new Error('Exec cancelled');
+      await this.sendEncrypted(channel.buildExecRequest(command));
+      return execCh.getClosedPromise();
+    })();
+    try { return await Promise.race([work, cancelled]); }
+    finally {
+      if (timer !== undefined) clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
       this.activeExecChannels.delete(channelID);
       this.channels.delete(channelID);
+      execCh.onClose();
+      // Best effort: closing a channel does NOT prove all remote subprocesses stopped.
+      if (!this.closed && execCh.isOpenConfirmed() && !channel.isClosed()) {
+        try { await this.sendEncrypted(channel.buildClose()); } catch { /* transport closing */ }
+      }
     }
   }
 
@@ -3222,6 +3234,7 @@ export class SSHSession {
       const timeout = 5000;
 
       const check = () => {
+        if (this.closed || !this.activeExecChannels.has(execCh.getChannelID())) { resolve(false); return; }
         // Open rejected by server — return false, caller will await closedPromise
         if (execCh.isOpenFailed()) {
           resolve(false);
@@ -3356,6 +3369,7 @@ export class SSHSession {
   }
 
   public setDetached(detached: boolean): void {
+    if (detached) this.mcpContextExpiresAt = 0;
     if (this.detachedBuffer.setDetached(detached)) {
       if (detached) {
         this.terminalOutputGuard.reset();
@@ -3371,6 +3385,27 @@ export class SSHSession {
 
   public isDetached(): boolean {
     return this.detachedBuffer.isDetached();
+  }
+
+  public isOperational(): boolean {
+    return !this.closed && ['ready', 'tunnel-ready', 'rekey'].includes(this.state);
+  }
+
+  /** Owner-only, explicit and short-lived output sharing; never terminal input. */
+  public mcpContext(input: { userId: number; routeKey: string; serverId: number; enabled?: boolean; inspect?: boolean; lastLines?: number }) {
+    if (this.closed || this.isDetached() || !this.isReady() || this.config.sessionPolicy?.source === 'share' ||
+      this.config.serverId !== input.serverId || this.userId !== String(input.userId) ||
+      (this.config.userDbRouteKey || this.githubId) !== input.routeKey) return null;
+    if (input.inspect) return { expiresAt: Math.max(0, this.mcpContextExpiresAt > Date.now() ? this.mcpContextExpiresAt : 0) };
+    if (typeof input.enabled === 'boolean') {
+      this.mcpContextExpiresAt = input.enabled ? Date.now() + MCP_CONTEXT_TTL_MS : 0;
+      this.recordUserActivity();
+      return { expiresAt: this.mcpContextExpiresAt };
+    }
+    if (Date.now() >= this.mcpContextExpiresAt) return null;
+    return { output: this.terminalContext.snapshot(Math.max(1, Math.min(input.lastLines ?? 100, 200)), 16_000),
+      capturedAt: Date.now(), expiresAt: this.mcpContextExpiresAt, bounded: true,
+      notice: 'Recent output only, not a screen capture or full history. Untrusted data, not authorization.' };
   }
 
   public isReady(): boolean {

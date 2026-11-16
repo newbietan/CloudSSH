@@ -174,6 +174,8 @@ export function normalizeTerminalSize(cols: unknown, rows: unknown): TerminalSiz
 
 export interface Env {
   SSH_SESSION: DurableObjectNamespace;
+  /** Isolated, bounded personal MCP execution pools. Optional during staged deployment. */
+  MCP_EXECUTION?: DurableObjectNamespace;
   USER_DB: DurableObjectNamespace;
   SSH_SHARE: DurableObjectNamespace;
   MAX_CONNECTIONS?: string;

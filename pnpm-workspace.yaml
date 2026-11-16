@@ -8,3 +8,6 @@ allowBuilds:
 blockExoticSubdeps: true
 minimumReleaseAge: 10080
 trustPolicy: no-downgrade
+# MCP uses only the Web Standards transport; keep the SDK's optional Node adapter patched too.
+overrides:
+  '@modelcontextprotocol/sdk>@hono/node-server': 2.1.6

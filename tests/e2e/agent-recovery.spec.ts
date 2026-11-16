@@ -5,6 +5,9 @@ async function mount(page: Page, tabs = false) {
   await mockAnonymousSession(page);
   await page.route('**/api/servers/1/memory', route => route.fulfill({ json: { workLogs: [], knowledge: [] } }));
   await page.goto('/?lang=zh-CN');
+  // The synthetic terminal must mount after bootstrap; a late showAuthSection would hide it
+  // and correctly prevent recovered confirmations from appearing outside the terminal view.
+  await expect(page.locator('#app')).toBeVisible();
   await page.evaluate(async (withTabs) => {
     const sent: any[] = [];
     let panel: any;
