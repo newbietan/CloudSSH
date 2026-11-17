@@ -1,4 +1,5 @@
-import { expect, test } from './fixtures';
+import { holdAnimationFrames } from './browser-timing';
+import { expect, type Page, test } from './fixtures';
 import { blockOptionalThirdPartyAssets, mockAnonymousSession } from './helpers';
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
@@ -93,7 +94,10 @@ test('移动端终端使用紧凑布局并提供完整快捷键入口', async ({
   await expect(page.locator('#theme-selector')).toBeHidden();
 });
 
-test('软键盘动画使用可视视口并只在尺寸稳定后适配终端', async ({ page }) => {
+async function prepareViewportPage(page: Page): Promise<void> {
+  const time = new Date('2026-01-01T00:00:00Z');
+  await page.clock.install({ time });
+  await page.clock.pauseAt(new Date(time.getTime() + 1000));
   await page.addInitScript(() => {
     class TestVisualViewport extends EventTarget {
       width = 390;
@@ -120,57 +124,109 @@ test('软键盘动画使用可视视口并只在尺寸稳定后适配终端', as
   await page.goto('/?lang=zh-CN');
   await expect(page.locator('#connection-form')).toBeVisible();
 
-  const result = await page.evaluate(async () => {
-    document.getElementById('auth-section')?.classList.add('hidden');
-    const section = document.getElementById('terminal-section')!;
-    section.classList.remove('hidden');
-    section.classList.add('flex');
-    document.body.classList.add('terminal-active');
+}
 
-    const mobileModule = await (window as any).eval("import('/src/mobile-terminal.ts')");
-    let fitCount = 0;
-    const terminal = {
-      fit: () => {
-        fitCount += 1;
-      },
-      getMobileModifier: () => null,
-      isMobileSelectionMode: () => false,
-      setMobileSelectionMode: () => undefined,
-    };
-    const controller = new mobileModule.MobileTerminalController(() => terminal);
-    controller.start();
-    await new Promise((resolve) => setTimeout(resolve, 160));
-    fitCount = 0;
+async function setViewport(page: Page, height: number, offsetTop = 0): Promise<void> {
+  await page.evaluate(({ height, offsetTop }) => {
+    (window as any).__setTestVisualViewport(height, offsetTop);
+  }, { height, offsetTop });
+}
 
-    (window as any).__setTestVisualViewport(720, 4);
-    (window as any).__setTestVisualViewport(610, 8);
-    (window as any).__setTestVisualViewport(500, 12);
-    await new Promise((resolve) => setTimeout(resolve, 60));
-    const fitCountDuringAnimation = fitCount;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+async function viewportFitCount(page: Page): Promise<number> {
+  return page.evaluate(() => (window as any).__viewportFitCount);
+}
 
-    const rootStyle = document.documentElement.style;
-    const sectionRect = section.getBoundingClientRect();
-    return {
-      fitCountDuringAnimation,
-      finalFitCount: fitCount,
-      viewportHeight: rootStyle.getPropertyValue('--visual-viewport-height'),
-      viewportOffsetTop: rootStyle.getPropertyValue('--visual-viewport-offset-top'),
-      keyboardOpen: document.documentElement.classList.contains('mobile-keyboard-open'),
-      statusHidden: getComputedStyle(document.querySelector('.terminal-status-bar')!).display,
-      sectionTop: Math.round(sectionRect.top),
-      sectionHeight: Math.round(sectionRect.height),
-    };
+for (const delayedFrame of [false, true]) {
+  test(`软键盘动画使用可视视口并只在尺寸稳定后适配终端：延迟帧=${delayedFrame}`, async ({ page }) => {
+    await prepareViewportPage(page);
+    await page.clock.runFor(200);
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+      document.getElementById('auth-section')?.classList.add('hidden');
+      const section = document.getElementById('terminal-section')!;
+      section.classList.remove('hidden');
+      section.classList.add('flex');
+      document.body.classList.add('terminal-active');
+
+      // Exercise the existing app controller, not a second instance sharing the root DOM.
+      const modulePath = '/src/main.ts';
+      const { getTabManager } = await import(modulePath);
+      const tab = getTabManager().createTab('Viewport test');
+      const fit = tab.terminal.fit.bind(tab.terminal);
+      (window as any).__viewportFitCount = 0;
+      tab.terminal.fit = () => {
+        (window as any).__viewportFitCount += 1;
+        fit();
+      };
+    });
+    await page.clock.runFor(200);
+    expect(await viewportFitCount(page)).toBeGreaterThan(0);
+    await page.evaluate(() => { (window as any).__viewportFitCount = 0; });
+
+    await setViewport(page, 720, 4);
+    await page.clock.runFor(16);
+    await page.clock.runFor(80);
+    expect(await viewportFitCount(page)).toBe(0);
+    if (delayedFrame) {
+      const releaseFrame = await holdAnimationFrames(page);
+      await setViewport(page, 610, 8);
+      await setViewport(page, 500, 12);
+      // Timers progress but painting stalls: an obsolete fit must not escape the debounce.
+      await page.clock.runFor(200);
+      expect(await viewportFitCount(page)).toBe(0);
+      await releaseFrame();
+    } else {
+      await setViewport(page, 610, 8);
+      await page.clock.runFor(16);
+      await page.clock.runFor(80);
+      expect(await viewportFitCount(page)).toBe(0);
+      await setViewport(page, 500, 12);
+      await page.clock.runFor(16);
+    }
+    await page.clock.runFor(100);
+    expect(await viewportFitCount(page)).toBe(0);
+    await page.clock.runFor(40);
+    expect(await viewportFitCount(page)).toBe(1);
+
+    const result = await page.evaluate(() => {
+      const root = document.documentElement;
+      const rect = document.getElementById('terminal-section')!.getBoundingClientRect();
+      return {
+        viewportHeight: root.style.getPropertyValue('--visual-viewport-height'),
+        viewportOffsetTop: root.style.getPropertyValue('--visual-viewport-offset-top'),
+        keyboardOpen: root.classList.contains('mobile-keyboard-open'),
+        statusHidden: getComputedStyle(document.querySelector('.terminal-status-bar')!).display,
+        sectionTop: Math.round(rect.top),
+        sectionHeight: Math.round(rect.height),
+      };
+    });
+    expect(result).toEqual({
+      viewportHeight: '500px', viewportOffsetTop: '12px', keyboardOpen: true,
+      statusHidden: 'none', sectionTop: 12, sectionHeight: 500,
+    });
+    await setViewport(page, 844);
+    await page.clock.runFor(160);
+    await expect(page.locator('html')).not.toHaveClass(/mobile-keyboard-open/);
+    await expect(page.locator('.terminal-status-bar')).toBeVisible();
   });
+}
 
-  expect(result.fitCountDuringAnimation).toBe(0);
-  expect(result.finalFitCount).toBe(1);
-  expect(result.viewportHeight).toBe('500px');
-  expect(result.viewportOffsetTop).toBe('12px');
-  expect(result.keyboardOpen).toBe(true);
-  expect(result.statusHidden).toBe('none');
-  expect(result.sectionTop).toBe(12);
-  expect(result.sectionHeight).toBe(500);
+test('首帧前的键盘变化保留初始高度，旋转后重新建立基线', async ({ page }) => {
+  await prepareViewportPage(page);
+  // No animation frame has run since startup. An immediate keyboard must not become the baseline.
+  await setViewport(page, 500);
+  await page.clock.runFor(16);
+  await expect(page.locator('html')).toHaveClass(/mobile-keyboard-open/);
+  await setViewport(page, 844);
+  await page.clock.runFor(16);
+  await expect(page.locator('html')).not.toHaveClass(/mobile-keyboard-open/);
+  await setViewport(page, 390);
+  await page.evaluate(() => window.dispatchEvent(new Event('orientationchange')));
+  await page.clock.runFor(16);
+  await expect(page.locator('html')).not.toHaveClass(/mobile-keyboard-open/);
+  await setViewport(page, 200);
+  await page.clock.runFor(16);
+  await expect(page.locator('html')).toHaveClass(/mobile-keyboard-open/);
 });
 
 test('移动端可单指滑动终端历史且调整尺寸后保留阅读位置', async ({ page }) => {
@@ -279,6 +335,7 @@ test('终端字号随手机、触屏平板和桌面宽度调整且不受文本�
     const xterm = root.querySelector<HTMLElement>('.xterm')!;
     return {
       fontSize: (terminal as any).terminal.options.fontSize,
+      supportsTextSizeAdjust: CSS.supports('text-size-adjust', '100%') || CSS.supports('-webkit-text-size-adjust', '100%'),
       textSizeAdjust:
         getComputedStyle(xterm).getPropertyValue('text-size-adjust') ||
         getComputedStyle(xterm).getPropertyValue('-webkit-text-size-adjust'),
@@ -286,7 +343,9 @@ test('终端字号随手机、触屏平板和桌面宽度调整且不受文本�
   });
 
   expect(initial.fontSize).toBe(12);
-  expect(initial.textSizeAdjust).toBe('100%');
+  // Playwright's desktop WebKit port does not implement iOS text autosizing, even in device emulation.
+  // Keep real font-size/resize assertions on both engines; inspect this CSS property only when supported.
+  if (initial.supportsTextSizeAdjust) expect(initial.textSizeAdjust).toBe('100%');
 
   await page.setViewportSize({ width: 844, height: 390 });
   await page.evaluate(() => (window as any).__responsiveFontTerminal.fit());

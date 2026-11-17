@@ -275,6 +275,8 @@ export class AuthChallengeDialog {
       t(challenge.prompts.length === 0 ? 'authChallenge.continue' : 'authChallenge.respond')
     ) as HTMLButtonElement;
     submitButton.type = 'submit';
+    const initialFocus = inputs[0] ?? storedPasswordButton ?? submitButton;
+    initialFocus.autofocus = true;
 
     form.prepend(accent, header);
     form.append(target, description, promptList, sensitiveHint, actions);
@@ -327,7 +329,11 @@ export class AuthChallengeDialog {
 
     requestAnimationFrame(() => {
       if (this.dialog !== dialog) return;
-      (inputs[0] ?? storedPasswordButton ?? submitButton).focus();
+      // Native modal focus normally handles autofocus. A late fallback must not steal a field
+      // or button the user has already selected, including during a multi-prompt challenge.
+      const focused = document.activeElement;
+      if (focused !== dialog && dialog.contains(focused)) return;
+      initialFocus.focus();
     });
     return true;
   }

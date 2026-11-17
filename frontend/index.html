@@ -1129,8 +1129,18 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 <option value="__custom__" data-i18n="theme.custom">Custom</option>
               </select>
             </label>
-            <button type="button" data-mcp-open class="hidden" data-i18n-title="mcp.title" data-i18n-aria-label="mcp.title" aria-label="External AI assistant MCP settings" title="External AI assistant MCP settings">
-              <span data-assistant-icon="mcp" aria-hidden="true"></span><span data-i18n="mcp.title">External AI assistant MCP settings</span>
+            <div class="mobile-font-controls" role="group" data-i18n-aria-label="terminal.fontSize" aria-label="Terminal font size">
+              <span data-i18n="terminal.fontSize">Terminal font size</span>
+              <button id="mobile-font-smaller" type="button" data-i18n-aria-label="terminal.fontSmaller" aria-label="Smaller font">−</button>
+              <output id="mobile-font-value" aria-live="polite"></output>
+              <button id="mobile-font-larger" type="button" data-i18n-aria-label="terminal.fontLarger" aria-label="Larger font">+</button>
+              <button id="mobile-font-auto" type="button" aria-pressed="true" data-i18n="terminal.fontAuto">Auto</button>
+            </div>
+            <button id="mobile-select-text-btn" type="button">
+              <span class="material-symbols-outlined" aria-hidden="true">content_copy</span><span data-i18n="terminal.selectText">Select text</span>
+            </button>
+            <button id="mobile-tab-actions-btn" type="button">
+              <span class="material-symbols-outlined" aria-hidden="true">terminal</span><span data-i18n="terminal.tabActions">Current tab actions</span>
             </button>
             <button id="mobile-search-btn" type="button">
               <span class="material-symbols-outlined" aria-hidden="true"
@@ -1154,6 +1164,9 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
             </button>
             <button id="mobile-agent-btn" type="button" class="hidden">
               <span data-assistant-icon="agent" aria-hidden="true"></span><span data-i18n="terminal.agent">AI Agent 助手</span>
+            </button>
+            <button type="button" data-mcp-open class="hidden" data-i18n-title="mcp.title" data-i18n-aria-label="mcp.title" aria-label="External AI assistant MCP settings" title="External AI assistant MCP settings">
+              <span data-assistant-icon="mcp" aria-hidden="true"></span><span data-i18n="mcp.title">External AI assistant MCP settings</span>
             </button>
             <button id="mobile-export-btn" type="button">
               <span class="material-symbols-outlined" aria-hidden="true"
@@ -1242,6 +1255,11 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
           data-i18n-aria-label="terminal.mobileKeyboard"
           aria-label="终端快捷键"
         >
+          <div id="mobile-selection-actions" class="mobile-selection-actions hidden" role="group" data-i18n-aria-label="terminal.selectText" aria-label="Select text">
+            <button id="mobile-selection-copy-btn" type="button" data-i18n="terminal.copySelection" disabled>Copy selection</button>
+            <button id="mobile-selection-ai-btn" type="button" class="hidden" data-i18n="terminal.askAISelection">Ask AI assistant</button>
+            <button id="mobile-selection-cancel-btn" type="button" data-i18n="common.cancel">Cancel</button>
+          </div>
           <div class="mobile-terminal-toolbar-scroll">
             <button type="button" data-terminal-key="escape">Esc</button>
             <button type="button" data-terminal-key="tab">Tab</button>

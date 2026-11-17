@@ -1,3 +1,4 @@
+import { holdAnimationFrames } from './browser-timing';
 import { expect, type Page, test } from './fixtures';
 import { mockAnonymousSession } from './helpers';
 
@@ -215,6 +216,45 @@ test('renders a Serv00 password challenge and acknowledges it only after display
     },
   ]);
   await expect(dialog).toHaveCount(0);
+});
+
+test('延迟的初始聚焦不抢占已选中的验证码字段', async ({ page }) => {
+  const releaseFrame = await holdAnimationFrames(page);
+  await showChallenge(page, [
+    { text: 'Password:', echo: false },
+    { text: 'Verification code:', echo: false },
+  ]);
+  const dialog = page.locator('.auth-challenge-dialog');
+  const inputs = dialog.locator('.auth-challenge-dialog__input');
+  await expect(inputs.nth(0)).toBeFocused();
+  await inputs.nth(0).fill('account-password');
+  await inputs.nth(1).focus();
+  await releaseFrame();
+  await expect(inputs.nth(1)).toBeFocused();
+  // Type through the current focus, rather than fill() refocusing and masking a stolen focus.
+  await page.keyboard.type('123456');
+  await expect(inputs.nth(0)).toHaveValue('account-password');
+  await expect(inputs.nth(1)).toHaveValue('123456');
+  await dialog.locator('.auth-challenge-dialog__button--submit').click();
+  expect(await page.evaluate(() => (window as any).__authChallengeState.submissions)).toEqual([
+    { type: 'auth_response', id: 'serv00-round-1', responses: ['account-password', '123456'] },
+  ]);
+});
+
+test('零提示认证优先聚焦继续，迟到帧不抢取消按钮', async ({ page }) => {
+  const releaseFrame = await holdAnimationFrames(page);
+  await showChallenge(page, []);
+  const dialog = page.locator('.auth-challenge-dialog');
+  await expect(dialog.locator('.auth-challenge-dialog__button--submit')).toBeFocused();
+  const cancel = dialog.locator('.auth-challenge-dialog__button--cancel');
+  await cancel.focus();
+  await releaseFrame();
+  await expect(cancel).toBeFocused();
+  expect(await page.evaluate(() => (window as any).__authChallengeState.submissions)).toEqual([]);
+  await cancel.press('Enter');
+  expect(await page.evaluate(() => (window as any).__authChallengeState.cancelled)).toEqual([
+    'serv00-round-1',
+  ]);
 });
 
 test('keeps a multi-prompt password and TOTP challenge usable in a mobile viewport', async ({

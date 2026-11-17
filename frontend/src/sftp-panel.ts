@@ -66,6 +66,10 @@ export class SFTPPanel {
   private entryRows = new Map<string, HTMLElement>();
   private highlightedNames = new Set<string>();
   private selectionAnchorIndex: number | null = null;
+  private multiSelect = false;
+  private leaveConfirmationPending = false;
+  private readonly mobileLayout = window.matchMedia('(max-width: 767px), (max-width: 1180px) and (pointer: coarse)');
+  private readonly layoutChanged = () => { if (!this.mobileLayout.matches) this.setMultiSelect(false); };
   private pendingDeleteCount = 0;
   private getWebSocketUrl: GetSFTPWebSocketUrlFn;
   private ws: WebSocket | null = null;
@@ -110,15 +114,18 @@ export class SFTPPanel {
   private readonly keydownHandler = (e: KeyboardEvent): void => {
     if (!this.visible || document.querySelector('dialog[open]')) return;
     const target = e.target as HTMLElement | null;
-    const isEditable = target?.matches('input, textarea, select, [contenteditable="true"]');
+    const isEditable = target?.matches('input:not([type="checkbox"]), textarea, select, [contenteditable="true"]');
     if ((e.ctrlKey || e.metaKey) && e.key.toLocaleLowerCase() === 'a' && !isEditable) {
       e.preventDefault();
       this.selectAllEntries();
     } else if (e.key === 'Escape' && this.selectedEntries.size > 0) {
       e.preventDefault();
       this.clearSelection();
+    } else if (e.key === 'Escape' && this.multiSelect) {
+      e.preventDefault();
+      this.setMultiSelect(false);
     } else if (e.key === 'Escape') {
-      this.hide();
+      this.requestHide();
     }
   };
 
@@ -128,7 +135,7 @@ export class SFTPPanel {
     document.body.appendChild(this.container);
     attachDrawerSwipeToClose(this.container, {
       headerSelector: '.sftp-panel-header',
-      onClose: () => this.hide(),
+      onClose: () => this.requestHide(),
     });
 
     this.editorCoordinator = new SFTPEditorCoordinator({
@@ -151,6 +158,7 @@ export class SFTPPanel {
     });
     this.bindEntryEvents();
     this.bindKeyboard();
+    this.mobileLayout.addEventListener('change', this.layoutChanged);
   }
 
   private createPanel(): HTMLElement {
@@ -160,7 +168,6 @@ export class SFTPPanel {
       'fixed top-0 right-0 h-full z-[90] flex transition-transform duration-300 ease-in-out';
     panel.style.transform = 'translateX(100%)';
 
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     panel.innerHTML = `
       <div class="flex flex-col w-full h-full bg-surface border-l border-outline-variant text-on-surface">
         <!-- Header -->
@@ -195,35 +202,41 @@ export class SFTPPanel {
         </div>
 
         <!-- Actions Bar -->
-        <div class="sftp-panel-actions flex items-center gap-1 px-3 py-1.5 border-b border-outline-variant bg-surface shrink-0 overflow-x-auto no-scrollbar">
-          <button id="sftp-upload-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" data-i18n-title="sftp.upload" title="上传文件">
-            <span class="material-symbols-outlined" style="font-size: 14px;">upload_file</span>
-            <span data-i18n="sftp.uploadAction">上传文件</span>
-          </button>
-          <button id="sftp-new-file-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" data-i18n-title="sftp.newFile" title="新建文件">
-            <span class="material-symbols-outlined" style="font-size: 14px;">note_add</span>
-            <span data-i18n="sftp.newFileAction">新建文件</span>
-          </button>
-          <button id="sftp-mkdir-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-secondary-container" data-i18n-title="sftp.newFolder" title="新建文件夹">
-            <span class="material-symbols-outlined" style="font-size: 14px;">create_new_folder</span>
-            <span data-i18n="sftp.mkdirAction">新建文件夹</span>
-          </button>
-          <button id="sftp-download-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.download" title="下载" disabled>
-            <span class="material-symbols-outlined" style="font-size: 14px;">download</span>
-            <span data-i18n="sftp.downloadAction">下载</span>
-          </button>
-          <button id="sftp-edit-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.edit" title="在线编辑" disabled>
-            <span class="material-symbols-outlined" style="font-size: 14px;">edit_note</span>
-            <span data-i18n="sftp.editAction">编辑</span>
-          </button>
-          <button id="sftp-delete-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-error-container rounded transition-colors cursor-pointer text-error disabled:opacity-30" data-i18n-title="common.delete" title="删除" disabled>
-            <span class="material-symbols-outlined" style="font-size: 14px;">delete</span>
-            <span data-i18n="sftp.deleteAction">删除</span>
-          </button>
-          <button id="sftp-rename-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.rename" title="重命名" disabled>
-            <span class="material-symbols-outlined" style="font-size: 14px;">drive_file_rename_outline</span>
-            <span data-i18n="sftp.renameAction">重命名</span>
-          </button>
+        <div class="sftp-panel-actions flex items-center gap-1 px-3 py-1 border-b border-outline-variant bg-surface shrink-0 overflow-hidden">
+          <div class="sftp-touch-actions mobile-only">
+            <button id="sftp-open-btn" type="button" disabled data-i18n="sftp.contextOpen">Open</button>
+            <button id="sftp-multi-btn" type="button" aria-pressed="false" data-i18n="sftp.multiSelect">Select</button>
+          </div>
+          <div class="sftp-actions-scroll flex min-w-0 flex-1 items-center gap-1 overflow-x-auto no-scrollbar p-0.5">
+            <button id="sftp-upload-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" data-i18n-title="sftp.upload" title="上传文件">
+              <span class="material-symbols-outlined" style="font-size: 14px;">upload_file</span>
+              <span data-i18n="sftp.uploadAction">上传文件</span>
+            </button>
+            <button id="sftp-new-file-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" data-i18n-title="sftp.newFile" title="新建文件">
+              <span class="material-symbols-outlined" style="font-size: 14px;">note_add</span>
+              <span data-i18n="sftp.newFileAction">新建文件</span>
+            </button>
+            <button id="sftp-mkdir-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-secondary-container" data-i18n-title="sftp.newFolder" title="新建文件夹">
+              <span class="material-symbols-outlined" style="font-size: 14px;">create_new_folder</span>
+              <span data-i18n="sftp.mkdirAction">新建文件夹</span>
+            </button>
+            <button id="sftp-download-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.download" title="下载" disabled>
+              <span class="material-symbols-outlined" style="font-size: 14px;">download</span>
+              <span data-i18n="sftp.downloadAction">下载</span>
+            </button>
+            <button id="sftp-edit-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.edit" title="在线编辑" disabled>
+              <span class="material-symbols-outlined" style="font-size: 14px;">edit_note</span>
+              <span data-i18n="sftp.editAction">编辑</span>
+            </button>
+            <button id="sftp-delete-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-error-container rounded transition-colors cursor-pointer text-error disabled:opacity-30" data-i18n-title="common.delete" title="删除" disabled>
+              <span class="material-symbols-outlined" style="font-size: 14px;">delete</span>
+              <span data-i18n="sftp.deleteAction">删除</span>
+            </button>
+            <button id="sftp-rename-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.rename" title="重命名" disabled>
+              <span class="material-symbols-outlined" style="font-size: 14px;">drive_file_rename_outline</span>
+              <span data-i18n="sftp.renameAction">重命名</span>
+            </button>
+          </div>
           <input type="file" id="sftp-file-input" class="hidden" multiple />
         </div>
 
@@ -308,6 +321,10 @@ export class SFTPPanel {
             <span data-i18n="sftp.truncated">该目录文件过多，为保证性能，仅显示前 2000 项。</span>
           </div>
           <!-- Entries will be rendered here -->
+          <div id="sftp-selection-tools" class="sftp-selection-tools hidden">
+            <button id="sftp-select-all-btn" type="button" data-i18n="sftp.selectAll">Select all</button>
+            <button id="sftp-clear-selection-btn" type="button" data-i18n="sftp.clearSelection">Clear selection</button>
+          </div>
           <div id="sftp-entries" role="listbox" aria-multiselectable="true"></div>
         </div>
 
@@ -342,11 +359,12 @@ export class SFTPPanel {
       const index = entryIndex(event);
       if (index === null) return;
       this.selectEntry(index, {
-        additive: event.ctrlKey || event.metaKey,
+        additive: this.multiSelect || event.ctrlKey || event.metaKey,
         range: event.shiftKey,
       });
     });
     entriesContainer.addEventListener('dblclick', (event) => {
+      if (this.multiSelect) return;
       const index = entryIndex(event);
       if (index !== null) void this.openEntry(this.renderedEntries[index]);
     });
@@ -354,6 +372,7 @@ export class SFTPPanel {
       const index = entryIndex(event);
       if (index === null) return;
       event.preventDefault();
+      if (this.multiSelect) return;
       const entry = this.renderedEntries[index];
       if (!this.selectedEntries.has(entry.name)) {
         this.selectEntry(index, { additive: false, range: false });
@@ -384,7 +403,14 @@ export class SFTPPanel {
     const pathInput = this.container.querySelector('#sftp-path-input') as HTMLInputElement;
     const pathBar = this.container.querySelector('#sftp-path-bar');
 
-    closeBtn.addEventListener('click', () => this.hide());
+    closeBtn.addEventListener('click', () => this.requestHide());
+    this.container.querySelector('#sftp-multi-btn')?.addEventListener('click', () => this.setMultiSelect(!this.multiSelect));
+    this.container.querySelector('#sftp-select-all-btn')?.addEventListener('click', () => this.selectAllEntries());
+    this.container.querySelector('#sftp-clear-selection-btn')?.addEventListener('click', () => this.clearSelection());
+    this.container.querySelector('#sftp-open-btn')?.addEventListener('click', () => {
+      const selected = [...this.selectedEntries.values()];
+      if (selected.length === 1) void this.openEntry(selected[0]);
+    });
     backBtn.addEventListener('click', () => this.goBack());
     homeBtn.addEventListener('click', () => this.navigate('~'));
     refreshBtn.addEventListener('click', () => this.refresh());
@@ -469,7 +495,39 @@ export class SFTPPanel {
     }
   }
 
+  hasPendingTransfer(): boolean {
+    return this.uploadActive || this.downloadActive || this.uploadQueuePending > 0 || this.downloadQueuePending > 0;
+  }
+
+  /** User intent only. hide/dispose and connection teardown remain synchronous and unconditional. */
+  runAfterTransferConfirmation(action: () => void, isCurrent: () => boolean = () => true, cancelled: () => void = () => {}): void {
+    if (this.leaveConfirmationPending) { cancelled(); return; }
+    if (!this.hasPendingTransfer()) { if (isCurrent()) action(); else cancelled(); return; }
+    this.leaveConfirmationPending = true;
+    const uploadGeneration = this.uploadQueueGeneration;
+    const downloadGeneration = this.downloadQueueGeneration;
+    void confirmAction({
+      title: t('sftp.leaveTransferTitle'),
+      message: t('sftp.leaveTransferMessage'),
+      confirmText: t('sftp.leaveTransferConfirm'),
+      cancelText: t('common.cancel'),
+      variant: 'warning',
+    }).then(approved => {
+      this.leaveConfirmationPending = false;
+      if (approved && this.container.isConnected && isCurrent() &&
+          uploadGeneration === this.uploadQueueGeneration && downloadGeneration === this.downloadQueueGeneration) action();
+      else cancelled();
+    });
+  }
+
+  requestHide(): void {
+    // A swipe has already translated the panel. Restore it while the user decides.
+    if (this.hasPendingTransfer()) this.container.style.transform = 'translateX(0)';
+    this.runAfterTransferConfirmation(() => this.hide());
+  }
+
   hide(): void {
+    this.setMultiSelect(false);
     this.closeActiveEditor();
     this.resetEditState();
     this.resetUploadQueue();
@@ -484,7 +542,7 @@ export class SFTPPanel {
 
   toggle(): void {
     if (this.visible) {
-      this.hide();
+      this.requestHide();
     } else {
       this.show();
     }
@@ -828,6 +886,7 @@ export class SFTPPanel {
 
   // Navigation
   private navigate(path: string): void {
+    this.setMultiSelect(false);
     this.linkResolver.cancel();
     this.showLoading();
     this.clearSelection();
@@ -904,7 +963,6 @@ export class SFTPPanel {
     // 行级交错入场仅限中小目录；接近 2000 条上限的大目录批量动画会拖累渲染
     const animateRows = sorted.length <= 150;
 
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     entriesContainer.innerHTML = sorted
       .map(
         (entry, idx) => `
@@ -912,6 +970,7 @@ export class SFTPPanel {
            data-idx="${idx}" data-name="${this.escapeHtml(entry.name)}" data-type="${entry.type}"
            ${animateRows ? `style="--stagger-index: ${Math.min(idx, 24)}"` : ''}
            role="option" aria-selected="${this.selectedEntries.has(entry.name)}" tabindex="-1">
+        <input class="sftp-entry-checkbox" type="checkbox" aria-label="${this.escapeHtml(entry.name)}" ${this.selectedEntries.has(entry.name) ? 'checked' : ''} />
         <span class="material-symbols-outlined shrink-0 ${entry.isDir ? 'text-primary-container' : entry.isLink ? 'text-secondary-container' : 'text-on-surface-variant'}"
               style="font-size: 16px; font-variation-settings: 'FILL' ${entry.isDir ? '1' : '0'};">
           ${entry.isDir ? 'folder' : entry.isLink ? 'link' : this.getFileIcon(entry.name)}
@@ -957,6 +1016,13 @@ export class SFTPPanel {
     this.updateActionButtons();
   }
 
+  private setMultiSelect(enabled: boolean): void {
+    this.multiSelect = enabled;
+    this.container.classList.toggle('sftp-multi-select', enabled);
+    this.container.querySelector('#sftp-multi-btn')?.setAttribute('aria-pressed', String(enabled));
+    this.container.querySelector('#sftp-selection-tools')?.classList.toggle('hidden', !enabled);
+  }
+
   private clearSelection(): void {
     this.selectedEntries.clear();
     this.selectionAnchorIndex = null;
@@ -979,12 +1045,16 @@ export class SFTPPanel {
       const row = this.entryRows.get(name);
       row?.classList.remove('bg-surface-variant');
       row?.setAttribute('aria-selected', 'false');
+      const checkbox = row?.querySelector<HTMLInputElement>('.sftp-entry-checkbox');
+      if (checkbox) checkbox.checked = false;
     }
     for (const name of selectedNames) {
       if (this.highlightedNames.has(name)) continue;
       const row = this.entryRows.get(name);
       row?.classList.add('bg-surface-variant');
       row?.setAttribute('aria-selected', 'true');
+      const checkbox = row?.querySelector<HTMLInputElement>('.sftp-entry-checkbox');
+      if (checkbox) checkbox.checked = true;
     }
     this.highlightedNames = selectedNames;
   }
@@ -1001,6 +1071,8 @@ export class SFTPPanel {
     editBtn.disabled = !(selected.length === 1 && !selected[0].isDir);
     deleteBtn.disabled = !hasSelection;
     renameBtn.disabled = selected.length !== 1;
+    const openBtn = this.container.querySelector<HTMLButtonElement>('#sftp-open-btn');
+    if (openBtn) openBtn.disabled = selected.length !== 1;
     this.setIdleStatus(
       hasSelection ? t('sftp.selectedCount', { count: selected.length }) : this.getItemsStatus()
     );
@@ -1062,7 +1134,6 @@ export class SFTPPanel {
       className: 'text-error',
     });
 
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     menu.innerHTML = items
       .map(
         (item) => `
@@ -1796,7 +1867,6 @@ export class SFTPPanel {
     if (!breadcrumbsEl) return;
 
     const crumbs = parsePathBreadcrumbs(path);
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     breadcrumbsEl.innerHTML = crumbs
       .map((crumb, idx) => {
         const isLast = idx === crumbs.length - 1;
@@ -2047,6 +2117,7 @@ export class SFTPPanel {
     this.editorCoordinator.dispose();
     this.closeWebSocket(1000, 'SFTP panel disposed');
     document.removeEventListener('keydown', this.keydownHandler);
+    this.mobileLayout.removeEventListener('change', this.layoutChanged);
     this.entryRows.clear();
     this.highlightedNames.clear();
     this.container.remove();

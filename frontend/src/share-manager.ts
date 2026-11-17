@@ -1,6 +1,4 @@
-// 渲染模板中的 innerHTML 站点均带 `pi-lens-ignore: no-inner-html` 内联抑制：
-// 动态值均经 escapeHtml 转义或来自可信 i18n 词条，无用户输入直插；
-// GitHub Actions 质量门禁不含该规则（AGENTS.md #27）。
+// HTML 模板仅插入经 escapeHtml 转义的动态值或可信内置 i18n 词条。
 import { localizedApiError } from './api-errors';
 import { copyTextToClipboard } from './clipboard';
 import { t } from './i18n';
@@ -56,9 +54,7 @@ function formatShareStatus(status: string | undefined): string {
 function stripTerminalControls(value: string): string {
   return value
     // 本函数的目的即去除 ANSI 控制序列（OSC \x1b]... / CSI \x1b[...），正则中的控制字符为设计意图。
-    // pi-lens-ignore: lint/suspicious/noControlCharactersInRegex
     .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
-    // pi-lens-ignore: lint/suspicious/noControlCharactersInRegex
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
     .replace(/\r/g, '');
 }
@@ -91,7 +87,6 @@ export class ShareManager {
     modal.className = 'responsive-modal hidden fixed inset-0 z-[120] items-center justify-center';
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
-    // pi-lens-ignore: no-inner-html
     modal.innerHTML = `
       <div class="modal-overlay absolute inset-0" data-share-close></div>
       <div class="responsive-modal-panel cyber-box p-6 shadow-2xl relative z-10 w-full max-w-2xl mx-4 max-h-[85vh] overflow-y-auto custom-scrollbar">
@@ -231,7 +226,6 @@ export class ShareManager {
       const linkBox = document.getElementById('share-created-link');
       if (linkBox) {
         linkBox.classList.remove('hidden');
-        // pi-lens-ignore: no-inner-html
         linkBox.innerHTML = `
           <p class="text-xs text-muted mb-2">${t('share.copyOnce')}</p>
           <div class="flex gap-2">
@@ -261,14 +255,12 @@ export class ShareManager {
   private async loadShares(): Promise<void> {
     const container = document.getElementById('share-list');
     if (!container) return;
-    // pi-lens-ignore: no-inner-html
     container.innerHTML = `<p class="text-xs text-muted">${t('common.loading')}</p>`;
     try {
       const response = await fetch(`/api/servers/${this.serverId}/shares`);
       const shares = (await response.json()) as ShareSummary[] & { error?: string };
       if (!response.ok) throw new Error(localizedApiError(shares, 'share.loadFailed'));
       if (shares.length === 0) {
-        // pi-lens-ignore: no-inner-html
         container.innerHTML = `<p class="text-xs text-muted">${t('share.none')}</p>`;
         return;
       }
@@ -288,7 +280,6 @@ export class ShareManager {
               <p class="text-[10px] text-dim mt-1">${t('share.auditRemovalHint')}</p>
             </details>`
           : '';
-      // pi-lens-ignore: no-inner-html
       container.innerHTML =
         cleanupSection +
         visible
@@ -320,7 +311,6 @@ export class ShareManager {
         button.addEventListener('click', () => void this.revokeShare(shareId));
       }
     } catch (error) {
-      // pi-lens-ignore: no-inner-html
       container.innerHTML = `<p class="text-xs text-error">${escapeHtml(error instanceof Error ? error.message : t('share.loadFailed'))}</p>`;
     }
   }
@@ -359,9 +349,7 @@ export class ShareManager {
     }
     // 先重置上次内容再切换视图，避免旧审计数据闪现
     meta.textContent = '';
-    // pi-lens-ignore: no-inner-html
     actions.innerHTML = '';
-    // pi-lens-ignore: no-inner-html
     content.innerHTML = `<p class="text-xs text-muted">${t('common.loading')}</p>`;
     this.showAuditView();
     try {
@@ -376,12 +364,10 @@ export class ShareManager {
       const canPurge =
         share?.status === 'closed' || share?.status === 'revoked' || share?.status === 'expired';
       meta.textContent = `${formatShareStatus(share?.status)} · ${Math.ceil((share?.auditBytes || 0) / 1024)} KiB`;
-      // pi-lens-ignore: no-inner-html
       actions.innerHTML = `
         <button type="button" data-audit-export class="cyber-button px-2 py-1 text-[10px]">${t('share.auditExport')}</button>
         ${canPurge ? `<button type="button" data-audit-purge class="cyber-button px-2 py-1 text-[10px] text-error">${t('share.auditPurge')}</button>` : ''}
       `;
-      // pi-lens-ignore: no-inner-html
       content.innerHTML = `
         <div class="space-y-1 mb-4 max-h-64 overflow-y-auto custom-scrollbar">
           ${structured.map((event) => `<div class="text-[10px] text-muted"><span class="text-dim">${escapeHtml(formatTime(event.occurredAt))}</span> ${escapeHtml(this.describeEvent(event))}</div>`).join('') || `<p class="text-xs text-muted">${t('share.auditNone')}</p>`}
@@ -396,7 +382,6 @@ export class ShareManager {
         button.addEventListener('click', () => void this.purgeAudit(shareId));
       }
     } catch (error) {
-      // pi-lens-ignore: no-inner-html
       content.innerHTML = `<p class="text-xs text-error">${escapeHtml(error instanceof Error ? error.message : t('share.auditFailed'))}</p>`;
     } finally {
       if (trigger) {
@@ -493,7 +478,6 @@ export class ShareManager {
       // 清理等同删除效果：返回列表视图并刷新，隐藏该分享的查看入口
       const content = document.getElementById('share-audit-content');
       if (content) {
-        // pi-lens-ignore: no-inner-html
         content.innerHTML = '';
       }
       this.showListView();

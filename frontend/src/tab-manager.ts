@@ -252,6 +252,23 @@ export class TabManager {
     return tab;
   }
 
+  /** Guard user navigation, never transport teardown. Revalidate identity/tab/panel after a dialog. */
+  runAfterTransferConfirmation(action: () => void, affected: TabInfo[] = [...this.tabs.values()], cancelled: () => void = () => {}): void {
+    const activeId = this.activeTabId;
+    const identity = this.githubId;
+    const snapshots = affected.map(tab => ({ tab, panel: tab.sftpPanel }));
+    const current = () => this.activeTabId === activeId && this.githubId === identity &&
+      snapshots.every(({ tab, panel }) => this.tabs.get(tab.id) === tab && tab.sftpPanel === panel);
+    const next = (index: number): void => {
+      if (!current()) { cancelled(); return; }
+      const snapshot = snapshots[index];
+      if (!snapshot) { action(); return; }
+      if (snapshot.panel) snapshot.panel.runAfterTransferConfirmation(() => next(index + 1), current, cancelled);
+      else next(index + 1);
+    };
+    next(0);
+  }
+
   // ==================== 切换标签 ====================
 
   switchTab(tabId: string): void {
@@ -263,6 +280,8 @@ export class TabManager {
     if (this.activeTabId && this.activeTabId !== tabId) {
       const prevTab = this.tabs.get(this.activeTabId);
       if (prevTab) {
+        prevTab.terminal.cancelPendingPaste();
+        prevTab.terminal.setMobileSelectionMode(false);
         prevTab.agentPanel?.rejectPendingConfirmation(false);
         prevTab.agentPanel?.hide();
         prevTab.containerEl.style.display = 'none';
@@ -435,14 +454,15 @@ export class TabManager {
     const selection = tab?.selectedText || '';
     if (!tab?.agentPanel || !selection.trim()) return false;
 
-    tab.sftpPanel?.hide();
-    const attached = tab.agentPanel.attachTerminalSelection(
-      selection,
-      this.getTerminalTargetLabel(tab)
-    );
-    if (attached) {
-      tab.terminal.clearSelection();
-    }
+    let attached = false;
+    this.runAfterTransferConfirmation(() => {
+      tab.sftpPanel?.hide();
+      attached = tab.agentPanel?.attachTerminalSelection(selection, this.getTerminalTargetLabel(tab)) ?? false;
+      if (attached) {
+        tab.terminal.setMobileSelectionMode(false);
+        tab.terminal.clearSelection();
+      }
+    }, [tab]);
     return attached;
   }
 
@@ -493,13 +513,13 @@ export class TabManager {
       tabEl.addEventListener('click', (e) => {
         // 如果点击的是关闭按钮，不触发切换
         if ((e.target as HTMLElement).closest('.tab-close')) return;
-        this.switchTab(tab.id);
+        if (this.activeTabId !== tab.id) this.runAfterTransferConfirmation(() => this.switchTab(tab.id));
       });
 
       // 关闭按钮
       closeBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.closeTab(tab.id);
+        this.runAfterTransferConfirmation(() => this.closeTab(tab.id), [tab]);
       });
 
       this.tabBarEl.appendChild(tabEl);
@@ -592,7 +612,14 @@ export class TabManager {
     }
   }
 
-  private showTabContextMenu(tab: TabInfo, x: number, y: number): void {
+  showActiveTabMenu(anchor: HTMLElement): void {
+    const tab = this.getActiveTab();
+    if (!tab) return;
+    const rect = anchor.getBoundingClientRect();
+    this.showTabContextMenu(tab, rect.right, rect.bottom, anchor);
+  }
+
+  private showTabContextMenu(tab: TabInfo, x: number, y: number, returnFocus?: HTMLElement): void {
     this.hideTabContextMenu();
 
     const menu = document.createElement('div');
@@ -615,30 +642,34 @@ export class TabManager {
       {
         label: t('terminal.duplicateTab'),
         icon: 'content_copy',
+        disabled: !tab.hostInfo?.serverId || this.githubId === null,
         action: () => {
-          this.onDuplicateTab?.(tab);
+          this.runAfterTransferConfirmation(() => this.onDuplicateTab?.(tab));
         },
       },
       {
         label: t('terminal.closeOtherTabs'),
         icon: 'close_fullscreen',
+        disabled: this.tabs.size <= 1,
         action: () => {
-          this.closeOtherTabs(tab.id);
+          this.runAfterTransferConfirmation(() => this.closeOtherTabs(tab.id));
         },
       },
       {
         label: t('terminal.closeTab'),
         icon: 'close',
         action: () => {
-          this.closeTab(tab.id);
+          this.runAfterTransferConfirmation(() => this.closeTab(tab.id), [tab]);
         },
         className: 'text-error',
       },
     ];
 
     for (const item of items) {
-      const itemEl = document.createElement('div');
-      itemEl.className = `flex items-center gap-2 px-3 py-1.5 hover:bg-surface-variant cursor-pointer ${item.className || ''}`;
+      const itemEl = document.createElement('button');
+      itemEl.type = 'button';
+      itemEl.disabled = item.disabled ?? false;
+      itemEl.className = `flex w-full text-left items-center gap-2 px-3 py-1.5 hover:bg-surface-variant cursor-pointer ${item.className || ''}`;
       itemEl.appendChild(this.createIcon(item.icon, '14px'));
       itemEl.appendChild(document.createTextNode(item.label));
       itemEl.addEventListener('click', (e) => {
@@ -649,7 +680,21 @@ export class TabManager {
       menu.appendChild(itemEl);
     }
 
+    menu.setAttribute('role', 'group');
+    menu.setAttribute('aria-label', t('terminal.tabActions'));
     document.body.appendChild(menu);
+    const viewport = window.visualViewport;
+    const left = viewport?.offsetLeft ?? 0;
+    const top = viewport?.offsetTop ?? 0;
+    menu.style.maxHeight = `${Math.max(44, (viewport?.height ?? window.innerHeight) - 16)}px`;
+    menu.style.overflowY = 'auto';
+    menu.style.left = `${Math.max(left + 8, Math.min(x, left + (viewport?.width ?? window.innerWidth) - menu.offsetWidth - 8))}px`;
+    menu.style.top = `${Math.max(top + 8, Math.min(y, top + (viewport?.height ?? window.innerHeight) - menu.offsetHeight - 8))}px`;
+    menu.addEventListener('keydown', event => {
+      if (event.key === 'Escape') { event.preventDefault(); this.hideTabContextMenu(); returnFocus?.focus(); }
+    });
+
+    if (returnFocus) menu.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
 
     const closeHandler = (e: MouseEvent) => {
       if (!menu.contains(e.target as Node)) {
@@ -659,7 +704,11 @@ export class TabManager {
     // capture 阶段挂载，确保菜单项等内部 stopPropagation 不影响包含性判断；
     // setTimeout(0) 避开部分平台 contextmenu 后紧跟的合成 click
     this.tabCtxCloseHandler = closeHandler;
-    setTimeout(() => document.addEventListener('click', closeHandler, true), 0);
+    setTimeout(() => {
+      if (this.tabCtxCloseHandler === closeHandler && menu.isConnected) {
+        document.addEventListener('click', closeHandler, true);
+      }
+    }, 0);
   }
 
   private hideTabContextMenu(): void {
@@ -809,8 +858,10 @@ export class TabManager {
       tab.selectedText.trim() &&
       tab.selectionAnchor
     );
-    button.classList.toggle('hidden', !visible);
-    if (!visible || !tab?.selectionAnchor) return;
+    const mobileSelection = !!tab?.terminal.isMobileSelectionMode();
+    button.classList.toggle('hidden', !visible || mobileSelection);
+    document.getElementById('mobile-selection-ai-btn')?.classList.toggle('hidden', !visible || !mobileSelection);
+    if (!visible || mobileSelection || !tab?.selectionAnchor) return;
 
     const gap = 12;
     const viewportPadding = 8;

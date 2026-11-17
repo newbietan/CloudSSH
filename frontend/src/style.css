@@ -670,7 +670,48 @@ html {
 .mobile-selection-mode .xterm-screen canvas {
   touch-action: none;
   cursor: crosshair;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
+
+.terminal-selection-handle {
+  position: absolute;
+  z-index: 20;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+.terminal-selection-handle::before {
+  content: '';
+  position: absolute;
+  left: var(--selection-anchor-x);
+  top: var(--selection-anchor-y);
+  width: var(--selection-stem-length);
+  height: 2px;
+  transform-origin: 0 50%;
+  transform: rotate(var(--selection-stem-angle));
+  background: var(--accent);
+}
+.terminal-selection-handle::after {
+  content: '';
+  position: absolute;
+  left: var(--selection-knob-x);
+  top: var(--selection-knob-y);
+  transform: translate(-50%, -50%);
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--bg-terminal);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.terminal-selection-handle[hidden] { display: none; }
 
 /* V3 效果注册表：扫描线/闪烁按 fx 开关门控（取代旧的 style=cyberpunk 硬编码） */
 html:not([data-fx-scanline='on']) .scanlines,
@@ -1495,6 +1536,19 @@ html[data-ui-motion='none'] .skeleton-line {
   position: relative;
   overflow: hidden;
 }
+.sftp-entry-checkbox { display: none; }
+.sftp-selection-tools {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  gap: 8px;
+  padding: 4px 12px;
+  background: var(--bg-surface);
+}
+.sftp-selection-tools.hidden { display: none; }
+.sftp-selection-tools button { min-height: 44px; padding: 0 12px; color: var(--accent); }
+.sftp-multi-select .sftp-entry-checkbox { display: block; width: 20px; height: 20px; flex: 0 0 auto; accent-color: var(--accent); }
 
 .sftp-entry--enter {
   animation: sftp-entry-in var(--motion-normal) var(--spring-ease-gentle) backwards;
@@ -1841,6 +1895,26 @@ html[data-ui-motion='none'] .auth-aurora::after {
   border: 0;
   overflow: visible;
 }
+
+.terminal-paste-dialog {
+  max-height: calc(var(--visual-viewport-height) - 24px);
+}
+.terminal-paste-dialog .app-dialog__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: inherit;
+  overflow-y: auto;
+}
+.terminal-paste-dialog textarea {
+  flex: 1 1 auto;
+  min-height: 80px;
+  max-height: 35vh;
+  font-size: 16px;
+  resize: vertical;
+}
+.terminal-paste-dialog .app-dialog__message { margin-top: 0; }
+#tab-context-menu button:disabled { opacity: 0.4; cursor: default; }
 
 .app-dialog[data-variant="success"] {
   --feedback-color: var(--accent);
@@ -3150,7 +3224,15 @@ html[data-theme="standard-light"] .theme-segmented-lens {
 }
 
 .drawer-segmented-btn .drawer-btn-icon {
+  /* Center both font glyphs and nested SVGs without an inherited text baseline. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1em;
+  height: 1em;
   font-size: 14px;
+  line-height: 1;
   transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
@@ -4704,14 +4786,18 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 
 /* ==================== SFTP 操作栏（全局：桌面面板 420~600px、移动/平板全屏） ====================
    按钮禁止压缩换行：WebKit 对嵌套 flex 的内在尺寸计算会把 CJK 标签
-   压成单字竖排；空间不足时整栏横向滚动（滚动条隐藏，触摸可滑） */
+   压成单字竖排。固定操作与滚动工具并排，避免文字从留白或玻璃背景下透出。 */
 .sftp-panel-actions {
+  overflow: hidden;
+}
+
+.sftp-actions-scroll {
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
 }
 
-.sftp-panel-actions::-webkit-scrollbar {
+.sftp-actions-scroll::-webkit-scrollbar {
   display: none;
 }
 
@@ -4727,6 +4813,31 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 /* ==================== Responsive Adaptations ==================== */
 
 @media (max-width: 767px), (max-width: 1180px) and (pointer: coarse) {
+  /* Mobile Liquid Glass: readable surfaces, not overlapping text layers.
+     Inherit from body so the inline theme palette, desktop and custom themes stay untouched. */
+  html[data-theme="liquid-glass"] body {
+    --bg-surface: rgba(250, 252, 255, 0.98);
+    --bg-elevated: #ffffff;
+  }
+
+  /* These surfaces otherwise use their own translucent color-mix, or the desktop toolbar
+     material on coarse-pointer tablets. Keep the glass edges/shadows and page background. */
+  html[data-theme="liquid-glass"] body :is(
+    .responsive-modal-panel,
+    .app-dialog__panel,
+    .auth-challenge-dialog__panel,
+    .remote-editor__panel,
+    .mcp-dialog__panel.assistant-shell,
+    #agent-panel.assistant-shell,
+    #sftp-panel,
+    #snippet-panel,
+    #tab-context-menu,
+    #ai-model-menu,
+    .user-space-header-actions
+  ) {
+    background: var(--bg-elevated);
+  }
+
   .mobile-only:not(.hidden) {
     display: flex;
   }
@@ -5010,6 +5121,11 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
     animation: mobile-menu-in var(--motion-normal) var(--spring-ease) backwards;
   }
 
+  /* Scroll the menu, never squeeze the theme/font controls into neighbouring rows. */
+  .mobile-more-menu > * {
+    flex-shrink: 0;
+  }
+
   .mobile-more-menu > button,
   .mobile-more-theme-row {
     display: flex;
@@ -5160,10 +5276,38 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
     display: none;
   }
 
+  .mobile-selection-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 4px 6px;
+    overflow-x: auto;
+  }
+  .mobile-selection-actions > button { flex: 1 0 auto; }
+  .mobile-selection-actions.hidden,
+  .mobile-selection-actions > button.hidden,
+  .mobile-terminal-toolbar-scroll.hidden { display: none; }
+
+  .mobile-font-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+  .mobile-font-controls > span { flex: 0 0 100%; }
+  .mobile-font-controls button { min-width: 44px; min-height: 44px; border-radius: var(--control-radius); }
+  .mobile-font-controls output { flex: 1; text-align: center; font-variant-numeric: tabular-nums; }
+  .mobile-font-controls button[aria-pressed='true'] { color: var(--accent); background: var(--accent-bg); }
+  .mobile-font-controls button:disabled,
+  .mobile-terminal-toolbar button:disabled { opacity: 0.45; }
+
   .mobile-terminal-toolbar button {
     display: inline-flex;
-    min-width: 42px;
-    height: 40px;
+    min-width: 44px;
+    height: 44px;
     flex: 0 0 auto;
     align-items: center;
     justify-content: center;
@@ -5268,7 +5412,12 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
     }
   }
 
-  /* 快捷提示词方块：移动端换行自适应铺满，不再横向滚动裁切 */
+  /* Hide only generic suggestions; keep the interrupted-task recovery action usable. */
+  #agent-quick-chips > [data-prompt-key],
+  #agent-quick-chips:not(:has(#agent-resume-task-chip)) {
+    display: none;
+  }
+
   #agent-quick-chips {
     flex-wrap: wrap;
     row-gap: 6px;
@@ -5327,8 +5476,35 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   }
 
   .sftp-panel-actions button {
-    min-height: 40px;
+    min-height: 44px;
   }
+  .sftp-touch-actions {
+    gap: 4px;
+    flex-shrink: 0;
+    padding-right: 6px;
+    border-right: 1px solid var(--border-strong);
+  }
+  .sftp-touch-actions button {
+    min-width: 44px;
+    padding: 0 8px;
+    border-radius: var(--control-radius);
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--accent);
+  }
+  .sftp-touch-actions button:disabled { opacity: 0.4; }
+  #sftp-multi-btn[aria-pressed='true'] { background: var(--accent-bg); }
+  .sftp-entry { min-height: 44px; }
+  #tab-context-menu { max-width: calc(100vw - 16px); }
+  #tab-context-menu button { min-height: 44px; }
+  #sftp-close-btn,
+  #sftp-transfer-cancel-btn { min-width: 44px; min-height: 44px; }
+  .tab-close,
+  .tab-new-btn { min-width: 44px; }
+  #tab-bar { min-height: 44px; height: 44px; }
+  .tab-item,
+  .tab-close,
+  .tab-new-btn { min-height: 44px; }
 
   .ask-ai-selection-float {
     max-width: calc(100vw - 24px);

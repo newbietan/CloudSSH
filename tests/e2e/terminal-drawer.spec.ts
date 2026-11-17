@@ -1,3 +1,4 @@
+import { BUILT_IN_THEME_NAMES } from '../../src/theme-schema';
 import { expect, test, type Page } from './fixtures';
 import { blockOptionalThirdPartyAssets } from './helpers';
 
@@ -74,7 +75,7 @@ test.describe('桌面视口', () => {
     await expect(page.locator('#snippet-toggle-btn')).toBeVisible();
   });
 
-  test('登录状态下抽屉分段条显示 AI Agent 按钮', async ({ page }) => {
+  test('登录状态下 Agent 图标与标签在四主题下居中对齐', async ({ page }) => {
     await blockOptionalThirdPartyAssets(page);
     await page.route('**/api/auth/me', (route) =>
       route.fulfill({
@@ -102,7 +103,45 @@ test.describe('桌面视口', () => {
     await expect(bar).toBeVisible();
     await expect(page.locator('#sftp-toggle-btn')).toBeVisible();
     await expect(page.locator('#snippet-toggle-btn')).toBeVisible();
-    await expect(page.locator('#agent-toggle-btn')).toBeVisible();
+    const agent = page.locator('#agent-toggle-btn');
+    await expect(agent).toBeVisible();
+    for (const theme of BUILT_IN_THEME_NAMES) {
+      await page.mouse.move(0, 0);
+      await page.evaluate(async (name) => {
+        const modulePath = '/src/theme.ts';
+        const { applyBuiltInTheme } = await import(modulePath);
+        applyBuiltInTheme(name);
+        await document.fonts.ready;
+      }, theme);
+      for (const hovered of [false, true]) {
+        if (hovered) await agent.hover();
+        const geometry = await agent.evaluate((button) => {
+          const box = button.getBoundingClientRect();
+          const icon = button.querySelector('.drawer-btn-icon')!.getBoundingClientRect();
+          const svg = button.querySelector('svg')!.getBoundingClientRect();
+          const label = button.querySelector('.drawer-btn-label')!.getBoundingClientRect();
+          const centerY = (rect: DOMRect) => rect.top + rect.height / 2;
+          return {
+            wrapperOffset: centerY(icon) - centerY(box),
+            glyphOffset: centerY(svg) - centerY(label),
+            glyphOverflow: svg.bottom - icon.bottom,
+            glyphWidthDifference: svg.width - icon.width,
+            gap: label.left - icon.right,
+          };
+        });
+        if (!hovered) {
+          await test.info().attach(`drawer-${theme}`, {
+            body: await bar.screenshot({ path: test.info().outputPath(`drawer-${theme}.png`) }),
+            contentType: 'image/png',
+          });
+        }
+        expect(Math.abs(geometry.wrapperOffset), `${theme}: wrapper center`).toBeLessThan(0.5);
+        expect(Math.abs(geometry.glyphOffset), `${theme}: SVG/label center`).toBeLessThan(0.5);
+        expect(geometry.glyphOverflow, `${theme}: SVG overflow`).toBeLessThan(0.5);
+        expect(Math.abs(geometry.glyphWidthDifference)).toBeLessThan(0.5);
+        expect(geometry.gap).toBeGreaterThan(2);
+      }
+    }
   });
 
   test('三个侧边抽屉共用同一宽度来源', async ({ page }) => {

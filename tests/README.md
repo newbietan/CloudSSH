@@ -208,8 +208,11 @@ OpenSSH 覆盖七种裸钥/证书协商、PTY/Shell、exec 与 SFTP；Go 网关�
 - IME 回归（`ios-ime.spec.ts` / `agent-responses.spec.ts`，Chromium + WebKit）：终端通过真实 xterm `onData` → Shell 就绪门控 → trzsz → 模拟 socket 验证拼音不泄漏、最终中文只发送一次、确认 Enter 不执行及下一次 Enter 立即可用；覆盖提交后紧接标点、Agent 主输入框/内联编辑的 composition/isComposing/229 保护、Shift+Enter、失焦恢复及文本对话框
 - SFTP 覆盖确认、路径面包屑、表头排序、新建文件、主题样式与 UI 回归
 - SFTP 列表选择（`sftp-list-selection.spec.ts`，Chromium + WebKit）：嵌套点击、Ctrl/Cmd、Shift、右键多选保持、排序/刷新后双击目标与高亮、全选/Escape、空目录与销毁重建；2000 项目录检查固定父容器监听与差量 ARIA 写入，附带非门禁计时证据。
-- 终端抽屉分段切换器：桌面端胶囊轮廓与可辨识边缘、双边异步物理弹簧滑块位移、PC 隐藏移动端更多操作按钮、三大抽屉宽度统一、匿名模式隐藏 AI Agent（display: none）与登录同步解锁
-- 移动端终端交互与用户空间：紧凑顶栏与菜单入口、视口与软键盘动态适配、单指滑动历史、字号响应式断点、移动端抽屉平行入口与 AI 设置弹窗无横向溢出
+- 终端抽屉分段切换器（`terminal-drawer.spec.ts`，Chromium + WebKit）：桌面端胶囊轮廓与可辨识边缘、双边异步物理弹簧滑块位移、PC 隐藏移动端更多操作按钮、三大抽屉宽度统一、匿名隐藏 Agent 与登录同步解锁；四主题下 Agent 内嵌 SVG 与标签中心对齐、无溢出，并保持悬停缩放。
+- 移动端终端交互与用户空间：紧凑顶栏与菜单入口、视口与软键盘动态适配、单指滑动历史、字号响应式断点、移动端抽屉平行入口与 AI 设置弹窗无横向溢出；`mobile-terminal`、`mobile-user-space`、`terminal-clipboard` 同时纳入 WebKit，桌面右键场景显式使用非触摸上下文，文本缩放属性仅在引擎支持时断言。
+- 视口与认证聚焦时序（`mobile-terminal.spec.ts` / `auth-challenge.spec.ts`）：视口测试使用受控时钟和页面已有的单一控制器/真实标签，逐帧发送键盘动画尺寸，不用固定真实等待推断初始化完成。`browser-timing.ts` 可暂缓 rAF 而继续推进计时器，覆盖旧 fit 立即取消、首帧前键盘变化、旋转基线重置和迟到聚焦不抢验证码/取消按钮；保留双引擎用例与原 CI 重试/失败门禁。
+- 移动端精细操作（`mobile-selection.spec.ts`、`mobile-sftp.spec.ts`、`mobile-terminal-actions.spec.ts`，Chromium + WebKit）：首列/宽字符选区、端点偏移与命中、跨屏本地滚动及取消、字号本机偏好/行数与列数变化；SFTP显式打开/非连续多选/批量删除、传输离开取消与过期批准；工具栏在四主题、三语和320/390px下比较滚动按钮隐藏前后的左侧截图，覆盖普通/多选状态不透字；每个主题×宽度×语言组合独立运行，保留30s单例预算、真实触摸与逐像素断言，避免Linux WebKit较慢的渲染等待在单例中累计三套场景，工具栏截图附件直接使用已核对的视口矩形而不重复滚动/稳定性等待；移动标签菜单与克隆独立令牌；手动粘贴的长度限制、换行/bracketed paste/trzsz、Shell-ready、切标签和旧socket隔离。`terminal-font-preference.test.ts` 覆盖纯策略、存储异常与范围限制。原生菜单/手柄触感与真实软键盘仍需真机验收，见 [移动端交互说明](../docs/mobile-ux.md)。
+- 移动阅读空间与材质（`mobile-glass.spec.ts`、`mcp.spec.ts`、`agent-responses.spec.ts`，Chromium + WebKit）：手机/平板隐藏四个普通建议但保留任务恢复、桌面建议可用；三语短屏更多菜单MCP紧邻Agent，主题/字号与其他行不压缩重叠，入口仍可打开。玻璃主题覆盖15类表面的320/390/900px与桌面往返、其他主题隔离，以及用户菜单、服务器表单、终端菜单、MCP、确认、SFTP、Agent真实截图；终端菜单正文区在隐藏底层终端前后须逐像素一致（不比较圆角/装饰边缘）。
 - tmux 触摸滚轮（`terminal-touch-scroll.spec.ts`，Chromium + WebKit）：VT200/drag/any 与 SGR/旧式二进制/像素编码、双向滚动、原始面板坐标、Ctrl 状态保留、Shell/连接门控、选区优先、取消/模式切换/断连清理与报文数量上限
 - 终端焦点报告（`terminal-focus-report.spec.ts`，Chromium + WebKit）：真实 Ctrl/Alt 按钮与焦点切换、DECSET 1004、Ctrl+B/方向键、bracketed paste、Shell/连接门控及 iOS IME 回退/去重
 - UI 与样式回归：Liquid Glass 下 AI 模型下拉面板与设置面板滚动能力（overflow 简写防回归）、窄视口弹窗横向溢出消除、主题化滚动条兜底与 .no-scrollbar 样式

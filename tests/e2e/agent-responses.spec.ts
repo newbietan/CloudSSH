@@ -18,6 +18,31 @@ async function mount(page: import('@playwright/test').Page, locale = 'zh-CN') {
   });
 }
 
+test.describe('移动端建议与恢复入口', () => {
+  test.use({ hasTouch: true });
+  test('手机和平板隐藏四个建议但保留任务恢复，桌面仍显示建议', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await mount(page);
+    const chips = page.locator('#agent-quick-chips');
+    for (const width of [390, 900]) {
+      await page.setViewportSize({ width, height: 844 });
+      await expect(chips.locator('[data-prompt-key]:visible')).toHaveCount(0);
+      await expect(chips).toBeHidden();
+      expect(await chips.evaluate((el) => el.getBoundingClientRect().height)).toBe(0);
+    }
+    await page.evaluate(() => (window as any).__responsesAgent.panel.renderResumeChip());
+    await expect(page.locator('#agent-resume-task-chip')).toBeVisible();
+    await expect(chips.locator('[data-prompt-key]:visible')).toHaveCount(0);
+    await page.evaluate(() => (window as any).__responsesAgent.panel.removeResumeChip());
+    await expect(chips).toBeHidden();
+    await page.setViewportSize({ width: 1280, height: 844 });
+    await expect(chips.locator('[data-prompt-key]:visible')).toHaveCount(4);
+    await chips.locator('[data-prompt-key]').first().click();
+    await expect(page.locator('#agent-input')).not.toHaveValue('');
+    expect(await page.evaluate(() => (window as any).__responsesAgent.sent)).toEqual([]);
+  });
+});
+
 test('assistant SVG remains consistent through thinking, completion, cancellation and reactivation', async ({ page }) => {
   await mount(page);
   await expect(page.locator('.agent-panel-header svg[data-assistant-glyph="agent"]')).toBeAttached();
