@@ -39,12 +39,14 @@ const selected = (page: Page) => page.locator('#sftp-entries [aria-selected="tru
 
 for (const theme of BUILT_IN_THEME_NAMES) {
   for (const width of [320, 390]) {
-    test(`工具栏左侧不透出滚动文字：${theme}/${width}px`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 844 });
-      await page.emulateMedia({ reducedMotion: 'reduce' });
-      await mount(page);
-      const bar = page.locator('.sftp-panel-actions');
-      for (const locale of ['zh-CN', 'zh-TW', 'en-US']) {
+    // Keep each language independent: Linux WebKit's rendering/actionability waits
+    // must not accumulate three complete scenarios into one 30-second test budget.
+    for (const locale of ['zh-CN', 'zh-TW', 'en-US']) {
+      test(`工具栏左侧不透出滚动文字：${theme}/${width}px/${locale}`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 844 });
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+        await mount(page);
+        const bar = page.locator('.sftp-panel-actions');
         await page.evaluate(async ({ theme, locale }) => {
           const themePath = '/src/theme.ts';
           const localePath = '/src/i18n/index.ts';
@@ -77,6 +79,11 @@ for (const theme of BUILT_IN_THEME_NAMES) {
                 width: Math.floor(after.right) - Math.ceil(box.left),
                 height: Math.floor(box.bottom) - Math.ceil(box.top),
               },
+              barClip: {
+                x: Math.ceil(box.left), y: Math.ceil(box.top),
+                width: Math.floor(box.right) - Math.ceil(box.left),
+                height: Math.floor(box.bottom) - Math.ceil(box.top),
+              },
             };
           }, end);
           expect(geometry.scrollLeft).toBeGreaterThan(0);
@@ -104,14 +111,15 @@ for (const theme of BUILT_IN_THEME_NAMES) {
           expect(visible.equals(masked), `${locale}: scrolling text must not paint under fixed actions`).toBe(true);
           if (locale === 'zh-CN' && end) {
             const path = test.info().outputPath('toolbar-scrolled.png');
-            await bar.screenshot({ path, animations: 'disabled' });
+            // The bar is already measured and in view; do not repeat locator scrolling/stability waits.
+            await page.screenshot({ path, clip: geometry.barClip, animations: 'disabled' });
             await test.info().attach('toolbar-scrolled', { path, contentType: 'image/png' });
           }
         }
         await page.locator('#sftp-multi-btn').tap();
         await expect(page.locator('#sftp-multi-btn')).toHaveAttribute('aria-pressed', 'false');
-      }
-    });
+      });
+    }
   }
 }
 

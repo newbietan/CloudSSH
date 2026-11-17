@@ -603,7 +603,7 @@ If CloudSSH has been helpful to your workflow or projects, consider sponsoring t
 
 Special thanks to those who financially support CloudSSH's ongoing maintenance and development. Your encouragement helps keep the project moving forward!
 
-- [爱发电用户_54858](https://afdian.com/u/548581badf2b11f1b8e152540025c377) — Thank you for supporting this project through Afdian.
+- <a href="https://github.com/shunia"><img src="https://github.com/shunia.png?size=80" width="40" height="40" alt="shunia" align="middle" /></a> [shunia](https://github.com/shunia) — Thank you for supporting this project through Afdian.
 
 <a id="license"></a>
 
