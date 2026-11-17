@@ -49,6 +49,10 @@ export class MobileTerminalController {
   }
 
   start(): void {
+    // Capture the unoccluded height before a delayed first frame can observe an open keyboard.
+    this.maximumViewportHeight = Math.max(
+      1, Math.round(window.visualViewport?.height ?? window.innerHeight)
+    );
     window.addEventListener('resize', this.viewportListener, { passive: true });
     window.addEventListener('orientationchange', this.viewportResetListener, { passive: true });
     window.visualViewport?.addEventListener('resize', this.viewportListener, { passive: true });
@@ -262,6 +266,11 @@ export class MobileTerminalController {
   }
 
   private scheduleViewportUpdate(): void {
+    // Invalidate the previous fit on notification, not on the next (possibly delayed) frame.
+    if (this.fitTimer !== null) {
+      clearTimeout(this.fitTimer);
+      this.fitTimer = null;
+    }
     if (this.viewportFrame !== null) cancelAnimationFrame(this.viewportFrame);
     this.viewportFrame = requestAnimationFrame(() => {
       this.viewportFrame = null;
@@ -292,7 +301,9 @@ export class MobileTerminalController {
     if (this.fitTimer !== null) clearTimeout(this.fitTimer);
     this.fitTimer = setTimeout(() => {
       this.fitTimer = null;
-      this.getTerminal()?.fit();
+      if (this.viewportFrame === null && document.body.classList.contains('terminal-active')) {
+        this.getTerminal()?.fit();
+      }
     }, VIEWPORT_FIT_STABLE_DELAY_MS);
   }
 

@@ -1,6 +1,6 @@
 # 移动端交互说明
 
-本次优化不改变 SSH 协议、认证、分享权限或 SFTP 数据通道，不引入后台传输或第二份终端文本缓存。
+本次优化不改变 SSH 协议、认证协议、分享权限或 SFTP 数据通道，不引入后台传输或第二份终端文本缓存。
 
 ## 终端选择与字号
 
@@ -11,6 +11,8 @@
 - 仅选择模式阻断终端内原生长按菜单，普通状态及手动粘贴框仍可使用系统粘贴。
 - 「更多 → 终端字号」可设置 12–18px，或恢复自动模式。自动模式仍按视口使用 12/13/14px；偏好只存本机 `cloudssh_terminal_font_size`，不随账户/服务器同步。存储被禁用时当前页面仍可调整。
 - 软键盘仅改变终端行数时，坐标仍有效的选区会恢复。字号/列数重排则结束选择并提示重新选择，避免手柄指向错误内容；不会暂停远端输出。
+
+软键盘视口变化到来时立即取消旧的适配计时器，再等待画面更新与 120ms 稳定期；启动时先保存初始高度，避免首帧延迟把已弹出的键盘误当成初始状态。旋转仍重新建立高度基线。认证挑战优先聚焦首个输入（零提示时为「继续」），迟到的聚焦回调不抢走用户已选择的验证码字段或取消按钮。
 
 ## SFTP
 
@@ -36,6 +38,7 @@
 ```bash
 pnpm exec vitest run tests/terminal-font-preference.test.ts tests/frontend-ux.test.ts tests/i18n.test.ts
 pnpm exec playwright test tests/e2e/mobile-selection.spec.ts tests/e2e/mobile-sftp.spec.ts tests/e2e/mobile-terminal-actions.spec.ts --workers=2
+pnpm exec playwright test tests/e2e/mobile-terminal.spec.ts tests/e2e/auth-challenge.spec.ts --workers=2
 ```
 
 以上三个新 spec 在 Chromium 和 WebKit 移动项目运行；既有移动终端、用户空间和剪贴板套件也加入 WebKit。桌面右键用例显式使用精细指针；文本自动缩放属性仅在引擎支持时检查，不能把桌面 WebKit 的设备模拟等同于 iOS 自动缩放实现。

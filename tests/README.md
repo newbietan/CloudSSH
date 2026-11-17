@@ -210,6 +210,7 @@ OpenSSH 覆盖七种裸钥/证书协商、PTY/Shell、exec 与 SFTP；Go 网关�
 - SFTP 列表选择（`sftp-list-selection.spec.ts`，Chromium + WebKit）：嵌套点击、Ctrl/Cmd、Shift、右键多选保持、排序/刷新后双击目标与高亮、全选/Escape、空目录与销毁重建；2000 项目录检查固定父容器监听与差量 ARIA 写入，附带非门禁计时证据。
 - 终端抽屉分段切换器：桌面端胶囊轮廓与可辨识边缘、双边异步物理弹簧滑块位移、PC 隐藏移动端更多操作按钮、三大抽屉宽度统一、匿名模式隐藏 AI Agent（display: none）与登录同步解锁
 - 移动端终端交互与用户空间：紧凑顶栏与菜单入口、视口与软键盘动态适配、单指滑动历史、字号响应式断点、移动端抽屉平行入口与 AI 设置弹窗无横向溢出；`mobile-terminal`、`mobile-user-space`、`terminal-clipboard` 同时纳入 WebKit，桌面右键场景显式使用非触摸上下文，文本缩放属性仅在引擎支持时断言。
+- 视口与认证聚焦时序（`mobile-terminal.spec.ts` / `auth-challenge.spec.ts`）：视口测试使用受控时钟和页面已有的单一控制器/真实标签，逐帧发送键盘动画尺寸，不用固定真实等待推断初始化完成。`browser-timing.ts` 可暂缓 rAF 而继续推进计时器，覆盖旧 fit 立即取消、首帧前键盘变化、旋转基线重置和迟到聚焦不抢验证码/取消按钮；保留双引擎用例与原 CI 重试/失败门禁。
 - 移动端精细操作（`mobile-selection.spec.ts`、`mobile-sftp.spec.ts`、`mobile-terminal-actions.spec.ts`，Chromium + WebKit）：首列/宽字符选区、端点偏移与命中、跨屏本地滚动及取消、字号本机偏好/行数与列数变化；SFTP显式打开/非连续多选/批量删除、传输离开取消与过期批准；移动标签菜单与克隆独立令牌；手动粘贴的长度限制、换行/bracketed paste/trzsz、Shell-ready、切标签和旧socket隔离。`terminal-font-preference.test.ts` 覆盖纯策略、存储异常与范围限制。原生菜单/手柄触感与真实软键盘仍需真机验收，见 [移动端交互说明](../docs/mobile-ux.md)。
 - tmux 触摸滚轮（`terminal-touch-scroll.spec.ts`，Chromium + WebKit）：VT200/drag/any 与 SGR/旧式二进制/像素编码、双向滚动、原始面板坐标、Ctrl 状态保留、Shell/连接门控、选区优先、取消/模式切换/断连清理与报文数量上限
 - 终端焦点报告（`terminal-focus-report.spec.ts`，Chromium + WebKit）：真实 Ctrl/Alt 按钮与焦点切换、DECSET 1004、Ctrl+B/方向键、bracketed paste、Shell/连接门控及 iOS IME 回退/去重
