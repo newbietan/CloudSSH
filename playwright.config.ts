@@ -28,8 +28,8 @@ export default defineConfig({
       name: 'webkit-mobile',
       testMatch: [
         /(?:agent-responses|agent-recovery|api-isolation|auth-challenge|none-auth|connection-recovery|ios-ime|sftp-panel-actions|version-notice)\.spec\.ts/,
-        /terminal-(?:touch-scroll|focus-report)\.spec\.ts/,
-        /mobile-(?:selection|sftp|terminal-actions|terminal|user-space)\.spec\.ts/,
+        /terminal-(?:touch-scroll|focus-report|drawer)\.spec\.ts/,
+        /mobile-(?:selection|sftp|terminal-actions|terminal|user-space|glass)\.spec\.ts/,
         /terminal-clipboard\.spec\.ts/,
         /(?:theme-background|local-fonts|sftp-list-selection|server-modal-layout|app-bootstrap|mcp(?:-access)?)\.spec\.ts/,
       ],

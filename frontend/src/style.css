@@ -3224,7 +3224,15 @@ html[data-theme="standard-light"] .theme-segmented-lens {
 }
 
 .drawer-segmented-btn .drawer-btn-icon {
+  /* Center both font glyphs and nested SVGs without an inherited text baseline. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1em;
+  height: 1em;
   font-size: 14px;
+  line-height: 1;
   transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
@@ -4778,14 +4786,18 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 
 /* ==================== SFTP 操作栏（全局：桌面面板 420~600px、移动/平板全屏） ====================
    按钮禁止压缩换行：WebKit 对嵌套 flex 的内在尺寸计算会把 CJK 标签
-   压成单字竖排；空间不足时整栏横向滚动（滚动条隐藏，触摸可滑） */
+   压成单字竖排。固定操作与滚动工具并排，避免文字从留白或玻璃背景下透出。 */
 .sftp-panel-actions {
+  overflow: hidden;
+}
+
+.sftp-actions-scroll {
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
 }
 
-.sftp-panel-actions::-webkit-scrollbar {
+.sftp-actions-scroll::-webkit-scrollbar {
   display: none;
 }
 
@@ -4801,6 +4813,31 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 /* ==================== Responsive Adaptations ==================== */
 
 @media (max-width: 767px), (max-width: 1180px) and (pointer: coarse) {
+  /* Mobile Liquid Glass: readable surfaces, not overlapping text layers.
+     Inherit from body so the inline theme palette, desktop and custom themes stay untouched. */
+  html[data-theme="liquid-glass"] body {
+    --bg-surface: rgba(250, 252, 255, 0.98);
+    --bg-elevated: #ffffff;
+  }
+
+  /* These surfaces otherwise use their own translucent color-mix, or the desktop toolbar
+     material on coarse-pointer tablets. Keep the glass edges/shadows and page background. */
+  html[data-theme="liquid-glass"] body :is(
+    .responsive-modal-panel,
+    .app-dialog__panel,
+    .auth-challenge-dialog__panel,
+    .remote-editor__panel,
+    .mcp-dialog__panel.assistant-shell,
+    #agent-panel.assistant-shell,
+    #sftp-panel,
+    #snippet-panel,
+    #tab-context-menu,
+    #ai-model-menu,
+    .user-space-header-actions
+  ) {
+    background: var(--bg-elevated);
+  }
+
   .mobile-only:not(.hidden) {
     display: flex;
   }
@@ -5082,6 +5119,11 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   /* hidden→flex 切换自动重播的入场动效（弹簧，一次性） */
   .mobile-more-menu:not(.hidden) {
     animation: mobile-menu-in var(--motion-normal) var(--spring-ease) backwards;
+  }
+
+  /* Scroll the menu, never squeeze the theme/font controls into neighbouring rows. */
+  .mobile-more-menu > * {
+    flex-shrink: 0;
   }
 
   .mobile-more-menu > button,
@@ -5370,7 +5412,12 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
     }
   }
 
-  /* 快捷提示词方块：移动端换行自适应铺满，不再横向滚动裁切 */
+  /* Hide only generic suggestions; keep the interrupted-task recovery action usable. */
+  #agent-quick-chips > [data-prompt-key],
+  #agent-quick-chips:not(:has(#agent-resume-task-chip)) {
+    display: none;
+  }
+
   #agent-quick-chips {
     flex-wrap: wrap;
     row-gap: 6px;
@@ -5432,13 +5479,9 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
     min-height: 44px;
   }
   .sftp-touch-actions {
-    position: sticky;
-    left: 0;
-    z-index: 2;
     gap: 4px;
     flex-shrink: 0;
     padding-right: 6px;
-    background: var(--bg-surface);
     border-right: 1px solid var(--border-strong);
   }
   .sftp-touch-actions button {

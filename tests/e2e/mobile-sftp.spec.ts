@@ -1,3 +1,4 @@
+import { BUILT_IN_THEME_NAMES } from '../../src/theme-schema';
 import { expect, test, type Page } from './fixtures';
 import { mockAnonymousSession } from './helpers';
 
@@ -35,6 +36,84 @@ async function mount(page: Page, withTabs = false) {
 }
 
 const selected = (page: Page) => page.locator('#sftp-entries [aria-selected="true"]').count();
+
+for (const theme of BUILT_IN_THEME_NAMES) {
+  for (const width of [320, 390]) {
+    test(`工具栏左侧不透出滚动文字：${theme}/${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 });
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await mount(page);
+      const bar = page.locator('.sftp-panel-actions');
+      for (const locale of ['zh-CN', 'zh-TW', 'en-US']) {
+        await page.evaluate(async ({ theme, locale }) => {
+          const themePath = '/src/theme.ts';
+          const localePath = '/src/i18n/index.ts';
+          const { applyBuiltInTheme } = await import(themePath);
+          const { setLocale } = await import(localePath);
+          applyBuiltInTheme(theme);
+          setLocale(locale);
+          await document.fonts.ready;
+        }, { theme, locale });
+        for (const end of [false, true]) {
+          if (end) {
+            await page.locator('#sftp-multi-btn').tap();
+            await expect(page.locator('#sftp-multi-btn')).toHaveAttribute('aria-pressed', 'true');
+          }
+          const geometry = await bar.evaluate((node, end) => {
+            const fixed = node.querySelector('.sftp-touch-actions')!;
+            const scroller = node.querySelector('.sftp-actions-scroll') ?? node;
+            scroller.scrollLeft = 0;
+            const before = fixed.getBoundingClientRect();
+            const box = node.getBoundingClientRect();
+            const label = node.querySelector('#sftp-upload-btn [data-i18n]')!.getBoundingClientRect();
+            // Put the upload label at the bar's left edge, then also exercise the far end.
+            scroller.scrollLeft = end ? scroller.scrollWidth : label.left - box.left - 4;
+            const after = fixed.getBoundingClientRect();
+            return {
+              scrollLeft: scroller.scrollLeft,
+              fixedShift: after.left - before.left,
+              clip: {
+                x: Math.ceil(box.left), y: Math.ceil(box.top),
+                width: Math.floor(after.right) - Math.ceil(box.left),
+                height: Math.floor(box.bottom) - Math.ceil(box.top),
+              },
+            };
+          }, end);
+          expect(geometry.scrollLeft).toBeGreaterThan(0);
+          expect(Math.abs(geometry.fixedShift)).toBeLessThan(0.5);
+          const visible = await page.screenshot({ clip: geometry.clip, animations: 'disabled' });
+          const previous = await bar.evaluate((node) => {
+            const fixed = node.querySelector('.sftp-touch-actions')!;
+            return [...node.querySelectorAll('button')].filter((button) => !fixed.contains(button))
+              .map((button) => {
+                const value = button.style.visibility;
+                button.style.visibility = 'hidden';
+                return value;
+              });
+          });
+          const masked = await page.screenshot({ clip: geometry.clip, animations: 'disabled' });
+          await bar.evaluate((node, values) => {
+            const fixed = node.querySelector('.sftp-touch-actions')!;
+            [...node.querySelectorAll('button')].filter((button) => !fixed.contains(button))
+              .forEach((button, index) => { button.style.visibility = values[index]; });
+          }, previous);
+          if (!visible.equals(masked)) {
+            await test.info().attach(`${locale}-visible`, { body: visible, contentType: 'image/png' });
+            await test.info().attach(`${locale}-masked`, { body: masked, contentType: 'image/png' });
+          }
+          expect(visible.equals(masked), `${locale}: scrolling text must not paint under fixed actions`).toBe(true);
+          if (locale === 'zh-CN' && end) {
+            const path = test.info().outputPath('toolbar-scrolled.png');
+            await bar.screenshot({ path, animations: 'disabled' });
+            await test.info().attach('toolbar-scrolled', { path, contentType: 'image/png' });
+          }
+        }
+        await page.locator('#sftp-multi-btn').tap();
+        await expect(page.locator('#sftp-multi-btn')).toHaveAttribute('aria-pressed', 'false');
+      }
+    });
+  }
+}
 
 test('pure touch can select disjoint files, toggle checkboxes, select all and explicitly open a directory', async ({ page }) => {
   await mount(page);

@@ -3,7 +3,7 @@ import { mockAnonymousSession } from './helpers';
 
 /**
  * SFTP 操作栏布局回归：
- * 面板宽度恒定 ≤420px，7 个操作按钮（上传/新建文件/新建文件夹/下载/编辑/删除/重命名）
+ * 面板桌面宽度为 420–600px、移动端随屏，7 个操作按钮（上传/新建文件/新建文件夹/下载/编辑/删除/重命名）
  * 在空间不足时必须横向滚动而不是压缩换行——WebKit 对嵌套 flex 的内在
  * 尺寸计算会把 CJK 标签压成单字竖排（Issue 反馈：按钮文字竖着显示），
  * 故以 white-space: nowrap 全局禁止，并用标签高度断言守护。
@@ -11,10 +11,12 @@ import { mockAnonymousSession } from './helpers';
 async function openPanel(page: import('@playwright/test').Page): Promise<void> {
   await mockAnonymousSession(page);
   await page.goto('/?lang=zh-CN');
+  await expect(page.locator('#app')).toBeVisible();
   await page.evaluate(async () => {
     const m = await (window as any).eval("import('/src/sftp-panel.ts')");
     const panel = new m.SFTPPanel(() => null);
     panel.visible = true;
+    panel.container.style.transform = 'translateX(0)';
   });
   await page.waitForSelector('.sftp-panel-actions');
 }
@@ -22,15 +24,16 @@ async function openPanel(page: import('@playwright/test').Page): Promise<void> {
 async function measureActions(page: import('@playwright/test').Page) {
   return page.evaluate(() => {
     const bar = document.querySelector('.sftp-panel-actions')!;
-    const labels = [...bar.querySelectorAll<HTMLElement>('button > span[data-i18n]')];
-    const buttons = [...bar.querySelectorAll<HTMLElement>(':scope > button')];
+    const scroller = bar.querySelector('.sftp-actions-scroll')!;
+    const labels = [...scroller.querySelectorAll<HTMLElement>('button > span[data-i18n]')];
+    const buttons = [...scroller.querySelectorAll<HTMLElement>(':scope > button')];
     return {
       labelCount: labels.length,
       maxLabelHeight: Math.max(...labels.map((el) => el.getBoundingClientRect().height)),
       maxButtonHeight: Math.max(...buttons.map((el) => el.getBoundingClientRect().height)),
-      overflowX: getComputedStyle(bar).overflowX,
-      barScrollWidth: bar.scrollWidth,
-      barClientWidth: bar.clientWidth,
+      overflowX: getComputedStyle(scroller).overflowX,
+      barScrollWidth: scroller.scrollWidth,
+      barClientWidth: scroller.clientWidth,
     };
   });
 }
@@ -58,14 +61,14 @@ test.describe('桌面视口', () => {
 test.describe('移动端视口', () => {
   test.use({ viewport: { width: 415, height: 750 }, hasTouch: true });
 
-  test('窄屏操作栏按钮单行、整栏可横向滚动', async ({ page }) => {
+  test('窄屏操作栏按钮单行、工具区可横向滚动', async ({ page }) => {
     await openPanel(page);
     const layout = await measureActions(page);
 
     expect(layout.labelCount).toBe(7);
     expect(layout.maxLabelHeight).toBeLessThan(24);
-    // 移动端媒体查询给按钮 min-height: 40px 触摸目标
-    expect(layout.maxButtonHeight).toBeGreaterThanOrEqual(40);
+    // 移动端保留 44px 触摸目标，固定操作不参与右侧工具滚动。
+    expect(layout.maxButtonHeight).toBeGreaterThanOrEqual(44);
     expect(layout.maxButtonHeight).toBeLessThan(56);
     expect(layout.overflowX).toBe('auto');
     // 7 个按钮总宽超出 415px 视口，必须可滚动且不换行

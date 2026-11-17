@@ -49,6 +49,47 @@ async function openPanel(page: Page) {
   await expect(page.locator('#mcp-config-form')).toBeVisible();
 }
 
+for (const locale of ['zh-CN', 'zh-TW', 'en-US']) {
+  test(`移动更多菜单MCP紧邻Agent且主题和字号不重叠：${locale}`, async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 568 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await setup(page);
+    await page.goto(`/?lang=${locale}`);
+    await expect(page.locator('#user-space-section')).toBeVisible();
+    await page.evaluate(async () => {
+      const modulePath = '/src/main.ts';
+      const { showTerminalWithNewTab } = await import(modulePath);
+      showTerminalWithNewTab('Mobile menu');
+    });
+    await page.locator('#mobile-more-btn').click();
+    const menu = page.locator('#mobile-more-menu');
+    const mcp = menu.locator('[data-mcp-open]');
+    await expect(mcp).not.toHaveClass(/hidden/);
+    const layout = await menu.evaluate((el) => {
+      const children = [...el.children].filter((child) => child.getClientRects().length > 0);
+      const rects = children.map((child) => child.getBoundingClientRect());
+      const theme = el.querySelector('.mobile-more-theme-row')!.getBoundingClientRect();
+      const select = el.querySelector('#mobile-theme-selector')!.getBoundingClientRect();
+      const font = el.querySelector('.mobile-font-controls')!.getBoundingClientRect();
+      return {
+        previous: el.querySelector('[data-mcp-open]')!.previousElementSibling?.id,
+        overlap: rects.some((rect, i) => i > 0 && rect.top < rects[i - 1].bottom - 0.5),
+        themeOverflow: select.bottom - theme.bottom,
+        fontOverlap: select.bottom - font.top,
+        scrollable: el.scrollHeight > el.clientHeight,
+      };
+    });
+    expect(layout.previous).toBe('mobile-agent-btn');
+    expect(layout.overlap).toBe(false);
+    expect(layout.themeOverflow).toBeLessThanOrEqual(0);
+    expect(layout.fontOverlap).toBeLessThanOrEqual(0);
+    expect(layout.scrollable).toBe(true);
+    await mcp.click();
+    await expect(page.locator('#mcp-config-form')).toBeVisible();
+    await expect(menu).toBeHidden();
+  });
+}
+
 test('one permanent configuration: generate once, repeatedly copy, change separate server permissions, and reopen without rotation', async ({ page }) => {
   const state = await setup(page);
   state.info.legacy = true;

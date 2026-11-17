@@ -202,39 +202,41 @@ export class SFTPPanel {
         </div>
 
         <!-- Actions Bar -->
-        <div class="sftp-panel-actions flex items-center gap-1 px-3 py-1.5 border-b border-outline-variant bg-surface shrink-0 overflow-x-auto no-scrollbar">
+        <div class="sftp-panel-actions flex items-center gap-1 px-3 py-1 border-b border-outline-variant bg-surface shrink-0 overflow-hidden">
           <div class="sftp-touch-actions mobile-only">
             <button id="sftp-open-btn" type="button" disabled data-i18n="sftp.contextOpen">Open</button>
             <button id="sftp-multi-btn" type="button" aria-pressed="false" data-i18n="sftp.multiSelect">Select</button>
           </div>
-          <button id="sftp-upload-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" data-i18n-title="sftp.upload" title="上传文件">
-            <span class="material-symbols-outlined" style="font-size: 14px;">upload_file</span>
-            <span data-i18n="sftp.uploadAction">上传文件</span>
-          </button>
-          <button id="sftp-new-file-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" data-i18n-title="sftp.newFile" title="新建文件">
-            <span class="material-symbols-outlined" style="font-size: 14px;">note_add</span>
-            <span data-i18n="sftp.newFileAction">新建文件</span>
-          </button>
-          <button id="sftp-mkdir-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-secondary-container" data-i18n-title="sftp.newFolder" title="新建文件夹">
-            <span class="material-symbols-outlined" style="font-size: 14px;">create_new_folder</span>
-            <span data-i18n="sftp.mkdirAction">新建文件夹</span>
-          </button>
-          <button id="sftp-download-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.download" title="下载" disabled>
-            <span class="material-symbols-outlined" style="font-size: 14px;">download</span>
-            <span data-i18n="sftp.downloadAction">下载</span>
-          </button>
-          <button id="sftp-edit-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.edit" title="在线编辑" disabled>
-            <span class="material-symbols-outlined" style="font-size: 14px;">edit_note</span>
-            <span data-i18n="sftp.editAction">编辑</span>
-          </button>
-          <button id="sftp-delete-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-error-container rounded transition-colors cursor-pointer text-error disabled:opacity-30" data-i18n-title="common.delete" title="删除" disabled>
-            <span class="material-symbols-outlined" style="font-size: 14px;">delete</span>
-            <span data-i18n="sftp.deleteAction">删除</span>
-          </button>
-          <button id="sftp-rename-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.rename" title="重命名" disabled>
-            <span class="material-symbols-outlined" style="font-size: 14px;">drive_file_rename_outline</span>
-            <span data-i18n="sftp.renameAction">重命名</span>
-          </button>
+          <div class="sftp-actions-scroll flex min-w-0 flex-1 items-center gap-1 overflow-x-auto no-scrollbar p-0.5">
+            <button id="sftp-upload-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" data-i18n-title="sftp.upload" title="上传文件">
+              <span class="material-symbols-outlined" style="font-size: 14px;">upload_file</span>
+              <span data-i18n="sftp.uploadAction">上传文件</span>
+            </button>
+            <button id="sftp-new-file-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" data-i18n-title="sftp.newFile" title="新建文件">
+              <span class="material-symbols-outlined" style="font-size: 14px;">note_add</span>
+              <span data-i18n="sftp.newFileAction">新建文件</span>
+            </button>
+            <button id="sftp-mkdir-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-secondary-container" data-i18n-title="sftp.newFolder" title="新建文件夹">
+              <span class="material-symbols-outlined" style="font-size: 14px;">create_new_folder</span>
+              <span data-i18n="sftp.mkdirAction">新建文件夹</span>
+            </button>
+            <button id="sftp-download-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.download" title="下载" disabled>
+              <span class="material-symbols-outlined" style="font-size: 14px;">download</span>
+              <span data-i18n="sftp.downloadAction">下载</span>
+            </button>
+            <button id="sftp-edit-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.edit" title="在线编辑" disabled>
+              <span class="material-symbols-outlined" style="font-size: 14px;">edit_note</span>
+              <span data-i18n="sftp.editAction">编辑</span>
+            </button>
+            <button id="sftp-delete-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-error-container rounded transition-colors cursor-pointer text-error disabled:opacity-30" data-i18n-title="common.delete" title="删除" disabled>
+              <span class="material-symbols-outlined" style="font-size: 14px;">delete</span>
+              <span data-i18n="sftp.deleteAction">删除</span>
+            </button>
+            <button id="sftp-rename-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.rename" title="重命名" disabled>
+              <span class="material-symbols-outlined" style="font-size: 14px;">drive_file_rename_outline</span>
+              <span data-i18n="sftp.renameAction">重命名</span>
+            </button>
+          </div>
           <input type="file" id="sftp-file-input" class="hidden" multiple />
         </div>
 

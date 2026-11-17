@@ -90,7 +90,8 @@ test('MCP and Agent share header, field and footer components in all themes', as
     await page.evaluate(async name => { const { applyBuiltInTheme } = await (window as any).eval("import('/src/theme.ts')"); applyBuiltInTheme(name); }, theme);
     const style = await page.locator('.mcp-dialog__panel').evaluate(node => {
       const css = getComputedStyle(node); return { color: css.color, background: css.backgroundColor,
-        radius: parseFloat(css.borderTopLeftRadius), shadow: css.boxShadow, filter: css.backdropFilter };
+        radius: parseFloat(css.borderTopLeftRadius), shadow: css.boxShadow, filter: css.backdropFilter,
+        mobile: matchMedia('(max-width: 767px), (max-width: 1180px) and (pointer: coarse)').matches };
     });
     colors.add(style.background);
     const components = await page.evaluate(() => {
@@ -99,6 +100,8 @@ test('MCP and Agent share header, field and footer components in all themes', as
         return keys.map(key => style.getPropertyValue(key));
       };
       return {
+        mcpSurface: css('.mcp-dialog__panel', ['background-color', 'backdrop-filter']),
+        agentSurface: css('#agent-panel', ['background-color', 'backdrop-filter']),
         mcpHeader: css('.mcp-dialog .assistant-panel-header', ['height','padding-left','background-color','border-bottom-color']),
         agentHeader: css('#agent-panel .assistant-panel-header', ['height','padding-left','background-color','border-bottom-color']),
         mcpTitle: css('#mcp-title', ['font-family','font-size','font-weight','letter-spacing','color']),
@@ -113,7 +116,14 @@ test('MCP and Agent share header, field and footer components in all themes', as
     expect(components.mcpTitle).toEqual(components.agentTitle);
     expect(components.mcpField).toEqual(components.agentField);
     expect(components.mcpFooter).toEqual(components.agentFooter);
-    if (theme === 'liquid-glass') { expect(style.filter).toContain('blur'); expect(style.radius).toBeGreaterThan(0); expect(style.background).toContain('0.96'); }
+    if (theme === 'liquid-glass') {
+      // Liquid material lives on the outer shells; other themes use the Agent's inner surface.
+      expect(components.mcpSurface).toEqual(components.agentSurface);
+      expect(style.filter).toContain('blur');
+      expect(style.radius).toBeGreaterThan(0);
+      if (style.mobile) expect(style.background).toBe('rgb(255, 255, 255)');
+      else expect(style.background).toContain('0.96');
+    }
     await expect(page.locator('#mcp-save-config')).toBeVisible();
     expect(await page.locator('#mcp-dialog').evaluate(node => node.scrollWidth > node.clientWidth + 1)).toBe(false);
   }
