@@ -353,7 +353,6 @@ export class AgentPanel {
     this.panelEl.style.transform = 'translateX(100%)';
     this.panelEl.style.display = 'none';
 
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     this.panelEl.innerHTML = `
       <div class="assistant-panel-surface flex flex-col w-full h-full border-l border-[var(--border)] text-on-surface overflow-hidden relative">
         <div class="assistant-panel-header agent-panel-header">
@@ -856,14 +855,12 @@ export class AgentPanel {
         btn.classList.add('is-stopping');
         btn.title = t('agent.stop');
         btn.setAttribute('data-i18n-title', 'agent.stop');
-        // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
         btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:18px;">stop</span>';
       } else {
         btn.classList.remove('is-stopping');
         btn.title = t('agent.send');
         btn.setAttribute('data-i18n-title', 'agent.send');
         btn.disabled = blocked || isWaiting || this.isStopping || !this.inputEl?.value.trim();
-        // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
         btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:20px;">arrow_upward</span>';
       }
     }
@@ -962,7 +959,6 @@ export class AgentPanel {
     if (!context) return;
 
     const source = context.sourceLabel || t('agent.selectionUnknownSource');
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     this.contextEl.innerHTML = `
       <div class="agent-context-chip">
         <details class="agent-context-details">
@@ -1058,7 +1054,6 @@ export class AgentPanel {
     const container = document.createElement('div');
     container.className = 'agent-thinking-process';
 
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     container.innerHTML = `
       <button class="tp-accordion" type="button">
         <span class="tp-chevron material-symbols-outlined">expand_more</span>
@@ -1099,7 +1094,6 @@ export class AgentPanel {
     if (this.livePreviewCache.length > 2) this.livePreviewCache.shift();
     const icon =
       '<span class="material-symbols-outlined tp-live-icon" style="font-variation-settings:\'FILL\' 0;">terminal</span>';
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     this.thinkingLiveEl.innerHTML = this.livePreviewCache
       .map((l) => `<div class="tp-live-item">${icon}<span>${escapeHtml(l)}</span></div>`)
       .join('');
@@ -1130,7 +1124,6 @@ export class AgentPanel {
         ? '<span class="material-symbols-outlined tp-step-icon" style="font-variation-settings:\'FILL\' 0;">terminal</span>'
         : `<span class="tp-step-icon">${assistantIconMarkup('agent')}</span>`;
 
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     stepEl.innerHTML = `${icon}<span class="tp-step-label">${escapeHtml(label)}</span>`;
 
     this.thinkingCurrentEl.appendChild(stepEl);
@@ -1171,7 +1164,6 @@ export class AgentPanel {
           step.tool === 'execute_command' || step.tool === 'terminal'
             ? '<span class="material-symbols-outlined tp-step-icon" style="font-variation-settings:\'FILL\' 0;">check_circle</span>'
             : '<span class="material-symbols-outlined tp-step-icon" style="font-variation-settings:\'FILL\' 1;">check_circle</span>';
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
         stepEl.innerHTML = `${icon}<span class="tp-step-label">${escapeHtml(step.label)}</span>`;
         this.thinkingStepsEl.appendChild(stepEl);
       }
@@ -1241,7 +1233,6 @@ export class AgentPanel {
       const themeColor = 'var(--agent-agent-color)';
       const roleIcon = `<span class="text-[15px]" style="color:${themeColor};">${assistantIconMarkup('agent')}</span>`;
 
-      // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
       el.innerHTML = `
         <div class="flex gap-2 items-start">
           <div class="agent-role-icon-wrapper">${roleIcon}</div>
@@ -1279,12 +1270,10 @@ export class AgentPanel {
         // renderMarkdown() wraps output in its own .agent-md-content div,
         // so we extract the inner HTML to avoid nesting.
         const tmp = document.createElement('div');
-        // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
         tmp.innerHTML = this.renderMarkdown(finalContent);
         const inner = tmp.querySelector('.agent-md-content');
         if (inner) {
           // Sanitized renderMarkdown output only; missing wrapper falls back to text.
-          // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
           contentEl.innerHTML = inner.innerHTML;
         } else {
           contentEl.textContent = finalContent;
@@ -1353,7 +1342,6 @@ export class AgentPanel {
       ? t('agent.confirmAutoCountdown', { seconds: 3 })
       : t('agent.confirm');
 
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     el.innerHTML = `
       <div class="flex items-center justify-between gap-1 mb-1">
         <div id="agent-confirm-title" class="text-[11px] font-bold text-[var(--error)] flex items-center gap-1 min-w-0 truncate">
@@ -1545,7 +1533,6 @@ export class AgentPanel {
       }
       this.renderUserMessageContent(el, content, options);
     } else {
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
       el.innerHTML = `
         <div class="flex gap-2 items-start">
           <div class="agent-role-icon-wrapper">${roleIcon}</div>
@@ -1578,7 +1565,6 @@ export class AgentPanel {
         </div>`
         : '';
 
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     el.innerHTML = `
       <div class="flex justify-end agent-user-container group relative">
         <div class="max-w-[calc(100%-64px)] px-3 py-2 rounded-lg agent-user-bubble relative" style="background: color-mix(in srgb, ${themeColor} 12%, transparent); border: 1px solid color-mix(in srgb, ${themeColor} 30%, transparent);">
@@ -1635,7 +1621,6 @@ export class AgentPanel {
 
     const themeColor = 'var(--agent-user-color)';
 
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     el.innerHTML = `
       <div class="flex flex-col items-end agent-user-edit-container w-full">
         <div class="agent-user-edit-bubble max-w-[85%] min-w-[160px] rounded-xl px-3 py-2 relative transition-all"
@@ -1973,7 +1958,6 @@ export class AgentPanel {
     chip.id = 'agent-resume-task-chip';
     chip.className =
       'agent-quick-chip shrink-0 text-[11px] px-2.5 py-0.5 rounded border border-warning/60 hover:border-warning text-warning hover:text-primary transition-colors cursor-pointer flex items-center gap-1 bg-warning/10 font-medium';
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     chip.innerHTML = `
       <span class="material-symbols-outlined text-[13px]">play_circle</span>
       <span data-i18n="agent.resumeInterruptedTask">${escapeHtml(t('agent.resumeInterruptedTask'))}</span>
@@ -2301,7 +2285,6 @@ export class AgentPanel {
     }
 
     if (!this.serverId) {
-      // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
       this.memoryContentEl.innerHTML = `
         <div class="p-4 text-center text-muted text-xs">
           ${t('agent.memoryDirectNotice')}
@@ -2314,7 +2297,6 @@ export class AgentPanel {
 
     if (this.activeMemoryTab === 'workLog') {
       if (this.unifiedMemory.workLogs.length === 0) {
-        // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
         this.memoryContentEl.innerHTML = `
           <div class="p-4 text-center text-muted text-xs">
             ${t('agent.workLogEmpty')}
@@ -2343,7 +2325,6 @@ export class AgentPanel {
         })
         .join('');
 
-      // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
       this.memoryContentEl.innerHTML = logsHtml;
 
       this.memoryContentEl.querySelectorAll<HTMLElement>('.agent-log-summary').forEach((el) => {
@@ -2384,7 +2365,6 @@ export class AgentPanel {
     if (this.unifiedMemory.knowledge.length === 0) {
       this.memoryBatchBtn?.classList.add('hidden');
       this.exitBatchMode();
-      // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
       this.memoryContentEl.innerHTML = `
         <div class="p-4 text-center text-muted text-xs">
           ${t('agent.knowledgeEmpty')}
@@ -2497,7 +2477,6 @@ export class AgentPanel {
       })
       .join('');
 
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     this.memoryContentEl.innerHTML = groupsHtml;
 
     this.memoryContentEl.querySelectorAll<HTMLElement>('.agent-knowledge-group-header').forEach((hdr) => {
@@ -2604,7 +2583,6 @@ export class AgentPanel {
     if (!this.memoryAddFormContainerEl) return;
     this.memoryAddFormContainerEl.classList.remove('hidden');
 
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     this.memoryAddFormContainerEl.innerHTML = `
       <form id="agent-add-knowledge-form" class="space-y-2">
         <div class="flex gap-2">

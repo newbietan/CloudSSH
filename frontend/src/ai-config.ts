@@ -31,7 +31,6 @@ export class AIConfigPanel {
     this.modalEl.className =
       'responsive-modal hidden fixed inset-0 z-[100] flex items-center justify-center';
     // Static markup and trusted bundled i18n only; user config is assigned through input.value.
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     this.modalEl.innerHTML = `
       <div class="modal-overlay absolute inset-0" id="ai-modal-backdrop"></div>
       <div class="responsive-modal-panel cyber-box p-6 shadow-2xl relative z-10 w-full max-w-md sm:max-w-lg mx-4">

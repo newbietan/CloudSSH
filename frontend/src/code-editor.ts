@@ -314,7 +314,6 @@ class RemoteEditor implements RemoteEditorHandle {
     dialog.setAttribute('aria-label', t('sftp.editorTitle', { name: this.options.filename }));
 
     // 静态模板，动态内容（文件名/路径）一律 textContent 写入
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     dialog.innerHTML = `
       <div class="remote-editor__panel">
         <div class="remote-editor__header">

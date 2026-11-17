@@ -249,7 +249,9 @@ test('旧版复制回退准确返回结果并恢复原焦点', async ({ page }) 
   });
 });
 
-test('右键粘贴遵循终端的 bracketed paste 模式并统一换行', async ({ page }) => {
+test.describe('desktop context-menu paste', () => {
+  test.use({ hasTouch: false, isMobile: false });
+  test('右键粘贴遵循终端的 bracketed paste 模式并统一换行', async ({ page }) => {
   await mockAnonymousSession(page);
   await page.goto('/?lang=zh-CN');
 
@@ -302,4 +304,5 @@ test('右键粘贴遵循终端的 bracketed paste 模式并统一换行', async 
 
   expect(result.bracketed).toBe('\x1b[200~one\rtwo\r\x1b[201~');
   expect(result.plain).toBe('one\rtwo\r');
+  });
 });

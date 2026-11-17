@@ -484,7 +484,6 @@ export class ServerList {
     tagFilterWrapper?.classList.toggle('hidden', allTags.length === 0);
     if (tagFilter) {
       if (this.selectedTag && !allTags.includes(this.selectedTag)) this.selectedTag = '';
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
       tagFilter.innerHTML = [
         `<option value="">${t('server.allTags')}</option>`,
         ...allTags.map(
@@ -517,7 +516,6 @@ export class ServerList {
     this.currentPage = page.currentPage;
     const visibleServers = page.items;
 
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     grid.innerHTML = visibleServers
       .map((server, index) => this.renderServerCard(server, index, this.searchQuery === ''))
       .join('');
@@ -587,7 +585,6 @@ export class ServerList {
       <div class="skeleton-line" style="width: 75%"></div>
       <div class="skeleton-line" style="width: 100%; height: 28px; margin-top: 8px"></div>
     </div>`;
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     grid.innerHTML = Array.from({ length: this.pageSize }, () => skeletonCard).join('');
   }
 
@@ -751,7 +748,6 @@ export class ServerList {
 
     const connectBtn = document.getElementById(`connect-${serverId}`);
     if (connectBtn) {
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
       connectBtn.innerHTML = `
         <span class="material-symbols-outlined animate-spin" style="font-size: 14px;">progress_activity</span>
         ${t('server.connecting')}
@@ -763,7 +759,6 @@ export class ServerList {
       let ephemeralCredential: string | undefined;
       if (server.cf_ssh_ca_team) {
         if (connectBtn) {
-          // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
           connectBtn.innerHTML = `
             <span class="material-symbols-outlined animate-spin" style="font-size: 14px;">progress_activity</span>
             ${t('auth.cfMinting')}
@@ -803,7 +798,6 @@ export class ServerList {
       });
     } finally {
       if (connectBtn) {
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
         connectBtn.innerHTML = `
           <span class="material-symbols-outlined" style="font-size: 14px;">power_settings_new</span>
           ${t('common.connect')}
@@ -875,7 +869,6 @@ export class ServerList {
     } else {
       title.textContent = t('server.edit');
     }
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     submitBtn.innerHTML = `
       <span class="material-symbols-outlined" style="font-size: 18px;">save</span>
       ${mode === 'edit' ? t('server.update') : t('server.save')}
@@ -1321,7 +1314,6 @@ export class ServerList {
 
     const submitBtn = document.getElementById('server-submit-btn') as HTMLButtonElement;
     submitBtn.disabled = true;
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     submitBtn.innerHTML = `
       <span class="material-symbols-outlined animate-spin" style="font-size: 18px;">progress_activity</span>
       ${t('server.saving')}
@@ -1456,7 +1448,6 @@ export class ServerList {
       // An old unlock/save must never mutate a subsequently opened editor's controls.
       if (generation === this.modalGeneration) {
         submitBtn.disabled = false;
-        // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
         submitBtn.innerHTML = `
           <span class="material-symbols-outlined" style="font-size: 18px;">save</span>
           ${this.editingServerId ? t('server.update') : t('server.save')}
@@ -1488,7 +1479,6 @@ export class ServerList {
     const closeBtn = document.createElement('button');
     closeBtn.className =
       'absolute top-2 right-2 text-muted hover:text-[var(--accent)] cursor-pointer';
-    // pi-lens-ignore: no-inner-html, ts-xss-dom-sink
     closeBtn.innerHTML =
       '<span class="material-symbols-outlined" style="font-size: 16px;">close</span>';
     closeBtn.onclick = () => notification.remove();

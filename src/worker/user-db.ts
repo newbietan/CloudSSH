@@ -1476,7 +1476,6 @@ export class UserDBDO {
       updates.push("updated_at = datetime('now')");
       values.push(serverId);
       // SET 片段仅来自本函数硬编码白名单（列名 + '?' 或固定字面量），动态值全部经 values 参数绑定
-      // pi-lens-ignore: sql-injection
       this.db.exec(`UPDATE servers SET ${updates.join(', ')} WHERE id = ?`, ...values);
     }
 

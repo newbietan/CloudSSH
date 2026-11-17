@@ -670,7 +670,48 @@ html {
 .mobile-selection-mode .xterm-screen canvas {
   touch-action: none;
   cursor: crosshair;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
+
+.terminal-selection-handle {
+  position: absolute;
+  z-index: 20;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+.terminal-selection-handle::before {
+  content: '';
+  position: absolute;
+  left: var(--selection-anchor-x);
+  top: var(--selection-anchor-y);
+  width: var(--selection-stem-length);
+  height: 2px;
+  transform-origin: 0 50%;
+  transform: rotate(var(--selection-stem-angle));
+  background: var(--accent);
+}
+.terminal-selection-handle::after {
+  content: '';
+  position: absolute;
+  left: var(--selection-knob-x);
+  top: var(--selection-knob-y);
+  transform: translate(-50%, -50%);
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--bg-terminal);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.terminal-selection-handle[hidden] { display: none; }
 
 /* V3 效果注册表：扫描线/闪烁按 fx 开关门控（取代旧的 style=cyberpunk 硬编码） */
 html:not([data-fx-scanline='on']) .scanlines,
@@ -1495,6 +1536,19 @@ html[data-ui-motion='none'] .skeleton-line {
   position: relative;
   overflow: hidden;
 }
+.sftp-entry-checkbox { display: none; }
+.sftp-selection-tools {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  gap: 8px;
+  padding: 4px 12px;
+  background: var(--bg-surface);
+}
+.sftp-selection-tools.hidden { display: none; }
+.sftp-selection-tools button { min-height: 44px; padding: 0 12px; color: var(--accent); }
+.sftp-multi-select .sftp-entry-checkbox { display: block; width: 20px; height: 20px; flex: 0 0 auto; accent-color: var(--accent); }
 
 .sftp-entry--enter {
   animation: sftp-entry-in var(--motion-normal) var(--spring-ease-gentle) backwards;
@@ -1841,6 +1895,26 @@ html[data-ui-motion='none'] .auth-aurora::after {
   border: 0;
   overflow: visible;
 }
+
+.terminal-paste-dialog {
+  max-height: calc(var(--visual-viewport-height) - 24px);
+}
+.terminal-paste-dialog .app-dialog__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: inherit;
+  overflow-y: auto;
+}
+.terminal-paste-dialog textarea {
+  flex: 1 1 auto;
+  min-height: 80px;
+  max-height: 35vh;
+  font-size: 16px;
+  resize: vertical;
+}
+.terminal-paste-dialog .app-dialog__message { margin-top: 0; }
+#tab-context-menu button:disabled { opacity: 0.4; cursor: default; }
 
 .app-dialog[data-variant="success"] {
   --feedback-color: var(--accent);
@@ -5160,10 +5234,38 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
     display: none;
   }
 
+  .mobile-selection-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 4px 6px;
+    overflow-x: auto;
+  }
+  .mobile-selection-actions > button { flex: 1 0 auto; }
+  .mobile-selection-actions.hidden,
+  .mobile-selection-actions > button.hidden,
+  .mobile-terminal-toolbar-scroll.hidden { display: none; }
+
+  .mobile-font-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+  .mobile-font-controls > span { flex: 0 0 100%; }
+  .mobile-font-controls button { min-width: 44px; min-height: 44px; border-radius: var(--control-radius); }
+  .mobile-font-controls output { flex: 1; text-align: center; font-variant-numeric: tabular-nums; }
+  .mobile-font-controls button[aria-pressed='true'] { color: var(--accent); background: var(--accent-bg); }
+  .mobile-font-controls button:disabled,
+  .mobile-terminal-toolbar button:disabled { opacity: 0.45; }
+
   .mobile-terminal-toolbar button {
     display: inline-flex;
-    min-width: 42px;
-    height: 40px;
+    min-width: 44px;
+    height: 44px;
     flex: 0 0 auto;
     align-items: center;
     justify-content: center;
@@ -5327,8 +5429,39 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   }
 
   .sftp-panel-actions button {
-    min-height: 40px;
+    min-height: 44px;
   }
+  .sftp-touch-actions {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    gap: 4px;
+    flex-shrink: 0;
+    padding-right: 6px;
+    background: var(--bg-surface);
+    border-right: 1px solid var(--border-strong);
+  }
+  .sftp-touch-actions button {
+    min-width: 44px;
+    padding: 0 8px;
+    border-radius: var(--control-radius);
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--accent);
+  }
+  .sftp-touch-actions button:disabled { opacity: 0.4; }
+  #sftp-multi-btn[aria-pressed='true'] { background: var(--accent-bg); }
+  .sftp-entry { min-height: 44px; }
+  #tab-context-menu { max-width: calc(100vw - 16px); }
+  #tab-context-menu button { min-height: 44px; }
+  #sftp-close-btn,
+  #sftp-transfer-cancel-btn { min-width: 44px; min-height: 44px; }
+  .tab-close,
+  .tab-new-btn { min-width: 44px; }
+  #tab-bar { min-height: 44px; height: 44px; }
+  .tab-item,
+  .tab-close,
+  .tab-new-btn { min-height: 44px; }
 
   .ask-ai-selection-float {
     max-width: calc(100vw - 24px);

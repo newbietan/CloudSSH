@@ -135,6 +135,7 @@ test('软键盘动画使用可视视口并只在尺寸稳定后适配终端', as
       },
       getMobileModifier: () => null,
       isMobileSelectionMode: () => false,
+      hasSelection: () => false,
       setMobileSelectionMode: () => undefined,
     };
     const controller = new mobileModule.MobileTerminalController(() => terminal);
@@ -279,6 +280,7 @@ test('终端字号随手机、触屏平板和桌面宽度调整且不受文本�
     const xterm = root.querySelector<HTMLElement>('.xterm')!;
     return {
       fontSize: (terminal as any).terminal.options.fontSize,
+      supportsTextSizeAdjust: CSS.supports('text-size-adjust', '100%') || CSS.supports('-webkit-text-size-adjust', '100%'),
       textSizeAdjust:
         getComputedStyle(xterm).getPropertyValue('text-size-adjust') ||
         getComputedStyle(xterm).getPropertyValue('-webkit-text-size-adjust'),
@@ -286,7 +288,9 @@ test('终端字号随手机、触屏平板和桌面宽度调整且不受文本�
   });
 
   expect(initial.fontSize).toBe(12);
-  expect(initial.textSizeAdjust).toBe('100%');
+  // Playwright's desktop WebKit port does not implement iOS text autosizing, even in device emulation.
+  // Keep real font-size/resize assertions on both engines; inspect this CSS property only when supported.
+  if (initial.supportsTextSizeAdjust) expect(initial.textSizeAdjust).toBe('100%');
 
   await page.setViewportSize({ width: 844, height: 390 });
   await page.evaluate(() => (window as any).__responsiveFontTerminal.fit());
