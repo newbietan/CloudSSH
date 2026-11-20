@@ -171,28 +171,36 @@ test.describe('narrow and touch', () => {
   }
 });
 
-for (const theme of themes) {
-  test(`${theme}: anonymous form also shows all five port digits`, async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 720 });
-    await page.route('**/api/auth/me', (route) => {
-      if (route.request().method() !== 'GET') return route.fallback();
-      return route.fulfill({ status: 401, json: { error: 'unauthorized' } });
-    });
-    await page.route('**/api/config', (route) => {
-      if (route.request().method() !== 'GET') return route.fallback();
-      return route.fulfill({ json: {
-        authMode: 'anonymous', turnstileEnabled: false, githubAuthEnabled: false, githubAuthRequired: false,
-      } });
-    });
-    await page.addInitScript((value) => localStorage.setItem('cloudssh_theme_selection', value), theme);
-    await page.goto('/?lang=en-US');
-    await page.locator('#port').fill('65535');
-    await page.evaluate(() => document.fonts.ready);
-    const port = await portGeometry(page, '#port');
-    expect(port.textSpace).toBeGreaterThanOrEqual(port.textWidth + 2);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+test('anonymous form shows all five port digits in each theme', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.route('**/api/auth/me', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 401, json: { error: 'unauthorized' } });
   });
-}
+  await page.route('**/api/config', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ json: {
+      authMode: 'anonymous', turnstileEnabled: false, githubAuthEnabled: false, githubAuthRequired: false,
+    } });
+  });
+  await page.goto('/?lang=en-US');
+  await page.locator('#port').fill('65535');
+  for (const theme of themes) {
+    await test.step(theme, async () => {
+      await page.evaluate(async (name) => {
+        const themePath = '/src/theme.ts';
+        const { applyBuiltInTheme } = await import(themePath);
+        applyBuiltInTheme(name);
+        await document.fonts.ready;
+      }, theme);
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      const port = await portGeometry(page, '#port');
+      expect(port.visible).toBe(true);
+      expect(port.textSpace).toBeGreaterThanOrEqual(port.textWidth + 2);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+    });
+  }
+});
 
 test('five-digit ports keep native bounds and save numeric values in add/edit flows', async ({ page }) => {
   const requests: Array<Record<string, unknown>> = [];

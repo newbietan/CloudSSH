@@ -66,15 +66,23 @@ test('Access credentials are explicitly saved with the unique account configurat
   expect(await page.evaluate(() => JSON.stringify([localStorage, sessionStorage]))).not.toMatch(/SERVICE-SECRET|SAVED-ACCOUNT-TOKEN/);
 });
 
-for (const [locale, caption] of [['zh-CN', 'Cloudflare Access 连接'], ['zh-TW', 'Cloudflare Access 連線'], ['en-US', 'Cloudflare Access connection']]) {
+for (const [locale, caption, title] of [
+  ['zh-CN', 'Cloudflare Access 连接', '外部AI助手MCP设置'],
+  ['zh-TW', 'Cloudflare Access 連線', '外部AI助理MCP設定'],
+  ['en-US', 'Cloudflare Access connection', 'External AI assistant MCP settings'],
+]) {
   test(`compact Access guide and theme controls (${locale})`, async ({ page }) => {
     await setup(page); await page.goto(`/?lang=${locale}`); await open(page);
+    await expect(page.locator('#mcp-title')).toHaveText(title);
+    await expect(page.locator('#user-space-header-actions [data-mcp-open]')).toHaveAttribute('aria-label', title);
+    await expect(page.locator('#ai-config-btn svg[data-assistant-glyph="agent"]')).toBeAttached();
     await expect(page.locator('#mcp-access-guide > summary')).toHaveText(caption);
     await expect(page.locator('#mcp-access-guide')).toContainText('Service Auth');
     for (const link of await page.locator('#mcp-access-guide a').all()) await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
     expect(await page.locator('#mcp-dialog').evaluate(node => node.scrollWidth > node.clientWidth + 1)).toBe(false);
     expect(await page.locator('#mcp-access-client-secret').evaluate(node => parseFloat(getComputedStyle(node).fontSize))).toBeGreaterThanOrEqual(16);
     expect((await new AxeBuilder({ page }).include('#mcp-dialog').analyze()).violations).toEqual([]);
+    await page.keyboard.press('Escape'); await expect(page.locator('#mcp-dialog')).toHaveCount(0);
   });
 }
 

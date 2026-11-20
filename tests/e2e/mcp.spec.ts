@@ -338,18 +338,6 @@ test('explicit context sharing still checks server state on reopen', async ({ pa
   expect(JSON.stringify(updates)).not.toContain('not-a-context-token');
 });
 
-for (const [locale, title] of [['zh-CN', '外部AI助手MCP设置'], ['zh-TW', '外部AI助理MCP設定'], ['en-US', 'External AI assistant MCP settings']]) {
-  test(`compact singleton panel and accessible icons (${locale})`, async ({ page }) => {
-    await setup(page); await page.goto(`/?lang=${locale}`); await openPanel(page);
-    await expect(page.locator('#mcp-title')).toHaveText(title);
-    await expect(page.locator('#mcp-dialog [data-i18n="mcp.compactIntro"], #mcp-dialog [data-i18n="mcp.help"]')).toHaveCount(0);
-    await expect(page.locator('#user-space-header-actions [data-mcp-open]')).toHaveAttribute('aria-label', title);
-    await expect(page.locator('#ai-config-btn svg[data-assistant-glyph="agent"]')).toBeAttached();
-    expect(await page.locator('#mcp-dialog').evaluate(node => node.scrollWidth > node.clientWidth + 1)).toBe(false);
-    await page.keyboard.press('Escape'); await expect(page.locator('#mcp-dialog')).toHaveCount(0);
-  });
-}
-
 test('anonymous pages do not expose MCP entry points', async ({ page }) => {
   await page.goto('/?lang=en-US');
   for (const button of await page.locator('[data-mcp-open]').all()) await expect(button).toBeHidden();

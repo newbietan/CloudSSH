@@ -1,11 +1,21 @@
 import { installApiMocks } from './api-mocks';
-import { expect, test } from './fixtures';
+import { expect, test, type Page } from './fixtures';
+
+// Request-guard checks need a same-origin document, not another full CloudSSH boot. Only the
+// probe document is stubbed here; /api requests still cross the original context/Vite boundary.
+async function openProbe(page: Page) {
+  await page.route('**/__api_probe__', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>API probe</title>' })
+  );
+  await page.goto('/__api_probe__');
+}
 
 test('自动 fixture 无需手动 helper 即提供初始化 JSON 响应', async ({ page, context }) => {
   // A second page also inherits the context-level defaults.
   const secondPage = await context.newPage();
   await page.goto('/');
-  await secondPage.goto('/');
+  await expect(page.locator('#connection-form')).toBeVisible();
+  await openProbe(secondPage);
   const responses = await secondPage.evaluate(async () => {
     const paths = ['/api/config', '/api/auth/me', '/api/user/theme', '/api/user/mobile-shortcuts'];
     return Promise.all(paths.map(async (path) => {
@@ -33,7 +43,7 @@ test('用例的显式路由可覆盖初始化默认值并匹配查询参数', as
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ json: { theme: { name: 'Explicit Theme' } } });
   });
-  await page.goto('/');
+  await openProbe(page);
   const payload = await page.evaluate(() =>
     fetch('/api/user/theme?id=preview').then((response) => response.json())
   );
@@ -47,7 +57,7 @@ test('未知 API 即使被应用 catch，守卫仍记录失败且不泄露参数
   const guard = await installApiMocks(isolated);
   try {
     const page = await isolated.newPage();
-    await page.goto('/');
+    await openProbe(page);
     const caught = await page.evaluate(() =>
       fetch('/api/undeclared?token=secret-must-not-be-logged').then(() => false).catch(() => true)
     );
@@ -65,7 +75,7 @@ test('基础读取 Mock 不放行未声明的 PUT 或带参数 DELETE', async ({
   const guard = await installApiMocks(isolated);
   try {
     const page = await isolated.newPage();
-    await page.goto('/');
+    await openProbe(page);
     const caught = await page.evaluate(async () => {
       const put = await fetch('/api/user/theme', { method: 'PUT', body: '{}' }).catch(() => null);
       const del = await fetch('/api/user/theme?id=not-declared', { method: 'DELETE' }).catch(
@@ -87,7 +97,7 @@ test('绕过 route 的 API 返回 501 JSON，守卫仍判失败', async ({ brows
   try {
     const page = await isolated.newPage();
     await page.route('**/api/bypass-mock', (route) => route.continue());
-    await page.goto('/');
+    await openProbe(page);
     const response = await page.evaluate(async () => {
       const result = await fetch('/api/bypass-mock');
       return {

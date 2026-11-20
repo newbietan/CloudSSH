@@ -190,7 +190,8 @@ OpenSSH 覆盖七种裸钥/证书协商、PTY/Shell、exec 与 SFTP；Go 网关�
 
 ### 浏览器 E2E
 
-- API 隔离守卫（`api-isolation.spec.ts`，Chromium + WebKit）：自动基础 JSON Mock、同 context 多页面、用例覆盖、未知 API/未声明写操作失败、查询值脱敏、`route.continue()` 绕过时的 501 JSON 与守卫失败。
+- API 隔离守卫（`api-isolation.spec.ts`，Chromium + WebKit）：保留一次真实应用启动；其余请求探针用同源空白文档，不重载应用，也不替换 API 守卫或 Vite 501 兜底。覆盖基础 JSON Mock、同 context 多页面、用例覆盖、未知 API/未声明写操作失败、查询值脱敏、`route.continue()` 绕过。
+- 版本提示布局（`version-notice.spec.ts`）：每种语言独立启动，在无更新/有更新两种状态下逐一测量 320/390/614px。无数据、相同版本、旧版本的页面断言复用这些启动；预发布和畸形元数据仍独立验证。匿名表单五位端口同理，在同一页面切换并测量四种主题，不裁掉组合。
 - 主题云端同步（`theme-sync.spec.ts` / `theme-styles.spec.ts`）：GET 多主题库与 activeId 恢复、PUT 载荷和云端状态、带 id 的 DELETE 与本地回退；GET 503/网络错误保留本地选择、PUT/DELETE 失败返回 false，不将本地成功等同于云端成功。
 - 主题背景合成（`theme-background.spec.ts`，Chromium + WebKit 移动端）：保留 Liquid Glass 原有玻璃材质、光晕与 35s 往返轨迹；关键帧仅含 `transform`，六个时刻与旧背景逐帧截图对照（允许轻微栅格采样误差）；覆盖高 DPR 末端、滚动/缩放、主题切换、自定义遮罩/噪点、系统减少动态与 `motion=none`。此处断言渲染/视觉契约，不以易受机器负载影响的 GPU 百分比作为 CI 门禁。
 - 本地字体（`local-fonts.spec.ts`，Chromium + WebKit 移动端）：开发页、实际 Worker 内联 HTML 与 Pages 编辑器相对路径，全部图标连字、字重与 FILL 图形变化、无 Google Fonts 请求、Worker 无独立字体请求。`build/font-assets.test.ts` 验证缺失/外链/独立字体产物会阻断构建，生产构建测试保护定向强制内联策略。
