@@ -538,7 +538,7 @@ pnpm run deploy:test     # 部署 test 环境
 - Worker CI 并发按事件与 PR/分支分组，仅取消过期 PR 验证；push 部署不在途取消，30 分钟 job 上限。互操作无 Secrets/部署，可取消旧运行；Pages 同一目标串行发布、10 分钟 job 上限
 - 维护者仓库 `test` 分支 push → 自动部署到 `cloudssh-test`
 - 维护者仓库 `main` 分支 push → 自动部署到 `cloudssh`
-- 维护者仓库 `docs/**` 变更 → 发布 GitHub Pages 主题编辑器（`github-pages.yml`）
+- 维护者仓库 `docs/**` 变更 → 发布 GitHub Pages 主题编辑器（`github-pages.yml`）。上传与部署必须共用含 `github.run_attempt` 的产物名：Pages 按整个 run 查找产物，重跑 job 时上次尝试的同名归档仍可能存在。仅修改 Pages 工作流可在目标分支手动触发验证；重跑旧 run 不会载入新工作流。
 - Fork 仅按需运行上游 `main` 同步（`sync-upstream.yml`）：手动执行无需变量；定时同步默认关闭，仅 `AUTO_SYNC_UPSTREAM=true` 开启，删除或设为 `false` 即关闭
 
 > 部署门禁（`deploy.yml`）依次执行：冻结锁文件安装 → `typecheck` → `test` → `build:frontend` → Playwright 浏览器安装 → `test:e2e` → 上传浏览器报告 → 按分支部署；任一环节失败即阻断部署。E2E 失败仍尝试上传报告，不放行部署。CI 部署步骤直接执行 `pnpm exec wrangler deploy [--env test]`，复用已通过测试的前端内联产物，不在注入部署 Secrets 后重复构建；本地 `deploy`/`deploy:test` 脚本仍保留一键构建部署。

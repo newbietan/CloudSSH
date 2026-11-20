@@ -89,6 +89,14 @@ describe('CI 验证和部署边界', () => {
     expect(pages).toContain('persist-credentials: false');
   });
 
+  it('Pages 重跑只部署本次尝试上传的产物，不匹配上一次尝试的同名归档', () => {
+    const pages = readWorkflow('github-pages.yml');
+    const step = (action: string) => pages.split(`uses: actions/${action}@`)[1]?.split('\n      - ')[0] ?? '';
+    expect(pages).toContain('PAGES_ARTIFACT_NAME: github-pages-${{ github.run_id }}-${{ github.run_attempt }}');
+    expect(step('upload-pages-artifact')).toContain('          name: ${{ env.PAGES_ARTIFACT_NAME }}');
+    expect(step('deploy-pages')).toContain('          artifact_name: ${{ env.PAGES_ARTIFACT_NAME }}');
+  });
+
   it('互操作 push/PR 均覆盖 MCP 和共享传输的相关变更', () => {
     const interop = readWorkflow('ssh-interop.yml');
     expect(interop).toContain('  pull_request:\n    branches: [test, main]');

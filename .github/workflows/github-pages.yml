@@ -17,6 +17,9 @@ jobs:
     if: github.repository_owner == 'newbietan'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # deploy-pages searches the whole run, including artifacts from previous attempts.
+    env:
+      PAGES_ARTIFACT_NAME: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
     permissions:
       contents: read
       pages: write
@@ -35,9 +38,12 @@ jobs:
         # actions/upload-pages-artifact@v3
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa
         with:
+          name: ${{ env.PAGES_ARTIFACT_NAME }}
           path: "docs"
 
       - name: Deploy to GitHub Pages
         id: deployment
         # actions/deploy-pages@v4
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e
+        with:
+          artifact_name: ${{ env.PAGES_ARTIFACT_NAME }}
