@@ -13,7 +13,7 @@
 
 CloudSSH is a serverless Web SSH terminal built on Cloudflare Workers. Users connect to SSH servers through a browser-based terminal UI with integrated SFTP file management and AI Agent assistant.
 
-当前版本：`2.11.2`；根目录与 `frontend/package.json` 版本必须同步，更新说明见 `CHANGELOG.md`。
+当前版本：`2.11.3`；根目录与 `frontend/package.json` 版本必须同步，更新说明见 `CHANGELOG.md`。
 
 ## Architecture
 
@@ -169,7 +169,9 @@ frontend/
 │   ├── mcp-client-config.ts # 双层认证配置组装，账户凭据加密回读后显式复制
 │   ├── assistant-icons.ts # 内置 AI 对话星芒 / 外部 MCP 连接节点的固定 SVG 几何与 DOM 渲染
 │   ├── assistant-ui.css # Agent/MCP 共用面板、标题栏、输入、按钮和页脚组件
-│   ├── mcp-config-draft.ts # 授权集合语义比较（顺序不构成改动），保存按钮状态基线
+│   ├── mcp-config-draft.ts # 每个设置窗口独立的完整授权草稿、已保存基线与变更台数
+│   ├── mcp-permission-editor.ts # 授权摘要、名称/标签搜索、按已保存权限筛选及桌面表格/手机逐行展开
+│   ├── server-removal.ts # 经服务端确认的删除通知，仅在同源同账户打开的设置视图移除关联行
 │   ├── ai-config.ts       # AI model configuration modal (Combobox 下拉、免密安全拉取与主题自适应)
 │   ├── i18n/
 │   │   ├── index.ts        # 语言解析、词条查询（t）与 locale 变更通知
@@ -300,7 +302,7 @@ Required for optional features (configured in `wrangler.toml` or Cloudflare Dash
 | `/api/auth/me` | GET | Yes | Returns current user info |
 | `/api/auth/password/login` | POST | No | 单管理员密码登录（密码模式专用；同源 Origin 校验 + Turnstile 可选 + DO 持久化节流 + 恒时比对） |
 | `/api/servers` | GET/POST | Yes | List or create saved servers（含 `tags` 与可选 `jump_server_id`） |
-| `/api/servers/:id` | PUT/DELETE | Yes | Update or delete a server（含标签和跳板关系校验） |
+| `/api/servers/:id` | PUT/DELETE | Yes | 更新或删除服务器；删除受所有权、跳板和分享门控，事务清理该服务器的记忆、MCP 授权及近期操作 |
 | `/api/servers/:id/connect` | POST | Yes | Generate one-time-token, return WebSocket URL |
 | `/api/servers/:id/memory` | GET | Yes | Read unified server memory (work logs & context knowledge) |
 | `/api/servers/:id/work-logs` | POST | Yes | Create a server work log entry |
@@ -484,7 +486,9 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
 48. **首屏初始化与强制登录防闪烁（#192）** - 初始 HTML 使用 `#app[hidden][inert][aria-hidden]` 隔离未决页面，独立 `#app-loading` 展示主题自适应、三语和减少动态友好的加载状态；不能先展示匿名连接表单再替换为登录面板。`app-bootstrap.ts` 同时读取 `/api/config` 与 `/api/auth/me`（同源、no-store），共享 10s deadline 覆盖响应正文，任一失败取消另一请求；仅身份接口 401 表示未登录，网络/HTTP/JSON/必要字段异常均停留错误页并允许手动单次重试，不降级匿名、不缓存认证策略。`ConnectionForm` 直接接收已确认配置，只渲染最终模式，强制登录/坏哈希面板不创建 SSH 凭据输入或读取本地连接历史。分享认领和独立终端路由仍绕过这两次读取并显式解除加载态；`#password-setup` 不受配置失败阻断。`app-bootstrap.test.ts` 与 Chromium/WebKit 的 `e2e/app-bootstrap.spec.ts` 覆盖脚本加载前、慢响应/刷新、已登录、失败/超时/迟到响应、重试、三语和动态偏好。
 
-49. **账户唯一 MCP 配置（#194）** - 每登录账户只生成一次长期令牌，无名称/天数/多Token/撤销/轮换入口。`mcp_configs.user_id` 主键确保唯一，并发生成幂等；旧摘要令牌无法恢复，新验证器不接受，首次生成提示更新客户端并清理账户旧记录。个人令牌与 Access Service Token 沿用账户 AES-GCM 加密回读，根密钥仍在同一 DB（不是独立 KMS）；用户已同意保存完整配置，不再沿用早期“Access不上传/只存摘要”语义。GET `/api/mcp/config` 只返回元数据、不改变绑定；POST首次生成、PUT逐服务器grants，POST `/api/mcp/config/credentials` 仅已登录所有者明确复制/查看时解密，旧多Token和DELETE接口移除。不写浏览器存储/日志；关闭/换号/模式变化清理明文及迟到响应。仅cf_access展示精简的Service Token/Service Auth引导，已保存时折叠；确认勾选不是边缘验证，不能用Bypass，本站与SSH隧道凭据有别。MCP 验证可信原生 Access 准入，不依赖 getIdentity 返回用户资料，仍校验个人令牌/模式/账户与逐服务器权限；无原生上下文或非法 aud 必须拒绝。DEBUG_MODE=true 时仅记录 mcp.auth.denied 的固定原因码（上下文缺失/令牌格式/模式/凭据拒绝/后端查询失败），每 isolate 每60秒最多20条，不包含请求头、令牌、身份、异常正文；对外仍返回统一401，不用诊断放宽认证。read/write/exec/context逐服务器校验，工具列表并集不是全局权限；权限更新后尽力关闭旧执行池，握手后/派发前再检查，旧清理不得删除替代的新连接。令牌在授权修改/凭据变更后保持不变，认证模式/完整路由/allowlist仍校验；密码换代先拒绝旧绑定，所有者显式POST复制/保存可恢复同一令牌，GET不得恢复。每配置120请求/分钟、最多100服务器，两条短连接、每服务器一次操作、60s空闲、命令≤60s/整次≤90s。保留严格TOFU、SSRF、16KiB隧道载体分帧、非PTYexec/独立SFTP与所有输出预算；交互认证/浏览器CA不可无人值守，未知结果不重放，取消不保证回滚或杀尽子进程。SFTP文本≤64KiB、目录≤200条/约64KiB/32批；临时文件必须在OPEN时原子指定0600，不能靠后续chmod关闭初始暴露窗口，保留EXCL与已有普通文件权限恢复；INIT写入与版本等待须同时接住失败，清理不得产生未处理Promise拒绝。覆盖哈希+原子rename，非事务锁，不保证inode元数据。终端上下文仅显式共享且逐服务器授权，30min/断线失效，不输入、不刷新空闲。设置名为「外部AI助手MCP设置」，上下文区为「共享当前终端上下文」，活动区为「MCP操作日志」，三语同步。Agent/MCP 实际共用 assistant-ui.css 的表面、48px标题栏、标题/图标、输入、主色操作和页脚，不能只调主题色。通用图标按钮固定尺寸必须排除带文字的Agent返回按钮，移动端操作组不收缩、标题可截断；≤380px仅隐藏返回文字，保留箭头和完整aria-label，不缩小触摸目标或改动关闭语义。已有配置无修改时保存禁用，按服务器/权限集合语义判断，恢复原值/保存成功重建基线；复制/失败/忙碌状态不能误启用，Access仅填入替换凭据才构成改动，首次生成仍可用。窗口使用主题变量和统一液态材质，近期操作整体默认折叠，展开后是最多100条小字号等宽单行日志（时间范围/服务器/状态/工具），无逐条折叠，列表可滚动，仅展开且可见时刷新；活动≤100条/约24h，Alarm与记忆共用最早唤醒，不存命令/输出，不作永久审计。固定SVG图标保留三语无障碍及思考状态恢复。详见 `docs/mcp.md`；设置表幂等创建，沿用v3 DO绑定，不新增migration、不删除已有Worker。
+49. **账户唯一 MCP 配置（#194）** - 每登录账户只生成一次长期令牌，无名称/天数/多Token/撤销/轮换入口。`mcp_configs.user_id` 主键确保唯一，并发生成幂等；旧摘要令牌无法恢复，新验证器不接受，首次生成提示更新客户端并清理账户旧记录。个人令牌与 Access Service Token 沿用账户 AES-GCM 加密回读，根密钥仍在同一 DB（不是独立 KMS）；用户已同意保存完整配置，不再沿用早期“Access不上传/只存摘要”语义。GET `/api/mcp/config` 只返回元数据、不改变绑定；POST首次生成、PUT逐服务器grants，POST `/api/mcp/config/credentials` 仅已登录所有者明确复制/查看时解密，旧多Token和DELETE接口移除。不写浏览器存储/日志；关闭/换号/模式变化清理明文及迟到响应。仅cf_access展示精简的Service Token/Service Auth引导，已保存时折叠；确认勾选不是边缘验证，不能用Bypass，本站与SSH隧道凭据有别。MCP 验证可信原生 Access 准入，不依赖 getIdentity 返回用户资料，仍校验个人令牌/模式/账户与逐服务器权限；无原生上下文或非法 aud 必须拒绝。DEBUG_MODE=true 时仅记录 mcp.auth.denied 的固定原因码（上下文缺失/令牌格式/模式/凭据拒绝/后端查询失败），每 isolate 每60秒最多20条，不包含请求头、令牌、身份、异常正文；对外仍返回统一401，不用诊断放宽认证。read/write/exec/context逐服务器校验，工具列表并集不是全局权限；权限更新后尽力关闭旧执行池，握手后/派发前再检查，旧清理不得删除替代的新连接。令牌在授权修改/凭据变更后保持不变，认证模式/完整路由/allowlist仍校验；密码换代先拒绝旧绑定，所有者显式POST复制/保存可恢复同一令牌，GET不得恢复。每配置120请求/分钟、最多100服务器，两条短连接、每服务器一次操作、60s空闲、命令≤60s/整次≤90s。保留严格TOFU、SSRF、16KiB隧道载体分帧、非PTYexec/独立SFTP与所有输出预算；交互认证/浏览器CA不可无人值守，未知结果不重放，取消不保证回滚或杀尽子进程。SFTP文本≤64KiB、目录≤200条/约64KiB/32批；临时文件必须在OPEN时原子指定0600，不能靠后续chmod关闭初始暴露窗口，保留EXCL与已有普通文件权限恢复；INIT写入与版本等待须同时接住失败，清理不得产生未处理Promise拒绝。覆盖哈希+原子rename，非事务锁，不保证inode元数据。终端上下文仅显式共享且逐服务器授权，30min/断线失效，不输入、不刷新空闲。设置名为「外部AI助手MCP设置」，上下文区为「共享当前终端上下文」，活动区为「MCP操作日志」，三语同步。Agent/MCP 实际共用 assistant-ui.css 的表面、48px标题栏、标题/图标、输入、主色操作和页脚，不能只调主题色。通用图标按钮固定尺寸必须排除带文字的Agent返回按钮，移动端操作组不收缩、标题可截断；≤380px仅隐藏返回文字，保留箭头和完整aria-label，不缩小触摸目标或改动关闭语义。服务器权限首次配置展开、已配置默认折叠；仅展开时挂载桌面权限表或移动逐行披露。搜索/筛选、折叠和断点切换仅影响展示，筛选基于已保存权限（编辑中不移走当前行），提交完整草稿而非可见行，不提供批量授权。已有配置无修改时保存禁用，按服务器/权限集合语义判断并显示变更台数，恢复原值/保存成功重建基线；复制/失败/忙碌状态不能误启用，Access仅填入替换凭据才构成改动，首次生成仍可用。窗口使用主题变量和统一液态材质，近期操作整体默认折叠，展开后是最多100条小字号等宽单行日志（时间范围/服务器/状态/工具），无逐条折叠，列表可滚动，仅展开且可见时刷新；活动≤100条/约24h，Alarm与记忆共用最早唤醒，不存命令/输出，不作永久审计。固定SVG图标保留三语无障碍及思考状态恢复。详见 `docs/mcp.md`；设置表幂等创建，沿用v3 DO绑定，不新增migration、不删除已有Worker。
+
+    **删除保存服务器**：必须先核对归属、跳板引用与未结束分享，同一 SQLite 事务删除服务器、记忆/待提炼任务、MCP grants 与近期活动。保留账户长期令牌、Access 凭据、其他服务器、主机指纹和已结束分享审计。旧库冷启动清理悬空授权/活动；迟到的操作记录不能重新插入，连接配置异步解密后须复核链上归属。仅作废相关一次性连接票据、尽力关对应 MCP 执行连接，不打断其他服务器或承诺回滚远程操作。前端只按明确成功确认通知同账户设置窗口，删除不影响其他草稿勾选，迟到列表/保存响应不得复活已删除行。
 
 50. **移动端精细操作（#195）** - 选择模式由明确「选择」入口开启，以 xterm 公开选区/缓冲 API 为权威，44px 端点命中区须保留抓取偏移、短选区重叠时按可见端点距离判定；宽字符按 cell width 对齐，不按 JS 字符串长度推算列数。边缘滚动仅普通缓冲区本地历史、最多约18行/秒，松手/取消/resize/关闭/连接切换停止，不发送远端滚轮或方向键，不复制第二份历史。仅选择模式捕获原生菜单，普通状态与手动粘贴保留系统菜单；操作栏复制失败保留选区，AI 附加仍受原权限与显式发送约束。字号为本机 `cloudssh_terminal_font_size`（12–18px或自动12/13/14px），不混入主题或账户配置；字号/列重排清除选区并提示，高度变化只在原行仍匹配时恢复选区。手动粘贴单次≤65,536字符，明确拒绝超限、不静默截断，Enter只换行；文本不持久化，绑定发起WebSocket，切标签/离开终端/断线/重连/销毁均销毁，迟到读取不得发送到新会话，成功仍经 xterm/trzsz/Shell-ready 管线。SFTP 多选复用原选择模型、通用打开复用 `openEntry`（含软链接与串行下载），不在多选中双击打开。「打开／多选」须与右侧独立横向滚动区并排隔离，不能以 sticky 叠放遮盖滚动文字；保留工具按钮不压缩/单行与44px触摸目标。用户主动中断传输经 `runAfterTransferConfirmation`，在批准后复核队列代际与标签/身份；`hide`/`dispose`仍同步强制清理，不能把确认塞入断线与账号切换路径。移动标签菜单复用原操作与独立连接令牌；新spec及既有移动终端/用户空间/剪贴板纳入WebKit，但自动化不替代真机原生菜单/IME/触感验收。详见 `docs/mobile-ux.md`。
 
@@ -534,7 +538,7 @@ pnpm run deploy:test     # 部署 test 环境
 - Worker CI 并发按事件与 PR/分支分组，仅取消过期 PR 验证；push 部署不在途取消，30 分钟 job 上限。互操作无 Secrets/部署，可取消旧运行；Pages 同一目标串行发布、10 分钟 job 上限
 - 维护者仓库 `test` 分支 push → 自动部署到 `cloudssh-test`
 - 维护者仓库 `main` 分支 push → 自动部署到 `cloudssh`
-- 维护者仓库 `docs/**` 变更 → 发布 GitHub Pages 主题编辑器（`github-pages.yml`）
+- 维护者仓库 `docs/**` 变更 → 发布 GitHub Pages 主题编辑器（`github-pages.yml`）。上传与部署必须共用含 `github.run_attempt` 的产物名：Pages 按整个 run 查找产物，重跑 job 时上次尝试的同名归档仍可能存在。仅修改 Pages 工作流可在目标分支手动触发验证；重跑旧 run 不会载入新工作流。
 - Fork 仅按需运行上游 `main` 同步（`sync-upstream.yml`）：手动执行无需变量；定时同步默认关闭，仅 `AUTO_SYNC_UPSTREAM=true` 开启，删除或设为 `false` 即关闭
 
 > 部署门禁（`deploy.yml`）依次执行：冻结锁文件安装 → `typecheck` → `test` → `build:frontend` → Playwright 浏览器安装 → `test:e2e` → 上传浏览器报告 → 按分支部署；任一环节失败即阻断部署。E2E 失败仍尝试上传报告，不放行部署。CI 部署步骤直接执行 `pnpm exec wrangler deploy [--env test]`，复用已通过测试的前端内联产物，不在注入部署 Secrets 后重复构建；本地 `deploy`/`deploy:test` 脚本仍保留一键构建部署。

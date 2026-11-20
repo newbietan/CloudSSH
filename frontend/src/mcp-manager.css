@@ -35,11 +35,6 @@
   flex: 1;
   min-width: 0;
 }
-.mcp-dialog h3 {
-  font-size: 12px;
-  font-weight: 600;
-  margin: 0.5rem 0;
-}
 .mcp-body {
   min-height: 0;
   overflow-y: auto;
@@ -76,20 +71,104 @@
 .mcp-dialog fieldset {
   min-width: 0;
 }
-.mcp-server-grant {
-  border: 1px solid var(--border-strong);
-  border-radius: var(--control-radius);
-  padding: 0.35rem 0.65rem 0.65rem;
-  margin: 0.75rem 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.75rem;
+#mcp-permissions {
+  border-top: 0;
 }
-.mcp-server-grant legend {
+.mcp-grant-count,
+.mcp-grant-description {
+  margin-inline-start: 0.65rem;
+  color: var(--on-surface-variant);
+  font-size: 0.8125rem;
+  font-weight: normal;
+}
+.mcp-grant-fields {
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+.mcp-grant-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.35rem 0 0.65rem;
+}
+.mcp-grant-toolbar select {
+  min-width: 0;
   max-width: 100%;
-  padding: 0 0.3rem;
-  font-size: 0.875rem;
+  cursor: pointer;
+}
+.mcp-grant-toolbar option {
+  background: var(--bg);
+  color: var(--on-surface);
+}
+.mcp-grant-list {
+  max-height: min(21rem, 50dvh);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--control-radius);
+}
+.mcp-grant-list table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.8125rem;
+}
+.mcp-grant-list th {
+  padding: 0.4rem;
+  text-align: center;
   overflow-wrap: anywhere;
+}
+.mcp-grant-list thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-elevated);
+  box-shadow: inset 0 -1px var(--border);
+}
+.mcp-grant-list th:first-child {
+  width: 37%;
+  padding-inline-start: 0.65rem;
+  text-align: start;
+}
+.mcp-grant-list tbody tr + tr > * {
+  border-top: 1px solid var(--border);
+}
+.mcp-grant-list td > label {
+  justify-content: center;
+  cursor: pointer;
+}
+@media (max-width: 767px), (max-width: 1180px) and (pointer: coarse) {
+  .mcp-grant-toolbar > * {
+    min-height: 44px;
+  }
+  .mcp-grant-list {
+    /* The dialog body is the only vertical scroller on a phone. */
+    max-height: none;
+    overflow: visible;
+    border: 0;
+  }
+  .mcp-grant-list details {
+    padding: 0;
+  }
+  .mcp-grant-list summary {
+    min-height: 44px;
+    padding: 0.65rem 0;
+  }
+  .mcp-grant-choices {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 0 0.5rem 0.5rem;
+  }
+  .mcp-grant-list .mcp-grant-choices label {
+    min-height: 44px;
+  }
+}
+@media (max-width: 380px) {
+  .mcp-grant-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .mcp-dialog label {
   display: flex;

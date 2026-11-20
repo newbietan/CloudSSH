@@ -31,6 +31,7 @@ import { requestCloudflareSshCertificate } from './cf-ssh-ca';
 import { notify } from './ui-feedback';
 import { initVersionNotice } from './version-notice';
 import { McpManager } from './mcp-manager';
+import { serverOwnerKey } from './server-removal';
 import { mountAssistantIcons } from './assistant-icons';
 
 // ==================== 全局状态 ====================
@@ -302,7 +303,7 @@ function showAuthSection(): void {
 
 function showUserSpace(user: InitialUser, config: AppConfig): void {
   deactivateTerminalView();
-  mcpManager.setIdentity(`${user.github_id}:${user.username}`, config.authMode);
+  mcpManager.setIdentity(serverOwnerKey(user), config.authMode);
   const previousGithubId = currentGithubId;
   isLoggedIn = true;
   currentGithubId = user.github_id;

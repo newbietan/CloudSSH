@@ -173,7 +173,7 @@ describe('UserDB jump connection resolution', () => {
               ['region', 'inferred_hint', 'tags', 'os', 'jump_server_id'].map((name) => ({ name })),
           };
         }
-        if (query === 'SELECT * FROM servers WHERE id = ?') {
+        if (query === 'SELECT * FROM servers WHERE id = ?' || query === 'SELECT user_id FROM servers WHERE id = ?') {
           const row = servers.get(Number(values[0]));
           return { toArray: () => (row ? [row] : []) };
         }

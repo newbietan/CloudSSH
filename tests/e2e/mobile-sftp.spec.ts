@@ -116,8 +116,8 @@ for (const theme of BUILT_IN_THEME_NAMES) {
             await test.info().attach('toolbar-scrolled', { path, contentType: 'image/png' });
           }
         }
-        await page.locator('#sftp-multi-btn').tap();
-        await expect(page.locator('#sftp-multi-btn')).toHaveAttribute('aria-pressed', 'false');
+        // This context is discarded after the screenshots. Exiting multi-select is exercised
+        // by the touch interaction test below, not repeated for every paint combination.
       });
     }
   }

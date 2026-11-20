@@ -56,6 +56,19 @@ export function t(key: TranslationKey, params: TranslationParams = {}): string {
   );
 }
 
+/** Only leaf nodes receive data-i18n: translateDocument replaces their text on language changes. */
+export function localizedElement<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  key?: TranslationKey
+): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag);
+  if (key) {
+    node.textContent = t(key);
+    node.dataset.i18n = key;
+  }
+  return node;
+}
+
 export function getLocale(): Locale {
   return currentLocale;
 }

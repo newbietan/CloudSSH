@@ -14,62 +14,79 @@ async function mockUpdate(page: Page, latestVersion: unknown): Promise<void> {
   });
 }
 
-for (const width of [320, 390, 614]) {
-  for (const locale of ['zh-CN', 'zh-TW', 'en-US']) {
-    test(`连接页版本紧随标题，三语与更新提示不挤压操作区：${width}px/${locale}`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 844 });
-      await page.emulateMedia({ reducedMotion: 'reduce' });
-      let latestVersion: string | null = null;
-      await page.route('**/api/version', (route) => {
-        if (route.request().method() !== 'GET') return route.fallback();
-        return route.fulfill({ json: { latestVersion } });
-      });
-      await page.goto(`/?lang=${locale}`);
-      const header = page.locator('.auth-connection-header');
-      const notice = header.locator('.auth-connection-heading [data-version-notice]');
-      await expect(notice).toHaveText(`v${APP_VERSION}`);
-      await expect(authNotice(page)).toHaveCount(1);
-      await expect(page.locator('#auth-section main > [data-version-notice]')).toHaveCount(0);
-
-      for (const update of [false, true]) {
-        if (update) {
-          latestVersion = nextVersion;
-          await page.evaluate((key) => localStorage.removeItem(key), VERSION_CACHE_KEY);
-          await page.reload();
-          await expect(notice.locator('a')).toContainText(nextVersion);
-          await expect(notice.getByRole('button')).toBeVisible();
-        }
-        const layout = await header.evaluate((element) => {
-          const rect = (selector: string) => element.querySelector(selector)!.getBoundingClientRect();
-          const title = rect('.auth-connection-title');
-          const version = rect('.version-notice__current');
-          const notice = rect('[data-version-notice]');
-          const actions = rect('.auth-connection-actions');
-          const header = element.getBoundingClientRect();
-          return {
-            versionAfterTitle: version.left >= title.right,
-            sameRow: Math.abs(title.y + title.height / 2 - version.y - version.height / 2) < 3,
-            noticeFits: notice.left >= header.left && notice.right <= header.right + 1,
-            actionsFit: actions.left >= header.left && actions.right <= header.right + 1,
-            overlap: notice.left < actions.right && notice.right > actions.left &&
-              notice.top < actions.bottom && notice.bottom > actions.top,
-            headerFits: element.scrollWidth <= element.clientWidth + 1,
-            pageFits: document.documentElement.scrollWidth <= innerWidth,
-          };
-        });
-        if (!update) {
-          expect(layout.versionAfterTitle).toBe(true);
-          expect(layout.sameRow).toBe(true);
-        }
-        expect(layout.noticeFits).toBe(true);
-        expect(layout.actionsFit).toBe(true);
-        expect(layout.overlap).toBe(false);
-        expect(layout.headerFits).toBe(true);
-        expect(layout.pageFits).toBe(true);
-        await expect(header.locator('[data-language-toggle]')).toBeVisible();
-      }
-    });
+async function checkHeaderLayout(page: Page, update: boolean) {
+  const header = page.locator('.auth-connection-header');
+  const layout = await header.evaluate((element) => {
+    const rect = (selector: string) => element.querySelector(selector)!.getBoundingClientRect();
+    const title = rect('.auth-connection-title');
+    const version = rect('.version-notice__current');
+    const notice = rect('[data-version-notice]');
+    const actions = rect('.auth-connection-actions');
+    const header = element.getBoundingClientRect();
+    return {
+      versionAfterTitle: version.left >= title.right,
+      sameRow: Math.abs(title.y + title.height / 2 - version.y - version.height / 2) < 3,
+      noticeFits: notice.left >= header.left && notice.right <= header.right + 1,
+      actionsFit: actions.left >= header.left && actions.right <= header.right + 1,
+      overlap: notice.left < actions.right && notice.right > actions.left &&
+        notice.top < actions.bottom && notice.bottom > actions.top,
+      headerFits: element.scrollWidth <= element.clientWidth + 1,
+      pageFits: document.documentElement.scrollWidth <= innerWidth,
+    };
+  });
+  if (!update) {
+    expect(layout.versionAfterTitle).toBe(true);
+    expect(layout.sameRow).toBe(true);
   }
+  expect(layout.noticeFits).toBe(true);
+  expect(layout.actionsFit).toBe(true);
+  expect(layout.overlap).toBe(false);
+  expect(layout.headerFits).toBe(true);
+  expect(layout.pageFits).toBe(true);
+  await expect(header.locator('[data-language-toggle]')).toBeVisible();
+}
+
+// Layout is responsive CSS: exercise every width in both states without booting the app
+// for every measurement. Each locale starts cold at a different width and no-update response.
+for (const [locale, initialWidth, baseline] of [
+  ['zh-CN', 320, null], ['zh-TW', 390, APP_VERSION], ['en-US', 614, '0.1.0'],
+] as const) {
+  test(`连接页版本紧随标题，三档宽度与更新提示不挤压操作区：${locale}`, async ({ page }) => {
+    await page.setViewportSize({ width: initialWidth, height: 844 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    let latestVersion: string | null = baseline;
+    await page.route('**/api/version', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({ json: { latestVersion } });
+    });
+    await page.goto(`/?lang=${locale}`);
+    const notice = page.locator('.auth-connection-heading [data-version-notice]');
+    await expect(page.locator('#host')).toBeVisible();
+    // Wait for this response to be consumed, not merely the initial version-only paint.
+    await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), VERSION_CACHE_KEY)).not.toBeNull();
+    await expect(notice).toHaveText(`v${APP_VERSION}`);
+    await expect(page.locator('.version-notice__link')).toHaveCount(0);
+    await expect(authNotice(page)).toHaveCount(1);
+    await expect(page.locator('#auth-section main > [data-version-notice]')).toHaveCount(0);
+
+    const widths = [initialWidth, ...[320, 390, 614].filter((width) => width !== initialWidth)];
+    for (const update of [false, true]) {
+      if (update) {
+        latestVersion = nextVersion;
+        await page.evaluate((key) => localStorage.removeItem(key), VERSION_CACHE_KEY);
+        await page.reload();
+        await expect(notice.locator('a')).toContainText(nextVersion);
+        await expect(notice.getByRole('button')).toBeVisible();
+      }
+      for (const width of widths) {
+        await test.step(`${width}px / ${update ? '有更新' : '无更新'}`, async () => {
+          await page.setViewportSize({ width, height: 844 });
+          await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width);
+          await checkHeaderLayout(page, update);
+        });
+      }
+    }
+  });
 }
 
 test('强制登录页的标题版本徽标在四款主题下可读，更新仍可忽略', async ({ page }) => {
@@ -156,8 +173,8 @@ test('忽略仅针对该新版，刷新保留，下个新版再次提示', async
   await expect(authNotice(page).locator('a')).toContainText(laterVersion);
 });
 
-for (const latestVersion of [APP_VERSION, '0.1.0', `${nextVersion}-beta.1`, null, '<img src=x onerror=alert(1)>']) {
-  test(`相同、旧版、预发布或无效版本不提示：${latestVersion}`, async ({ page }) => {
+for (const latestVersion of [`${nextVersion}-beta.1`, '<img src=x onerror=alert(1)>']) {
+  test(`预发布或无效版本不提示：${latestVersion}`, async ({ page }) => {
     await mockUpdate(page, latestVersion);
     await page.goto('/?lang=en-US');
     await expect(page.locator('#host')).toBeVisible();
