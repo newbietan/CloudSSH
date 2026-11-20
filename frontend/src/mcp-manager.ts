@@ -1,4 +1,5 @@
 import './mcp-manager.css';
+import { onServerRemoved } from './server-removal';
 import { getLocale, localizedElement as element, onLocaleChange, t, type TranslationKey } from './i18n';
 import { copyTextToClipboard } from './clipboard';
 import type {
@@ -98,6 +99,13 @@ export class McpManager {
     this.close();
     const generation = this.generation;
     this.controller = new AbortController();
+    // Subscribe before the reads: never reinsert a row from a response started before deletion.
+    const removed = new Set<number>();
+    let forget: ((id: number) => void) | undefined;
+    onServerRemoved(this.identity, this.controller.signal, (id) => {
+      if (forget) forget(id);
+      else removed.add(id);
+    });
     const dialog = element('dialog');
     dialog.id = 'mcp-dialog';
     dialog.className = 'mcp-dialog';
@@ -145,9 +153,22 @@ export class McpManager {
       ]);
       if (generation !== this.generation) return;
       this.status!.textContent = '';
-      this.buildConfiguration(body, servers, info);
-      this.buildContext(body);
-      this.buildActivity(body, servers);
+      const live = servers.filter((server) => !removed.has(server.id));
+      const dropGrant = this.buildConfiguration(body, live, info);
+      const target = this.getContext();
+      const ids = new Set(live.map((s) => s.id));
+      const context = this.buildContext(target && ids.has(target.serverId) ? target : null);
+      body.append(context);
+      const dropActivity = this.buildActivity(body, live);
+      removed.clear();
+      forget = (id) => {
+        if (!ids.delete(id)) return;
+        dropGrant(id);
+        dropActivity(id);
+        if (id === target?.serverId && context.isConnected) {
+          context.replaceWith(this.buildContext(null));
+        }
+      };
     } catch {
       if (generation === this.generation) {
         this.message('mcp.error');
@@ -159,7 +180,7 @@ export class McpManager {
     parent: HTMLElement,
     servers: McpServerOption[],
     initial: McpConfigInfo
-  ): void {
+  ) {
     let info = initial;
     const generation = this.generation;
     const form = element('form');
@@ -324,6 +345,10 @@ export class McpManager {
     });
     parent.append(form, configArea);
     parent.parentElement?.append(footer);
+    return (id: number) => {
+      permissions.removeServer(id);
+      syncButtons();
+    };
   }
   private buildAccessGuide(form: HTMLFormElement, required: boolean) {
     const details = disclosure('mcp.access.connection');
@@ -383,10 +408,9 @@ export class McpManager {
     form.append(details);
     return { details, fieldset, clientId, clientSecret, confirmed };
   }
-  private buildContext(parent: HTMLElement): void {
+  private buildContext(target: ContextTarget | null): HTMLDetailsElement {
     const section = disclosure('mcp.context');
     section.id = 'mcp-context-section';
-    const target = this.getContext();
     if (!target) section.append(element('p', 'mcp.noContext'));
     else {
       const generation = this.generation;
@@ -428,7 +452,7 @@ export class McpManager {
         code.hidden = !enabled;
       };
       section.addEventListener('toggle', () => {
-        if (!section.open || loaded) return;
+        if (!section.isConnected || !section.open || loaded) return;
         loaded = true;
         void this.api<{ expiresAt: number }>('/api/mcp/context', {
           method: 'POST',
@@ -447,9 +471,10 @@ export class McpManager {
       });
       section.append(element('p', 'mcp.contextBrief'), toggle, code);
     }
-    parent.append(section);
+    return section;
   }
-  private buildActivity(parent: HTMLElement, servers: { id: number; name: string }[]): void {
+  private buildActivity(parent: HTMLElement, servers: { id: number; name: string }[]) {
+    const names = new Map(servers.map((server) => [server.id, server.name]));
     const section = disclosure('mcp.activity');
     section.id = 'mcp-activity-section';
     const list = element('div');
@@ -469,7 +494,8 @@ export class McpManager {
           const items = await this.api<McpActivity[]>('/api/mcp/activity');
           if (id !== refreshId || generation !== this.generation || !section.open) return;
           list.replaceChildren();
-          if (!items.length) list.append(element('p', 'mcp.noActivity'));
+          const live = items.slice(0, 100).filter((item) => names.has(item.serverId));
+          if (!live.length) list.append(element('p', 'mcp.noActivity'));
           const dateTime = new Intl.DateTimeFormat(getLocale(), {
             year: 'numeric',
             month: '2-digit',
@@ -485,8 +511,9 @@ export class McpManager {
             second: '2-digit',
             hour12: false,
           });
-          for (const item of items.slice(0, 100)) {
+          for (const item of live) {
             const record = element('div');
+            record.dataset.serverId = String(item.serverId);
             record.className = 'mcp-operation';
             record.setAttribute('role', 'listitem');
             const start = new Date(item.startedAt);
@@ -496,7 +523,7 @@ export class McpManager {
               (end
                 ? ` — ${end.toDateString() === start.toDateString() ? time.format(end) : dateTime.format(end)}`
                 : '');
-            record.textContent = `${period}  ${servers.find((s) => s.id === item.serverId)?.name ?? item.serverId} · ${t(`mcp.status.${item.status}`)}  ${item.tool}`;
+            record.textContent = `${period}  ${names.get(item.serverId)} · ${t(`mcp.status.${item.status}`)}  ${item.tool}`;
             list.append(record);
           }
         } catch {
@@ -512,5 +539,10 @@ export class McpManager {
       refreshId++;
       if (section.open) void refresh(refreshId);
     });
+    return (id: number) => {
+      if (!names.delete(id)) return;
+      list.querySelectorAll(`[data-server-id="${id}"]`).forEach((row) => row.remove());
+      if (section.open && !list.childElementCount) list.append(element('p', 'mcp.noActivity'));
+    };
   }
 }

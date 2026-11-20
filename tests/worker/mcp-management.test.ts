@@ -15,14 +15,16 @@ function fixture() {
     return Response.json((body as any).action === 'credentials' ? { token: 'saved-private-token' } : info);
   });
   const invalidate = vi.fn(async () => Response.json({ success: true }));
+  const context = vi.fn(async () => Response.json({ expiresAt: 0 }));
   const env = { GITHUB_CLIENT_ID: 'test', GITHUB_CLIENT_SECRET: 'test',
+    SSH_SESSION: { idFromName: (v: string) => v, get: () => ({ fetch: context }) },
     USER_DB: { idFromName: (v: string) => v, get: () => ({ fetch: internal }) },
     MCP_EXECUTION: { idFromName: (v: string) => v, get: () => ({ fetch: invalidate }) },
   } as unknown as Env;
   const call = (path: string, method = 'GET', body?: unknown) => handleMcpManagement(new Request(`https://cloudssh.test${path}`, {
     method, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   }), env);
-  return { call, calls, internal, invalidate };
+  return { call, calls, internal, invalidate, context };
 }
 describe('singleton MCP owner-only management API', () => {
   it('GET returns metadata only and plaintext export is a separate authenticated POST', async () => {
@@ -38,6 +40,15 @@ describe('singleton MCP owner-only management API', () => {
     expect((await f.call('/api/mcp/config', 'PUT', { grants: [] })).ok).toBe(true);
     expect(f.calls[0]).toMatchObject({ action: 'update', userId: 7, input: { grants: [] } });
     expect(f.invalidate).toHaveBeenCalledOnce();
+  });
+  it('a stale owner tab cannot enable context sharing for a deleted server, but can still stop sharing', async () => {
+    const f = fixture();
+    const session = `session:1780000000000:${crypto.randomUUID()}`;
+    f.internal.mockResolvedValueOnce(new Response(null, { status: 404 }));
+    expect((await f.call('/api/mcp/context', 'POST', { serverId: 1, session, enabled: true })).status).toBe(404);
+    expect(f.context).not.toHaveBeenCalled();
+    expect((await f.call('/api/mcp/context', 'POST', { serverId: 1, session, enabled: false })).ok).toBe(true);
+    expect(f.internal).toHaveBeenCalledOnce(); expect(f.context).toHaveBeenCalledOnce();
   });
   it('has no revocation or old multi-token endpoints', async () => {
     const f = fixture();

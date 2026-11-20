@@ -6,7 +6,10 @@ export class McpGrantDraft {
   private current = new Map<number, readonly McpScope[]>();
   private changed = new Set<number>();
 
-  constructor(private serverIds: readonly number[], grants: readonly McpGrant[]) {
+  private readonly serverIds: Set<number>;
+
+  constructor(serverIds: readonly number[], grants: readonly McpGrant[]) {
+    this.serverIds = new Set(serverIds);
     this.reset(grants);
   }
 
@@ -21,6 +24,13 @@ export class McpGrantDraft {
     this.changed.clear();
   }
 
+  removeServer(id: number): void {
+    this.serverIds.delete(id);
+    this.saved.delete(id);
+    this.current.delete(id);
+    this.changed.delete(id);
+  }
+
   scopes(id: number): readonly McpScope[] {
     return this.current.get(id) ?? [];
   }
@@ -30,6 +40,7 @@ export class McpGrantDraft {
   }
 
   setScope(id: number, scope: McpScope, enabled: boolean): void {
+    if (!this.serverIds.has(id)) return;
     const old = this.scopes(id);
     if (old.includes(scope) === enabled) return;
     const next = MCP_SCOPES.filter((s) => (s === scope ? enabled : old.includes(s)));
@@ -44,7 +55,7 @@ export class McpGrantDraft {
   get changedCount(): number { return this.changed.size; }
 
   grants(): McpGrant[] {
-    return this.serverIds.flatMap((serverId) => {
+    return [...this.serverIds].flatMap((serverId) => {
       const scopes = this.current.get(serverId);
       return scopes ? [{ serverId, scopes: [...scopes] }] : [];
     });

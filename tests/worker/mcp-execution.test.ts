@@ -112,6 +112,28 @@ describe('bounded headless MCP execution', () => {
     expect((f.object as any).connections.get(1)).toBe(replacement);
     await f.object.fetch(new Request('https://internal/invalidate', { method: 'POST' }));
   });
+  it('deleting one server aborts its active operation but leaves the other cached SSH session and alarm intact', async () => {
+    const f = fixture();
+    expect((await f.call({ server_id: 2 })).ok).toBe(true);
+    const other = (f.object as any).connections.get(2);
+    let started!: () => void; let release!: () => void;
+    const ready = new Promise<void>(resolve => { started = resolve; });
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    vi.mocked(SSHSession).mockImplementationOnce(class {
+      startHandshake = async () => {}; waitUntilAuthenticated = async () => {}; close = vi.fn();
+      executeCommand = async () => { started(); await pending; return {}; };
+    } as never);
+    const inFlight = f.call(); await ready;
+    await f.object.fetch(new Request('https://internal/invalidate/1', { method: 'POST' }));
+    expect(await (await inFlight).json()).toMatchObject({ status: 'unknown' }); release();
+    expect((f.object as any).connections.has(1)).toBe(false);
+    expect((f.object as any).connections.get(2)).toBe(other);
+    expect(f.state.storage.deleteAlarm).not.toHaveBeenCalled();
+    expect((await f.call({ server_id: 2 })).ok).toBe(true);
+    expect(f.fetchSpy).toHaveBeenCalledTimes(2);
+    await f.object.fetch(new Request('https://internal/invalidate/2', { method: 'POST' }));
+    expect(f.state.storage.deleteAlarm).toHaveBeenCalledOnce();
+  });
   it('rejects concurrent operations without queueing, cancels on disconnect and never replays commands', async () => {
     const f = fixture();
     const deferred = () => {

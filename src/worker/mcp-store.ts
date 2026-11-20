@@ -45,7 +45,38 @@ export class McpStore {
     sql.exec(`CREATE TABLE IF NOT EXISTS mcp_activity (
       id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, client TEXT NOT NULL, server_id INTEGER NOT NULL,
       tool TEXT NOT NULL, status TEXT NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER)`);
+    // Older versions filtered deleted servers on read, but never removed the stored references.
+    this.pruneMissingServers();
   }
+
+  /** Idempotent on cold start; on DELETE run inside the server transaction, for that owner only. */
+  pruneMissingServers(userId?: number): void {
+    const owner = userId === undefined ? '' : 'user_id = ? AND ';
+    const params = userId === undefined ? [] : [userId];
+    for (const [table, column, id, value] of [
+      ['mcp_configs', 'grants', "CASE WHEN entry.type = 'object' THEN json_extract(entry.value, '$.serverId') END", 'json(entry.value)'],
+      ['mcp_tokens', 'server_ids', "CASE WHEN entry.type = 'integer' THEN entry.value END", 'entry.value'],
+    ]) {
+      // All identifiers/expressions above are fixed. Keep other grants, token bindings and
+      // encrypted credentials byte-for-byte untouched; an empty grant array is valid.
+      // A damaged historic row must not stop the whole UserDB from opening. Never infer
+      // access from a non-array; json_each(NULL) has no rows.
+      const array = `CASE WHEN json_valid(${column}) THEN CASE WHEN json_type(${column}) = 'array' THEN ${column} END END`;
+      const entries = `json_each(${array}) entry`;
+      const live = `EXISTS (SELECT 1 FROM servers s WHERE s.id = ${id} AND s.user_id = ${table}.user_id)`;
+      this.sql.exec(`UPDATE ${table} SET ${column} = (
+        SELECT json_group_array(${value}) FROM ${entries} WHERE ${live})
+        WHERE ${owner}(${array} IS NULL OR EXISTS (SELECT 1 FROM ${entries} WHERE NOT ${live}))`, ...params);
+    }
+    this.sql.exec(`DELETE FROM mcp_activity WHERE ${owner}NOT EXISTS (
+      SELECT 1 FROM servers s WHERE s.id = mcp_activity.server_id AND s.user_id = mcp_activity.user_id)`, ...params);
+  }
+
+  executionPool(userId: number): Pick<McpPrincipal, 'id' | 'routeKey'> | null {
+    const row = this.sql.exec('SELECT id, route_key FROM mcp_configs WHERE user_id = ?', userId).toArray()[0];
+    return row ? { id: String(row.id), routeKey: String(row.route_key) } : null;
+  }
+
   private row(userId: number): ConfigRow | undefined {
     return this.sql
       .exec('SELECT * FROM mcp_configs WHERE user_id = ?', userId)
@@ -277,8 +308,10 @@ export class McpStore {
   record(userId: number, activity: McpActivity): void {
     this.sql.exec(
       `INSERT INTO mcp_activity (id, user_id, client, server_id, tool, status, started_at, finished_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET status = excluded.status, finished_at = excluded.finished_at
-      WHERE mcp_activity.user_id = excluded.user_id AND mcp_activity.status = 'running'`,
+      SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM servers WHERE id = ? AND user_id = ?)
+      ON CONFLICT(id) DO UPDATE SET status = excluded.status, finished_at = excluded.finished_at
+      WHERE mcp_activity.user_id = excluded.user_id AND mcp_activity.server_id = excluded.server_id
+      AND mcp_activity.status = 'running'`,
       activity.id,
       userId,
       activity.client,
@@ -286,7 +319,9 @@ export class McpStore {
       activity.tool,
       activity.status,
       activity.startedAt,
-      activity.finishedAt
+      activity.finishedAt,
+      activity.serverId,
+      userId
     );
     this.sql.exec(
       `DELETE FROM mcp_activity WHERE user_id = ? AND id NOT IN

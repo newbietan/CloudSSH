@@ -1,4 +1,6 @@
 import { readApiJson } from './api-errors';
+import { notifyServerRemoved, serverOwnerKey } from './server-removal';
+import { agentSessionDraftKey } from './agent/session-draft';
 import type { AppConfig } from './app-bootstrap';
 import { copyTextToClipboard } from './clipboard';
 import { isValidTunnelHostname, maskIPAddress } from './host-display';
@@ -426,7 +428,7 @@ export class ServerList {
 
   private async fetchServers(): Promise<void> {
     try {
-      const res = await fetch('/api/servers');
+      const res = await fetch('/api/servers', { cache: 'no-store' });
       if (!res.ok) throw new Error('Failed to fetch servers');
       const servers = (await res.json()) as ServerConfig[];
       this.servers = servers.map((server) => ({
@@ -828,11 +830,14 @@ export class ServerList {
         method: 'DELETE',
       });
 
-      if (!res.ok) {
-        const error = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(error.error || t('server.deleteFailed', { message: res.status }));
+      // A proxy/login HTML page with status 200 isn't a committed deletion.
+      const result = await readApiJson<{ success?: boolean }>(res, 'api.requestFailed');
+      if (result.success !== true) throw new Error(t('api.invalidResponse', { status: res.status }));
+      notifyServerRemoved(serverOwnerKey(this.user), serverId);
+      const draftKey = agentSessionDraftKey(this.user.github_id, serverId);
+      if (draftKey) {
+        try { localStorage.removeItem(draftKey); } catch { /* Storage may be unavailable. */ }
       }
-
       // 等待动画完成后移除
       await new Promise((r) => setTimeout(r, 300));
       this.servers = this.servers.filter((s) => s.id !== serverId);

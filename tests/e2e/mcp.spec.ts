@@ -238,6 +238,66 @@ test('mobile disclosures preserve selections through resize and allow full revoc
   expect(state.writes).toEqual([{ grants: [] }]);
 });
 
+test('confirmed server removal updates other open and loading MCP views without losing unrelated edits', async ({ page, context }) => {
+  const inventory = [...servers];
+  const state = await setup(page, inventory);
+  state.info = { ...empty(), configured: true, id, grants: inventory.map(({ id }) => ({ serverId: id, scopes: ['read'] })) };
+  await page.goto('/?lang=en-US'); await openPanel(page);
+  await revealMcpGrant(page, 1);
+  await page.locator('input[data-server-id="1"][value="context"]').check();
+  await revealMcpGrant(page, 3);
+  const write = page.locator('input[data-server-id="3"][value="write"]');
+  await write.check();
+  const save = page.locator('#mcp-save-config');
+  await expect(save).toHaveText('Save changes (2)');
+  await page.locator('#mcp-activity-section > summary').click();
+  await expect(page.locator('#mcp-activity-list')).toContainText('Personal server 1');
+
+  const owner = await context.newPage(); await setup(owner, inventory);
+  let badResponse = true;
+  await owner.route(/\/api\/servers\/\d+$/, route => {
+    if (route.request().method() !== 'DELETE') return route.fallback();
+    if (badResponse) return route.fulfill({ contentType: 'text/html', body: '<title>Sign in</title>' });
+    const id = Number(new URL(route.request().url()).pathname.split('/').pop());
+    inventory.splice(inventory.findIndex(s => s.id === id), 1);
+    state.info.grants = state.info.grants.filter(g => g.serverId !== id);
+    return route.fulfill({ json: { success: true } });
+  });
+  await owner.goto('/?lang=en-US');
+  const remove = async (id: number) => {
+    await owner.locator(`#delete-${id}`).click();
+    await owner.locator('.app-dialog__button--confirm').click();
+  };
+  await remove(1);
+  await expect(owner.locator('.app-toast').last()).toBeVisible();
+  await expect(owner.locator('#card-1')).toBeVisible(); await expect(save).toHaveText('Save changes (2)');
+  badResponse = false; await remove(1);
+  await expect(owner.locator('#card-1')).toHaveCount(0);
+  await expect(page.locator('#mcp-permissions [data-grant-id="1"]')).toHaveCount(0);
+  await expect(page.locator('#mcp-activity-list')).not.toContainText('Personal server 1');
+  await expect(write).toBeChecked(); await expect(save).toHaveText('Save changes (1)');
+  await save.click(); await expect(save).toBeDisabled();
+  expect(state.writes).toEqual([{ grants: [{ serverId: 3, scopes: ['read', 'write'] }] }]);
+
+  // A response captured before a second deletion must not reintroduce even the last server.
+  await page.locator('#mcp-dialog').getByRole('button', { name: 'Close', exact: true }).click();
+  let release!: () => void; let started!: () => void;
+  const paused = new Promise<void>(resolve => { release = resolve; });
+  const requested = new Promise<void>(resolve => { started = resolve; });
+  await page.route('**/api/servers', async route => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    const stale = [...inventory]; started(); await paused; await route.fulfill({ json: stale });
+  });
+  const opening = openPanel(page); await requested;
+  try { await remove(3); await expect(owner.locator('#card-3')).toHaveCount(0); }
+  finally { release(); }
+  await opening;
+  await expect(page.locator('#mcp-permissions > summary')).toContainText('0 / 0 authorized');
+  await page.locator('#mcp-permissions > summary').click();
+  await expect(page.locator('[data-i18n="mcp.noServers"]')).toBeVisible();
+  await expect(save).toBeDisabled(); await owner.close();
+});
+
 test('no saved servers: first configuration is expanded, with a distinct empty state', async ({ page }) => {
   const state = await setup(page, []);
   await page.goto('/?lang=zh-TW'); await openPanel(page);

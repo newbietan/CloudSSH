@@ -17,6 +17,17 @@ describe('MCP saved permission baseline', () => {
     expect(JSON.stringify(saved)).toBe(before);
   });
 
+  it('does not resurrect a removed server on a late edit or an older save response', () => {
+    const saved: McpGrant[] = [{ serverId: 1, scopes: ['read'] }, { serverId: 3, scopes: ['exec'] }];
+    const draft = new McpGrantDraft([1, 3], saved);
+    draft.setScope(3, 'write', true);
+    draft.removeServer(1); draft.setScope(1, 'exec', true);
+    expect(draft.grants()).toEqual([{ serverId: 3, scopes: ['write', 'exec'] }]);
+    expect(draft.changedCount).toBe(1); expect(draft.authorizedCount).toBe(1);
+    draft.reset(saved);
+    expect(draft.grants()).toEqual([saved[1]]); expect(draft.wasAuthorized(1)).toBe(false);
+  });
+
   it('counts servers rather than checkbox clicks; saved membership stays stable during edits', () => {
     const draft = new McpGrantDraft([1, 3], [{ serverId: 3, scopes: ['read'] }]);
     draft.setScope(3, 'read', false);

@@ -283,7 +283,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'server.clone': 'Clone',
   'server.cloneTitle': 'Clone server',
   'server.deleteTitle': 'Delete server',
-  'server.deleteMessage': 'Delete “{name}”? This cannot be undone.',
+  'server.deleteMessage': 'Delete “{name}” and its saved memory, MCP permissions, and MCP operation log? This cannot be undone.',
   'server.invalidWs': 'The server returned an invalid or untrusted WebSocket URL.',
   'server.connectFailed': 'Unable to connect',
   'server.loadFailed': 'Could not load the server list.',

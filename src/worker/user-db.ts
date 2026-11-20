@@ -1,5 +1,6 @@
 import { normalizeAIBaseUrl } from '../ai-endpoint';
 import { McpStore } from './mcp-store';
+import { executionName } from './mcp-auth';
 import type { McpActivity } from '../mcp-schema';
 import { resolveModelBudget } from '../ai-model-policy';
 import { ServerMemoryStore } from './server-memory-store';
@@ -18,7 +19,7 @@ import {
 import { CF_ACCESS_USER_GITHUB_ID, LOCAL_ADMIN_GITHUB_ID, getAccessUserRouteKey } from './auth';
 import { inferLocationHint } from './ip-geo';
 import { isDetectedOS } from './os-detect';
-import { deserializeServerRow, serializeServerTags } from './server-tags';
+import { deserializeServerRow, parseStoredServerTags, serializeServerTags } from './server-tags';
 import { isValidTunnelHostname } from './tunnel-stream';
 import { extractPrivateKeyAndCertificate } from '../ssh/user-cert';
 import { sanitizeTeamName } from './cf-ssh-ca';
@@ -509,7 +510,7 @@ export class UserDBDO {
       if (serverMatch) {
         const serverId = parseInt(serverMatch[1], 10);
         if (request.method === 'PUT') return await this.handleUpdateServer(serverId, request);
-        if (request.method === 'DELETE') return this.handleDeleteServer(serverId, request);
+        if (request.method === 'DELETE') return await this.handleDeleteServer(serverId, request);
       }
 
       // /internal/servers/:id/connect
@@ -1000,7 +1001,9 @@ export class UserDBDO {
       userId
     );
 
-    return Response.json(rows.map((row) => formatServerResponse(row)));
+    return Response.json(rows.map((row) => formatServerResponse(row)), {
+      headers: { 'Cache-Control': 'private, no-store' },
+    });
   }
 
   private validateJumpChain(
@@ -1529,20 +1532,28 @@ export class UserDBDO {
       );
     }
 
-    try {
-      this.db.exec('DELETE FROM server_memories WHERE server_id = ?', serverId);
-    } catch {
-      /* ignore if legacy table was already dropped */
+    // No await between the ownership/share/jump checks and the commit. Retain route-scoped
+    // known_hosts (other entries may use them) and terminal share audit metadata.
+    const pool = this.mcpState.storage.transactionSync(() => {
+      this.memoryStore.cleanup(serverId, ownerUserId);
+      this.db.exec('DELETE FROM servers WHERE id = ? AND user_id = ?', serverId, ownerUserId);
+      this.mcpStore.pruneMissingServers(ownerUserId);
+      return this.mcpStore.executionPool(ownerUserId);
+    });
+    for (const [token, { config }] of this.connectTokens) {
+      if (config.userId === String(ownerUserId) &&
+          (config.serverId === serverId || config.jumpHosts?.some((hop) => hop.serverId === serverId))) {
+        this.connectTokens.delete(token);
+      }
     }
-    try {
-      this.db.exec('DELETE FROM server_task_checkpoints WHERE server_id = ?', serverId);
-    } catch {
-      /* ignore */
+    const execution = this.env.MCP_EXECUTION;
+    if (pool && execution) {
+      try {
+        await execution.get(execution.idFromName(executionName(pool))).fetch(
+          new Request(`https://internal/invalidate/${serverId}`, { method: 'POST', signal: AbortSignal.timeout(4000) })
+        );
+      } catch { /* Already committed; subsequent calls recheck grants. Idle pools expire. */ }
     }
-    this.db.exec('DELETE FROM server_work_logs WHERE server_id = ?', serverId);
-    this.db.exec('DELETE FROM server_knowledge WHERE server_id = ?', serverId);
-    this.memoryStore.cleanup(serverId);
-    this.db.exec('DELETE FROM servers WHERE id = ?', serverId);
     return Response.json({ success: true });
   }
 
@@ -2203,6 +2214,11 @@ export class UserDBDO {
       cfAccessClientSecret: isTunnel ? cfAccessClientSecret : undefined,
     };
 
+    // Decryption and Access routing yielded above. A deletion during either must not issue
+    // fresh credentials/a browser ticket after the deletion already cleared pending tickets.
+    if (chain.some(({ id }) => this.one<UserIdRow>('SELECT user_id FROM servers WHERE id = ?', id)?.user_id !== body.user_id)) {
+      return Response.json({ error: 'Server not found' }, { status: 404 });
+    }
     if (configOnly) return Response.json(config);
 
     // 防止 token 数量无限增长
@@ -2234,6 +2250,10 @@ export class UserDBDO {
       } catch { return Response.json({ error: 'invalid_mcp_configuration' }, { status: 400 }); }
     }
     if (body.action === 'activity') return Response.json(store.activity(body.userId));
+    if (body.action === 'owns_server') {
+      const owned = this.one('SELECT id FROM servers WHERE id = ? AND user_id = ?', body.serverId, body.userId);
+      return new Response(null, { status: owned ? 204 : 404 });
+    }
     // This internal route is reachable only via a DO binding, never a public URL.
     if (body.action === 'record') {
       store.record(body.userId, body.activity);
@@ -2247,10 +2267,17 @@ export class UserDBDO {
     }
     if (body.action === 'verify' || body.action === 'authorize') return Response.json(principal);
     if (body.action === 'servers') {
-      const result = await this.handleGetServers(principal.userId).json<Record<string, unknown>[]>();
-      return Response.json(result.filter(server => principal.serverIds.includes(Number(server.id)))
-        .map(server => ({ id: server.id, name: server.name, tags: server.tags, os: server.os,
-          unattended: !server.cf_ssh_ca_team })));
+      this.ensureCfSshCaTeamColumn();
+      // Read current grants and live, same-owner servers together; never list a grant snapshot.
+      const rows = this.query<Pick<ServerRow, 'id' | 'name' | 'tags' | 'os' | 'cf_ssh_ca_team'>>(
+        `SELECT s.id, s.name, s.tags, s.os, s.cf_ssh_ca_team FROM mcp_configs c
+         JOIN json_each(c.grants) g JOIN servers s ON s.id = json_extract(g.value, '$.serverId') AND s.user_id = c.user_id
+         WHERE c.user_id = ? AND c.id = ? AND c.mode_tag = ? AND c.route_key = ?
+         ORDER BY (s.last_connected_at IS NULL) ASC, s.last_connected_at DESC, s.updated_at DESC`,
+        principal.userId, principal.id, principal.modeTag, principal.routeKey
+      );
+      return Response.json(rows.map(({ id, name, tags, os, cf_ssh_ca_team }) =>
+        ({ id, name, tags: parseStoredServerTags(tags), os, unattended: !cf_ssh_ca_team })));
     }
     if (body.action === 'config' && principal.serverIds.includes(body.serverId)) {
       this.ensureCfSshCaTeamColumn();

@@ -227,7 +227,7 @@ export const zhTW = {
   'server.clone': '克隆',
   'server.cloneTitle': '克隆伺服器',
   'server.deleteTitle': '刪除伺服器',
-  'server.deleteMessage': '確定刪除伺服器“{name}”嗎？此操作無法撤銷。',
+  'server.deleteMessage': '刪除伺服器「{name}」及其記憶、MCP 權限和 MCP 操作日誌？此操作無法復原。',
   'server.invalidWs': '伺服器返回了無效或不受信任的 WebSocket 位址。',
   'server.connectFailed': '無法建立連線',
   'server.loadFailed': '載入伺服器列表失敗。',

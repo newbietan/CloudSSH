@@ -278,9 +278,9 @@ export class ServerMemoryStore {
     if (row?.due != null && this.scheduleAlarm) await this.scheduleAlarm(Math.max(Date.now() + 1, row.due));
   }
 
-  cleanup(serverId: number): void {
-    this.db.exec('DELETE FROM agent_memory_state WHERE server_id = ?', serverId);
-    this.db.exec('DELETE FROM agent_knowledge_meta WHERE server_id = ?', serverId);
-    this.db.exec('DELETE FROM agent_pending_distillations WHERE server_id = ?', serverId);
+  cleanup(serverId: number, userId: number): void {
+    for (const table of ['server_work_logs', 'server_knowledge', 'agent_memory_state', 'agent_knowledge_meta', 'agent_pending_distillations']) {
+      this.db.exec(`DELETE FROM ${table} WHERE server_id = ? AND user_id = ?`, serverId, userId);
+    }
   }
 }

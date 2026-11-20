@@ -227,7 +227,7 @@ export const zhCN = {
   'server.clone': '克隆',
   'server.cloneTitle': '克隆服务器',
   'server.deleteTitle': '删除服务器',
-  'server.deleteMessage': '确定删除服务器“{name}”吗？此操作无法撤销。',
+  'server.deleteMessage': '删除服务器“{name}”及其记忆、MCP 权限和 MCP 操作日志？此操作无法撤销。',
   'server.invalidWs': '服务器返回了无效或不受信任的 WebSocket 地址。',
   'server.connectFailed': '无法建立连接',
   'server.loadFailed': '加载服务器列表失败。',

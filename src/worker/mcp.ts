@@ -64,6 +64,11 @@ export async function handleMcpManagement(request: Request, env: Env): Promise<R
       Number(input.serverId) < 1
     )
       return jsonError('invalid_arguments', 400);
+    if (input.enabled !== false) {
+      // A still-connected browser shell is not proof the saved server still exists.
+      const live = await mcpDatabase(env, routeKey, { ...base, action: 'owns_server', serverId: input.serverId });
+      if (!live.ok) return jsonError('server_unavailable', live.status);
+    }
     return contextRequest(env, String(input.session), {
       ...base,
       serverId: input.serverId,

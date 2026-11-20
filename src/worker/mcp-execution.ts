@@ -17,6 +17,7 @@ import { mcpList, mcpRead, mcpWrite, withMcpSftp } from './mcp-sftp';
 
 type Connection = {
   hash: string;
+  jumpIds?: number[];
   sessions: SSHSession[];
   transports: { close(): void }[];
   final?: SSHSession;
@@ -66,12 +67,19 @@ export class MCPExecutionDO {
     if (this.connections.size) await this.state.storage.setAlarm(now + MCP_CONNECTION_IDLE_MS);
   }
   async fetch(request: Request): Promise<Response> {
-    if (new URL(request.url).pathname === '/invalidate') {
-      for (const connection of this.connections.values()) closeConnection(connection);
-      this.connections.clear();
-      await this.state.storage.deleteAlarm();
+    const path = new URL(request.url).pathname;
+    const invalidate = /^\/invalidate(?:\/([1-9]\d*))?$/.exec(path);
+    if (request.method === 'POST' && invalidate) {
+      const serverId = invalidate[1] ? Number(invalidate[1]) : null;
+      for (const [id, connection] of this.connections) {
+        if (serverId !== null && id !== serverId && !connection.jumpIds?.includes(serverId)) continue;
+        this.connections.delete(id);
+        closeConnection(connection);
+      }
+      if (!this.connections.size) await this.state.storage.deleteAlarm();
       return Response.json({ success: true });
     }
+    if (request.method !== 'POST' || path !== '/execute') return new Response(null, { status: 404 });
     const body = await request.json<{
       token: string;
       modeTag: string;
@@ -174,6 +182,7 @@ export class MCPExecutionDO {
         }
         const config = await configResponse.json<SSHConnectionConfig>();
         controller.signal.throwIfAborted();
+        current.jumpIds = config.jumpHosts?.map((hop) => hop.serverId);
         const hash = await mcpHash(JSON.stringify(config));
         controller.signal.throwIfAborted();
         if (current.hash !== hash || !current.final?.isOperational()) {

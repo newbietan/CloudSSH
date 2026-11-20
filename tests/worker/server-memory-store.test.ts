@@ -84,7 +84,7 @@ describe('Saved memory and simple retry persistence', () => {
   it('keeps server ownership isolation and removes pending work when the server is deleted', async () => {
     await expect(f.store.read(2, 10)).rejects.toMatchObject({ status: 403 });
     await f.store.enqueueMemory(1, 10, task);
-    f.store.cleanup(1);
+    f.store.cleanup(1, 10);
     expect(f.store.nextTask()).toBeUndefined();
   });
 });

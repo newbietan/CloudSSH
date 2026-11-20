@@ -11,10 +11,11 @@ export interface McpServerOption {
 /** Desktop uses a real table; narrow screens mount native disclosures instead. There is only one
  * set of editable controls at a time, and neither layout is the source of grants sent on save. */
 export function createMcpPermissionEditor(
-  servers: readonly McpServerOption[],
+  initialServers: readonly McpServerOption[],
   initial: { configured: boolean; grants: McpGrant[] },
   signal: AbortSignal
 ) {
+  let servers = [...initialServers];
   const draft = new McpGrantDraft(servers.map(({ id }) => id), initial.grants);
   const section = element('details');
   section.id = 'mcp-permissions';
@@ -152,6 +153,7 @@ export function createMcpPermissionEditor(
         input.value = scope;
         inputs.set(scope, input);
         input.addEventListener('change', () => {
+          if (rows.get(server.id)?.node !== node) return;
           draft.setScope(server.id, scope, input.checked);
           syncRow(server.id);
           updateCount();
@@ -182,6 +184,20 @@ export function createMcpPermissionEditor(
   updateCount();
   return {
     section, fields, draft,
+    removeServer(id: number) {
+      servers = servers.filter((server) => server.id !== id);
+      draft.removeServer(id);
+      rows.get(id)?.node.remove();
+      rows.delete(id);
+      if (!servers.length) {
+        toolbar.remove();
+        hint.remove();
+        empty.dataset.i18n = 'mcp.noServers';
+        empty.textContent = t('mcp.noServers');
+      }
+      updateCount();
+      applyFilter();
+    },
     reset(grants: McpGrant[]) {
       draft.reset(grants);
       for (const id of rows.keys()) syncRow(id);
