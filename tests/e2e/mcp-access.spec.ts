@@ -1,5 +1,6 @@
 import { expect, test, type Page } from './fixtures';
 import AxeBuilder from '@axe-core/playwright';
+import { revealMcpGrant } from './helpers';
 const server = { id: 1, user_id: 1, name: 'Access test server', host: 'ssh.example.com', port: 22,
   username: 'deploy', auth_method: 'password', tags: [], os: null, created_at: '', updated_at: '' };
 const token = 'SAVED-ACCOUNT-TOKEN'; const clientId = 'SERVICE-ID.access'; const secret = 'SERVICE-SECRET';
@@ -41,6 +42,7 @@ async function fillAccess(page: Page) {
 test('Access credentials are explicitly saved with the unique account configuration and can be exported again after reopening', async ({ page }) => {
   const state = await setup(page); await page.goto('/?lang=en-US'); await open(page);
   await expect(page.locator('#mcp-access-guide')).toHaveAttribute('open', '');
+  await revealMcpGrant(page, 1);
   await page.locator('input[data-server-id="1"][value="read"]').check();
   await page.locator('#mcp-save-config').click(); expect(state.writes).toHaveLength(0);
   await page.locator('#mcp-access-client-id').fill(clientId); await page.locator('#mcp-access-client-secret').fill(secret);
@@ -57,6 +59,7 @@ test('Access credentials are explicitly saved with the unique account configurat
   await expect(page.locator('#mcp-client-config')).toHaveCount(0);
   await expect(page.locator('#mcp-access-guide')).not.toHaveAttribute('open', '');
   await page.locator('#mcp-view-config').click(); await expect(page.locator('#mcp-client-config')).toHaveValue(new RegExp(secret));
+  await revealMcpGrant(page, 1);
   await page.locator('input[data-server-id="1"][value="context"]').check(); await page.locator('#mcp-save-config').click();
   await expect.poll(() => state.writes.length).toBe(2);
   expect(state.writes[1]).toEqual({ grants: [{ serverId: 1, scopes: ['read', 'context'] }] });

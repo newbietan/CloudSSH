@@ -1,35 +1,21 @@
 import './mcp-manager.css';
-import { getLocale, t, type TranslationKey } from './i18n';
+import { getLocale, localizedElement as element, onLocaleChange, t, type TranslationKey } from './i18n';
 import { copyTextToClipboard } from './clipboard';
 import type {
   McpActivity,
   McpConfigInfo,
-  McpGrant,
   McpSavedCredentials,
-  McpScope,
 } from '../../src/mcp-schema';
-import { MCP_SCOPES } from '../../src/mcp-schema';
 import type { AppConfig } from './app-bootstrap';
 import { createAssistantIcon } from './assistant-icons';
 import { buildMcpClientConfig, normalizeMcpAccessCredentials } from './mcp-client-config';
-import { equalMcpGrants } from './mcp-config-draft';
+import { createMcpPermissionEditor, type McpServerOption } from './mcp-permission-editor';
 import './assistant-ui.css';
 
 interface ContextTarget {
   session: string;
   serverId: number;
   label: string;
-}
-function element<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  key?: TranslationKey
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (key) {
-    node.textContent = t(key);
-    node.dataset.i18n = key;
-  }
-  return node;
 }
 function button(key: TranslationKey, action: () => void): HTMLButtonElement {
   const node = element('button', key);
@@ -154,7 +140,7 @@ export class McpManager {
     dialog.showModal();
     try {
       const [servers, info] = await Promise.all([
-        this.api<{ id: number; name: string }[]>('/api/servers'),
+        this.api<McpServerOption[]>('/api/servers'),
         this.api<McpConfigInfo>('/api/mcp/config'),
       ]);
       if (generation !== this.generation) return;
@@ -171,38 +157,16 @@ export class McpManager {
   }
   private buildConfiguration(
     parent: HTMLElement,
-    servers: { id: number; name: string }[],
+    servers: McpServerOption[],
     initial: McpConfigInfo
   ): void {
     let info = initial;
     const generation = this.generation;
     const form = element('form');
     form.id = 'mcp-config-form';
-    form.append(element('h3', 'mcp.permissionsTitle'));
-    const controls: HTMLInputElement[] = [];
-    for (const server of servers) {
-      const row = element('fieldset');
-      row.className = 'mcp-server-grant';
-      const legend = element('legend');
-      legend.textContent = server.name;
-      row.append(legend);
-      for (const scope of MCP_SCOPES) {
-        const label = element('label');
-        const input = element('input');
-        input.type = 'checkbox';
-        input.value = scope;
-        input.dataset.serverId = String(server.id);
-        input.setAttribute('aria-label', `${server.name} · ${t(`mcp.permission.${scope}`)}`);
-        input.checked = info.grants.some(
-          (grant) => grant.serverId === server.id && grant.scopes.includes(scope)
-        );
-        label.append(input, element('span', `mcp.permission.${scope}`));
-        row.append(label);
-        controls.push(input);
-      }
-      form.append(row);
-    }
-    if (!servers.length) form.append(element('p', 'mcp.noServers'));
+    const signal = this.controller!.signal;
+    const permissions = createMcpPermissionEditor(servers, info, signal);
+    form.append(permissions.section);
     const access =
       this.authMode === 'cf_access'
         ? this.buildAccessGuide(form, !info.hasAccessCredentials)
@@ -217,22 +181,15 @@ export class McpManager {
     const view = button('mcp.viewConfig', () => void exportConfig(true));
     view.id = 'mcp-view-config';
     view.className = 'assistant-action';
-    const save = element('button', info.configured ? 'mcp.savePermissions' : 'mcp.generate');
+    const save = element('button');
     save.type = 'submit';
     save.id = 'mcp-save-config';
     save.className = 'assistant-action assistant-accent-control';
     save.setAttribute('form', form.id);
-    const readGrants = (): McpGrant[] =>
-      servers.flatMap((server) => {
-        const scopes = controls
-          .filter((input) => input.dataset.serverId === String(server.id) && input.checked)
-          .map((input) => input.value as McpScope);
-        return scopes.length ? [{ serverId: server.id, scopes }] : [];
-      });
     let busy = false;
     const dirty = () =>
       !info.configured ||
-      !equalMcpGrants(readGrants(), info.grants) ||
+      permissions.draft.changedCount > 0 ||
       !!(
         access &&
         (!info.hasAccessCredentials ||
@@ -243,22 +200,19 @@ export class McpManager {
       const exportDisabled = busy || !info.configured;
       if (copy.disabled !== exportDisabled) copy.disabled = exportDisabled;
       if (view.disabled !== exportDisabled) view.disabled = exportDisabled;
-      const saveDisabled = busy || !dirty();
+      const changed = dirty();
+      const saveDisabled = busy || !changed;
       if (save.disabled !== saveDisabled) save.disabled = saveDisabled;
       save.setAttribute('aria-busy', String(busy));
-      save.title = t(
-        info.configured && !dirty()
-          ? 'mcp.noChanges'
-          : info.configured
-            ? 'mcp.savePermissions'
-            : 'mcp.generate'
-      );
-      save.dataset.i18n = info.configured ? 'mcp.savePermissions' : 'mcp.generate';
-      const label = t(save.dataset.i18n as TranslationKey);
+      const count = permissions.draft.changedCount;
+      const label = !info.configured ? t('mcp.generate') : count
+        ? t('mcp.saveGrantChanges', { count }) : t('mcp.savePermissions');
+      save.title = changed ? label : t('mcp.noChanges');
       if (save.textContent !== label) save.textContent = label;
     };
-    form.addEventListener('input', syncButtons);
+    access?.fieldset.addEventListener('input', syncButtons);
     form.addEventListener('change', syncButtons);
+    signal.addEventListener('abort', onLocaleChange(syncButtons), { once: true });
     syncButtons();
     footer.append(view, copy, save);
     const exportConfig = async (preview: boolean) => {
@@ -313,7 +267,7 @@ export class McpManager {
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       if (save.disabled) return;
-      const grants = readGrants();
+      const grants = permissions.draft.grants();
       let credentials: ReturnType<typeof normalizeMcpAccessCredentials> | undefined;
       if (
         access &&
@@ -332,9 +286,7 @@ export class McpManager {
       }
       busy = true;
       syncButtons();
-      controls.forEach((input) => {
-        input.disabled = true;
-      });
+      permissions.fields.disabled = true;
       if (access) access.fieldset.disabled = true;
       void (async () => {
         try {
@@ -345,13 +297,7 @@ export class McpManager {
           credentials = undefined;
           if (generation !== this.generation) return;
           info = result;
-          controls.forEach((input) => {
-            input.checked = info.grants.some(
-              (grant) =>
-                grant.serverId === Number(input.dataset.serverId) &&
-                grant.scopes.includes(input.value as McpScope)
-            );
-          });
+          permissions.reset(info.grants);
           configArea.replaceChildren();
           if (access) {
             access.clientId.value = access.clientSecret.value = '';
@@ -368,9 +314,7 @@ export class McpManager {
         } finally {
           credentials = undefined;
           if (generation === this.generation) {
-            controls.forEach((input) => {
-              input.disabled = false;
-            });
+            permissions.fields.disabled = false;
             if (access) access.fieldset.disabled = false;
             busy = false;
             syncButtons();
