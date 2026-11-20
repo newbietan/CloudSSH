@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.3] - 2026-11-20
+
+### Changed
+
+- **MCP 服务器权限管理（关联 Issue：#194）**：已有配置默认显示授权台数，首次配置直接展开。桌面按表格对照权限，手机点开单台服务器编辑；可按名称、标签或已保存的授权状态筛选。搜索、折叠和旋转屏幕不丢失修改，保存按钮按变更的服务器数计数。
+- **CI 验证**：合并重复的浏览器启动和页面加载，保留 Chromium/WebKit、三语、主题、视口组合和移动 SFTP 绘制检查；不降低部署门禁。
+
+### Fixed
+
+- **删除服务器后 MCP 信息残留**：删除保存的服务器时，在同一事务中清理其 MCP 授权、近期操作记录、服务器记忆和待处理任务。原令牌再次调用 `server_list` 不再列出该服务器；同账户已打开的设置页同步移除对应行，保留其他服务器的未保存修改。历史孤立关联在用户库下次启动时自动清理。账户令牌、其他服务器权限、主机指纹和已结束分享的审计记录不受影响。
+- **GitHub Pages 重跑失败**：上传与部署使用本次运行及尝试专属的产物名，避免重跑时因匹配到多个同名归档而失败。
+
 ## [2.11.2] - 2026-11-17
 
 ### Added
