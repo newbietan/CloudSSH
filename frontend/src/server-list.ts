@@ -367,6 +367,7 @@ export class ServerList {
 
     // Modal 关闭
     document.getElementById('modal-close-btn')?.addEventListener('click', () => this.hideModal());
+    document.getElementById('server-cancel-btn')?.addEventListener('click', () => this.hideModal());
     document.getElementById('modal-backdrop')?.addEventListener('click', () => this.hideModal());
     document.getElementById('server-modal')?.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
@@ -376,7 +377,18 @@ export class ServerList {
     });
 
     // Modal 提交
-    document.getElementById('server-form')?.addEventListener('submit', (event) => {
+    const form = document.getElementById('server-form') as HTMLFormElement | null;
+    form?.addEventListener('keydown', (event) => {
+      if (
+        event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.altKey ||
+        event.repeat || event.defaultPrevented || event.isComposing || event.keyCode === 229
+      ) return;
+      const submit = document.getElementById('server-submit-btn') as HTMLButtonElement | null;
+      if (!submit || submit.disabled) return;
+      event.preventDefault();
+      form.requestSubmit(submit);
+    });
+    form?.addEventListener('submit', (event) => {
       event.preventDefault();
       void this.handleSubmit();
     });
@@ -581,11 +593,10 @@ export class ServerList {
     if (!grid) return;
     grid.setAttribute('aria-busy', 'true');
     const skeletonCard = `<div class="skeleton-card" aria-hidden="true">
-      <div class="skeleton-line" style="width: 55%"></div>
-      <div class="skeleton-line" style="width: 80%"></div>
-      <div class="skeleton-line" style="width: 70%"></div>
-      <div class="skeleton-line" style="width: 75%"></div>
-      <div class="skeleton-line" style="width: 100%; height: 28px; margin-top: 8px"></div>
+      <div class="server-card-heading"><span class="skeleton-line skeleton-icon"></span><span class="skeleton-line w-2/5"></span></div>
+      <span class="skeleton-line w-3/4"></span>
+      <div class="server-card-metadata"><span class="skeleton-line w-1/3"></span><span class="skeleton-line w-1/4"></span></div>
+      <div class="server-card-actions"><span class="skeleton-line skeleton-action"></span></div>
     </div>`;
     grid.innerHTML = Array.from({ length: this.pageSize }, () => skeletonCard).join('');
   }
@@ -618,7 +629,7 @@ export class ServerList {
           : 'PWD';
     const isTunnel = server.transport_type === 'cf_tunnel';
     const tunnelBadge = isTunnel
-      ? `<span class="shrink-0 text-[10px] font-bold tracking-[0.1em] text-[var(--accent-secondary)] border border-[var(--accent-secondary)] px-1.5 py-0.5">${t('server.tunnelBadge')}</span>`
+      ? `<span class="server-card-badge server-tunnel-badge">${t('server.tunnelBadge')}</span>`
       : '';
 
     // 下游节点自身的区域不参与调度；连接区域始终由跳板链入口决定。
@@ -649,94 +660,89 @@ export class ServerList {
     }
     const tagMarkup =
       (server.tags || []).length > 0
-        ? `<div class="flex flex-wrap gap-1 mt-3">${server.tags
+        ? `<div class="server-card-tags">${server.tags
             .map(
               (tag) =>
-                `<span class="text-[9px] text-primary border border-[var(--border-strong)] px-1.5 py-0.5">#${this.escapeHtml(tag)}</span>`
+                `<span class="server-card-tag">#${this.escapeHtml(tag)}</span>`
             )
             .join('')}</div>`
         : '';
     const jumpNames = this.getJumpPath(server);
     const jumpMarkup =
       jumpNames.length > 0
-        ? `<div class="server-card-meta-row flex items-center gap-2 min-w-0">
-          <span class="text-dim">${t('server.jumpPath')}</span>
+        ? `<div class="server-card-jump" title="${this.escapeAttr(t('server.jumpPath'))}">
+          <span class="material-symbols-outlined" aria-hidden="true">route</span>
+          <span class="sr-only">${t('server.jumpPath')}</span>
           <span class="text-on-surface min-w-0 truncate" title="${this.escapeAttr(jumpNames.join(' → '))}">${jumpNames.map((name) => this.escapeHtml(name)).join(' → ')}</span>
         </div>`
         : '';
 
-    const lastConnectedText = server.last_connected_at
-      ? formatTimestampWithRelative(server.last_connected_at, Date.now(), getLocale())
-      : t('server.neverConnected');
+    const lastConnectedText = t('server.neverConnected');
+    const now = Date.now();
+    const lastConnection = server.last_connected_at;
+    const lastConnectedTitle = lastConnection
+      ? formatTimestampWithRelative(lastConnection, now, getLocale())
+      : lastConnectedText;
+    let lastConnectedLabel = lastConnectedText;
+    if (lastConnection) {
+      const minutes = Math.max(0, Math.floor((now - lastConnection) / 60_000));
+      const format = new Intl.RelativeTimeFormat(getLocale(), { style: 'short', numeric: 'auto' });
+      lastConnectedLabel = minutes < 1_440
+        ? format.format(-(minutes < 60 ? minutes : Math.floor(minutes / 60)), minutes < 60 ? 'minute' : 'hour')
+        : format.format(-Math.floor(minutes / 1_440), 'day');
+    }
 
     const maskedHost = isTunnel ? null : maskIPAddress(server.host);
     const copyIPLabel = this.escapeAttr(t('server.clickToCopyIP'));
     // 隧道连接只看域名（实际端口由内网 cloudflared 配置决定）：卡片不展示端口
     const hostDisplay = `<button type="button" class="host-ip-badge server-host-badge min-w-0 truncate" id="host-badge-${server.id}" title="${copyIPLabel}" aria-label="${copyIPLabel}">${this.escapeHtml(maskedHost ?? server.host)}${isTunnel ? '' : `:${server.port}`}</button>`;
-    const shareButton = this.sharingEnabled
-      ? `<button id="share-${server.id}" class="cyber-button text-primary py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] flex items-center justify-center" title="${t('share.create')}">
-          <span class="material-symbols-outlined" style="font-size:14px">share</span>
-        </button>`
-      : '';
+    const action = (id: string, icon: string, label: string, danger = false) => `
+      <button type="button" id="${id}-${server.id}" class="cyber-button btn-${danger ? 'danger-ghost' : 'ghost'} server-icon-action" title="${this.escapeAttr(label)}" aria-label="${this.escapeAttr(label)}">
+        <span class="material-symbols-outlined" aria-hidden="true">${icon}</span>
+      </button>`;
 
     return `
-      <div class="server-card p-5 relative group${animate ? ' server-card--enter' : ''}" id="card-${server.id}"${animate ? ` style="--stagger-index: ${index}"` : ''}>
-        <div class="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-[var(--border-strong)] to-transparent group-hover:via-[var(--accent)] transition-all duration-300"></div>
-
-        <div class="flex items-start justify-between gap-2 mb-3">
-          <div class="flex items-center gap-2 min-w-0 flex-1">
-            ${this.renderOSIconMarkup(server.os)}
-            <h3 class="server-card-title text-sm font-bold text-primary tracking-[0.05em] truncate min-w-0" title="${this.escapeAttr(server.name)}">${this.escapeHtml(server.name)}</h3>
+      <div class="server-card${animate ? ' server-card--enter' : ''}" id="card-${server.id}"${animate ? ` style="--stagger-index: ${index}"` : ''}>
+        <div class="server-card-heading">
+          <div class="server-card-identity">
+            <div class="server-card-os">${this.renderOSIconMarkup(server.os)}</div>
+            <h3 class="server-card-title truncate" title="${this.escapeAttr(server.name)}">${this.escapeHtml(server.name)}</h3>
           </div>
-          <div class="flex items-center gap-1.5 shrink-0">
+          <div class="flex items-center gap-1 shrink-0">
             ${tunnelBadge}
-            <span class="shrink-0 text-[10px] font-bold tracking-[0.1em] text-muted border border-dim px-2 py-0.5 flex items-center gap-1">
-              <span class="material-symbols-outlined" style="font-size: 12px;">${authIcon}</span>
-              ${authLabel}
+            <span class="server-card-badge" title="${authLabel}">
+              <span class="material-symbols-outlined" aria-hidden="true">${authIcon}</span>${authLabel}
             </span>
           </div>
         </div>
 
-        <div class="space-y-1.5 text-xs text-muted mb-4">
-          <div class="server-card-meta-row flex items-center gap-2 min-w-0">
-            <span class="text-dim">${t('server.hostLabel')}</span>
-            ${hostDisplay}
-          </div>
-          <div class="server-card-meta-row flex items-center gap-2 min-w-0">
-            <span class="text-dim">${t('server.userLabel')}</span>
-            <span class="text-on-surface min-w-0 truncate">${this.escapeHtml(server.username)}</span>
-          </div>
-          ${jumpMarkup}
-          <div class="server-card-region-row flex items-center gap-2 min-w-0">
-            <span class="text-dim">${t('server.regionLabel')}</span>
-            <span class="text-on-surface flex items-center gap-1">
-              <span class="material-symbols-outlined" style="font-size: 11px; color: var(--accent-secondary);">${regionIcon}</span>
-              ${this.escapeHtml(regionLabelText)}
-            </span>
-            <span class="text-[9px] text-dim border border-dim px-1 py-0.5 ml-0.5">${regionTag}</span>
-          </div>
-          <div class="server-card-meta-row flex items-center gap-2 min-w-0">
-            <span class="text-dim">${t('server.lastConnected')}</span>
-            <span class="text-on-surface min-w-0 truncate" title="${this.escapeAttr(lastConnectedText)}">${this.escapeHtml(lastConnectedText)}</span>
-          </div>
-          ${tagMarkup}
+        <div class="server-card-endpoint font-code">
+          <span class="server-card-user truncate" title="${this.escapeAttr(server.username)}">${this.escapeHtml(server.username)}</span>
+          <span class="text-muted" aria-hidden="true">@</span>
+          ${hostDisplay}
         </div>
-
-        <div class="server-card-actions flex gap-2 pt-3 border-t border-[var(--border)]">
-          <button id="connect-${server.id}" class="server-connect-button cyber-button text-primary flex-1 min-w-0 py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-1" title="${t('common.connect')}">
-            <span class="material-symbols-outlined" style="font-size: 14px;">power_settings_new</span>
+        ${jumpMarkup}
+        <div class="server-card-metadata">
+          <span class="server-card-region-row" title="${this.escapeAttr(`${regionLabelText} · ${regionTag}`)}">
+            <span class="material-symbols-outlined" aria-hidden="true">${regionIcon}</span>
+            <span class="sr-only">${t('server.regionLabel')}</span>
+            <span class="truncate">${this.escapeHtml(regionLabelText)}</span>
+            <span class="sr-only">${regionTag}</span>
+          </span>
+          <span class="truncate" title="${this.escapeAttr(t('server.lastConnected') + ' ' + lastConnectedTitle)}">${this.escapeHtml(lastConnectedLabel)}</span>
+        </div>
+        ${tagMarkup}
+        <div class="server-card-actions">
+          <button type="button" id="connect-${server.id}" class="server-connect-button cyber-button btn-primary" title="${t('common.connect')}">
+            <span class="material-symbols-outlined" aria-hidden="true">terminal</span>
             ${t('common.connect')}
           </button>
-          <button id="clone-${server.id}" class="cyber-button text-primary py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] flex items-center justify-center" title="${t('server.clone')}">
-            <span class="material-symbols-outlined" style="font-size: 14px;">content_copy</span>
-          </button>
-          <button id="edit-${server.id}" class="cyber-button text-primary py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] flex items-center justify-center" title="${t('common.edit')}">
-            <span class="material-symbols-outlined" style="font-size: 14px;">edit</span>
-          </button>
-          ${shareButton}
-          <button id="delete-${server.id}" class="cyber-button py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] flex items-center justify-center text-error border-[var(--error)] hover:bg-[var(--error)] hover:text-[var(--bg)]" title="${t('common.delete')}">
-            <span class="material-symbols-outlined" style="font-size: 14px;">delete</span>
-          </button>
+          <div class="server-card-aux">
+            ${action('clone', 'content_copy', t('server.clone'))}
+            ${action('edit', 'edit', t('common.edit'))}
+            ${this.sharingEnabled ? action('share', 'share', t('share.create')) : ''}
+            ${action('delete', 'delete', t('common.delete'), true)}
+          </div>
         </div>
       </div>
     `;

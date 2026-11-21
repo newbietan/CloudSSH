@@ -239,8 +239,10 @@ for (const [locale, message, theme] of [
     await page.goto(`/?lang=${locale}`);
     await configGate.seen;
     await expect(page.locator('#app-loading-status')).toHaveText(message);
-    const spinner = page.locator('.app-loading-spinner');
-    expect(await spinner.evaluate(node => getComputedStyle(node).animationName)).toBe('none');
+    const placeholder = page.locator('.auth-skeleton .skeleton-line').first();
+    await expect(placeholder).toBeVisible();
+    const animationName = () => placeholder.evaluate(node => getComputedStyle(node, '::after').animationName);
+    expect(await animationName()).toBe('none');
     expect(await page.evaluate(() =>
       document.documentElement.scrollWidth - innerWidth
     )).toBeLessThanOrEqual(1);
@@ -249,7 +251,7 @@ for (const [locale, message, theme] of [
       await page.evaluate(motion => {
         document.documentElement.dataset.uiMotion = motion;
       }, motion);
-      expect(await spinner.evaluate(node => getComputedStyle(node).animationName)).toBe('none');
+      expect(await animationName()).toBe('none');
     }
     configGate.release();
     await expect(page.locator('#connection-form')).toBeVisible();

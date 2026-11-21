@@ -394,7 +394,7 @@ export class CustomThemeModal {
 
     const titleText = document.createElement('span');
     titleText.id = 'custom-theme-modal-title';
-    titleText.className = 'text-sm font-bold tracking-[0.08em] text-[var(--accent)]';
+    titleText.className = 'text-sm font-bold text-[var(--accent)]';
     titleText.textContent = t('theme.manageTitle');
     titleGroup.appendChild(titleText);
     header.appendChild(titleGroup);
@@ -484,7 +484,7 @@ export class CustomThemeModal {
     const doneBtn = document.createElement('button');
     doneBtn.id = 'custom-theme-modal-done-btn';
     doneBtn.type = 'button';
-    doneBtn.className = 'terminal-btn-primary px-4 py-1.5 text-xs rounded font-medium cursor-pointer';
+    doneBtn.className = 'cyber-button btn-primary px-4 py-1.5 text-sm font-medium';
     doneBtn.textContent = t('common.close');
     footer.appendChild(doneBtn);
 

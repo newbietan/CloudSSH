@@ -176,7 +176,9 @@ frontend/
 │   ├── i18n/
 │   │   ├── index.ts        # 语言解析、词条查询（t）与 locale 变更通知
 │   │   └── locales/        # zh-CN.ts / en-US.ts 词条字典
-│   ├── style.css           # Global styles (CSS variable theme system)
+│   ├── app.css             # 单 CSS 构建入口（基础主题样式 → 工作台组件）
+│   ├── workbench.css       # 共享语义色、字号密度、操作层级与工作区布局
+│   ├── style.css           # 基础主题、公共组件与模块样式
 │   └── turnstile.d.ts      # Turnstile type declarations
 └── vite.config.ts          # Dev proxy to localhost:8787（+ esbuild minifySyntax 关闭以规避 xterm 6 DECRQM bug）
 ```
@@ -472,9 +474,11 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
 42. **SSH/SFTP 入站解析收敛** - SSH 版本交换的前导数据累计最多 64KiB，标识行含换行最多 255 字节；后续同块 KEX 数据不计入前导预算，超限正常关闭并发出不可自动重试的 `packet_error`。SSH `nextPacket()` 的 `null` 仅表示报文未收齐；GCM/CTR 解密失败必须抛错，由会话层关闭 TCP/WebSocket 并清空解析缓冲，不得在认证失败后继续堆积或分发剩余报文；当前前端将 `packet_error` 视为不可重试错误，避免畸形服务器导致无限自动重连。SFTP v3 使用 `SFTPReader` 在读整数/切片/推进 offset 前校验边界；单报文体 ≤1MiB、接收缓冲 ≤2MiB、NAME 单包 ≤10,000 条且受剩余字节约束、filename/longname 各 ≤16KiB、HANDLE ≤256 字节。STATUS 的消息与语言字段必须完整，扩展属性按 v3 标志有界读取，不支持的版本/标志及不匹配请求的响应失败关闭。协议错误拒绝所有待决请求、清理其计时器/缓冲，并经会话层终止连接；目录枚举另外受 #41 的计数、估算内存和时间预算约束。
 
-43. **前端微交互、弹簧引擎与移动端手势边界** - 统一 Spring 物理弹簧引擎（`frontend/src/spring.ts`）通过 Euler 数值积分求解刚度与阻尼，提供 `snapTo` 与 `settled`，供主题/抽屉液态分段器与各类微交互共享，严禁私自重复实现；抽屉面板移动端触摸右滑关闭（`frontend/src/drawer-swipe.ts`）严格以 `headerSelector` 限定在头部，规避 iOS Safari 屏幕左缘系统返回手势冲突，且与列表纵向滚动明确隔离（纵向位移判定后即刻交还原生滚动），关闭时统一路由原面板的 `hide()`/`close()` 语义，保持在途传输中断（AGENTS.md #37）与清理逻辑；主视图切换过渡（`#terminal-section`）必须保持仅纯透明度淡入，严禁添加带 `transform` 的动画以防破坏其内部 `position: fixed` 抽屉面板的包含块（containing block）基准；所有微动效全量接入 `@media (prefers-reduced-motion: reduce)` 与 `data-ui-motion` 档位收敛；卡片指针聚光灯通过 rAF 节流直接写入 CSS 变量并在粗指针设备上跳过注册；骨架屏必须携带 `aria-busy` 与 `aria-hidden` 无障碍属性；SFTP 列表仅在行数 ≤150 时启用交错入场动画以防大目录并发卡顿。
+43. **前端微交互、弹簧引擎与移动端手势边界** - 统一 Spring 物理弹簧引擎（`frontend/src/spring.ts`）通过 Euler 数值积分求解刚度与阻尼，提供 `snapTo` 与 `settled`，供主题/抽屉液态分段器与各类微交互共享，严禁私自重复实现；抽屉面板移动端触摸右滑关闭（`frontend/src/drawer-swipe.ts`）严格以 `headerSelector` 限定在头部，规避 iOS Safari 屏幕左缘系统返回手势冲突，且与列表纵向滚动明确隔离（纵向位移判定后即刻交还原生滚动），关闭时统一路由原面板的 `hide()`/`close()` 语义，保持在途传输中断（AGENTS.md #37）与清理逻辑；主视图切换过渡（`#terminal-section`）必须保持仅纯透明度淡入，严禁添加带 `transform` 的动画以防破坏其内部 `position: fixed` 抽屉面板的包含块（containing block）基准；所有微动效全量接入 `@media (prefers-reduced-motion: reduce)` 与 `data-ui-motion` 档位收敛；服务器卡片与 SFTP 行仅使用静态悬停/选中样式，禁止恢复全局 pointermove 聚光跟踪；骨架屏必须携带 `aria-busy` 与 `aria-hidden` 无障碍属性；SFTP 列表仅在行数 ≤150 时启用交错入场动画以防大目录并发卡顿。
 
-    **主题背景性能（#185）**：应用背景由 `frontend/index.html` 中与 `#app` 平级的 `.app-background[aria-hidden="true"]` 固定裁剪层承载，渐变位于其 `::before`，不能把该层变成应用/终端的祖先。漂移使用预绘制的约 130% 纹理 + `transform` 合成，保留 35s `ease-in-out` 往返与 30% 视口位移；额外 1px 过扫描仅防高 DPR 末端露边，不增加行程。不要改回逐帧 `background-position`、降低模糊/透明/光晕、限帧或给全站滥加 `will-change`。静态/纯色、自定义背景与原有噪点叠层仍使用同一白名单变量；`motion=none` 和系统减少动态保持原有静止语义。`tests/e2e/theme-background.spec.ts` 在 Chromium / WebKit 移动端校验关键帧、滚动/缩放、主题切换与旧实现六个时刻的截图（允许少量栅格采样误差），不将消除主线程重绘等同于 GPU 零成本。
+    **主题背景性能（#185）**：应用背景由 `frontend/index.html` 中与 `#app` 平级的 `.app-background[aria-hidden="true"]` 固定裁剪层承载，渐变位于其 `::before`，不能把该层变成应用/终端的祖先。漂移使用预绘制的约 130% 纹理 + `transform` 合成，保留 35s `ease-in-out` 往返与 30% 视口位移；额外 1px 过扫描仅防高 DPR 末端露边，不增加行程。不要改回逐帧 `background-position`、降低模糊/透明/光晕、限帧或给全站滥加 `will-change`。静态/纯色、自定义背景与原有噪点叠层仍使用同一白名单变量；`motion=none` 和系统减少动态保持原有静止语义。`tests/e2e/theme-background.spec.ts` 在 Chromium / WebKit 移动端校验关键帧、滚动/缩放、主题切换与旧实现六个时刻的截图（允许少量栅格采样误差），不将消除主线程重绘等同于 GPU 零成本。对照仅替换背景合成算法，不替换新版材质；卡片和工具项无嵌套毛玻璃。
+
+    **工作台视觉基线**：新用户默认 `standard-dark`，已有主题选择不迁移。`app.css` 保持单一入口，`workbench.css` 的衍生色不扩充 Theme V4 白名单。桌面终端顶栏与 `--drawer-top` 同源；移动端保持 `--drawer-top: 0`。握手摘要只能读当前连接的真实事件，切换标签不串状态，非 `shell_ready` 不显示在线。服务器 `/` 与表单 `Ctrl/⌘+Enter` 不得抢 IME、绕过原生表单校验或向终端发键。详见 `docs/frontend-workbench.md`。
 
 44. **可选版本更新提示** - 运行版本从根 `package.json` 构建时导入（根/前端版本保持同步），与官方 `main/package.json` 的稳定 SemVer 数值比较，不按字符串或提交数比较，不依赖 GitHub Releases/Tags，也不提示降级或预发布版本。`GET /api/version` 只向固定官方 raw GitHub URL 请求公开版本元数据（不转发用户头部/凭据；必须使用 Workers 支持的 `redirect: 'manual'` 并拒绝 3xx，不得使用会在 Workers 中直接抛错的 `'error'` 模式），读取上限 16KiB、4s 超时，Worker isolate 去重/缓存并使用 Cloudflare fetch 缓存；成功缓存 6h、失败退避 15min，失败只返回 null。前端非阻塞同源读取，5s 超时，localStorage/内存缓存与跨标签页忽略同步；可见页面按缓存到期检查，隐藏/离线不检查，恢复可见/在线时重试。连接页在“连接参数”标题后展示紧凑版本徽标及可忽略的小提示，不再单独占用底部空间；标题区支持三语与窄屏自然换行，不能挤压语言切换或溢出卡片。用户空间/桌面终端仍使用页脚，移动终端放进“更多”菜单，分享认领页不检查；忽略仅针对该新版，下一个新版可再次提示。不弹窗、不自动更新/刷新/跳转、不影响 SSH/SFTP/Agent；更新日志链接为固定官方地址，三语文案随语言切换。
 

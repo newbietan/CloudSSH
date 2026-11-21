@@ -399,7 +399,7 @@ export class AgentPanel {
               <span id="agent-memory-count" class="text-[11px] text-muted font-code shrink-0"></span>
             </div>
             <div class="flex items-center gap-1 shrink-0">
-              <button id="agent-memory-batch-btn" type="button" class="hidden text-[11px] px-2 py-0.5 rounded border border-outline-variant/60 text-muted hover:text-primary hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-1 cursor-pointer">
+              <button id="agent-memory-batch-btn" type="button" class="hidden text-[11px] px-2 py-0.5 rounded border border-outline-variant/60 text-muted hover:text-primary hover:bg-[var(--surface-hover)] transition-colors flex items-center gap-1 cursor-pointer">
                 <span class="material-symbols-outlined text-[13px]">checklist</span>
                 <span id="agent-memory-batch-btn-text" data-i18n="agent.batchManage">批量管理</span>
               </button>
@@ -423,7 +423,7 @@ export class AgentPanel {
               <span id="agent-memory-selected-count" class="text-primary font-medium text-[11px]">已选择 0 项</span>
             </div>
             <div class="flex items-center gap-1.5">
-              <button id="agent-memory-batch-cancel" type="button" class="px-2 py-0.5 rounded text-muted hover:text-primary hover:bg-[var(--bg-hover)] cursor-pointer text-[11px]" data-i18n="agent.batchCancel">退出管理</button>
+              <button id="agent-memory-batch-cancel" type="button" class="px-2 py-0.5 rounded text-muted hover:text-primary hover:bg-[var(--surface-hover)] cursor-pointer text-[11px]" data-i18n="agent.batchCancel">退出管理</button>
               <button id="agent-memory-batch-delete" type="button" class="px-2.5 py-0.5 rounded bg-error/15 text-error hover:bg-error/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium flex items-center gap-1 cursor-pointer text-[11px]" disabled>
                 <span class="material-symbols-outlined text-[13px]">delete</span>
                 <span data-i18n="agent.batchDelete">批量删除</span>
@@ -1059,11 +1059,7 @@ export class AgentPanel {
         <span class="tp-chevron material-symbols-outlined">expand_more</span>
         <span class="tp-icon">${assistantIconMarkup('agent')}</span>
         <span class="tp-status">${t('agent.thinking')}</span>
-        <div class="thinking-dots">
-          <span class="w-1 h-1 rounded-full bg-[var(--agent-agent-color)] animate-bounce" style="animation-delay:0ms;"></span>
-          <span class="w-1 h-1 rounded-full bg-[var(--agent-agent-color)] animate-bounce" style="animation-delay:150ms;"></span>
-          <span class="w-1 h-1 rounded-full bg-[var(--agent-agent-color)] animate-bounce" style="animation-delay:300ms;"></span>
-        </div>
+        <span class="thinking-dots" aria-hidden="true"></span>
       </button>
       <div class="tp-live-preview"></div>
       <div class="tp-body">
@@ -2412,7 +2408,7 @@ export class AgentPanel {
             const isSelected = this.selectedKnowledgeIds.has(k.id);
 
             return `
-              <div class="agent-knowledge-item group px-3 py-2 flex items-center justify-between gap-2 text-[12px] hover:bg-[var(--bg-hover)]/40 transition-colors select-text" data-knowledge-id="${k.id}">
+              <div class="agent-knowledge-item group px-3 py-2 flex items-center justify-between gap-2 text-[12px] hover:bg-[var(--surface-hover)]/40 transition-colors select-text" data-knowledge-id="${k.id}">
                 <div class="flex items-center gap-2 min-w-0 flex-1">
                   ${
                     this.isBatchMode
@@ -2427,19 +2423,19 @@ export class AgentPanel {
                   ${
                     isSecret
                       ? `
-                    <button type="button" class="agent-secret-toggle-btn text-muted hover:text-primary transition-colors p-1 rounded hover:bg-[var(--bg-hover)] cursor-pointer flex items-center justify-center" data-id="${k.id}" title="${isRevealed ? t('agent.hideSecret') : t('agent.revealSecret')}">
+                    <button type="button" class="agent-secret-toggle-btn text-muted hover:text-primary transition-colors p-1 rounded hover:bg-[var(--surface-hover)] cursor-pointer flex items-center justify-center" data-id="${k.id}" title="${isRevealed ? t('agent.hideSecret') : t('agent.revealSecret')}">
                       <span class="material-symbols-outlined text-[15px]">${isRevealed ? 'visibility_off' : 'visibility'}</span>
                     </button>
                   `
                       : ''
                   }
-                  <button type="button" class="agent-knowledge-copy-btn text-muted hover:text-primary transition-colors p-1 rounded hover:bg-[var(--bg-hover)] cursor-pointer flex items-center justify-center" data-value="${escapeHtml(k.value)}" title="${t('agent.codeCopy')}">
+                  <button type="button" class="agent-knowledge-copy-btn text-muted hover:text-primary transition-colors p-1 rounded hover:bg-[var(--surface-hover)] cursor-pointer flex items-center justify-center" data-value="${escapeHtml(k.value)}" title="${t('agent.codeCopy')}">
                     <span class="material-symbols-outlined text-[15px]">content_copy</span>
                   </button>
                   ${
                     !this.isBatchMode
                       ? `
-                    <button type="button" class="agent-knowledge-delete-btn text-muted hover:text-error transition-colors p-1 rounded hover:bg-[var(--bg-hover)] cursor-pointer flex items-center justify-center" data-id="${k.id}" title="${t('common.delete')}">
+                    <button type="button" class="agent-knowledge-delete-btn text-muted hover:text-error transition-colors p-1 rounded hover:bg-[var(--surface-hover)] cursor-pointer flex items-center justify-center" data-id="${k.id}" title="${t('common.delete')}">
                       <span class="material-symbols-outlined text-[15px]">delete</span>
                     </button>
                   `
@@ -2453,7 +2449,7 @@ export class AgentPanel {
 
         return `
           <div class="agent-knowledge-group border border-[var(--border)] rounded-lg overflow-hidden bg-[var(--bg-elevated)]/30" data-group-key="${g.key}">
-            <div class="agent-knowledge-group-header flex items-center justify-between px-3 py-1.5 bg-[var(--bg-elevated)]/70 cursor-pointer select-none hover:bg-[var(--bg-hover)]/40 transition-colors" data-group="${g.key}">
+            <div class="agent-knowledge-group-header flex items-center justify-between px-3 py-1.5 bg-[var(--bg-elevated)]/70 cursor-pointer select-none hover:bg-[var(--surface-hover)]/40 transition-colors" data-group="${g.key}">
               <div class="flex items-center gap-1.5 text-xs font-semibold text-primary">
                 <span class="material-symbols-outlined text-[16px] transition-transform duration-200 ${isCollapsed ? '-rotate-90' : ''}">expand_more</span>
                 <span>${escapeHtml(g.label)}</span>

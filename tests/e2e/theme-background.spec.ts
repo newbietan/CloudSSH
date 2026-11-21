@@ -138,7 +138,7 @@ test('背景独立裁剪，保留 35s 往返缓动和 30% 视口位移，关键�
 });
 
 for (const scene of ['auth', 'servers'] as const) {
-  test(`${scene}：六个往返动画时刻与旧渲染逐帧对照，不减少玻璃滤镜、光晕或阴影`, async ({ page }, testInfo) => {
+  test(`${scene}：磨砂卡片无嵌套滤镜，背景合成与旧算法六个时刻逐帧对照`, async ({ page }, testInfo) => {
     if (scene === 'servers') await mockSavedServers(page);
     await page.goto('/');
     await expect(page.locator(scene === 'servers' ? '.server-card' : '#host').first()).toBeVisible();
@@ -146,7 +146,7 @@ for (const scene of ['auth', 'servers'] as const) {
     await expect(page.locator('html')).toHaveAttribute('data-fx-glow', 'on');
     const glass = page.locator(scene === 'servers' ? '.server-card' : '#auth-section .cyber-box').first();
     const originalFilter = await glass.evaluate((element) => getComputedStyle(element).backdropFilter);
-    expect(originalFilter).toBe('blur(20px) saturate(1.9) contrast(1.12) brightness(1.06)');
+    expect(originalFilter).toBe('none');
 
     const frames: Buffer[] = [];
     for (const time of phases) {

@@ -146,7 +146,7 @@ test('none 与空密码可保存，编辑留空保留旧密码，显式勾选才
   await page.locator('#server-name').fill('Empty password');
   await page.locator('#server-host').fill('ssh.example.com');
   await page.locator('#server-username').fill('alice');
-  await page.locator('#server-submit-btn').click();
+  await page.locator('#server-username').press('Control+Enter');
   await expect.poll(() => added.length).toBe(3);
   expect(added[2]).toMatchObject({ auth_method: 'password', credential: '' });
 });
@@ -165,6 +165,9 @@ test('paginates after filtering and resets to the first page', async ({ page }) 
   await expect(page.locator('.server-card')).toHaveCount(6);
   await expect(page.locator('#server-pagination')).toBeVisible();
 
+  await page.locator('#server-tag-filter').blur();
+  await page.keyboard.press('/');
+  await expect(page.locator('#server-search')).toBeFocused();
   await page.locator('#server-search').fill('Server 01');
   await expect(page.locator('.server-card')).toHaveCount(1);
   await expect(page.locator('.server-card')).toContainText('#production');

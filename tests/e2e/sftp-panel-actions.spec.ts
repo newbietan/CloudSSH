@@ -38,6 +38,25 @@ async function measureActions(page: import('@playwright/test').Page) {
   });
 }
 
+test('表头的主题透明度工具类支持不透明和 RGBA 色值', async ({ page }) => {
+  await openPanel(page);
+  const alpha = await page.locator('#sftp-table-header').evaluate((header) => {
+    const canvas = document.createElement('canvas');
+    const pixel = canvas.getContext('2d')!;
+    const readAlpha = (color: string) => {
+      (header as HTMLElement).style.setProperty('--surface-dot', color);
+      pixel.clearRect(0, 0, 1, 1);
+      pixel.fillStyle = getComputedStyle(header).backgroundColor;
+      pixel.fillRect(0, 0, 1, 1);
+      return pixel.getImageData(0, 0, 1, 1).data[3];
+    };
+    return [readAlpha('#406080'), readAlpha('rgba(64, 96, 128, 0.5)')];
+  });
+  expect(alpha[0]).toBe(51); // 20% of an opaque Theme V4 color.
+  expect(alpha[1]).toBeGreaterThanOrEqual(25);
+  expect(alpha[1]).toBeLessThanOrEqual(26); // 20% of a half-transparent color.
+});
+
 test.describe('桌面视口', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 

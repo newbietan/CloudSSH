@@ -111,13 +111,19 @@
 }
 html[data-ui-style="liquid"] :is(#agent-panel.assistant-shell, .mcp-dialog__panel.assistant-shell) {
   background: color-mix(in srgb, var(--bg) 96%, transparent);
-  -webkit-backdrop-filter: blur(32px) saturate(200%) contrast(115%) brightness(108%);
-  backdrop-filter: blur(32px) saturate(200%) contrast(115%) brightness(108%);
+  -webkit-backdrop-filter: blur(min(14px, var(--surface-blur))) saturate(128%);
+  backdrop-filter: blur(min(14px, var(--surface-blur))) saturate(128%);
   box-shadow: var(--shadow-modal);
 }
 html[data-ui-style="liquid"] .assistant-shell .assistant-panel-header {
   background: color-mix(in srgb, var(--bg-surface) 25%, rgba(255, 255, 255, 0.5));
   border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+@media (max-width: 767px), (pointer: coarse) and (max-width: 1180px) {
+  html[data-ui-style="liquid"][data-theme="liquid-glass"] :is(#agent-panel.assistant-shell, .mcp-dialog__panel.assistant-shell) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 @media (max-width: 520px) {
   .assistant-panel-header {

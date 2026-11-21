@@ -163,7 +163,7 @@ export class ConnectionForm {
       <div class="flex min-h-[320px] flex-col items-center justify-center gap-5 px-4 text-center" id="github-auth-required-panel">
         <span class="material-symbols-outlined text-[var(--accent)]" style="font-size: 42px;" aria-hidden="true">lock</span>
         <div class="space-y-2">
-          <h2 class="text-sm font-bold tracking-[0.1em] text-on-surface" data-i18n="auth.githubRequired">此 CloudSSH 实例需要 GitHub 登录</h2>
+          <h2 class="text-sm font-bold text-on-surface" data-i18n="auth.githubRequired">此 CloudSSH 实例需要 GitHub 登录</h2>
           <p class="mx-auto max-w-md text-xs leading-6 text-muted" data-i18n="auth.githubRequiredHint">登录成功且账号获得管理员授权后，才能使用 SSH 和账号功能。</p>
         </div>
         ${
@@ -184,7 +184,7 @@ export class ConnectionForm {
     if (!placeholder) return;
 
     placeholder.innerHTML = `
-      <button type="button" id="github-login-btn" class="github-login-btn text-[11px] font-bold tracking-[0.1em] text-muted hover:text-primary transition-all cursor-pointer flex items-center gap-1.5 bg-transparent border border-dim px-3 py-1 hover:border-[var(--accent)]">
+      <button type="button" id="github-login-btn" class="github-login-btn text-[11px] font-bold text-muted hover:text-primary transition-all cursor-pointer flex items-center gap-1.5 bg-transparent border border-dim px-3 py-1 hover:border-[var(--accent)]">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
         <span data-i18n="auth.login">使用 GitHub 登录</span>
       </button>
@@ -204,7 +204,7 @@ export class ConnectionForm {
     if (!placeholder) return;
 
     placeholder.innerHTML = `
-      <button type="button" id="admin-login-btn" class="github-login-btn text-[11px] font-bold tracking-[0.1em] text-muted hover:text-primary transition-all cursor-pointer flex items-center gap-1.5 bg-transparent border border-dim px-3 py-1 hover:border-[var(--accent)]">
+      <button type="button" id="admin-login-btn" class="github-login-btn text-[11px] font-bold text-muted hover:text-primary transition-all cursor-pointer flex items-center gap-1.5 bg-transparent border border-dim px-3 py-1 hover:border-[var(--accent)]">
         <span class="material-symbols-outlined" style="font-size: 14px;" aria-hidden="true">admin_panel_settings</span>
         <span data-i18n="auth.adminLogin">管理员登录</span>
       </button>
@@ -225,7 +225,7 @@ export class ConnectionForm {
       <div class="flex min-h-[320px] flex-col items-center justify-center gap-5 px-4 text-center" id="admin-auth-required-panel">
         <span class="material-symbols-outlined text-[var(--accent)]" style="font-size: 42px;" aria-hidden="true">lock</span>
         <div class="space-y-2">
-          <h2 class="text-sm font-bold tracking-[0.1em] text-on-surface" data-i18n="auth.adminRequired">此 CloudSSH 实例需要管理员登录</h2>
+          <h2 class="text-sm font-bold text-on-surface" data-i18n="auth.adminRequired">此 CloudSSH 实例需要管理员登录</h2>
           <p class="mx-auto max-w-md text-xs leading-6 text-muted" data-i18n="auth.adminRequiredHint">请使用管理员密码登录后使用 SSH 和账号功能。</p>
         </div>
         <span id="github-login-placeholder"></span>
@@ -244,10 +244,10 @@ export class ConnectionForm {
       <div class="flex min-h-[320px] flex-col items-center justify-center gap-5 px-4 text-center">
         <span class="material-symbols-outlined text-error" style="font-size: 42px;" aria-hidden="true">report</span>
         <div class="space-y-2">
-          <h2 class="text-sm font-bold tracking-[0.1em] text-on-surface" data-i18n="auth.adminHashInvalidTitle">管理员密码配置无效</h2>
+          <h2 class="text-sm font-bold text-on-surface" data-i18n="auth.adminHashInvalidTitle">管理员密码配置无效</h2>
           <p class="mx-auto max-w-md text-xs leading-6 text-muted" data-i18n="auth.adminHashInvalid">ADMIN_PASSWORD_HASH 格式损坏，登录已停止，请联系管理员修复。</p>
         </div>
-        <button type="button" id="admin-hash-regen-btn" class="github-login-btn text-[11px] font-bold tracking-[0.1em] text-muted hover:text-primary transition-all cursor-pointer flex items-center gap-1.5 bg-transparent border border-dim px-3 py-1 hover:border-[var(--accent)]">
+        <button type="button" id="admin-hash-regen-btn" class="github-login-btn text-[11px] font-bold text-muted hover:text-primary transition-all cursor-pointer flex items-center gap-1.5 bg-transparent border border-dim px-3 py-1 hover:border-[var(--accent)]">
           <span class="material-symbols-outlined" style="font-size: 14px;" aria-hidden="true">refresh</span>
           <span data-i18n="auth.adminHashGenRegenerate">在浏览器中重新生成</span>
         </button>
@@ -269,7 +269,7 @@ export class ConnectionForm {
     entry.type = 'button';
     entry.id = 'admin-hash-gen-entry';
     entry.className =
-      'text-[10px] text-muted/70 hover:text-muted transition-all bg-transparent border-none cursor-pointer tracking-[0.05em] px-1';
+      'text-[10px] text-muted/70 hover:text-muted transition-all bg-transparent border-none cursor-pointer px-1';
     entry.textContent = t('auth.adminHashGenEntry');
     entry.title = t('auth.adminHashGenHint');
     entry.addEventListener('click', () => {
@@ -531,45 +531,37 @@ export class ConnectionForm {
     const container = document.getElementById('connection-form-container')!;
 
     container.innerHTML = `
-      <form class="space-y-6" id="connection-form">
+      <form id="connection-form" class="connection-fields">
         <div class="ssh-endpoint-fields">
           <div class="ssh-host-field">
-            <label for="host" class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.host">主机地址</label>
-            <div class="flex items-center">
-              <span class="text-muted mr-2">&gt;</span>
-               <input id="host" class="terminal-input text-[13px]" placeholder="192.168.1.1 or 2001:db8::1" type="text" required>
-            </div>
+            <label for="host" class="block field-label" data-i18n="auth.host">主机地址</label>
+            <input id="host" class="terminal-input font-code" placeholder="ssh.example.com" type="text" autocapitalize="none" spellcheck="false" required>
           </div>
           <div class="ssh-port-field">
-            <label for="port" class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.port">端口</label>
-            <div class="flex items-center">
-              <span class="text-muted mr-2">:</span>
-              <input id="port" class="terminal-input text-[13px]" placeholder="22" type="number" inputmode="numeric" min="1" max="65535" step="1" value="22" required>
-            </div>
+            <label for="port" class="block field-label" data-i18n="auth.port">端口</label>
+            <input id="port" class="terminal-input font-code" placeholder="22" type="number" inputmode="numeric" min="1" max="65535" step="1" value="22" required>
           </div>
         </div>
         <div>
-          <label for="username" class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.user">用户名</label>
+          <label for="username" class="block field-label" data-i18n="auth.user">用户名</label>
           <div class="flex items-center">
-            <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px;">person</span>
-            <input id="username" class="terminal-input text-[13px]" placeholder="admin" type="text" required>
+            <input id="username" class="terminal-input font-code" placeholder="admin" type="text" spellcheck="false" autocapitalize="none" required>
           </div>
         </div>
         <div>
-          <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="auth.method">认证方式</label>
-          <div class="flex gap-2 mb-3">
-            <button type="button" id="auth-tab-password" class="auth-tab auth-tab-active px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all" data-i18n="common.password">密码</button>
-            <button type="button" id="auth-tab-key" class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all" data-i18n="common.privateKey">私钥</button>
-            <button type="button" id="auth-tab-cf-ca" class="auth-tab hidden px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all" data-i18n="auth.cfSshCa">Cloudflare CA</button>
-            <button type="button" id="auth-tab-none" class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all" data-i18n="auth.none"></button>
+          <label class="block field-label" data-i18n="auth.method">认证方式</label>
+          <div class="auth-method-switch" role="group" data-i18n-aria-label="auth.method">
+            <button type="button" id="auth-tab-password" class="auth-tab auth-tab-active" aria-pressed="true" data-i18n="common.password">密码</button>
+            <button type="button" id="auth-tab-key" class="auth-tab" aria-pressed="false" data-i18n="common.privateKey">私钥</button>
+            <button type="button" id="auth-tab-cf-ca" class="auth-tab hidden" aria-pressed="false" data-i18n="auth.cfSshCa">Cloudflare CA</button>
+            <button type="button" id="auth-tab-none" class="auth-tab" aria-pressed="false" data-i18n="auth.none"></button>
           </div>
           <p id="auth-none-section" class="text-xs text-muted" style="display:none;" data-i18n="auth.noneHint"></p>
           <div id="auth-cf-ca-section" style="display:none;" class="space-y-3">
             <div>
-              <label for="cf-ca-team" class="block text-[11px] font-bold tracking-[0.1em] text-muted mb-1" data-i18n="auth.cfTeamName">Zero Trust 团队标识</label>
+              <label for="cf-ca-team" class="block field-label" data-i18n="auth.cfTeamName">Zero Trust 团队标识</label>
               <div class="flex items-center">
-                <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px;">verified_user</span>
-                <input id="cf-ca-team" class="terminal-input text-[13px]" data-i18n-placeholder="auth.cfTeamNamePlaceholder" placeholder="mycompany" type="text" autocomplete="off">
+                <input id="cf-ca-team" class="terminal-input" data-i18n-placeholder="auth.cfTeamNamePlaceholder" placeholder="mycompany" type="text" autocomplete="off">
               </div>
             </div>
             <div id="cf-ca-access-badge" class="hidden text-[11px] text-[var(--accent)] flex items-center gap-1.5 p-2 border border-dim bg-surface/40">
@@ -579,8 +571,7 @@ export class ConnectionForm {
           </div>
           <div id="auth-password-section">
             <div class="flex items-center">
-              <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px;">key</span>
-              <input id="password" class="terminal-input text-[13px]" placeholder="••••••••" type="password" data-i18n-aria-label="common.password" aria-label="密码" aria-describedby="auth-password-hint">
+              <input id="password" class="terminal-input" placeholder="••••••••" type="password" data-i18n-aria-label="common.password" aria-label="密码" aria-describedby="auth-password-hint">
             </div>
             <p id="auth-password-hint" class="text-xs text-muted mt-2" data-i18n="auth.passwordHint"></p>
           </div>
@@ -600,8 +591,8 @@ export class ConnectionForm {
           <div id="turnstile-widget" class="flex justify-center"></div>
         </div>
         <div>
-          <label for="anon-region" class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"><span data-i18n="auth.regionHint">连接区域</span> <span class="text-[9px] opacity-60" data-i18n="auth.regionOptional">可选；自动模式由 Cloudflare 调度</span></label>
-          <select id="anon-region" class="terminal-input text-[13px] cursor-pointer" style="border:1px solid var(--border-strong);border-bottom:1px solid var(--border-strong);padding:6px 8px;">
+          <label for="anon-region" class="block field-label"><span data-i18n="auth.regionHint">连接区域</span> <span class="text-[9px] opacity-60" data-i18n="auth.regionOptional">可选；自动模式由 Cloudflare 调度</span></label>
+          <select id="anon-region" class="terminal-input cursor-pointer" style="border:1px solid var(--border-strong);border-bottom:1px solid var(--border-strong);padding:6px 8px;">
             <option value="">自动</option>
           </select>
         </div>
@@ -609,21 +600,21 @@ export class ConnectionForm {
           <input type="checkbox" id="remember-me" class="accent-[var(--accent)] w-4 h-4 cursor-pointer">
           <label for="remember-me" class="text-xs text-muted cursor-pointer select-none" data-i18n="auth.remember">记住连接信息</label>
         </div>
-        <div class="pt-4">
-          <button id="connect-btn" class="connect-btn w-full py-3 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-2" type="submit">
+        <div class="auth-submit-row">
+          <button id="connect-btn" class="connect-btn btn-primary auth-connect-button" type="submit">
             <span class="material-symbols-outlined" style="font-size: 18px;">power_settings_new</span>
             <span data-i18n="auth.execute">建立连接</span>
           </button>
         </div>
-        <div class="flex flex-wrap justify-between items-center gap-x-2 gap-y-1 mt-4">
+        <div class="auth-account-row">
           <span id="status-text" class="text-[13px] text-muted flex items-center gap-1">
-            <span class="w-2 h-2 bg-surface-dot inline-block"></span> <span data-i18n="auth.statusOffline">状态：离线</span>
+            <span class="w-2 h-2 bg-surface-dot rounded-full inline-block"></span> <span data-i18n="auth.statusOffline">状态：离线</span>
           </span>
           <span id="github-login-placeholder"></span>
         </div>
         <!-- Recent Connections Section -->
         <div id="recent-connections-section" class="mt-6 pt-4 border-t border-dim hidden">
-          <label class="block text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)] mb-3" data-i18n="auth.recent">最近连接</label>
+          <label class="block field-label" data-i18n="auth.recent">最近连接</label>
           <div id="recent-connections-list" class="space-y-2 max-h-[160px] overflow-y-auto custom-scrollbar pr-1"></div>
         </div>
       </form>
@@ -703,6 +694,7 @@ export class ConnectionForm {
       const tab = document.getElementById(tabId)!;
       tab.classList.toggle('auth-tab-active', mode === value);
       tab.setAttribute('aria-pressed', String(mode === value));
+      tab.setAttribute('aria-pressed', String(mode === value));
       document.getElementById(`auth-${value === 'cf_ca' ? 'cf-ca' : value}-section`)!.style.display =
         mode === value ? '' : 'none';
     }
@@ -750,7 +742,7 @@ export class ConnectionForm {
         <div class="flex items-center gap-2 overflow-hidden mr-2 select-none flex-1">
           <span class="material-symbols-outlined text-muted" style="font-size: 14px;">history</span>
           <span class="recent-connection-label text-on-surface truncate"></span>
-          <span class="text-[9px] font-bold tracking-[0.05em] text-muted border border-dim px-1.5 py-0.2 shrink-0">${authLabel}</span>
+          <span class="text-[9px] font-bold text-muted border border-dim px-1.5 py-0.2 shrink-0">${authLabel}</span>
         </div>
         <button type="button" class="delete-history-btn text-muted hover:text-error flex items-center justify-center p-0.5" title="${t('auth.removeHistory')}">
           <span class="material-symbols-outlined" style="font-size: 14px;">close</span>

@@ -28,7 +28,7 @@ import {
 import { currentTerminalFontSize, TERMINAL_FONT_CHANGE_EVENT } from './terminal-layout';
 import { TerminalTouchSelection } from './terminal-selection';
 import { requestManualPaste } from './manual-paste-dialog';
-import { localizedSSHMessage } from './terminal-status';
+import { localizedSSHMessage, sshHandshakeStage } from './terminal-status';
 import { TerminalOutputAck } from './terminal-output-ack';
 import { centerTerminalText } from './terminal-text';
 import { getActiveTerminalTheme, onTerminalThemeChange } from './theme';
@@ -169,6 +169,8 @@ export class SSHTerminal {
   private restoreCursorBlinkAfterReturnPrompt: boolean = false;
   private onSessionClosed?: (event: CloseEvent, willReconnect: boolean) => void;
   private onSessionReady?: (resumed?: boolean) => void;
+  private handshakeStage: NonNullable<ReturnType<typeof sshHandshakeStage>> = 'terminal.connectionStage.transport';
+  private onHandshakeStageChanged?: () => void;
   private onAgentFrameHandler?: (msg: any) => void;
   private onOSDetectedHandler?: (serverId: number, os: string) => void;
   private sftpAttachUrl: string | null = null;
@@ -766,8 +768,16 @@ export class SSHTerminal {
       }
     });
 
+    box.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || event.isComposing || event.keyCode === 229) return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.hideSearch();
+    });
+
     // Enter = next, Shift+Enter = previous
     this.searchInput.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.isComposing || e.keyCode === 229) return;
       const term = this.searchInput!.value;
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -801,6 +811,11 @@ export class SSHTerminal {
     const button = document.createElement('button');
     button.className = `cloudssh-search-btn ${extraClass}`;
     button.title = t(titleKey);
+    button.setAttribute('aria-label', button.title);
+    const shortcut = extraClass === 'cloudssh-search-prev' ? 'Shift+Enter'
+      : extraClass === 'cloudssh-search-next' ? 'Enter' : 'Escape';
+    button.setAttribute('aria-keyshortcuts', shortcut);
+    button.title += ' (' + shortcut + ')';
     const iconSpan = document.createElement('span');
     iconSpan.className = 'material-symbols-outlined';
     iconSpan.style.fontSize = '16px';
@@ -1061,6 +1076,14 @@ export class SSHTerminal {
     }
   }
 
+  setHandshakeStageChangedHandler(handler: () => void): void {
+    this.onHandshakeStageChanged = handler;
+  }
+
+  getHandshakeLabel(): string {
+    return t(this.handshakeStage);
+  }
+
   private setupWebSocketHandlers(rejectFn?: (reason?: any) => void): void {
     if (!this.ws) return;
     const socket = this.ws;
@@ -1163,6 +1186,13 @@ export class SSHTerminal {
 
           switch (msg.type) {
             case 'status':
+              if (!this.sessionReady) {
+                const stage = sshHandshakeStage(msg.event);
+                if (stage && stage !== this.handshakeStage) {
+                  this.handshakeStage = stage;
+                  this.onHandshakeStageChanged?.();
+                }
+              }
               this.terminal.writeln(
                 `\x1b[32m[*] ${localizedSSHMessage(msg.message, msg.event, msg.params)}\x1b[0m`
               );
@@ -1260,6 +1290,7 @@ export class SSHTerminal {
         );
 
       const willReconnect = event.code !== 1000 && this.hasReconnectStrategy();
+      this.handshakeStage = 'terminal.connectionStage.transport';
       this.onSessionClosed?.(event, willReconnect);
       if (willReconnect) {
         this.scheduleReconnect();
@@ -1699,6 +1730,7 @@ export class SSHTerminal {
 
   private resetActiveConnection(): void {
     this.authChallengeDialog?.dismiss();
+    this.handshakeStage = 'terminal.connectionStage.transport';
     this.cancelPendingPaste();
     this.setMobileSelectionMode(false);
     this.finishMobileScroll();

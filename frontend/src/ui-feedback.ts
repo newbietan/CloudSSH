@@ -55,6 +55,7 @@ const DEFAULT_TITLE_KEYS: Record<FeedbackVariant, Parameters<typeof t>[0]> = {
 };
 
 let toastContainer: HTMLElement | null = null;
+const discardToast = new WeakMap<Element, () => void>();
 
 function getToastContainer(): HTMLElement {
   if (toastContainer?.isConnected) return toastContainer;
@@ -67,10 +68,10 @@ function getToastContainer(): HTMLElement {
   return toastContainer;
 }
 
-/** 显示非阻塞通知；错误会停留更久，鼠标悬停或聚焦时暂停计时。 */
+/** 显示非阻塞通知；默认保留错误提示，鼠标悬停或聚焦时暂停计时。 */
 export function notify(message: string, options: NotificationOptions = {}): void {
   const variant = options.variant ?? 'info';
-  const duration = options.duration ?? (variant === 'danger' ? 7000 : 4500);
+  const duration = options.duration ?? (variant === 'danger' ? 0 : variant === 'success' ? 2500 : 4000);
   const container = getToastContainer();
   const toast = document.createElement('div');
   toast.className = 'app-toast';
@@ -101,10 +102,9 @@ export function notify(message: string, options: NotificationOptions = {}): void
 
   content.append(title, body);
   toast.append(icon, content, closeButton);
-  container.appendChild(toast);
-
-  while (container.children.length > 4) {
-    container.firstElementChild?.remove();
+  container.prepend(toast);
+  for (const overflow of Array.from(container.children).slice(3)) {
+    discardToast.get(overflow)?.();
   }
 
   let timeout: number | null = null;
@@ -124,16 +124,21 @@ export function notify(message: string, options: NotificationOptions = {}): void
     window.setTimeout(() => toast.remove(), 220);
   };
   const startTimer = (): void => {
-    if (duration > 0 && !removing) {
+    stopTimer();
+    if (duration > 0 && !removing && !toast.matches(':hover, :focus-within')) {
       timeout = window.setTimeout(dismiss, duration);
     }
   };
+  discardToast.set(toast, () => {
+    stopTimer();
+    toast.remove();
+  });
 
   closeButton.addEventListener('click', dismiss);
   toast.addEventListener('mouseenter', stopTimer);
   toast.addEventListener('mouseleave', startTimer);
   toast.addEventListener('focusin', stopTimer);
-  toast.addEventListener('focusout', startTimer);
+  toast.addEventListener('focusout', () => queueMicrotask(startTimer));
 
   requestAnimationFrame(() => toast.classList.add('app-toast--visible'));
   startTimer();

@@ -130,7 +130,8 @@ test('MCP and Agent share header, field and footer components in all themes', as
     if (theme === 'liquid-glass') {
       // Liquid material lives on the outer shells; other themes use the Agent's inner surface.
       expect(components.mcpSurface).toEqual(components.agentSurface);
-      expect(style.filter).toContain('blur');
+      if (style.mobile) expect(style.filter).toBe('none');
+      else expect(style.filter).toContain('blur(14px)');
       expect(style.radius).toBeGreaterThan(0);
       if (style.mobile) expect(style.background).toBe('rgb(255, 255, 255)');
       else expect(style.background).toContain('0.96');

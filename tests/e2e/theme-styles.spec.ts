@@ -57,7 +57,7 @@ test('内置主题切换 UI 风格但保持服务器列表结构稳定', async (
   );
   await expect(selector.locator('option[value="cyberpunk"]')).toHaveCSS(
     'color',
-    'rgb(74, 246, 38)'
+    'rgb(201, 213, 198)'
   );
 
   // V3：Liquid Glass 内置主题携带背景/效果/模糊与 liquid 风格专属配置
@@ -416,8 +416,8 @@ test('自定义主题分段控制器交互与管理弹窗上传/多套管理/删
   await themeModal.locator('#custom-theme-modal-close-btn').click();
   await expect(themeModal).toBeHidden();
 
-  // 验证主题回退到内置主题（cyberpunk），Custom 不再处于选中状态
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'cyberpunk');
+  // 清空主题库后回退到默认主题；Custom 不再处于选中状态。
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'standard-dark');
   await expect(customSegmentBtn).toHaveAttribute('aria-selected', 'false');
   await expect.poll(() => api.cloud.themes.length).toBe(0);
   expect(api.cloud.activeId).toBeNull();

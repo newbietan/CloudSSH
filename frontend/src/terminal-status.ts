@@ -60,6 +60,26 @@ const SSH_EVENT_KEYS: Record<string, TranslationKey> = {
   share_audit_unavailable: 'terminal.status.shareAuditUnavailable',
 };
 
+// Map only phases confirmed by the current SSH transport, never synthetic percentages.
+export function sshHandshakeStage(event: unknown): TranslationKey | null {
+  switch (event) {
+    case 'jump_hop_connecting':
+    case 'jump_target_connecting':
+    case 'version_exchange':
+      return 'terminal.connectionStage.transport';
+    case 'version_ready':
+      return 'terminal.connectionStage.keyExchange';
+    case 'auth_service_accepted':
+    case 'auth_public_key':
+    case 'auth_interactive_required':
+      return 'terminal.connectionStage.authentication';
+    case 'auth_success':
+      return 'terminal.connectionStage.shell';
+    default:
+      return null;
+  }
+}
+
 export function localizedSSHMessage(
   message: string,
   event?: string,

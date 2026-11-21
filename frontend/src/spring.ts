@@ -38,3 +38,11 @@ export class Spring {
     this.velocity = 0;
   }
 }
+
+/** Slight edge lag retains a hint of stretch without sending the lens past its target. */
+export function tuneSegmentedSprings(leading: Spring, trailing: Spring): void {
+  leading.stiffness = 360;
+  leading.damping = 38;
+  trailing.stiffness = 300;
+  trailing.damping = 35;
+}

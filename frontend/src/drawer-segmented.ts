@@ -4,7 +4,7 @@
  * 配备双边异步物理弹簧（Asymmetric Dual-Edge Springs）驱动的液态透镜滑块。
  */
 
-import { Spring } from './spring';
+import { Spring, tuneSegmentedSprings } from './spring';
 
 export class LiquidSegmentedDrawerControl {
   private readonly container: HTMLElement;
@@ -115,8 +115,8 @@ export class LiquidSegmentedDrawerControl {
     this.lastCenter = center;
 
     const reduceMotion =
-      typeof window !== 'undefined' &&
-      (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
+      (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false) ||
+      ['none', 'reduced'].includes(document.documentElement.dataset.uiMotion ?? '');
 
     if (!animate || reduceMotion || this.lastCenter === null) {
       this.leftSpring.snapTo(left);
@@ -126,18 +126,10 @@ export class LiquidSegmentedDrawerControl {
       return;
     }
 
-    // 双边异步参数：领先边刚度 260/阻尼 26，拖后边刚度 130/阻尼 15
-    if (movingRight) {
-      this.rightSpring.stiffness = 260;
-      this.rightSpring.damping = 26;
-      this.leftSpring.stiffness = 130;
-      this.leftSpring.damping = 15;
-    } else {
-      this.leftSpring.stiffness = 260;
-      this.leftSpring.damping = 26;
-      this.rightSpring.stiffness = 130;
-      this.rightSpring.damping = 15;
-    }
+    tuneSegmentedSprings(
+      movingRight ? this.rightSpring : this.leftSpring,
+      movingRight ? this.leftSpring : this.rightSpring
+    );
 
     this.leftSpring.target = left;
     this.rightSpring.target = right;

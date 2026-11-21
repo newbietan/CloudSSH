@@ -174,7 +174,7 @@ export class SFTPPanel {
         <div class="sftp-panel-header flex items-center justify-between px-4 h-12 border-b border-outline-variant bg-elevated shrink-0">
           <div class="flex items-center gap-2">
             <span class="material-symbols-outlined text-primary-container" style="font-size: 18px; font-variation-settings: 'FILL' 1;">folder_open</span>
-            <span class="text-xs font-bold tracking-[0.1em] text-primary-container" data-i18n="sftp.title">SFTP 文件管理器</span>
+            <span class="text-xs font-bold text-primary-container" data-i18n="sftp.title">SFTP 文件管理器</span>
           </div>
           <button id="sftp-close-btn" class="panel-close-btn" data-i18n-title="sftp.close" title="关闭 SFTP 面板">
             <span class="material-symbols-outlined">close</span>
@@ -208,31 +208,31 @@ export class SFTPPanel {
             <button id="sftp-multi-btn" type="button" aria-pressed="false" data-i18n="sftp.multiSelect">Select</button>
           </div>
           <div class="sftp-actions-scroll flex min-w-0 flex-1 items-center gap-1 overflow-x-auto no-scrollbar p-0.5">
-            <button id="sftp-upload-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" data-i18n-title="sftp.upload" title="上传文件">
+            <button id="sftp-upload-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" data-i18n-title="sftp.upload" title="上传文件">
               <span class="material-symbols-outlined" style="font-size: 14px;">upload_file</span>
               <span data-i18n="sftp.uploadAction">上传文件</span>
             </button>
-            <button id="sftp-new-file-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" data-i18n-title="sftp.newFile" title="新建文件">
+            <button id="sftp-new-file-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold hover:bg-surface-variant rounded transition-colors cursor-pointer text-primary-container" data-i18n-title="sftp.newFile" title="新建文件">
               <span class="material-symbols-outlined" style="font-size: 14px;">note_add</span>
               <span data-i18n="sftp.newFileAction">新建文件</span>
             </button>
-            <button id="sftp-mkdir-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-secondary-container" data-i18n-title="sftp.newFolder" title="新建文件夹">
+            <button id="sftp-mkdir-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold hover:bg-surface-variant rounded transition-colors cursor-pointer text-secondary-container" data-i18n-title="sftp.newFolder" title="新建文件夹">
               <span class="material-symbols-outlined" style="font-size: 14px;">create_new_folder</span>
               <span data-i18n="sftp.mkdirAction">新建文件夹</span>
             </button>
-            <button id="sftp-download-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.download" title="下载" disabled>
+            <button id="sftp-download-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.download" title="下载" disabled>
               <span class="material-symbols-outlined" style="font-size: 14px;">download</span>
               <span data-i18n="sftp.downloadAction">下载</span>
             </button>
-            <button id="sftp-edit-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.edit" title="在线编辑" disabled>
+            <button id="sftp-edit-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.edit" title="在线编辑" disabled>
               <span class="material-symbols-outlined" style="font-size: 14px;">edit_note</span>
               <span data-i18n="sftp.editAction">编辑</span>
             </button>
-            <button id="sftp-delete-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-error-container rounded transition-colors cursor-pointer text-error disabled:opacity-30" data-i18n-title="common.delete" title="删除" disabled>
+            <button id="sftp-delete-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold hover:bg-error-container rounded transition-colors cursor-pointer text-error disabled:opacity-30" data-i18n-title="common.delete" title="删除" disabled>
               <span class="material-symbols-outlined" style="font-size: 14px;">delete</span>
               <span data-i18n="sftp.deleteAction">删除</span>
             </button>
-            <button id="sftp-rename-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold tracking-wider hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.rename" title="重命名" disabled>
+            <button id="sftp-rename-btn" class="flex items-center gap-1 px-2 py-1 text-[11px] font-bold hover:bg-surface-variant rounded transition-colors cursor-pointer text-on-surface-variant disabled:opacity-30" data-i18n-title="sftp.rename" title="重命名" disabled>
               <span class="material-symbols-outlined" style="font-size: 14px;">drive_file_rename_outline</span>
               <span data-i18n="sftp.renameAction">重命名</span>
             </button>
@@ -251,8 +251,8 @@ export class SFTPPanel {
               </button>
             </div>
           </div>
-          <div class="w-full h-1.5 bg-surface-variant rounded-full overflow-hidden">
-            <div id="sftp-progress-bar" class="h-full bg-primary-container rounded-full transition-all duration-200" style="width: 0%"></div>
+          <div class="w-full h-[3px] bg-surface-variant rounded-full overflow-hidden">
+            <div id="sftp-progress-bar" class="h-full bg-primary-container rounded-full transition-[width] duration-150" style="width: 0%"></div>
           </div>
         </div>
 
@@ -978,9 +978,9 @@ export class SFTPPanel {
         <span class="flex-1 truncate ${entry.isDir ? 'text-primary-container font-bold' : 'text-on-surface'}" title="${this.escapeHtml(entry.name)}">
           ${this.escapeHtml(entry.name)}
         </span>
-        <span class="text-on-surface-variant text-[11px] w-16 text-right shrink-0">${entry.isDir ? '-' : entry.sizeFormatted}</span>
-        <span class="text-on-surface-variant text-[10px] w-20 text-right shrink-0 hidden md:block">${entry.permissions}</span>
-        <span class="text-on-surface-variant text-[10px] w-24 text-right shrink-0 hidden lg:block">${this.formatTimestamp(entry.modifiedTime)}</span>
+        <span class="font-code text-on-surface-variant text-[11px] w-16 text-right shrink-0">${entry.isDir ? '-' : entry.sizeFormatted}</span>
+        <span class="font-code text-on-surface-variant text-[10px] w-20 text-right shrink-0 hidden md:block">${entry.permissions}</span>
+        <span class="font-code text-on-surface-variant text-[10px] w-24 text-right shrink-0 hidden lg:block">${this.formatTimestamp(entry.modifiedTime)}</span>
       </div>
     `
       )

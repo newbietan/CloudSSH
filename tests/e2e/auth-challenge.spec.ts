@@ -47,6 +47,41 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/');
 });
 
+test('握手遥测由当前 SSH 事件推进，只有 Shell ready 才交接给终端', async ({ page }) => {
+  let sendStage: ((event: string) => void) | undefined;
+  await page.route('**/api/known-hosts?**', route => route.fulfill({ status: 401, json: {} }));
+  await page.routeWebSocket('**/api/ssh*', socket => {
+    socket.onMessage(data => {
+      if (typeof data !== 'string') return;
+      const message = JSON.parse(data);
+      if (message.host) {
+        sendStage = event => socket.send(JSON.stringify({ type: 'status', event, message: '' }));
+      } else if (message.type === 'ping') {
+        socket.send(JSON.stringify({ type: 'pong', id: message.id }));
+      }
+    });
+  });
+  await page.goto('/?lang=en-US');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'standard-dark');
+  await page.locator('#host').fill('ssh.example.com');
+  await page.locator('#username').fill('alice');
+  await page.locator('#connect-btn').click();
+
+  const stage = page.locator('#term-connection-stage');
+  await expect(stage).toHaveText('Opening secure channel…');
+  await expect.poll(() => Boolean(sendStage)).toBe(true);
+  sendStage!('version_ready');
+  await expect(stage).toHaveText('Exchanging SSH keys…');
+  sendStage!('auth_service_accepted');
+  await expect(stage).toHaveText('Authenticating…');
+  sendStage!('auth_success');
+  await expect(stage).toHaveText('Opening terminal…');
+  await expect(page.locator('#term-status')).toContainText('Connecting');
+  sendStage!('shell_ready');
+  await expect(stage).toBeHidden();
+  await expect(page.locator('#term-status')).toContainText('Connected');
+});
+
 test('匿名 password 空密码可连接、重连并从历史恢复', async ({ page }) => {
   const configs: Array<Record<string, unknown>> = [];
   const disconnect: Array<() => void> = [];

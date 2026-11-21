@@ -304,7 +304,7 @@ export class SnippetManager {
 
     const title = createElement(
       'span',
-      'text-xs font-bold tracking-[0.1em] text-primary-container truncate',
+      'text-xs font-bold text-primary-container truncate',
       t('snippets.title')
     );
     titleBlock.appendChild(title);
@@ -388,7 +388,7 @@ export class SnippetManager {
     // “新建片段” 按钮
     const newBtn = createElement(
       'button',
-      'flex items-center gap-1 px-2.5 py-1 h-[30px] text-[11px] font-bold tracking-wider cyber-button text-primary-container shrink-0 cursor-pointer'
+      'flex items-center gap-1 px-2.5 py-1 h-[30px] text-[11px] font-bold cyber-button text-primary-container shrink-0 cursor-pointer'
     );
     newBtn.id = 'snippet-new-btn';
     newBtn.type = 'button';

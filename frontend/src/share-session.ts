@@ -43,37 +43,39 @@ function renderClaimButton(button: HTMLButtonElement, claiming: boolean): void {
 }
 
 function buildShareLandingCard(): HTMLElement {
-  const card = el('main', 'w-full max-w-lg relative z-10');
+  const card = el('main', 'auth-shell w-full relative');
   card.id = 'share-landing-card';
 
-  const brand = el('div', 'mb-8 text-center');
-  brand.append(el('div', 'text-3xl font-bold text-primary tracking-tighter mb-2', 'CloudSSH'));
-  card.append(brand);
+  const brandRow = el('div', 'workbench-brand-row');
+  const brand = el('div', 'workbench-brand');
+  const mark = el('span', 'workbench-mark');
+  mark.setAttribute('aria-hidden', 'true');
+  brand.append(mark, el('span', undefined, 'CloudSSH'));
+  const language = el('div', undefined);
+  language.setAttribute('data-language-switcher', '');
+  brandRow.append(brand, language);
+  card.append(brandRow);
 
-  const box = el('div', 'cyber-box p-6 shadow-2xl relative');
-  box.append(
-    el(
-      'div',
-      'theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent opacity-50'
-    )
-  );
-
-  const headerRow = el('div', 'flex items-center justify-between mb-5 pb-4 border-b border-dim');
-  headerRow.append(el('span', 'text-sm font-bold text-primary', t('share.accessTitle')));
-  headerRow.append(el('div', undefined));
-  headerRow.lastElementChild?.setAttribute('data-language-switcher', '');
+  const box = el('div', 'cyber-box auth-card');
+  const headerRow = el('div', 'auth-connection-header');
+  headerRow.append(el('h1', 'auth-connection-title', t('share.accessTitle')));
   box.append(headerRow);
 
   box.append(el('p', 'text-sm text-on-surface mb-4', t('share.accessDescription')));
 
-  const noticeList = el('ul', 'space-y-2 text-xs text-muted mb-6 list-disc pl-5');
-  for (const key of [
-    'share.noticeOneTime',
-    'share.noticeAudited',
-    'share.noticeNoAgent',
-    'share.noticeNoReconnect',
+  const noticeList = el('ul', 'share-notices');
+  noticeList.setAttribute('role', 'list');
+  for (const [key, iconName] of [
+    ['share.noticeOneTime', 'vpn_key'],
+    ['share.noticeAudited', 'verified_user'],
+    ['share.noticeNoAgent', 'info'],
+    ['share.noticeNoReconnect', 'link_off'],
   ] as const) {
-    noticeList.append(el('li', undefined, t(key)));
+    const item = el('li', undefined);
+    const icon = el('span', 'material-symbols-outlined', iconName);
+    icon.setAttribute('aria-hidden', 'true');
+    item.append(icon, el('span', undefined, t(key)));
+    noticeList.append(item);
   }
   box.append(noticeList);
 
@@ -84,7 +86,7 @@ function buildShareLandingCard(): HTMLElement {
 
   const button = el(
     'button',
-    'cyber-button text-primary w-full py-2.5 text-xs font-bold tracking-[0.1em] flex items-center justify-center gap-2'
+    'cyber-button btn-primary auth-connect-button'
   );
   button.type = 'button';
   button.id = 'share-claim-btn';

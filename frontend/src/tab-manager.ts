@@ -209,6 +209,11 @@ export class TabManager {
       this.onOSDetected?.(serverId, os);
     });
 
+    terminal.setHandshakeStageChangedHandler(() => {
+      const tab = this.tabs.get(id);
+      if (tab && this.activeTabId === id) this.updateHandshakeStatus(tab);
+    });
+
     // 设置延迟监测更新回调
     terminal.setLatencyUpdatedHandler((cfLatency, cfColo, wsLatency) => {
       const t = this.tabs.get(id);
@@ -738,7 +743,16 @@ export class TabManager {
 
   // ==================== 状态栏同步 ====================
 
+  private updateHandshakeStatus(tab: TabInfo): void {
+    const details = document.getElementById('term-connection-stage');
+    if (!details) return;
+    const label = tab.state === 'connecting' ? tab.terminal.getHandshakeLabel() : '';
+    details.hidden = !label;
+    if (details.textContent !== label) details.textContent = label;
+  }
+
   private updateStatusBar(tab: TabInfo): void {
+    this.updateHandshakeStatus(tab);
     const termHost = document.getElementById('term-host');
     const termUser = document.getElementById('term-user');
     const termPort = document.getElementById('term-port');
@@ -756,7 +770,7 @@ export class TabManager {
           badge.title = copyIPLabel;
           badge.setAttribute('aria-label', copyIPLabel);
           badge.textContent = masked;
-          termHost.replaceChildren(document.createTextNode(t('terminal.hostLabel')), badge);
+          termHost.replaceChildren(badge);
           badge.addEventListener('click', async () => {
             const ok = await copyTextToClipboard(tab.hostInfo!.host);
             if (ok) {
@@ -768,16 +782,15 @@ export class TabManager {
             }
           });
         } else {
-          termHost.textContent = t('terminal.host', { value: tab.hostInfo.host });
+          termHost.textContent = tab.hostInfo.host.includes(':')
+            ? `[${tab.hostInfo.host}]`
+            : tab.hostInfo.host;
         }
       }
-      if (termUser)
-        termUser.textContent = tab.hostInfo.username
-          ? t('terminal.user', { value: tab.hostInfo.username })
-          : '';
-      if (termPort) termPort.textContent = t('terminal.port', { value: tab.hostInfo.port });
+      if (termUser) termUser.textContent = tab.hostInfo.username ? `${tab.hostInfo.username}@` : '';
+      if (termPort) termPort.textContent = `:${tab.hostInfo.port}`;
     } else {
-      if (termHost) termHost.textContent = t('terminal.server', { value: tab.label });
+      if (termHost) termHost.textContent = tab.label;
       if (termUser) termUser.textContent = '';
       if (termPort) termPort.textContent = '';
     }
@@ -786,7 +799,7 @@ export class TabManager {
       this.setStatusIndicator(termStatus, 'w-2 h-2 bg-primary-container', t('terminal.connected'));
       this.setStatusIndicator(
         statusText,
-        'w-2 h-2 bg-[var(--accent)] animate-pulse',
+        'w-2 h-2 rounded-full bg-[var(--success)]',
         t('auth.statusOnline')
       );
     } else if (tab.state === 'connecting') {
@@ -807,19 +820,18 @@ export class TabManager {
         const latencyItems: { label: string; quality: string }[] = [];
         if (tab.cfLatency !== undefined) {
           latencyItems.push({
-            label: `CF-${tab.cfColo || 'UNK'}: ${tab.cfLatency}ms`,
+            label: `CF${tab.cfColo ? ` ${tab.cfColo}` : ''} ${tab.cfLatency}ms`,
             quality: getNetworkQuality(tab.cfLatency, 'cf'),
           });
         }
         if (tab.wsLatency !== undefined) {
           latencyItems.push({
-            label: `RTT: ${tab.wsLatency}ms`,
+            label: `RTT ${tab.wsLatency}ms`,
             quality: getNetworkQuality(tab.wsLatency, 'ws'),
           });
         }
         if (latencyItems.length > 0) {
           const fragment = document.createDocumentFragment();
-          fragment.appendChild(document.createTextNode('⚡ '));
           for (const [index, item] of latencyItems.entries()) {
             if (index > 0) {
               const separator = document.createElement('span');

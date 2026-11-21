@@ -462,6 +462,10 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'terminal.copySuccess': 'Copied',
   'terminal.copyFailed':
     'Could not write to the clipboard. Check browser permissions and make sure the page uses HTTPS.',
+  'terminal.connectionStage.transport': 'Opening secure channel…',
+  'terminal.connectionStage.keyExchange': 'Exchanging SSH keys…',
+  'terminal.connectionStage.authentication': 'Authenticating…',
+  'terminal.connectionStage.shell': 'Opening terminal…',
   'terminal.status.versionExchange': 'Exchanging SSH versions…',
   'terminal.status.versionReady': 'SSH version exchange complete',
   'terminal.status.authPublicKey': 'Authenticating with a public key…',

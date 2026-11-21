@@ -222,22 +222,22 @@ export const THEMES = {
 
 export const UI_THEMES: Record<BuiltInThemeName, Record<string, string>> = {
   'standard-dark': {
-    '--bg': '#0f1115',
-    '--bg-surface': '#161a22',
-    '--bg-elevated': '#1c222d',
-    '--bg-terminal': '#0b0e14',
+    '--bg': '#0b0e14',
+    '--bg-surface': '#121720',
+    '--bg-elevated': '#1a202b',
+    '--bg-terminal': '#080b10',
     '--text': '#e6edf3',
-    '--text-muted': '#9ba7b4',
-    '--text-dim': '#7d8590',
-    '--accent': '#58a6ff',
-    '--accent-secondary': '#79c0ff',
-    '--accent-secondary-light': '#a5d6ff',
-    '--border': '#30363d',
-    '--border-strong': '#484f58',
+    '--text-muted': '#a9b4c5',
+    '--text-dim': '#8d98a9',
+    '--accent': '#78adff',
+    '--accent-secondary': '#95bfff',
+    '--accent-secondary-light': '#bfd7ff',
+    '--border': '#282f3d',
+    '--border-strong': '#485365',
     '--error': '#ff7b72',
     '--error-bg': '#3d1418',
     '--on-accent': '#07111f',
-    '--surface-dot': '#30363d',
+    '--surface-dot': '#282f3d',
     '--scrollbar-track': 'rgba(22, 26, 34, 0.7)',
     '--scrollbar-thumb': 'rgba(155, 167, 180, 0.35)',
     '--scrollbar-thumb-hover': 'rgba(155, 167, 180, 0.55)',
@@ -246,14 +246,14 @@ export const UI_THEMES: Record<BuiltInThemeName, Record<string, string>> = {
     '--accent-bg': 'rgba(88, 166, 255, 0.1)',
     '--modal-overlay': 'rgba(0, 0, 0, 0.72)',
     '--on-surface': '#e6edf3',
-    '--on-surface-variant': '#9ba7b4',
-    '--agent-user-color': '#58a6ff',
-    '--agent-agent-color': '#79c0ff',
+    '--on-surface-variant': '#a9b4c5',
+    '--agent-user-color': '#78adff',
+    '--agent-agent-color': '#95bfff',
   },
   'standard-light': {
-    '--bg': '#f6f8fa',
+    '--bg': '#f6f7f9',
     '--bg-surface': '#ffffff',
-    '--bg-elevated': '#eef2f6',
+    '--bg-elevated': '#f0f3f7',
     '--bg-terminal': '#ffffff',
     '--text': '#1f2328',
     '--text-muted': '#57606a',
@@ -261,8 +261,8 @@ export const UI_THEMES: Record<BuiltInThemeName, Record<string, string>> = {
     '--accent': '#0969da',
     '--accent-secondary': '#0550ae',
     '--accent-secondary-light': '#0550ae',
-    '--border': '#d0d7de',
-    '--border-strong': '#afb8c1',
+    '--border': '#dce2ea',
+    '--border-strong': '#aeb9c7',
     '--error': '#cf222e',
     '--error-bg': '#ffebe9',
     '--on-accent': '#ffffff',
@@ -284,9 +284,9 @@ export const UI_THEMES: Record<BuiltInThemeName, Record<string, string>> = {
     '--bg-surface': '#121212',
     '--bg-elevated': '#131313',
     '--bg-terminal': '#0e0e0e',
-    '--text': '#4af626',
-    '--text-muted': '#bbccb0',
-    '--text-dim': '#3c4b36',
+    '--text': '#c9d5c6',
+    '--text-muted': '#aabca7',
+    '--text-dim': '#82937e',
     '--accent': '#4af626',
     '--accent-secondary': '#14d1ff',
     '--accent-secondary-light': '#b7eaff',
@@ -304,7 +304,7 @@ export const UI_THEMES: Record<BuiltInThemeName, Record<string, string>> = {
     '--accent-bg': 'rgba(74, 246, 38, 0.1)',
     '--modal-overlay': 'rgba(0, 0, 0, 0.8)',
     '--on-surface': '#e5e2e1',
-    '--on-surface-variant': '#bbccb0',
+    '--on-surface-variant': '#aabca7',
     '--agent-user-color': '#4af626',
     '--agent-agent-color': '#14d1ff',
   },
@@ -364,7 +364,7 @@ export const BUILT_IN_BACKGROUND: Partial<Record<BuiltInThemeName, ThemeBackgrou
   },
   'liquid-glass': {
     type: 'mesh',
-    stops: ['#a2d2ff', '#d8b4fe', '#ffc8dd', '#bde0fe', '#ffdfba'],
+    stops: ['#adc5de', '#c1c1d9', '#d9d9e3', '#bfd6e6', '#e2d9cc'],
     angle: 135,
     scrim: 0.35,
     animation: 'drift',
@@ -373,7 +373,7 @@ export const BUILT_IN_BACKGROUND: Partial<Record<BuiltInThemeName, ThemeBackgrou
 
 /** V3 内置主题的效果配置（键存在且 >0 即启用） */
 export const BUILT_IN_EFFECTS: Partial<Record<BuiltInThemeName, ThemeEffects>> = {
-  cyberpunk: { scanline: 1, flicker: 1 },
+  cyberpunk: { scanline: 0.42, flicker: 0.35 },
   'liquid-glass': { glow: 0.35 },
 };
 
@@ -382,9 +382,11 @@ export const BUILT_IN_TYPOGRAPHY: Partial<Record<BuiltInThemeName, ThemeTypograp
   'liquid-glass': { fontScale: 1.02, radiusScale: 1.4 },
 };
 
-let activeTerminalTheme: ITheme = THEMES.cyberpunk;
+export const DEFAULT_THEME: BuiltInThemeName = 'standard-dark';
+
+let activeTerminalTheme: ITheme = THEMES[DEFAULT_THEME];
 let activeColorScheme: ColorScheme = 'dark';
-let activeAppearance: ResolvedThemeAppearance = UI_STYLE_PRESETS.cyberpunk;
+let activeAppearance: ResolvedThemeAppearance = UI_STYLE_PRESETS.standard;
 const terminalThemeListeners = new Set<(theme: ITheme) => void>();
 const colorSchemeListeners = new Set<(colorScheme: ColorScheme) => void>();
 
@@ -514,7 +516,7 @@ function applyThemeV3Layers(
   root.dataset.fxNoise = effects?.noise ? 'on' : 'off';
   root.style.setProperty('--fx-scanline-opacity', String(effects?.scanline ?? 1));
   // 闪烁频率随强度在 0.32s–0.12s 之间收紧
-  root.style.setProperty('--fx-flicker-speed', `${0.32 - 0.2 * (effects?.flicker ?? 1)}s`);
+  root.style.setProperty('--fx-flicker-strength', String(effects?.flicker ?? 0));
   root.style.setProperty('--fx-glow-strength', String(effects?.glow ?? 0.6));
   root.style.setProperty('--fx-noise-opacity', String(effects?.noise ?? 0.05));
 

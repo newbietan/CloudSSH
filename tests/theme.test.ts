@@ -386,7 +386,7 @@ describe('Standard 主题入口和编辑器', () => {
 
     expect(BUILT_IN_BACKGROUND['liquid-glass']).toEqual({
       type: 'mesh',
-      stops: ['#a2d2ff', '#d8b4fe', '#ffc8dd', '#bde0fe', '#ffdfba'],
+      stops: ['#adc5de', '#c1c1d9', '#d9d9e3', '#bfd6e6', '#e2d9cc'],
       angle: 135,
       scrim: 0.35,
       animation: 'drift',
@@ -563,7 +563,7 @@ describe('Theme V3 背景层、效果与版式', () => {
   it('内置主题携带差异化的背景、效果与版式配置', () => {
     expect(BUILT_IN_BACKGROUND['liquid-glass']?.type).toBe('mesh');
     expect(BUILT_IN_BACKGROUND['liquid-glass']?.animation).toBe('drift');
-    expect(BUILT_IN_EFFECTS.cyberpunk).toEqual({ scanline: 1, flicker: 1 });
+    expect(BUILT_IN_EFFECTS.cyberpunk).toEqual({ scanline: 0.42, flicker: 0.35 });
     expect(BUILT_IN_EFFECTS['liquid-glass']?.glow).toBeGreaterThan(0);
     expect(BUILT_IN_TYPOGRAPHY['liquid-glass']?.radiusScale).toBeGreaterThan(1);
     expect(BUILT_IN_BACKGROUND['standard-dark']).toBeUndefined();

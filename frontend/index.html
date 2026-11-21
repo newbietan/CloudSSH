@@ -75,7 +75,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>CloudSSH</title>
     <!-- 字体已本地化：见 frontend/src/assets/fonts/fonts.css 的 @font-face，不再请求 Google Fonts。 -->
-    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/app.css" />
     <script
       src="https://challenges.cloudflare.com/turnstile/v0/api.js"
       async
@@ -86,18 +86,15 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     <div class="app-background" aria-hidden="true"></div>
     <!-- 运行时配置与身份确认前，应用内容不可见、不可聚焦，也不进入无障碍树。 -->
     <div id="app-loading" class="min-h-screen flex items-center justify-center p-6">
-      <main class="w-full max-w-md text-center" aria-label="CloudSSH">
-        <div class="text-3xl font-bold text-primary tracking-tighter mb-8">CloudSSH</div>
-        <div class="cyber-box p-6 min-h-[320px] flex items-center justify-center">
-          <div
-            id="app-loading-status"
-            class="space-y-5 text-muted"
-            role="status"
-            aria-live="polite"
-            aria-busy="true"
-          >
-            <span class="app-loading-spinner" aria-hidden="true"></span>
+      <main class="auth-shell w-full" aria-label="CloudSSH">
+        <div class="workbench-brand"><span class="workbench-mark" aria-hidden="true"></span><span>CloudSSH</span></div>
+        <div class="cyber-box auth-loading-card">
+          <div id="app-loading-status" role="status" aria-live="polite" aria-busy="true">
             <p data-i18n="app.loading">正在加载配置与登录状态…</p>
+            <div class="auth-skeleton" aria-hidden="true">
+              <span class="skeleton-line"></span><span class="skeleton-line"></span>
+              <span class="skeleton-line"></span><span class="skeleton-line"></span>
+            </div>
           </div>
           <div id="app-loading-error" class="hidden space-y-5" role="alert">
             <p class="text-muted" data-i18n="app.loadFailed">
@@ -106,7 +103,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
             <button
               id="app-loading-retry"
               type="button"
-              class="cyber-button text-primary px-5 py-2"
+              class="cyber-button btn-secondary px-5 py-2"
               data-i18n="app.retry"
             >重试</button>
           </div>
@@ -119,13 +116,11 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
         id="auth-section"
         class="min-h-screen flex items-center justify-center p-6 relative overflow-y-auto"
       >
-        <div class="scanlines"></div>
-        <div class="flicker"></div>
-        <div class="auth-aurora" aria-hidden="true"></div>
-        <main class="w-full max-w-md relative z-10">
+        <div class="flicker" aria-hidden="true"></div>
+        <main class="auth-shell w-full relative">
           <button
             id="back-to-terminal-from-auth-btn"
-            class="hidden cyber-button text-primary py-2 px-3 text-xs font-bold tracking-[0.1em] uppercase flex items-center gap-1.5 mx-auto mb-4"
+            class="hidden cyber-button text-primary py-2 px-3 text-xs font-bold flex items-center gap-1.5 mx-auto mb-4"
             data-i18n-title="terminal.backToTerminal"
             title="返回终端"
           >
@@ -138,50 +133,22 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
               >返回终端</span
             >
           </button>
-          <div class="mb-8 text-center">
-            <div class="text-3xl font-bold text-primary tracking-tighter mb-2">
-              CloudSSH<span class="blinking-cursor"></span>
-            </div>
+          <div class="workbench-brand-row">
+            <div class="workbench-brand"><span class="workbench-mark" aria-hidden="true"></span><span>CloudSSH</span></div>
+            <div data-language-switcher></div>
           </div>
-          <div class="cyber-box p-6 shadow-2xl relative">
-            <div
-              class="theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent opacity-50"
-            ></div>
-            <div
-              class="auth-connection-header flex items-center justify-between mb-8 pb-4 border-b border-dim"
-            >
+          <div class="cyber-box auth-card">
+            <div class="auth-connection-header">
               <div class="auth-connection-heading">
-                <span
-                  class="auth-connection-title text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]"
-                  data-i18n="auth.connectionParameters"
-                  >连接参数</span
-                >
+                <h1 class="auth-connection-title" data-i18n="auth.connectionParameters">连接参数</h1>
                 <div class="auth-version-notice" data-version-notice></div>
-              </div>
-              <div class="auth-connection-actions flex items-center">
-                <div data-language-switcher></div>
-                <span
-                  class="material-symbols-outlined text-[var(--accent-secondary)]"
-                  style="font-variation-settings: 'FILL' 0"
-                  >terminal</span
-                >
               </div>
             </div>
             <div id="connection-form-container"></div>
           </div>
-          <div
-            class="mt-8 text-center text-[13px] text-muted opacity-60"
-            data-i18n="auth.systemReady"
-          >
-            系统就绪，等待输入。
-          </div>
-          <div class="mt-4 text-center">
-            <a
-              href="https://github.com/newbietan/CloudSSH"
-              class="text-[13px] text-primary opacity-60 hover:opacity-100 transition-colors tracking-widest uppercase"
-              >[ GitHub Open Source ]</a
-            >
-          </div>
+          <footer class="auth-footer">
+            <a href="https://github.com/newbietan/CloudSSH">GitHub <span aria-hidden="true">↗</span></a>
+          </footer>
         </main>
       </div>
 
@@ -196,10 +163,10 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
         >
           <div class="user-space-brand flex items-center gap-6 min-w-0">
             <h1
-              class="text-2xl font-bold text-primary-container tracking-tighter cursor-pointer"
+              class="workbench-brand cursor-pointer"
               id="user-space-logo"
             >
-              CloudSSH
+              <span class="workbench-mark" aria-hidden="true"></span><span>CloudSSH</span>
             </h1>
           </div>
           <div
@@ -318,7 +285,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
               <div class="flex items-center gap-2">
                 <button
                   id="back-to-terminal-btn"
-                  class="hidden cyber-button text-primary py-2 px-3 text-xs font-bold tracking-[0.1em] uppercase flex items-center gap-1.5"
+                  class="hidden cyber-button text-primary py-2 px-3 text-xs font-bold flex items-center gap-1.5"
                   data-i18n-title="terminal.backToTerminal"
                   title="返回终端"
                 >
@@ -335,7 +302,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 </button>
                 <button
                   id="add-server-btn"
-                  class="cyber-button text-primary py-2 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center gap-2"
+                  class="cyber-button btn-secondary font-semibold py-2 px-4 text-xs flex items-center gap-2"
                 >
                   <span
                     class="material-symbols-outlined"
@@ -365,6 +332,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                   <input
                     id="server-search"
                     type="search"
+                    aria-keyshortcuts="/"
                     class="terminal-input text-[13px] w-full"
                     style="padding-left: 36px; padding-right: 38px"
                     data-i18n-placeholder="server.searchPlaceholder"
@@ -385,6 +353,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                       >close</span
                     >
                   </button>
+                  <kbd class="server-search-shortcut" aria-hidden="true">/</kbd>
                 </div>
                 <div id="server-tag-filter-wrapper" class="hidden sm:w-44">
                   <label
@@ -470,7 +439,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 >
               </div>
               <p
-                class="text-muted text-sm tracking-[0.08em] mb-2"
+                class="text-muted text-sm mb-2"
                 data-i18n="server.noMatches"
               >
                 没有匹配的服务器
@@ -495,7 +464,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 >
               </div>
               <p
-                class="text-muted text-sm tracking-[0.1em] mb-2"
+                class="text-muted text-sm mb-2"
                 data-i18n="server.none"
               >
                 尚未配置服务器
@@ -505,7 +474,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
               </p>
               <button
                 id="empty-add-btn"
-                class="cyber-button text-primary py-2 px-6 text-xs font-bold tracking-[0.1em] uppercase flex items-center gap-2"
+                class="cyber-button text-primary py-2 px-6 text-xs font-bold flex items-center gap-2"
               >
                 <span class="material-symbols-outlined" style="font-size: 16px"
                   >add</span
@@ -523,11 +492,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
           <div
             class="user-space-footer-source text-secondary-container opacity-60"
           >
-            © <span id="user-copyright-year"></span> CLOUD_SSH_TERMINAL<span
-              class="user-space-footer-url"
-            >
-              - https://github.com/newbietan/CloudSSH</span
-            >
+            © <span id="user-copyright-year"></span> CloudSSH
           </div>
           <div class="footer-meta">
             <div data-version-notice></div>
@@ -561,7 +526,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
           >
             <span
               id="modal-title"
-              class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]"
+              class="text-xs font-bold text-[var(--accent-secondary)]"
               data-i18n="server.add"
               >添加服务器</span
             >
@@ -584,7 +549,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
             <div>
               <label
                 for="server-name"
-                class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                class="block text-xs font-bold text-muted mb-2"
                 data-i18n="server.name"
                 >服务器名称</label
               >
@@ -607,7 +572,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
             <div>
               <label
                 for="server-tags"
-                class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                class="block text-xs font-bold text-muted mb-2"
                 data-i18n="server.tags"
                 >标签</label
               >
@@ -632,7 +597,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
             <div>
               <label
                 id="server-transport-label"
-                class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                class="block text-xs font-bold text-muted mb-2"
                 data-i18n="server.transportMode"
                 >网络连接</label
               >
@@ -640,7 +605,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 <button
                   type="button"
                   id="modal-transport-tab-direct"
-                  class="auth-tab auth-tab-active px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all"
+                  class="auth-tab auth-tab-active px-3 py-1 text-[11px] font-bold cursor-pointer transition-all"
                   data-i18n="server.transportDirect"
                 >
                   直连 / 跳板机
@@ -648,7 +613,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 <button
                   type="button"
                   id="modal-transport-tab-tunnel"
-                  class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all"
+                  class="auth-tab px-3 py-1 text-[11px] font-bold cursor-pointer transition-all"
                   data-i18n="server.transportTunnel"
                 >
                   Cloudflare 隧道
@@ -660,7 +625,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 <label
                   for="server-host"
                   id="server-host-label"
-                  class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                  class="block text-xs font-bold text-muted mb-2"
                   data-i18n="auth.host"
                   >主机地址</label
                 >
@@ -678,7 +643,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
               <div class="ssh-port-field" id="server-port-field">
                 <label
                   for="server-port"
-                  class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                  class="block text-xs font-bold text-muted mb-2"
                   data-i18n="auth.port"
                   >端口</label
                 >
@@ -702,7 +667,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
             <div>
               <label
                 for="server-username"
-                class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                class="block text-xs font-bold text-muted mb-2"
                 data-i18n="auth.user"
                 >用户名</label
               >
@@ -724,7 +689,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
             <div id="server-jump-host-section">
               <label
                 for="server-jump-host"
-                class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                class="block text-xs font-bold text-muted mb-2"
                 data-i18n="server.jumpHost"
                 >跳板服务器</label
               >
@@ -755,7 +720,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
               <button
                 type="button"
                 id="server-cf-access-toggle"
-                class="w-full text-left text-[11px] font-bold tracking-[0.05em] text-[var(--accent-secondary)] flex items-center gap-1.5 cursor-pointer"
+                class="w-full text-left text-[11px] font-bold text-[var(--accent-secondary)] flex items-center gap-1.5 cursor-pointer"
                 aria-expanded="false"
                 aria-controls="server-cf-access-fields"
               >
@@ -777,7 +742,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
               <div>
                 <label
                   for="server-cf-client-id"
-                  class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                  class="block text-xs font-bold text-muted mb-2"
                   data-i18n="server.cfClientId"
                   >Service Token Client ID</label
                 >
@@ -793,7 +758,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 <div class="flex flex-wrap items-center justify-between gap-1 mb-2">
                   <label
                     for="server-cf-client-secret"
-                    class="block text-xs font-bold tracking-[0.1em] text-muted"
+                    class="block text-xs font-bold text-muted"
                     data-i18n="server.cfClientSecret"
                     >Service Token Client Secret</label
                   >
@@ -825,7 +790,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
             <div>
               <label
                 id="server-auth-label"
-                class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                class="block text-xs font-bold text-muted mb-2"
                 data-i18n="auth.method"
                 >认证方式</label
               >
@@ -833,7 +798,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 <button
                   type="button"
                   id="modal-auth-tab-password"
-                  class="auth-tab auth-tab-active px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all"
+                  class="auth-tab auth-tab-active px-3 py-1 text-[11px] font-bold cursor-pointer transition-all"
                   data-i18n="common.password"
                 >
                   密码
@@ -841,7 +806,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 <button
                   type="button"
                   id="modal-auth-tab-key"
-                  class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all"
+                  class="auth-tab px-3 py-1 text-[11px] font-bold cursor-pointer transition-all"
                   data-i18n="common.privateKey"
                 >
                   私钥
@@ -849,7 +814,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 <button
                   type="button"
                   id="modal-auth-tab-cf-ca"
-                  class="auth-tab hidden px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all"
+                  class="auth-tab hidden px-3 py-1 text-[11px] font-bold cursor-pointer transition-all"
                   data-i18n="auth.cfSshCa"
                 >
                   Cloudflare CA
@@ -857,7 +822,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 <button
                   type="button"
                   id="modal-auth-tab-none"
-                  class="auth-tab px-3 py-1 text-[11px] font-bold tracking-[0.1em] cursor-pointer transition-all"
+                  class="auth-tab px-3 py-1 text-[11px] font-bold cursor-pointer transition-all"
                   data-i18n="auth.none"
                 ></button>
               </div>
@@ -865,7 +830,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
               <div id="modal-cf-ca-section" style="display: none" class="space-y-2">
                 <label
                   for="server-cf-ca-team"
-                  class="block text-xs font-bold tracking-[0.1em] text-muted mb-1"
+                  class="block text-xs font-bold text-muted mb-1"
                   data-i18n="auth.cfTeamName"
                   >Zero Trust 团队标识</label
                 >
@@ -926,7 +891,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
             <div id="server-region-section">
               <label
                 for="server-region"
-                class="block text-xs font-bold tracking-[0.1em] text-muted mb-2"
+                class="block text-xs font-bold text-muted mb-2"
                 data-i18n="auth.regionHint"
                 >连接区域</label
               >
@@ -953,10 +918,12 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
             </div>
             </div>
             <div class="server-modal-actions">
+              <button type="button" id="server-cancel-btn" class="cyber-button btn-secondary px-4" data-i18n="common.cancel">取消</button>
               <button
                 id="server-submit-btn"
-                class="cyber-button w-full py-3 px-4 text-xs font-bold tracking-[0.1em] uppercase flex items-center justify-center gap-2 bg-primary text-on-primary"
+                class="cyber-button btn-primary py-2 px-4 text-sm font-semibold flex items-center justify-center gap-2"
                 type="submit"
+                aria-keyshortcuts="Control+Enter Meta+Enter"
               >
                 <span class="material-symbols-outlined" style="font-size: 18px"
                   >save</span
@@ -979,9 +946,9 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
         >
           <div class="flex items-center gap-6">
             <h1
-              class="terminal-app-title text-2xl font-bold text-primary-container tracking-tighter cursor-pointer"
+              class="terminal-app-title workbench-brand cursor-pointer"
             >
-              CloudSSH
+              <span class="workbench-mark" aria-hidden="true"></span><span>CloudSSH</span>
             </h1>
           </div>
           <div
@@ -1212,7 +1179,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
           class="terminal-main flex-1 relative bg-surface-container-lowest overflow-hidden"
         >
           <div
-            class="absolute inset-0 scanline pointer-events-none z-10 opacity-30"
+            class="absolute inset-0 scanline pointer-events-none z-10" aria-hidden="true"
           ></div>
           <div
             id="terminal-wrapper"
@@ -1220,26 +1187,16 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
           >
             <!-- Status Bar -->
             <div
-              class="terminal-status-bar flex justify-between items-center border-b border-[var(--border)] pb-2 mb-4 text-on-surface-variant opacity-80 text-[11px]"
+              class="terminal-status-bar"
             >
-              <div
-                class="terminal-status-details flex gap-2 sm:gap-6 flex-wrap"
-              >
-                <span id="term-status" class="flex items-center gap-1"
-                  ><div class="w-2 h-2 bg-primary-container"></div>
-                  已连接</span
-                >
-                <span id="term-host" class="truncate max-w-[200px]"
-                  >主机：-</span
-                >
-                <span id="term-user" class="truncate max-w-[120px]"
-                  >用户：-</span
-                >
-                <span id="term-port">端口：-</span>
+              <div class="terminal-status-details">
+                <span id="term-status" role="status"></span>
+                <span class="terminal-endpoint">
+                  <span id="term-user"></span><span id="term-host"></span><span id="term-port"></span>
+                </span>
+                <span id="term-connection-stage" class="truncate" aria-live="polite" hidden></span>
               </div>
-              <div>
-                <span id="term-info"></span>
-              </div>
+              <span id="term-info"></span>
             </div>
             <!-- Terminal Area (TabManager 在此动态创建每个标签的容器) -->
             <div
@@ -1381,8 +1338,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
           class="terminal-footer px-6 py-0 flex justify-between items-center z-50 bg-elevated border-t border-outline-variant text-xs h-8 shrink-0"
         >
           <div class="text-secondary-container opacity-60">
-            © <span id="copyright-year"></span> CLOUD_SSH_TERMINAL -
-            https://github.com/newbietan/CloudSSH
+            © <span id="copyright-year"></span> CloudSSH
           </div>
           <div class="footer-meta">
             <div data-version-notice></div>

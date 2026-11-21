@@ -17,6 +17,7 @@ import { SnippetManager } from './snippet-manager';
 import { TabManager } from './tab-manager';
 import type { SSHHostInfo, SSHTerminal } from './terminal';
 import {
+  DEFAULT_THEME,
   applyBuiltInTheme,
   applyImportedTheme,
   type BuiltInThemeName,
@@ -187,18 +188,30 @@ function bindBackToTerminalButtons(): void {
   document.getElementById('back-to-terminal-from-auth-btn')?.addEventListener('click', () => {
     showTerminalSection();
   });
-  // 支持 Esc 快速返回已有的终端会话
+  // Give the foremost dialog/IME the key before considering workspace shortcuts.
   document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
+    if (event.key !== 'Escape' && event.key !== '/') return;
+    if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+    if (document.querySelector('dialog[open]') || Array.from(
+      document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]')
+    ).some((dialog) => dialog.getClientRects().length > 0)) return;
+
+    if (event.key === '/') {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
+      if ((event.target as Element | null)?.closest?.('input, textarea, select, [contenteditable]')) return;
+      const search = document.getElementById('server-search');
+      if (!search?.getClientRects().length) return;
+      event.preventDefault();
+      search.focus();
+      return;
+    }
+
     const terminalHidden =
       document.getElementById('terminal-section')?.classList.contains('hidden') ?? true;
-    if (!terminalHidden) return;
-    if (!tabManager?.hasAnyTab()) return;
-    const activeModal = document.getElementById('server-modal');
-    // 若服务器编辑弹窗打开，优先关闭弹窗而非返回终端
-    if (activeModal && !activeModal.classList.contains('hidden')) return;
+    if (!terminalHidden || !tabManager?.hasAnyTab()) return;
     event.preventDefault();
     showTerminalSection();
+    tabManager.getActiveTab()?.terminal.focus();
   });
 }
 
@@ -681,7 +694,7 @@ function handleThemeSelection(value: string): void {
   if (value === CUSTOM_THEME_VALUE) {
     if (!customThemeStore.hasThemes()) {
       // 未上传过自定义主题 -> 弹窗要求上传
-      const fallback = localStorage.getItem('cloudssh_theme_selection') || 'cyberpunk';
+      const fallback = localStorage.getItem('cloudssh_theme_selection') || DEFAULT_THEME;
       syncThemeSelectors(fallback);
       customThemeModal.show({
         onApplied: () => {
@@ -691,7 +704,7 @@ function handleThemeSelection(value: string): void {
         },
         onClosed: () => {
           if (!customThemeStore.hasThemes()) {
-            const cur = localStorage.getItem('cloudssh_theme_selection') || 'cyberpunk';
+            const cur = localStorage.getItem('cloudssh_theme_selection') || DEFAULT_THEME;
             syncThemeSelectors(cur);
           }
         },
@@ -784,7 +797,7 @@ globalImportThemeInput?.addEventListener('change', async (e) => {
 customThemeStore.subscribe(() => {
   const current = localStorage.getItem('cloudssh_theme_selection');
   if (current === CUSTOM_THEME_VALUE && !customThemeStore.hasThemes()) {
-    handleThemeSelection('cyberpunk');
+    handleThemeSelection(DEFAULT_THEME);
   }
 });
 
@@ -846,9 +859,9 @@ function restoreTheme(): void {
     }
   }
 
-  localStorage.setItem('cloudssh_theme_selection', 'cyberpunk');
-  applyBuiltInTheme('cyberpunk');
-  syncThemeSelectors('cyberpunk');
+  localStorage.setItem('cloudssh_theme_selection', DEFAULT_THEME);
+  applyBuiltInTheme(DEFAULT_THEME);
+  syncThemeSelectors(DEFAULT_THEME);
 }
 
 async function saveThemeToCloud(
@@ -950,61 +963,6 @@ async function restoreCloudTheme(
 
 // ==================== 初始化 ====================
 
-/**
- * 卡片指针聚光追踪（全主题通用）：
- * 监听 pointermove 并通过 requestAnimationFrame 节流更新 --mx 和 --my，
- * 纯变量传导，零 DOM 重排，GPU 仅更新 radial-gradient 聚光位置。
- * 触屏设备无悬停语义（CSS 侧同步隐藏聚光层），直接不注册以省电。
- */
-function initPointerSpecularTracking(): void {
-  if (window.matchMedia?.('(hover: none) and (pointer: coarse)').matches) return;
-
-  let rafId: number | null = null;
-  let targetCard: HTMLElement | null = null;
-  let px = 50;
-  let py = 0;
-
-  document.addEventListener(
-    'pointermove',
-    (e: PointerEvent) => {
-      const card = (e.target as HTMLElement | null)?.closest?.(
-        '.server-card, .cyber-box, .sftp-entry'
-      ) as HTMLElement | null;
-      if (!card) {
-        targetCard = null;
-        return;
-      }
-      const rect = card.getBoundingClientRect();
-      targetCard = card;
-      px = Math.round(((e.clientX - rect.left) / rect.width) * 100);
-      py = Math.round(((e.clientY - rect.top) / rect.height) * 100);
-
-      if (rafId === null) {
-        rafId = requestAnimationFrame(() => {
-          if (targetCard) {
-            targetCard.style.setProperty('--mx', `${px}%`);
-            targetCard.style.setProperty('--my', `${py}%`);
-          }
-          rafId = null;
-        });
-      }
-    },
-    { passive: true }
-  );
-
-  document.addEventListener(
-    'pointerleave',
-    () => {
-      if (targetCard) {
-        targetCard.style.setProperty('--mx', '50%');
-        targetCard.style.setProperty('--my', '0%');
-        targetCard = null;
-      }
-    },
-    { passive: true }
-  );
-}
-
 /** #password-setup 路由消费：命中则打开生成器并清地址栏（init 与 hashchange 共用） */
 function consumeAdminSetupRoute(): void {
   if (window.location.hash !== '#password-setup') return;
@@ -1027,7 +985,6 @@ async function init(): Promise<void> {
   initUserSpaceMobileMenu();
   initServerPaginationBreakpoints();
   bindBackToTerminalButtons();
-  initPointerSpecularTracking();
   const userSegmentedContainer = document.getElementById('user-theme-segmented-container');
   const userSelect = document.getElementById('user-theme-selector') as HTMLSelectElement | null;
   if (userSegmentedContainer && userSelect) {

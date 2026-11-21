@@ -265,8 +265,8 @@ describe('网络质量三色提示', () => {
   it('状态栏只渲染色点和延迟数值，不增加质量文字', () => {
     const source = readFileSync(new URL('../frontend/src/tab-manager.ts', import.meta.url), 'utf8');
     expect(source).toContain(`network-quality-\${item.quality}`);
-    expect(source).toContain('CF-');
-    expect(source).toContain('RTT:');
+    expect(source).toContain('CF${tab.cfColo');
+    expect(source).toContain('RTT ${tab.wsLatency}ms');
     expect(source).not.toMatch(/良好|一般|较差|Good|Fair|Poor/);
   });
 });

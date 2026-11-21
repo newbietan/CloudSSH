@@ -21,29 +21,31 @@ async function checkHeaderLayout(page: Page, update: boolean) {
     const title = rect('.auth-connection-title');
     const version = rect('.version-notice__current');
     const notice = rect('[data-version-notice]');
-    const actions = rect('.auth-connection-actions');
+    const language = document.querySelector('#auth-section .workbench-brand-row [data-language-toggle]')!.getBoundingClientRect();
+    const brand = document.querySelector('#auth-section .workbench-brand')!.getBoundingClientRect();
     const header = element.getBoundingClientRect();
+    const sameRow = Math.abs(title.y + title.height / 2 - version.y - version.height / 2) < 3;
     return {
-      versionAfterTitle: version.left >= title.right,
-      sameRow: Math.abs(title.y + title.height / 2 - version.y - version.height / 2) < 3,
+      versionAfterTitle: sameRow ? version.left >= title.right : version.top >= title.bottom,
+      sameRow,
       noticeFits: notice.left >= header.left && notice.right <= header.right + 1,
-      actionsFit: actions.left >= header.left && actions.right <= header.right + 1,
-      overlap: notice.left < actions.right && notice.right > actions.left &&
-        notice.top < actions.bottom && notice.bottom > actions.top,
+      actionsFit: language.left >= brand.right && language.right <= innerWidth,
+      overlap: notice.left < language.right && notice.right > language.left &&
+        notice.top < language.bottom && notice.bottom > language.top,
       headerFits: element.scrollWidth <= element.clientWidth + 1,
       pageFits: document.documentElement.scrollWidth <= innerWidth,
     };
   });
   if (!update) {
     expect(layout.versionAfterTitle).toBe(true);
-    expect(layout.sameRow).toBe(true);
+    if (page.viewportSize()!.width >= 390) expect(layout.sameRow).toBe(true);
   }
   expect(layout.noticeFits).toBe(true);
   expect(layout.actionsFit).toBe(true);
   expect(layout.overlap).toBe(false);
   expect(layout.headerFits).toBe(true);
   expect(layout.pageFits).toBe(true);
-  await expect(header.locator('[data-language-toggle]')).toBeVisible();
+  await expect(page.locator('#auth-section .workbench-brand-row [data-language-toggle]')).toBeVisible();
 }
 
 // Layout is responsive CSS: exercise every width in both states without booting the app

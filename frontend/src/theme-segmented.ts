@@ -6,7 +6,7 @@
  * - 目标到达后自动切断 rAF 循环，零静止 CPU 消耗。
  */
 
-import { Spring } from './spring';
+import { Spring, tuneSegmentedSprings } from './spring';
 
 const THEME_OPTIONS = [
   { id: 'standard-dark', label: 'Dark', icon: 'dark_mode' },
@@ -157,8 +157,8 @@ export class LiquidSegmentedThemeControl {
     this.lastCenter = center;
 
     const reduceMotion =
-      typeof window !== 'undefined' &&
-      (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
+      (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false) ||
+      ['none', 'reduced'].includes(document.documentElement.dataset.uiMotion ?? '');
 
     if (!animate || reduceMotion || this.leftSpring.value === 0) {
       // 即时停靠（首次加载或无障碍）
@@ -169,20 +169,10 @@ export class LiquidSegmentedThemeControl {
       return;
     }
 
-    // 双边异步参数调优：
-    // 领先边：刚度 260、阻尼 26 → 迅捷前驱不抖动
-    // 拖后边：刚度 130、阻尼 15 → 弹性迟滞，产生自然流体微拉伸
-    if (movingRight) {
-      this.rightSpring.stiffness = 260;
-      this.rightSpring.damping = 26;
-      this.leftSpring.stiffness = 130;
-      this.leftSpring.damping = 15;
-    } else {
-      this.leftSpring.stiffness = 260;
-      this.leftSpring.damping = 26;
-      this.rightSpring.stiffness = 130;
-      this.rightSpring.damping = 15;
-    }
+    tuneSegmentedSprings(
+      movingRight ? this.rightSpring : this.leftSpring,
+      movingRight ? this.leftSpring : this.rightSpring
+    );
 
     this.leftSpring.target = left;
     this.rightSpring.target = right;

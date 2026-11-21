@@ -1,0 +1,3 @@
+/* Keep a single stylesheet entry for the Worker’s inline production build. */
+@import './style.css';
+@import './workbench.css';
