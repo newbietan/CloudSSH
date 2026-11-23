@@ -50,7 +50,7 @@ async function connectDesktop(route, fingerprint) {
     if (phase === 'runtime') finish('FreeRDP 浏览器运行时或工作线程启动失败。');
   }
   const closed = () => finish('连接已结束。');
-  status.textContent = '正在下载并编译 FreeRDP WASM（约 11 MB）。';
+  status.textContent = '正在下载并编译 FreeRDP WASM；此时还未连接 Windows。';
   watch(WASM_TIMEOUT_MS, '下载或编译 FreeRDP WASM 超时。');
 
   let compiled;
@@ -67,7 +67,7 @@ async function connectDesktop(route, fingerprint) {
   if (finished) return;
   phase = 'runtime';
   status.textContent = 'WASM 已就绪，正在加载 FreeRDP 浏览器运行时。';
-  watch(STARTUP_TIMEOUT_MS, 'FreeRDP 浏览器运行时或工作线程启动超时。');
+  watch(STARTUP_TIMEOUT_MS, 'FreeRDP 工作线程未就绪，尚未连接 Windows。');
   window.addEventListener('error', runtimeError);
   window.addEventListener('unhandledrejection', runtimeError);
 

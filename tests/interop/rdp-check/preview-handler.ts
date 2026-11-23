@@ -30,10 +30,21 @@ interface Dependencies<E extends PreviewBindings, C> {
     request: Request, targets: RdpCheckEnv, route: 'public' | 'tunnel', origin: string, remainingMs: number
   ): Response;
   files: ReadonlyMap<string, File>;
+  gzipWasm?: ArrayBuffer;
   now?: () => number;
 }
 
 const hidden = () => new Response(null, { status: 404, headers: { 'Cache-Control': 'no-store' } });
+
+function acceptsGzip(value: string | null): boolean {
+  // Browsers advertise gzip explicitly. Honor an explicit refusal and fail
+  // back to the original bytes if the header is missing or malformed.
+  for (const item of value?.split(',') ?? []) {
+    const match = /^gzip\s*(?:;\s*q\s*=\s*(0(?:\.\d{0,3})?|1(?:\.0{0,3})?))?$/i.exec(item.trim());
+    if (match) return match[1] === undefined || Number(match[1]) > 0;
+  }
+  return false;
+}
 
 export function createPreviewHandler<E extends PreviewBindings, C>(deps: Dependencies<E, C>) {
   const now = deps.now ?? Date.now;
@@ -47,8 +58,9 @@ export function createPreviewHandler<E extends PreviewBindings, C>(deps: Depende
     }
     const path = url.pathname.slice(PREVIEW_PATH.length);
     const isUpgrade = path === '/ws/public' || path === '/ws/tunnel';
+    const gzipWasm = path === '/sdl-freerdp.wasm' ? deps.gzipWasm : undefined;
     const asset = deps.files.get(path === '/' ? '/index.html' : path);
-    if (!isUpgrade && path !== '' && path !== '/config' && !asset) return hidden();
+    if (!isUpgrade && path !== '' && path !== '/config' && !asset && !gzipWasm) return hidden();
     if (isUpgrade && (
       request.headers.get('Origin') !== url.origin ||
       request.headers.get('Upgrade')?.toLowerCase() !== 'websocket'
@@ -74,6 +86,19 @@ export function createPreviewHandler<E extends PreviewBindings, C>(deps: Depende
       return Response.json({ fingerprint: preview.targets.RDP_CHECK_CERT_SHA256, public: true, tunnel: true }, {
         headers: previewDocumentHeaders,
       });
+    }
+    if (gzipWasm) {
+      const headers = new Headers({
+        ...previewDocumentHeaders, 'Content-Type': 'application/wasm', Vary: 'Accept-Encoding',
+      });
+      if (acceptsGzip(request.headers.get('Accept-Encoding'))) {
+        headers.set('Content-Encoding', 'gzip');
+        // These bytes are already compressed; don't have Workers encode them again.
+        return new Response(gzipWasm, { headers, encodeBody: 'manual' });
+      }
+      // Uncommon fallback: stream-decode trusted static bytes rather than deploy a second WASM copy.
+      const body = new Blob([gzipWasm]).stream().pipeThrough(new DecompressionStream('gzip'));
+      return new Response(body, { headers });
     }
     if (!asset) return hidden();
     return new Response(asset[0], { headers: { ...previewDocumentHeaders, 'Content-Type': asset[1] } });

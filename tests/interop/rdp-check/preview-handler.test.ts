@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
 import type { Env } from '../../../src/types';
 import { createPreviewHandler, type PreviewBindings, verifyPreviewSession } from './preview-handler';
@@ -14,6 +15,8 @@ const config = {
 };
 const env = { RDP_PREVIEW_CONFIG: JSON.stringify(config) };
 const upgrade = { Origin: site, Upgrade: 'websocket' };
+const wasm = Uint8Array.of(0, 97, 115, 109, 1, 0, 0, 0);
+const compressed = Uint8Array.from(gzipSync(wasm));
 
 function fixture() {
   let clock = current;
@@ -23,6 +26,7 @@ function fixture() {
   const handler = createPreviewHandler<PreviewBindings, null>({
     main, isAuthenticated, open, now: () => clock,
     files: new Map([['/index.html', ['<html></html>', 'text/html']]]),
+    gzipWasm: compressed.buffer,
   });
   return { isAuthenticated, main, open, handler, tick: () => { clock = config.expiresAt; } };
 }
@@ -114,6 +118,25 @@ describe('test-only RDP preview request routing', () => {
     expect(open).toHaveBeenCalledWith(request, expect.objectContaining({
       RDP_CHECK_PUBLIC_IP: config.publicIp, RDP_CHECK_TUNNEL_HOST: config.tunnelHost,
     }), 'tunnel', site, 1_000);
+  });
+
+  it('serves negotiated precompressed WASM only after authentication, with raw fallback', async () => {
+    const { handler, isAuthenticated } = fixture();
+    const url = site + PREVIEW_PATH + '/sdl-freerdp.wasm';
+    const request = (encoding: string) => new Request(url, { headers: { 'Accept-Encoding': encoding } });
+    const gzip = await handler(request('br, gzip;q=0.8'), env, null);
+    expect(gzip.headers.get('Content-Encoding')).toBe('gzip');
+    expect(gzip.headers.get('Content-Type')).toBe('application/wasm');
+    expect(gzip.headers.get('Vary')).toBe('Accept-Encoding');
+    expect(new Uint8Array(await gzip.arrayBuffer())).toEqual(compressed);
+    for (const encoding of ['gzip;q=0, br', 'br', 'gzip;q=bad', '']) {
+      const raw = await handler(request(encoding), env, null);
+      expect(raw.headers.get('Vary')).toBe('Accept-Encoding');
+      expect(raw.headers.get('Content-Encoding')).toBeNull();
+      expect(new Uint8Array(await raw.arrayBuffer())).toEqual(wasm);
+    }
+    isAuthenticated.mockResolvedValue(false);
+    expect((await handler(request('gzip'), env, null)).status).toBe(404);
   });
 
   it('rechecks expiry after awaiting authentication', async () => {

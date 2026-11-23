@@ -5,7 +5,7 @@ import { openDesktop } from './desktop';
 import boot from './preview-build/desktop.rdp-text';
 import page from './preview-build/index.rdp-text';
 import licenses from './preview-build/licenses.rdp-text';
-import freeRdpWasm from './preview-build/sdl-freerdp.rdp-bin';
+import freeRdpWasmGzip from './preview-build/sdl-freerdp-gzip.rdp-bin';
 import freeRdpScript from './preview-build/sdl-freerdp.rdp-text';
 import { createPreviewHandler, type PreviewBindings, verifyPreviewSession } from './preview-handler';
 
@@ -17,11 +17,11 @@ export default {
     main: (request, env, ctx) => app.fetch(request, env, ctx),
     isAuthenticated: verifyPreviewSession,
     open: openDesktop,
+    gzipWasm: freeRdpWasmGzip,
     files: new Map([
       ['/index.html', [page, 'text/html; charset=utf-8']],
       ['/desktop.js', [boot, 'text/javascript; charset=utf-8']],
       ['/sdl-freerdp.js', [freeRdpScript, 'text/javascript; charset=utf-8']],
-      ['/sdl-freerdp.wasm', [freeRdpWasm, 'application/wasm']],
       ['/licenses.txt', [licenses, 'text/plain; charset=utf-8']],
     ]),
   }),

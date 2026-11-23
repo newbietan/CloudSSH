@@ -3,12 +3,14 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
+import { gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 
 const script = fileURLToPath(new URL('./preview-cache.mjs', import.meta.url));
 const wasm = 'sdl-freerdp.rdp-bin';
 const glue = 'sdl-freerdp.rdp-text';
 const licenses = 'licenses.rdp-text';
+const upstreamGlue = 'initMainThread(){var pthreadPoolSize=32; const dynamicPool = true;';
 
 function withCache(run: (fixture: ReturnType<typeof createFixture>) => void) {
   const fixture = createFixture();
@@ -23,7 +25,7 @@ function createFixture() {
   mkdirSync(cache);
   mkdirSync(desktop);
   writeFileSync(join(cache, wasm), Buffer.from('0061736d01000000', 'hex'));
-  writeFileSync(join(cache, glue), 'compiled client');
+  writeFileSync(join(cache, glue), upstreamGlue);
   writeFileSync(join(cache, licenses), 'licenses');
   writeFileSync(join(desktop, 'desktop.js'), 'script');
   writeFileSync(join(desktop, 'index.html'), 'original');
@@ -44,7 +46,10 @@ describe('test-only FreeRDP cache', () => {
       writeFileSync(join(desktop, 'index.html'), 'updated');
       expect(prepare('stage', 'second').status).toBe(0);
       expect(readFileSync(join(root, 'second', 'index.rdp-text'), 'utf8')).toBe('updated');
-      expect(readFileSync(join(root, 'second', glue), 'utf8')).toBe('compiled client');
+      expect(readFileSync(join(cache, glue), 'utf8')).toBe(upstreamGlue);
+      expect(readFileSync(join(root, 'second', glue), 'utf8')).toBe(upstreamGlue.replace('=32;', '=4;'));
+      expect(gunzipSync(readFileSync(join(root, 'second', 'sdl-freerdp-gzip.rdp-bin'))))
+        .toEqual(readFileSync(join(cache, wasm)));
     });
   });
 
@@ -56,6 +61,17 @@ describe('test-only FreeRDP cache', () => {
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain('checksum mismatch');
       expect(existsSync(join(root, 'corrupt'))).toBe(false);
+    });
+  });
+
+  it('requires an exact, unique match for the pinned upstream thread pool', () => {
+    withCache(({ cache, prepare }) => {
+      for (const changed of ['new ABI', upstreamGlue.repeat(2)]) {
+        writeFileSync(join(cache, glue), changed);
+        const result = prepare('record', 'invalid');
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain('recheck the pinned thread pool');
+      }
     });
   });
 
