@@ -62,7 +62,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
     'Connecting to target through the jump chain: {host}:{port}',
   'server.jumpHost': 'Jump host',
   'server.jumpHostNone': 'No jump host (direct)',
-  'server.jumpHostHint': 'Choose a saved server; up to 3 recursive hops',
   'server.jumpPath': 'Path',
   'terminal.moreActions': 'More actions',
   'terminal.searchMobile': 'Search',
@@ -175,6 +174,8 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'auth.keyUnlockTransient': 'The unlocked key is for this connection only; credential remembering has been disabled. The passphrase is not saved.',
   'auth.keyPlaceholder':
     '-----BEGIN OPENSSH PRIVATE KEY-----\n...paste private key here...\n-----END OPENSSH PRIVATE KEY-----',
+  'auth.keyFileReading': 'Reading the private key file. Please wait.',
+  'auth.keyFileTooLarge': 'The private key file must not exceed 128 KiB.',
   'auth.chooseKeyFile': 'Choose key file',
   'auth.regionHint': 'Connection region',
   'auth.regionOptional': 'Optional; Auto lets Cloudflare choose',
@@ -227,8 +228,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'auth.validationHostUser': 'Enter a host address and username.',
   'auth.validationPort': 'Port must be an integer from 1 to 65535.',
   'auth.validationPassword': 'Enter a password.',
-  'auth.passwordHint':
-    'Leave blank to send an empty password. Interactive authentication prompts also accept an empty response with Enter.',
   'server.passwordEditHint':
     'Leave blank to keep the saved password. To clear it, select “Set an empty password”.',
   'server.useEmptyPassword': 'Set an empty password',
@@ -250,7 +249,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'auth.verificationRequired': 'Verification required',
   'auth.connectFailed': 'Connection failed: {message}',
   'server.list': 'Server list',
-  'server.manage': 'Manage your SSH connections',
+  'server.manage': 'Manage your server connections',
   'server.searchLabel': 'Search servers',
   'server.searchPlaceholder': 'Search by name, host, or username',
   'server.clearSearch': 'Clear search',
@@ -265,7 +264,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'server.neverConnected': 'Never connected',
   'server.tags': 'Tags',
   'server.tagsPlaceholder': 'production, database, apac',
-  'server.tagsHint': 'Separate tags with commas; up to 10 tags',
   'server.pagination': 'Server list pagination',
   'server.previousPage': 'Previous',
   'server.nextPage': 'Next',
@@ -292,6 +290,9 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'server.connectError': 'Could not connect to the server: {message}',
   'server.regionInferred': 'Detected region: {region}',
   'server.hostLabel': 'Host',
+  'server.clickToCopyHost': 'Click to copy full hostname',
+  'server.hostCopied': 'Hostname copied',
+  'server.hostCopyFailed': 'Could not copy the hostname',
   'server.clickToCopyIP': 'Click to copy full IP address',
   'server.ipCopied': 'Server IP copied',
   'server.ipCopyFailed': 'Could not copy the server IP',
@@ -367,10 +368,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
     'The server requires an expired password to be changed; changing it during authentication is not supported yet',
   'terminal.status.authProtocolError':
     'The server sent a message that does not match the current authentication flow',
-  'terminal.status.hostKeyFingerprintMatchedUnverified':
-    'The known host fingerprint matches ({keyType}), but the signature was not verified',
-  'terminal.status.hostKeyUnverifiedInstruction':
-    'Connection blocked because the host-key signature could not be verified. The new fingerprint cannot be trusted.',
   'terminal.status.hostKeyShareChangeBlocked':
     'Connection blocked. A shared session cannot replace a host fingerprint trusted by the owner.',
   'terminal.hostKeySaveTitle': 'Could not save SSH host fingerprint',
@@ -493,8 +490,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
     'Host certificate signature checked; host identity uses the underlying public-key fingerprint (TOFU), not CA trust.',
   'terminal.status.hostKeyFirstSeen':
     'Server fingerprint: {fingerprint} ({keyType}, first connection, verified)',
-  'terminal.status.hostKeyNotSaved':
-    'Server fingerprint: {fingerprint} ({keyType}, signature unverified, not saved)',
   'terminal.status.hostKeyChanged':
     'The host key fingerprint changed. Verify that this is expected.',
   'terminal.status.hostKeyKnown': 'Known fingerprint: {fingerprint}',
@@ -506,9 +501,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'terminal.status.hostKeyVerifySkipped':
     'Host-key signature verification skipped: this algorithm is not supported yet',
   'terminal.status.hostKeySignatureBlocked':
-    'Host-key signature verification failed and the connection was blocked. Set STRICT_HOST_KEY_VERIFY=false to skip it.',
-  'terminal.status.hostKeySignatureRisk':
-    'Host-key signature verification failed and may be unsafe; strict mode is disabled, so the connection was not blocked.',
+    'Host-key signature verification failed and the connection was blocked.',
   'terminal.status.hostKeySignatureError': 'Host-key signature verification error: {message}',
   'terminal.status.channelRejected': 'The server rejected the SSH channel request',
   'terminal.status.ptyShellRejected': 'The server rejected the PTY or shell request',
@@ -838,8 +831,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'aiConfig.loadFailed': 'Could not load models: {message}',
   'aiConfig.compatibleHint':
     'CloudSSH only supports the Responses API. Please make sure the API address is correct.',
-  'aiConfig.keyUnchanged': 'Leave blank to keep the existing key',
-  'aiConfig.currentKey': 'Current key: ****{last4} (leave blank to keep it)',
+  'aiConfig.currentKey': 'Current key: ****{last4}',
   'aiConfig.required': 'Base URL and model are required.',
   'aiConfig.credentialsRequired': 'Enter a Base URL and API key first.',
   'aiConfig.loadingModels': 'Loading models…',
@@ -942,7 +934,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'share.errorAlreadyUsed':
     'This share link has already been claimed or revoked and cannot be used again',
   'share.errorLinkExpired': 'This share link has expired. Ask the owner to generate a new one',
-  'share.errorSharingDisabled': 'SSH sharing is currently disabled',
   'share.errorServiceUnavailable':
     'Share service is temporarily unavailable. Please try again later',
   'terminal.status.shareSessionExpired': 'Share session has expired, connection ended',
@@ -1021,4 +1012,42 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'mobileShortcuts.saved': 'Mobile shortcuts saved.',
   'mobileShortcuts.saveFailed': 'Failed to save mobile shortcuts.',
   'mobileShortcuts.resetSuccess': 'Mobile shortcuts reset to default.',
+  'rdp.noConnectionRecord': 'No record yet',
+  'rdp.serverKind': 'Server type',
+  'rdp.add': 'Add remote desktop',
+  'rdp.empty': 'No remote desktops configured.',
+  'rdp.profileChanged': 'Device settings changed. Reopen the editor from the refreshed list.',
+  'rdp.profileLimit': 'Windows device limit reached. Remove an unused device before adding another.',
+  'rdp.signInAgain': 'Your sign-in has expired. Sign in again.',
+  'rdp.editEndsSession': 'Saving changes will disconnect active CloudSSH desktops for this device.',
+  'server.listUnavailable': 'Could not load the {kind} list.',
+  'server.listStale': 'Could not refresh {kind}. Showing the last list.',
+  'server.listSessionChanged': 'Access could not be verified. Reload to check your sign-in.',
+  'rdp.failed': 'Could not complete the operation. Refresh and try again.',
+  'rdp.direct': 'Public IPv4 (TCP 3389)',
+  'rdp.tunnel': 'Cloudflare Tunnel',
+  'rdp.desktopTitle': 'Remote Desktop',
+  'rdp.returning': 'Returning to your servers…',
+  'rdp.exitFullscreen': 'Exit full screen',
+  'rdp.disconnectBack': 'Disconnect and return to your servers',
+  'rdp.fullscreen': 'Full screen',
+  'rdp.open': 'Open desktop',
+  'rdp.edit': 'Edit device',
+  'rdp.remove': 'Delete device',
+  'rdp.name': 'Device name',
+  'rdp.host': 'IPv4 address or tunnel hostname',
+  'rdp.route': 'Connection route',
+  'rdp.access': 'Access Service Token (optional)',
+  'rdp.accessId': 'Client ID',
+  'rdp.accessSecret': 'Client Secret',
+  'rdp.clearAccess': 'Clear saved token',
+  'rdp.save': 'Save',
+  'rdp.cancel': 'Cancel',
+  'rdp.complete': 'Complete setup',
+  'rdp.loadingIdentity': 'Loading the saved username and domain…',
+  'rdp.domain': 'Domain (optional)',
+  'rdp.keepLogin': 'Leave blank to keep the saved password',
+  'rdp.leaveSsh': 'Opening the isolated desktop workspace will disconnect SSH tabs on this page. Continue?',
+  'rdp.invalid': 'Check the server address, Windows sign-in or Access token.',
+  'rdp.removeConfirm': 'Deleting this device ends its CloudSSH sessions.',
 };

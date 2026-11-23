@@ -372,7 +372,6 @@ export class MCPExecutionDO {
         client,
         transport,
         node,
-        true,
         false,
         undefined,
         undefined,

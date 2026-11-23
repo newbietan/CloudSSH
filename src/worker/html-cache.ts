@@ -70,24 +70,28 @@ export function matchesLastModified(ifModifiedSince: string | null, lastModified
  * Uses `Cache-Control: no-cache, no-transform` so browsers always revalidate with the Worker
  * and edge proxies (e.g. Cloudflare) preserve ETag/caching validators without stripping them.
  */
-export function createHtmlResponse(request: Request): Response {
-  const etag = getHtmlEtag();
+export function createHtmlResponse(request: Request, rdpHome?: 'public' | 'account'): Response {
+  // A cached login document must never inherit isolation from an authenticated 304 (or vice versa).
+  const isolated = rdpHome === 'account';
+  const etag = isolated ? getHtmlEtag().replace(/"$/, '-rdp-account"') : getHtmlEtag();
   const lastModified = getHtmlLastModified();
   const ifNoneMatch = request.headers.get('If-None-Match');
   const ifModifiedSince = request.headers.get('If-Modified-Since');
 
   const baseHeaders = {
     ETag: etag,
-    'Last-Modified': lastModified,
-    'Cache-Control': 'no-cache, no-transform',
+    ...(!rdpHome ? { 'Last-Modified': lastModified } : {}),
+    'Cache-Control': rdpHome ? 'private, no-cache, no-transform' : 'no-cache, no-transform',
+    ...(rdpHome ? { Vary: 'Cookie' } : {}),
+    ...(isolated ? { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' } : {}),
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
   };
 
-  const isEtagMatch = matchesEtag(ifNoneMatch, etag);
-  const isDateMatch = matchesLastModified(ifModifiedSince, lastModified);
+  const isEtagMatch = (!rdpHome || !ifNoneMatch?.includes('*')) && matchesEtag(ifNoneMatch, etag);
+  const isDateMatch = !rdpHome && matchesLastModified(ifModifiedSince, lastModified);
 
   if (ifNoneMatch ? isEtagMatch : isDateMatch) {
     return new Response(null, {

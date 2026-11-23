@@ -4,7 +4,7 @@ import { onLocaleChange, t, translateDocument } from './i18n';
 import { openAdminHashGeneratorDialog } from './admin-hash-generator';
 import { loadKnownFingerprint } from './known-hosts';
 import { parsePort } from './port';
-import { preparePrivateKey } from './private-key-import';
+import { bindPrivateKeyFile, preparePrivateKey } from './private-key-import';
 import { stretchAdminPassword } from './password-stretch';
 import { populateRegionSelect } from './regions';
 import { requestCloudflareSshCertificate } from './cf-ssh-ca';
@@ -137,10 +137,6 @@ export class ConnectionForm {
         emailSpan.textContent = t('auth.cfAccessDetected', { email: config.cfAccessEmail });
         badge.classList.remove('hidden');
       }
-    }
-    if (this.cfSshCaEnabled && config.cfAccessTeamName) {
-      const teamInput = document.getElementById('cf-ca-team') as HTMLInputElement | null;
-      if (teamInput && !teamInput.value) teamInput.value = config.cfAccessTeamName;
     }
 
     // Access owns its external login flow; preserve the existing SSH CA form behavior.
@@ -580,20 +576,12 @@ export class ConnectionForm {
           <div id="auth-password-section">
             <div class="flex items-center">
               <span class="material-symbols-outlined text-muted mr-2" style="font-size: 16px;">key</span>
-              <input id="password" class="terminal-input text-[13px]" placeholder="••••••••" type="password" data-i18n-aria-label="common.password" aria-label="密码" aria-describedby="auth-password-hint">
+              <input id="password" class="terminal-input text-[13px]" placeholder="••••••••" type="password" data-i18n-aria-label="common.password" aria-label="密码">
             </div>
-            <p id="auth-password-hint" class="text-xs text-muted mt-2" data-i18n="auth.passwordHint"></p>
           </div>
           <div id="auth-key-section" style="display:none;">
             <textarea id="private-key" class="terminal-input text-[11px] w-full" rows="5" data-i18n-placeholder="auth.keyPlaceholder" data-i18n-aria-label="common.privateKey" aria-label="私钥" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...粘贴私钥内容...&#10;-----END OPENSSH PRIVATE KEY-----" style="resize:vertical;border:1px solid var(--border-strong);padding:8px;"></textarea>
-            <div class="flex items-center gap-2 mt-2">
-              <label for="private-key-file" class="text-[11px] text-muted hover:text-primary cursor-pointer flex items-center gap-1 border border-dim px-2 py-1 hover:border-[var(--accent)] transition-all">
-                <span class="material-symbols-outlined" style="font-size: 14px;">upload_file</span>
-                <span data-i18n="auth.chooseKeyFile">选择密钥文件</span>
-              </label>
-              <input type="file" id="private-key-file" accept=".pem,.key,.txt,.pub" class="hidden">
-              <span id="file-name" class="text-[10px] text-muted truncate"></span>
-            </div>
+            <div id="anon-key-picker" class="flex items-center gap-2 mt-2"></div>
           </div>
         </div>
         <div id="turnstile-container" style="display:none;">
@@ -655,35 +643,13 @@ export class ConnectionForm {
       this.setAuthMode('none');
     });
 
-    // File upload for private key
-    const fileInput = document.getElementById('private-key-file') as HTMLInputElement;
-    const fileNameSpan = document.getElementById('file-name');
-
-    fileInput.addEventListener('change', async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-
-      try {
-        const content = await file.text();
-        const privateKeyTextarea = document.getElementById('private-key') as HTMLTextAreaElement;
-        privateKeyTextarea.value = content;
-        if (fileNameSpan) {
-          fileNameSpan.textContent = file.name;
-        }
-      } catch (error) {
-        notify(t('auth.readKeyFailed') + ' ' + (error instanceof Error ? error.message : ''), {
-          title: t('auth.readKeyTitle'),
-          variant: 'danger',
-        });
-      }
-
-      // Reset file input
-      fileInput.value = '';
-    });
+    this.resetKeyPicker = bindPrivateKeyFile(document.getElementById('anon-key-picker')!,
+      document.querySelector<HTMLTextAreaElement>('#private-key')!, 'private-key-file');
   }
 
   private authMode: 'password' | 'key' | 'none' | 'cf_ca' = 'password';
   private connectionGeneration = 0;
+  private resetKeyPicker?: () => void;
   /** 仅 Cloudflare Access 登录模式展示 SSH CA；其他模式没有 Access JWT，入口直接隐藏。 */
   private cfSshCaEnabled = false;
 
@@ -697,6 +663,7 @@ export class ConnectionForm {
   private setAuthMode(mode: 'password' | 'key' | 'none' | 'cf_ca'): void {
     if (mode === 'cf_ca' && !this.cfSshCaEnabled) return;
     this.connectionGeneration++;
+    this.resetKeyPicker?.();
     this.authMode = mode;
     for (const value of ['password', 'key', 'none', 'cf_ca'] as const) {
       const tabId = value === 'cf_ca' ? 'auth-tab-cf-ca' : `auth-tab-${value}`;

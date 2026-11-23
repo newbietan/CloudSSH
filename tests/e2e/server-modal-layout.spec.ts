@@ -13,7 +13,7 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/config', (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ json: {
-      authMode: 'cf_access', cfAccessEmail: 'preview@example.com', cfAccessTeamName: 'example-team',
+      authMode: 'cf_access', cfAccessEmail: 'preview@example.com',
       turnstileEnabled: false, sitekey: '', githubAuthEnabled: false, githubAuthRequired: false,
       sshSharingEnabled: false,
     } });

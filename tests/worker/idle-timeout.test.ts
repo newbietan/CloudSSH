@@ -77,7 +77,6 @@ describe('SSHSession 空闲超时机制', () => {
         password: 'pwd',
         authMethod: 'password',
       },
-      true,
       false,
       undefined,
       options?.env,

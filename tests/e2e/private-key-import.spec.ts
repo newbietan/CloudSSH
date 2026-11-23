@@ -22,10 +22,16 @@ for (const name of ['id_ed25519_encrypted', 'id_rsa_pkcs8_aes256_encrypted.pem']
       });
     });
     await page.goto('/?lang=zh-CN');
+    await expect(page.locator('#auth-password-hint')).toHaveCount(0);
+    await expect(page.locator('#copyright-year').locator('..')).toHaveText(`© ${new Date().getFullYear()} CLOUDSSH`);
     await page.locator('#host').fill('ssh.example.com');
     await page.locator('#username').fill('test-user');
     await page.locator('#auth-tab-key').click();
-    await page.locator('#private-key').fill(fixture(name));
+    if (name === 'id_ed25519_encrypted') {
+      await page.getByLabel('选择密钥文件').setInputFiles(join(__dirname, '../ssh/fixtures', name));
+      await expect(page.locator('#anon-key-picker [role=status]')).toHaveText(name);
+      await expect(page.locator('#private-key')).toHaveValue(fixture(name));
+    } else await page.locator('#private-key').fill(fixture(name));
     await page.locator('#remember-me').check();
     await page.locator('#connect-btn').click();
     const input = page.locator('#app-dialog-input');
@@ -60,6 +66,35 @@ test('取消解锁不建立连接，并清空密码框', async ({ page }) => {
   await expect(page.locator('#app-dialog-input')).toHaveValue('');
   await expect(page.locator('#connect-btn')).toBeEnabled();
   expect(connections).toBe(0);
+});
+
+test('文件读取过大或弹窗已重开时不覆盖当前私钥', async ({ page }) => {
+  await page.route('**/api/auth/me', r => r.request().method() === 'GET' ? r.fulfill({ json: {
+    id: 1, github_id: 1, username: 'test-user', avatar_url: '',
+  } }) : r.fallback());
+  await page.route('**/api/servers', r => r.request().method() === 'GET' ? r.fulfill({ json: [] }) : r.fallback());
+  await page.goto('/?lang=en-US');
+  await page.locator('#add-server-btn').click();
+  await expect(page.locator('#server-password-hint')).toBeHidden();
+  await expect(page.locator('#user-copyright-year').locator('..')).toHaveText(`© ${new Date().getFullYear()} CLOUDSSH`);
+  await page.locator('#modal-auth-tab-key').click();
+  const key = page.locator('#server-private-key'), file = page.locator('#server-private-key-file');
+  await key.fill('original draft');
+  await file.setInputFiles({ name: 'too-big', mimeType: 'text/plain', buffer: Buffer.alloc(128 * 1024 + 1) });
+  await expect(key).toHaveJSProperty('validationMessage', 'The private key file must not exceed 128 KiB.');
+  await expect(key).toHaveValue('original draft');
+  await page.evaluate(() => {
+    File.prototype.text = () => new Promise<string>(resolve => { (window as any).finishKeyRead = resolve; });
+  });
+  await file.setInputFiles({ name: 'id_ed25519', mimeType: 'text/plain', buffer: Buffer.from('test') });
+  await expect(key).toHaveJSProperty('validationMessage', 'Reading the private key file. Please wait.');
+  await page.locator('#modal-close-btn').click();
+  await page.locator('#add-server-btn').click();
+  await page.locator('#modal-auth-tab-key').click();
+  await key.fill('new draft');
+  await page.evaluate(() => (window as any).finishKeyRead('old key'));
+  await expect(key).toHaveValue('new draft');
+  await expect(page.locator('#server-key-picker [role=status]')).toBeEmpty();
 });
 
 test('服务器编辑器自动聚焦不会抢走后续字段的输入焦点', async ({ page }) => {
@@ -100,7 +135,11 @@ test('保存加密私钥需单独同意保存解锁材料，拒绝时不提交',
   await page.locator('#server-host').fill('ssh.example.com');
   await page.locator('#server-username').fill('test-user');
   await page.locator('#modal-auth-tab-key').click();
-  await page.locator('#server-private-key').fill(fixture('id_ed25519_encrypted'));
+  const picker = page.getByLabel('Choose key file');
+  await picker.setInputFiles(join(__dirname, '../ssh/fixtures/id_ed25519_encrypted'));
+  await expect(page.locator('#server-private-key')).toHaveValue(fixture('id_ed25519_encrypted'));
+  await expect(page.locator('#server-key-picker [role=status]')).toHaveText('id_ed25519_encrypted');
+  expect(saves).toHaveLength(0);
   await page.locator('#server-submit-btn').click();
   await expect(page.locator('#app-dialog-message')).toContainText('not independent KMS');
   await page.locator('.app-dialog__button--cancel').click();
@@ -118,6 +157,8 @@ test('保存加密私钥需单独同意保存解锁材料，拒绝时不提交',
   expect(JSON.stringify(saves)).not.toContain(passphrase);
   await expect(input).toHaveValue('');
   await expect(page.locator('#server-modal')).toBeHidden();
+  await expect(page.locator('#server-private-key')).toHaveValue('');
+  await expect(page.locator('#server-key-picker [role=status]')).toBeEmpty();
 
   // A decrypted result arriving after the editor closes must not save into another editor.
   await page.evaluate(() => {

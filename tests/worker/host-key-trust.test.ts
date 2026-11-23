@@ -31,7 +31,7 @@ function sentMessages(ws: { send: ReturnType<typeof vi.fn> }): any[] {
 describe('SSHSession 主机密钥 TOFU', () => {
   it('首次连接只在签名验证通过后发布可持久化指纹', () => {
     const verified = createSession();
-    expect((verified.session as any).finalizeHostKeyTrust(true)).toBe(true);
+    expect((verified.session as any).finalizeHostKeyTrust()).toBe(true);
     expect(sentMessages(verified.ws)).toContainEqual(
       expect.objectContaining({
         type: 'host_key_verified',
@@ -42,25 +42,13 @@ describe('SSHSession 主机密钥 TOFU', () => {
         firstSeen: true,
       })
     );
-
-    const unverified = createSession();
-    expect((unverified.session as any).finalizeHostKeyTrust(false)).toBe(true);
-    expect(
-      sentMessages(unverified.ws).some((message) => message.type === 'host_key_verified')
-    ).toBe(false);
-    expect(sentMessages(unverified.ws)).toContainEqual(
-      expect.objectContaining({
-        type: 'status',
-        event: 'host_key_not_saved',
-      })
-    );
   });
 
   it('指纹变更时发布精确路由信息并正常关闭，等待用户明确确认', () => {
     const routeIdentity = 'jump:1@bastion.example.com:22|10.0.0.2';
     const { session, ws, socket } = createSession(OLD_FINGERPRINT, routeIdentity);
 
-    expect((session as any).finalizeHostKeyTrust(true)).toBe(false);
+    expect((session as any).finalizeHostKeyTrust()).toBe(false);
 
     expect(sentMessages(ws)).toContainEqual(
       expect.objectContaining({
@@ -79,19 +67,10 @@ describe('SSHSession 主机密钥 TOFU', () => {
   it('已知指纹匹配时不重复写入信任记录', () => {
     const { session, ws } = createSession(NEW_FINGERPRINT);
 
-    expect((session as any).finalizeHostKeyTrust(true)).toBe(true);
+    expect((session as any).finalizeHostKeyTrust()).toBe(true);
 
     expect(sentMessages(ws)).toEqual([
       expect.objectContaining({ type: 'status', event: 'host_key_accepted' }),
-    ]);
-
-    const unverified = createSession(NEW_FINGERPRINT);
-    expect((unverified.session as any).finalizeHostKeyTrust(false)).toBe(true);
-    expect(sentMessages(unverified.ws)).toEqual([
-      expect.objectContaining({
-        type: 'status',
-        event: 'host_key_fingerprint_matched_unverified',
-      }),
     ]);
   });
 });

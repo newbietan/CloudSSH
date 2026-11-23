@@ -158,7 +158,7 @@ describe('内部 SSH 头部只能由 Worker 权威注入', () => {
         `/api/ssh?share_ref=${shareRef}&share_ticket=${'t'.repeat(43)}`, { headers: {
           Upgrade: 'websocket', Origin: 'https://cloudssh.test', 'x-share-device-key': 'attacker-key',
         } }
-      ), makeEnv({ ENABLE_SSH_SHARING: 'true', sshSessionStub, sshShareStub }));
+      ), makeEnv({ sshSessionStub, sshShareStub }));
       expect(result.status).toBe(200);
       expect(forwarded!.headers.get('x-share-device-key')).toBe(devicePubKey);
     }
@@ -1256,25 +1256,20 @@ describe('安全 — 一次性 token 与接缝鉴权', () => {
 });
 
 describe('安全 — 一次性 SSH 分享边界', () => {
-  it('分享功能默认关闭，仅显式配置 true 时公开', async () => {
+  it('分享始终可用，但未登录者不能创建或管理分享', async () => {
     const worker = await loadWorker();
-    const disabled = await worker.fetch(makeRequest('/api/config'), makeEnv());
-    expect(((await disabled.json()) as { sshSharingEnabled?: boolean }).sshSharingEnabled).toBe(
-      false
-    );
-
-    const enabled = await worker.fetch(
-      makeRequest('/api/config'),
-      makeEnv({ ENABLE_SSH_SHARING: 'true' })
-    );
-    expect(((await enabled.json()) as { sshSharingEnabled?: boolean }).sshSharingEnabled).toBe(
-      true
-    );
+    const env = makeEnv();
+    const config = await worker.fetch(makeRequest('/api/config'), env);
+    expect(await config.json()).toMatchObject({ sshSharingEnabled: true });
+    for (const [path, method] of [['/api/servers/1/shares', 'POST'], ['/api/shares/1', 'DELETE']]) {
+      const response = await worker.fetch(makeRequest(path, { method }), env);
+      expect(response.status).toBe(401);
+    }
   });
 
   it('公开领取接口对非法 JSON 和非 URL-safe 凭证返回 400', async () => {
     const worker = await loadWorker();
-    const env = makeEnv({ ENABLE_SSH_SHARING: 'true' });
+    const env = makeEnv();
     const malformed = await worker.fetch(
       makeRequest('/api/share/claim', {
         method: 'POST',
@@ -1306,7 +1301,7 @@ describe('安全 — 一次性 SSH 分享边界', () => {
       });
     });
     const idFromName = vi.fn(() => 'share-do');
-    const env = makeEnv({ ENABLE_SSH_SHARING: 'true', sshShareStub: shareStub });
+    const env = makeEnv({ sshShareStub: shareStub });
     env.SSH_SHARE = { idFromName, get: () => shareStub } as any;
 
     const response = await worker.fetch(
@@ -1350,7 +1345,7 @@ describe('安全 — 一次性 SSH 分享边界', () => {
       initBody = await request.json<Record<string, unknown>>();
       return Response.json({ success: true });
     });
-    const env = makeEnv({ ENABLE_SSH_SHARING: 'true', userDbStub, sshShareStub: shareStub });
+    const env = makeEnv({ userDbStub, sshShareStub: shareStub });
 
     const response = await worker.fetch(
       makeRequest('/api/servers/7/shares', {
@@ -1423,7 +1418,6 @@ describe('安全 — 一次性 SSH 分享边界', () => {
       return new Response('forwarded');
     });
     const env = makeEnv({
-      ENABLE_SSH_SHARING: 'true',
       REQUIRE_GITHUB_AUTH: 'true',
       sshShareStub: shareStub,
       sshSessionStub: sessionStub,
@@ -1453,14 +1447,17 @@ describe('安全 — 一次性 SSH 分享边界', () => {
     );
   });
 
-  it('分享功能关闭时拒绝领取和分享 WebSocket', async () => {
+  it('分享常开仍须经 ShareDO 核验凭证，拒绝时不启动 SSH 会话', async () => {
     const worker = await loadWorker();
+    const sshShareStub = makeDOStub(() => new Response(null, { status: 404 }));
+    const sshSessionStub = makeDOStub(() => new Response());
+    const env = makeEnv({ sshShareStub, sshSessionStub });
     const claim = await worker.fetch(
       makeRequest('/api/share/claim', {
         method: 'POST',
         body: { token: 'a'.repeat(43) },
       }),
-      makeEnv()
+      env
     );
     expect(claim.status).toBe(404);
 
@@ -1468,9 +1465,13 @@ describe('安全 — 一次性 SSH 分享边界', () => {
       makeRequest(`/api/ssh?share_ref=${'r'.repeat(43)}&share_ticket=${'t'.repeat(43)}`, {
         headers: { Upgrade: 'websocket', Origin: 'https://cloudssh.test' },
       }),
-      makeEnv()
+      env
     );
     expect(socket.status).toBe(404);
+    expect(sshShareStub.fetch.mock.calls.map(([req]) => new URL(req.url).pathname)).toEqual([
+      '/internal/claim', '/internal/connect/consume',
+    ]);
+    expect(sshSessionStub.fetch).not.toHaveBeenCalled();
   });
 });
 
@@ -1576,7 +1577,6 @@ describe('安全 — SSH 身份字段信任边界', () => {
       {} as WebSocket,
       {} as any,
       { host: 'ssh.example.com', port: 22, username: 'alice', password: 'secret' },
-      true,
       false,
       undefined,
       env,

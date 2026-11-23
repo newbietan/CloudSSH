@@ -45,7 +45,6 @@ function createSSHSessionDO() {
     waitUntil: vi.fn(),
   };
   const mockEnv = {
-    STRICT_HOST_KEY_VERIFY: 'false',
     DEBUG_MODE: 'false',
   };
   return new SSHSessionDO(mockState as any, mockEnv as any);

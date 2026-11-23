@@ -17,7 +17,7 @@ function createSession(options: { anonymous?: boolean; share?: boolean } = {}) {
       allowSftp: true, allowMetadataMutation: false, allowHostKeyMutation: false,
       allowReconnect: false, sessionExpiresAt: Date.now() + 60_000,
     } } : {}),
-  }, true, false, undefined, undefined, options.anonymous ? undefined : '1', '42');
+  }, false, undefined, undefined, options.anonymous ? undefined : '1', '42');
   const internal = session as any;
   internal.state = 'ready';
   internal.fetchAgentAIConfig = () => new Promise(() => {});

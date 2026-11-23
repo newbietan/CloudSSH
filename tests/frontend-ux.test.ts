@@ -158,6 +158,20 @@ describe('服务器列表多维排序', () => {
     expect(sorted.map((s) => s.id)).toEqual([3, 1, 2]);
   });
 
+  it('在同一时间轴对 SQLite UTC 时间和 Windows 毫秒排序，旧设备空时间不冒充最新', () => {
+    const epoch = Date.parse('2026-11-23T12:00:00Z');
+    const rows = [
+      { name: 'SSH', updated_at: '2026-11-23 12:00:00', created_at: '2026-11-23 12:00:00', last_connected_at: epoch },
+      { name: 'Windows', updated_at: epoch - 100, created_at: epoch + 100, last_connected_at: epoch + 200 },
+      { name: 'Old Windows', updated_at: null, created_at: null, last_connected_at: null },
+    ];
+    for (const [mode, first] of [['updated', 'SSH'], ['recent', 'Windows'], ['created', 'Windows']] as const) {
+      const sorted = sortServers(rows, mode);
+      expect(sorted[0].name).toBe(first);
+      expect(sorted[2].name).toBe('Old Windows');
+    }
+  });
+
   it('ServerList 提供 refresh 方法并在返回主页时联动刷新', () => {
     const serverListSource = readFileSync(
       new URL('../frontend/src/server-list.ts', import.meta.url),

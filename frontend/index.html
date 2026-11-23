@@ -74,6 +74,8 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     <meta name="color-scheme" content="dark light" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>CloudSSH</title>
+    <!-- Presentation only: never flash the homepage loader during an isolated desktop navigation. -->
+    <script>if (/^\/rdp\/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(location.pathname)) document.documentElement.dataset.rdpEntry = '';</script>
     <!-- 字体已本地化：见 frontend/src/assets/fonts/fonts.css 的 @font-face，不再请求 Google Fonts。 -->
     <link rel="stylesheet" href="/src/style.css" />
     <script
@@ -312,7 +314,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                   class="text-xs text-muted opacity-60 mt-1"
                   data-i18n="server.manage"
                 >
-                  管理你的 SSH 连接
+                  管理你的服务器连接
                 </p>
               </div>
               <div class="flex items-center gap-2">
@@ -421,6 +423,10 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 </div>
               </div>
             </div>
+            <div id="server-list-notice" class="hidden mb-3 text-sm text-muted">
+              <span id="server-list-status" role="status"></span>
+              <button type="button" id="server-list-retry" class="cyber-button text-primary" data-i18n="app.retry">重试</button>
+            </div>
             <!-- 服务器卡片网格 -->
             <div
               id="server-grid"
@@ -523,11 +529,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
           <div
             class="user-space-footer-source text-secondary-container opacity-60"
           >
-            © <span id="user-copyright-year"></span> CLOUD_SSH_TERMINAL<span
-              class="user-space-footer-url"
-            >
-              - https://github.com/newbietan/CloudSSH</span
-            >
+            © <span id="user-copyright-year">2026</span> CLOUDSSH
           </div>
           <div class="footer-meta">
             <div data-version-notice></div>
@@ -579,7 +581,12 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
             </button>
           </div>
           <form id="server-form" class="server-modal-form">
+            <div id="server-kind-switch" class="server-kind-switch hidden" role="group" data-i18n-aria-label="rdp.serverKind" aria-label="服务器类型">
+              <button id="server-kind-linux" type="button" aria-pressed="true" aria-controls="server-ssh-fields">Linux</button>
+              <button id="server-kind-windows" type="button" aria-pressed="false" aria-controls="server-rdp-fields">Windows Server</button>
+            </div>
             <div class="server-modal-fields">
+            <fieldset id="server-ssh-fields" class="server-kind-fields">
             <div class="server-identity-fields">
             <div>
               <label
@@ -619,12 +626,6 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 placeholder="生产, 数据库, 亚太"
                 maxlength="249"
               />
-              <div
-                class="text-[10px] text-muted mt-1"
-                data-i18n="server.tagsHint"
-              >
-                使用逗号分隔，最多 10 个标签
-              </div>
             </div>
             </div>
             <div class="server-settings-columns">
@@ -741,12 +742,6 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                   不使用跳板（直连）
                 </option>
               </select>
-              <div
-                class="text-[10px] text-muted mt-1"
-                data-i18n="server.jumpHostHint"
-              >
-                可选择已保存服务器；最多递归跳转 3 级
-              </div>
             </div>
             <div
               id="server-cf-access-section"
@@ -895,10 +890,9 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                     type="password"
                     data-i18n-aria-label="common.password"
                     aria-label="密码"
-                    aria-describedby="server-password-hint"
                   />
                 </div>
-                <p id="server-password-hint" class="text-xs text-muted mt-2" data-i18n="auth.passwordHint"></p>
+                <p id="server-password-hint" class="hidden text-xs text-muted mt-2" data-i18n="server.passwordEditHint"></p>
                 <div id="server-empty-password-option" class="hidden mt-2">
                   <label class="flex items-center gap-2 text-xs text-muted cursor-pointer">
                     <input id="server-empty-password" type="checkbox" class="accent-[var(--accent)] w-4 h-4" />
@@ -921,6 +915,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                     padding: 8px;
                   "
                 ></textarea>
+                <div id="server-key-picker" class="flex items-center gap-2 mt-2"></div>
               </div>
             </div>
             <div id="server-region-section">
@@ -951,6 +946,8 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
             </div>
             </section>
             </div>
+            </fieldset>
+            <fieldset id="server-rdp-fields" class="server-kind-fields hidden" disabled></fieldset>
             </div>
             <div class="server-modal-actions">
               <button
@@ -1381,8 +1378,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
           class="terminal-footer px-6 py-0 flex justify-between items-center z-50 bg-elevated border-t border-outline-variant text-xs h-8 shrink-0"
         >
           <div class="text-secondary-container opacity-60">
-            © <span id="copyright-year"></span> CLOUD_SSH_TERMINAL -
-            https://github.com/newbietan/CloudSSH
+            © <span id="copyright-year">2026</span> CLOUDSSH
           </div>
           <div class="footer-meta">
             <div data-version-notice></div>

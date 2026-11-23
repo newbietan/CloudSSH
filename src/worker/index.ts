@@ -34,6 +34,7 @@ import { createHtmlResponse } from './html-cache';
 import { handleVersionCheck } from './version-check';
 import { handleCloudflareSshCaSign } from './cf-ssh-ca';
 import { handleMcp, handleMcpManagement } from './mcp';
+import { handleRdp, isRdpRoute, type RdpAssets } from './rdp-routes';
 export { MCPExecutionDO } from './mcp-execution';
 
 export { SSHSessionDO } from './durable-object';
@@ -154,10 +155,6 @@ function getUserDBStub(env: Env, githubId: string | number): DurableObjectStub {
   return env.USER_DB.get(id);
 }
 
-function isSSHSharingEnabled(env: Env): boolean {
-  return env.ENABLE_SSH_SHARING === 'true';
-}
-
 async function hashShareToken(token: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
   let binary = '';
@@ -185,7 +182,8 @@ export default {
   async fetch(
     request: Request,
     env: Env,
-    ctx?: Pick<ExecutionContext, 'access'>
+    ctx?: Pick<ExecutionContext, 'access'> & Partial<Pick<ExecutionContext, 'waitUntil'>>,
+    rdpAssets?: RdpAssets,
   ): Promise<Response> {
     try {
       await initializeAccessIdentity(request, ctx);
@@ -200,6 +198,10 @@ export default {
         }
       }
 
+      if (isRdpRoute(url.pathname)) return await handleRdp(request, url, env, rdpAssets, ctx);
+      if (url.pathname === '/__rdp-preview' || url.pathname.startsWith('/__rdp-preview/')) {
+        return new Response(null, { status: 404, headers: { 'Cache-Control': 'no-store' } });
+      }
       if (url.pathname === '/mcp') return await handleMcp(request, env);
       if (url.pathname.startsWith('/api/mcp/')) {
         const response = await handleMcpManagement(request, env);
@@ -410,10 +412,10 @@ export default {
           // 密码模式/CF Access 模式下 GitHub 入口被禁用
           githubAuthEnabled: authMode === 'github',
           githubAuthRequired: isGitHubAuthRequired(env) || authMode === 'cf_access',
-          sshSharingEnabled: isSSHSharingEnabled(env),
+          sshSharingEnabled: true,
+          ...(rdpAssets && env.ENABLE_RDP === 'true' ? { rdpEnabled: true } : {}),
           authMode,
           cfAccessEmail,
-          cfAccessTeamName: env.CF_ACCESS_TEAM_NAME || '',
           // 浏览器预拉伸公开参数（盐非机密）；坏哈希时为 null
           passwordAuth: authMode === 'password' ? getPasswordAuthParams(env) : null,
           passwordHashInvalid:
@@ -421,6 +423,13 @@ export default {
         });
       }
 
+      if (rdpAssets && env.ENABLE_RDP === 'true' && url.protocol === 'https:' && request.method === 'GET' &&
+          url.pathname === '/' && [...url.searchParams.keys()].every(key => key === 'lang')) {
+        // Keep the list and RDP frame in the same document. Never isolate the login flow on
+        // the strength of a cookie alone. Bootstrap and every RDP resource still recheck access.
+        const owner = await getAuthenticatedUser(request, env).catch(() => null);
+        return createHtmlResponse(request, owner ? 'account' : 'public');
+      }
       return createHtmlResponse(request);
     } catch {
       console.error('Worker request failed');
@@ -465,9 +474,6 @@ async function handleServersRoute(request: Request, url: URL, env: Env): Promise
   // /api/servers/:id/connect
   const sharesMatch = url.pathname.match(/^\/api\/servers\/(\d+)\/shares$/);
   if (sharesMatch) {
-    if (!isSSHSharingEnabled(env)) {
-      return Response.json({ error: 'SSH sharing is disabled' }, { status: 404 });
-    }
     const serverId = sharesMatch[1];
     if (request.method === 'GET') {
       return stub.fetch(
@@ -1322,9 +1328,6 @@ async function handleResumeSSHConnection(
 }
 
 async function handleShareClaim(request: Request, url: URL, env: Env): Promise<Response> {
-  if (!isSSHSharingEnabled(env)) {
-    return Response.json({ error: 'SSH sharing is disabled' }, { status: 404 });
-  }
   const retryAfter = getRateLimitRetryAfter(request.headers.get('CF-Connecting-IP'));
   if (retryAfter !== null) {
     return new Response('Too Many Requests', {
@@ -1371,9 +1374,6 @@ async function handleShareClaim(request: Request, url: URL, env: Env): Promise<R
 }
 
 async function handleShareOwnerRoute(request: Request, url: URL, env: Env): Promise<Response> {
-  if (!isSSHSharingEnabled(env)) {
-    return Response.json({ error: 'SSH sharing is disabled' }, { status: 404 });
-  }
   const user = await getAuthenticatedUser(request, env);
   if (!user) return Response.json({ error: 'Authentication required' }, { status: 401 });
   const match = url.pathname.match(/^\/api\/shares\/([^/]+)(?:\/audit)?$/);
@@ -1421,9 +1421,6 @@ async function handleShareSSHConnection(
   shareRef: string,
   ticket: string
 ): Promise<Response> {
-  if (!isSSHSharingEnabled(env)) {
-    return Response.json({ error: 'SSH sharing is disabled' }, { status: 404 });
-  }
   if (request.headers.get('Upgrade') !== 'websocket') {
     return Response.json({ error: 'Expected WebSocket upgrade' }, { status: 426 });
   }

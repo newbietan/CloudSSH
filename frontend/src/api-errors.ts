@@ -17,7 +17,6 @@ const SERVER_MESSAGE_KEYS: Readonly<Record<string, TranslationKey>> = {
   'Invalid share link': 'share.claimFailed',
   'Invalid request body': 'share.claimFailed',
   'Invalid device public key': 'share.claimFailed',
-  'SSH sharing is disabled': 'share.errorSharingDisabled',
   'Share service unavailable': 'share.errorServiceUnavailable',
   'Connection ticket has already been used': 'share.errorAlreadyUsed',
   'Connection ticket expired': 'share.errorLinkExpired',

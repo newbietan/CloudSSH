@@ -7,13 +7,15 @@ import { isValidTunnelHostname, maskIPAddress } from './host-display';
 import { getLocale, onLocaleChange, t } from './i18n';
 import { osDisplayName, osIconSvg } from './os-icons';
 import { parsePort } from './port';
-import { preparePrivateKey } from './private-key-import';
+import { bindPrivateKeyFile, preparePrivateKey } from './private-key-import';
 import { requestCloudflareSshCertificate } from './cf-ssh-ca';
 import { populateRegionSelect, regionLabel } from './regions';
 import { ShareManager } from './share-manager';
 import type { SSHHostInfo } from './terminal';
 import { confirmAction, notify } from './ui-feedback';
 import { formatTimestampWithRelative } from '../../src/server-memory-schema';
+import { isRdpId, type RdpCard, type RdpProfile } from '../../src/rdp-schema';
+import { RdpManager } from './rdp-manager';
 
 interface UserInfo {
   id: number;
@@ -123,11 +125,11 @@ export function filterServers(
   });
 }
 
-export function paginateServers(
-  servers: readonly ServerConfig[],
+export function paginateServers<T>(
+  servers: readonly T[],
   page: number,
   pageSize = SERVER_PAGE_SIZE
-): { items: ServerConfig[]; currentPage: number; totalPages: number } {
+): { items: T[]; currentPage: number; totalPages: number } {
   const totalPages = Math.max(1, Math.ceil(servers.length / pageSize));
   const currentPage = Math.min(Math.max(1, Math.floor(page)), totalPages);
   const start = (currentPage - 1) * pageSize;
@@ -138,49 +140,31 @@ export function paginateServers(
   };
 }
 
-export function sortServers(
-  servers: readonly ServerConfig[],
-  sortMode: ServerSortMode = 'recent'
-): ServerConfig[] {
-  const list = [...servers];
-  switch (sortMode) {
-    case 'recent':
-      return list.sort((a, b) => {
-        const aConnected = a.last_connected_at ?? 0;
-        const bConnected = b.last_connected_at ?? 0;
-        if (aConnected !== bConnected) {
-          return bConnected - aConnected;
-        }
-        const aUpdated = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-        const bUpdated = b.updated_at ? new Date(b.updated_at).getTime() : 0;
-        if (aUpdated !== bUpdated && !Number.isNaN(aUpdated) && !Number.isNaN(bUpdated)) {
-          return bUpdated - aUpdated;
-        }
-        return 0;
-      });
-    case 'updated':
-      return list.sort((a, b) => {
-        const aUpdated = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-        const bUpdated = b.updated_at ? new Date(b.updated_at).getTime() : 0;
-        if (aUpdated !== bUpdated && !Number.isNaN(aUpdated) && !Number.isNaN(bUpdated)) {
-          return bUpdated - aUpdated;
-        }
-        return 0;
-      });
-    case 'created':
-      return list.sort((a, b) => {
-        const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
-        if (aCreated !== bCreated && !Number.isNaN(aCreated) && !Number.isNaN(bCreated)) {
-          return bCreated - aCreated;
-        }
-        return 0;
-      });
-    case 'name':
-      return list.sort((a, b) => a.name.localeCompare(b.name));
-    default:
-      return list;
-  }
+type SortableServer = {
+  name: string;
+  last_connected_at?: number | null;
+  updated_at?: string | number | null;
+  created_at?: string | number | null;
+};
+
+function sortTimestamp(value: SortableServer['updated_at']): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (!value) return 0;
+  // SSH uses SQLite datetime('now') (UTC); newer card metadata is Unix milliseconds.
+  const normalizedDate = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value) ? value.replace(' ', 'T') + 'Z' : value;
+  return Date.parse(normalizedDate) || 0;
+}
+
+export function sortServers<T extends SortableServer>(servers: readonly T[], sortMode: ServerSortMode = 'recent'): T[] {
+  return [...servers].sort((a, b) => {
+    if (sortMode === 'name') return a.name.localeCompare(b.name);
+    if (sortMode === 'recent') {
+      const byConnection = (b.last_connected_at ?? 0) - (a.last_connected_at ?? 0);
+      if (byConnection) return byConnection;
+    }
+    const key = sortMode === 'created' ? 'created_at' : 'updated_at';
+    return sortTimestamp(b[key]) - sortTimestamp(a[key]);
+  });
 }
 
 /**
@@ -189,6 +173,17 @@ export function sortServers(
 export class ServerList {
   private user: UserInfo;
   private servers: ServerConfig[] = [];
+  private rdpProfiles: RdpCard[] = [];
+  private readonly rdp?: RdpManager;
+  private readonly modalEvents = new AbortController();
+  private disposed = false;
+  private modalKind: 'ssh' | 'rdp' = 'ssh';
+  private rdpSaving = false;
+  private listState = {
+    ssh: { generation: 0, loaded: false, failed: false, pending: false },
+    rdp: { generation: 0, loaded: false, failed: false, pending: false },
+  };
+  private listAccessDenied = false;
   private onLogout: () => void;
   private onConnect: (wsUrl: string, serverName: string, hostInfo?: SSHHostInfo) => void;
   private editingServerId: number | null = null;
@@ -198,6 +193,7 @@ export class ServerList {
   private modalAuthMode: 'password' | 'key' | 'none' | 'cf_ca' = 'password';
   private modalTransportMode: 'direct' | 'cf_tunnel' = 'direct';
   private modalGeneration = 0;
+  private resetKeyPicker?: () => void;
   private clearCfAccessClientSecret = false;
   private searchQuery = '';
   private selectedTag = '';
@@ -213,13 +209,16 @@ export class ServerList {
     user: UserInfo,
     onLogout: () => void,
     onConnect: (wsUrl: string, serverName: string, hostInfo?: SSHHostInfo) => void,
-    config: AppConfig
+    config: AppConfig,
+    private readonly openRdp?: (id: string) => void,
   ) {
     this.user = user;
     this.onLogout = onLogout;
     this.onConnect = onConnect;
     this.sharingEnabled = config.sshSharingEnabled === true;
     this.cfSshCaEnabled = config.authMode === 'cf_access';
+    const fields = document.querySelector<HTMLFieldSetElement>('#server-rdp-fields');
+    if (config.rdpEnabled === true && fields) this.rdp = new RdpManager(fields, () => this.syncRdpSubmit());
     try {
       const savedSort = localStorage.getItem(SERVER_SORT_STORAGE_KEY) as ServerSortMode | null;
       if (savedSort && ['recent', 'updated', 'created', 'name'].includes(savedSort)) {
@@ -228,8 +227,20 @@ export class ServerList {
     } catch {
       /* ignore */
     }
-    onLocaleChange(() => this.renderServerGrid());
+    const unbindLocale = onLocaleChange(() => this.renderServerGrid());
+    this.modalEvents.signal.addEventListener('abort', unbindLocale, { once: true });
     this.init();
+  }
+
+  disposeRdp(): void {
+    this.disposed = true;
+    this.modalEvents.abort();
+    this.servers = [];
+    this.rdpProfiles = [];
+    document.getElementById('server-grid')?.replaceChildren();
+    document.getElementById('server-list-notice')?.classList.add('hidden');
+    this.rdp?.dispose();
+    this.hideModal();
   }
 
   private async init(): Promise<void> {
@@ -238,7 +249,6 @@ export class ServerList {
     this.applyCfSshCaAvailability();
     this.renderSkeletonGrid();
     await this.fetchServers();
-    this.renderServerGrid();
 
     // 设置用户空间的版权年份
     const yearSpan = document.getElementById('user-copyright-year');
@@ -256,12 +266,7 @@ export class ServerList {
   /** 用户切回主页或重新展示时调用：先使用内存状态即时重排，再静默拉取后台最新数据同步 */
   async refresh(): Promise<void> {
     this.renderServerGrid();
-    try {
-      await this.fetchServers();
-      this.renderServerGrid();
-    } catch {
-      /* ignore network errors to keep memory state intact */
-    }
+    await this.fetchServers();
   }
 
   /** 连接后由 os_detected 消息回调：更新某台服务器的操作系统并即时重渲染图标 */
@@ -281,6 +286,8 @@ export class ServerList {
     container.innerHTML = '';
     if (this.user.avatar_url) {
       const img = document.createElement('img');
+      // GitHub's public avatar endpoint supports CORS. An isolated account page must not rely on no-cors embedding.
+      if (window.crossOriginIsolated) img.crossOrigin = 'anonymous';
       img.src = this.user.avatar_url;
       img.alt = this.user.username;
       img.className = 'user-avatar w-8 h-8';
@@ -303,6 +310,8 @@ export class ServerList {
   // ==================== 事件绑定 ====================
 
   private bindEvents(): void {
+    this.resetKeyPicker = bindPrivateKeyFile(document.getElementById('server-key-picker')!,
+      document.querySelector<HTMLTextAreaElement>('#server-private-key')!, 'server-private-key-file', this.modalEvents.signal);
     // 退出登录
     document.getElementById('logout-btn')?.addEventListener('click', () => this.logout());
 
@@ -365,6 +374,13 @@ export class ServerList {
       this.renderServerGrid();
     });
 
+    document.getElementById('server-list-retry')?.addEventListener('click', () => {
+      if (this.listAccessDenied) { location.reload(); return; }
+      for (const kind of ['ssh', 'rdp'] as const) {
+        if (this.listState[kind].failed && !this.listState[kind].pending) void this.fetchList(kind);
+      }
+    }, { signal: this.modalEvents.signal });
+
     // Modal 关闭
     document.getElementById('modal-close-btn')?.addEventListener('click', () => this.hideModal());
     document.getElementById('modal-backdrop')?.addEventListener('click', () => this.hideModal());
@@ -378,8 +394,17 @@ export class ServerList {
     // Modal 提交
     document.getElementById('server-form')?.addEventListener('submit', (event) => {
       event.preventDefault();
-      void this.handleSubmit();
-    });
+      if (this.disposed) return;
+      if (this.modalKind === 'rdp') void this.saveRdp();
+      else void this.handleSubmit();
+    }, { signal: this.modalEvents.signal });
+    for (const [id, kind] of [['server-kind-linux', 'ssh'], ['server-kind-windows', 'rdp']] as const) {
+      const button = document.getElementById(id);
+      if (button) button.onclick = () => {
+        const submit = document.querySelector<HTMLButtonElement>('#server-submit-btn');
+        if (this.rdp && !submit?.disabled && !this.disposed) this.setModalKind(kind);
+      };
+    }
 
     document.getElementById('server-empty-password')?.addEventListener('change', () => {
       this.setModalAuthMode(this.modalAuthMode);
@@ -427,20 +452,62 @@ export class ServerList {
   // ==================== 数据获取 ====================
 
   private async fetchServers(): Promise<void> {
+    await Promise.all([this.fetchList('ssh'), this.fetchRdpProfiles()]);
+  }
+
+  fetchRdpProfiles(): Promise<void> { return this.fetchList('rdp'); }
+
+  private async fetchList(kind: 'ssh' | 'rdp'): Promise<void> {
+    if (this.disposed || this.listAccessDenied || (kind === 'rdp' && !this.rdp)) return;
+    const state = this.listState[kind];
+    const generation = ++state.generation;
+    const current = () => !this.disposed && !this.listAccessDenied && generation === state.generation;
+    state.pending = true;
+    if (state.failed) this.renderListNotice();
     try {
-      const res = await fetch('/api/servers', { cache: 'no-store' });
-      if (!res.ok) throw new Error('Failed to fetch servers');
-      const servers = (await res.json()) as ServerConfig[];
-      this.servers = servers.map((server) => ({
-        ...server,
-        tags: Array.isArray(server.tags) ? server.tags : [],
-      }));
-      this.renderServerGrid();
-    } catch (e) {
-      console.error('Failed to fetch servers:', e);
-      this.servers = [];
-      this.renderServerGrid();
+      const signal = AbortSignal.any([this.modalEvents.signal, AbortSignal.timeout(10000)]);
+      if (kind === 'ssh') {
+        const res = await fetch('/api/servers', { cache: 'no-store', signal });
+        if (!res.ok) throw res;
+        const rows = await res.json() as ServerConfig[];
+        if (!current()) return;
+        this.servers = rows.map(server => ({ ...server, tags: Array.isArray(server.tags) ? server.tags : [] }));
+      } else {
+        const rows = await this.rdp!.list(signal);
+        if (!current()) return;
+        this.rdpProfiles = rows;
+      }
+      state.loaded = true;
+      state.failed = false;
+    } catch (error) {
+      if (!current()) return;
+      state.failed = true;
+      // Never keep the previous account's cards on an explicit authentication/permission failure.
+      if (error instanceof Response && (error.status === 401 || error.status === 403)) {
+        this.listAccessDenied = true;
+        this.hideModal();
+        this.servers = [];
+        this.rdpProfiles = [];
+      }
+    } finally {
+      if (!this.disposed && generation === state.generation) {
+        state.pending = false;
+        this.renderServerGrid();
+      }
     }
+  }
+
+  private renderListNotice(): void {
+    const failed = (['ssh', 'rdp'] as const).filter(kind => this.listState[kind].failed);
+    const status = document.getElementById('server-list-status');
+    if (!status) return;
+    const message = this.listAccessDenied ? t('server.listSessionChanged') : failed.map(kind =>
+      t(this.listState[kind].loaded ? 'server.listStale' : 'server.listUnavailable', { kind: kind === 'ssh' ? 'SSH' : 'Windows' })
+    ).join(' ');
+    if (status.textContent !== message) status.textContent = message;
+    status.parentElement?.classList.toggle('hidden', !this.listAccessDenied && !failed.length);
+    const retry = document.querySelector<HTMLButtonElement>('#server-list-retry');
+    if (retry) retry.disabled = !this.listAccessDenied && failed.every(kind => this.listState[kind].pending);
   }
 
   private applyCfSshCaAvailability(): void {
@@ -452,6 +519,7 @@ export class ServerList {
   // ==================== 渲染服务器卡片 ====================
 
   private renderServerGrid(): void {
+    if (this.disposed) return;
     const grid = document.getElementById('server-grid');
     const emptyState = document.getElementById('empty-state');
     const searchWrapper = document.getElementById('server-search-wrapper');
@@ -461,17 +529,20 @@ export class ServerList {
     const tagFilter = document.getElementById('server-tag-filter') as HTMLSelectElement | null;
     const pagination = document.getElementById('server-pagination');
     if (!grid || !emptyState || !searchWrapper || !searchEmptyState) return;
+    this.renderListNotice();
     grid.removeAttribute('aria-busy');
 
-    if (this.servers.length === 0) {
+    if (this.servers.length === 0 && this.rdpProfiles.length === 0) {
       grid.innerHTML = '';
       searchWrapper.classList.add('hidden');
       pagination?.classList.add('hidden');
       pagination?.classList.remove('flex');
       searchEmptyState.classList.add('hidden');
       searchEmptyState.classList.remove('flex');
-      emptyState.classList.remove('hidden');
-      emptyState.classList.add('flex');
+      const listed = (s: typeof this.listState.ssh) => s.loaded && !s.failed;
+      const confirmedEmpty = !this.listAccessDenied && listed(this.listState.ssh) && (!this.rdp || listed(this.listState.rdp));
+      emptyState.classList.toggle('hidden', !confirmedEmpty);
+      emptyState.classList.toggle('flex', confirmedEmpty);
       return;
     }
 
@@ -480,7 +551,7 @@ export class ServerList {
     emptyState.classList.remove('flex');
     clearSearchButton?.classList.toggle('hidden', this.searchQuery.length === 0);
 
-    const allTags = [...new Set(this.servers.flatMap((server) => server.tags || []))].sort((a, b) =>
+    const allTags = [...new Set([...this.servers, ...this.rdpProfiles].flatMap((server) => server.tags || []))].sort((a, b) =>
       a.localeCompare(b)
     );
     tagFilterWrapper?.classList.toggle('hidden', allTags.length === 0);
@@ -501,7 +572,14 @@ export class ServerList {
     }
 
     const filteredServers = filterServers(this.servers, this.searchQuery, this.selectedTag);
-    if (filteredServers.length === 0) {
+    const query = this.searchQuery.trim().toLocaleLowerCase();
+    const windows = this.rdpProfiles.filter((row) =>
+      (!this.selectedTag || (row.tags ?? []).includes(this.selectedTag)) &&
+      (!query || [row.name, row.host, row.username ?? '', 'Windows Server', 'RDP', ...(row.tags ?? [])].some((value) => value.toLocaleLowerCase().includes(query)))
+    );
+    const entries = sortServers<ServerConfig | RdpCard>([...filteredServers, ...windows], this.sortMode)
+      .map(row => 'route' in row ? { kind: 'rdp' as const, row } : { kind: 'ssh' as const, row });
+    if (entries.length === 0) {
       grid.innerHTML = '';
       pagination?.classList.add('hidden');
       pagination?.classList.remove('flex');
@@ -513,17 +591,27 @@ export class ServerList {
     searchEmptyState.classList.add('hidden');
     searchEmptyState.classList.remove('flex');
 
-    const sortedServers = sortServers(filteredServers, this.sortMode);
-    const page = paginateServers(sortedServers, this.currentPage, this.pageSize);
+    const page = paginateServers(entries, this.currentPage, this.pageSize);
     this.currentPage = page.currentPage;
-    const visibleServers = page.items;
+    grid.innerHTML = page.items.map((entry, index) => entry.kind === 'ssh'
+      ? this.renderServerCard(entry.row, index, this.searchQuery === '')
+      : this.renderRdpCard(entry.row)).join('');
 
-    grid.innerHTML = visibleServers
-      .map((server, index) => this.renderServerCard(server, index, this.searchQuery === ''))
-      .join('');
-
-    // 绑定卡片事件
-    for (const server of visibleServers) {
+    // Keep RDP out of all SSH-only card actions, sharing, and jump choices.
+    for (const entry of page.items) {
+      this.bindHostCopy(entry.row.id, entry.row.host);
+      if (entry.kind === 'rdp') {
+        const { row } = entry;
+        document.getElementById(`rdp-open-${row.id}`)?.addEventListener('click', () => {
+          if (this.disposed) return;
+          if (!row.hasLogin) this.editRdp(row);
+          else this.openRdp?.(row.id);
+        });
+        document.getElementById(`rdp-edit-${row.id}`)?.addEventListener('click', () => this.editRdp(row));
+        document.getElementById(`rdp-delete-${row.id}`)?.addEventListener('click', () => { void this.deleteRdp(row); });
+        continue;
+      }
+      const server = entry.row;
       document
         .getElementById(`connect-${server.id}`)
         ?.addEventListener('click', () => this.connectServer(server.id));
@@ -539,19 +627,6 @@ export class ServerList {
       document
         .getElementById(`delete-${server.id}`)
         ?.addEventListener('click', () => this.deleteServer(server.id));
-      const hostBadge = document.getElementById(`host-badge-${server.id}`);
-      if (hostBadge) {
-        hostBadge.addEventListener('click', async () => {
-          const ok = await copyTextToClipboard(server.host);
-          if (ok) {
-            hostBadge.classList.add('host-ip-copied');
-            setTimeout(() => hostBadge.classList.remove('host-ip-copied'), 800);
-            notify(t('server.ipCopied'), { variant: 'success', duration: 1500 });
-          } else {
-            notify(t('server.ipCopyFailed'), { variant: 'danger' });
-          }
-        });
-      }
     }
 
     if (page.totalPages > 1) {
@@ -566,7 +641,7 @@ export class ServerList {
         info.textContent = t('server.pageInfo', {
           current: page.currentPage,
           total: page.totalPages,
-          count: filteredServers.length,
+          count: entries.length,
         });
       }
     } else {
@@ -598,6 +673,57 @@ export class ServerList {
       return `<span class="server-os-icon shrink-0" title="${this.escapeAttr(label)}">${svg}</span>`;
     }
     return `<span class="material-symbols-outlined text-primary shrink-0" style="font-size: 20px; font-variation-settings: 'FILL' 0;">dns</span>`;
+  }
+
+  private bindHostCopy(id: number | string, host: string): void {
+    const badge = document.getElementById(`host-badge-${id}`);
+    badge?.addEventListener('click', async () => {
+      const ok = await copyTextToClipboard(host); // Copy the actual host, never the mask or display port.
+      if (this.disposed) return;
+      const ip = maskIPAddress(host) !== null;
+      if (ok) {
+        badge.classList.add('host-ip-copied');
+        setTimeout(() => badge.classList.remove('host-ip-copied'), 800);
+        notify(t(ip ? 'server.ipCopied' : 'server.hostCopied'), { variant: 'success', duration: 1500 });
+      } else notify(t(ip ? 'server.ipCopyFailed' : 'server.hostCopyFailed'), { variant: 'danger' });
+    });
+  }
+
+  private renderHostRow(id: string | number, host: string, port: number | null): string {
+    const masked = maskIPAddress(host);
+    const copyLabel = this.escapeAttr(t(masked ? 'server.clickToCopyIP' : 'server.clickToCopyHost'));
+    return `<div class="server-card-meta-row flex items-center gap-2 min-w-0">
+      <span class="text-dim">${t('server.hostLabel')}</span>
+      <button type="button" class="host-ip-badge server-host-badge min-w-0 truncate" id="host-badge-${this.escapeAttr(String(id))}" title="${copyLabel}" aria-label="${copyLabel}">${this.escapeHtml(masked ?? host)}${port === null ? '' : `:${port}`}</button>
+    </div>`;
+  }
+
+  private renderRdpCard(row: RdpCard): string {
+    if (!isRdpId(row.id)) return '';
+    const connected = row.last_connected_at ? formatTimestampWithRelative(row.last_connected_at, Date.now(), getLocale()) : t('rdp.noConnectionRecord');
+    return `<div class="server-card p-5 relative group" id="rdp-card-${row.id}">
+      <div class="flex items-center gap-2 mb-3 min-w-0">
+        ${this.renderOSIconMarkup('windows')}
+        <h3 class="server-card-title text-sm font-bold text-primary truncate min-w-0 flex-1" title="${this.escapeAttr(row.name)}">${this.escapeHtml(row.name)}</h3>
+        <span class="shrink-0 text-[10px] text-muted border border-dim px-2 py-0.5">RDP</span>
+      </div>
+      <div class="space-y-1.5 text-xs text-muted mb-4">
+        ${this.renderHostRow(row.id, row.host, row.route === 'direct' ? 3389 : null)}
+        <div class="server-card-meta-row flex items-center gap-2 min-w-0"><span class="text-dim">${t('server.userLabel')}</span><span class="text-on-surface truncate" title="${this.escapeAttr(row.username ?? '—')}">${this.escapeHtml(row.username ?? '—')}</span></div>
+        <div>${t(row.route === 'tunnel' ? 'rdp.tunnel' : 'rdp.direct')}</div>
+        <div class="server-card-meta-row flex items-center gap-2 min-w-0"><span class="text-dim">${t('server.lastConnected')}</span><span class="text-on-surface truncate" title="${this.escapeAttr(connected)}">${this.escapeHtml(connected)}</span></div>
+        ${(row.tags ?? []).length ? `<div class="flex flex-wrap gap-1 mt-3">${row.tags.map(tag => `<span class="text-[9px] text-primary border border-[var(--border-strong)] px-1.5 py-0.5">#${this.escapeHtml(tag)}</span>`).join('')}</div>` : ''}
+      </div>
+      <div class="server-card-actions flex gap-2 pt-3 border-t border-[var(--border)]">
+        <button type="button" id="rdp-open-${row.id}" class="server-connect-button cyber-button text-primary flex-1 min-w-0 py-1.5 px-3 text-xs flex items-center justify-center">${t(row.hasLogin ? 'rdp.open' : 'rdp.complete')}</button>
+        <button type="button" id="rdp-edit-${row.id}" class="cyber-button text-primary px-3" aria-label="${this.escapeAttr(t('rdp.edit'))}">
+          <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px">edit</span>
+        </button>
+        <button type="button" id="rdp-delete-${row.id}" class="cyber-button text-error px-3" aria-label="${this.escapeAttr(t('rdp.remove'))}">
+          <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px">delete</span>
+        </button>
+      </div>
+    </div>`;
   }
 
   private renderServerCard(server: ServerConfig, index = 0, animate = false): string {
@@ -669,10 +795,6 @@ export class ServerList {
       ? formatTimestampWithRelative(server.last_connected_at, Date.now(), getLocale())
       : t('server.neverConnected');
 
-    const maskedHost = isTunnel ? null : maskIPAddress(server.host);
-    const copyIPLabel = this.escapeAttr(t('server.clickToCopyIP'));
-    // 隧道连接只看域名（实际端口由内网 cloudflared 配置决定）：卡片不展示端口
-    const hostDisplay = `<button type="button" class="host-ip-badge server-host-badge min-w-0 truncate" id="host-badge-${server.id}" title="${copyIPLabel}" aria-label="${copyIPLabel}">${this.escapeHtml(maskedHost ?? server.host)}${isTunnel ? '' : `:${server.port}`}</button>`;
     const shareButton = this.sharingEnabled
       ? `<button id="share-${server.id}" class="cyber-button text-primary py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] flex items-center justify-center" title="${t('share.create')}">
           <span class="material-symbols-outlined" style="font-size:14px">share</span>
@@ -698,10 +820,7 @@ export class ServerList {
         </div>
 
         <div class="space-y-1.5 text-xs text-muted mb-4">
-          <div class="server-card-meta-row flex items-center gap-2 min-w-0">
-            <span class="text-dim">${t('server.hostLabel')}</span>
-            ${hostDisplay}
-          </div>
+          ${this.renderHostRow(server.id, server.host, isTunnel ? null : server.port)}
           <div class="server-card-meta-row flex items-center gap-2 min-w-0">
             <span class="text-dim">${t('server.userLabel')}</span>
             <span class="text-on-surface min-w-0 truncate">${this.escapeHtml(server.username)}</span>
@@ -851,10 +970,91 @@ export class ServerList {
     }
   }
 
+  private async deleteRdp(row: RdpProfile): Promise<void> {
+    if (!this.rdp || this.disposed || !(await confirmAction({
+      title: t('rdp.remove'), message: t('rdp.removeConfirm'),
+      confirmText: t('common.delete'), cancelText: t('server.keep'), variant: 'danger',
+    })) || this.disposed) return;
+    try {
+      await this.rdp.remove(row.id);
+      if (this.disposed) return;
+      this.rdpProfiles = this.rdpProfiles.filter(profile => profile.id !== row.id);
+      this.renderServerGrid();
+      await this.fetchRdpProfiles();
+    } catch {
+      if (!this.disposed) notify(t('rdp.failed'), { variant: 'danger' });
+    }
+  }
+
+  private editRdp(row: RdpProfile): void {
+    if (!this.rdp || this.disposed) return;
+    this.showModal('add');
+    this.rdp.reset(row);
+    document.getElementById('server-kind-switch')?.classList.add('hidden');
+    const title = document.getElementById('modal-title');
+    if (title) {
+      title.dataset.i18n = 'server.edit';
+      title.textContent = t('server.edit');
+    }
+    this.setModalKind('rdp');
+  }
+
+  private setModalKind(kind: 'ssh' | 'rdp', focus = true): void {
+    this.resetKeyPicker?.();
+    this.modalKind = kind;
+    const ssh = document.querySelector<HTMLFieldSetElement>('#server-ssh-fields');
+    const rdp = document.querySelector<HTMLFieldSetElement>('#server-rdp-fields');
+    for (const [panel, shown] of [[ssh, kind === 'ssh'], [rdp, kind === 'rdp']] as const) {
+      if (!panel) continue;
+      panel.disabled = !shown;
+      panel.classList.toggle('hidden', !shown);
+    }
+    document.getElementById('server-kind-linux')?.setAttribute('aria-pressed', String(kind === 'ssh'));
+    document.getElementById('server-kind-windows')?.setAttribute('aria-pressed', String(kind === 'rdp'));
+    const fields = document.querySelector<HTMLElement>('#server-modal .server-modal-fields');
+    if (fields) fields.scrollTop = 0;
+    this.syncRdpSubmit();
+    if (!focus) return;
+    if (kind === 'rdp') this.rdp?.focus();
+    else document.getElementById('server-name')?.focus({ preventScroll: true });
+  }
+
+  private syncRdpSubmit(): void {
+    if (this.disposed || this.modalKind !== 'rdp' || !this.rdp) return;
+    const submit = document.querySelector<HTMLButtonElement>('#server-submit-btn');
+    if (submit) submit.disabled = this.rdpSaving || !this.rdp.canSubmit;
+  }
+
+  private async saveRdp(): Promise<void> {
+    const submit = document.querySelector<HTMLButtonElement>('#server-submit-btn');
+    if (!this.rdp?.canSubmit || !submit || this.rdpSaving) return;
+    const generation = this.modalGeneration;
+    this.rdpSaving = submit.disabled = true;
+    try {
+      await this.rdp.save();
+      if (generation === this.modalGeneration) this.hideModal();
+      await this.fetchRdpProfiles();
+    } catch (error) {
+      if (!this.disposed && generation === this.modalGeneration) {
+        notify(error instanceof Error ? error.message : t('rdp.failed'), { variant: 'danger' });
+      }
+    } finally {
+      if (generation === this.modalGeneration) {
+        this.rdpSaving = false;
+        this.syncRdpSubmit();
+      }
+    }
+  }
+
   // ==================== Modal 操作 ====================
 
   showModal(mode: 'add' | 'edit' | 'clone', server?: ServerConfig): void {
+    if (this.disposed) return;
     this.modalGeneration++;
+    this.rdpSaving = false;
+    this.rdp?.reset();
+    this.setModalKind('ssh', false);
+    document.getElementById('server-kind-switch')?.classList.toggle('hidden', !this.rdp || mode !== 'add');
     this.editingServerId = mode === 'edit' && server ? server.id : null;
     this.editingOriginalAuthMethod = mode === 'edit' && server ? server.auth_method : null;
     this.editingOriginalCfTeam =
@@ -867,13 +1067,9 @@ export class ServerList {
     (submitBtn as HTMLButtonElement).disabled = false;
     (document.getElementById('server-empty-password') as HTMLInputElement).checked = false;
 
-    if (mode === 'add') {
-      title.textContent = t('server.add');
-    } else if (mode === 'clone') {
-      title.textContent = t('server.cloneTitle');
-    } else {
-      title.textContent = t('server.edit');
-    }
+    const titleKey = mode === 'add' ? 'server.add' : mode === 'clone' ? 'server.cloneTitle' : 'server.edit';
+    title.dataset.i18n = titleKey;
+    title.textContent = t(titleKey);
     submitBtn.innerHTML = `
       <span class="material-symbols-outlined" style="font-size: 18px;">save</span>
       ${mode === 'edit' ? t('server.update') : t('server.save')}
@@ -1004,6 +1200,11 @@ export class ServerList {
 
   hideModal(): void {
     this.modalGeneration++;
+    this.resetKeyPicker?.();
+    const key = document.querySelector<HTMLTextAreaElement>('#server-private-key');
+    if (key) key.value = '';
+    this.rdpSaving = false;
+    this.rdp?.reset();
     const modal = document.getElementById('server-modal');
     if (modal) {
       modal.classList.add('hidden');
@@ -1085,6 +1286,7 @@ export class ServerList {
 
   private setModalAuthMode(mode: 'password' | 'key' | 'none' | 'cf_ca'): void {
     if (mode === 'cf_ca' && !this.cfSshCaEnabled) return;
+    this.resetKeyPicker?.();
     this.modalAuthMode = mode;
     for (const value of ['password', 'key', 'none', 'cf_ca'] as const) {
       const tabId = value === 'cf_ca' ? 'modal-auth-tab-cf-ca' : `modal-auth-tab-${value}`;
@@ -1102,12 +1304,11 @@ export class ServerList {
     const emptyPassword = document.getElementById('server-empty-password') as HTMLInputElement;
     document.getElementById('server-empty-password-option')!
       .classList.toggle('hidden', !editingPassword);
-    (document.getElementById('server-password') as HTMLInputElement).disabled =
-      editingPassword && emptyPassword.checked;
-    const hint = document.getElementById('server-password-hint')!;
-    const hintKey = editingPassword ? 'server.passwordEditHint' : 'auth.passwordHint';
-    hint.dataset.i18n = hintKey;
-    hint.textContent = t(hintKey);
+    const password = document.getElementById('server-password') as HTMLInputElement;
+    password.disabled = editingPassword && emptyPassword.checked;
+    document.getElementById('server-password-hint')!.classList.toggle('hidden', !editingPassword);
+    if (editingPassword) password.setAttribute('aria-describedby', 'server-password-hint');
+    else password.removeAttribute('aria-describedby');
   }
 
   private getJumpPath(server: ServerConfig): string[] {

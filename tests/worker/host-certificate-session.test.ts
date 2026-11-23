@@ -23,7 +23,7 @@ function serverOffer(hostAlgorithms = [CERT]) {
   ].map(encodeString), new Uint8Array(5));
 }
 
-function createSession(config: Partial<SSHConnectionConfig> = {}, strict = true) {
+function createSession(config: Partial<SSHConnectionConfig> = {}) {
   const ws = { readyState: 1, send: vi.fn(), close: vi.fn() };
   const writes: Uint8Array[] = [];
   const socket = {
@@ -33,7 +33,7 @@ function createSession(config: Partial<SSHConnectionConfig> = {}, strict = true)
   const session = new SSHSession(ws as unknown as WebSocket, socket, {
     host: 'ssh.example.com', port: 2222, username: 'redacted-test-user', password: '',
     authMethod: 'none', ...config,
-  }, strict);
+  });
   sessions.push(session);
   const internal = session as any;
   internal.state = 'kex';
@@ -150,9 +150,33 @@ describe('SSHSession host certificate compatibility (#169)', () => {
     expect(context.internal.derivedKeys).toBeNull();
   });
 
-  it.each([true, false])('never bypasses certificate/KEX integrity when strictHostKeyVerify=%s', async (strict) => {
+  it.each(['first seen', 'known fingerprint', 'verifier failure', 'rekey'])('rejects an unverified raw host key before trust or NEWKEYS: %s', async (stage) => {
+    const { host, ca } = await certificateKeys();
+    const context = createSession(stage === 'known fingerprint'
+      ? { expectedFingerprint: await fingerprintHostKey(host.blob) } : {});
+    const offer = serverOffer(['ssh-ed25519']);
+    await start(context, offer);
+    if (stage === 'rekey') {
+      await context.internal.handleKEXPacket(31, await reply(context, host.blob, host));
+      await context.internal.handleKEXPacket(21, new Uint8Array([21]));
+      context.internal.state = 'ready';
+      await context.internal.handleServerRekeyInit(offer);
+    }
+    context.ws.send.mockClear();
+    const packet = await reply(context, host.blob, ca);
+    if (stage === 'verifier failure') vi.spyOn(crypto.subtle, 'verify').mockRejectedValueOnce(new Error('verify failed'));
+    if (stage === 'rekey') await context.internal.handleRekeyPacket(31, packet);
+    else await context.internal.handleKEXPacket(31, packet);
+    expect(context.ws.close).toHaveBeenCalledWith(1000);
+    expect(context.socket.close).toHaveBeenCalledOnce();
+    expect(messages(context)).toContainEqual(expect.objectContaining({ event: 'host_key_invalid' }));
+    expect(messages(context).some(m => m.type === 'host_key_verified' || m.type === 'host_key_changed' || m.event === 'host_key_accepted')).toBe(false);
+    if (stage !== 'rekey') expect(context.internal.derivedKeys).toBeNull();
+  });
+
+  it('rejects both invalid certificate signatures and invalid KEX signatures', async () => {
     for (const badCertificate of [false, true]) {
-      const context = createSession({}, strict);
+      const context = createSession();
       const cert = await createHostCertificate(badCertificate ? { caSignature:
         concat(encodeString('ssh-ed25519'), encodeString(new Uint8Array(64))) } : {});
       await start(context);

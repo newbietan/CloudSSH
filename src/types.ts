@@ -178,7 +178,6 @@ export interface Env {
   MCP_EXECUTION?: DurableObjectNamespace;
   USER_DB: DurableObjectNamespace;
   SSH_SHARE: DurableObjectNamespace;
-  MAX_CONNECTIONS?: string;
   IDLE_TIMEOUT?: string;
   TURNSTILE_SECRET?: string;
   TURNSTILE_SITEKEY?: string;
@@ -190,12 +189,10 @@ export interface Env {
   // 是否强制 GitHub 登录后才能使用 SSH（可选，默认 false）
   REQUIRE_GITHUB_AUTH?: string;
   BASE_URL?: string;
-  // 主机密钥验证严格模式（默认 true，设为 false 可跳过签名验证失败）
-  STRICT_HOST_KEY_VERIFY?: string;
   // 调试模式（设为 true 启用调试日志输出到前端）
   DEBUG_MODE?: string;
-  // 一次性 SSH 分享（默认关闭；true 时登录用户可创建分享链接）
-  ENABLE_SSH_SHARING?: string;
+  /** Explicit opt-in for authenticated browser RDP. */
+  ENABLE_RDP?: string;
   // 单管理员密码认证（可选）。
   // 格式：pbkdf2$sha256$<iterations>$<salt-b64url>$<verifier-b64url>，由 `pnpm run hash-password` 生成。
   // 非空且格式合法即启用密码模式：GitHub OAuth 路由禁用，全实例仅本地管理员一个账号。
@@ -204,8 +201,6 @@ export interface Env {
   ADMIN_PASSWORD_HASH?: string;
   // 强制 Cloudflare Access 模式（可选；运行时 ctx.access 自动感知，绝不信任原始身份标头）
   CF_ACCESS?: string;
-  // Cloudflare Zero Trust Team 名称（可选；用于自动推断或预填 SSH CA 签发端点）
-  CF_ACCESS_TEAM_NAME?: string;
 }
 
 /** /api/config 下发的密码认证公开参数（盐与迭代数非机密，供浏览器预拉伸） */

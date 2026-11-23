@@ -102,7 +102,7 @@ describe.skipIf(!enabled)('real OpenSSH loopback interoperability', () => {
       }, {
         host: '127.0.0.1', port, username, password: '', authMethod: 'publickey',
         privateKey: readFileSync(join(fixtures, 'id_ed25519'), 'utf8'),
-      }, true, false, undefined, undefined, undefined, undefined,
+      }, false, undefined, undefined, undefined, undefined,
       { openShellOnAuth: !headless, ownsWebSocket: !headless, allowKeyboardInteractive: false });
       await session.startHandshake();
       if (headless) await session.waitUntilAuthenticated();

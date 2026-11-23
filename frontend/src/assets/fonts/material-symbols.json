@@ -1,7 +1,7 @@
 {
   "source": "https://fonts.gstatic.com/s/materialsymbolsoutlined/v383/kJEPBvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oDMzBwG-RpA6RzaxHMPdY40KH8nGzv3fzfVJO1Q.woff2",
   "sourceSha256": "c9c3ba449c7ecebd8f289fbc866aafecd5a2e982f8a834588f07cdcf50f029fc",
-  "sha256": "9149692cd82f7cb479b4ff676c85e290691456ee9051fbed4f1143a90c1c125d",
+  "sha256": "b6146e3326e6905c65db1bc42e381599fdf92c941eff1ac73ef4128890240bc4",
   "icons": [
     "accessible",
     "add",
@@ -126,6 +126,7 @@
     "html",
     "http",
     "https",
+    "iframe",
     "image",
     "inbox",
     "info",
@@ -202,6 +203,7 @@
     "reply",
     "report",
     "resize",
+    "restore",
     "resume",
     "route",
     "rtt",

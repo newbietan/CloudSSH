@@ -1,0 +1,127 @@
+// Local adapter for the pinned FreeRDP browser build. It intentionally does not
+// modify the global WebSocket constructor, and never forwards relay controls to WASM.
+window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket) {
+  const limit = 1024 * 1024;
+  const frame = 16 * 1024;
+  const ws = new WebSocket(url, 'cloudssh-rdp-v1');
+  ws.binaryType = 'arraybuffer';
+  const sink = {
+    CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3, readyState: 0,
+    binaryType: 'arraybuffer', lease: undefined,
+    send(value) {
+      if (sink.readyState !== 1 || (!(value instanceof ArrayBuffer) && !ArrayBuffer.isView(value))) return fail();
+      if (value.byteLength > limit || pending + sent - acknowledged + value.byteLength > limit) return fail();
+      const bytes = value instanceof ArrayBuffer ? new Uint8Array(value) : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+      for (let start = 0; start < bytes.length; start += frame) {
+        const part = bytes.slice(start, start + frame);
+        queue.push(part);
+        pending += part.length;
+      }
+      flush();
+    },
+    consumed(bytes) {
+      if (sink.readyState !== 1 || !Number.isSafeInteger(bytes) || bytes < 0 || consumed + bytes > incoming) return fail();
+      consumed += bytes;
+      if (!ackTimer) ackTimer = window.setTimeout(() => {
+        ackTimer = undefined;
+        if (sink.readyState === 1) ws.send(JSON.stringify({ type: 'ack', bytes: consumed }));
+      }, 16);
+    },
+    probe() {
+      if (sink.readyState !== 1) return;
+      const now = performance.now();
+      if (probe && now - probe.at < 5000) return;
+      sequence = sequence % 0x7fffffff + 1;
+      probe = { id: sequence, at: now };
+      try { ws.send(JSON.stringify({ type: 'ping', id: sequence })); } catch { fail(); }
+    },
+    cancelProbe() { probe = undefined; },
+    reportDesktopReady() {
+      if (sink.readyState !== 1 || !canReport || reported) return;
+      reported = true;
+      try { ws.send('{"type":"desktop_ready"}'); } catch { /* Metadata is best effort. */ }
+    },
+    activity() {
+      const now = performance.now();
+      if (sink.readyState !== 1 || now - lastActivity < 1000) return;
+      lastActivity = now;
+      ws.send('{"type":"activity"}');
+    },
+    close() {
+      if (sink.readyState < 2) {
+        probe = undefined;
+        sink.readyState = 2;
+        ws.close(1000);
+      }
+    },
+  };
+  let canReport = false, reported = false;
+  let sequence = 0, probe;
+  let sent = 0;
+  let acknowledged = 0;
+  let pending = 0;
+  let incoming = 0;
+  let consumed = 0;
+  let lastActivity = -Infinity;
+  let ackTimer;
+  const queue = [];
+  function fail() {
+    if (sink.readyState >= 2) return;
+    sink.close();
+    sink.onerror?.(new Event('error'));
+  }
+  function flush() {
+    while (sink.readyState === 1 && queue.length) {
+      const next = queue.shift();
+      pending -= next.length;
+      sent += next.length;
+      ws.send(next);
+    }
+  }
+  ws.onopen = () => {
+    if (ws.protocol !== 'cloudssh-rdp-v1') return fail();
+    ws.send(JSON.stringify({ type: 'ticket', ticket }));
+    ticket = undefined;
+  };
+  ws.onmessage = ({ data }) => {
+    if (sink.readyState >= 2) return;
+    try {
+      if (typeof data === 'string') {
+        if (data.length > 256) return fail();
+        const value = JSON.parse(data);
+        if (value?.type === 'ready' && sink.readyState === 0 &&
+            typeof value.lease === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value.lease)) {
+          canReport = value.desktopReport === true;
+          sink.lease = value.lease;
+          sink.readyState = 1;
+          sink.onopen?.(new Event('open'));
+        } else if (value?.type === 'desktop_recorded' && sink.readyState === 1 && reported) {
+          sink.onDesktopRecorded?.();
+        } else if (value?.type === 'pong' && sink.readyState === 1) {
+          if (probe && value.id === probe.id) {
+            const ms = performance.now() - probe.at;
+            probe = undefined;
+            if (ms >= 0 && ms < 5000) sink.onRelayRtt?.(Math.round(ms));
+          }
+        } else if (value?.type === 'ack' && sink.readyState === 1 && Number.isSafeInteger(value.bytes) && value.bytes >= acknowledged && value.bytes <= sent) {
+          acknowledged = value.bytes;
+          flush();
+        } else fail();
+        return;
+      }
+      if (sink.readyState !== 1 || !(data instanceof ArrayBuffer) || data.byteLength === 0 || data.byteLength > frame || incoming - consumed + data.byteLength > limit) return fail();
+      incoming += data.byteLength;
+      sink.onmessage?.({ data });
+    } catch { fail(); }
+  };
+  ws.onerror = fail;
+  ws.onclose = (event) => {
+    probe = ticket = sink.lease = undefined;
+    clearTimeout(ackTimer);
+    queue.length = 0;
+    sink.readyState = 3;
+    sink.onRelayClose?.(event.reason);
+    sink.onclose?.(event);
+  };
+  return sink;
+};

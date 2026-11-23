@@ -4,7 +4,7 @@ import { SSHSession } from '../../src/worker/ssh-session';
 function fixture() {
   const session = new SSHSession({ readyState: 1, send: vi.fn(), close: vi.fn() }, { close: vi.fn() }, {
     host: 'ssh.example.com', port: 22, username: 'test', password: '', serverId: 1, userDbRouteKey: 'cf-owner',
-  }, true, false, undefined, undefined, '7', '-2');
+  }, false, undefined, undefined, '7', '-2');
   const state = session as any;
   state.state = 'ready';
   state.terminalContext.appendOutput('private recent output\n');

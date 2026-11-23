@@ -30,9 +30,10 @@ describe('Fork 工作流执行策略', () => {
     );
     expect(deploy).not.toMatch(/^\s*continue-on-error:\s*true/m);
     expect(deploy).not.toMatch(/run: pnpm run test:e2e[^\n]*\|\|/);
-    expect(
-      deploy.match(/^        if: github.event_name == 'push' && github.ref == 'refs\/heads\/(?:test|main)'$/gm)
-    ).toHaveLength(2);
+    const deploymentSteps = deploy.split('      - name: Deploy verified artifact').slice(1);
+    expect(deploymentSteps).toHaveLength(2);
+    expect(deploymentSteps.filter((step) => step.includes("github.ref == 'refs/heads/main'"))).toHaveLength(1);
+    expect(deploymentSteps.filter((step) => step.includes("github.ref == 'refs/heads/test'"))).toHaveLength(1);
   });
 
   it('Fork 可直接手动同步，定时同步需要显式开启', () => {
@@ -64,13 +65,49 @@ describe('CI 验证和部署边界', () => {
     const sections = deploy.split('      - name: Deploy verified artifact').slice(1);
     expect(sections).toHaveLength(2);
     for (const section of sections) {
-      expect(section).toContain("if: github.event_name == 'push' && github.ref == 'refs/heads/");
+      expect(section).toMatch(/^        if: github.event_name == 'push' && github.ref == 'refs\/heads\/(test|main)'(?: && [^\n]+)?$/m);
       expect(section).toContain('CLOUDFLARE_API_TOKEN:');
     }
     expect(deploy.slice(0, deploy.indexOf('      - name: Deploy verified artifact'))).not.toContain('secrets.');
   });
 
-  it('将昂贵浏览器安装放在快速检查和构建之后，保留全部浏览器', () => {
+  it('retires the RDP preview and keeps the standard deployment free of compiler steps', () => {
+    const deploy = readWorkflow('deploy.yml');
+    expect(deploy).not.toMatch(/CLOUDSSH_RDP_TEST_CONFIG|preview-worker\.ts|prepare-preview\.sh|build-freerdp\.sh/);
+  });
+
+  it('runs both manual FreeRDP build phases as the host owner of the disposable checkout', () => {
+    const script = readFileSync(
+      new URL('../scripts/build-freerdp.sh', import.meta.url), 'utf8'
+    );
+    expect(script.match(/docker run\b/g)).toHaveLength(1);
+    expect(script).toContain('docker run --rm --user "$(id -u):$(id -g)"');
+    expect(script).toContain('-e HOME=/src/.cloudssh-build-home');
+    expect(script).toContain('-e EM_CACHE=/src/.cloudssh-build-home/emscripten-cache');
+    expect(script).toMatch(/run_sdk bash -euc '[^\n]*--no-build/);
+    expect(script).toMatch(/run_sdk bash -euc '[\s\S]*?bash -e scripts\/emscripten\.sh --no-clone/);
+    expect(script).not.toContain('chmod -R');
+  });
+
+  it('测试档位不跳过类型检查、单测、构建或部署前打包', () => {
+    const deploy = readWorkflow('deploy.yml');
+    for (const [name, command] of [
+      ['Type check', 'pnpm run typecheck'],
+      ['Unit and integration tests', 'pnpm test'],
+      ['Build frontend', 'pnpm run build:frontend'],
+    ]) {
+      expect(deploy).toContain(`      - name: ${name}\n        run: ${command}\n`);
+    }
+    const installChromium = deploy.split('      - name: Install Playwright Chromium (reduced test profile)\n')[1]?.split('      - name:')[0] ?? '';
+    expect(installChromium).toContain("if: steps.e2e-profile.outputs.profile == 'chromium'");
+    expect(installChromium).toContain('run: pnpm exec playwright install --with-deps chromium\n');
+    expect(deploy).toContain('fetch-depth: 2');
+    expect(deploy).not.toContain('CLOUDSSH_TEST_E2E');
+    expect(deploy).toContain('run: node scripts/ci-test-e2e.mjs');
+    expect(readWorkflow('ssh-interop.yml')).not.toContain('CLOUDSSH_TEST_E2E');
+  });
+
+  it('将完整浏览器安装放在快速检查和构建之后', () => {
     const deploy = readWorkflow('deploy.yml');
     const browsers = deploy.indexOf('run: pnpm exec playwright install --with-deps chromium webkit');
     expect(browsers).toBeGreaterThan(deploy.indexOf('run: pnpm run typecheck'));
@@ -136,8 +173,13 @@ describe('浏览器 CI 并发与报告策略', () => {
     const uploadHeader = '      - name: Upload browser test reports\n';
     const upload = deploy.split(uploadHeader)[1]?.split('\n      - name:')[0] ?? '';
     expect(deploy).toContain('          persist-credentials: false');
-    expect(deploy).toContain('        id: e2e\n        run: pnpm run test:e2e');
-    expect(upload).toContain(`if: \${{ !cancelled() && steps.e2e.outcome != 'skipped' }}`);
+    expect(deploy).toContain("id: e2e\n        if: steps.e2e-profile.outputs.profile != 'skip' && steps.e2e-profile.outputs.profile != 'chromium'\n        run: pnpm run test:e2e\n");
+    expect(deploy).toContain("id: e2e-chromium\n        if: steps.e2e-profile.outputs.profile == 'chromium'\n        run: pnpm run test:e2e --project=chromium");
+    expect(upload).toContain('!cancelled()');
+    for (const id of ['e2e', 'e2e-chromium']) {
+      expect(upload).toContain(`steps.${id}.outcome == 'success'`);
+      expect(upload).toContain(`steps.${id}.outcome == 'failure'`);
+    }
     expect(upload).toMatch(/uses: actions\/upload-artifact@[a-f0-9]{40} /);
     expect(upload).toContain(
       `name: playwright-report-\${{ github.run_id }}-\${{ github.run_attempt }}`

@@ -6,7 +6,7 @@ function setup(debugMode: boolean) {
   const ws: { send: ReturnType<typeof vi.fn>; readyState: number } = { send: vi.fn(), readyState: WebSocket.OPEN };
   const session = new SSHSession(ws as unknown as WebSocket, { close: vi.fn() }, {
     host: 'ssh.example.com', port: 22, username: 'alice', authMethod: 'password', password: 'SECRET',
-  }, true, debugMode);
+  }, debugMode);
   return { ws, internal: session as any };
 }
 

@@ -97,10 +97,19 @@ pnpm run verify
 
 ## E2E CI 并发与报告
 
-- `deploy.yml` 对 test/main 的 push、目标为 test/main 的 PR 和手动触发执行完整验证；只有 push 可按 test/main 分流部署。PR 和手动验证不注入 Cloudflare Secrets，保留 job 级 repository_owner 限制；不使用 `pull_request_target`。
-- 类型检查、单元测试与构建先于浏览器安装，以尽早失败；不删测试或减少浏览器。Worker CI 仅取消同 PR 的过期验证，不中断部署，job 上限 30 分钟。互操作 CI 允许取消旧运行，Pages 发布串行执行。
+- `deploy.yml` 默认对 test/main 的 push、目标为 test/main 的 PR 和手动触发执行完整验证；只有 push 可按分支部署。PR 和手动验证不注入 Cloudflare Secrets，保留 job 级 repository_owner 限制；不使用 `pull_request_target`。
+- **仅 `test` 分支的 push** 可在推送命令附带浏览器档位，不需要配置仓库变量。先提交改动，从运行 Summary 确认实际档位：
 
-- CI 默认使用 **2 个 worker**，本地默认并发仍由 Playwright 决定。所有 Chromium / WebKit 项目及用例范围不变；CI 保留最多 2 次重试、首次重试记录 trace、失败时截图，不启用全程 trace 或录像。
+  | 推送命令 | 浏览器验证 |
+  | --- | --- |
+  | `git push origin test` | 默认完整运行 Chromium 和移动 WebKit。 |
+  | `bash scripts/push-test.sh --e2e=chromium` | 只跑完整 Chromium 项目。 |
+  | `bash scripts/push-test.sh --e2e=skip` | 跳过浏览器安装、E2E 和报告。 |
+
+  脚本仅在干净且有待推送文件变更的 `test` 分支附加一条空提交，不改写实际提交、不强推。CI 只识别推送顶端严格匹配且不修改文件的标记；后续普通提交恢复全量，同一次 CI 的重跑保留原档位。类型检查、全量单测、前端构建和实际部署均不跳过；SSH 互操作仍按变更触发，PR / `main` / 手动验证始终完整。文档专用推送仍按原 paths-ignore 跳过部署。旧 `CLOUDSSH_TEST_E2E` 已不读取。
+- RDP 已移除测试专用部署；普通构建复用随代码提交的 FreeRDP JS/WASM/许可证，`rdp-assets.test.ts` 验证摘要和大小。`rdp-store.test.ts` 检查账户、票据与租约，`rdp-devices.spec.ts` 检查用户空间 CRUD。正式双线路、Access 与弱网真机验收见 [RDP 说明](../docs/rdp-implementation-plan.md)。
+- 快速检查先于浏览器安装。Worker CI 仅取消同 PR 的过期验证，不中断部署，job 上限 30 分钟。互操作 CI 允许取消旧运行，Pages 发布串行执行。
+- CI 默认使用 **2 个 worker**，本地默认并发仍由 Playwright 决定。所选浏览器项目保留全部用例、最多 2 次重试、首次重试 trace 和失败截图，不启用全程 trace 或录像。
 - CI 生成 `playwright-report/index.html` 与 `test-results/results.json`。`deploy.yml` 在 E2E 实际执行成功或失败后、部署密钥注入前，将 `playwright-report/` 与 `test-results/` 一并上传，保留 **7 天**；取消或 E2E 未执行时不上传。报告名包含 run ID 与运行尝试编号，避免重跑时覆盖或 PR ref 的斜杠导致非法名称；启动失败且尚无文件时只警告，但原测试失败仍阻止部署。
 - 在 Actions 对应运行的 **Artifacts** 中下载 `playwright-report-<run-id>-<attempt>`。解压后运行 `pnpm exec playwright show-report <解压目录>/playwright-report` 查看每条用例、耗时、重试和附件；JSON 中的 `stats` / `suites` 可用于汇总与分文件分析。报告包含测试页面及模拟数据，请勿在 E2E 中使用真实凭据。
 - E2E 不设置 `continue-on-error`；上传报告成功不代表测试成功。任一门禁失败仍阻断部署，部署沿用已验证的同一份前端产物，不在配置部署 Secrets 后重新构建。
@@ -113,7 +122,7 @@ CI=true pnpm exec playwright test --workers=1
 CI=true pnpm exec playwright test --workers=2
 ```
 
-基线参考：v2.10.3 的 457 项浏览器用例（456 通过、1 跳过），单 worker 的 [main CI](https://github.com/newbietan/CloudSSH/actions/runs/42570709206) 为 17 分 06 秒，[test CI](https://github.com/newbietan/CloudSSH/actions/runs/42570913350) 为 16 分 46 秒；这不是其他机器的固定时长。两 worker 应在同类 runner、相同浏览器版本与用例范围下观察多轮耗时、重试/偶发失败及 OOM。收益不足或出现新增竞态时回退单 worker，保留报告能力；不削减覆盖、放宽超时或跳过失败来换速度。
+基线参考：v2.10.3 的 457 项浏览器用例（456 通过、1 跳过），单 worker 的 [main CI](https://github.com/newbietan/CloudSSH/actions/runs/42570709206) 为 17 分 06 秒，[test CI](https://github.com/newbietan/CloudSSH/actions/runs/42570913350) 为 16 分 46 秒；这不是其他机器的固定时长。两 worker 应在同类 runner、相同浏览器版本与用例范围下观察多轮耗时、重试/偶发失败及 OOM。收益不足或出现新增竞态时回退单 worker，保留报告能力；不要降低完整门禁的覆盖或把失败当作跳过。
 
 ## 个人 MCP 接入回归
 

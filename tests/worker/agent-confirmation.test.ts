@@ -8,7 +8,7 @@ function fixture(idleTimeout = '10s') {
   const socket = { close: vi.fn() };
   const session = new SSHSession(ws as unknown as WebSocket, socket as never, {
     host: 'ssh.example.com', port: 22, username: 'alice', authMethod: 'password', password: 'secret',
-  }, true, false, undefined, { IDLE_TIMEOUT: idleTimeout } as Env);
+  }, false, undefined, { IDLE_TIMEOUT: idleTimeout } as Env);
   const internal = session as any;
   internal.state = 'ready';
   internal.agentCore = { getStatus: () => 'running', agentAbort: vi.fn(), resetSession: vi.fn() };

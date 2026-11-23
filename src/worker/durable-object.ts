@@ -779,12 +779,6 @@ export class SSHSessionDO {
       const colo = this.websocketColos.get(ws) || 'UNKNOWN';
       this.websocketColos.delete(ws);
 
-      // Capability links never inherit the ordinary-session escape hatch: every
-      // hop must prove possession of its already trusted host key.
-      const strictVerify =
-        config.sessionPolicy?.source === 'share'
-          ? true
-          : this.env.STRICT_HOST_KEY_VERIFY !== 'false';
       const pendingSize = this.pendingTerminalSizes.get(ws);
       if (pendingSize) {
         config.cols = pendingSize.cols;
@@ -816,7 +810,6 @@ export class SSHSessionDO {
           ws,
           transport,
           { ...hop, sessionPolicy: undefined },
-          strictVerify,
           debugMode,
           undefined,
           this.env,
@@ -860,7 +853,6 @@ export class SSHSessionDO {
         ws,
         transport,
         finalConfig,
-        strictVerify,
         debugMode,
         sftpAttachUrl,
         this.env,

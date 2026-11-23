@@ -5,9 +5,9 @@ export interface AppConfig {
   githubAuthEnabled: boolean;
   githubAuthRequired: boolean;
   sshSharingEnabled?: boolean;
+  rdpEnabled?: boolean;
   authMode?: 'password' | 'cf_access' | 'github' | 'anonymous';
   cfAccessEmail?: string | null;
-  cfAccessTeamName?: string;
   passwordAuth?: { kdf: string; iterations: number; salt: string } | null;
   passwordHashInvalid?: boolean;
 }
@@ -34,7 +34,7 @@ function isAppConfig(value: unknown): value is AppConfig {
   );
 }
 
-function isInitialUser(value: unknown): value is InitialUser {
+export function isInitialUser(value: unknown): value is InitialUser {
   if (!value || typeof value !== 'object') return false;
   const user = value as InitialUser;
   return (

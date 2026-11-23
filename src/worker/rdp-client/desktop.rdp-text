@@ -1,0 +1,338 @@
+const dictionary = {
+  'en-US': ['Back to CloudSSH', 'Remote Desktop', 'Username', 'Domain (optional)', 'Windows password', 'Connect', 'Disconnect', 'Full screen', 'Loading the saved desktop…', 'Open this desktop from the server list after completing its settings.', 'Saved Windows sign-in details are incomplete. Edit the device and try again.', 'Downloading the desktop client…', 'Starting the desktop client…', 'Connecting to Windows…', 'Checking the Windows certificate and signing in…', 'Desktop ready. Click the desktop to control it.', 'Connection ended. Return to the server list to reconnect.', 'Could not start the desktop. Return to the server list to retry.', 'Desktop startup timed out.', 'No desktop appeared. Verify the certificate and Windows credentials, then retry.', 'This browser does not support the required shared memory.', 'Device or session changed. Refresh the page.', 'The connection is too slow or ended.', 'Full screen is unavailable.'],
+  'zh-CN': ['返回 CloudSSH', '远程桌面', '用户名', '域（可选）', 'Windows 密码', '连接', '断开', '全屏', '正在读取已保存的桌面…', '请先补全设备配置，再从服务器列表打开桌面。', '保存的 Windows 登录信息不完整，请编辑设备后重试。', '正在下载桌面客户端…', '正在启动桌面客户端…', '正在连接 Windows…', '正在验证 Windows 证书并登录…', 'Windows 桌面已显示，点击画布可操作。', '连接已断开，可返回服务器列表重新连接。', '桌面启动失败，请返回服务器列表重试。', '桌面客户端启动超时。', '未收到桌面画面，请核对证书和 Windows 凭据后重试。', '当前浏览器不支持所需的共享内存。', '设备或登录已变化，请刷新页面。', '连接过慢或已断开。', '当前无法进入全屏。'],
+  'zh-TW': ['返回 CloudSSH', '遠端桌面', '使用者名稱', '網域（選填）', 'Windows 密碼', '連線', '中斷', '全螢幕', '正在讀取已儲存的桌面…', '請先補全裝置設定，再從伺服器清單開啟桌面。', '儲存的 Windows 登入資訊不完整，請編輯裝置後重試。', '正在下載桌面客戶端…', '正在啟動桌面客戶端…', '正在連線至 Windows…', '正在驗證 Windows 憑證並登入…', 'Windows 桌面已顯示，點擊畫布即可操作。', '連線已中斷，可返回伺服器清單重新連線。', '桌面啟動失敗，請返回伺服器清單重試。', '桌面客戶端啟動逾時。', '未收到桌面畫面，請核對憑證和 Windows 登入資訊後重試。', '目前瀏覽器不支援所需的共享記憶體。', '裝置或登入已變更，請重新整理。', '連線過慢或已中斷。', '目前無法使用全螢幕。'],
+};
+// Only these local messages may reach the status line, never an upstream error or close reason.
+const failureText = {
+  profile_changed: ['Device settings changed. Return to the list and reopen the device.', '设备配置已更新，请返回列表重新打开。', '裝置設定已更新，請返回清單重新開啟。'],
+  refresh_client: ['The desktop client has changed. Refresh CloudSSH.', '桌面客户端已更新，请刷新 CloudSSH。', '桌面用戶端已更新，請重新整理 CloudSSH。'],
+  authentication_required: ['Your sign-in has expired. Return and sign in again.', '登录已失效，请返回并重新登录。', '登入已失效，請返回並重新登入。'],
+  ticket_rejected: ['Connection ticket is no longer valid. Reopen the device for a new one.', '连接票据已失效，请从列表重新打开设备。', '連線票據已失效，請從清單重新開啟裝置。'],
+  ticket_limit: ['Too many connection attempts. Wait a moment, then reopen the device.', '连接请求过多，请稍候再从列表打开设备。', '連線請求過多，請稍候再從清單開啟裝置。'],
+  idle_timeout: ['Disconnected after inactivity. Reopen the device to continue.', '因长时间无操作已断开，可从列表重新连接。', '因長時間無操作已斷線，可從清單重新連線。'],
+  session_limit: ['The two-hour session limit was reached. Reopen the device to continue.', '已达到两小时会话上限，可从列表重新连接。', '已達兩小時工作階段上限，可從清單重新連線。'],
+  upstream_unavailable: ['Could not reach Windows. Check the server address or tunnel and try again.', '无法连接 Windows，请检查服务器地址或隧道后重试。', '無法連線至 Windows，請檢查伺服器位址或隧道後重試。'],
+  slow_connection: ['Data transfer stalled. Check your network and reconnect.', '数据传输停滞，请检查网络后重新连接。', '資料傳輸停滯，請檢查網路後重新連線。'],
+};
+const trustText = {
+  'en-US': ['First connection to Windows', 'Verify this certificate fingerprint through a trusted source before accepting. An unexpected fingerprint may mean you reached a different server.', 'Cancel', 'Trust and connect', 'Windows certificate changed', 'Connection blocked. The received fingerprint differs from the one you saved.', 'Previously saved fingerprint', 'Could not record certificate trust. Reconnect and try again.', 'Waiting for certificate confirmation.', 'Certificate was not accepted.'],
+  'zh-CN': ['首次连接此 Windows 服务器', '请通过可信方式核对证书指纹再确认。意外的指纹可能表示你连接到了另一台服务器。', '取消', '信任并连接', 'Windows 证书已变化', '连接已阻止：收到的证书指纹与已保存的指纹不一致。', '已保存的指纹', '无法保存证书信任，请重新连接。', '等待确认 Windows 证书。', '未接受 Windows 证书。'],
+  'zh-TW': ['首次連線至此 Windows 伺服器', '請透過可信方式核對憑證指紋再確認。意外的指紋可能表示你連線到了另一台伺服器。', '取消', '信任並連線', 'Windows 憑證已變更', '連線已阻擋：收到的憑證指紋與已儲存的指紋不一致。', '已儲存的指紋', '無法儲存憑證信任，請重新連線。', '等待確認 Windows 憑證。', '未接受 Windows 憑證。'],
+};
+let requested = navigator.language;
+try { requested = localStorage.getItem('cloudssh_locale') || requested; } catch { /* optional */ }
+const locale = Object.hasOwn(dictionary, requested) ? requested : /^zh-(TW|HK|Hant)/i.test(requested) ? 'zh-TW' : /^zh/i.test(requested) ? 'zh-CN' : 'en-US';
+document.documentElement.lang = locale;
+const msg = dictionary[locale];
+const failure = code => typeof code === 'string' && Object.hasOwn(failureText, code)
+  ? failureText[code][locale === 'en-US' ? 0 : locale === 'zh-CN' ? 1 : 2] : undefined;
+async function requestFailure(response) {
+  if (response.status === 401) return failure('authentication_required');
+  const data = await response.json().catch(() => null);
+  return failure(data?.code) ?? msg[17];
+}
+const [relayLabel, rttHelp] = {
+  'en-US': ['Relay', 'Relay: browser to CloudSSH. RDP: average round trip reported by Windows. A dash means no recent sample. Neither measures screen rendering.'],
+  'zh-CN': ['中继', '中继：浏览器到 CloudSSH 的往返时间。RDP：Windows 上报的平均往返时间。横线表示暂无近期数据，两者都不代表画面响应耗时。'],
+  'zh-TW': ['中繼', '中繼：瀏覽器至 CloudSSH 的往返時間。RDP：Windows 回報的平均往返時間。橫線表示暫無近期資料，兩者都不是畫面反應時間。'],
+}[locale];
+const el = id => document.getElementById(id);
+const tellWorkspace = (type, detail) => window.frameElement?.dispatchEvent(new CustomEvent('cloudssh-rdp-' + type, { detail }));
+const status = el('status');
+const show = i => {
+  status.classList.toggle('desktop-ready', i === 15); // Announce readiness without taking a row from the desktop.
+  status.textContent = msg[i];
+};
+const canvas = el('canvas');
+const stage = el('stage');
+// CSS pixels; SDL's external-canvas backend reports these to the negotiated DISP channel.
+const viewportSize = () => {
+  const w = Math.max(1, stage.clientWidth), h = Math.max(1, stage.clientHeight);
+  const scale = Math.min(1, 3840 / w, 2160 / h);
+  return [Math.max(200, Math.floor(w * scale / 2) * 2), Math.max(200, Math.floor(h * scale / 2) * 2)];
+};
+const api = '/api/rdp/profiles/' + location.pathname.split('/')[2];
+const clientRevision = '4'; // Keep aligned with src/rdp-schema.ts when changing the browser ABI.
+const trust = trustText[locale];
+const certificate = el('certificate');
+const acceptCertificate = el('certificate-accept');
+const cancelCertificate = el('certificate-cancel');
+const formatFingerprint = value => value.toUpperCase().match(/../g).join(':');
+const base = '/rdp/assets/';
+let socket;
+let profile;
+let terminate;
+show(8);
+
+function request(url, options) {
+  return fetch(url, { credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(10000), ...options });
+}
+
+async function run() {
+  let password;
+  const abort = new AbortController();
+  let stopped = false;
+  let ticket;
+  let timer;
+  let ready = false;
+  let telemetry, relayMs, remoteMs;
+  let relayAt = -Infinity, remoteAt = -Infinity;
+  function paintLatency() {
+    const now = performance.now();
+    const fmt = (ms, age, limit) => ms !== undefined && age < limit ? `${ms} ms` : '—';
+    const text = `${relayLabel} ${fmt(relayMs, now - relayAt, 10000)} · RDP ${fmt(remoteMs, now - remoteAt, 30000)}`;
+    tellWorkspace('latency', { text, help: rttHelp });
+  }
+  function sample() {
+    if (!ready || stopped || document.hidden) return;
+    const value = window.Module?._cloudssh_take_rdp_rtt?.();
+    if (Number.isInteger(value) && value >= 0 && value <= 60000) { remoteMs = value; remoteAt = performance.now(); }
+    paintLatency();
+    socket?.probe?.();
+  }
+  function resetMeter() {
+    clearInterval(telemetry); telemetry = undefined;
+    socket?.cancelProbe?.();
+    relayMs = remoteMs = undefined;
+    paintLatency();
+  }
+  paintLatency();
+  function monitorLatency() {
+    resetMeter();
+    if (!ready || stopped || document.hidden) return;
+    sample();
+    telemetry = setInterval(sample, 5000);
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (ready && !stopped) window.Module?._cloudssh_take_rdp_rtt?.(); // Discard old background samples.
+    monitorLatency();
+  }, { signal: abort.signal });
+  let negotiatedResize = false;
+  let initialSize = viewportSize();
+  let resizeTimer, lastSize = '', settledResize;
+  function layout(force = false) {
+    if (stopped) return;
+    let [w, h] = viewportSize();
+    if (!negotiatedResize) {
+      const factor = Math.min(w / initialSize[0], h / initialSize[1]);
+      w = Math.round(initialSize[0] * factor); h = Math.round(initialSize[1] * factor);
+    }
+    const sizeKey = `${w}x${h}`;
+    if (!force && sizeKey === lastSize) return;
+    lastSize = sizeKey;
+    stage.style.setProperty('--desktop-width', w + 'px');
+    stage.style.setProperty('--desktop-height', h + 'px');
+    if (negotiatedResize) {
+      settledResize = new Event('resize');
+      try { window.dispatchEvent(settledResize); } finally { settledResize = undefined; }
+    }
+  }
+  const scheduleLayout = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(layout, 250); };
+  const observer = new ResizeObserver(scheduleLayout);
+  observer.observe(stage);
+  // This frame is only a FreeRDP runtime. Browsers can emit a burst of window resize events;
+  // SDL resizes the backing canvas synchronously on each. Only forward our settled layout.
+  window.addEventListener('resize', event => {
+    if (event !== settledResize) { event.stopImmediatePropagation(); scheduleLayout(); }
+  }, { capture: true, signal: abort.signal });
+  layout();
+  let pendingFingerprint;
+  let decision = -1;
+  const watch = (ms, reason) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => finish(reason), ms);
+  };
+  function finish(reason, keepDialog = false) {
+    if (stopped) return;
+    stopped = true;
+    password = ticket = undefined;
+    clearTimeout(timer);
+    clearTimeout(resizeTimer);
+    observer.disconnect();
+    abort.abort();
+    resetMeter();
+    socket?.close();
+    tellWorkspace('ended');
+    decision = -1;
+    acceptCertificate.disabled = true;
+    cancelCertificate.disabled = false;
+    if (!keepDialog && certificate.open) certificate.close();
+    if (typeof reason === 'number') show(reason);
+    else { status.classList.remove('desktop-ready'); status.textContent = reason; }
+  }
+  function displayCertificate(fingerprint, saved) {
+    el('certificate-title').textContent = trust[saved ? 4 : 0];
+    el('certificate-help').textContent = trust[saved ? 5 : 1];
+    el('certificate-fingerprint').textContent = formatFingerprint(fingerprint);
+    el('certificate-saved-box').hidden = !saved;
+    el('certificate-saved-label').textContent = trust[6];
+    el('certificate-saved').textContent = saved ? formatFingerprint(saved) : '';
+    acceptCertificate.textContent = trust[3];
+    cancelCertificate.textContent = trust[2];
+    acceptCertificate.hidden = !!saved;
+    acceptCertificate.disabled = !!saved;
+    cancelCertificate.disabled = false;
+    if (!certificate.open) certificate.showModal();
+  }
+  cancelCertificate.onclick = () => {
+    if (stopped) return certificate.close();
+    finish(trust[9]);
+  };
+  certificate.oncancel = event => { event.preventDefault(); if (!cancelCertificate.disabled) cancelCertificate.click(); };
+  acceptCertificate.onclick = () => {
+    if (stopped || !pendingFingerprint || !socket?.lease || acceptCertificate.disabled) return;
+    const fingerprint = pendingFingerprint;
+    const lease = socket.lease;
+    acceptCertificate.disabled = cancelCertificate.disabled = true;
+    void (async () => {
+      const response = await request(api + '/trust', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-CloudSSH-RDP-Client': clientRevision },
+        body: JSON.stringify({ fingerprint, revision: profile.revision, lease }),
+      });
+      if (!response.ok || (await response.json()).fingerprint !== fingerprint) throw new Error('trust rejected');
+      if (stopped || pendingFingerprint !== fingerprint) return;
+      profile.fingerprint = fingerprint;
+      decision = 1;
+      certificate.close();
+      show(14);
+      watch(30_000, 19);
+    })().catch(() => finish(trust[7]));
+  };
+  terminate = finish;
+  show(11);
+  watch(90_000, 18);
+  try {
+    const response = await request(base + 'sdl-freerdp.wasm', { cache: 'no-cache', signal: abort.signal });
+    if (!response.ok || response.headers.get('Content-Type')?.split(';')[0] !== 'application/wasm') return finish(17);
+    let module = await (WebAssembly.compileStreaming ? WebAssembly.compileStreaming(response) : WebAssembly.compile(await response.arrayBuffer()));
+    if (stopped) return;
+    show(12);
+    watch(30_000, 18);
+    const url = new URL('/api/rdp/session', location.origin);
+    url.protocol = 'wss:';
+    window.Module = {
+      canvas,
+      websocket: { url: url.href, subprotocol: null },
+      createRdpSocket(address) {
+        if (stopped || address !== url.href || !ticket || socket) throw new Error('socket unavailable');
+        socket = window.createCloudSshRdpSocket(address, ticket);
+        socket.onRelayClose = reason => {
+          const detail = failure(reason === 'connect_timeout' ? 'upstream_unavailable' : reason);
+          if (detail) finish(detail);
+        };
+        socket.onDesktopRecorded = () => {
+          if (!stopped) window.frameElement?.dispatchEvent(new Event('cloudssh-rdp-recorded'));
+        };
+        socket.onRelayRtt = value => {
+          if (!ready || stopped || document.hidden) return;
+          relayMs = value; relayAt = performance.now(); paintLatency();
+        };
+        ticket = undefined;
+        return socket;
+      },
+      takeWindowsPassword() { const value = password; password = undefined; return stopped ? undefined : value; },
+      onWindowsCertificate(fingerprint) {
+        if (stopped) return -1;
+        if (fingerprint === null) return decision;
+        if (!/^[a-f0-9]{64}$/.test(fingerprint) || !socket?.lease) return -1;
+        if (profile.fingerprint) {
+          if (fingerprint === profile.fingerprint) return 1;
+          displayCertificate(fingerprint, profile.fingerprint);
+          finish(trust[5], true);
+          return -1;
+        }
+        if (pendingFingerprint) return fingerprint === pendingFingerprint ? decision : -1;
+        pendingFingerprint = fingerprint;
+        decision = 0;
+        displayCertificate(fingerprint);
+        status.textContent = trust[8];
+        watch(85_000, trust[9]);
+        return 0;
+      },
+      onWindowsDisplayControl() {
+        if (stopped) return;
+        negotiatedResize = true;
+        // SDL enables its resizable window after processing the server capabilities.
+        clearTimeout(resizeTimer); resizeTimer = setTimeout(() => layout(true), 550);
+      },
+      onWindowsFirstFrame() {
+        if (stopped) return;
+        clearTimeout(timer);
+        ready = true;
+        socket?.reportDesktopReady?.();
+        monitorLatency();
+        tellWorkspace('ready');
+        show(15);
+      },
+      instantiateWasm(imports, receive) {
+        void WebAssembly.instantiate(module, imports).then(instance => {
+          if (!stopped) receive(instance, module);
+          module = undefined;
+        }).catch(() => finish(17));
+        return {};
+      },
+      print() {}, printErr() {},
+      onExit(code) { finish(code ? (ready ? 22 : 19) : 16); },
+      onAbort() { finish(17); },
+      onRuntimeInitialized() {
+        if (stopped) return;
+        void (async () => {
+          show(13);
+          watch(20_000, 22);
+          const issued = await request(api + '/connect', { method: 'POST', signal: abort.signal, headers: {
+            'X-CloudSSH-RDP-Client': clientRevision, 'X-CloudSSH-RDP-Saved-Revision': String(profile.revision),
+          } });
+          if (!issued.ok) return finish(await requestFailure(issued));
+          const info = await issued.json();
+          if (stopped) return;
+          if (info.revision !== profile.revision || !/^[a-f0-9]{64}$/.test(info.ticket)) return finish(21);
+          if (!validLogin(info.login?.username, info.login?.domain, info.login?.password)) return finish(10);
+          const { username, domain } = info.login;
+          password = info.login.password;
+          delete info.login;
+          ticket = info.ticket;
+          window.Module.websocket.on?.('open', () => { if (!stopped) { show(14); watch(30_000, 19); } });
+          window.Module.websocket.on?.('error', () => finish(22));
+          window.Module.websocket.on?.('close', () => finish(ready ? 16 : 19));
+          initialSize = viewportSize();
+          layout(true);
+          const args = ['/v:127.0.0.1:3389', '/u:' + username, '/sec:nla', '/cert:deny',
+            '/size:' + initialSize.join('x'), '/dynamic-resolution', '-clipboard', '-auto-reconnect', '/audio-mode:2', '/log-level:OFF'];
+          if (domain) args.push('/d:' + domain);
+          const result = window.Module.callMain(args);
+          if (result && typeof result.then === 'function') result.then(code => finish(code ? 19 : 16), () => finish(17));
+        })().catch(() => finish(17));
+      },
+    };
+    const script = document.createElement('script');
+    script.setAttribute('data-cfasync', 'false');
+    script.src = base + 'sdl-freerdp.js';
+    script.onerror = () => finish(17);
+    document.head.append(script);
+  } catch { finish(17); }
+}
+
+function validLogin(username, domain, password) {
+  return typeof username === 'string' && username.trim() && username.length <= 128 && typeof domain === 'string' && domain.length <= 128 &&
+    typeof password === 'string' && password && ![username, domain, password].some(value => /[\x00\r\n]/.test(value)) && new TextEncoder().encode(password).length <= 1024;
+}
+addEventListener('cloudssh-rdp-disconnect', () => terminate?.(16));
+addEventListener('cloudssh-rdp-fullscreen-error', () => show(23));
+addEventListener('pagehide', () => terminate?.(16));
+for (const event of ['keydown', 'pointerdown', 'pointermove', 'wheel']) {
+  canvas.addEventListener(event, input => { if (input.isTrusted) socket?.activity(); }, { passive: true });
+}
+void (async () => {
+  if (window.frameElement?.dataset.connectSaved !== 'true') return show(9);
+  delete window.frameElement.dataset.connectSaved;
+  if (!crossOriginIsolated || typeof SharedArrayBuffer !== 'function') return show(20);
+  const response = await request(api, { cache: 'no-store' });
+  if (!response.ok) { status.textContent = await requestFailure(response); return; }
+  const saved = await response.json();
+  if ((saved.fingerprint !== null && !/^[a-f0-9]{64}$/.test(saved.fingerprint)) || !Number.isInteger(saved.revision)) return show(21);
+  profile = saved;
+  if (profile.hasLogin !== true) return show(9);
+  tellWorkspace('starting', profile.name);
+  void run();
+})().catch(() => show(21));
