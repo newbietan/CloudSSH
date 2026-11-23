@@ -216,6 +216,34 @@ patch('sdl_disp.cpp', '#include "sdl_disp.hpp"', '#include "sdl_disp.hpp"\n#ifde
 patch('sdl_disp.cpp', '\t_activated = true;', '\t_activated = true;\n#ifdef __EMSCRIPTEN__\n\tMAIN_THREAD_EM_ASM({ Module["onWindowsDisplayControl"]?.(); });\n#endif')
 PY
 
+# Optional, server-measured end-to-end RTT (MS-RDPBCGR Network Characteristics Result).
+# Keep just one sample across pthreads; receiving these PDUs never schedules UI work.
+python3 - "$source_dir/libfreerdp/core/autodetect.c" <<'PY'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1]); text = p.read_text()
+anchor = '#include "autodetect.h"'
+sample = '\tautodetect->netCharAverageRTT = result.averageRTT;'
+bridge = '''
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <winpr/interlocked.h>
+static volatile LONG cloudssh_latest_rtt = -1;
+EMSCRIPTEN_KEEPALIVE int cloudssh_take_rdp_rtt(void)
+{
+    return InterlockedExchange(&cloudssh_latest_rtt, -1);
+}
+#endif'''
+record = '''
+#ifdef __EMSCRIPTEN__
+    if (result.averageRTT <= 60000)
+        (void)InterlockedExchange(&cloudssh_latest_rtt, (LONG)result.averageRTT);
+#endif'''
+if bridge not in text or record not in text:
+    if text.count(anchor) != 1 or text.count(sample) != 1: sys.exit('FreeRDP RTT hook mismatch')
+    p.write_text(text.replace(anchor, anchor + bridge).replace(sample, sample + record))
+PY
+
 # Fetch with the official script, then confirm all the git dependency commits
 # before any dependency build. The official script verifies the LibreSSL tarball.
 if [[ $fresh == 1 ]]; then

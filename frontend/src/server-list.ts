@@ -581,10 +581,10 @@ export class ServerList {
     for (const entry of page.items) {
       if (entry.kind === 'rdp') {
         const { row } = entry;
-        document.getElementById(`rdp-open-${row.id}`)?.addEventListener('click', event => {
-          if (this.disposed || !this.openRdp || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-          event.preventDefault();
-          this.openRdp(row.id);
+        document.getElementById(`rdp-open-${row.id}`)?.addEventListener('click', () => {
+          if (this.disposed) return;
+          if (!row.hasLogin) this.editRdp(row);
+          else this.openRdp?.(row.id);
         });
         document.getElementById(`rdp-edit-${row.id}`)?.addEventListener('click', () => this.editRdp(row));
         document.getElementById(`rdp-delete-${row.id}`)?.addEventListener('click', () => { void this.deleteRdp(row); });
@@ -682,7 +682,7 @@ export class ServerList {
         ${(row.tags ?? []).length ? `<div class="flex flex-wrap gap-1 mt-3">${row.tags.map(tag => `<span class="text-[9px] text-primary border border-[var(--border-strong)] px-1.5 py-0.5">#${this.escapeHtml(tag)}</span>`).join('')}</div>` : ''}
       </div>
       <div class="server-card-actions flex gap-2 pt-3 border-t border-[var(--border)]">
-        <a id="rdp-open-${row.id}" href="/rdp/${row.id}" class="server-connect-button cyber-button text-primary flex-1 min-w-0 py-1.5 px-3 text-xs flex items-center justify-center">${t('rdp.open')}</a>
+        <button type="button" id="rdp-open-${row.id}" class="server-connect-button cyber-button text-primary flex-1 min-w-0 py-1.5 px-3 text-xs flex items-center justify-center">${t(row.hasLogin ? 'rdp.open' : 'rdp.complete')}</button>
         <button type="button" id="rdp-edit-${row.id}" class="cyber-button text-primary px-3" aria-label="${this.escapeAttr(t('rdp.edit'))}">
           <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px">edit</span>
         </button>

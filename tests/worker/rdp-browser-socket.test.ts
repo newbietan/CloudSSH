@@ -9,12 +9,15 @@ interface SocketAdapter {
   consumed(bytes: number): void;
   readyState: number;
   lease?: string;
+  probe(): void;
+  cancelProbe(): void;
+  onRelayRtt?: (ms: number) => void;
   onopen?: () => void;
   onmessage?: (event: { data: unknown }) => void;
 }
 const lease = '12345678-1234-1234-1234-123456789abc';
 const ready = JSON.stringify({ type: 'ready', lease });
-function fixture() {
+function fixture(clock = performance) {
   const native = {
     protocol: 'cloudssh-rdp-v1',
     send: vi.fn(), close: vi.fn(),
@@ -24,7 +27,7 @@ function fixture() {
   class FakeWebSocket {
     constructor() { return native; }
   }
-  runInNewContext(code, { window: browser, WebSocket: FakeWebSocket, Event, ArrayBuffer, Uint8Array, performance, clearTimeout });
+  runInNewContext(code, { window: browser, WebSocket: FakeWebSocket, Event, ArrayBuffer, Uint8Array, performance: clock, clearTimeout });
   const socket = browser.createCloudSshRdpSocket('wss://example.com/api/rdp/session', 'token');
   return { native, socket };
 }
@@ -51,6 +54,23 @@ describe('FreeRDP browser socket', () => {
       await vi.advanceTimersByTimeAsync(20);
       expect(native.send).toHaveBeenLastCalledWith('{"type":"ack","bytes":12}');
     } finally { vi.useRealTimers(); }
+  });
+
+  it('times one matched relay pong locally and ignores stale, duplicate, expired and cancelled responses', () => {
+    let now = 100;
+    const { native, socket } = fixture({ now: () => now } as Performance);
+    const sample = socket.onRelayRtt = vi.fn();
+    const pong = (id: number) => native.onmessage({ data: JSON.stringify({ type: 'pong', id }) });
+    socket.probe();
+    expect(native.send).not.toHaveBeenCalled();
+    native.onmessage({ data: ready });
+    socket.probe(); socket.probe();
+    expect(native.send).toHaveBeenCalledExactlyOnceWith('{"type":"ping","id":1}');
+    now += 27; pong(99); pong(1); pong(1);
+    expect(sample).toHaveBeenCalledExactlyOnceWith(27);
+    socket.probe(); now += 5100; pong(2);
+    socket.probe(); socket.cancelProbe(); pong(3);
+    expect(sample).toHaveBeenCalledTimes(1);
   });
 
   it('splits writes and rejects sending beyond the unacknowledged input window', () => {

@@ -93,9 +93,13 @@ export async function handleRdp(
       if (request.method === 'GET') return call('profiles');
       if (request.method === 'POST') return call('profiles', 'POST', await readRdpJson(request));
     }
-    const match = /^profiles\/([a-f0-9-]{36})(\/(?:connect|trust))?$/.exec(resource);
+    const match = /^profiles\/([a-f0-9-]{36})(\/(?:connect|trust|login-identity))?$/.exec(resource);
     if (!match || !isRdpId(match[1])) return hide();
     const [, id, action] = match;
+    if (action === '/login-identity' && request.method === 'POST') {
+      if (request.headers.get('X-CloudSSH-RDP-Client') !== String(RDP_CLIENT_REVISION)) return rdpJson({ code: 'refresh_client' }, 409);
+      return call(`profiles/${id}/login-identity`, 'POST', await readRdpJson(request));
+    }
     if (action === '/trust' && request.method === 'PUT') {
       if (request.headers.get('X-CloudSSH-RDP-Client') !== String(RDP_CLIENT_REVISION)) return rdpJson({ code: 'refresh_client' }, 409);
       return call(`profiles/${id}/trust`, 'PUT', await readRdpJson(request));
@@ -108,9 +112,9 @@ export async function handleRdp(
         return rdpJson({ code: 'refresh_client' }, 409);
       }
       const savedRevision = request.headers.get('X-CloudSSH-RDP-Saved-Revision');
-      if (savedRevision !== null && !/^[1-9]\d{0,9}$/.test(savedRevision)) return rdpJson({ code: 'invalid_revision' }, 400);
+      if (!savedRevision || !/^[1-9]\d{0,9}$/.test(savedRevision)) return rdpJson({ code: 'invalid_revision' }, 400);
       const response = await call('ticket', 'POST', { profile: id, binding: await binding(request, key),
-        ...(savedRevision === null ? {} : { savedRevision: Number(savedRevision) }) });
+        savedRevision: Number(savedRevision) });
       if (!response.ok || !issueCookie) return response;
       const headers = new Headers(response.headers);
       headers.append('Set-Cookie', `${COOKIE}=${key}; Path=/; Secure; HttpOnly; SameSite=Strict`);

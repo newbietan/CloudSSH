@@ -109,11 +109,19 @@ export class RdpStore {
       }
       return this.trust(userId, id, payload.revision, payload.lease, payload.fingerprint);
     }
+    if (kind === 'profiles' && isRdpId(id) && route === `profiles/${id}/login-identity` && request.method === 'POST') {
+      const body = await readRdpJson(request) as { revision?: number } | null;
+      const revision = body?.revision;
+      if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 1) return error(400, 'invalid_request');
+      const login = await this.readLogin(userId, id, revision);
+      if (login instanceof Response) return login;
+      return rdpJson({ username: login.username, domain: login.domain, revision });
+    }
     if (request.method !== 'POST') return error(405, 'method_not_allowed');
     const body = await readRdpJson(request) as Record<string, unknown> | null;
     if (!body || typeof body !== 'object') return error(400, 'invalid_request');
     if (route === 'ticket' && isRdpId(body.profile) && digestPattern(body.binding)) {
-      if (body.savedRevision !== undefined && (typeof body.savedRevision !== 'number' || !Number.isSafeInteger(body.savedRevision) || body.savedRevision < 1)) return error(400, 'invalid_request');
+      if (typeof body.savedRevision !== 'number' || !Number.isSafeInteger(body.savedRevision) || body.savedRevision < 1) return error(400, 'invalid_request');
       return this.issue(userId, body.profile, body.binding, body.savedRevision);
     }
     if (route === 'claim' && digestPattern(body.ticket) && digestPattern(body.binding)) {
@@ -154,12 +162,12 @@ export class RdpStore {
     if (!input) return error(400, 'invalid_profile');
     if (existing && (body as { revision?: unknown }).revision !== existing.revision) return error(409, 'profile_changed');
     const sameTarget = existing?.route === input.route && existing.host === input.host;
+    if (!input.login && !(sameTarget && existing.login && input.login === undefined)) return error(400, 'login_required');
     let access = sameTarget && input.route === 'tunnel' ? existing.access : null;
     if (input.accessId !== undefined) {
       access = input.accessId ? await this.encrypt(JSON.stringify([input.accessId, input.accessSecret]), userId) : null;
     }
-    let login = sameTarget ? existing.login : null;
-    if (input.login !== undefined) login = input.login ? await this.encrypt(JSON.stringify(input.login), userId) : null;
+    const login = input.login ? await this.encrypt(JSON.stringify(input.login), userId) : existing!.login;
     return this.transaction(() => {
       const id = existing?.id ?? crypto.randomUUID();
       const revision = (existing?.revision ?? 0) + 1;
@@ -182,25 +190,31 @@ export class RdpStore {
     });
   }
 
-  private async issue(userId: number, id: string, binding: string, savedRevision?: number): Promise<Response> {
+  private async readLogin(userId: number, id: string, revision: number) {
+    const row = this.row(userId, id);
+    if (!row) return error(404, 'not_found');
+    if (!row.login || row.revision !== revision) return error(409, 'profile_changed');
+    try {
+      const login: unknown = JSON.parse(await this.decrypt(row.login, userId));
+      if (this.row(userId, id)?.revision !== revision) return error(409, 'profile_changed');
+      return isRdpLogin(login) ? login : error(500, 'login_unavailable');
+    } catch { return error(500, 'login_unavailable'); }
+  }
+
+  private async issue(userId: number, id: string, binding: string, savedRevision: number): Promise<Response> {
     const ticket = Array.from(crypto.getRandomValues(new Uint8Array(32)), byte => byte.toString(16).padStart(2, '0')).join('');
     const hash = await rdpDigest(ticket);
-    let login: unknown;
-    if (savedRevision !== undefined) {
-      const row = this.row(userId, id);
-      if (!row?.login || row.revision !== savedRevision) return error(409, 'profile_changed');
-      try { login = JSON.parse(await this.decrypt(row.login, userId)); } catch { return error(500, 'login_unavailable'); }
-      if (!isRdpLogin(login)) return error(500, 'login_unavailable');
-    }
+    const login = await this.readLogin(userId, id, savedRevision);
+    if (login instanceof Response) return login;
     return this.transaction(() => {
       const now = Date.now();
       this.clean(now);
       const row = this.row(userId, id);
       if (!row) return error(404, 'not_found');
-      if (savedRevision !== undefined && row.revision !== savedRevision) return error(409, 'profile_changed');
+      if (row.revision !== savedRevision) return error(409, 'profile_changed');
       if (this.count('rdp_tickets', userId) >= MAX_TICKETS) return error(429, 'ticket_limit');
       this.sql.exec('INSERT INTO rdp_tickets VALUES (?, ?, ?, ?, ?, ?)', hash, userId, id, row.revision, binding, now + TICKET_MS);
-      return rdpJson({ ticket, revision: row.revision, ...(savedRevision === undefined ? {} : { login }) });
+      return rdpJson({ ticket, revision: row.revision, login });
     });
   }
 
@@ -212,7 +226,7 @@ export class RdpStore {
       if (!token || token.binding !== binding) return null;
       this.sql.exec('DELETE FROM rdp_tickets WHERE user_id = ? AND hash = ?', userId, hash);
       const row = this.row(userId, token.profile);
-      if (!row || row.revision !== token.revision || this.count('rdp_leases', userId) >= MAX_SESSIONS) return null;
+      if (!row?.login || row.revision !== token.revision || this.count('rdp_leases', userId) >= MAX_SESSIONS) return null;
       const lease = crypto.randomUUID();
       this.sql.exec('INSERT INTO rdp_leases VALUES (?, ?, ?, ?, ?)', lease, userId, row.id, row.revision, Date.now() + RDP_LEASE_MS);
       return { lease, row };

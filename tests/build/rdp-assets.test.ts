@@ -24,7 +24,7 @@ describe('bundled FreeRDP client', () => {
     expect(glue.toString()).toContain('Module["createRdpSocket"](url)');
     expect(glue.toString()).toContain('.socket.consumed(bytesRead)');
     expect(glue.toString()).toContain('pthreadPoolSize=4;');
-    for (const hook of ['onWindowsDisplayControl', 'onWindowsFirstFrame', 'onWindowsCertificate']) {
+    for (const hook of ['onWindowsDisplayControl', 'onWindowsFirstFrame', 'onWindowsCertificate', '_cloudssh_take_rdp_rtt']) {
       expect(glue.toString()).toContain(hook);
     }
   });

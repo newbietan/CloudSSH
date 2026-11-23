@@ -4,7 +4,8 @@ import { parseRdpProfile } from '../../src/rdp-schema';
 import { RdpStore } from '../../src/worker/rdp-store';
 
 const certificate = '1'.repeat(64);
-const target = { name: 'Workstation', route: 'direct', host: '93.184.215.14' };
+const endpoint = { name: 'Workstation', route: 'direct', host: '93.184.215.14' };
+const target = { ...endpoint, login: { username: 'Administrator', domain: '', password: 'test only' } };
 const bind = '2'.repeat(64);
 
 function fixture() {
@@ -46,8 +47,8 @@ describe('RDP profiles and connection leases', () => {
       expect(saved.status).toBe(201);
       const { id, revision } = await saved.json() as { id: string; revision: number };
       expect((await request(`profiles/${id}`, 'GET', undefined, 2)).status).toBe(404);
-      expect((await request('ticket', 'POST', { profile: id, binding: bind }, 2)).status).toBe(404);
-      const { ticket } = await (await request('ticket', 'POST', { profile: id, binding: bind })).json() as { ticket: string };
+      expect((await request('ticket', 'POST', { profile: id, binding: bind, savedRevision: revision }, 2)).status).toBe(404);
+      const { ticket } = await (await request('ticket', 'POST', { profile: id, binding: bind, savedRevision: revision })).json() as { ticket: string };
       expect(database.prepare('SELECT hash FROM rdp_tickets').get()?.hash).not.toBe(ticket);
       expect((await request('claim', 'POST', { ticket, binding: '3'.repeat(64) })).status).toBe(409);
       const claimed = await request('claim', 'POST', { ticket, binding: bind });
@@ -68,7 +69,7 @@ describe('RDP profiles and connection leases', () => {
       };
       expect(fingerprint).toBeNull();
       const profile = `profiles/${id}`;
-      const { ticket } = await (await request('ticket', 'POST', { profile: id, binding: bind })).json() as { ticket: string };
+      const { ticket } = await (await request('ticket', 'POST', { profile: id, binding: bind, savedRevision: revision })).json() as { ticket: string };
       const { id: lease } = await (await request('claim', 'POST', { ticket, binding: bind })).json() as { id: string };
       const payload = { revision, lease, fingerprint: certificate };
       expect((await request(`${profile}/trust`, 'PUT', payload, 2)).status).toBe(404);
@@ -84,11 +85,14 @@ describe('RDP profiles and connection leases', () => {
     } finally { database.close(); }
   });
 
-  it('returns opt-in login only in a matching owner/revision ticket, never in lists, relay claims or another destination', async () => {
+  it('requires complete login and only returns the password to a matching owner/revision ticket', async () => {
     const { request, database } = fixture();
     try {
       const login = { username: 'saved-user', domain: 'domain', password: ' secret ' };
       const get = async (route: string, method: string, body?: unknown, user = 1) => (await request(route, method, body, user)).json() as Promise<Record<string, unknown>>;
+      for (const input of [endpoint, { ...endpoint, login: null }, { ...endpoint, login: { ...login, password: '' } }]) {
+        expect((await request('profiles', 'POST', input)).status).toBe(400);
+      }
       const saved = await get('profiles', 'POST', { ...target, login, tags: ['Work'] });
       const path = `profiles/${saved.id}`;
       const issue = { profile: saved.id, binding: bind };
@@ -100,8 +104,11 @@ describe('RDP profiles and connection leases', () => {
       const ticket = await get('ticket', 'POST', { ...issue, savedRevision: 1 });
       expect(ticket.login).toEqual(login);
       expect(JSON.stringify(await get('claim', 'POST', { ticket: ticket.ticket, binding: bind }))).not.toContain(login.username);
-      expect(await get(path, 'PUT', { ...target, name: 'Renamed', revision: 1 })).toMatchObject({ hasLogin: true });
-      expect(await get(path, 'PUT', { ...target, host: '8.8.8.8', revision: 2 })).toMatchObject({ hasLogin: false });
+      expect(await get(path + '/login-identity', 'POST', { revision: 1 })).toEqual({ username: login.username, domain: login.domain, revision: 1 });
+      expect((await request(path + '/login-identity', 'POST', { revision: 1 }, 2)).status).toBe(404);
+      expect(await get(path, 'PUT', { ...endpoint, name: 'Renamed', revision: 1 })).toMatchObject({ hasLogin: true });
+      expect((await request(path + '/login-identity', 'POST', { revision: 1 })).status).toBe(409);
+      expect((await request(path, 'PUT', { ...endpoint, host: '8.8.8.8', revision: 2 })).status).toBe(400);
       expect((await request('ticket', 'POST', { ...issue, savedRevision: 3 })).ok).toBe(false);
       await request(path, 'DELETE');
       expect(database.prepare('SELECT * FROM rdp_profile_options').all()).toHaveLength(0);

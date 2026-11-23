@@ -1,7 +1,7 @@
 const dictionary = {
-  'en-US': ['Back to CloudSSH', 'Remote Desktop', 'Username', 'Domain (optional)', 'Windows password', 'Connect', 'Disconnect / Retry', 'Full screen', 'Loading the saved desktop…', 'Enter your Windows credentials.', 'Invalid Windows credentials.', 'Downloading the desktop client…', 'Starting the desktop client…', 'Connecting to Windows…', 'Checking the Windows certificate and signing in…', 'Desktop ready. Click the desktop to control it.', 'Connection ended. Use Disconnect / Retry.', 'Could not start the desktop. Use Disconnect / Retry.', 'Desktop startup timed out.', 'No desktop appeared. Verify the certificate and Windows credentials, then retry.', 'This browser does not support the required shared memory.', 'Device or session changed. Refresh the page.', 'The connection is too slow or ended.', 'Full screen is unavailable.'],
-  'zh-CN': ['返回 CloudSSH', '远程桌面', '用户名', '域（可选）', 'Windows 密码', '连接', '断开／重试', '全屏', '正在读取已保存的桌面…', '请输入 Windows 登录凭据。', 'Windows 登录凭据无效。', '正在下载桌面客户端…', '正在启动桌面客户端…', '正在连接 Windows…', '正在验证 Windows 证书并登录…', 'Windows 桌面已显示，点击画布可操作。', '连接已结束，请点「断开／重试」。', '桌面启动失败，请点「断开／重试」。', '桌面客户端启动超时。', '未收到桌面画面，请核对证书和 Windows 凭据后重试。', '当前浏览器不支持所需的共享内存。', '设备或登录已变化，请刷新页面。', '连接过慢或已断开。', '当前无法进入全屏。'],
-  'zh-TW': ['返回 CloudSSH', '遠端桌面', '使用者名稱', '網域（選填）', 'Windows 密碼', '連線', '中斷／重試', '全螢幕', '正在讀取已儲存的桌面…', '請輸入 Windows 登入憑證。', 'Windows 登入憑證無效。', '正在下載桌面客戶端…', '正在啟動桌面客戶端…', '正在連線至 Windows…', '正在驗證 Windows 憑證並登入…', 'Windows 桌面已顯示，點擊畫布即可操作。', '連線已結束，請點「中斷／重試」。', '桌面啟動失敗，請點「中斷／重試」。', '桌面客戶端啟動逾時。', '未收到桌面畫面，請核對憑證和 Windows 登入資訊後重試。', '目前瀏覽器不支援所需的共享記憶體。', '裝置或登入已變更，請重新整理。', '連線過慢或已中斷。', '目前無法使用全螢幕。'],
+  'en-US': ['Back to CloudSSH', 'Remote Desktop', 'Username', 'Domain (optional)', 'Windows password', 'Connect', 'Disconnect', 'Full screen', 'Loading the saved desktop…', 'Open this desktop from the server list after completing its settings.', 'Invalid Windows credentials.', 'Downloading the desktop client…', 'Starting the desktop client…', 'Connecting to Windows…', 'Checking the Windows certificate and signing in…', 'Desktop ready. Click the desktop to control it.', 'Connection ended. Return to the server list to reconnect.', 'Could not start the desktop. Return to the server list to retry.', 'Desktop startup timed out.', 'No desktop appeared. Verify the certificate and Windows credentials, then retry.', 'This browser does not support the required shared memory.', 'Device or session changed. Refresh the page.', 'The connection is too slow or ended.', 'Full screen is unavailable.'],
+  'zh-CN': ['返回 CloudSSH', '远程桌面', '用户名', '域（可选）', 'Windows 密码', '连接', '断开', '全屏', '正在读取已保存的桌面…', '请先补全设备配置，再从服务器列表打开桌面。', 'Windows 登录凭据无效。', '正在下载桌面客户端…', '正在启动桌面客户端…', '正在连接 Windows…', '正在验证 Windows 证书并登录…', 'Windows 桌面已显示，点击画布可操作。', '连接已断开，可返回服务器列表重新连接。', '桌面启动失败，请返回服务器列表重试。', '桌面客户端启动超时。', '未收到桌面画面，请核对证书和 Windows 凭据后重试。', '当前浏览器不支持所需的共享内存。', '设备或登录已变化，请刷新页面。', '连接过慢或已断开。', '当前无法进入全屏。'],
+  'zh-TW': ['返回 CloudSSH', '遠端桌面', '使用者名稱', '網域（選填）', 'Windows 密碼', '連線', '中斷', '全螢幕', '正在讀取已儲存的桌面…', '請先補全裝置設定，再從伺服器清單開啟桌面。', 'Windows 登入憑證無效。', '正在下載桌面客戶端…', '正在啟動桌面客戶端…', '正在連線至 Windows…', '正在驗證 Windows 憑證並登入…', 'Windows 桌面已顯示，點擊畫布即可操作。', '連線已中斷，可返回伺服器清單重新連線。', '桌面啟動失敗，請返回伺服器清單重試。', '桌面客戶端啟動逾時。', '未收到桌面畫面，請核對憑證和 Windows 登入資訊後重試。', '目前瀏覽器不支援所需的共享記憶體。', '裝置或登入已變更，請重新整理。', '連線過慢或已中斷。', '目前無法使用全螢幕。'],
 };
 const trustText = {
   'en-US': ['First connection to Windows', 'Verify this certificate fingerprint through a trusted source before accepting. An unexpected fingerprint may mean you reached a different server.', 'Cancel', 'Trust and connect', 'Windows certificate changed', 'Connection blocked. The received fingerprint differs from the one you saved.', 'Previously saved fingerprint', 'Could not record certificate trust. Reconnect and try again.', 'Waiting for certificate confirmation.', 'Certificate was not accepted.'],
@@ -13,8 +13,13 @@ try { requested = localStorage.getItem('cloudssh_locale') || requested; } catch 
 const locale = Object.hasOwn(dictionary, requested) ? requested : /^zh-(TW|HK|Hant)/i.test(requested) ? 'zh-TW' : /^zh/i.test(requested) ? 'zh-CN' : 'en-US';
 document.documentElement.lang = locale;
 const msg = dictionary[locale];
+const [relayLabel, rttHelp] = {
+  'en-US': ['Relay', 'Relay: browser to CloudSSH. RDP: average round trip reported by Windows. A dash means no recent sample. Neither measures screen rendering.'],
+  'zh-CN': ['中继', '中继：浏览器到 CloudSSH 的往返时间。RDP：Windows 上报的平均往返时间。横线表示暂无近期数据，两者都不代表画面响应耗时。'],
+  'zh-TW': ['中繼', '中繼：瀏覽器至 CloudSSH 的往返時間。RDP：Windows 回報的平均往返時間。橫線表示暫無近期資料，兩者都不是畫面反應時間。'],
+}[locale];
 const el = id => document.getElementById(id);
-['back', 'title', 'user-label', 'domain-label', 'password-label', 'connect', 'disconnect', 'fullscreen'].forEach((id, i) => { el(id).textContent = msg[i]; });
+for (const [id, index] of [['back', 0], ['title', 1], ['disconnect', 6], ['fullscreen', 7]]) el(id).textContent = msg[index];
 const status = el('status');
 const show = i => { status.textContent = msg[i]; };
 const canvas = el('canvas');
@@ -25,11 +30,8 @@ const viewportSize = () => {
   const scale = Math.min(1, 3840 / w, 2160 / h);
   return [Math.max(200, Math.floor(w * scale / 2) * 2), Math.max(200, Math.floor(h * scale / 2) * 2)];
 };
-const form = el('credentials');
-const connect = el('connect');
-const passwordBox = el('windows-password');
 const api = '/api/rdp/profiles/' + location.pathname.split('/')[2];
-const clientRevision = '3'; // Keep aligned with src/rdp-schema.ts when changing the browser ABI.
+const clientRevision = '4'; // Keep aligned with src/rdp-schema.ts when changing the browser ABI.
 const trust = trustText[locale];
 const certificate = el('certificate');
 const acceptCertificate = el('certificate-accept');
@@ -38,7 +40,6 @@ const formatFingerprint = value => value.toUpperCase().match(/../g).join(':');
 const base = '/rdp/assets/';
 let socket;
 let profile;
-let started = false;
 let terminate;
 show(8);
 
@@ -46,12 +47,48 @@ function request(url, options) {
   return fetch(url, { credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(10000), ...options });
 }
 
-async function run(username, domain, password, useSaved) {
+async function run() {
+  let password;
   const abort = new AbortController();
   let stopped = false;
   let ticket;
   let timer;
   let ready = false;
+  let telemetry, relayMs, remoteMs;
+  let relayAt = -Infinity, remoteAt = -Infinity;
+  const meter = el('latency');
+  meter.title = rttHelp;
+  function paintLatency() {
+    const now = performance.now();
+    const fmt = (ms, age, limit) => ms !== undefined && age < limit ? `${ms} ms` : '—';
+    const text = `${relayLabel} ${fmt(relayMs, now - relayAt, 10000)} · RDP ${fmt(remoteMs, now - remoteAt, 30000)}`;
+    meter.textContent = el('stage-latency').textContent = text;
+  }
+  function sample() {
+    if (!ready || stopped || document.hidden) return;
+    const value = window.Module?._cloudssh_take_rdp_rtt?.();
+    if (Number.isInteger(value) && value >= 0 && value <= 60000) { remoteMs = value; remoteAt = performance.now(); }
+    paintLatency();
+    socket?.probe?.();
+  }
+  function resetMeter() {
+    clearInterval(telemetry); telemetry = undefined;
+    socket?.cancelProbe?.();
+    relayMs = remoteMs = undefined;
+    paintLatency();
+  }
+  meter.hidden = false;
+  paintLatency();
+  function monitorLatency() {
+    resetMeter();
+    if (!ready || stopped || document.hidden) return;
+    sample();
+    telemetry = setInterval(sample, 5000);
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (ready && !stopped) window.Module?._cloudssh_take_rdp_rtt?.(); // Discard old background samples.
+    monitorLatency();
+  }, { signal: abort.signal });
   let negotiatedResize = false;
   let initialSize = viewportSize();
   let resizeTimer, lastSize = '';
@@ -88,7 +125,9 @@ async function run(username, domain, password, useSaved) {
     clearTimeout(resizeTimer);
     observer.disconnect();
     abort.abort();
+    resetMeter();
     socket?.close();
+    el('disconnect').disabled = true;
     el('fullscreen').disabled = true;
     if (document.fullscreenElement === stage) void document.exitFullscreen().catch(() => {});
     decision = -1;
@@ -154,6 +193,10 @@ async function run(username, domain, password, useSaved) {
       createRdpSocket(address) {
         if (stopped || address !== url.href || !ticket || socket) throw new Error('socket unavailable');
         socket = window.createCloudSshRdpSocket(address, ticket);
+        socket.onRelayRtt = value => {
+          if (!ready || stopped || document.hidden) return;
+          relayMs = value; relayAt = performance.now(); paintLatency();
+        };
         ticket = undefined;
         return socket;
       },
@@ -186,6 +229,7 @@ async function run(username, domain, password, useSaved) {
         if (stopped) return;
         clearTimeout(timer);
         ready = true;
+        monitorLatency();
         el('fullscreen').disabled = !stage.requestFullscreen;
         show(15);
       },
@@ -205,17 +249,16 @@ async function run(username, domain, password, useSaved) {
           show(13);
           watch(20_000, 22);
           const issued = await request(api + '/connect', { method: 'POST', signal: abort.signal, headers: {
-            'X-CloudSSH-RDP-Client': clientRevision, ...(useSaved ? { 'X-CloudSSH-RDP-Saved-Revision': String(profile.revision) } : {}),
+            'X-CloudSSH-RDP-Client': clientRevision, 'X-CloudSSH-RDP-Saved-Revision': String(profile.revision),
           } });
           if (!issued.ok) return finish(21);
           const info = await issued.json();
           if (stopped) return;
           if (info.revision !== profile.revision || !/^[a-f0-9]{64}$/.test(info.ticket)) return finish(21);
-          if (useSaved) {
-            if (!validLogin(info.login?.username, info.login?.domain, info.login?.password)) return finish(10);
-            ({ username, domain, password } = info.login);
-            delete info.login;
-          }
+          if (!validLogin(info.login?.username, info.login?.domain, info.login?.password)) return finish(10);
+          const { username, domain } = info.login;
+          password = info.login.password;
+          delete info.login;
           ticket = info.ticket;
           window.Module.websocket.on?.('open', () => { if (!stopped) { show(14); watch(30_000, 19); } });
           window.Module.websocket.on?.('error', () => finish(22));
@@ -242,29 +285,16 @@ function validLogin(username, domain, password) {
   return typeof username === 'string' && username.trim() && username.length <= 128 && typeof domain === 'string' && domain.length <= 128 &&
     typeof password === 'string' && password && ![username, domain, password].some(value => /[\x00\r\n]/.test(value)) && new TextEncoder().encode(password).length <= 1024;
 }
-function start() {
-  if (!profile || started) return;
-  const username = el('windows-user').value.trim();
-  const domain = el('windows-domain').value.trim();
-  const password = passwordBox.value;
-  const useSaved = profile.hasLogin === true;
-  if (!useSaved && !validLogin(username, domain, password)) return show(10);
-  started = true;
-  passwordBox.value = '';
-  for (const control of form.querySelectorAll('button, input')) control.disabled = true;
-  el('disconnect').disabled = false;
-  status.focus({ preventScroll: true });
-  form.hidden = true;
-  void run(username, domain, password, useSaved);
-}
-form.addEventListener('submit', event => { event.preventDefault(); start(); });
-el('disconnect').onclick = () => { terminate?.(16); location.reload(); };
+el('disconnect').onclick = () => terminate?.(16);
 el('fullscreen').onclick = () => { void stage.requestFullscreen?.().catch(() => show(23)); };
 addEventListener('pagehide', () => terminate?.(16));
 for (const event of ['keydown', 'pointerdown', 'pointermove', 'wheel']) {
   canvas.addEventListener(event, input => { if (input.isTrusted) socket?.activity(); }, { passive: true });
 }
 void (async () => {
+  if (window.frameElement?.dataset.connectSaved !== 'true') return show(9);
+  delete window.frameElement.dataset.connectSaved;
+  el('back').hidden = true;
   if (!crossOriginIsolated || typeof SharedArrayBuffer !== 'function') return show(20);
   const response = await request(api, { cache: 'no-store' });
   if (!response.ok) return show(21);
@@ -272,14 +302,7 @@ void (async () => {
   if ((saved.fingerprint !== null && !/^[a-f0-9]{64}$/.test(saved.fingerprint)) || !Number.isInteger(saved.revision)) return show(21);
   profile = saved;
   el('title').textContent = msg[1] + ' · ' + profile.name;
-  connect.disabled = false;
-  if (window.frameElement) el('back').hidden = true;
-  if (profile.hasLogin) {
-    for (const label of form.querySelectorAll('label')) { label.hidden = true; label.querySelector('input').disabled = true; }
-    status.textContent = profile.name;
-    if (window.frameElement?.dataset.connectSaved === 'true') {
-      delete window.frameElement.dataset.connectSaved;
-      start();
-    }
-  } else show(9);
+  if (profile.hasLogin !== true) return show(9);
+  el('disconnect').disabled = false;
+  void run();
 })().catch(() => show(21));

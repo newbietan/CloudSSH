@@ -63,12 +63,13 @@ describe('formal RDP routing', () => {
     const headers = { Origin: origin, Cookie: 'session=42:cookie-value', 'X-CloudSSH-RDP-Client': String(RDP_CLIENT_REVISION) };
     const stale = await handle(`/api/rdp/profiles/${id}/connect`, { method: 'POST', headers: { ...headers, 'X-CloudSSH-RDP-Client': '0' } });
     expect(stale.status).toBe(409);
-    const response = await handle(`/api/rdp/profiles/${id}/connect`, { method: 'POST', headers });
+    expect((await handle(`/api/rdp/profiles/${id}/connect`, { method: 'POST', headers })).status).toBe(400);
+    const response = await handle(`/api/rdp/profiles/${id}/connect`, { method: 'POST', headers: { ...headers, 'X-CloudSSH-RDP-Saved-Revision': '1' } });
     expect(response.status).toBe(200);
     expect(response.headers.get('Set-Cookie')).toMatch(/^__Host-cloudssh_rdp=[0-9a-f]{64}; Path=\/; Secure; HttpOnly; SameSite=Strict$/);
     const [request] = internal.mock.calls.at(-1)!;
     expect(request.url).toBe('https://internal/internal/rdp/ticket?user_id=5');
-    expect(await request.json()).toEqual({ profile: id, binding: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    expect(await request.json()).toEqual({ profile: id, savedRevision: 1, binding: expect.stringMatching(/^[a-f0-9]{64}$/) });
     expect(response.headers.get('Location')).toBeNull();
     const desktop = await handle(`/rdp/${id}`, { headers });
     expect(desktop.headers.get('X-Frame-Options')).toBe('DENY');

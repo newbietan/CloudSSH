@@ -6,7 +6,7 @@ export const RDP_MAX_BODY = 12 * 1024;
 export const RDP_WINDOW = 1024 * 1024;
 export const RDP_FRAME = 16 * 1024;
 export const RDP_WS_PROTOCOL = 'cloudssh-rdp-v1';
-export const RDP_CLIENT_REVISION = 3;
+export const RDP_CLIENT_REVISION = 4;
 
 export interface RdpLogin { username: string; domain: string; password: string }
 export function isRdpLogin(value: unknown): value is RdpLogin {
@@ -22,7 +22,7 @@ export interface RdpProfileInput {
   route: RdpRoute;
   host: string;
   tags?: string[];
-  login?: RdpLogin | null;
+  login?: RdpLogin;
   accessId?: string;
   accessSecret?: string;
 }
@@ -64,7 +64,7 @@ export function parseRdpProfile(value: unknown): RdpProfileInput | null {
   const route = data.route;
   if (!name || name.length > 64 || /[\x00-\x1f\x7f]/.test(name)) return null;
   if (data.tags !== undefined && !Array.isArray(data.tags)) return null;
-  if (data.login !== undefined && data.login !== null && !isRdpLogin(data.login)) return null;
+  if (data.login !== undefined && !isRdpLogin(data.login)) return null;
   const extra = { ...(data.tags === undefined ? {} : { tags: normalizeServerTags(data.tags) }),
     ...(data.login === undefined ? {} : { login: data.login }) };
   if (route === 'direct') {

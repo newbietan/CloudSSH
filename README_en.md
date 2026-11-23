@@ -363,7 +363,7 @@ Every server in a jump relation must belong to the same GitHub user. Self-refere
 
 ##### Windows Remote Desktop
 
-With `ENABLE_RDP=true`, signed-in users can choose Windows Server in the Add Server dialog and add a remote desktop using public IPv4 on TCP 3389 or a Cloudflare `rdp://` tunnel route, and open it in a same-site browser page. Windows must use NLA. Verify and confirm the displayed SHA-256 certificate fingerprint on first connection; later mismatches block login. Windows devices support tags. Credentials are not saved by default; opt in to encrypted account storage for one-click sign-in in the current CloudSSH workspace. Full screen is user-initiated, and servers supporting Display Control can resize with the viewport. See the [RDP setup and limits](docs/rdp-implementation-plan.md).
+With `ENABLE_RDP=true`, signed-in users can choose Windows Server in the Add Server dialog and add a remote desktop using public IPv4 on TCP 3389 or a Cloudflare `rdp://` tunnel route, and open it in a same-site browser page. Windows must use NLA. Verify and confirm the displayed SHA-256 certificate fingerprint on first connection; later mismatches block login. Windows devices support tags. Configure a username (default: Administrator), password and optional domain when saving a device. Credentials are encrypted in your account. Connect from the device card; older devices without credentials must be edited first. The desktop shows browser-to-relay RTT and, when reported by Windows, average RDP RTT. Full screen is user-initiated, and servers supporting Display Control can resize with the viewport. See the [RDP setup and limits](docs/rdp-implementation-plan.md).
 
 ##### Connecting via Cloudflare Tunnel
 

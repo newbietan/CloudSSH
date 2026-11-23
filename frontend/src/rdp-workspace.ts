@@ -31,7 +31,8 @@ export class RdpWorkspace {
         connect = intent?.id === id && intent.until >= now && intent.until <= now + 30000;
       } catch { /* Deep links and unavailable storage require a Connect click. */ }
     }
-    this.mount(id, connect);
+    if (connect) this.mount(id);
+    else history.replaceState(null, '', '/'); // Bookmark/refresh is not permission to release credentials.
   }
   async open(id: string): Promise<void> {
     if (!isRdpId(id) || this.events.signal.aborted) return;
@@ -45,9 +46,9 @@ export class RdpWorkspace {
       return;
     }
     history.pushState(null, '', path);
-    this.mount(id, true);
+    this.mount(id);
   }
-  private mount(id: string, connect: boolean): void {
+  private mount(id: string): void {
     this.close();
     const dialog = document.createElement('dialog');
     dialog.className = 'rdp-workspace';
@@ -64,7 +65,7 @@ export class RdpWorkspace {
     frame.title = t('rdp.open');
     frame.src = `/rdp/${id}/client`;
     frame.allow = 'fullscreen';
-    frame.dataset.connectSaved = String(connect);
+    frame.dataset.connectSaved = 'true';
     const applyTheme = () => {
       const doc = frame.contentDocument;
       if (!doc || doc.location.origin !== location.origin) return;

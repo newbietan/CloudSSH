@@ -20,11 +20,13 @@ test('Windows uses the shared add-server dialog and the main server grid', async
     if (route.request().method() === 'GET') return route.fulfill({ json: { profiles } });
     if (route.request().method() === 'POST') {
       saved = route.request().postDataJSON() as Record<string, unknown>;
-      profiles = [{ ...saved, id, revision: 1, hasAccessToken: false }];
+      const { login: _login, ...metadata } = saved;
+      profiles = [{ ...metadata, id, revision: 1, hasAccessToken: false, hasLogin: true }];
       return route.fulfill({ status: 201, json: profiles[0] });
     }
     return route.fallback();
   });
+  await page.route(`**/api/rdp/profiles/${id}/login-identity`, r => r.request().method() === 'POST' ? r.fulfill({ json: { revision: 1, username: 'custom-user', domain: 'WORK' } }) : r.fallback());
   await page.route(`**/api/rdp/profiles/${id}`, route => {
     if (route.request().method() !== 'DELETE') return route.fallback();
     profiles = [];
@@ -62,18 +64,29 @@ test('Windows uses the shared add-server dialog and the main server grid', async
   await expect(modal.getByText('On your first connection, check and confirm the Windows certificate.')).toHaveCount(0);
   await modal.locator('#server-rdp-tags').fill('Office, Office, Windows');
   await expect(modal.getByLabel(/fingerprint/i)).toHaveCount(0);
+  await expect(modal.locator('#server-rdp-remember')).toHaveCount(0);
+  await expect(modal.locator('#server-rdp-user')).toHaveValue('Administrator');
+  await modal.locator('#server-submit-btn').click();
+  expect(saved).toBeUndefined();
+  await modal.locator('#server-rdp-user').fill('custom-user');
+  await modal.locator('#server-rdp-domain').fill('WORK');
+  await modal.locator('#server-rdp-password').fill('synthetic');
   await modal.locator('#server-submit-btn').click();
   const card = page.locator(`#server-grid #rdp-card-${id}`);
-  const connection = card.getByRole('link', { name: 'Open desktop' });
-  await expect(connection).toHaveAttribute('href', `/rdp/${id}`);
-  await expect(connection).not.toHaveAttribute('target', '_blank');
-  expect(saved).toEqual({ name: 'Windows workstation', route: 'direct', host: '93.184.215.14', tags: ['Office', 'Windows'] });
+  await expect(card.getByRole('button', { name: 'Open desktop' })).toBeVisible();
+  expect(saved).toEqual({ name: 'Windows workstation', route: 'direct', host: '93.184.215.14', tags: ['Office', 'Windows'], login: { username: 'custom-user', domain: 'WORK', password: 'synthetic' } });
   await expect(card).toContainText('Office');
   await page.locator('#server-tag-filter').selectOption('Office');
   await expect(card).toBeVisible();
   await expect(page.locator('#server-grid')).not.toContainText('Linux workstation');
   await card.getByRole('button', { name: 'Edit device' }).click();
   await expect(modal.getByLabel('Device name')).toHaveValue('Windows workstation');
+  await expect(modal.locator('#server-rdp-user')).toHaveValue('custom-user');
+  await expect(modal.locator('#server-rdp-domain')).toHaveValue('WORK');
+  await expect(modal.locator('#server-rdp-password')).toHaveValue('');
+  await expect(modal.locator('#server-rdp-password')).not.toHaveAttribute('required');
+  await modal.locator('#server-rdp-user').fill('different-user');
+  await expect(modal.locator('#server-rdp-password')).toHaveAttribute('required');
   await expect(windows).toBeHidden();
   await modal.locator('#modal-close-btn').click();
   await page.locator('#add-server-btn').click();
@@ -90,20 +103,24 @@ test('the themed workspace stays in the current tab and a saved login is release
   await get('**/api/config', { turnstileEnabled: false, githubAuthEnabled: true, githubAuthRequired: true, authMode: 'github', rdpEnabled: true });
   await get('**/api/auth/me', { id: 1, github_id: 42, username: 'tester', avatar_url: null });
   await get('**/api/servers', []);
-  await get('**/api/rdp/profiles', { profiles: [profile] });
+  await get('**/api/rdp/profiles', { profiles: [profile, { ...profile, id: '12345678-1234-1234-1234-123456789abd', name: 'Legacy', hasLogin: false }] });
   await get(`**/api/rdp/profiles/${id}`, profile);
   const asset = (name: string) => readFileSync(`${__dirname}/../../src/worker/rdp-client/${name}.rdp-text`, 'utf8');
   await page.route(`**/rdp/${id}/client`, r => r.fulfill({ contentType: 'text/html', body: asset('index') }));
   await page.route('**/rdp/assets/desktop.js', r => r.fulfill({ contentType: 'text/javascript', body: asset('desktop') }));
-  await page.route('**/rdp/assets/rdp-socket.js', r => r.fulfill({ contentType: 'text/javascript', body: '' }));
+  await page.route('**/rdp/assets/rdp-socket.js', r => r.fulfill({ contentType: 'text/javascript', body: `window.createCloudSshRdpSocket = () => ({ probe() { this.onRelayRtt(24); }, close() {} })` }));
   await page.route('**/rdp/assets/sdl-freerdp.wasm', r => r.fulfill({ contentType: 'application/wasm', body: Buffer.from([0,97,115,109,1,0,0,0]) }));
   await page.route('**/rdp/assets/sdl-freerdp.js', r => r.fulfill({ contentType: 'text/javascript', body: `
     const m = window.Module;
     m.callMain = args => {
       document.documentElement.dataset.loginOk = String(args.includes('/u:test-user') && m.takeWindowsPassword() === 'synthetic' && !m.takeWindowsPassword());
+      const stage = document.getElementById('stage');
+      document.documentElement.dataset.initialViewport = '/size:' + (stage.clientWidth & ~1) + 'x' + (stage.clientHeight & ~1);
       document.documentElement.dataset.size = args.find(a => a.startsWith('/size:'));
       document.documentElement.dataset.dynamic = String(args.includes('/dynamic-resolution'));
       window.addEventListener('resize', () => { document.documentElement.dataset.requestedWidth = document.getElementById('stage').style.getPropertyValue('--desktop-width'); });
+      m.createRdpSocket(m.websocket.url);
+      m._cloudssh_take_rdp_rtt = () => 83;
       m.onWindowsDisplayControl(); m.onWindowsFirstFrame();
     }; m.onRuntimeInitialized();` }));
   let released = 0;
@@ -118,8 +135,12 @@ test('the themed workspace stays in the current tab and a saved login is release
     if (typeof SharedArrayBuffer !== 'function') Object.defineProperty(window, 'SharedArrayBuffer', { value: ArrayBuffer });
   });
   await page.goto('/?lang=en-US');
-  const card = page.getByRole('link', { name: 'Open desktop' });
+  const card = page.getByRole('button', { name: 'Open desktop' });
   await expect(card).toBeVisible();
+  await page.getByRole('button', { name: 'Complete setup' }).click();
+  await expect(page.locator('#server-modal #server-rdp-user')).toHaveValue('Administrator');
+  await expect(page.locator('#server-modal #server-rdp-password')).toHaveAttribute('required');
+  await page.locator('#modal-close-btn').click();
   expect(released).toBe(0);
   await card.click();
   await expect(page).toHaveURL(new RegExp(`/rdp/${id}$`));
@@ -128,10 +149,10 @@ test('the themed workspace stays in the current tab and a saved login is release
   await expect(frame.locator('html')).toHaveAttribute('data-login-ok', 'true');
   await expect(frame.locator('html')).toHaveAttribute('data-dynamic', 'true');
   const stage = frame.locator('#stage');
-  const width = (await stage.boundingBox())!.width;
-  const height = (await stage.boundingBox())!.height;
-  await expect(frame.locator('html')).toHaveAttribute('data-size', `/size:${Math.floor(width / 2) * 2}x${Math.floor(height / 2) * 2}`);
-  await expect(frame.locator('#credentials')).toBeHidden();
+  // Measure the initial viewport at callMain, not after the status line changes on first paint.
+  await expect(frame.locator('html')).toHaveAttribute('data-size', (await frame.locator('html').getAttribute('data-initial-viewport'))!);
+  await expect(frame.locator('form,input,#connect')).toHaveCount(0);
+  await expect(frame.locator('#latency')).toHaveText('Relay 24 ms · RDP 83 ms');
   expect(await frame.locator('html').evaluate(e => e.style.getPropertyValue('--accent').trim())).toBe(await page.locator('body').evaluate(e => getComputedStyle(e).getPropertyValue('--accent').trim()));
   await page.setViewportSize({ width: 960, height: 700 });
   await expect(frame.locator('html')).toHaveAttribute('data-requested-width', '960px');
@@ -146,6 +167,10 @@ test('the themed workspace stays in the current tab and a saved login is release
   await workspace.getByRole('button', { name: 'Back' }).click();
   await expect(workspace).toHaveCount(0);
   await expect(card).toBeVisible();
+  await page.goto(`/rdp/${id}`); // A pasted URL is not a second user-authorized connect action.
+  await expect(card).toBeVisible();
+  await expect(workspace).toHaveCount(0);
+  expect(released).toBe(1);
 });
 
 for (const scenario of ['accept', 'cancel', 'saved match', 'saved mismatch', 'save failed'] as const) {
@@ -156,7 +181,8 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'saved mismatch', 'sa
     const path = `/api/rdp/profiles/${id}`;
     let attempts = 0;
     const asset = (name: string) => readFileSync(`${__dirname}/../../src/worker/rdp-client/${name}.rdp-text`, 'utf8');
-    await page.route(`**/rdp/${id}`, route => route.fulfill({
+    await page.route(`**/rdp/${id}`, r => r.fulfill({ contentType: 'text/html', body: `<iframe src="/rdp/${id}/client" data-connect-saved="true"></iframe>` }));
+    await page.route(`**/rdp/${id}/client`, route => route.fulfill({
       contentType: 'text/html', body: asset('index'),
       headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' },
     }));
@@ -177,9 +203,9 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'saved mismatch', 'sa
       m.onRuntimeInitialized();
     ` }));
     await page.route(`**${path}`, route => route.request().method() === 'GET'
-      ? route.fulfill({ json: { id, name: 'Windows workstation', revision: 1, fingerprint: saved } }) : route.fallback());
+      ? route.fulfill({ json: { id, name: 'Windows workstation', revision: 1, hasLogin: true, fingerprint: saved } }) : route.fallback());
     await page.route(`**${path}/connect`, route => route.request().method() === 'POST'
-      ? route.fulfill({ json: { ticket: '1'.repeat(64), revision: 1 } }) : route.fallback());
+      ? route.fulfill({ json: { ticket: '1'.repeat(64), revision: 1, login: { username: 'test-user', domain: '', password: 'synthetic' } } }) : route.fallback());
     await page.route(`**${path}/trust`, route => {
       if (route.request().method() !== 'PUT') return route.fallback();
       attempts++;
@@ -194,12 +220,10 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'saved mismatch', 'sa
     });
     test.setTimeout(12_000);
     await page.goto(`/rdp/${id}`);
-    await page.locator('#windows-user').fill('user');
-    await page.locator('#windows-password').fill('test only');
-    await page.locator('#connect').click();
-    const result = () => page.evaluate(() => Reflect.get(window, 'certificateResult'));
-    const decision = () => page.evaluate(() => Reflect.get(window, 'Module').onWindowsCertificate(null));
-    const dialog = page.locator('#certificate');
+    const runner = page.frameLocator('iframe');
+    const result = () => runner.locator('html').evaluate(() => Reflect.get(window, 'certificateResult'));
+    const decision = () => runner.locator('html').evaluate(() => Reflect.get(window, 'Module').onWindowsCertificate(null));
+    const dialog = runner.locator('#certificate');
     if (scenario === 'saved match') {
       await expect.poll(result).toBe(1);
       await expect(dialog).toBeHidden();
@@ -213,7 +237,7 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'saved mismatch', 'sa
       } else {
         await expect.poll(decision).toBe(0);
         expect(attempts).toBe(0);
-        if (scenario === 'cancel') await page.keyboard.press('Escape');
+        if (scenario === 'cancel') await dialog.locator('#certificate-cancel').press('Escape');
         else await dialog.getByRole('button', { name: 'Trust and connect' }).click();
         await expect(dialog).toBeHidden();
         await expect.poll(decision).toBe(scenario === 'accept' ? 1 : -1);

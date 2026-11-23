@@ -29,6 +29,7 @@ export function startRdpRelay(hooks: SessionHooks): Response {
   let outSent = 0;
   let outAck = 0;
   let controls = 0;
+  let lastProbe = -Infinity;
   let creditWake: (() => void) | undefined;
   let writes = Promise.resolve();
   let phaseTimer = setTimeout(() => finish(1008, 'ticket_timeout'), 5000);
@@ -116,6 +117,12 @@ export function startRdpRelay(hooks: SessionHooks): Response {
           return;
         }
         if (stage !== 'ready') return finish(1008, 'invalid_frame');
+        if (msg?.type === 'ping') {
+          if (!Number.isSafeInteger(msg.id) || msg.id < 1 || msg.id > 0x7fffffff) return finish(1008, 'invalid_frame');
+          const now = Date.now();
+          if (now - lastProbe >= 1000) { lastProbe = now; control({ type: 'pong', id: msg.id }); }
+          return; // Transport telemetry is neither Windows input nor user activity.
+        }
         if (msg?.type === 'activity') { lastActivity = Date.now(); return; }
         if (msg?.type !== 'ack' || !Number.isSafeInteger(msg.bytes) || msg.bytes < outAck || msg.bytes > outSent) {
           return finish(1008, 'invalid_ack');

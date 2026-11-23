@@ -1,4 +1,4 @@
-import { isRdpId, parseRdpProfile, type RdpProfile } from '../../src/rdp-schema';
+import { RDP_CLIENT_REVISION, isRdpId, parseRdpProfile, type RdpProfile } from '../../src/rdp-schema';
 import { localizedElement, t, type TranslationKey } from './i18n';
 
 import { normalizeServerTags } from '../../src/server-tags';
@@ -17,7 +17,10 @@ export class RdpManager {
   private readonly secret: HTMLInputElement;
   private readonly clear = document.createElement('input');
   private readonly clearLabel = document.createElement('label');
-  private readonly remember = document.createElement('input');
+  private generation = 0;
+  private identity?: { username: string; domain: string };
+  private loadingIdentity = false;
+  private readonly loginNote = localizedElement('p', 'rdp.saveLogin');
   private readonly loginFields = document.createElement('fieldset');
   private readonly username: HTMLInputElement;
   private readonly domain: HTMLInputElement;
@@ -54,22 +57,16 @@ export class RdpManager {
     name.required = host.required = true;
     host.spellcheck = false;
     target.append(routeLabel, hostLabel);
-    this.remember.type = 'checkbox';
-    this.remember.id = 'server-rdp-remember';
-    const consent = document.createElement('label');
-    consent.className = 'flex gap-2 items-center text-sm';
-    consent.append(this.remember, localizedElement('span', 'rdp.saveLogin'));
+    this.loginNote.className = 'text-xs text-muted';
     const [username, userLabel] = this.field('rdp-user', 128, 'auth.user');
     const [domain, domainLabel] = this.field('rdp-domain', 128, 'rdp.domain');
     const [password, passLabel] = this.field('rdp-password', 1024, 'common.password', 'password');
     this.username = username; this.domain = domain; this.password = password;
-    this.loginFields.className = 'space-y-3 mt-3';
-    this.loginFields.append(userLabel, domainLabel, passLabel);
-    this.remember.onchange = () => {
-      this.loginFields.hidden = this.loginFields.disabled = !this.remember.checked;
-      if (!this.remember.checked) this.username.value = this.domain.value = this.password.value = '';
-    };
-    authentication.append(consent, this.loginFields);
+    username.required = true;
+    this.loginFields.className = 'grid gap-3 min-w-0';
+    this.loginFields.append(userLabel, passLabel, domainLabel, this.loginNote);
+    this.host.oninput = username.oninput = domain.oninput = () => this.updatePasswordRequirement();
+    authentication.append(this.loginFields);
     columns.append(target, authentication);
 
     this.access.className = 'rdp-tunnel-fields mt-4 pt-4 border-t border-outline-variant';
@@ -120,18 +117,53 @@ export class RdpManager {
     this.host.value = row?.host ?? '';
     this.tags.value = (row?.tags ?? []).join(', ');
     this.transport.value = row?.route ?? 'direct';
-    this.id.value = this.secret.value = this.username.value = this.domain.value = this.password.value = '';
-    this.remember.checked = row?.hasLogin === true;
-    this.loginFields.hidden = this.loginFields.disabled = !this.remember.checked;
-    this.password.placeholder = row?.hasLogin ? t('rdp.keepLogin') : '';
+    this.id.value = this.secret.value = this.domain.value = this.password.value = '';
+    this.username.value = row?.hasLogin ? '' : 'Administrator';
+    this.identity = undefined;
+    const generation = ++this.generation;
+    this.loginFields.disabled = this.loadingIdentity = row?.hasLogin === true;
+    if (row?.hasLogin) void this.loadIdentity(row, generation);
     this.clear.checked = false;
     this.clearLabel.hidden = !row?.hasAccessToken;
     this.updateTransport();
   }
 
+  private async loadIdentity(row: RdpProfile, generation: number): Promise<void> {
+    try {
+      const res = await this.request(`/${row.id}/login-identity`, 'POST', { revision: row.revision });
+      if (!res.ok) throw new Error();
+      const data = await res.json() as { username: string; domain: string; revision: number };
+      if (data.revision !== row.revision || typeof data.username !== 'string' || typeof data.domain !== 'string') throw new Error();
+      if (this.generation !== generation) return;
+      this.identity = { username: data.username, domain: data.domain };
+      this.username.value = data.username;
+      this.domain.value = data.domain;
+    } catch {
+      // Identity could not be verified: require a complete replacement, never reuse the password.
+      if (this.generation === generation) this.username.value = 'Administrator';
+    } finally {
+      if (this.generation === generation) {
+        this.loginFields.disabled = this.loadingIdentity = false;
+        this.updatePasswordRequirement();
+      }
+    }
+  }
+
+  private canKeepPassword(): boolean {
+    return !!this.identity && this.editing?.host === this.host.value.trim().toLowerCase() &&
+      this.editing.route === this.transport.value && this.identity.username === this.username.value.trim() &&
+      this.identity.domain === this.domain.value.trim();
+  }
+
+  private updatePasswordRequirement(): void {
+    this.password.required = !this.canKeepPassword();
+    this.password.placeholder = this.password.required ? '' : t('rdp.keepLogin');
+  }
+
   focus(): void { this.name.focus({ preventScroll: true }); }
 
   private updateTransport(): void {
+    this.updatePasswordRequirement();
     this.access.hidden = this.transport.value !== 'tunnel';
     this.access.disabled = this.access.hidden;
     this.host.placeholder = this.access.hidden ? '203.0.113.10' : 'rdp.example.com';
@@ -141,7 +173,7 @@ export class RdpManager {
   private request(path: string, method = 'GET', body?: unknown): Promise<Response> {
     return fetch(API + path, {
       method, cache: 'no-store', signal: this.requests.signal,
-      ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+      ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json', 'X-CloudSSH-RDP-Client': String(RDP_CLIENT_REVISION) }, body: JSON.stringify(body) }),
     });
   }
 
@@ -161,12 +193,10 @@ export class RdpManager {
       input.accessId = this.clear.checked ? '' : this.id.value;
       input.accessSecret = this.clear.checked ? '' : this.secret.value;
     }
-    if (this.remember.checked) {
-      const sameTarget = editing?.host === this.host.value.trim().toLowerCase() && editing.route === this.transport.value;
-      if (!sameTarget || !editing?.hasLogin || this.username.value || this.domain.value || this.password.value) {
-        input.login = { username: this.username.value.trim(), domain: this.domain.value.trim(), password: this.password.value };
-      }
-    } else if (editing?.hasLogin) input.login = null;
+    if (this.loadingIdentity) throw new Error(t('rdp.loadingIdentity'));
+    if (!this.canKeepPassword() || this.password.value) {
+      input.login = { username: this.username.value.trim(), domain: this.domain.value.trim(), password: this.password.value };
+    }
     const data = parseRdpProfile(input);
     if (!data) throw new Error(t('rdp.invalid'));
     try {
