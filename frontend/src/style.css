@@ -6047,9 +6047,10 @@ html[data-rdp-entry] #app-loading { display: none; }
 @media (pointer: fine) {
   .rdp-shell:fullscreen header button { min-height: 28px; padding-block: 0; }
 }
-/* Letterbox below the desktop rather than inserting a black band below its controls. */
+/* Fullscreen fits the entire Windows canvas edge-to-edge below the toolbar, without
+   resizing the running iframe or clipping any desktop content. */
 .rdp-shell:fullscreen .rdp-viewport iframe {
-  top: 0; transform-origin: center top; transform: translateX(-50%) scale(var(--rdp-scale, 1));
+  top: 0; left: 0; transform-origin: top left; transform: var(--rdp-fill-transform, none);
 }
 .rdp-viewport { flex: 1; min-height: 0; position: relative; overflow: hidden; background: #080808; }
 .rdp-viewport iframe {

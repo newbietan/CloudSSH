@@ -1,11 +1,40 @@
 import { readFileSync } from 'node:fs';
-import { expect, test } from './fixtures';
+import { expect, test, type Page } from './fixtures';
 
 const id = '12345678-1234-1234-1234-123456789abc';
 const ssh = {
   id: 1, user_id: 1, name: 'Linux workstation', host: 'ssh.example.com', port: 22,
   username: 'deploy', auth_method: 'password', tags: [], created_at: '', updated_at: '',
 };
+
+/** Check the visible canvas, not just the element around the embedded document. */
+async function expectFullscreenFit(page: Page, checkHits = false) {
+  const viewport = page.locator('.rdp-shell:fullscreen .rdp-viewport');
+  await expect.poll(() => viewport.evaluate(e => {
+    const frame = e.querySelector('iframe')!;
+    const canvas = frame.contentDocument!.querySelector('canvas')!.getBoundingClientRect();
+    const area = e.getBoundingClientRect(), rect = frame.getBoundingClientRect();
+    const sx = rect.width / frame.clientWidth, sy = rect.height / frame.clientHeight;
+    return Math.max(Math.abs(rect.left + canvas.left * sx - area.left), Math.abs(rect.left + canvas.right * sx - area.right),
+      Math.abs(rect.top + canvas.top * sy - area.top), Math.abs(rect.top + canvas.bottom * sy - area.bottom));
+  })).toBeLessThan(1);
+  if (!checkHits) return;
+  const canvas = page.frameLocator('.rdp-viewport iframe').locator('#canvas');
+  const box = (await viewport.boundingBox())!;
+  for (const [x, y] of [[0, 0], [1, 0], [1, 1], [0, 1], [.5, .5]]) {
+    await canvas.evaluate((e: HTMLCanvasElement) => {
+      delete e.dataset.hit;
+      e.addEventListener('pointerdown', event => {
+        const r = e.getBoundingClientRect();
+        e.dataset.hit = JSON.stringify([(event.clientX - r.x) / r.width, (event.clientY - r.y) / r.height]);
+      }, { once: true });
+    });
+    await page.mouse.click(box.x + 2 + (box.width - 4) * x, box.y + 2 + (box.height - 4) * y);
+    const [u, v] = JSON.parse(await canvas.getAttribute('data-hit') ?? '[]') as number[];
+    expect(Math.abs(u - x)).toBeLessThan(.02);
+    expect(Math.abs(v - y)).toBeLessThan(.02);
+  }
+}
 
 test('Windows uses the shared add-server dialog and the main server grid', async ({ page }) => {
   await page.route('**/api/config', route => route.request().method() === 'GET' ? route.fulfill({ json: {
@@ -222,20 +251,23 @@ test('the themed workspace stays in the current tab and a saved login is release
       await expect(workspace.locator('header .rdp-latency')).toBeVisible();
       expect(await stage.evaluate(e => e.getBoundingClientRect().top)).toBe(0);
       const headerRect = (await toolbar.boundingBox())!;
-      const frameRect = (await workspace.locator('iframe').boundingBox())!;
-      expect(Math.abs(frameRect.y - headerRect.y - headerRect.height)).toBeLessThan(2);
+      const viewport = workspace.locator('.rdp-viewport');
+      expect(Math.abs((await viewport.boundingBox())!.y - headerRect.y - headerRect.height)).toBeLessThan(2);
+      await expectFullscreenFit(page);
       expect(headerRect.height).toBeLessThanOrEqual(await page.evaluate(() => matchMedia('(pointer: fine)').matches ? 34 : 48));
       if (how === 'back') break; // Back must end the live session even from fullscreen.
       if (how === 'button') {
-        // Model a display substantially larger than the tab. The iframe's logical viewport and SDL canvas must not resize.
-        // CDP cannot resize an actual fullscreen OS window; resize its host viewport instead.
-        const viewport = workspace.locator('.rdp-viewport');
-        await viewport.evaluate(e => { e.style.minWidth = '1280px'; e.style.minHeight = '920px'; });
-        await expect.poll(() => frameSize()).toEqual(initialSize);
-        const target = workspace.locator('iframe');
-        await expect.poll(() => target.evaluate(e => Number(e.style.getPropertyValue('--rdp-scale')))).toBeGreaterThan(1);
-        await frame.locator('#canvas').click();
-        await viewport.evaluate(e => { e.style.removeProperty('min-width'); e.style.removeProperty('min-height'); });
+        // CDP cannot resize a fullscreen OS window. Simulate wide and tall display areas inside it.
+        // Also model a fixed-resolution canvas already letterboxed inside its document.
+        const canvas = frame.locator('#canvas');
+        await canvas.evaluate(e => { e.style.setProperty('width', '70%', 'important'); e.style.setProperty('height', '62%', 'important'); });
+        for (const [width, height] of [['62%', '80%'], ['96%', '52%']]) {
+          await viewport.evaluate((e, [w, h]) => { e.style.flex = 'none'; e.style.width = w; e.style.height = h; }, [width, height]);
+          await expectFullscreenFit(page, true);
+          expect(await frameSize()).toEqual(initialSize);
+        }
+        await canvas.evaluate(e => { e.style.removeProperty('width'); e.style.removeProperty('height'); });
+        await viewport.evaluate(e => { e.style.removeProperty('flex'); e.style.removeProperty('width'); e.style.removeProperty('height'); });
         await exit.click();
       } else {
         await page.keyboard.press('Escape');
@@ -245,6 +277,7 @@ test('the themed workspace stays in the current tab and a saved login is release
       await expect(full).toBeVisible();
       await expect.poll(inFullscreen).toBe(false);
       expect(await frameSize()).toEqual(initialSize);
+      await expect.poll(() => workspace.locator('iframe').evaluate(e => e.style.getPropertyValue('--rdp-fill-transform'))).toBe('');
     }
   } else await expect(full).toBeDisabled();
   expect(context.pages()).toHaveLength(1);
