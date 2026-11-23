@@ -7,7 +7,7 @@ import { isValidTunnelHostname, maskIPAddress } from './host-display';
 import { getLocale, onLocaleChange, t } from './i18n';
 import { osDisplayName, osIconSvg } from './os-icons';
 import { parsePort } from './port';
-import { preparePrivateKey } from './private-key-import';
+import { bindPrivateKeyFile, preparePrivateKey } from './private-key-import';
 import { requestCloudflareSshCertificate } from './cf-ssh-ca';
 import { populateRegionSelect, regionLabel } from './regions';
 import { ShareManager } from './share-manager';
@@ -189,6 +189,7 @@ export class ServerList {
   private modalAuthMode: 'password' | 'key' | 'none' | 'cf_ca' = 'password';
   private modalTransportMode: 'direct' | 'cf_tunnel' = 'direct';
   private modalGeneration = 0;
+  private resetKeyPicker?: () => void;
   private clearCfAccessClientSecret = false;
   private searchQuery = '';
   private selectedTag = '';
@@ -306,6 +307,8 @@ export class ServerList {
   // ==================== 事件绑定 ====================
 
   private bindEvents(): void {
+    this.resetKeyPicker = bindPrivateKeyFile(document.getElementById('server-key-picker')!,
+      document.querySelector<HTMLTextAreaElement>('#server-private-key')!, 'server-private-key-file', this.modalEvents.signal);
     // 退出登录
     document.getElementById('logout-btn')?.addEventListener('click', () => this.logout());
 
@@ -958,6 +961,7 @@ export class ServerList {
   }
 
   private setModalKind(kind: 'ssh' | 'rdp', focus = true): void {
+    this.resetKeyPicker?.();
     this.modalKind = kind;
     const ssh = document.querySelector<HTMLFieldSetElement>('#server-ssh-fields');
     const rdp = document.querySelector<HTMLFieldSetElement>('#server-rdp-fields');
@@ -1147,6 +1151,9 @@ export class ServerList {
 
   hideModal(): void {
     this.modalGeneration++;
+    this.resetKeyPicker?.();
+    const key = document.querySelector<HTMLTextAreaElement>('#server-private-key');
+    if (key) key.value = '';
     this.rdpSaving = false;
     this.rdp?.reset();
     const modal = document.getElementById('server-modal');
@@ -1230,6 +1237,7 @@ export class ServerList {
 
   private setModalAuthMode(mode: 'password' | 'key' | 'none' | 'cf_ca'): void {
     if (mode === 'cf_ca' && !this.cfSshCaEnabled) return;
+    this.resetKeyPicker?.();
     this.modalAuthMode = mode;
     for (const value of ['password', 'key', 'none', 'cf_ca'] as const) {
       const tabId = value === 'cf_ca' ? 'modal-auth-tab-cf-ca' : `modal-auth-tab-${value}`;
@@ -1247,12 +1255,11 @@ export class ServerList {
     const emptyPassword = document.getElementById('server-empty-password') as HTMLInputElement;
     document.getElementById('server-empty-password-option')!
       .classList.toggle('hidden', !editingPassword);
-    (document.getElementById('server-password') as HTMLInputElement).disabled =
-      editingPassword && emptyPassword.checked;
-    const hint = document.getElementById('server-password-hint')!;
-    const hintKey = editingPassword ? 'server.passwordEditHint' : 'auth.passwordHint';
-    hint.dataset.i18n = hintKey;
-    hint.textContent = t(hintKey);
+    const password = document.getElementById('server-password') as HTMLInputElement;
+    password.disabled = editingPassword && emptyPassword.checked;
+    document.getElementById('server-password-hint')!.classList.toggle('hidden', !editingPassword);
+    if (editingPassword) password.setAttribute('aria-describedby', 'server-password-hint');
+    else password.removeAttribute('aria-describedby');
   }
 
   private getJumpPath(server: ServerConfig): string[] {

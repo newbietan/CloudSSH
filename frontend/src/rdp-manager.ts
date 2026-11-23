@@ -20,7 +20,6 @@ export class RdpManager {
   private generation = 0;
   private identity?: { username: string; domain: string };
   private loadingIdentity = false;
-  private readonly loginNote = localizedElement('p', 'rdp.saveLogin');
   private readonly loginFields = document.createElement('fieldset');
   private readonly username: HTMLInputElement;
   private readonly domain: HTMLInputElement;
@@ -57,14 +56,13 @@ export class RdpManager {
     name.required = host.required = true;
     host.spellcheck = false;
     target.append(routeLabel, hostLabel);
-    this.loginNote.className = 'text-xs text-muted';
     const [username, userLabel] = this.field('rdp-user', 128, 'auth.user');
     const [domain, domainLabel] = this.field('rdp-domain', 128, 'rdp.domain');
     const [password, passLabel] = this.field('rdp-password', 1024, 'common.password', 'password');
     this.username = username; this.domain = domain; this.password = password;
     username.required = true;
     this.loginFields.className = 'grid gap-3 min-w-0';
-    this.loginFields.append(userLabel, passLabel, domainLabel, this.loginNote);
+    this.loginFields.append(userLabel, passLabel, domainLabel);
     this.host.oninput = username.oninput = domain.oninput = () => this.updatePasswordRequirement();
     authentication.append(this.loginFields);
     columns.append(target, authentication);

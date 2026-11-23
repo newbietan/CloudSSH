@@ -5033,10 +5033,6 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
     white-space: nowrap;
   }
 
-  .user-space-footer-url {
-    display: none;
-  }
-
   .responsive-modal {
     align-items: center;
     padding-top: max(12px, env(safe-area-inset-top));

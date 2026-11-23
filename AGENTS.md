@@ -148,7 +148,7 @@ frontend/
 │   ├── sftp-selection.ts  # Pure multi-selection state model
 │   ├── auth-form.ts       # Auth form & encrypted anonymous credentials storage/autofill + 单管理员密码登录对话框
 │   ├── private-key-unlock.ts # 浏览器内 OpenSSH bcrypt/AES-CTR、PKCS#8 PBES2 解锁与 KDF/DER 预算
-│   ├── private-key-import.ts # 解锁交互、显式保存同意与临时凭据边界
+│   ├── private-key-import.ts # 匿名/服务器编辑共用有界本地文件选择、解锁交互、显式保存同意与临时凭据边界
 │   ├── password-stretch.ts # 单管理员密码登录浏览器端 PBKDF2 预拉伸（server relief，原始密码不出浏览器）+ 哈希生成纯函数
 │   ├── admin-hash-generator.ts # 管理员密码哈希浏览器内生成器对话框（Dashboard-only 部署无需本地 Node 工具）
 │   ├── api-errors.ts      # 统一 API 错误解析与脱敏展示纯函数

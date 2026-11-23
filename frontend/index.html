@@ -525,11 +525,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
           <div
             class="user-space-footer-source text-secondary-container opacity-60"
           >
-            © <span id="user-copyright-year"></span> CLOUD_SSH_TERMINAL<span
-              class="user-space-footer-url"
-            >
-              - https://github.com/newbietan/CloudSSH</span
-            >
+            © <span id="user-copyright-year">2026</span> CLOUDSSH
           </div>
           <div class="footer-meta">
             <div data-version-notice></div>
@@ -626,12 +622,6 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 placeholder="生产, 数据库, 亚太"
                 maxlength="249"
               />
-              <div
-                class="text-[10px] text-muted mt-1"
-                data-i18n="server.tagsHint"
-              >
-                使用逗号分隔，最多 10 个标签
-              </div>
             </div>
             </div>
             <div class="server-settings-columns">
@@ -748,12 +738,6 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                   不使用跳板（直连）
                 </option>
               </select>
-              <div
-                class="text-[10px] text-muted mt-1"
-                data-i18n="server.jumpHostHint"
-              >
-                可选择已保存服务器；最多递归跳转 3 级
-              </div>
             </div>
             <div
               id="server-cf-access-section"
@@ -902,10 +886,9 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                     type="password"
                     data-i18n-aria-label="common.password"
                     aria-label="密码"
-                    aria-describedby="server-password-hint"
                   />
                 </div>
-                <p id="server-password-hint" class="text-xs text-muted mt-2" data-i18n="auth.passwordHint"></p>
+                <p id="server-password-hint" class="hidden text-xs text-muted mt-2" data-i18n="server.passwordEditHint"></p>
                 <div id="server-empty-password-option" class="hidden mt-2">
                   <label class="flex items-center gap-2 text-xs text-muted cursor-pointer">
                     <input id="server-empty-password" type="checkbox" class="accent-[var(--accent)] w-4 h-4" />
@@ -928,6 +911,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                     padding: 8px;
                   "
                 ></textarea>
+                <div id="server-key-picker" class="flex items-center gap-2 mt-2"></div>
               </div>
             </div>
             <div id="server-region-section">
@@ -1390,8 +1374,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
           class="terminal-footer px-6 py-0 flex justify-between items-center z-50 bg-elevated border-t border-outline-variant text-xs h-8 shrink-0"
         >
           <div class="text-secondary-container opacity-60">
-            © <span id="copyright-year"></span> CLOUD_SSH_TERMINAL -
-            https://github.com/newbietan/CloudSSH
+            © <span id="copyright-year">2026</span> CLOUDSSH
           </div>
           <div class="footer-meta">
             <div data-version-notice></div>

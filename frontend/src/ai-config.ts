@@ -56,7 +56,7 @@ export class AIConfigPanel {
               <span class="material-symbols-outlined text-muted mr-2" style="font-size:16px;">key</span>
               <input id="ai-api-key" class="terminal-input text-[13px]" placeholder="sk-..." type="password">
             </div>
-            <div id="ai-key-hint" class="text-[10px] text-muted opacity-60 mt-1" data-i18n="aiConfig.keyUnchanged">留空表示不修改现有密钥</div>
+            <div id="ai-key-hint" class="hidden"></div>
           </div>
           <div>
             <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="aiConfig.model">模型</label>
@@ -196,6 +196,7 @@ export class AIConfigPanel {
       }
     });
 
+    this.modalEl?.querySelector('#ai-api-key')?.addEventListener('input', () => this.updateKeyHint());
     baseUrlEl?.addEventListener('input', () => {
       // 接口地址发生变更时重置已缓存的模型列表，避免服务商混淆
       this.loadedModels = [];
@@ -216,7 +217,7 @@ export class AIConfigPanel {
   private updateKeyHint(): void {
     const baseUrlEl = this.modalEl?.querySelector('#ai-base-url') as HTMLInputElement | null;
     const apiKeyEl = this.modalEl?.querySelector('#ai-api-key') as HTMLInputElement | null;
-    const hintEl = this.modalEl?.querySelector('#ai-key-hint');
+    const hintEl = this.modalEl?.querySelector<HTMLElement>('#ai-key-hint');
     if (!hintEl) return;
 
     const currentBaseUrl = baseUrlEl?.value.trim() || '';
@@ -229,7 +230,9 @@ export class AIConfigPanel {
         return;
       }
     }
-    hintEl.className = 'text-[10px] text-muted opacity-60 mt-1';
+    const last4 = hintEl.dataset.last4;
+    hintEl.textContent = last4 ? t('aiConfig.currentKey', { last4 }) : '';
+    hintEl.className = last4 ? 'text-[10px] text-muted opacity-60 mt-1' : 'hidden';
   }
 
   private isSameBaseUrl(urlA: string, urlB: string): boolean {
@@ -381,14 +384,13 @@ export class AIConfigPanel {
         if (data.configured) {
           const baseUrlEl = this.modalEl?.querySelector('#ai-base-url') as HTMLInputElement;
           const modelEl = this.modalEl?.querySelector('#ai-model') as HTMLInputElement;
-          const hintEl = this.modalEl?.querySelector('#ai-key-hint');
+          const hintEl = this.modalEl?.querySelector<HTMLElement>('#ai-key-hint');
           if (baseUrlEl) baseUrlEl.value = data.base_url || '';
           if (modelEl) modelEl.value = data.model || '';
           this.savedBaseUrl = data.base_url || '';
           this.hasConfiguredKey = Boolean(data.api_key_last4);
-          if (hintEl && data.api_key_last4) {
-            hintEl.textContent = t('aiConfig.currentKey', { last4: data.api_key_last4 });
-          }
+          if (hintEl) hintEl.dataset.last4 = data.api_key_last4 || '';
+          this.updateKeyHint();
           this.updateClearButtonVisibility();
         }
       }

@@ -125,7 +125,11 @@ test('AI 模型选择下拉框：免重复输入 token 获取模型列表，且�
 
   // 验证 API 密钥输入框为空，但显示了掩码提示
   await expect(page.locator('#ai-api-key')).toHaveValue('');
-  await expect(page.locator('#ai-key-hint')).toContainText('9999');
+  await expect(page.locator('#ai-key-hint')).toHaveText(/\*{4}9999$/);
+  await page.locator('#ai-base-url').fill('https://different.example/v1');
+  await expect(page.locator('#ai-key-hint')).not.toContainText('9999');
+  await page.locator('#ai-base-url').fill('https://api.example.com/v1');
+  await expect(page.locator('#ai-key-hint')).toHaveText(/\*{4}9999$/);
 
   // 用户第二次修改模型时：无需输入 token，直接点击“获取模型列表”
   await page.locator('#ai-fetch-models-btn').click();

@@ -62,7 +62,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
     'Connecting to target through the jump chain: {host}:{port}',
   'server.jumpHost': 'Jump host',
   'server.jumpHostNone': 'No jump host (direct)',
-  'server.jumpHostHint': 'Choose a saved server; up to 3 recursive hops',
   'server.jumpPath': 'Path',
   'terminal.moreActions': 'More actions',
   'terminal.searchMobile': 'Search',
@@ -175,6 +174,8 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'auth.keyUnlockTransient': 'The unlocked key is for this connection only; credential remembering has been disabled. The passphrase is not saved.',
   'auth.keyPlaceholder':
     '-----BEGIN OPENSSH PRIVATE KEY-----\n...paste private key here...\n-----END OPENSSH PRIVATE KEY-----',
+  'auth.keyFileReading': 'Reading the private key file. Please wait.',
+  'auth.keyFileTooLarge': 'The private key file must not exceed 128 KiB.',
   'auth.chooseKeyFile': 'Choose key file',
   'auth.regionHint': 'Connection region',
   'auth.regionOptional': 'Optional; Auto lets Cloudflare choose',
@@ -227,8 +228,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'auth.validationHostUser': 'Enter a host address and username.',
   'auth.validationPort': 'Port must be an integer from 1 to 65535.',
   'auth.validationPassword': 'Enter a password.',
-  'auth.passwordHint':
-    'Leave blank to send an empty password. Interactive authentication prompts also accept an empty response with Enter.',
   'server.passwordEditHint':
     'Leave blank to keep the saved password. To clear it, select “Set an empty password”.',
   'server.useEmptyPassword': 'Set an empty password',
@@ -265,7 +264,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'server.neverConnected': 'Never connected',
   'server.tags': 'Tags',
   'server.tagsPlaceholder': 'production, database, apac',
-  'server.tagsHint': 'Separate tags with commas; up to 10 tags',
   'server.pagination': 'Server list pagination',
   'server.previousPage': 'Previous',
   'server.nextPage': 'Next',
@@ -841,8 +839,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'aiConfig.loadFailed': 'Could not load models: {message}',
   'aiConfig.compatibleHint':
     'CloudSSH only supports the Responses API. Please make sure the API address is correct.',
-  'aiConfig.keyUnchanged': 'Leave blank to keep the existing key',
-  'aiConfig.currentKey': 'Current key: ****{last4} (leave blank to keep it)',
+  'aiConfig.currentKey': 'Current key: ****{last4}',
   'aiConfig.required': 'Base URL and model are required.',
   'aiConfig.credentialsRequired': 'Enter a Base URL and API key first.',
   'aiConfig.loadingModels': 'Loading models…',
@@ -1048,7 +1045,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'rdp.clearAccess': 'Clear saved token',
   'rdp.save': 'Save',
   'rdp.cancel': 'Cancel',
-  'rdp.saveLogin': 'Saving this device encrypts its Windows sign-in details in your account.',
   'rdp.complete': 'Complete setup',
   'rdp.loadingIdentity': 'Loading the saved username and domain…',
   'rdp.domain': 'Domain (optional)',
