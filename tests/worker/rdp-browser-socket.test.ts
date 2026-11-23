@@ -8,9 +8,12 @@ interface SocketAdapter {
   send(data: ArrayBuffer): void;
   consumed(bytes: number): void;
   readyState: number;
+  lease?: string;
   onopen?: () => void;
   onmessage?: (event: { data: unknown }) => void;
 }
+const lease = '12345678-1234-1234-1234-123456789abc';
+const ready = JSON.stringify({ type: 'ready', lease });
 function fixture() {
   const native = {
     protocol: 'cloudssh-rdp-v1',
@@ -36,8 +39,9 @@ describe('FreeRDP browser socket', () => {
       native.onopen();
       expect(native.send).toHaveBeenLastCalledWith('{"type":"ticket","ticket":"token"}');
       expect(onOpen).not.toHaveBeenCalled();
-      native.onmessage({ data: '{"type":"ready"}' });
+      native.onmessage({ data: ready });
       expect(onOpen).toHaveBeenCalledOnce();
+      expect(socket.lease).toBe(lease);
       const incoming = new ArrayBuffer(12);
       native.onmessage({ data: incoming });
       expect(onData).toHaveBeenCalledExactlyOnceWith({ data: incoming });
@@ -51,7 +55,7 @@ describe('FreeRDP browser socket', () => {
 
   it('splits writes and rejects sending beyond the unacknowledged input window', () => {
     const { native, socket } = fixture();
-    native.onmessage({ data: '{"type":"ready"}' });
+    native.onmessage({ data: ready });
     socket.send(new ArrayBuffer(1024 * 1024));
     expect(native.send).toHaveBeenCalledTimes(64);
     expect(native.send.mock.calls.every(([frame]) => frame.byteLength === 16 * 1024)).toBe(true);

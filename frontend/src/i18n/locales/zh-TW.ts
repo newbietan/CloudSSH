@@ -971,8 +971,7 @@ export const zhTW = {
   'rdp.remove': '刪除裝置',
   'rdp.name': '裝置名稱',
   'rdp.host': 'IPv4 位址或通道網域',
-  'rdp.fingerprint': 'Windows 憑證 SHA-256 指紋',
-  'rdp.pinHelp': '請從受信任的 Windows 主控台獨立核對指紋。',
+  'rdp.pinHelp': '首次開啟桌面時會提示你核對並確認 Windows 憑證。',
   'rdp.route': '線路',
   'rdp.access': 'Access Service Token（選填）',
   'rdp.accessId': 'Client ID',
@@ -980,6 +979,6 @@ export const zhTW = {
   'rdp.clearAccess': '清除已儲存權杖',
   'rdp.save': '儲存',
   'rdp.cancel': '取消',
-  'rdp.invalid': '請檢查位址、憑證指紋和權杖。',
+  'rdp.invalid': '請檢查伺服器位址或 Access 權杖。',
   'rdp.removeConfirm': '刪除後會中斷該裝置的 CloudSSH 工作階段。',
 } as const;

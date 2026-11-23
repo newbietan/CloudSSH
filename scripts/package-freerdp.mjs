@@ -13,7 +13,9 @@ let glue = bounded(script, 2 * 1024 * 1024).toString('utf8');
 const module = bounded(wasm, 24 * 1024 * 1024);
 const notice = bounded(licenses, 2 * 1024 * 1024).toString('utf8').replace(/[ \t]+(?=\r?$)/gm, '');
 if (!WebAssembly.validate(module)) throw new Error('Invalid WASM');
-if (!glue.includes('takeWindowsPassword') || !glue.includes('onWindowsFirstFrame')) throw new Error('Missing browser bridge');
+if (['takeWindowsPassword', 'onWindowsFirstFrame', 'onWindowsCertificate'].some((hook) => !glue.includes(hook))) {
+  throw new Error('Missing browser bridge');
+}
 function patch(needle, replacement) {
   if (glue.split(needle).length !== 2) throw new Error(`Recheck pinned Emscripten ABI: ${needle}`);
   glue = glue.replace(needle, replacement);

@@ -6024,8 +6024,9 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 .server-kind-switch:not(.hidden) {
   display: inline-grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-self: flex-start;
+  align-self: stretch;
   flex-shrink: 0;
+  width: 100%;
   max-width: 100%;
   margin-top: 12px;
   padding: 3px;
@@ -6043,6 +6044,7 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   font-size: 0.8125rem;
   font-weight: 600;
   line-height: 1.2;
+  text-align: center;
 }
 .server-kind-switch button[aria-pressed='true'] {
   border-color: var(--border-strong);

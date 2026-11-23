@@ -8,7 +8,6 @@ export class RdpManager {
   private readonly requests = new AbortController();
   private readonly name: HTMLInputElement;
   private readonly host: HTMLInputElement;
-  private readonly fingerprint: HTMLInputElement;
   private readonly transport = document.createElement('select');
   private readonly access = document.createElement('fieldset');
   private readonly id: HTMLInputElement;
@@ -40,16 +39,12 @@ export class RdpManager {
     authentication.className = 'server-settings-section';
     const [host, hostLabel] = this.field('rdp-host', 253, 'rdp.host');
     this.host = host;
-    const [fingerprint, fingerprintLabel] = this.field('rdp-fingerprint', 96, 'rdp.fingerprint');
-    this.fingerprint = fingerprint;
-    for (const field of [name, host, fingerprint]) field.required = true;
-    host.spellcheck = fingerprint.spellcheck = false;
+    name.required = host.required = true;
+    host.spellcheck = false;
     const hint = localizedElement('p', 'rdp.pinHelp');
-    hint.id = 'server-rdp-certificate-help';
-    hint.className = 'text-xs text-muted';
-    fingerprint.setAttribute('aria-describedby', hint.id);
+    hint.className = 'text-sm text-muted';
     target.append(hostLabel);
-    authentication.append(fingerprintLabel, hint);
+    authentication.append(hint);
     columns.append(target, authentication);
 
     this.access.className = 'rdp-tunnel-fields mt-4 pt-4 border-t border-outline-variant';
@@ -98,7 +93,6 @@ export class RdpManager {
     this.editing = row;
     this.name.value = row?.name ?? '';
     this.host.value = row?.host ?? '';
-    this.fingerprint.value = row?.fingerprint ?? '';
     this.transport.value = row?.route ?? 'direct';
     this.id.value = this.secret.value = '';
     this.clear.checked = false;
@@ -132,7 +126,7 @@ export class RdpManager {
   async save(): Promise<void> {
     const editing = this.editing;
     const input: Record<string, unknown> = {
-      name: this.name.value, route: this.transport.value, host: this.host.value, fingerprint: this.fingerprint.value,
+      name: this.name.value, route: this.transport.value, host: this.host.value,
     };
     if (this.transport.value === 'tunnel' && (this.clear.checked || this.id.value || this.secret.value)) {
       input.accessId = this.clear.checked ? '' : this.id.value;

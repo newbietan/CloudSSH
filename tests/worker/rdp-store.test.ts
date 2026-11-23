@@ -4,7 +4,7 @@ import { parseRdpProfile } from '../../src/rdp-schema';
 import { RdpStore } from '../../src/worker/rdp-store';
 
 const certificate = '1'.repeat(64);
-const target = { name: 'Workstation', route: 'direct', host: '93.184.215.14', fingerprint: certificate };
+const target = { name: 'Workstation', route: 'direct', host: '93.184.215.14' };
 const bind = '2'.repeat(64);
 
 function fixture() {
@@ -33,6 +33,8 @@ describe('RDP profiles and connection leases', () => {
     for (const host of ['127.0.0.1', '0.0.0.0', 'fd00::1', '192.168.1.1', '198.51.100.3', '10.0.0.8', '93.018.215.14', 'www.example.com']) {
       expect(parseRdpProfile({ ...target, host })).toBeNull();
     }
+    expect(parseRdpProfile(target)).toEqual(target);
+    expect(parseRdpProfile({ ...target, fingerprint: certificate })).toBeNull();
     expect(parseRdpProfile({ ...target, password: 'not allowed' })).toBeNull();
     expect(parseRdpProfile({ ...target, route: 'tunnel', host: 'a.test/foo' })).toBeNull();
   });
@@ -55,6 +57,30 @@ describe('RDP profiles and connection leases', () => {
       expect((await request('renew', 'POST', { lease })).status).toBe(200);
       expect((await request(`profiles/${id}`, 'PUT', { ...target, revision, name: 'Renamed' })).status).toBe(200);
       expect((await request('renew', 'POST', { lease })).status).toBe(404);
+    } finally { database.close(); }
+  });
+
+  it('binds first-use trust to the owner, active lease and destination revision and never overwrites a pin', async () => {
+    const { request, database } = fixture();
+    try {
+      const { id, revision, fingerprint } = await (await request('profiles', 'POST', target)).json() as {
+        id: string; revision: number; fingerprint: string | null;
+      };
+      expect(fingerprint).toBeNull();
+      const profile = `profiles/${id}`;
+      const { ticket } = await (await request('ticket', 'POST', { profile: id, binding: bind })).json() as { ticket: string };
+      const { id: lease } = await (await request('claim', 'POST', { ticket, binding: bind })).json() as { id: string };
+      const payload = { revision, lease, fingerprint: certificate };
+      expect((await request(`${profile}/trust`, 'PUT', payload, 2)).status).toBe(404);
+      expect((await request(`${profile}/trust`, 'PUT', { ...payload, lease: id })).status).toBe(409);
+      expect((await request(`${profile}/trust`, 'PUT', { ...payload, revision: revision + 1 })).status).toBe(409);
+      expect((await request(`${profile}/trust`, 'PUT', payload)).status).toBe(200);
+      expect((await request(`${profile}/trust`, 'PUT', { ...payload, fingerprint: bind })).status).toBe(409);
+      const nameEdit = await request(profile, 'PUT', { ...target, name: 'Renamed', revision });
+      expect(await nameEdit.json()).toMatchObject({ fingerprint: certificate, revision: revision + 1 });
+      expect((await request(`${profile}/trust`, 'PUT', payload)).status).toBe(409);
+      const hostEdit = await request(profile, 'PUT', { ...target, host: '8.8.8.8', revision: revision + 1 });
+      expect(await hostEdit.json()).toMatchObject({ fingerprint: null });
     } finally { database.close(); }
   });
 

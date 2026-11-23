@@ -7,7 +7,7 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket) {
   ws.binaryType = 'arraybuffer';
   const sink = {
     CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3, readyState: 0,
-    binaryType: 'arraybuffer',
+    binaryType: 'arraybuffer', lease: undefined,
     send(value) {
       if (sink.readyState !== 1 || (!(value instanceof ArrayBuffer) && !ArrayBuffer.isView(value))) return fail();
       if (value.byteLength > limit || pending + sent - acknowledged + value.byteLength > limit) return fail();
@@ -72,7 +72,9 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket) {
       if (typeof data === 'string') {
         if (data.length > 256) return fail();
         const value = JSON.parse(data);
-        if (value?.type === 'ready' && sink.readyState === 0) {
+        if (value?.type === 'ready' && sink.readyState === 0 &&
+            typeof value.lease === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value.lease)) {
+          sink.lease = value.lease;
           sink.readyState = 1;
           sink.onopen?.(new Event('open'));
         } else if (value?.type === 'ack' && sink.readyState === 1 && Number.isSafeInteger(value.bytes) && value.bytes >= acknowledged && value.bytes <= sent) {
@@ -88,7 +90,7 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket) {
   };
   ws.onerror = fail;
   ws.onclose = (event) => {
-    ticket = undefined;
+    ticket = sink.lease = undefined;
     clearTimeout(ackTimer);
     queue.length = 0;
     sink.readyState = 3;

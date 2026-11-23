@@ -970,8 +970,7 @@ export const zhCN = {
   'rdp.remove': '删除设备',
   'rdp.name': '设备名称',
   'rdp.host': 'IPv4 地址或隧道域名',
-  'rdp.fingerprint': 'Windows 证书 SHA-256 指纹',
-  'rdp.pinHelp': '请从受信的 Windows 控制台独立核对指纹。',
+  'rdp.pinHelp': '首次打开桌面时会提示你核对并确认 Windows 证书。',
   'rdp.route': '线路',
   'rdp.access': 'Access Service Token（可选）',
   'rdp.accessId': 'Client ID',
@@ -979,6 +978,6 @@ export const zhCN = {
   'rdp.clearAccess': '清除已存令牌',
   'rdp.save': '保存',
   'rdp.cancel': '取消',
-  'rdp.invalid': '请检查地址、证书指纹和令牌。',
+  'rdp.invalid': '请检查服务器地址或 Access 令牌。',
   'rdp.removeConfirm': '删除后会断开该设备的 CloudSSH 会话。',
 } as const;

@@ -99,7 +99,7 @@ export function startRdpRelay(hooks: SessionHooks): Response {
       clearTimeout(phaseTimer);
       lastInputProgress = lastOutputProgress = lastActivity = lastRenew = Date.now();
       stage = 'ready';
-      control({ type: 'ready' });
+      control({ type: 'ready', lease: claimed.id });
       await transport.read(deliver);
       finish(1000, 'session_ended');
     } catch { finish(1011, 'upstream_unavailable'); }

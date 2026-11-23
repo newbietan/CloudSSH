@@ -92,10 +92,14 @@ export async function handleRdp(
       if (request.method === 'GET') return call('profiles');
       if (request.method === 'POST') return call('profiles', 'POST', await readRdpJson(request));
     }
-    const match = /^profiles\/([a-f0-9-]{36})(\/connect)?$/.exec(resource);
+    const match = /^profiles\/([a-f0-9-]{36})(\/(?:connect|trust))?$/.exec(resource);
     if (!match || !isRdpId(match[1])) return hide();
-    const [, id, connect] = match;
-    if (connect && request.method === 'POST') {
+    const [, id, action] = match;
+    if (action === '/trust' && request.method === 'PUT') {
+      if (request.headers.get('X-CloudSSH-RDP-Client') !== String(RDP_CLIENT_REVISION)) return rdpJson({ code: 'refresh_client' }, 409);
+      return call(`profiles/${id}/trust`, 'PUT', await readRdpJson(request));
+    }
+    if (action === '/connect' && request.method === 'POST') {
       let key = cookie(request, COOKIE);
       const issueCookie = !/^[a-f0-9]{64}$/.test(key);
       if (issueCookie) key = newBrowserKey();
@@ -108,7 +112,7 @@ export async function handleRdp(
       headers.append('Set-Cookie', `${COOKIE}=${key}; Path=/; Secure; HttpOnly; SameSite=Strict`);
       return new Response(response.body, { status: response.status, headers });
     }
-    if (!connect && ['GET', 'PUT', 'DELETE'].includes(request.method)) {
+    if (!action && ['GET', 'PUT', 'DELETE'].includes(request.method)) {
       return call(`profiles/${id}`, request.method, request.method === 'PUT' ? await readRdpJson(request) : undefined);
     }
     return hide();

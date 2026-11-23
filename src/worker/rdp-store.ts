@@ -23,7 +23,7 @@ export const rdpJson = (body: unknown, status = 200) => Response.json(body, {
 });
 const error = (status: number, code: string) => rdpJson({ code }, status);
 const profile = ({ id, revision, name, route, host, fingerprint, access }: Row): RdpProfile => ({
-  id, revision, name, route, host, fingerprint, hasAccessToken: !!access,
+  id, revision, name, route, host, fingerprint: fingerprint || null, hasAccessToken: !!access,
 });
 const digestPattern = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 export async function rdpDigest(text: string): Promise<string> {
@@ -90,6 +90,14 @@ export class RdpStore {
         return rdpJson({ success: true });
       }
     }
+    if (kind === 'profiles' && isRdpId(id) && route === `profiles/${id}/trust` && request.method === 'PUT') {
+      const payload = await readRdpJson(request) as Record<string, unknown> | null;
+      if (!payload || !digestPattern(payload.fingerprint) || !isRdpId(payload.lease) ||
+          typeof payload.revision !== 'number' || !Number.isSafeInteger(payload.revision)) {
+        return error(400, 'invalid_request');
+      }
+      return this.trust(userId, id, payload.revision, payload.lease, payload.fingerprint);
+    }
     if (request.method !== 'POST') return error(405, 'method_not_allowed');
     const body = await readRdpJson(request) as Record<string, unknown> | null;
     if (!body || typeof body !== 'object') return error(400, 'invalid_request');
@@ -113,28 +121,47 @@ export class RdpStore {
     return error(404, 'not_found');
   }
 
+  private trust(userId: number, id: string, revision: number, lease: string, fingerprint: string): Response {
+    return this.transaction(() => {
+      const row = this.row(userId, id);
+      if (!row) return error(404, 'not_found');
+      if (row.revision !== revision || (row.fingerprint && row.fingerprint !== fingerprint)) return error(409, 'trust_changed');
+      const active = this.sql.exec(`SELECT id FROM rdp_leases
+        WHERE user_id=? AND profile=? AND revision=? AND id=? AND expires>?`, userId, id, revision, lease, Date.now()).toArray();
+      if (!active.length) return error(409, 'session_ended');
+      if (!row.fingerprint) {
+        this.sql.exec('UPDATE rdp_profiles SET fingerprint=? WHERE user_id=? AND id=? AND revision=? AND fingerprint=?', fingerprint, userId, id, revision, '');
+      }
+      // First acceptance does not change the destination revision during a live TLS handshake.
+      return rdpJson({ fingerprint });
+    });
+  }
+
   private async save(userId: number, existing: Row | null, body: unknown): Promise<Response> {
     const input = parseRdpProfile(body);
     if (!input) return error(400, 'invalid_profile');
     if (existing && (body as { revision?: unknown }).revision !== existing.revision) return error(409, 'profile_changed');
-    let access = existing?.route === 'tunnel' && existing.host === input.host && input.route === 'tunnel' ? existing.access : null;
+    const sameTarget = existing?.route === input.route && existing.host === input.host;
+    let access = sameTarget && input.route === 'tunnel' ? existing.access : null;
     if (input.accessId !== undefined) {
       access = input.accessId ? await this.encrypt(JSON.stringify([input.accessId, input.accessSecret]), userId) : null;
     }
     return this.transaction(() => {
       const id = existing?.id ?? crypto.randomUUID();
       const revision = (existing?.revision ?? 0) + 1;
+      // Preserve newer first-use acceptance made while encryption or body parsing awaited.
+      const fingerprint = sameTarget && existing ? this.row(userId, id)?.fingerprint ?? '' : '';
       if (existing) {
         const result = this.sql.exec(`UPDATE rdp_profiles SET revision=?, name=?, route=?, host=?, fingerprint=?, access=?
-          WHERE user_id=? AND id=? AND revision=?`, revision, input.name, input.route, input.host, input.fingerprint, access, userId, id, existing.revision);
+          WHERE user_id=? AND id=? AND revision=?`, revision, input.name, input.route, input.host, fingerprint, access, userId, id, existing.revision);
         if (!result.rowsWritten) return error(409, 'profile_changed');
         this.sql.exec('DELETE FROM rdp_tickets WHERE user_id = ? AND profile = ?', userId, id);
         this.sql.exec('DELETE FROM rdp_leases WHERE user_id = ? AND profile = ?', userId, id);
       } else {
         if (this.count('rdp_profiles', userId) >= RDP_MAX_PROFILES) return error(409, 'profile_limit');
-        this.sql.exec('INSERT INTO rdp_profiles VALUES (?, ?, ?, ?, ?, ?, ?, ?)', id, userId, revision, input.name, input.route, input.host, input.fingerprint, access);
+        this.sql.exec('INSERT INTO rdp_profiles VALUES (?, ?, ?, ?, ?, ?, ?, ?)', id, userId, revision, input.name, input.route, input.host, fingerprint, access);
       }
-      return rdpJson(profile({ ...input, id, revision, access }), existing ? 200 : 201);
+      return rdpJson(profile({ ...input, id, revision, fingerprint, access }), existing ? 200 : 201);
     });
   }
 

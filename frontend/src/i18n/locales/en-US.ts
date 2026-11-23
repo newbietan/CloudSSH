@@ -1032,8 +1032,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'rdp.remove': 'Delete device',
   'rdp.name': 'Device name',
   'rdp.host': 'IPv4 address or tunnel hostname',
-  'rdp.fingerprint': 'Windows certificate SHA-256 fingerprint',
-  'rdp.pinHelp': 'Verify this fingerprint independently through a trusted Windows console.',
+  'rdp.pinHelp': 'On your first connection, check and confirm the Windows certificate.',
   'rdp.route': 'Connection route',
   'rdp.access': 'Access Service Token (optional)',
   'rdp.accessId': 'Client ID',
@@ -1041,6 +1040,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'rdp.clearAccess': 'Clear saved token',
   'rdp.save': 'Save',
   'rdp.cancel': 'Cancel',
-  'rdp.invalid': 'Check the address, certificate fingerprint and token.',
+  'rdp.invalid': 'Check the server address or Access token.',
   'rdp.removeConfirm': 'Deleting this device ends its CloudSSH sessions.',
 };

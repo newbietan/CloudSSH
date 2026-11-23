@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { RDP_CLIENT_REVISION } from '../../src/rdp-schema';
 import worker from '../../src/worker/index';
 import { handleRdp, type RdpAssets } from '../../src/worker/rdp-routes';
 import type { Env } from '../../src/types';
@@ -12,6 +13,7 @@ function fixture() {
     if (path === '/internal/session/verify') return Response.json({ id: 5, github_id: 42 });
     if (path === '/internal/rdp/ticket') return Response.json({ ticket: '1'.repeat(64), revision: 1 });
     if (path === `/internal/rdp/profiles/${id}`) return Response.json({ id });
+    if (path === `/internal/rdp/profiles/${id}/trust`) return Response.json({ fingerprint: 'a'.repeat(64) });
     return new Response(null, { status: 404 });
   });
   const env = { ENABLE_RDP: 'true', GITHUB_CLIENT_ID: 'mock', GITHUB_CLIENT_SECRET: 'mock',
@@ -42,9 +44,23 @@ describe('formal RDP routing', () => {
     expect(internal).not.toHaveBeenCalled();
   });
 
+  it('only forwards trust from an authenticated same-origin client with the current ABI', async () => {
+    const { handle, internal } = fixture();
+    const path = `/api/rdp/profiles/${id}/trust`;
+    const headers = { Origin: origin, Cookie: 'session=42:cookie-value', 'X-CloudSSH-RDP-Client': '1' };
+    const payload = { fingerprint: 'a'.repeat(64), lease: id, revision: 1 };
+    expect((await handle(path, { method: 'PUT', headers })).status).toBe(409);
+    headers['X-CloudSSH-RDP-Client'] = String(RDP_CLIENT_REVISION);
+    expect((await handle(path, { method: 'PUT', headers: { ...headers, Origin: 'https://other.example' } })).status).toBe(403);
+    expect((await handle(path, { method: 'PUT', headers, body: JSON.stringify(payload) })).status).toBe(200);
+    const [request] = internal.mock.calls.at(-1)!;
+    expect(request.url).toBe(`https://internal/internal/rdp/profiles/${id}/trust?user_id=5`);
+    expect(await request.json()).toEqual(payload);
+  });
+
   it('binds a connection ticket to the current account and a secure browser cookie', async () => {
     const { handle, internal } = fixture();
-    const headers = { Origin: origin, Cookie: 'session=42:cookie-value', 'X-CloudSSH-RDP-Client': '1' };
+    const headers = { Origin: origin, Cookie: 'session=42:cookie-value', 'X-CloudSSH-RDP-Client': String(RDP_CLIENT_REVISION) };
     const stale = await handle(`/api/rdp/profiles/${id}/connect`, { method: 'POST', headers: { ...headers, 'X-CloudSSH-RDP-Client': '0' } });
     expect(stale.status).toBe(409);
     const response = await handle(`/api/rdp/profiles/${id}/connect`, { method: 'POST', headers });

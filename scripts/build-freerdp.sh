@@ -37,8 +37,8 @@ run_sdk() {
     --mount "type=bind,source=$source_dir,target=/src" -w /src "$image" "$@"
 }
 
-# FreeRDP's upstream fingerprint list is a fallback allowlist, not strict pinning.
-# For this preview, configured pins reject every mismatch, including otherwise trusted chains.
+# Independently verify the actual leaf certificate after TLS and before CredSSP.
+# The browser either checks a saved pin or asks for confirmed first-use trust.
 python3 - "$source_dir/libfreerdp/crypto/tls.c" <<'PY'
 from pathlib import Path
 import sys
@@ -63,12 +63,49 @@ accepted = '''\t/* Check, if we already accepted this key. */
 \t}
 
 '''
-if text.count(new + '\n\n' + accepted.rstrip('\n')) == 1:
+browser = '''#ifdef __EMSCRIPTEN__
+	// TLS runs on the RDP pthread. Never wait for UI on the browser thread.
+	verification_status = -1;
+	if (!emscripten_is_main_browser_thread())
+	{
+		char* fingerprint = freerdp_certificate_get_fingerprint_by_hash_ex(cert, "sha256", FALSE);
+		if (fingerprint)
+		{
+			int decision = MAIN_THREAD_EM_ASM_INT({
+				return Module["onWindowsCertificate"]?.(UTF8ToString($0)) ?? -1;
+			}, fingerprint);
+			free(fingerprint);
+			for (unsigned int i = 0; decision == 0 && i < 900; ++i)
+			{
+				if (freerdp_shall_disconnect_context(context))
+					break;
+				Sleep(100);
+				decision = MAIN_THREAD_EM_ASM_INT({
+					return Module["onWindowsCertificate"]?.(null) ?? -1;
+				});
+			}
+			if (decision == 1)
+				verification_status = 1;
+		}
+	}
+	goto end;
+#endif
+'''
+includes = '''#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/threading.h>
+#include <winpr/synch.h>
+#endif
+'''
+if browser in text and includes in text:
     sys.exit(0)
 needle = accepted + old
-if text.count(needle) != 1:
-    sys.exit('FreeRDP strict-pin patch did not match the pinned source')
-p.write_text(text.replace(needle, new + '\n\n' + accepted.rstrip('\n')))
+strict = new + '\n\n' + accepted.rstrip('\n')
+if text.count(needle) == 1:
+    text = text.replace(needle, strict)
+if text.count(strict) != 1 or text.count('#include <freerdp/config.h>\n') != 1:
+    sys.exit('FreeRDP certificate patch did not match the pinned source')
+p.write_text(text.replace('#include <freerdp/config.h>\n', '#include <freerdp/config.h>\n' + includes).replace(strict, browser + '\n' + strict))
 PY
 
 # Keep Windows credentials out of process arguments and SDL's modal event loop.

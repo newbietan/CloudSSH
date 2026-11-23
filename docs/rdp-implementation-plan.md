@@ -8,12 +8,12 @@
 2. 登录后点「添加服务器」，在弹窗顶部从默认的 Linux 切换到「Windows Server」，填写远程桌面配置。保存后设备会出现在同一个服务器列表中；无需创建 SSH 设备或安装 Windows App。Windows 必须已开启远程桌面、NLA，账号须有 RDP 权限。
 3. **公网**模式填可达的公开 IPv4。首版只拨 TCP 3389，不允许任意端口、私网 IP 或未固定解析的直连域名。标准 Workers TCP 出站没有实例独享固定公网 IP；不要为了测试向全网开放 3389。有入站白名单要求时优先走 Tunnel。
 4. **Tunnel** 模式选择已经配置的 Cloudflare Published Application 主机名。在 cloudflared 端把该主机名的服务设置为 `rdp://<Windows 地址>:3389`，例如同机 `rdp://127.0.0.1:3389`。这是字节流隧道，不是 Access 浏览器桌面入口，也不能用现有 `ssh://` 路由替代。建议给目标主机名单独加 Access **Service Auth**，在设备上填该应用的 Client ID/Secret；不是 Tunnel 安装令牌。修改目的地会清空旧凭据，省略同主机的凭据则保留。
-5. 从可信 Windows 管理控制台取得当前 RDP 侦听器证书的 **DER SHA-256 指纹**（64 位十六进制），填入设备；Windows `Thumbprint` 通常是 SHA-1，不能直接当 SHA-256。证书更换时由所有者独立核对后手动修改，不自动接受。点击「打开桌面」打开同源窗口，Win 本地账号通常留空 Domain。密码只交给本页内存中的 FreeRDP，不存浏览器持久存储、URL、Worker 或 UserDB。
+5. 点击「打开桌面」，输入 Windows 凭据（本地账号通常留空 Domain）。首次连接会显示实际收到的 Windows 证书 **DER SHA-256** 指纹，请通过可信 Windows 管理控制台独立核对后选择「信任并连接」，不必手填。Windows `Thumbprint` 通常是 SHA-1，不能直接比较。指纹已保存时不再询问；不一致时显示新旧指纹并停止连接，不能在警告弹窗里覆盖。若确认是计划内换证且目的地未变，可删除并重建设备后再次核对和信任。密码只交给本页内存中的 FreeRDP，不存浏览器持久存储、URL、Worker 或 UserDB。
 
 ## 实现边界
 
 - `rdp_profiles` 独立于 SSH 设备，不进入 SSH 跳板、分享、MCP、AI、SFTP、命令片段或 OS 探测。账户库行级隔离；Tunnel Service Token 使用账户现有 AES-GCM 能力加密，普通 GET 无明文。旧 SSH 表和 DO migration 不变。
-- API `/api/rdp/profiles`、`/api/rdp/profiles/:id` 和 `POST /api/rdp/profiles/:id/connect`；同源、双重校验的 `/api/rdp/session` WebSocket 只接受首帧单次连接票据（30 秒、仅存摘要、绑定浏览器与档案修订），不把目标地址或令牌放到 URL。更新/删除撤销相关票据与在线租约，在线会话定期复查，不能保证对已经退出的 Windows 会话执行注销。
+- API `/api/rdp/profiles`、`/api/rdp/profiles/:id` 和 `POST /api/rdp/profiles/:id/connect`；同源、双重校验的 `/api/rdp/session` WebSocket 只接受首帧单次连接票据（30 秒、仅存摘要、绑定浏览器与档案修订），不把目标地址或令牌放到 URL。`PUT /api/rdp/profiles/:id/trust` 在证书首次确认后按账户、设备修订及当前有效连接租约原子写入 SHA-256，仅未固定时可写（同指纹重试幂等）；保存失败则不进入 NLA。原有指纹保留；仅换主机或线路重置，普通编辑不重置。确认等待有限（约 85 秒）。更新/删除撤销相关票据与在线租约，在线会话定期复查，不能保证对已经退出的 Windows 会话执行注销。
 - 公网和 Tunnel 只有传输层分流。Worker 不终止 Windows TLS、不渲染或转码，只搬运字节。浏览器与 Windows 做 NLA 及严格 Windows 证书指纹校验；隧道 HTTPS 外层的 TLS 不能替代 Windows 证书。连接路径不关闭 NLA。仅 Chromium / WebKit 实机体验另验；不承诺 Kerberos-only、RD Gateway、多屏或移动端键盘完整性。
 - 桌面转发使用有界双向字节窗口与累计 ACK；浏览器下行确认发生在 WASM socket 消费字节时，而不是 JavaScript 收到消息时，也不等于渲染结束。超时、租约失效或持续积压关闭，不能继续交付丢失部分字节的 TLS 流。单次连接最多 2 小时以保留 Workers Free 的内部子请求预算；期间仍应用 `IDLE_TIMEOUT`。隧道每条出站消息最多 16 KiB，不把 RDP 包、TLS 记录和载体帧视为同一边界。Workers WebSocket 没有 drain 指标，Tunnel 向 Windows 的写入另限速并限制单会话累计 8 MiB；该限制不累计 Windows 到浏览器的画面流量。此路径仍需用真实弱网核查；不会自动重放输入或密码。剪贴板、挂载、音频转发不在首版范围。
 - `src/worker/rdp-entry.ts` 同一次 Worker 部署，重导出原 DO 类，保持原生 `ctx.access`。RDP 按需加载；COOP/COEP/CSP 仅 RDP 文件响应。WASM 使用已压缩的 vendor 模块，主站 HTML、登录与原 SSH 终端不加载它。独立桌面页，用站内操作，不启动 xterm/Trzsz。

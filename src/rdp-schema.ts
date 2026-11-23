@@ -4,19 +4,19 @@ export const RDP_MAX_BODY = 4096;
 export const RDP_WINDOW = 1024 * 1024;
 export const RDP_FRAME = 16 * 1024;
 export const RDP_WS_PROTOCOL = 'cloudssh-rdp-v1';
-export const RDP_CLIENT_REVISION = 1;
+export const RDP_CLIENT_REVISION = 2;
 
 export interface RdpProfileInput {
   name: string;
   route: RdpRoute;
   host: string;
-  fingerprint: string;
   accessId?: string;
   accessSecret?: string;
 }
 export interface RdpProfile extends Omit<RdpProfileInput, 'accessId' | 'accessSecret'> {
   id: string;
   revision: number;
+  fingerprint: string | null;
   hasAccessToken: boolean;
 }
 
@@ -42,25 +42,24 @@ export function isRdpId(value: unknown): value is string {
 export function parseRdpProfile(value: unknown): RdpProfileInput | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const data = value as Record<string, unknown>;
-  if (Object.keys(data).some((key) => !['name', 'route', 'host', 'fingerprint', 'accessId', 'accessSecret', 'revision'].includes(key))) return null;
-  if (typeof data.name !== 'string' || typeof data.host !== 'string' || typeof data.fingerprint !== 'string') return null;
+  if (Object.keys(data).some((key) => !['name', 'route', 'host', 'accessId', 'accessSecret', 'revision'].includes(key))) return null;
+  if (typeof data.name !== 'string' || typeof data.host !== 'string') return null;
   const name = data.name.trim();
   const host = data.host.trim().toLowerCase();
-  const fingerprint = data.fingerprint.trim().toLowerCase().replace(/:/g, '');
   const route = data.route;
-  if (!name || name.length > 64 || /[\x00-\x1f\x7f]/.test(name) || !/^[0-9a-f]{64}$/.test(fingerprint)) return null;
+  if (!name || name.length > 64 || /[\x00-\x1f\x7f]/.test(name)) return null;
   if (route === 'direct') {
     if (!isPublicRdpIPv4(host) || data.accessId !== undefined || data.accessSecret !== undefined) return null;
-    return { name, host, fingerprint, route };
+    return { name, host, route };
   }
   if (route !== 'tunnel' || !isRdpTunnelHost(host)) return null;
   const accessId = data.accessId;
   const accessSecret = data.accessSecret;
-  if (accessId === undefined && accessSecret === undefined) return { name, host, fingerprint, route };
+  if (accessId === undefined && accessSecret === undefined) return { name, host, route };
   if (typeof accessId !== 'string' || typeof accessSecret !== 'string') return null;
-  if (accessId === '' && accessSecret === '') return { name, host, fingerprint, route, accessId, accessSecret };
+  if (accessId === '' && accessSecret === '') return { name, host, route, accessId, accessSecret };
   if (!/^[!-~]{1,256}$/.test(accessId) || !/^[!-~]{1,512}$/.test(accessSecret)) return null;
-  return { name, host, fingerprint, route, accessId, accessSecret };
+  return { name, host, route, accessId, accessSecret };
 }
 
 export async function readRdpJson(request: Pick<Request | Response, 'body' | 'headers'>): Promise<unknown> {
