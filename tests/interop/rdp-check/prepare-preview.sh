@@ -7,8 +7,12 @@ image=emscripten/emsdk@sha256:77638e6c215a65f25a704c0c831d5c2463a8c0468a58c6cb82
 # Only the disposable FreeRDP checkout is mounted into the container. No CloudSSH
 # checkout, Cloudflare credentials, or Windows credentials are available there.
 if [[ $# -eq 0 ]]; then
-  temp_dir=$(mktemp -d)
-  trap 'rm -rf -- "$temp_dir"' EXIT
+  temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/cloudssh-rdp-build.XXXXXXXX")
+  cleanup() {
+    trap - EXIT
+    rm -rf -- "$temp_dir"
+  }
+  trap cleanup EXIT
   source_dir="$temp_dir/FreeRDP"
   git clone --depth 1 --branch 3.33.1 --single-branch --no-tags \
     https://github.com/FreeRDP/FreeRDP.git "$source_dir"
@@ -21,6 +25,16 @@ else
   exit 2
 fi
 [[ $(git -C "$source_dir" rev-parse HEAD) == "$commit" ]]
+
+# Linux bind mounts preserve Unix ownership: use the host builder for both
+# fetch and compile so the host can read artifacts and remove the checkout.
+mkdir -p -- "$source_dir/.cloudssh-build-home" "$source_dir/.cloudssh-build-tools"
+run_sdk() {
+  docker run --rm --user "$(id -u):$(id -g)" \
+    -e HOME=/src/.cloudssh-build-home -e EM_CACHE=/src/.cloudssh-build-home/emscripten-cache \
+    -e "CMAKE_BUILD_PARALLEL_LEVEL=${CMAKE_BUILD_PARALLEL_LEVEL:-4}" \
+    --mount "type=bind,source=$source_dir,target=/src" -w /src "$image" "$@"
+}
 
 # FreeRDP's upstream fingerprint list is a fallback allowlist, not strict pinning.
 # For this preview, configured pins reject every mismatch, including otherwise trusted chains.
@@ -59,8 +73,7 @@ PY
 # Fetch with the official script, then confirm all the git dependency commits
 # before any dependency build. The official script verifies the LibreSSL tarball.
 if [[ $fresh == 1 ]]; then
-  docker run --rm --mount "type=bind,source=$source_dir,target=/src" -w /src "$image" \
-    bash -euc 'git config --global --add safe.directory /src; bash scripts/emscripten.sh --no-build'
+  run_sdk bash -euc 'git config --global --add safe.directory /src; bash scripts/emscripten.sh --no-build'
 fi
 while read -r path sha; do
   [[ $(git -C "$source_dir/build-emscripten/src/$path" rev-parse HEAD) == "$sha" ]]
@@ -87,7 +100,6 @@ case $(docker info --format '{{.Architecture}}') in
     ninja_sha=fb46acf6b93b8dd0322adc3a4945452a4e774b75b91293bafcc7b7f8e6517dfa ;;
   *) printf '%s\n' 'Unsupported Docker architecture' >&2; exit 1 ;;
 esac
-mkdir -p -- "$source_dir/.cloudssh-build-tools"
 curl --fail --silent --show-error --location --retry 2 --retry-all-errors --connect-timeout 15 --max-time 120 \
   "https://files.pythonhosted.org/packages/$ninja_wheel" \
   --output "$source_dir/.cloudssh-build-tools/ninja.zip"
@@ -105,12 +117,10 @@ PY
 
 build_args=()
 if [[ $fresh == 0 ]]; then build_args+=(--no-deps); fi
-docker run --rm -e "CMAKE_BUILD_PARALLEL_LEVEL=${CMAKE_BUILD_PARALLEL_LEVEL:-4}" \
-  --mount "type=bind,source=$source_dir,target=/src" -w /src "$image" bash -euc '
-    git config --global --add safe.directory /src
-    ln -sf /src/.cloudssh-build-tools/ninja /usr/bin/ninja
-    bash scripts/emscripten.sh --no-clone "$@"
-  ' build "${build_args[@]}"
+run_sdk bash -euc '
+  export PATH="/src/.cloudssh-build-tools:$PATH"
+  bash scripts/emscripten.sh --no-clone "$@"
+' build "${build_args[@]}"
 
 out="$here/preview-build"
 mkdir -p -- "$out"
@@ -139,4 +149,5 @@ with out.open('w') as f:
         f.write(f'\n--- {license.relative_to(source)} ---\n')
         f.write(license.read_text(errors='replace'))
 PY
+if [[ $fresh == 1 ]]; then cleanup; fi
 printf '%s\n' 'Test-only FreeRDP assets prepared.'

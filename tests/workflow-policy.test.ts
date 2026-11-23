@@ -86,6 +86,19 @@ describe('CI 验证和部署边界', () => {
     expect(deploy).toContain("github.ref == 'refs/heads/test' && vars.CLOUDSSH_RDP_TEST_CONFIG == ''");
   });
 
+  it('runs both preview build phases as the host owner of the disposable checkout', () => {
+    const script = readFileSync(
+      new URL('./interop/rdp-check/prepare-preview.sh', import.meta.url), 'utf8'
+    );
+    expect(script.match(/docker run\b/g)).toHaveLength(1);
+    expect(script).toContain('docker run --rm --user "$(id -u):$(id -g)"');
+    expect(script).toContain('-e HOME=/src/.cloudssh-build-home');
+    expect(script).toContain('-e EM_CACHE=/src/.cloudssh-build-home/emscripten-cache');
+    expect(script).toMatch(/run_sdk bash -euc '[^\n]*--no-build/);
+    expect(script).toMatch(/run_sdk bash -euc '[\s\S]*?emscripten\.sh --no-clone/);
+    expect(script).not.toContain('chmod -R');
+  });
+
   it('将昂贵浏览器安装放在快速检查和构建之后，保留全部浏览器', () => {
     const deploy = readWorkflow('deploy.yml');
     const browsers = deploy.indexOf('run: pnpm exec playwright install --with-deps chromium webkit');
