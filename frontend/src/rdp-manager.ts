@@ -1,204 +1,161 @@
-import { isRdpId, parseRdpProfile, type RdpProfile, type RdpProfileInput } from '../../src/rdp-schema';
+import { isRdpId, parseRdpProfile, type RdpProfile } from '../../src/rdp-schema';
 import { localizedElement, t, type TranslationKey } from './i18n';
 
 const API = '/api/rdp/profiles';
-function button(label: TranslationKey, action: () => void): HTMLButtonElement {
-  const result = localizedElement('button', label);
-  result.className = 'cyber-button px-3 py-2 text-sm';
-  result.type = 'button';
-  result.onclick = action;
-  return result;
-}
 
+/** Windows fields mounted into the shared server modal, not a second dialog. */
 export class RdpManager {
-  private readonly root = document.createElement('section');
-  private readonly grid = document.createElement('div');
-  private readonly status = document.createElement('p');
   private readonly requests = new AbortController();
-  private dialog: HTMLDialogElement | undefined;
-  private generation = 0;
+  private readonly name: HTMLInputElement;
+  private readonly host: HTMLInputElement;
+  private readonly fingerprint: HTMLInputElement;
+  private readonly transport = document.createElement('select');
+  private readonly access = document.createElement('fieldset');
+  private readonly id: HTMLInputElement;
+  private readonly secret: HTMLInputElement;
+  private readonly clear = document.createElement('input');
+  private readonly clearLabel = document.createElement('label');
+  private editing?: RdpProfile;
 
-  constructor(parent: HTMLElement) {
-    const heading = localizedElement('h2', 'rdp.title');
-    heading.className = 'text-base font-semibold';
-    const header = document.createElement('div');
-    header.className = 'flex flex-wrap items-center justify-between gap-3 mb-3';
-    header.append(heading, button('rdp.add', () => this.edit()));
-    this.status.setAttribute('role', 'status');
-    this.status.className = 'text-muted text-sm';
-    this.grid.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4';
-    this.root.className = 'pt-6 mt-6 border-t border-outline-variant';
-    this.root.append(header, this.status, this.grid);
-    parent.append(this.root);
-    void this.refresh();
+  constructor(parent: HTMLFieldSetElement) {
+    const identity = document.createElement('div');
+    identity.className = 'server-identity-fields';
+    const [name, nameLabel] = this.field('rdp-name', 64, 'rdp.name');
+    this.name = name;
+    const routeLabel = this.label('rdp.route', this.transport);
+    this.transport.id = 'server-rdp-route';
+    this.transport.className = 'terminal-input w-full';
+    for (const [key, value] of [['rdp.direct', 'direct'], ['rdp.tunnel', 'tunnel']] as const) {
+      const option = localizedElement('option', key);
+      option.value = value;
+      this.transport.append(option);
+    }
+    identity.append(nameLabel, routeLabel);
+
+    const columns = document.createElement('div');
+    columns.className = 'server-settings-columns';
+    const target = document.createElement('div');
+    target.className = 'server-settings-section';
+    const authentication = document.createElement('div');
+    authentication.className = 'server-settings-section';
+    const [host, hostLabel] = this.field('rdp-host', 253, 'rdp.host');
+    this.host = host;
+    const [fingerprint, fingerprintLabel] = this.field('rdp-fingerprint', 96, 'rdp.fingerprint');
+    this.fingerprint = fingerprint;
+    for (const field of [name, host, fingerprint]) field.required = true;
+    host.spellcheck = fingerprint.spellcheck = false;
+    const hint = localizedElement('p', 'rdp.pinHelp');
+    hint.id = 'server-rdp-certificate-help';
+    hint.className = 'text-xs text-muted';
+    fingerprint.setAttribute('aria-describedby', hint.id);
+    target.append(hostLabel);
+    authentication.append(fingerprintLabel, hint);
+    columns.append(target, authentication);
+
+    this.access.className = 'rdp-tunnel-fields mt-4 pt-4 border-t border-outline-variant';
+    const legend = localizedElement('legend', 'rdp.access');
+    legend.className = 'text-xs font-semibold text-muted';
+    const [id, idLabel] = this.field('rdp-access-id', 256, 'rdp.accessId');
+    this.id = id;
+    const [secret, secretLabel] = this.field('rdp-access-secret', 512, 'rdp.accessSecret', 'password');
+    this.secret = secret;
+    this.clear.type = 'checkbox';
+    this.clearLabel.className = 'flex gap-2 items-center text-xs text-muted';
+    this.clearLabel.append(this.clear, localizedElement('span', 'rdp.clearAccess'));
+    const credentials = document.createElement('div');
+    credentials.className = 'server-service-token-fields';
+    credentials.append(idLabel, secretLabel);
+    this.access.append(legend, credentials, this.clearLabel);
+    this.transport.onchange = this.clear.onchange = () => this.updateTransport();
+    parent.replaceChildren(identity, columns, this.access);
+    this.reset();
   }
+
+  private label(key: TranslationKey, control: HTMLInputElement | HTMLSelectElement): HTMLLabelElement {
+    const group = document.createElement('label');
+    const label = localizedElement('span', key);
+    label.className = 'block text-xs font-bold tracking-[0.1em] text-muted mb-2';
+    group.append(label, control);
+    return group;
+  }
+
+  private field(id: string, max: number, label: TranslationKey, type = 'text') {
+    const field = document.createElement('input');
+    field.id = `server-${id}`;
+    field.className = 'terminal-input text-[13px] w-full';
+    field.type = type;
+    field.maxLength = max;
+    field.autocomplete = 'off';
+    return [field, this.label(label, field)] as const;
+  }
+
   dispose(): void {
     this.requests.abort();
-    this.dialog?.close();
-    this.root.remove();
+    this.reset();
   }
+
+  reset(row?: RdpProfile): void {
+    this.editing = row;
+    this.name.value = row?.name ?? '';
+    this.host.value = row?.host ?? '';
+    this.fingerprint.value = row?.fingerprint ?? '';
+    this.transport.value = row?.route ?? 'direct';
+    this.id.value = this.secret.value = '';
+    this.clear.checked = false;
+    this.clearLabel.hidden = !row?.hasAccessToken;
+    this.updateTransport();
+  }
+
+  focus(): void { this.name.focus({ preventScroll: true }); }
+
+  private updateTransport(): void {
+    this.access.hidden = this.transport.value !== 'tunnel';
+    this.access.disabled = this.access.hidden;
+    this.host.placeholder = this.access.hidden ? '203.0.113.10' : 'rdp.example.com';
+    this.id.disabled = this.secret.disabled = this.clear.checked;
+  }
+
   private request(path: string, method = 'GET', body?: unknown): Promise<Response> {
     return fetch(API + path, {
       method, cache: 'no-store', signal: this.requests.signal,
       ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
     });
   }
-  private error(target: HTMLElement, key: TranslationKey): void {
-    target.dataset.i18n = key;
-    target.textContent = t(key);
+
+  async list(): Promise<RdpProfile[]> {
+    const response = await this.request('');
+    if (!response.ok) throw new Error(t('rdp.failed'));
+    const data = await response.json() as { profiles: RdpProfile[] };
+    return data.profiles.filter(row => isRdpId(row.id));
   }
-  async refresh(): Promise<void> {
-    const generation = ++this.generation;
+
+  async save(): Promise<void> {
+    const editing = this.editing;
+    const input: Record<string, unknown> = {
+      name: this.name.value, route: this.transport.value, host: this.host.value, fingerprint: this.fingerprint.value,
+    };
+    if (this.transport.value === 'tunnel' && (this.clear.checked || this.id.value || this.secret.value)) {
+      input.accessId = this.clear.checked ? '' : this.id.value;
+      input.accessSecret = this.clear.checked ? '' : this.secret.value;
+    }
+    const data = parseRdpProfile(input);
+    if (!data) throw new Error(t('rdp.invalid'));
     try {
-      const response = await this.request('');
-      if (!response.ok) throw new Error('load failed');
-      const data = await response.json() as { profiles: RdpProfile[] };
-      if (generation !== this.generation || this.requests.signal.aborted) return;
-      this.grid.replaceChildren(...data.profiles.filter(row => isRdpId(row.id)).map(row => this.createCard(row)));
-      delete this.status.dataset.i18n;
-      this.status.textContent = '';
-      if (!this.grid.childElementCount) this.error(this.status, 'rdp.empty');
+      const pending = this.request(editing ? `/${editing.id}` : '', editing ? 'PUT' : 'POST', editing ? { ...data, revision: editing.revision } : data);
+      this.secret.value = '';
+      const response = await pending;
+      if (!response.ok) throw new Error();
+      const saved = await response.json() as RdpProfile;
+      if (!isRdpId(saved?.id)) throw new Error();
     } catch {
-      if (!this.requests.signal.aborted && generation === this.generation) this.error(this.status, 'rdp.failed');
+      throw new Error(t('rdp.failed'));
     }
   }
-  private createCard(row: RdpProfile): HTMLElement {
-    const card = document.createElement('div');
-    card.className = 'rounded-xl border border-outline-variant bg-elevated p-4 min-w-0';
-    const title = document.createElement('h3');
-    title.className = 'font-semibold break-words';
-    title.textContent = row.name;
-    const route = localizedElement('p', row.route === 'direct' ? 'rdp.direct' : 'rdp.tunnel');
-    const host = document.createElement('p');
-    host.className = 'text-muted break-all font-mono text-sm';
-    host.textContent = row.host;
-    const actions = document.createElement('div');
-    actions.className = 'flex flex-wrap gap-2 mt-3';
-    const open = localizedElement('a', 'rdp.open');
-    open.className = 'cyber-button px-3 py-2 text-sm';
-    open.href = `/rdp/${row.id}`;
-    open.target = '_blank';
-    open.rel = 'noopener';
-    actions.append(open, button('rdp.edit', () => this.edit(row)), button('rdp.remove', () => this.remove(row)));
-    card.append(title, route, host, actions);
-    return card;
-  }
-  private modal(title: TranslationKey): HTMLDialogElement {
-    this.dialog?.close();
-    const dialog = document.createElement('dialog');
-    dialog.className = 'rdp-device-dialog';
-    const heading = localizedElement('h2', title);
-    heading.className = 'font-semibold mb-3';
-    heading.id = 'rdp-device-title';
-    dialog.setAttribute('aria-labelledby', heading.id);
-    dialog.append(heading);
-    dialog.addEventListener('close', () => {
-      if (this.dialog === dialog) this.dialog = undefined;
-      dialog.remove();
-    }, { once: true });
-    this.root.append(dialog);
-    this.dialog = dialog;
-    return dialog;
-  }
-  private edit(row?: RdpProfile): void {
-    const dialog = this.modal(row ? 'rdp.edit' : 'rdp.add');
-    const form = document.createElement('form');
-    form.className = 'grid gap-3';
-    form.autocomplete = 'off';
-    function input(label: TranslationKey, max: number, value = '', type = 'text') {
-      const group = document.createElement('label');
-      const field = document.createElement('input');
-      field.className = 'terminal-input w-full';
-      field.type = type;
-      field.maxLength = max;
-      field.autocomplete = 'off';
-      field.value = value;
-      group.append(localizedElement('span', label), field);
-      return { group, field };
-    }
-    const name = input('rdp.name', 64, row?.name);
-    const host = input('rdp.host', 253, row?.host);
-    const fingerprint = input('rdp.fingerprint', 96, row?.fingerprint);
-    for (const field of [name.field, host.field, fingerprint.field]) field.required = true;
-    const transport = document.createElement('select');
-    transport.className = 'terminal-input w-full';
-    for (const [key, value] of [['rdp.direct', 'direct'], ['rdp.tunnel', 'tunnel']] as const) {
-      const option = localizedElement('option', key);
-      option.value = value;
-      transport.append(option);
-    }
-    transport.value = row?.route ?? 'direct';
-    const routeLabel = document.createElement('label');
-    routeLabel.append(localizedElement('span', 'rdp.route'), transport);
-    const access = document.createElement('fieldset');
-    access.className = 'grid gap-2';
-    access.append(localizedElement('legend', 'rdp.access'));
-    const id = input('rdp.accessId', 256);
-    const secret = input('rdp.accessSecret', 512, '', 'password');
-    const clear = document.createElement('input');
-    clear.type = 'checkbox';
-    const clearLabel = document.createElement('label');
-    clearLabel.className = 'flex gap-2 items-center';
-    clearLabel.append(clear, localizedElement('span', 'rdp.clearAccess'));
-    clearLabel.hidden = !row?.hasAccessToken;
-    access.append(id.group, secret.group, clearLabel);
-    const update = () => {
-      access.hidden = transport.value !== 'tunnel';
-      access.disabled = access.hidden;
-      id.field.disabled = secret.field.disabled = clear.checked;
-    };
-    transport.onchange = clear.onchange = update;
-    update();
-    const actions = document.createElement('div');
-    actions.className = 'flex gap-2 justify-end';
-    const save = button('rdp.save', () => {});
-    save.type = 'submit';
-    actions.append(button('rdp.cancel', () => dialog.close()), save);
-    const status = document.createElement('p');
-    status.setAttribute('role', 'status');
-    form.append(name.group, routeLabel, host.group, fingerprint.group, localizedElement('p', 'rdp.pinHelp'), access, status, actions);
-    dialog.append(form);
-    dialog.addEventListener('close', () => { secret.field.value = ''; });
-    form.onsubmit = (event) => {
-      event.preventDefault();
-      if (save.disabled) return;
-      const input: Record<string, unknown> = {
-        name: name.field.value, route: transport.value, host: host.field.value, fingerprint: fingerprint.field.value,
-      };
-      if (transport.value === 'tunnel' && (clear.checked || id.field.value || secret.field.value)) {
-        input.accessId = clear.checked ? '' : id.field.value;
-        input.accessSecret = clear.checked ? '' : secret.field.value;
-      }
-      const data: RdpProfileInput | null = parseRdpProfile(input);
-      if (!data) { this.error(status, 'rdp.invalid'); return; }
-      save.disabled = true;
-      secret.field.value = '';
-      void (async () => {
-        const response = await this.request(row ? `/${row.id}` : '', row ? 'PUT' : 'POST', row ? { ...data, revision: row.revision } : data);
-        if (!response.ok) throw new Error('write failed');
-        dialog.close();
-        await this.refresh();
-      })().catch(() => { if (dialog.open) this.error(status, 'rdp.failed'); }).finally(() => { save.disabled = false; });
-    };
-    dialog.showModal();
-  }
-  private remove(row: RdpProfile): void {
-    const dialog = this.modal('rdp.remove');
-    const hint = localizedElement('p', 'rdp.removeConfirm');
-    hint.setAttribute('role', 'status');
-    const actions = document.createElement('div');
-    actions.className = 'flex gap-2 mt-4 justify-end';
-    const remove = button('rdp.remove', () => {
-      remove.disabled = true;
-      void (async () => {
-        const response = await this.request(`/${row.id}`, 'DELETE');
-        if (!response.ok) throw new Error('remove failed');
-        dialog.close();
-        await this.refresh();
-      })().catch(() => { if (dialog.open) this.error(hint, 'rdp.failed'); }).finally(() => { remove.disabled = false; });
-    });
-    actions.append(button('rdp.cancel', () => dialog.close()), remove);
-    dialog.append(hint, actions);
-    dialog.showModal();
+
+  async remove(id: string): Promise<void> {
+    const response = await this.request(`/${id}`, 'DELETE');
+    if (!response.ok) throw new Error(t('rdp.failed'));
+    const data = await response.json() as { success?: boolean };
+    if (data.success !== true) throw new Error(t('rdp.failed'));
   }
 }

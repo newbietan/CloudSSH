@@ -498,7 +498,7 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
 - 入口、生命周期与验收见 `docs/rdp-implementation-plan.md`。Wrangler 的 `rdp-entry.ts` 重导出原 DO，显式导入有界 Data/Text 模块；不添加 `[assets]`，不削弱原生 `ctx.access`。旧 P0 路由返回 404，CI 不读取临时目标或启动 Docker；FreeRDP 由维护者显式重建后随代码提交，普通 SSH 页面不下载 WASM。仅 `ENABLE_RDP=true` 公开能力。
 - `rdp_profiles` 独立、每账户授权、只接公网 IPv4:3389 或已配置 Tunnel 主机名；Access Service Token 加密且换域不继承。票据仅通过已认证同源 WebSocket 首帧提交，单用、绑定浏览器和修订。不要把 HTTP/WS 控制、密码或目标路由混入 Windows 字节流；浏览器内一次提交密码，保持 NLA 和严格的目标证书 SHA-256 固定。清理须有界，确认代表 WASM 已消费而不是已绘制。
-- 不挂接 SSH、SFTP、MCP、Agent、分享或跳板。更新/删除撤销旧票据和租约，定期复核但不承诺强制注销 Windows。新生产链路需独立双线、Access 与弱网真机验收，不沿用 P0 作为发布结论。
+- Linux / Windows Server 在既有「添加服务器」弹窗切换，默认 Linux；隐藏字段禁用，不参与另一类型的提交。共用服务器卡片网格，不另挂新增入口；仅新增可切换，编辑不转换协议。`rdp_profiles` 不挂接 SSH、SFTP、MCP、Agent、分享或跳板。更新/删除撤销旧票据和租约，定期复核但不承诺强制注销 Windows。新生产链路需独立双线、Access 与弱网真机验收，不沿用 P0 作为发布结论。
 
 ## SSH 兼容增强边界
 

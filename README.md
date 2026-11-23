@@ -361,7 +361,7 @@ SSH 跳转不需要额外环境变量，但必须启用 GitHub OAuth 并使用�
 
 ##### Windows 远程桌面
 
-设置 `ENABLE_RDP=true` 后，登录用户可在「远程桌面设备」中添加 Windows，通过公网 IPv4:3389 或 Cloudflare 的 `rdp://` 隧道路由，在同站浏览器页面操作桌面。Windows 需启用 NLA；CloudSSH 不存 Windows 密码，设备保存经过独立核对的证书 SHA-256 指纹。配置与兼容边界见 [RDP 说明](docs/rdp-implementation-plan.md)。
+设置 `ENABLE_RDP=true` 后，登录用户可点「添加服务器」并切换到 Windows Server，通过公网 IPv4:3389 或 Cloudflare 的 `rdp://` 隧道路由，在同站浏览器页面操作桌面。Windows 需启用 NLA；CloudSSH 不存 Windows 密码，设备保存经过独立核对的证书 SHA-256 指纹。配置与兼容边界见 [RDP 说明](docs/rdp-implementation-plan.md)。
 
 ##### 通过 Cloudflare 隧道连接内网服务器
 

@@ -7,7 +7,6 @@ import { initI18n, onLocaleChange, t } from './i18n';
 import { MobileTerminalController } from './mobile-terminal';
 import { MobileShortcutsManager } from './mobile-shortcuts-manager';
 import { ServerList } from './server-list';
-import { RdpManager } from './rdp-manager';
 import {
   type ClaimedShare,
   renderShareEnded,
@@ -41,7 +40,6 @@ let tabManager: TabManager | null = null;
 let connectionForm: ConnectionForm | null = null;
 let appConfig: AppConfig | null = null;
 let serverList: ServerList | null = null;
-let rdpManager: RdpManager | undefined;
 let isLoggedIn = false;
 let currentGithubId: number | null = null;
 let sharedSessionMode = false;
@@ -327,9 +325,7 @@ function showUserSpace(user: InitialUser, config: AppConfig): void {
   document.getElementById('mobile-shortcuts-terminal-btn')?.classList.remove('hidden');
   mobileShortcutsManager.setLoggedIn(true);
 
-  rdpManager?.dispose();
-  const rdpHost = document.getElementById('rdp-manager');
-  rdpManager = config.rdpEnabled === true && rdpHost ? new RdpManager(rdpHost) : undefined;
+  serverList?.disposeRdp();
   serverList = new ServerList(
     user,
     // onLogout 回调
@@ -337,9 +333,8 @@ function showUserSpace(user: InitialUser, config: AppConfig): void {
       isLoggedIn = false;
       currentGithubId = null;
       customThemeStore.setLoggedIn(false);
+      serverList?.disposeRdp();
       serverList = null;
-      rdpManager?.dispose();
-      rdpManager = undefined;
       tabManager?.setUser(null);
       // Dispose panels before clearing storage so late frames cannot recreate drafts.
       clearUserAgentSessionDrafts(user.github_id);

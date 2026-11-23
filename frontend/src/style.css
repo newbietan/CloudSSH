@@ -6021,17 +6021,48 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   flex: 0 0 96px;
 }
 
-.rdp-device-dialog {
-  width: min(34rem, calc(100% - 2rem));
-  max-height: calc(100dvh - 2rem);
-  overflow: auto;
-  padding: 1.25rem;
-  border: 1px solid var(--outline-variant);
-  border-radius: 1rem;
-  background: var(--surface);
-  color: var(--on-surface);
+.server-kind-switch:not(.hidden) {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-self: flex-start;
+  flex-shrink: 0;
+  max-width: 100%;
+  margin-top: 12px;
+  padding: 3px;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-hover, transparent);
 }
-.rdp-device-dialog::backdrop { background: rgb(0 0 0 / 45%); }
-.rdp-device-dialog [hidden] { display: none; }
+.server-kind-switch button {
+  min-height: 40px;
+  padding: 0.45rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.server-kind-switch button[aria-pressed='true'] {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--accent);
+}
+.server-kind-switch button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.server-kind-fields {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.server-kind-fields [hidden] { display: none; }
+.rdp-tunnel-fields > label { margin-top: 12px; }
+@media (max-width: 520px), (pointer: coarse) {
+  .server-kind-switch button { min-height: 44px; }
+}
 
 

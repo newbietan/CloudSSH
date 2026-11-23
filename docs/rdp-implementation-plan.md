@@ -5,7 +5,7 @@
 ## 启用并配置
 
 1. 发布环境默认关闭；维护者的 `test` 已通过 `[env.test.vars]` 开启正式入口供验收。其他环境可设置 `ENABLE_RDP=true`，Git/CLI 部署写在对应环境的 `[vars]`，或在 Dashboard 配成 Secret 以免被部署清除。仍须登录 CloudSSH，匿名和一次性 SSH 分享不可使用。使用当前部署的 GitHub、单管理员密码或 Cloudflare Access 登录方式，不设额外账号名单。
-2. 登录后在用户空间的「远程桌面设备」独立列表添加设备。无需创建一个假的 SSH 服务器，也不用安装 Windows App。Windows 必须已开启远程桌面、NLA，账号须有 RDP 权限。
+2. 登录后点「添加服务器」，在弹窗顶部从默认的 Linux 切换到「Windows Server」，填写远程桌面配置。保存后设备会出现在同一个服务器列表中；无需创建 SSH 设备或安装 Windows App。Windows 必须已开启远程桌面、NLA，账号须有 RDP 权限。
 3. **公网**模式填可达的公开 IPv4。首版只拨 TCP 3389，不允许任意端口、私网 IP 或未固定解析的直连域名。标准 Workers TCP 出站没有实例独享固定公网 IP；不要为了测试向全网开放 3389。有入站白名单要求时优先走 Tunnel。
 4. **Tunnel** 模式选择已经配置的 Cloudflare Published Application 主机名。在 cloudflared 端把该主机名的服务设置为 `rdp://<Windows 地址>:3389`，例如同机 `rdp://127.0.0.1:3389`。这是字节流隧道，不是 Access 浏览器桌面入口，也不能用现有 `ssh://` 路由替代。建议给目标主机名单独加 Access **Service Auth**，在设备上填该应用的 Client ID/Secret；不是 Tunnel 安装令牌。修改目的地会清空旧凭据，省略同主机的凭据则保留。
 5. 从可信 Windows 管理控制台取得当前 RDP 侦听器证书的 **DER SHA-256 指纹**（64 位十六进制），填入设备；Windows `Thumbprint` 通常是 SHA-1，不能直接当 SHA-256。证书更换时由所有者独立核对后手动修改，不自动接受。点击「打开桌面」打开同源窗口，Win 本地账号通常留空 Domain。密码只交给本页内存中的 FreeRDP，不存浏览器持久存储、URL、Worker 或 UserDB。
