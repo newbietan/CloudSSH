@@ -1,7 +1,11 @@
 import {
-  type RdpProfile, type RdpRoute, RDP_MAX_PROFILES, isRdpId, parseRdpProfile, readRdpJson,
+  type RdpProfile, type RdpRoute, RDP_MAX_PROFILES, isRdpId, isRdpLogin, parseRdpProfile, readRdpJson,
 } from '../rdp-schema';
 
+import { parseStoredServerTags } from '../server-tags';
+
+const withOptions = `SELECT p.*, o.tags, o.login FROM rdp_profiles p LEFT JOIN rdp_profile_options o
+  ON o.profile=p.id AND o.user_id=p.user_id`;
 const TICKET_MS = 30_000;
 export const RDP_LEASE_MS = 45_000;
 const MAX_TICKETS = 8;
@@ -14,6 +18,8 @@ interface Row {
   host: string;
   fingerprint: string;
   access: string | null;
+  tags: string | null;
+  login: string | null;
 }
 interface TicketRow { profile: string; revision: number; binding: string; expires: number }
 export interface RdpLease { id: string; profile: RdpProfile; accessId?: string; accessSecret?: string }
@@ -22,8 +28,8 @@ export const rdpJson = (body: unknown, status = 200) => Response.json(body, {
   status, headers: { 'Cache-Control': 'no-store' },
 });
 const error = (status: number, code: string) => rdpJson({ code }, status);
-const profile = ({ id, revision, name, route, host, fingerprint, access }: Row): RdpProfile => ({
-  id, revision, name, route, host, fingerprint: fingerprint || null, hasAccessToken: !!access,
+const profile = ({ id, revision, name, route, host, fingerprint, access, tags, login }: Row): RdpProfile => ({
+  id, revision, name, route, host, fingerprint: fingerprint || null, hasAccessToken: !!access, hasLogin: !!login, tags: parseStoredServerTags(tags),
 });
 const digestPattern = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 export async function rdpDigest(text: string): Promise<string> {
@@ -43,6 +49,10 @@ export class RdpStore {
       id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, revision INTEGER NOT NULL, name TEXT NOT NULL,
       route TEXT NOT NULL, host TEXT NOT NULL, fingerprint TEXT NOT NULL, access TEXT
     )`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS rdp_profile_options (
+      user_id INTEGER NOT NULL, profile TEXT NOT NULL, tags TEXT NOT NULL, login TEXT,
+      PRIMARY KEY (user_id, profile)
+    )`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS rdp_tickets (
       hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, profile TEXT NOT NULL, revision INTEGER NOT NULL,
       binding TEXT NOT NULL, expires INTEGER NOT NULL
@@ -53,7 +63,7 @@ export class RdpStore {
     )`);
   }
   private row(userId: number, id: string): Row | undefined {
-    return this.sql.exec('SELECT * FROM rdp_profiles WHERE user_id = ? AND id = ?', userId, id).toArray()[0] as unknown as Row | undefined;
+    return this.sql.exec(`${withOptions} WHERE p.user_id = ? AND p.id = ?`, userId, id).toArray()[0] as unknown as Row | undefined;
   }
   private clean(now: number): void {
     this.sql.exec('DELETE FROM rdp_tickets WHERE expires <= ?', now);
@@ -70,7 +80,7 @@ export class RdpStore {
     const route = url.pathname.slice('/internal/rdp/'.length);
     if (route === 'profiles') {
       if (request.method === 'GET') {
-        const rows = this.sql.exec('SELECT * FROM rdp_profiles WHERE user_id = ? ORDER BY name, id LIMIT ?', userId, RDP_MAX_PROFILES).toArray() as unknown as Row[];
+        const rows = this.sql.exec(`${withOptions} WHERE p.user_id = ? ORDER BY p.name, p.id LIMIT ?`, userId, RDP_MAX_PROFILES).toArray() as unknown as Row[];
         return rdpJson({ profiles: rows.map(profile) });
       }
       if (request.method === 'POST') return this.save(userId, null, await readRdpJson(request));
@@ -83,6 +93,7 @@ export class RdpStore {
       if (request.method === 'PUT') return this.save(userId, row, await readRdpJson(request));
       if (request.method === 'DELETE') {
         this.transaction(() => {
+          this.sql.exec('DELETE FROM rdp_profile_options WHERE user_id=? AND profile=?', userId, id);
           this.sql.exec('DELETE FROM rdp_profiles WHERE user_id = ? AND id = ?', userId, id);
           this.sql.exec('DELETE FROM rdp_tickets WHERE user_id = ? AND profile = ?', userId, id);
           this.sql.exec('DELETE FROM rdp_leases WHERE user_id = ? AND profile = ?', userId, id);
@@ -102,7 +113,8 @@ export class RdpStore {
     const body = await readRdpJson(request) as Record<string, unknown> | null;
     if (!body || typeof body !== 'object') return error(400, 'invalid_request');
     if (route === 'ticket' && isRdpId(body.profile) && digestPattern(body.binding)) {
-      return this.issue(userId, body.profile, body.binding);
+      if (body.savedRevision !== undefined && (typeof body.savedRevision !== 'number' || !Number.isSafeInteger(body.savedRevision) || body.savedRevision < 1)) return error(400, 'invalid_request');
+      return this.issue(userId, body.profile, body.binding, body.savedRevision);
     }
     if (route === 'claim' && digestPattern(body.ticket) && digestPattern(body.binding)) {
       return this.claim(userId, body.ticket, body.binding);
@@ -146,6 +158,8 @@ export class RdpStore {
     if (input.accessId !== undefined) {
       access = input.accessId ? await this.encrypt(JSON.stringify([input.accessId, input.accessSecret]), userId) : null;
     }
+    let login = sameTarget ? existing.login : null;
+    if (input.login !== undefined) login = input.login ? await this.encrypt(JSON.stringify(input.login), userId) : null;
     return this.transaction(() => {
       const id = existing?.id ?? crypto.randomUUID();
       const revision = (existing?.revision ?? 0) + 1;
@@ -161,21 +175,32 @@ export class RdpStore {
         if (this.count('rdp_profiles', userId) >= RDP_MAX_PROFILES) return error(409, 'profile_limit');
         this.sql.exec('INSERT INTO rdp_profiles VALUES (?, ?, ?, ?, ?, ?, ?, ?)', id, userId, revision, input.name, input.route, input.host, fingerprint, access);
       }
-      return rdpJson(profile({ ...input, id, revision, fingerprint, access }), existing ? 200 : 201);
+      const tags = JSON.stringify(input.tags ?? parseStoredServerTags(existing?.tags));
+      this.sql.exec(`INSERT INTO rdp_profile_options(user_id,profile,tags,login) VALUES (?,?,?,?)
+        ON CONFLICT(user_id,profile) DO UPDATE SET tags=excluded.tags,login=excluded.login`, userId, id, tags, login);
+      return rdpJson(profile(this.row(userId, id)!), existing ? 200 : 201);
     });
   }
 
-  private async issue(userId: number, id: string, binding: string): Promise<Response> {
+  private async issue(userId: number, id: string, binding: string, savedRevision?: number): Promise<Response> {
     const ticket = Array.from(crypto.getRandomValues(new Uint8Array(32)), byte => byte.toString(16).padStart(2, '0')).join('');
     const hash = await rdpDigest(ticket);
+    let login: unknown;
+    if (savedRevision !== undefined) {
+      const row = this.row(userId, id);
+      if (!row?.login || row.revision !== savedRevision) return error(409, 'profile_changed');
+      try { login = JSON.parse(await this.decrypt(row.login, userId)); } catch { return error(500, 'login_unavailable'); }
+      if (!isRdpLogin(login)) return error(500, 'login_unavailable');
+    }
     return this.transaction(() => {
       const now = Date.now();
       this.clean(now);
       const row = this.row(userId, id);
       if (!row) return error(404, 'not_found');
+      if (savedRevision !== undefined && row.revision !== savedRevision) return error(409, 'profile_changed');
       if (this.count('rdp_tickets', userId) >= MAX_TICKETS) return error(429, 'ticket_limit');
       this.sql.exec('INSERT INTO rdp_tickets VALUES (?, ?, ?, ?, ?, ?)', hash, userId, id, row.revision, binding, now + TICKET_MS);
-      return rdpJson({ ticket, revision: row.revision });
+      return rdpJson({ ticket, revision: row.revision, ...(savedRevision === undefined ? {} : { login }) });
     });
   }
 

@@ -6021,6 +6021,18 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   flex: 0 0 96px;
 }
 
+.rdp-workspace[open] {
+  position: fixed; inset: 0; width: 100%; height: 100dvh; max-width: none; max-height: none;
+  margin: 0; padding: 0; border: 0; display: flex; flex-direction: column;
+  background: var(--bg); color: var(--text); overflow: hidden;
+}
+.rdp-workspace header {
+  display: flex; justify-content: space-between; align-items: center; gap: .75rem;
+  padding: .4rem max(.8rem, env(safe-area-inset-right)) .4rem max(.8rem, env(safe-area-inset-left));
+  border-bottom: 1px solid var(--border); background: var(--bg-elevated); color: var(--accent);
+}
+.rdp-workspace header button { min-height: 40px; padding: 0 .9rem; }
+.rdp-workspace iframe { flex: 1; min-height: 0; width: 100%; border: 0; }
 .server-kind-switch:not(.hidden) {
   display: inline-grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

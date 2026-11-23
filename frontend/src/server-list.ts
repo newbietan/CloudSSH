@@ -222,7 +222,8 @@ export class ServerList {
     user: UserInfo,
     onLogout: () => void,
     onConnect: (wsUrl: string, serverName: string, hostInfo?: SSHHostInfo) => void,
-    config: AppConfig
+    config: AppConfig,
+    private readonly openRdp?: (id: string) => void,
   ) {
     this.user = user;
     this.onLogout = onLogout;
@@ -527,7 +528,7 @@ export class ServerList {
     emptyState.classList.remove('flex');
     clearSearchButton?.classList.toggle('hidden', this.searchQuery.length === 0);
 
-    const allTags = [...new Set(this.servers.flatMap((server) => server.tags || []))].sort((a, b) =>
+    const allTags = [...new Set([...this.servers, ...this.rdpProfiles].flatMap((server) => server.tags || []))].sort((a, b) =>
       a.localeCompare(b)
     );
     tagFilterWrapper?.classList.toggle('hidden', allTags.length === 0);
@@ -549,8 +550,9 @@ export class ServerList {
 
     const filteredServers = filterServers(this.servers, this.searchQuery, this.selectedTag);
     const query = this.searchQuery.trim().toLocaleLowerCase();
-    const windows = this.selectedTag ? [] : this.rdpProfiles.filter((row) =>
-      !query || [row.name, row.host, 'Windows Server', 'RDP'].some((value) => value.toLocaleLowerCase().includes(query))
+    const windows = this.rdpProfiles.filter((row) =>
+      (!this.selectedTag || (row.tags ?? []).includes(this.selectedTag)) &&
+      (!query || [row.name, row.host, 'Windows Server', 'RDP', ...(row.tags ?? [])].some((value) => value.toLocaleLowerCase().includes(query)))
     );
     const entries = [
       ...sortServers(filteredServers, this.sortMode).map((row) => ({ kind: 'ssh' as const, row })),
@@ -579,6 +581,11 @@ export class ServerList {
     for (const entry of page.items) {
       if (entry.kind === 'rdp') {
         const { row } = entry;
+        document.getElementById(`rdp-open-${row.id}`)?.addEventListener('click', event => {
+          if (this.disposed || !this.openRdp || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+          event.preventDefault();
+          this.openRdp(row.id);
+        });
         document.getElementById(`rdp-edit-${row.id}`)?.addEventListener('click', () => this.editRdp(row));
         document.getElementById(`rdp-delete-${row.id}`)?.addEventListener('click', () => { void this.deleteRdp(row); });
         continue;
@@ -672,9 +679,10 @@ export class ServerList {
       <div class="space-y-1.5 text-xs text-muted mb-4">
         <div class="font-mono truncate">${this.escapeHtml(host)}${row.route === 'direct' ? ':3389' : ''}</div>
         <div>${t(row.route === 'tunnel' ? 'rdp.tunnel' : 'rdp.direct')}</div>
+        ${(row.tags ?? []).length ? `<div class="flex flex-wrap gap-1 mt-3">${row.tags.map(tag => `<span class="text-[9px] text-primary border border-[var(--border-strong)] px-1.5 py-0.5">#${this.escapeHtml(tag)}</span>`).join('')}</div>` : ''}
       </div>
       <div class="server-card-actions flex gap-2 pt-3 border-t border-[var(--border)]">
-        <a href="/rdp/${row.id}" target="_blank" rel="noopener" class="server-connect-button cyber-button text-primary flex-1 min-w-0 py-1.5 px-3 text-xs flex items-center justify-center">${t('rdp.open')}</a>
+        <a id="rdp-open-${row.id}" href="/rdp/${row.id}" class="server-connect-button cyber-button text-primary flex-1 min-w-0 py-1.5 px-3 text-xs flex items-center justify-center">${t('rdp.open')}</a>
         <button type="button" id="rdp-edit-${row.id}" class="cyber-button text-primary px-3" aria-label="${this.escapeAttr(t('rdp.edit'))}">
           <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px">edit</span>
         </button>

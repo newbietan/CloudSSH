@@ -84,6 +84,30 @@ describe('RDP profiles and connection leases', () => {
     } finally { database.close(); }
   });
 
+  it('returns opt-in login only in a matching owner/revision ticket, never in lists, relay claims or another destination', async () => {
+    const { request, database } = fixture();
+    try {
+      const login = { username: 'saved-user', domain: 'domain', password: ' secret ' };
+      const get = async (route: string, method: string, body?: unknown, user = 1) => (await request(route, method, body, user)).json() as Promise<Record<string, unknown>>;
+      const saved = await get('profiles', 'POST', { ...target, login, tags: ['Work'] });
+      const path = `profiles/${saved.id}`;
+      const issue = { profile: saved.id, binding: bind };
+      expect(saved).toMatchObject({ hasLogin: true, tags: ['Work'] });
+      for (const info of [saved, await get('profiles', 'GET'), await get(path, 'GET'), await get('ticket', 'POST', issue)]) expect(JSON.stringify(info)).not.toContain(login.username);
+      expect(database.prepare('SELECT login FROM rdp_profile_options').get()?.login).not.toContain(login.password);
+      expect((await request('ticket', 'POST', { ...issue, savedRevision: 1 }, 2)).ok).toBe(false);
+      expect((await request('ticket', 'POST', { ...issue, savedRevision: 2 })).ok).toBe(false);
+      const ticket = await get('ticket', 'POST', { ...issue, savedRevision: 1 });
+      expect(ticket.login).toEqual(login);
+      expect(JSON.stringify(await get('claim', 'POST', { ticket: ticket.ticket, binding: bind }))).not.toContain(login.username);
+      expect(await get(path, 'PUT', { ...target, name: 'Renamed', revision: 1 })).toMatchObject({ hasLogin: true });
+      expect(await get(path, 'PUT', { ...target, host: '8.8.8.8', revision: 2 })).toMatchObject({ hasLogin: false });
+      expect((await request('ticket', 'POST', { ...issue, savedRevision: 3 })).ok).toBe(false);
+      await request(path, 'DELETE');
+      expect(database.prepare('SELECT * FROM rdp_profile_options').all()).toHaveLength(0);
+    } finally { database.close(); }
+  });
+
   it('never returns the Access credentials in list responses and clears old-host credentials', async () => {
     const { request, database } = fixture();
     try {

@@ -18,11 +18,18 @@ const el = id => document.getElementById(id);
 const status = el('status');
 const show = i => { status.textContent = msg[i]; };
 const canvas = el('canvas');
+const stage = el('stage');
+// CSS pixels; SDL's external-canvas backend reports these to the negotiated DISP channel.
+const viewportSize = () => {
+  const w = Math.max(1, stage.clientWidth), h = Math.max(1, stage.clientHeight);
+  const scale = Math.min(1, 3840 / w, 2160 / h);
+  return [Math.max(200, Math.floor(w * scale / 2) * 2), Math.max(200, Math.floor(h * scale / 2) * 2)];
+};
 const form = el('credentials');
 const connect = el('connect');
 const passwordBox = el('windows-password');
-const api = '/api/rdp/profiles/' + location.pathname.slice('/rdp/'.length);
-const clientRevision = '2'; // Keep aligned with src/rdp-schema.ts when changing the browser ABI.
+const api = '/api/rdp/profiles/' + location.pathname.split('/')[2];
+const clientRevision = '3'; // Keep aligned with src/rdp-schema.ts when changing the browser ABI.
 const trust = trustText[locale];
 const certificate = el('certificate');
 const acceptCertificate = el('certificate-accept');
@@ -39,12 +46,34 @@ function request(url, options) {
   return fetch(url, { credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(10000), ...options });
 }
 
-async function run(username, domain, password) {
+async function run(username, domain, password, useSaved) {
   const abort = new AbortController();
   let stopped = false;
   let ticket;
   let timer;
   let ready = false;
+  let negotiatedResize = false;
+  let initialSize = viewportSize();
+  let resizeTimer, lastSize = '';
+  function layout(force = false) {
+    if (stopped) return;
+    let [w, h] = viewportSize();
+    if (!negotiatedResize) {
+      const factor = Math.min(w / initialSize[0], h / initialSize[1]);
+      w = Math.round(initialSize[0] * factor); h = Math.round(initialSize[1] * factor);
+    }
+    const sizeKey = `${w}x${h}`;
+    if (!force && sizeKey === lastSize) return;
+    lastSize = sizeKey;
+    stage.style.setProperty('--desktop-width', w + 'px');
+    stage.style.setProperty('--desktop-height', h + 'px');
+    if (negotiatedResize) window.dispatchEvent(new Event('resize'));
+  }
+  const scheduleLayout = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(layout, 250); };
+  const observer = new ResizeObserver(scheduleLayout);
+  observer.observe(stage);
+  document.addEventListener('fullscreenchange', scheduleLayout, { signal: abort.signal });
+  layout();
   let pendingFingerprint;
   let decision = -1;
   const watch = (ms, reason) => {
@@ -56,10 +85,12 @@ async function run(username, domain, password) {
     stopped = true;
     password = ticket = undefined;
     clearTimeout(timer);
+    clearTimeout(resizeTimer);
+    observer.disconnect();
     abort.abort();
     socket?.close();
     el('fullscreen').disabled = true;
-    if (document.fullscreenElement === canvas) void document.exitFullscreen().catch(() => {});
+    if (document.fullscreenElement === stage) void document.exitFullscreen().catch(() => {});
     decision = -1;
     acceptCertificate.disabled = true;
     cancelCertificate.disabled = false;
@@ -145,11 +176,17 @@ async function run(username, domain, password) {
         watch(85_000, trust[9]);
         return 0;
       },
+      onWindowsDisplayControl() {
+        if (stopped) return;
+        negotiatedResize = true;
+        // SDL enables its resizable window after processing the server capabilities.
+        clearTimeout(resizeTimer); resizeTimer = setTimeout(() => layout(true), 550);
+      },
       onWindowsFirstFrame() {
         if (stopped) return;
         clearTimeout(timer);
         ready = true;
-        el('fullscreen').disabled = !canvas.requestFullscreen;
+        el('fullscreen').disabled = !stage.requestFullscreen;
         show(15);
       },
       instantiateWasm(imports, receive) {
@@ -167,17 +204,26 @@ async function run(username, domain, password) {
         void (async () => {
           show(13);
           watch(20_000, 22);
-          const issued = await request(api + '/connect', { method: 'POST', headers: { 'X-CloudSSH-RDP-Client': clientRevision } });
+          const issued = await request(api + '/connect', { method: 'POST', signal: abort.signal, headers: {
+            'X-CloudSSH-RDP-Client': clientRevision, ...(useSaved ? { 'X-CloudSSH-RDP-Saved-Revision': String(profile.revision) } : {}),
+          } });
           if (!issued.ok) return finish(21);
           const info = await issued.json();
           if (stopped) return;
           if (info.revision !== profile.revision || !/^[a-f0-9]{64}$/.test(info.ticket)) return finish(21);
+          if (useSaved) {
+            if (!validLogin(info.login?.username, info.login?.domain, info.login?.password)) return finish(10);
+            ({ username, domain, password } = info.login);
+            delete info.login;
+          }
           ticket = info.ticket;
           window.Module.websocket.on?.('open', () => { if (!stopped) { show(14); watch(30_000, 19); } });
           window.Module.websocket.on?.('error', () => finish(22));
           window.Module.websocket.on?.('close', () => finish(ready ? 16 : 19));
+          initialSize = viewportSize();
+          layout(true);
           const args = ['/v:127.0.0.1:3389', '/u:' + username, '/sec:nla', '/cert:deny',
-            '/size:1280x720', '-clipboard', '-auto-reconnect', '/audio-mode:2', '/log-level:OFF'];
+            '/size:' + initialSize.join('x'), '/dynamic-resolution', '-clipboard', '-auto-reconnect', '/audio-mode:2', '/log-level:OFF'];
           if (domain) args.push('/d:' + domain);
           const result = window.Module.callMain(args);
           if (result && typeof result.then === 'function') result.then(code => finish(code ? 19 : 16), () => finish(17));
@@ -192,22 +238,28 @@ async function run(username, domain, password) {
   } catch { finish(17); }
 }
 
-form.addEventListener('submit', event => {
-  event.preventDefault();
+function validLogin(username, domain, password) {
+  return typeof username === 'string' && username.trim() && username.length <= 128 && typeof domain === 'string' && domain.length <= 128 &&
+    typeof password === 'string' && password && ![username, domain, password].some(value => /[\x00\r\n]/.test(value)) && new TextEncoder().encode(password).length <= 1024;
+}
+function start() {
   if (!profile || started) return;
   const username = el('windows-user').value.trim();
   const domain = el('windows-domain').value.trim();
   const password = passwordBox.value;
-  if (!username || !password || [username, domain, password].some(value => /[\x00\r\n]/.test(value)) || new TextEncoder().encode(password).length > 1024) return show(10);
+  const useSaved = profile.hasLogin === true;
+  if (!useSaved && !validLogin(username, domain, password)) return show(10);
   started = true;
   passwordBox.value = '';
   for (const control of form.querySelectorAll('button, input')) control.disabled = true;
   el('disconnect').disabled = false;
   status.focus({ preventScroll: true });
-  void run(username, domain, password);
-});
+  form.hidden = true;
+  void run(username, domain, password, useSaved);
+}
+form.addEventListener('submit', event => { event.preventDefault(); start(); });
 el('disconnect').onclick = () => { terminate?.(16); location.reload(); };
-el('fullscreen').onclick = () => { void canvas.requestFullscreen?.().catch(() => show(23)); };
+el('fullscreen').onclick = () => { void stage.requestFullscreen?.().catch(() => show(23)); };
 addEventListener('pagehide', () => terminate?.(16));
 for (const event of ['keydown', 'pointerdown', 'pointermove', 'wheel']) {
   canvas.addEventListener(event, input => { if (input.isTrusted) socket?.activity(); }, { passive: true });
@@ -221,5 +273,13 @@ void (async () => {
   profile = saved;
   el('title').textContent = msg[1] + ' · ' + profile.name;
   connect.disabled = false;
-  show(9);
+  if (window.frameElement) el('back').hidden = true;
+  if (profile.hasLogin) {
+    for (const label of form.querySelectorAll('label')) { label.hidden = true; label.querySelector('input').disabled = true; }
+    status.textContent = profile.name;
+    if (window.frameElement?.dataset.connectSaved === 'true') {
+      delete window.frameElement.dataset.connectSaved;
+      start();
+    }
+  } else show(9);
 })().catch(() => show(21));

@@ -31,12 +31,14 @@ import { requestCloudflareSshCertificate } from './cf-ssh-ca';
 import { notify } from './ui-feedback';
 import { initVersionNotice } from './version-notice';
 import { McpManager } from './mcp-manager';
+import { RdpWorkspace } from './rdp-workspace';
 import { serverOwnerKey } from './server-removal';
 import { mountAssistantIcons } from './assistant-icons';
 
 // ==================== 全局状态 ====================
 
 let tabManager: TabManager | null = null;
+let rdpWorkspace: RdpWorkspace | undefined;
 let connectionForm: ConnectionForm | null = null;
 let appConfig: AppConfig | null = null;
 let serverList: ServerList | null = null;
@@ -326,6 +328,8 @@ function showUserSpace(user: InitialUser, config: AppConfig): void {
   mobileShortcutsManager.setLoggedIn(true);
 
   serverList?.disposeRdp();
+  rdpWorkspace?.dispose();
+  rdpWorkspace = config.rdpEnabled ? new RdpWorkspace(() => tabManager?.hasAnyTab() === true) : undefined;
   serverList = new ServerList(
     user,
     // onLogout 回调
@@ -334,6 +338,8 @@ function showUserSpace(user: InitialUser, config: AppConfig): void {
       currentGithubId = null;
       customThemeStore.setLoggedIn(false);
       serverList?.disposeRdp();
+      rdpWorkspace?.dispose();
+      rdpWorkspace = undefined;
       serverList = null;
       tabManager?.setUser(null);
       // Dispose panels before clearing storage so late frames cannot recreate drafts.
@@ -345,7 +351,7 @@ function showUserSpace(user: InitialUser, config: AppConfig): void {
     (wsUrl: string, serverName: string, hostInfo?: SSHHostInfo) => {
       showTerminalFromServer(wsUrl, serverName, hostInfo);
     },
-    config
+    config, id => { void rdpWorkspace?.open(id); }
   );
 }
 

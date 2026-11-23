@@ -8,7 +8,7 @@
 2. 登录后点「添加服务器」，在弹窗顶部从默认的 Linux 切换到「Windows Server」，填写远程桌面配置。保存后设备会出现在同一个服务器列表中；无需创建 SSH 设备或安装 Windows App。Windows 必须已开启远程桌面、NLA，账号须有 RDP 权限。
 3. **公网**模式填可达的公开 IPv4。首版只拨 TCP 3389，不允许任意端口、私网 IP 或未固定解析的直连域名。标准 Workers TCP 出站没有实例独享固定公网 IP；不要为了测试向全网开放 3389。有入站白名单要求时优先走 Tunnel。
 4. **Tunnel** 模式选择已经配置的 Cloudflare Published Application 主机名。在 cloudflared 端把该主机名的服务设置为 `rdp://<Windows 地址>:3389`，例如同机 `rdp://127.0.0.1:3389`。这是字节流隧道，不是 Access 浏览器桌面入口，也不能用现有 `ssh://` 路由替代。建议给目标主机名单独加 Access **Service Auth**，在设备上填该应用的 Client ID/Secret；不是 Tunnel 安装令牌。修改目的地会清空旧凭据，省略同主机的凭据则保留。
-5. 点击「打开桌面」，输入 Windows 凭据（本地账号通常留空 Domain）。首次连接会显示实际收到的 Windows 证书 **DER SHA-256** 指纹，请通过可信 Windows 管理控制台独立核对后选择「信任并连接」，不必手填。Windows `Thumbprint` 通常是 SHA-1，不能直接比较。指纹已保存时不再询问；不一致时显示新旧指纹并停止连接，不能在警告弹窗里覆盖。若确认是计划内换证且目的地未变，可删除并重建设备后再次核对和信任。密码只交给本页内存中的 FreeRDP，不存浏览器持久存储、URL、Worker 或 UserDB。
+5. Windows 设备可以添加标签，纳入统一搜索、筛选。默认每次输入 Windows 凭据（本地账号通常留空 Domain）；如勾选「在我的 CloudSSH 账户中加密保存 Windows 登录凭据」，再点击设备即可跳过输入，未确认的证书仍须确认。编辑同一目标时登录字段全部留空保留，取消勾选删除凭据；改线路/主机须重新填写或不保存。首次连接会显示实际收到的 Windows 证书 **DER SHA-256** 指纹，请通过可信 Windows 管理控制台独立核对后选择「信任并连接」，不必手填。Windows `Thumbprint` 通常是 SHA-1，不能直接比较。指纹已保存时不再询问；不一致时显示新旧指纹并停止连接，不能在警告弹窗里覆盖。若确认是计划内换证且目的地未变，可删除并重建设备后再次核对和信任。手动输入的密码只交给浏览器 FreeRDP。选择云端保存时，用户名、域和密码整体沿用账户 AES-GCM 加密，密钥与数据同库，不是独立 KMS；列表/编辑 GET、WebSocket 和日志不含明文。当前所有者点击连接后，匹配设备修订的同源 POST 才在 no-store 响应中把解密值交付浏览器，不能保护已被入侵的浏览器或 DO。
 
 ## 实现边界
 
@@ -16,7 +16,11 @@
 - API `/api/rdp/profiles`、`/api/rdp/profiles/:id` 和 `POST /api/rdp/profiles/:id/connect`；同源、双重校验的 `/api/rdp/session` WebSocket 只接受首帧单次连接票据（30 秒、仅存摘要、绑定浏览器与档案修订），不把目标地址或令牌放到 URL。`PUT /api/rdp/profiles/:id/trust` 在证书首次确认后按账户、设备修订及当前有效连接租约原子写入 SHA-256，仅未固定时可写（同指纹重试幂等）；保存失败则不进入 NLA。原有指纹保留；仅换主机或线路重置，普通编辑不重置。确认等待有限（约 85 秒）。更新/删除撤销相关票据与在线租约，在线会话定期复查，不能保证对已经退出的 Windows 会话执行注销。
 - 公网和 Tunnel 只有传输层分流。Worker 不终止 Windows TLS、不渲染或转码，只搬运字节。浏览器与 Windows 做 NLA 及严格 Windows 证书指纹校验；隧道 HTTPS 外层的 TLS 不能替代 Windows 证书。连接路径不关闭 NLA。仅 Chromium / WebKit 实机体验另验；不承诺 Kerberos-only、RD Gateway、多屏或移动端键盘完整性。
 - 桌面转发使用有界双向字节窗口与累计 ACK；浏览器下行确认发生在 WASM socket 消费字节时，而不是 JavaScript 收到消息时，也不等于渲染结束。超时、租约失效或持续积压关闭，不能继续交付丢失部分字节的 TLS 流。单次连接最多 2 小时以保留 Workers Free 的内部子请求预算；期间仍应用 `IDLE_TIMEOUT`。隧道每条出站消息最多 16 KiB，不把 RDP 包、TLS 记录和载体帧视为同一边界。Workers WebSocket 没有 drain 指标，Tunnel 向 Windows 的写入另限速并限制单会话累计 8 MiB；该限制不累计 Windows 到浏览器的画面流量。此路径仍需用真实弱网核查；不会自动重放输入或密码。剪贴板、挂载、音频转发不在首版范围。
-- `src/worker/rdp-entry.ts` 同一次 Worker 部署，重导出原 DO 类，保持原生 `ctx.access`。RDP 按需加载；COOP/COEP/CSP 仅 RDP 文件响应。WASM 使用已压缩的 vendor 模块，主站 HTML、登录与原 SSH 终端不加载它。独立桌面页，用站内操作，不启动 xterm/Trzsz。
+- `src/worker/rdp-entry.ts` 同一次 Worker 部署，重导出原 DO 类，保持原生 `ctx.access`。RDP 按需加载；COOP/COEP/CSP 仅 RDP 文件响应。WASM 使用已压缩的 vendor 模块，主站 HTML、登录与原 SSH 终端不加载它。`/rdp/:id` 载入同一 CloudSSH 应用与当前主题，通过同源隔离运行帧操作桌面，不启动 xterm/Trzsz。首次从非隔离主页切入需要在当前标签重新载入；若有 SSH 标签会先提示，取消可保留会话。默认占满网页可用区，首帧后可显式点全屏，Esc 退出。初始与动态尺寸以 CSS 像素为单位（单屏上限 3840×2160），由 FreeRDP 的 MS-RDPEDISP 能力决定能否同步更新远端；不支持时等比显示，不重连或重放输入。
+
+## Edge 风险提示
+
+Edge 显示「已阻止该站点」和「恐吓软件」时，不是 Windows 的 TOFU 证书弹窗。Edge 的 [Scareware blocker](https://support.microsoft.com/en-us/edge/prevent-online-scams-with-the-scareware-blocker-in-microsoft-edge) 可根据全屏网页的画面判断技术支持诈骗。正常远桌也可能被误判，但截图不足以确认具体触发原因或排除网站被篡改。请先返回安全状态，核对站点部署、域名、目标设备与证书，排查非预期脚本和跳转；确认正常后通过 Edge「帮助和反馈 → 发送反馈」向微软提交版本、触发步骤与已脱敏的截图，不提交密码或桌面隐私。不建议关闭保护、忽略警告或换域绕过拦截。
 
 ## 维护和验收
 

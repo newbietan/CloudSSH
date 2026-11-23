@@ -1,6 +1,7 @@
 import { RDP_CLIENT_REVISION, RDP_WS_PROTOCOL, isRdpId, readRdpJson } from '../rdp-schema';
 import type { Env } from '../types';
 import { getAuthenticatedUser, userDbRouteKey } from './auth';
+import { createHtmlResponse } from './html-cache';
 import { parseIdleTimeout } from './idle-timeout';
 import { type RdpLease, rdpDigest, rdpJson } from './rdp-store';
 
@@ -106,7 +107,10 @@ export async function handleRdp(
       if (request.headers.get('X-CloudSSH-RDP-Client') !== String(RDP_CLIENT_REVISION)) {
         return rdpJson({ code: 'refresh_client' }, 409);
       }
-      const response = await call('ticket', 'POST', { profile: id, binding: await binding(request, key) });
+      const savedRevision = request.headers.get('X-CloudSSH-RDP-Saved-Revision');
+      if (savedRevision !== null && !/^[1-9]\d{0,9}$/.test(savedRevision)) return rdpJson({ code: 'invalid_revision' }, 400);
+      const response = await call('ticket', 'POST', { profile: id, binding: await binding(request, key),
+        ...(savedRevision === null ? {} : { savedRevision: Number(savedRevision) }) });
       if (!response.ok || !issueCookie) return response;
       const headers = new Headers(response.headers);
       headers.append('Set-Cookie', `${COOKIE}=${key}; Path=/; Secure; HttpOnly; SameSite=Strict`);
@@ -119,11 +123,22 @@ export async function handleRdp(
   }
   if (!path.startsWith(ROOT) || request.method !== 'GET' || url.search) return hide();
   const resource = path.slice(ROOT.length);
-  if (isRdpId(resource)) {
-    const profile = await call(`profiles/${resource}`);
+  const embedded = resource.endsWith('/client');
+  const deviceId = embedded ? resource.slice(0, -7) : resource;
+  if (isRdpId(deviceId)) {
+    const profile = await call(`profiles/${deviceId}`);
     if (!profile.ok) return hide();
     void profile.body?.cancel().catch(() => {});
-    return new Response(assets.page, { headers: { ...securityHeaders, 'Content-Type': 'text/html; charset=utf-8' } });
+    if (embedded) {
+      return new Response(assets.page, { headers: { ...securityHeaders, 'Content-Type': 'text/html; charset=utf-8',
+        'X-Frame-Options': 'SAMEORIGIN', 'Content-Security-Policy': securityHeaders['Content-Security-Policy'].replace("frame-ancestors 'none'", "frame-ancestors 'self'") } });
+    }
+    // Only the RDP workspace needs isolation. Ordinary login (including Turnstile) stays unchanged.
+    const shell = createHtmlResponse(request);
+    shell.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+    shell.headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
+    shell.headers.set('Cache-Control', 'private, no-store, no-transform');
+    return shell;
   }
   const resources = new Map<string, [string | ArrayBuffer, string, string?]>([
     ['assets/desktop.js', [assets.bootstrap, 'text/javascript; charset=utf-8']],

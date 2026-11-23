@@ -1,12 +1,15 @@
 import { isRdpId, parseRdpProfile, type RdpProfile } from '../../src/rdp-schema';
 import { localizedElement, t, type TranslationKey } from './i18n';
 
+import { normalizeServerTags } from '../../src/server-tags';
+
 const API = '/api/rdp/profiles';
 
 /** Windows fields mounted into the shared server modal, not a second dialog. */
 export class RdpManager {
   private readonly requests = new AbortController();
   private readonly name: HTMLInputElement;
+  private readonly tags: HTMLInputElement;
   private readonly host: HTMLInputElement;
   private readonly transport = document.createElement('select');
   private readonly access = document.createElement('fieldset');
@@ -14,6 +17,11 @@ export class RdpManager {
   private readonly secret: HTMLInputElement;
   private readonly clear = document.createElement('input');
   private readonly clearLabel = document.createElement('label');
+  private readonly remember = document.createElement('input');
+  private readonly loginFields = document.createElement('fieldset');
+  private readonly username: HTMLInputElement;
+  private readonly domain: HTMLInputElement;
+  private readonly password: HTMLInputElement;
   private editing?: RdpProfile;
 
   constructor(parent: HTMLFieldSetElement) {
@@ -29,7 +37,11 @@ export class RdpManager {
       option.value = value;
       this.transport.append(option);
     }
-    identity.append(nameLabel, routeLabel);
+    const [tags, tagsLabel] = this.field('rdp-tags', 300, 'server.tags');
+    this.tags = tags;
+    tags.dataset.i18nPlaceholder = 'server.tagsPlaceholder';
+    tags.placeholder = t('server.tagsPlaceholder');
+    identity.append(nameLabel, tagsLabel);
 
     const columns = document.createElement('div');
     columns.className = 'server-settings-columns';
@@ -41,10 +53,23 @@ export class RdpManager {
     this.host = host;
     name.required = host.required = true;
     host.spellcheck = false;
-    const hint = localizedElement('p', 'rdp.pinHelp');
-    hint.className = 'text-sm text-muted';
-    target.append(hostLabel);
-    authentication.append(hint);
+    target.append(routeLabel, hostLabel);
+    this.remember.type = 'checkbox';
+    this.remember.id = 'server-rdp-remember';
+    const consent = document.createElement('label');
+    consent.className = 'flex gap-2 items-center text-sm';
+    consent.append(this.remember, localizedElement('span', 'rdp.saveLogin'));
+    const [username, userLabel] = this.field('rdp-user', 128, 'auth.user');
+    const [domain, domainLabel] = this.field('rdp-domain', 128, 'rdp.domain');
+    const [password, passLabel] = this.field('rdp-password', 1024, 'common.password', 'password');
+    this.username = username; this.domain = domain; this.password = password;
+    this.loginFields.className = 'space-y-3 mt-3';
+    this.loginFields.append(userLabel, domainLabel, passLabel);
+    this.remember.onchange = () => {
+      this.loginFields.hidden = this.loginFields.disabled = !this.remember.checked;
+      if (!this.remember.checked) this.username.value = this.domain.value = this.password.value = '';
+    };
+    authentication.append(consent, this.loginFields);
     columns.append(target, authentication);
 
     this.access.className = 'rdp-tunnel-fields mt-4 pt-4 border-t border-outline-variant';
@@ -93,8 +118,12 @@ export class RdpManager {
     this.editing = row;
     this.name.value = row?.name ?? '';
     this.host.value = row?.host ?? '';
+    this.tags.value = (row?.tags ?? []).join(', ');
     this.transport.value = row?.route ?? 'direct';
-    this.id.value = this.secret.value = '';
+    this.id.value = this.secret.value = this.username.value = this.domain.value = this.password.value = '';
+    this.remember.checked = row?.hasLogin === true;
+    this.loginFields.hidden = this.loginFields.disabled = !this.remember.checked;
+    this.password.placeholder = row?.hasLogin ? t('rdp.keepLogin') : '';
     this.clear.checked = false;
     this.clearLabel.hidden = !row?.hasAccessToken;
     this.updateTransport();
@@ -126,17 +155,23 @@ export class RdpManager {
   async save(): Promise<void> {
     const editing = this.editing;
     const input: Record<string, unknown> = {
-      name: this.name.value, route: this.transport.value, host: this.host.value,
+      name: this.name.value, route: this.transport.value, host: this.host.value, tags: normalizeServerTags(this.tags.value),
     };
     if (this.transport.value === 'tunnel' && (this.clear.checked || this.id.value || this.secret.value)) {
       input.accessId = this.clear.checked ? '' : this.id.value;
       input.accessSecret = this.clear.checked ? '' : this.secret.value;
     }
+    if (this.remember.checked) {
+      const sameTarget = editing?.host === this.host.value.trim().toLowerCase() && editing.route === this.transport.value;
+      if (!sameTarget || !editing?.hasLogin || this.username.value || this.domain.value || this.password.value) {
+        input.login = { username: this.username.value.trim(), domain: this.domain.value.trim(), password: this.password.value };
+      }
+    } else if (editing?.hasLogin) input.login = null;
     const data = parseRdpProfile(input);
     if (!data) throw new Error(t('rdp.invalid'));
     try {
       const pending = this.request(editing ? `/${editing.id}` : '', editing ? 'PUT' : 'POST', editing ? { ...data, revision: editing.revision } : data);
-      this.secret.value = '';
+      this.secret.value = this.password.value = '';
       const response = await pending;
       if (!response.ok) throw new Error();
       const saved = await response.json() as RdpProfile;

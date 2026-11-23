@@ -13,7 +13,7 @@ let glue = bounded(script, 2 * 1024 * 1024).toString('utf8');
 const module = bounded(wasm, 24 * 1024 * 1024);
 const notice = bounded(licenses, 2 * 1024 * 1024).toString('utf8').replace(/[ \t]+(?=\r?$)/gm, '');
 if (!WebAssembly.validate(module)) throw new Error('Invalid WASM');
-if (['takeWindowsPassword', 'onWindowsFirstFrame', 'onWindowsCertificate'].some((hook) => !glue.includes(hook))) {
+if (['takeWindowsPassword', 'onWindowsFirstFrame', 'onWindowsCertificate', 'onWindowsDisplayControl'].some((hook) => !glue.includes(hook))) {
   throw new Error('Missing browser bridge');
 }
 function patch(needle, replacement) {

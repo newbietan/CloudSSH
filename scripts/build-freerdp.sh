@@ -198,6 +198,24 @@ if callback not in text:
     p.write_text(text.replace(run, callback + run + state).replace(draw, draw + notify))
 PY
 
+# Report negotiated MS-RDPEDISP capability, not just a local canvas resize. SDL's
+# Emscripten backend samples the external canvas CSS size on window resize; use CSS
+# pixels for the remote monitor rather than multiplying full-screen by Retina DPR.
+python3 - "$source_dir/client/SDL/SDL3" <<'PY'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+def patch(file, before, after):
+    path = root / file
+    text = path.read_text()
+    if after in text: return
+    if text.count(before) != 1: sys.exit('FreeRDP display patch mismatch: ' + file)
+    path.write_text(text.replace(before, after))
+patch('sdl_window.cpp', '\tflags |= SDL_WINDOW_HIGH_PIXEL_DENSITY;', '#ifndef __EMSCRIPTEN__\n\tflags |= SDL_WINDOW_HIGH_PIXEL_DENSITY;\n#endif')
+patch('sdl_disp.cpp', '#include "sdl_disp.hpp"', '#include "sdl_disp.hpp"\n#ifdef __EMSCRIPTEN__\n#include <emscripten.h>\n#endif')
+patch('sdl_disp.cpp', '\t_activated = true;', '\t_activated = true;\n#ifdef __EMSCRIPTEN__\n\tMAIN_THREAD_EM_ASM({ Module["onWindowsDisplayControl"]?.(); });\n#endif')
+PY
+
 # Fetch with the official script, then confirm all the git dependency commits
 # before any dependency build. The official script verifies the LibreSSL tarball.
 if [[ $fresh == 1 ]]; then

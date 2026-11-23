@@ -71,7 +71,10 @@ describe('formal RDP routing', () => {
     expect(await request.json()).toEqual({ profile: id, binding: expect.stringMatching(/^[a-f0-9]{64}$/) });
     expect(response.headers.get('Location')).toBeNull();
     const desktop = await handle(`/rdp/${id}`, { headers });
-    expect(await desktop.text()).toBe('desktop page');
+    expect(desktop.headers.get('X-Frame-Options')).toBe('DENY');
+    const embedded = await handle(`/rdp/${id}/client`, { headers });
+    expect(await embedded.text()).toBe('desktop page');
+    expect(embedded.headers.get('Content-Security-Policy')).toContain("frame-ancestors 'self'");
     expect(desktop.headers.get('Cross-Origin-Embedder-Policy')).toBe('require-corp');
   });
 });

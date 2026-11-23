@@ -1,23 +1,38 @@
+import { normalizeServerTags } from './server-tags';
+
 export type RdpRoute = 'direct' | 'tunnel';
 export const RDP_MAX_PROFILES = 32;
-export const RDP_MAX_BODY = 4096;
+export const RDP_MAX_BODY = 12 * 1024;
 export const RDP_WINDOW = 1024 * 1024;
 export const RDP_FRAME = 16 * 1024;
 export const RDP_WS_PROTOCOL = 'cloudssh-rdp-v1';
-export const RDP_CLIENT_REVISION = 2;
+export const RDP_CLIENT_REVISION = 3;
+
+export interface RdpLogin { username: string; domain: string; password: string }
+export function isRdpLogin(value: unknown): value is RdpLogin {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const { username, domain, password } = value as Record<string, unknown>;
+  return Object.keys(value).length === 3 && typeof username === 'string' && !!username.trim() && username.length <= 128 &&
+    typeof domain === 'string' && domain.length <= 128 && typeof password === 'string' && !!password &&
+    ![username, domain, password].some(s => /[\x00\r\n]/.test(s)) && new TextEncoder().encode(password).length <= 1024;
+}
 
 export interface RdpProfileInput {
   name: string;
   route: RdpRoute;
   host: string;
+  tags?: string[];
+  login?: RdpLogin | null;
   accessId?: string;
   accessSecret?: string;
 }
-export interface RdpProfile extends Omit<RdpProfileInput, 'accessId' | 'accessSecret'> {
+export interface RdpProfile extends Omit<RdpProfileInput, 'accessId' | 'accessSecret' | 'login'> {
   id: string;
   revision: number;
   fingerprint: string | null;
   hasAccessToken: boolean;
+  hasLogin: boolean;
+  tags: string[];
 }
 
 /** Direct endpoints intentionally accept public IPv4 literals only in the first version. */
@@ -42,24 +57,28 @@ export function isRdpId(value: unknown): value is string {
 export function parseRdpProfile(value: unknown): RdpProfileInput | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const data = value as Record<string, unknown>;
-  if (Object.keys(data).some((key) => !['name', 'route', 'host', 'accessId', 'accessSecret', 'revision'].includes(key))) return null;
+  if (Object.keys(data).some((key) => !['name', 'tags', 'login', 'route', 'host', 'accessId', 'accessSecret', 'revision'].includes(key))) return null;
   if (typeof data.name !== 'string' || typeof data.host !== 'string') return null;
   const name = data.name.trim();
   const host = data.host.trim().toLowerCase();
   const route = data.route;
   if (!name || name.length > 64 || /[\x00-\x1f\x7f]/.test(name)) return null;
+  if (data.tags !== undefined && !Array.isArray(data.tags)) return null;
+  if (data.login !== undefined && data.login !== null && !isRdpLogin(data.login)) return null;
+  const extra = { ...(data.tags === undefined ? {} : { tags: normalizeServerTags(data.tags) }),
+    ...(data.login === undefined ? {} : { login: data.login }) };
   if (route === 'direct') {
     if (!isPublicRdpIPv4(host) || data.accessId !== undefined || data.accessSecret !== undefined) return null;
-    return { name, host, route };
+    return { name, host, route, ...extra };
   }
   if (route !== 'tunnel' || !isRdpTunnelHost(host)) return null;
   const accessId = data.accessId;
   const accessSecret = data.accessSecret;
-  if (accessId === undefined && accessSecret === undefined) return { name, host, route };
+  if (accessId === undefined && accessSecret === undefined) return { name, host, route, ...extra };
   if (typeof accessId !== 'string' || typeof accessSecret !== 'string') return null;
-  if (accessId === '' && accessSecret === '') return { name, host, route, accessId, accessSecret };
+  if (accessId === '' && accessSecret === '') return { name, host, route, accessId, accessSecret, ...extra };
   if (!/^[!-~]{1,256}$/.test(accessId) || !/^[!-~]{1,512}$/.test(accessSecret)) return null;
-  return { name, host, route, accessId, accessSecret };
+  return { name, host, route, accessId, accessSecret, ...extra };
 }
 
 export async function readRdpJson(request: Pick<Request | Response, 'body' | 'headers'>): Promise<unknown> {
