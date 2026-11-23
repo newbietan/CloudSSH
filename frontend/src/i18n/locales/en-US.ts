@@ -1021,6 +1021,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'mobileShortcuts.saved': 'Mobile shortcuts saved.',
   'mobileShortcuts.saveFailed': 'Failed to save mobile shortcuts.',
   'mobileShortcuts.resetSuccess': 'Mobile shortcuts reset to default.',
+  'rdp.noConnectionRecord': 'No record yet',
   'rdp.serverKind': 'Server type',
   'rdp.add': 'Add remote desktop',
   'rdp.empty': 'No remote desktops configured.',

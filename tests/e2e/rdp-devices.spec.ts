@@ -102,13 +102,19 @@ test('the themed workspace stays in the current tab and a saved login is release
   const get = (path: string, json: unknown) => page.route(path, r => r.request().method() === 'GET' ? r.fulfill({ json }) : r.fallback());
   await get('**/api/config', { turnstileEnabled: false, githubAuthEnabled: true, githubAuthRequired: true, authMode: 'github', rdpEnabled: true });
   await get('**/api/auth/me', { id: 1, github_id: 42, username: 'tester', avatar_url: null });
-  await get('**/api/servers', []);
-  await get('**/api/rdp/profiles', { profiles: [profile, { ...profile, id: '12345678-1234-1234-1234-123456789abd', name: 'Legacy', hasLogin: false }] });
+  let released = 0;
+  const now = Date.now();
+  const username = 'Ops <User>';
+  await get('**/api/servers', [{ ...ssh, last_connected_at: now - 60000 }]);
+  await page.route('**/api/rdp/profiles', r => r.request().method() === 'GET' ? r.fulfill({ json: { profiles: [
+    { ...profile, username, last_connected_at: released ? now : null },
+    { ...profile, id: '12345678-1234-1234-1234-123456789abd', name: 'Legacy', hasLogin: false, username: null, last_connected_at: null },
+  ] } }) : r.fallback());
   await get(`**/api/rdp/profiles/${id}`, profile);
   const asset = (name: string) => readFileSync(`${__dirname}/../../src/worker/rdp-client/${name}.rdp-text`, 'utf8');
   await page.route(`**/rdp/${id}/client`, r => r.fulfill({ contentType: 'text/html', body: asset('index') }));
   await page.route('**/rdp/assets/desktop.js', r => r.fulfill({ contentType: 'text/javascript', body: asset('desktop') }));
-  await page.route('**/rdp/assets/rdp-socket.js', r => r.fulfill({ contentType: 'text/javascript', body: `window.createCloudSshRdpSocket = () => ({ probe() { this.onRelayRtt(24); }, close() {} })` }));
+  await page.route('**/rdp/assets/rdp-socket.js', r => r.fulfill({ contentType: 'text/javascript', body: `window.createCloudSshRdpSocket = () => ({ probe() { this.onRelayRtt(24); }, reportDesktopReady() { this.onDesktopRecorded(); }, close() {} })` }));
   await page.route('**/rdp/assets/sdl-freerdp.wasm', r => r.fulfill({ contentType: 'application/wasm', body: Buffer.from([0,97,115,109,1,0,0,0]) }));
   await page.route('**/rdp/assets/sdl-freerdp.js', r => r.fulfill({ contentType: 'text/javascript', body: `
     const m = window.Module;
@@ -123,7 +129,6 @@ test('the themed workspace stays in the current tab and a saved login is release
       m._cloudssh_take_rdp_rtt = () => 83;
       m.onWindowsDisplayControl(); m.onWindowsFirstFrame();
     }; m.onRuntimeInitialized();` }));
-  let released = 0;
   await page.route(`**/api/rdp/profiles/${id}/connect`, r => {
     if (r.request().method() !== 'POST') return r.fallback();
     expect(r.request().headers()['x-cloudssh-rdp-saved-revision']).toBe('4');
@@ -137,6 +142,14 @@ test('the themed workspace stays in the current tab and a saved login is release
   await page.goto('/?lang=en-US');
   const card = page.getByRole('button', { name: 'Open desktop' });
   await expect(card).toBeVisible();
+  const firstCard = page.locator('#server-grid .server-card-title').first();
+  await expect(firstCard).toHaveText('Linux workstation');
+  const search = page.locator('#server-search');
+  await search.fill('ops <user>');
+  await expect(firstCard).toHaveText('Office Windows');
+  await expect(page.locator(`#rdp-card-${id}`)).toContainText(username);
+  await expect(page.locator(`#rdp-card-${id}`)).toContainText('No record yet');
+  await search.fill('');
   await page.getByRole('button', { name: 'Complete setup' }).click();
   await expect(page.locator('#server-modal #server-rdp-user')).toHaveValue('Administrator');
   await expect(page.locator('#server-modal #server-rdp-password')).toHaveAttribute('required');
@@ -167,6 +180,8 @@ test('the themed workspace stays in the current tab and a saved login is release
   await workspace.getByRole('button', { name: 'Back' }).click();
   await expect(workspace).toHaveCount(0);
   await expect(card).toBeVisible();
+  await expect(firstCard).toHaveText('Office Windows');
+  await expect(page.locator(`#rdp-card-${id}`)).not.toContainText('No record yet');
   await page.goto(`/rdp/${id}`); // A pasted URL is not a second user-authorized connect action.
   await expect(card).toBeVisible();
   await expect(workspace).toHaveCount(0);

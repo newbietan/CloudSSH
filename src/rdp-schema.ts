@@ -35,6 +35,14 @@ export interface RdpProfile extends Omit<RdpProfileInput, 'accessId' | 'accessSe
   tags: string[];
 }
 
+/** Authenticated card projection. No domain, password, token or encrypted login blob. */
+export interface RdpCard extends RdpProfile {
+  username: string | null;
+  last_connected_at: number | null;
+  created_at: number | null;
+  updated_at: number | null;
+}
+
 /** Direct endpoints intentionally accept public IPv4 literals only in the first version. */
 export function isPublicRdpIPv4(value: string): boolean {
   const components = value.split('.');

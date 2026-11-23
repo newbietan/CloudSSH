@@ -97,7 +97,11 @@ describe('RDP profiles and connection leases', () => {
       const path = `profiles/${saved.id}`;
       const issue = { profile: saved.id, binding: bind };
       expect(saved).toMatchObject({ hasLogin: true, tags: ['Work'] });
-      for (const info of [saved, await get('profiles', 'GET'), await get(path, 'GET'), await get('ticket', 'POST', issue)]) expect(JSON.stringify(info)).not.toContain(login.username);
+      const cards = await get('profiles', 'GET');
+      expect(cards.profiles).toMatchObject([{ username: login.username, last_connected_at: null }]);
+      expect(JSON.stringify(cards)).not.toContain(login.password);
+      expect(JSON.stringify(cards)).not.toContain(login.domain);
+      for (const info of [saved, await get(path, 'GET'), await get('ticket', 'POST', issue)]) expect(JSON.stringify(info)).not.toContain(login.username);
       expect(database.prepare('SELECT login FROM rdp_profile_options').get()?.login).not.toContain(login.password);
       expect((await request('ticket', 'POST', { ...issue, savedRevision: 1 }, 2)).ok).toBe(false);
       expect((await request('ticket', 'POST', { ...issue, savedRevision: 2 })).ok).toBe(false);
@@ -112,6 +116,46 @@ describe('RDP profiles and connection leases', () => {
       expect((await request('ticket', 'POST', { ...issue, savedRevision: 3 })).ok).toBe(false);
       await request(path, 'DELETE');
       expect(database.prepare('SELECT * FROM rdp_profile_options').all()).toHaveLength(0);
+      expect(database.prepare('SELECT * FROM rdp_card_metadata').all()).toHaveLength(0);
+    } finally { database.close(); }
+  });
+
+  it('records first-frame time only for the live owned lease, independently of edit times', async () => {
+    const { request, database } = fixture();
+    try {
+      const { id } = await (await request('profiles', 'POST', target)).json() as { id: string };
+      const path = `profiles/${id}`;
+      const card = async () => (await (await request('profiles', 'GET')).json() as { profiles: { revision: number; username: string; created_at: number; updated_at: number; last_connected_at: number | null }[] }).profiles[0];
+      const initial = await card();
+      expect(initial).toMatchObject({ username: target.login.username, revision: 1, created_at: expect.any(Number), last_connected_at: null });
+      const { ticket } = await (await request('ticket', 'POST', { profile: id, binding: bind, savedRevision: 1 })).json() as { ticket: string };
+      const { id: lease } = await (await request('claim', 'POST', { ticket, binding: bind })).json() as { id: string };
+      expect((await request('desktop-ready', 'POST', { lease }, 2)).ok).toBe(false);
+      expect(await card()).toEqual(initial);
+      expect((await request('desktop-ready', 'POST', { lease })).ok).toBe(true);
+      const connected = await card();
+      expect(connected).toEqual({ ...initial, last_connected_at: expect.any(Number) });
+      await request(path, 'PUT', { ...endpoint, name: 'Renamed', revision: 1 });
+      expect((await card()).last_connected_at).toBe(connected.last_connected_at);
+      expect((await request('desktop-ready', 'POST', { lease })).ok).toBe(false);
+      await request(path, 'PUT', { ...target, host: '8.8.8.8', revision: 2 });
+      expect((await card()).last_connected_at).toBeNull();
+    } finally { database.close(); }
+  });
+
+  it('backfills only an encrypted display username for an older device and does not invent dates', async () => {
+    const { request, database } = fixture();
+    try {
+      await request('profiles', 'POST', target);
+      database.exec('DELETE FROM rdp_card_metadata');
+      const list = () => request('profiles', 'GET').then(r => r.json());
+      expect(await list()).toMatchObject({ profiles: [{ username: target.login.username, created_at: null, updated_at: null, last_connected_at: null }] });
+      const field = database.prepare('SELECT username_enc FROM rdp_card_metadata').get()?.username_enc;
+      expect(field).toBeTruthy();
+      expect(field).not.toBe(target.login.username);
+      database.exec("UPDATE rdp_profile_options SET login='not readable'"); // A normal card read no longer decrypts the password blob.
+      expect(await list()).toMatchObject({ profiles: [{ username: target.login.username }] });
+      expect(await (await request('profiles', 'GET', undefined, 2)).json()).toEqual({ profiles: [] });
     } finally { database.close(); }
   });
 

@@ -4,6 +4,7 @@ import { openRdpTransport, type RdpTransport } from './rdp-transport';
 
 interface SessionHooks {
   claim(ticket: string): Promise<RdpLease | null>;
+  desktopReady(lease: string): Promise<boolean>;
   renew(lease: string): Promise<boolean>;
   release(lease: string): Promise<void>;
   idleMs: number;
@@ -29,6 +30,7 @@ export function startRdpRelay(hooks: SessionHooks): Response {
   let outSent = 0;
   let outAck = 0;
   let controls = 0;
+  let reportedDesktop = false;
   let lastProbe = -Infinity;
   let creditWake: (() => void) | undefined;
   let writes = Promise.resolve();
@@ -100,7 +102,7 @@ export function startRdpRelay(hooks: SessionHooks): Response {
       clearTimeout(phaseTimer);
       lastInputProgress = lastOutputProgress = lastActivity = lastRenew = Date.now();
       stage = 'ready';
-      control({ type: 'ready', lease: claimed.id });
+      control({ type: 'ready', lease: claimed.id, desktopReport: true });
       await transport.read(deliver);
       finish(1000, 'session_ended');
     } catch { finish(1011, 'upstream_unavailable'); }
@@ -117,6 +119,14 @@ export function startRdpRelay(hooks: SessionHooks): Response {
           return;
         }
         if (stage !== 'ready') return finish(1008, 'invalid_frame');
+        if (msg?.type === 'desktop_ready' && lease) {
+          if (reportedDesktop) return;
+          reportedDesktop = true;
+          // Metadata is best-effort and once per live lease. Never block the byte stream or count activity.
+          const write = hooks.desktopReady(lease.id).then(ok => { if (ok) control({ type: 'desktop_recorded' }); }).catch(() => {});
+          hooks.waitUntil?.(write);
+          return;
+        }
         if (msg?.type === 'ping') {
           if (!Number.isSafeInteger(msg.id) || msg.id < 1 || msg.id > 0x7fffffff) return finish(1008, 'invalid_frame');
           const now = Date.now();

@@ -14,7 +14,7 @@ import { ShareManager } from './share-manager';
 import type { SSHHostInfo } from './terminal';
 import { confirmAction, notify } from './ui-feedback';
 import { formatTimestampWithRelative } from '../../src/server-memory-schema';
-import { isRdpId, type RdpProfile } from '../../src/rdp-schema';
+import { isRdpId, type RdpCard, type RdpProfile } from '../../src/rdp-schema';
 import { RdpManager } from './rdp-manager';
 
 interface UserInfo {
@@ -140,49 +140,31 @@ export function paginateServers<T>(
   };
 }
 
-export function sortServers(
-  servers: readonly ServerConfig[],
-  sortMode: ServerSortMode = 'recent'
-): ServerConfig[] {
-  const list = [...servers];
-  switch (sortMode) {
-    case 'recent':
-      return list.sort((a, b) => {
-        const aConnected = a.last_connected_at ?? 0;
-        const bConnected = b.last_connected_at ?? 0;
-        if (aConnected !== bConnected) {
-          return bConnected - aConnected;
-        }
-        const aUpdated = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-        const bUpdated = b.updated_at ? new Date(b.updated_at).getTime() : 0;
-        if (aUpdated !== bUpdated && !Number.isNaN(aUpdated) && !Number.isNaN(bUpdated)) {
-          return bUpdated - aUpdated;
-        }
-        return 0;
-      });
-    case 'updated':
-      return list.sort((a, b) => {
-        const aUpdated = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-        const bUpdated = b.updated_at ? new Date(b.updated_at).getTime() : 0;
-        if (aUpdated !== bUpdated && !Number.isNaN(aUpdated) && !Number.isNaN(bUpdated)) {
-          return bUpdated - aUpdated;
-        }
-        return 0;
-      });
-    case 'created':
-      return list.sort((a, b) => {
-        const aCreated = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const bCreated = b.created_at ? new Date(b.created_at).getTime() : 0;
-        if (aCreated !== bCreated && !Number.isNaN(aCreated) && !Number.isNaN(bCreated)) {
-          return bCreated - aCreated;
-        }
-        return 0;
-      });
-    case 'name':
-      return list.sort((a, b) => a.name.localeCompare(b.name));
-    default:
-      return list;
-  }
+type SortableServer = {
+  name: string;
+  last_connected_at?: number | null;
+  updated_at?: string | number | null;
+  created_at?: string | number | null;
+};
+
+function sortTimestamp(value: SortableServer['updated_at']): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (!value) return 0;
+  // SSH uses SQLite datetime('now') (UTC); newer card metadata is Unix milliseconds.
+  const normalizedDate = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value) ? value.replace(' ', 'T') + 'Z' : value;
+  return Date.parse(normalizedDate) || 0;
+}
+
+export function sortServers<T extends SortableServer>(servers: readonly T[], sortMode: ServerSortMode = 'recent'): T[] {
+  return [...servers].sort((a, b) => {
+    if (sortMode === 'name') return a.name.localeCompare(b.name);
+    if (sortMode === 'recent') {
+      const byConnection = (b.last_connected_at ?? 0) - (a.last_connected_at ?? 0);
+      if (byConnection) return byConnection;
+    }
+    const key = sortMode === 'created' ? 'created_at' : 'updated_at';
+    return sortTimestamp(b[key]) - sortTimestamp(a[key]);
+  });
 }
 
 /**
@@ -191,7 +173,7 @@ export function sortServers(
 export class ServerList {
   private user: UserInfo;
   private servers: ServerConfig[] = [];
-  private rdpProfiles: RdpProfile[] = [];
+  private rdpProfiles: RdpCard[] = [];
   private readonly rdp?: RdpManager;
   private readonly modalEvents = new AbortController();
   private disposed = false;
@@ -475,7 +457,7 @@ export class ServerList {
     }
   }
 
-  private async fetchRdpProfiles(): Promise<void> {
+  async fetchRdpProfiles(): Promise<void> {
     if (!this.rdp || this.disposed) return;
     const generation = ++this.rdpListGeneration;
     try {
@@ -552,13 +534,10 @@ export class ServerList {
     const query = this.searchQuery.trim().toLocaleLowerCase();
     const windows = this.rdpProfiles.filter((row) =>
       (!this.selectedTag || (row.tags ?? []).includes(this.selectedTag)) &&
-      (!query || [row.name, row.host, 'Windows Server', 'RDP', ...(row.tags ?? [])].some((value) => value.toLocaleLowerCase().includes(query)))
+      (!query || [row.name, row.host, row.username ?? '', 'Windows Server', 'RDP', ...(row.tags ?? [])].some((value) => value.toLocaleLowerCase().includes(query)))
     );
-    const entries = [
-      ...sortServers(filteredServers, this.sortMode).map((row) => ({ kind: 'ssh' as const, row })),
-      ...windows.map((row) => ({ kind: 'rdp' as const, row })),
-    ];
-    if (this.sortMode === 'name') entries.sort((a, b) => a.row.name.localeCompare(b.row.name));
+    const entries = sortServers<ServerConfig | RdpCard>([...filteredServers, ...windows], this.sortMode)
+      .map(row => 'route' in row ? { kind: 'rdp' as const, row } : { kind: 'ssh' as const, row });
     if (entries.length === 0) {
       grid.innerHTML = '';
       pagination?.classList.add('hidden');
@@ -667,9 +646,10 @@ export class ServerList {
     return `<span class="material-symbols-outlined text-primary shrink-0" style="font-size: 20px; font-variation-settings: 'FILL' 0;">dns</span>`;
   }
 
-  private renderRdpCard(row: RdpProfile): string {
+  private renderRdpCard(row: RdpCard): string {
     if (!isRdpId(row.id)) return '';
     const host = row.route === 'direct' ? maskIPAddress(row.host) ?? row.host : row.host;
+    const connected = row.last_connected_at ? formatTimestampWithRelative(row.last_connected_at, Date.now(), getLocale()) : t('rdp.noConnectionRecord');
     return `<div class="server-card p-5 relative group" id="rdp-card-${row.id}">
       <div class="flex items-center gap-2 mb-3 min-w-0">
         ${this.renderOSIconMarkup('windows')}
@@ -678,7 +658,9 @@ export class ServerList {
       </div>
       <div class="space-y-1.5 text-xs text-muted mb-4">
         <div class="font-mono truncate">${this.escapeHtml(host)}${row.route === 'direct' ? ':3389' : ''}</div>
+        <div class="server-card-meta-row flex items-center gap-2 min-w-0"><span class="text-dim">${t('server.userLabel')}</span><span class="text-on-surface truncate" title="${this.escapeAttr(row.username ?? '—')}">${this.escapeHtml(row.username ?? '—')}</span></div>
         <div>${t(row.route === 'tunnel' ? 'rdp.tunnel' : 'rdp.direct')}</div>
+        <div class="server-card-meta-row flex items-center gap-2 min-w-0"><span class="text-dim">${t('server.lastConnected')}</span><span class="text-on-surface truncate" title="${this.escapeAttr(connected)}">${this.escapeHtml(connected)}</span></div>
         ${(row.tags ?? []).length ? `<div class="flex flex-wrap gap-1 mt-3">${row.tags.map(tag => `<span class="text-[9px] text-primary border border-[var(--border-strong)] px-1.5 py-0.5">#${this.escapeHtml(tag)}</span>`).join('')}</div>` : ''}
       </div>
       <div class="server-card-actions flex gap-2 pt-3 border-t border-[var(--border)]">

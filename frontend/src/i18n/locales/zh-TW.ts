@@ -960,6 +960,7 @@ export const zhTW = {
   'mobileShortcuts.saved': '行動端快捷鍵設定已儲存。',
   'mobileShortcuts.saveFailed': '儲存行動端快捷鍵設定失敗。',
   'mobileShortcuts.resetSuccess': '已回復預設行動端快捷鍵。',
+  'rdp.noConnectionRecord': '暫無紀錄',
   'rdp.serverKind': '伺服器類型',
   'rdp.add': '新增遠端桌面',
   'rdp.empty': '尚未設定遠端桌面。',

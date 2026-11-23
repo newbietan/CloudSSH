@@ -193,6 +193,9 @@ async function run() {
       createRdpSocket(address) {
         if (stopped || address !== url.href || !ticket || socket) throw new Error('socket unavailable');
         socket = window.createCloudSshRdpSocket(address, ticket);
+        socket.onDesktopRecorded = () => {
+          if (!stopped) window.frameElement?.dispatchEvent(new Event('cloudssh-rdp-recorded'));
+        };
         socket.onRelayRtt = value => {
           if (!ready || stopped || document.hidden) return;
           relayMs = value; relayAt = performance.now(); paintLatency();
@@ -229,6 +232,7 @@ async function run() {
         if (stopped) return;
         clearTimeout(timer);
         ready = true;
+        socket?.reportDesktopReady?.();
         monitorLatency();
         el('fullscreen').disabled = !stage.requestFullscreen;
         show(15);

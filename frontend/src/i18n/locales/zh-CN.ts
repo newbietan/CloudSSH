@@ -959,6 +959,7 @@ export const zhCN = {
   'mobileShortcuts.saved': '移动端快捷键配置已保存。',
   'mobileShortcuts.saveFailed': '保存移动端快捷键配置失败。',
   'mobileShortcuts.resetSuccess': '已恢复默认移动端快捷键。',
+  'rdp.noConnectionRecord': '暂无记录',
   'rdp.serverKind': '服务器类型',
   'rdp.add': '新增远程桌面',
   'rdp.empty': '尚未配置远程桌面。',

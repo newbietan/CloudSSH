@@ -1,11 +1,13 @@
 import {
-  type RdpProfile, type RdpRoute, RDP_MAX_PROFILES, isRdpId, isRdpLogin, parseRdpProfile, readRdpJson,
+  type RdpCard, type RdpProfile, type RdpRoute, RDP_MAX_PROFILES, isRdpId, isRdpLogin, parseRdpProfile, readRdpJson,
 } from '../rdp-schema';
 
 import { parseStoredServerTags } from '../server-tags';
 
-const withOptions = `SELECT p.*, o.tags, o.login FROM rdp_profiles p LEFT JOIN rdp_profile_options o
-  ON o.profile=p.id AND o.user_id=p.user_id`;
+const withOptions = `SELECT p.*, o.tags, o.login, m.username_enc, m.identity_revision,
+  m.created_at, m.updated_at, m.last_connected_at FROM rdp_profiles p
+  LEFT JOIN rdp_profile_options o ON o.profile=p.id AND o.user_id=p.user_id
+  LEFT JOIN rdp_card_metadata m ON m.profile=p.id AND m.user_id=p.user_id`;
 const TICKET_MS = 30_000;
 export const RDP_LEASE_MS = 45_000;
 const MAX_TICKETS = 8;
@@ -20,6 +22,11 @@ interface Row {
   access: string | null;
   tags: string | null;
   login: string | null;
+  username_enc: string | null;
+  identity_revision: number | null;
+  created_at: number | null;
+  updated_at: number | null;
+  last_connected_at: number | null;
 }
 interface TicketRow { profile: string; revision: number; binding: string; expires: number }
 export interface RdpLease { id: string; profile: RdpProfile; accessId?: string; accessSecret?: string }
@@ -53,6 +60,10 @@ export class RdpStore {
       user_id INTEGER NOT NULL, profile TEXT NOT NULL, tags TEXT NOT NULL, login TEXT,
       PRIMARY KEY (user_id, profile)
     )`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS rdp_card_metadata (
+      user_id INTEGER NOT NULL, profile TEXT NOT NULL, username_enc TEXT, identity_revision INTEGER,
+      created_at INTEGER, updated_at INTEGER, last_connected_at INTEGER, PRIMARY KEY(user_id,profile)
+    )`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS rdp_tickets (
       hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, profile TEXT NOT NULL, revision INTEGER NOT NULL,
       binding TEXT NOT NULL, expires INTEGER NOT NULL
@@ -73,16 +84,46 @@ export class RdpStore {
     return Number(this.sql.exec(`SELECT COUNT(*) AS count FROM ${kind} WHERE user_id = ?`, userId).one().count);
   }
 
+  private async cards(userId: number): Promise<Response> {
+    const rows = () => this.sql.exec(`${withOptions} WHERE p.user_id=? ORDER BY p.name,p.id LIMIT ?`, userId, RDP_MAX_PROFILES).toArray() as unknown as Row[];
+    const names = new Map<string, { revision: number; username: string }>();
+    // Bounded and sequential: avoid repeated concurrent KDF work on a cold account.
+    for (const row of rows()) {
+      if (!row.login) continue;
+      try {
+        let username: string;
+        if (row.username_enc && row.identity_revision === row.revision) {
+          username = await this.decrypt(row.username_enc, userId);
+        } else {
+          // Old profiles have no separate encrypted display name. Backfill only the same revision.
+          const login: unknown = JSON.parse(await this.decrypt(row.login, userId));
+          if (!isRdpLogin(login)) continue;
+          username = login.username;
+          const encrypted = await this.encrypt(username, userId);
+          this.sql.exec(`INSERT INTO rdp_card_metadata(user_id,profile,username_enc,identity_revision)
+            SELECT user_id,id,?,revision FROM rdp_profiles WHERE user_id=? AND id=? AND revision=?
+            ON CONFLICT(user_id,profile) DO UPDATE SET username_enc=excluded.username_enc, identity_revision=excluded.identity_revision`,
+          encrypted, userId, row.id, row.revision);
+        }
+        names.set(row.id, { revision: row.revision, username });
+      } catch { /* Unreadable identity is unknown, not Administrator. Never log credential data. */ }
+    }
+    // An edit or deletion during decryption must not publish an old identity.
+    const profiles: RdpCard[] = rows().map(row => {
+      const name = names.get(row.id);
+      return { ...profile(row), username: name?.revision === row.revision ? name.username : null,
+        last_connected_at: row.last_connected_at, created_at: row.created_at, updated_at: row.updated_at };
+    });
+    return rdpJson({ profiles });
+  }
+
   async handle(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const userId = Number(url.searchParams.get('user_id'));
     if (!Number.isSafeInteger(userId) || userId < 1) return error(400, 'invalid_request');
     const route = url.pathname.slice('/internal/rdp/'.length);
     if (route === 'profiles') {
-      if (request.method === 'GET') {
-        const rows = this.sql.exec(`${withOptions} WHERE p.user_id = ? ORDER BY p.name, p.id LIMIT ?`, userId, RDP_MAX_PROFILES).toArray() as unknown as Row[];
-        return rdpJson({ profiles: rows.map(profile) });
-      }
+      if (request.method === 'GET') return this.cards(userId);
       if (request.method === 'POST') return this.save(userId, null, await readRdpJson(request));
     }
     const [kind, id] = route.split('/');
@@ -93,6 +134,7 @@ export class RdpStore {
       if (request.method === 'PUT') return this.save(userId, row, await readRdpJson(request));
       if (request.method === 'DELETE') {
         this.transaction(() => {
+          this.sql.exec('DELETE FROM rdp_card_metadata WHERE user_id=? AND profile=?', userId, id);
           this.sql.exec('DELETE FROM rdp_profile_options WHERE user_id=? AND profile=?', userId, id);
           this.sql.exec('DELETE FROM rdp_profiles WHERE user_id = ? AND id = ?', userId, id);
           this.sql.exec('DELETE FROM rdp_tickets WHERE user_id = ? AND profile = ?', userId, id);
@@ -126,6 +168,14 @@ export class RdpStore {
     }
     if (route === 'claim' && digestPattern(body.ticket) && digestPattern(body.binding)) {
       return this.claim(userId, body.ticket, body.binding);
+    }
+    if (route === 'desktop-ready' && isRdpId(body.lease)) {
+      const now = Date.now();
+      const result = this.sql.exec(`INSERT INTO rdp_card_metadata(user_id,profile,last_connected_at)
+        SELECT p.user_id,p.id,? FROM rdp_leases l JOIN rdp_profiles p ON p.id=l.profile AND p.user_id=l.user_id AND p.revision=l.revision
+        WHERE l.id=? AND l.user_id=? AND l.expires>?
+        ON CONFLICT(user_id,profile) DO UPDATE SET last_connected_at=MAX(COALESCE(last_connected_at,0),excluded.last_connected_at)`, now, body.lease, userId, now);
+      return result.rowsWritten ? rdpJson({ success: true }) : error(409, 'session_ended');
     }
     if ((route === 'renew' || route === 'release') && isRdpId(body.lease)) {
       if (route === 'release') {
@@ -168,6 +218,8 @@ export class RdpStore {
       access = input.accessId ? await this.encrypt(JSON.stringify([input.accessId, input.accessSecret]), userId) : null;
     }
     const login = input.login ? await this.encrypt(JSON.stringify(input.login), userId) : existing!.login;
+    const usernameEnc = input.login ? await this.encrypt(input.login.username, userId)
+      : existing && existing.identity_revision === existing.revision ? existing.username_enc : null;
     return this.transaction(() => {
       const id = existing?.id ?? crypto.randomUUID();
       const revision = (existing?.revision ?? 0) + 1;
@@ -186,6 +238,12 @@ export class RdpStore {
       const tags = JSON.stringify(input.tags ?? parseStoredServerTags(existing?.tags));
       this.sql.exec(`INSERT INTO rdp_profile_options(user_id,profile,tags,login) VALUES (?,?,?,?)
         ON CONFLICT(user_id,profile) DO UPDATE SET tags=excluded.tags,login=excluded.login`, userId, id, tags, login);
+      const now = Date.now();
+      this.sql.exec(`INSERT INTO rdp_card_metadata(user_id,profile,username_enc,identity_revision,created_at,updated_at)
+        VALUES (?,?,?,?,?,?) ON CONFLICT(user_id,profile) DO UPDATE SET username_enc=excluded.username_enc,
+        identity_revision=excluded.identity_revision, updated_at=excluded.updated_at,
+        last_connected_at=CASE WHEN ? THEN last_connected_at ELSE NULL END`,
+      userId, id, usernameEnc, revision, existing ? null : now, now, sameTarget ? 1 : 0);
       return rdpJson(profile(this.row(userId, id)!), existing ? 200 : 201);
     });
   }

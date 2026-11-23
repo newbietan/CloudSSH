@@ -12,7 +12,7 @@ export class RdpWorkspace {
   private readonly events = new AbortController();
   private readonly pathId = () => /^\/rdp\/([^/]+)$/.exec(location.pathname)?.[1];
 
-  constructor(private readonly hasSshTabs: () => boolean) {
+  constructor(private readonly hasSshTabs: () => boolean, private readonly onRecorded: () => void) {
     window.addEventListener('popstate', () => this.restore(false), { signal: this.events.signal });
     window.addEventListener('pagehide', () => this.close(), { signal: this.events.signal });
     this.restore(true);
@@ -74,6 +74,9 @@ export class RdpWorkspace {
       doc.documentElement.style.colorScheme = getComputedStyle(document.documentElement).colorScheme;
     };
     frame.onload = applyTheme;
+    frame.addEventListener('cloudssh-rdp-recorded', () => {
+      if (this.dialog === dialog && !this.events.signal.aborted) this.onRecorded();
+    }, { once: true });
     this.observer = new MutationObserver(applyTheme);
     this.observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-theme'] });
     dialog.oncancel = event => { event.preventDefault(); }; // Don't drop a desktop on an accidental Esc.

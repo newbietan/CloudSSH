@@ -1,4 +1,4 @@
-import { RDP_CLIENT_REVISION, isRdpId, parseRdpProfile, type RdpProfile } from '../../src/rdp-schema';
+import { RDP_CLIENT_REVISION, isRdpId, parseRdpProfile, type RdpCard, type RdpProfile } from '../../src/rdp-schema';
 import { localizedElement, t, type TranslationKey } from './i18n';
 
 import { normalizeServerTags } from '../../src/server-tags';
@@ -177,10 +177,10 @@ export class RdpManager {
     });
   }
 
-  async list(): Promise<RdpProfile[]> {
+  async list(): Promise<RdpCard[]> {
     const response = await this.request('');
     if (!response.ok) throw new Error(t('rdp.failed'));
-    const data = await response.json() as { profiles: RdpProfile[] };
+    const data = await response.json() as { profiles: RdpCard[] };
     return data.profiles.filter(row => isRdpId(row.id));
   }
 

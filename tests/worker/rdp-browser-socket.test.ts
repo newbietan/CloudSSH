@@ -9,6 +9,8 @@ interface SocketAdapter {
   consumed(bytes: number): void;
   readyState: number;
   lease?: string;
+  reportDesktopReady(): void;
+  onDesktopRecorded?: () => void;
   probe(): void;
   cancelProbe(): void;
   onRelayRtt?: (ms: number) => void;
@@ -54,6 +56,20 @@ describe('FreeRDP browser socket', () => {
       await vi.advanceTimersByTimeAsync(20);
       expect(native.send).toHaveBeenLastCalledWith('{"type":"ack","bytes":12}');
     } finally { vi.useRealTimers(); }
+  });
+
+  it('reports first paint only once and only if the relay negotiated support', () => {
+    const old = fixture();
+    old.native.onmessage({ data: ready });
+    old.socket.reportDesktopReady();
+    expect(old.native.send).not.toHaveBeenCalled();
+    const { native, socket } = fixture();
+    native.onmessage({ data: JSON.stringify({ type: 'ready', lease, desktopReport: true }) });
+    socket.reportDesktopReady(); socket.reportDesktopReady();
+    expect(native.send).toHaveBeenCalledExactlyOnceWith('{"type":"desktop_ready"}');
+    const recorded = socket.onDesktopRecorded = vi.fn();
+    native.onmessage({ data: '{"type":"desktop_recorded"}' });
+    expect(recorded).toHaveBeenCalledOnce();
   });
 
   it('times one matched relay pong locally and ignores stale, duplicate, expired and cancelled responses', () => {

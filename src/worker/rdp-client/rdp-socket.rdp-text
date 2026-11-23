@@ -36,6 +36,11 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket) {
       try { ws.send(JSON.stringify({ type: 'ping', id: sequence })); } catch { fail(); }
     },
     cancelProbe() { probe = undefined; },
+    reportDesktopReady() {
+      if (sink.readyState !== 1 || !canReport || reported) return;
+      reported = true;
+      try { ws.send('{"type":"desktop_ready"}'); } catch { /* Metadata is best effort. */ }
+    },
     activity() {
       const now = performance.now();
       if (sink.readyState !== 1 || now - lastActivity < 1000) return;
@@ -50,6 +55,7 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket) {
       }
     },
   };
+  let canReport = false, reported = false;
   let sequence = 0, probe;
   let sent = 0;
   let acknowledged = 0;
@@ -85,9 +91,12 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket) {
         const value = JSON.parse(data);
         if (value?.type === 'ready' && sink.readyState === 0 &&
             typeof value.lease === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value.lease)) {
+          canReport = value.desktopReport === true;
           sink.lease = value.lease;
           sink.readyState = 1;
           sink.onopen?.(new Event('open'));
+        } else if (value?.type === 'desktop_recorded' && sink.readyState === 1 && reported) {
+          sink.onDesktopRecorded?.();
         } else if (value?.type === 'pong' && sink.readyState === 1) {
           if (probe && value.id === probe.id) {
             const ms = performance.now() - probe.at;

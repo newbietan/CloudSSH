@@ -84,6 +84,7 @@ export async function handleRdp(
         if (!current || current.id !== user?.id || await userDbRouteKey(current) !== routeKey) return false;
         return (await call('renew', 'POST', { lease })).ok;
       },
+      async desktopReady(lease) { return (await call('desktop-ready', 'POST', { lease })).ok; },
       async release(lease) { await call('release', 'POST', { lease }); },
     });
   }

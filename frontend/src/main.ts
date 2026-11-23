@@ -329,7 +329,9 @@ function showUserSpace(user: InitialUser, config: AppConfig): void {
 
   serverList?.disposeRdp();
   rdpWorkspace?.dispose();
-  rdpWorkspace = config.rdpEnabled ? new RdpWorkspace(() => tabManager?.hasAnyTab() === true) : undefined;
+  rdpWorkspace = config.rdpEnabled ? new RdpWorkspace(
+    () => tabManager?.hasAnyTab() === true, () => { void serverList?.fetchRdpProfiles(); },
+  ) : undefined;
   serverList = new ServerList(
     user,
     // onLogout 回调
