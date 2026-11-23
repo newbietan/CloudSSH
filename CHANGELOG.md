@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.0] - 2026-11-24
+
+> **升级注意**：原先设为 `ENABLE_SSH_SHARING=false` 的实例升级后，登录所有者仍可主动创建一次性 SSH 分享，但不会自动分享任何服务器。`STRICT_HOST_KEY_VERIFY=false` 不再跳过主机验签；依赖该设置的连接遇到无效签名将被拒绝。Windows 远程桌面在生产配置中仍默认关闭。
+
+### Added
+
+- **站内 Windows 远程桌面（关联 Issue：[#201](https://github.com/newbietan/CloudSSH/issues/201)）**：启用 `ENABLE_RDP=true` 后，登录用户可在「添加服务器」中保存 Windows 设备，通过公网 IPv4 TCP 3389 或 Cloudflare Tunnel 在同一标签页连接。Windows 登录凭据按账户加密；浏览器 FreeRDP 客户端使用 NLA，首次连接需核对并确认 Windows 证书指纹，后续指纹改变会阻断登录。RDP 不开放匿名连接，也不复用 SSH 分享、跳板、SFTP 或 Agent。
+- **Windows 设备卡片与桌面操作**：与 SSH 卡片共用标签、搜索、排序及分页。卡片显示用户名和最近成功连接时间，仅在桌面出现首帧后记录。「返回」断开桌面但不注销 Windows，复核账户后恢复原列表；全屏在工具栏下铺满画面，不裁剪或重新协商分辨率。工具栏分别显示中继 RTT 和 Windows 上报的 RDP RTT（无数据时显示「—」）。
+- **已保存 SSH 服务器支持私钥文件导入**：与匿名表单共用本地文件选择器，支持无后缀文件；选文件只填入草稿，不自动连接或保存。加密私钥仍在浏览器解锁，保存解锁后的私钥须单独确认。
+
+### Changed
+
+- 精简 SSH、Windows 和 AI 配置表单的重复说明，不改变空密码、密钥保留及凭据加密行为。同步中英文部署与使用指南，区分生产与测试环境默认值。
+- 维护者可对单次 `test` 推送选择浏览器验证范围；类型检查、单元与集成测试、构建仍为必需。生产、PR 和手动验证继续执行完整浏览器门禁。
+
+### Fixed
+
+- Windows 配置没有实际改动时不再保存，避免误断正在使用的桌面；真正修改前提示连接影响。票据失效、配置变化、空闲超时等已知错误给出下一步操作，不回显上游原始错误。
+- SSH 与 Windows 列表分别处理刷新失败，保留同一账户上次成功加载的卡片，可只重试失败的一类。首次失败不显示为空列表，明确失去访问权限时清空旧卡片。
+
+### Removed
+
+- 移除 `MAX_CONNECTIONS`（原未生效）、`ENABLE_SSH_SHARING`、`STRICT_HOST_KEY_VERIFY` 和 `CF_ACCESS_TEAM_NAME`。SSH CA 团队名改为手填，已保存服务器的团队配置不变；旧环境中残留这四项可清理。
+
 ## [2.11.3] - 2026-11-20
 
 ### Changed
