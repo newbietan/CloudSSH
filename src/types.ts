@@ -196,6 +196,8 @@ export interface Env {
   DEBUG_MODE?: string;
   // 一次性 SSH 分享（默认关闭；true 时登录用户可创建分享链接）
   ENABLE_SSH_SHARING?: string;
+  /** Explicit opt-in for authenticated browser RDP. */
+  ENABLE_RDP?: string;
   // 单管理员密码认证（可选）。
   // 格式：pbkdf2$sha256$<iterations>$<salt-b64url>$<verifier-b64url>，由 `pnpm run hash-password` 生成。
   // 非空且格式合法即启用密码模式：GitHub OAuth 路由禁用，全实例仅本地管理员一个账号。

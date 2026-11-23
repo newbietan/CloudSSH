@@ -31,7 +31,7 @@ export default defineConfig({
         /terminal-(?:touch-scroll|focus-report|drawer)\.spec\.ts/,
         /mobile-(?:selection|sftp|terminal-actions|terminal|user-space|glass)\.spec\.ts/,
         /terminal-clipboard\.spec\.ts/,
-        /(?:theme-background|local-fonts|sftp-list-selection|server-modal-layout|app-bootstrap|mcp(?:-access)?)\.spec\.ts/,
+        /(?:theme-background|local-fonts|sftp-list-selection|server-modal-layout|app-bootstrap|mcp(?:-access)?|rdp-devices)\.spec\.ts/,
       ],
       use: { ...devices['iPhone 13'] },
     },

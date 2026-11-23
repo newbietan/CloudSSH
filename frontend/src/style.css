@@ -6021,4 +6021,17 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   flex: 0 0 96px;
 }
 
+.rdp-device-dialog {
+  width: min(34rem, calc(100% - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  padding: 1.25rem;
+  border: 1px solid var(--outline-variant);
+  border-radius: 1rem;
+  background: var(--surface);
+  color: var(--on-surface);
+}
+.rdp-device-dialog::backdrop { background: rgb(0 0 0 / 45%); }
+.rdp-device-dialog [hidden] { display: none; }
+
 

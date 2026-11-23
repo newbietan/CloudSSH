@@ -1,6 +1,0 @@
-.dev.vars*
-.env*
-.wrangler/
-desktop-assets/
-preview-build/
-preview-cache/

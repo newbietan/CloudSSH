@@ -92,40 +92,12 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
-      - name: Cache compiled FreeRDP assets (test only)
-        id: rdp-preview-cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/test' && vars.CLOUDSSH_RDP_TEST_CONFIG != ''
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
-        with:
-          path: tests/interop/rdp-check/preview-cache
-          key: cloudssh-rdp-assets-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tests/interop/rdp-check/prepare-preview.sh', 'tests/interop/rdp-check/preview-cache.mjs') }}
-
-      - name: Build opt-in browser desktop preview (test only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/test' && vars.CLOUDSSH_RDP_TEST_CONFIG != ''
-        env:
-          RDP_CACHE_HIT: ${{ steps.rdp-preview-cache.outputs.cache-hit }}
-        run: |
-          if [ "$RDP_CACHE_HIT" = 'true' ]; then
-            bash tests/interop/rdp-check/prepare-preview.sh --from-cache
-          else
-            bash tests/interop/rdp-check/prepare-preview.sh
-          fi
-          pnpm exec wrangler deploy tests/interop/rdp-check/preview-worker.ts --env test --config wrangler.toml --dry-run
-
       - name: Deploy verified artifact (test)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/test' && vars.CLOUDSSH_RDP_TEST_CONFIG == ''
+        if: github.event_name == 'push' && github.ref == 'refs/heads/test'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm exec wrangler deploy --env test
-
-      - name: Deploy verified artifact with browser desktop preview (test only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/test' && vars.CLOUDSSH_RDP_TEST_CONFIG != ''
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          RDP_PREVIEW_CONFIG: ${{ vars.CLOUDSSH_RDP_TEST_CONFIG }}
-        run: pnpm exec wrangler deploy tests/interop/rdp-check/preview-worker.ts --env test --config wrangler.toml --var "RDP_PREVIEW_CONFIG:$RDP_PREVIEW_CONFIG"
 
       - name: Deploy verified artifact (production)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

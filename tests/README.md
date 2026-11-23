@@ -107,7 +107,7 @@ pnpm run verify
   | `bash scripts/push-test.sh --e2e=skip` | 跳过浏览器安装、E2E 和报告。 |
 
   脚本仅在干净且有待推送文件变更的 `test` 分支附加一条空提交，不改写实际提交、不强推。CI 只识别推送顶端严格匹配且不修改文件的标记；后续普通提交恢复全量，同一次 CI 的重跑保留原档位。类型检查、全量单测、前端构建和实际部署均不跳过；SSH 互操作仍按变更触发，PR / `main` / 手动验证始终完整。文档专用推送仍按原 paths-ignore 跳过部署。旧 `CLOUDSSH_TEST_E2E` 已不读取。
-- 开启 RDP 预览时，test 部署按构建脚本、系统和架构缓存已编译的 FreeRDP JS/WASM/许可证；命中后核验文件并打包本次网页，仍运行 Worker dry-run。首次或缓存失效会重编，不缓存配置、凭据和网页。缓存仅用于已授权的 `test` 推送，不用于 PR 或 `main`。
+- RDP 已移除测试专用部署；普通构建复用随代码提交的 FreeRDP JS/WASM/许可证，`rdp-assets.test.ts` 验证摘要和大小。`rdp-store.test.ts` 检查账户、票据与租约，`rdp-devices.spec.ts` 检查用户空间 CRUD。正式双线路、Access 与弱网真机验收见 [RDP 说明](../docs/rdp-implementation-plan.md)。
 - 快速检查先于浏览器安装。Worker CI 仅取消同 PR 的过期验证，不中断部署，job 上限 30 分钟。互操作 CI 允许取消旧运行，Pages 发布串行执行。
 - CI 默认使用 **2 个 worker**，本地默认并发仍由 Playwright 决定。所选浏览器项目保留全部用例、最多 2 次重试、首次重试 trace 和失败截图，不启用全程 trace 或录像。
 - CI 生成 `playwright-report/index.html` 与 `test-results/results.json`。`deploy.yml` 在 E2E 实际执行成功或失败后、部署密钥注入前，将 `playwright-report/` 与 `test-results/` 一并上传，保留 **7 天**；取消或 E2E 未执行时不上传。报告名包含 run ID 与运行尝试编号，避免重跑时覆盖或 PR ref 的斜杠导致非法名称；启动失败且尚无文件时只警告，但原测试失败仍阻止部署。

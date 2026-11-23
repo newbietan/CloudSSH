@@ -1,13 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 here=$(cd -- "$(dirname -- "$0")" && pwd)
-cache="$here/preview-cache"
-out="$here/preview-build"
-if [[ $# -eq 1 && $1 == --from-cache ]]; then
-  node "$here/preview-cache.mjs" stage "$cache" "$out" "$here/desktop-src"
-  printf '%s\n' 'Reused validated FreeRDP assets; packaged current preview page.'
-  exit 0
-fi
+out="$here/../src/worker/rdp-client/vendor"
 commit=65bcca1913a28cbdd7eb913599f692bd2b707991
 image=emscripten/emsdk@sha256:77638e6c215a65f25a704c0c831d5c2463a8c0468a58c6cb82489dbe621dfa05
 
@@ -28,7 +22,7 @@ elif [[ $# -eq 2 && $1 == --reuse-source ]]; then
   source_dir=$(cd -- "$2" && pwd)
   fresh=0
 else
-  printf '%s\n' 'Usage: bash prepare-preview.sh [--from-cache | --reuse-source /path/to/disposable/FreeRDP]' >&2
+  printf '%s\n' 'Usage: bash scripts/build-freerdp.sh [--reuse-source /path/to/disposable/FreeRDP]' >&2
   exit 2
 fi
 [[ $(git -C "$source_dir" rev-parse HEAD) == "$commit" ]]
@@ -222,11 +216,10 @@ run_sdk bash -euc '
   bash -e scripts/emscripten.sh --no-clone "$@"
 ' build "${build_args[@]}"
 
-mkdir -p -- "$cache"
+package_dir=$(mktemp -d "${TMPDIR:-/tmp}/cloudssh-freerdp-package.XXXXXXXX")
+trap 'rm -rf -- "$package_dir"; if [[ $fresh == 1 ]]; then cleanup; fi' EXIT
 artifacts="$source_dir/build-emscripten/build/freerdp/client/SDL/SDL3"
-cp -- "$artifacts/sdl-freerdp.js" "$cache/sdl-freerdp.rdp-text"
-cp -- "$artifacts/sdl-freerdp.wasm" "$cache/sdl-freerdp.rdp-bin"
-python3 - "$source_dir" "$cache/licenses.rdp-text" <<'PY'
+python3 - "$source_dir" "$package_dir/licenses.rdp-text" <<'PY'
 from pathlib import Path
 import sys
 source, out = map(Path, sys.argv[1:]); dependencies = source / 'build-emscripten' / 'src'
@@ -239,12 +232,13 @@ for root in roots:
         for glob in names:
             files.update(p for p in folder.glob(glob) if p.is_file() and p.stat().st_size <= 65536)
 with out.open('w') as f:
-    f.write('CloudSSH test RDP preview: FreeRDP 3.33.1 with strict configured certificate pinning.\n')
+    f.write('CloudSSH browser RDP: FreeRDP 3.33.1 with strict configured certificate pinning.\n')
     f.write('https://github.com/FreeRDP/FreeRDP/tree/65bcca1913a28cbdd7eb913599f692bd2b707991\n')
     for license in sorted(files):
         f.write(f'\n--- {license.relative_to(source)} ---\n')
         f.write(license.read_text(errors='replace'))
 PY
-node "$here/preview-cache.mjs" record "$cache" "$out" "$here/desktop-src"
+node "$here/package-freerdp.mjs" "$artifacts/sdl-freerdp.js" "$artifacts/sdl-freerdp.wasm" "$package_dir/licenses.rdp-text" "$out"
+rm -rf -- "$package_dir"
 if [[ $fresh == 1 ]]; then cleanup; fi
-printf '%s\n' 'Test-only FreeRDP assets prepared.'
+printf '%s\n' 'CloudSSH FreeRDP browser assets prepared.'

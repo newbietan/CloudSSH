@@ -1,0 +1,152 @@
+const dictionary = {
+  'en-US': ['Back to CloudSSH', 'Remote Desktop', 'Username', 'Domain (optional)', 'Windows password', 'Connect', 'Disconnect / Retry', 'Full screen', 'Loading the saved desktop…', 'Enter your Windows credentials.', 'Invalid Windows credentials.', 'Downloading the desktop client…', 'Starting the desktop client…', 'Connecting to Windows…', 'Checking the Windows certificate and signing in…', 'Desktop ready. Click the desktop to control it.', 'Connection ended. Use Disconnect / Retry.', 'Could not start the desktop. Use Disconnect / Retry.', 'Desktop startup timed out.', 'No desktop appeared. Verify the certificate and Windows credentials, then retry.', 'This browser does not support the required shared memory.', 'Device or session changed. Refresh the page.', 'The connection is too slow or ended.', 'Full screen is unavailable.'],
+  'zh-CN': ['返回 CloudSSH', '远程桌面', '用户名', '域（可选）', 'Windows 密码', '连接', '断开／重试', '全屏', '正在读取已保存的桌面…', '请输入 Windows 登录凭据。', 'Windows 登录凭据无效。', '正在下载桌面客户端…', '正在启动桌面客户端…', '正在连接 Windows…', '正在验证 Windows 证书并登录…', 'Windows 桌面已显示，点击画布可操作。', '连接已结束，请点「断开／重试」。', '桌面启动失败，请点「断开／重试」。', '桌面客户端启动超时。', '未收到桌面画面，请核对证书和 Windows 凭据后重试。', '当前浏览器不支持所需的共享内存。', '设备或登录已变化，请刷新页面。', '连接过慢或已断开。', '当前无法进入全屏。'],
+  'zh-TW': ['返回 CloudSSH', '遠端桌面', '使用者名稱', '網域（選填）', 'Windows 密碼', '連線', '中斷／重試', '全螢幕', '正在讀取已儲存的桌面…', '請輸入 Windows 登入憑證。', 'Windows 登入憑證無效。', '正在下載桌面客戶端…', '正在啟動桌面客戶端…', '正在連線至 Windows…', '正在驗證 Windows 憑證並登入…', 'Windows 桌面已顯示，點擊畫布即可操作。', '連線已結束，請點「中斷／重試」。', '桌面啟動失敗，請點「中斷／重試」。', '桌面客戶端啟動逾時。', '未收到桌面畫面，請核對憑證和 Windows 登入資訊後重試。', '目前瀏覽器不支援所需的共享記憶體。', '裝置或登入已變更，請重新整理。', '連線過慢或已中斷。', '目前無法使用全螢幕。'],
+};
+let requested = navigator.language;
+try { requested = localStorage.getItem('cloudssh_locale') || requested; } catch { /* optional */ }
+const locale = Object.hasOwn(dictionary, requested) ? requested : /^zh-(TW|HK|Hant)/i.test(requested) ? 'zh-TW' : /^zh/i.test(requested) ? 'zh-CN' : 'en-US';
+document.documentElement.lang = locale;
+const msg = dictionary[locale];
+const el = id => document.getElementById(id);
+['back', 'title', 'user-label', 'domain-label', 'password-label', 'connect', 'disconnect', 'fullscreen'].forEach((id, i) => { el(id).textContent = msg[i]; });
+const status = el('status');
+const show = i => { status.textContent = msg[i]; };
+const canvas = el('canvas');
+const form = el('credentials');
+const connect = el('connect');
+const passwordBox = el('windows-password');
+const api = '/api/rdp/profiles/' + location.pathname.slice('/rdp/'.length);
+const clientRevision = '1'; // Keep aligned with src/rdp-schema.ts when changing the browser ABI.
+const base = '/rdp/assets/';
+let socket;
+let profile;
+let started = false;
+let terminate;
+show(8);
+
+function request(url, options) {
+  return fetch(url, { credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(10000), ...options });
+}
+
+async function run(username, domain, password) {
+  const abort = new AbortController();
+  let stopped = false;
+  let ticket;
+  let timer;
+  let ready = false;
+  const watch = (ms, reason) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => finish(reason), ms);
+  };
+  function finish(reason) {
+    if (stopped) return;
+    stopped = true;
+    password = ticket = undefined;
+    clearTimeout(timer);
+    abort.abort();
+    socket?.close();
+    el('fullscreen').disabled = true;
+    if (document.fullscreenElement === canvas) void document.exitFullscreen().catch(() => {});
+    show(reason);
+  }
+  terminate = finish;
+  show(11);
+  watch(90_000, 18);
+  try {
+    const response = await request(base + 'sdl-freerdp.wasm', { cache: 'no-cache', signal: abort.signal });
+    if (!response.ok || response.headers.get('Content-Type')?.split(';')[0] !== 'application/wasm') return finish(17);
+    let module = await (WebAssembly.compileStreaming ? WebAssembly.compileStreaming(response) : WebAssembly.compile(await response.arrayBuffer()));
+    if (stopped) return;
+    show(12);
+    watch(30_000, 18);
+    const url = new URL('/api/rdp/session', location.origin);
+    url.protocol = 'wss:';
+    window.Module = {
+      canvas,
+      websocket: { url: url.href, subprotocol: null },
+      createRdpSocket(address) {
+        if (stopped || address !== url.href || !ticket || socket) throw new Error('socket unavailable');
+        socket = window.createCloudSshRdpSocket(address, ticket);
+        ticket = undefined;
+        return socket;
+      },
+      takeWindowsPassword() { const value = password; password = undefined; return stopped ? undefined : value; },
+      onWindowsFirstFrame() {
+        if (stopped) return;
+        clearTimeout(timer);
+        ready = true;
+        el('fullscreen').disabled = !canvas.requestFullscreen;
+        show(15);
+      },
+      instantiateWasm(imports, receive) {
+        void WebAssembly.instantiate(module, imports).then(instance => {
+          if (!stopped) receive(instance, module);
+          module = undefined;
+        }).catch(() => finish(17));
+        return {};
+      },
+      print() {}, printErr() {},
+      onExit(code) { finish(code ? (ready ? 22 : 19) : 16); },
+      onAbort() { finish(17); },
+      onRuntimeInitialized() {
+        if (stopped) return;
+        void (async () => {
+          show(13);
+          watch(20_000, 22);
+          const issued = await request(api + '/connect', { method: 'POST', headers: { 'X-CloudSSH-RDP-Client': clientRevision } });
+          if (!issued.ok) return finish(21);
+          const info = await issued.json();
+          if (stopped) return;
+          if (info.revision !== profile.revision || !/^[a-f0-9]{64}$/.test(info.ticket)) return finish(21);
+          ticket = info.ticket;
+          window.Module.websocket.on?.('open', () => { if (!stopped) { show(14); watch(30_000, 19); } });
+          window.Module.websocket.on?.('error', () => finish(22));
+          window.Module.websocket.on?.('close', () => finish(ready ? 16 : 19));
+          const args = ['/v:127.0.0.1:3389', '/u:' + username, '/sec:nla', '/cert:deny,fingerprint:sha256:' + profile.fingerprint,
+            '/size:1280x720', '-clipboard', '-auto-reconnect', '/audio-mode:2', '/log-level:OFF'];
+          if (domain) args.push('/d:' + domain);
+          const result = window.Module.callMain(args);
+          if (result && typeof result.then === 'function') result.then(code => finish(code ? 19 : 16), () => finish(17));
+        })().catch(() => finish(17));
+      },
+    };
+    const script = document.createElement('script');
+    script.setAttribute('data-cfasync', 'false');
+    script.src = base + 'sdl-freerdp.js';
+    script.onerror = () => finish(17);
+    document.head.append(script);
+  } catch { finish(17); }
+}
+
+form.addEventListener('submit', event => {
+  event.preventDefault();
+  if (!profile || started) return;
+  const username = el('windows-user').value.trim();
+  const domain = el('windows-domain').value.trim();
+  const password = passwordBox.value;
+  if (!username || !password || [username, domain, password].some(value => /[\x00\r\n]/.test(value)) || new TextEncoder().encode(password).length > 1024) return show(10);
+  started = true;
+  passwordBox.value = '';
+  for (const control of form.querySelectorAll('button, input')) control.disabled = true;
+  el('disconnect').disabled = false;
+  status.focus({ preventScroll: true });
+  void run(username, domain, password);
+});
+el('disconnect').onclick = () => { terminate?.(16); location.reload(); };
+el('fullscreen').onclick = () => { void canvas.requestFullscreen?.().catch(() => show(23)); };
+addEventListener('pagehide', () => terminate?.(16));
+for (const event of ['keydown', 'pointerdown', 'pointermove', 'wheel']) {
+  canvas.addEventListener(event, input => { if (input.isTrusted) socket?.activity(); }, { passive: true });
+}
+void (async () => {
+  if (!crossOriginIsolated || typeof SharedArrayBuffer !== 'function') return show(20);
+  const response = await request(api, { cache: 'no-store' });
+  if (!response.ok) return show(21);
+  const saved = await response.json();
+  if (!/^[a-f0-9]{64}$/.test(saved.fingerprint) || !Number.isInteger(saved.revision)) return show(21);
+  profile = saved;
+  el('title').textContent = msg[1] + ' · ' + profile.name;
+  connect.disabled = false;
+  show(9);
+})().catch(() => show(21));

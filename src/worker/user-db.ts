@@ -1,5 +1,6 @@
 import { normalizeAIBaseUrl } from '../ai-endpoint';
 import { McpStore } from './mcp-store';
+import { RdpStore } from './rdp-store';
 import { executionName } from './mcp-auth';
 import type { McpActivity } from '../mcp-schema';
 import { resolveModelBudget } from '../ai-model-policy';
@@ -133,6 +134,7 @@ type AIConfigSecretRow = AIBudgetRow & { base_url: string; model: string; api_ke
  */
 export class UserDBDO {
   private mcpStore: McpStore;
+  private rdpStore?: RdpStore;
   private alarmSchedule: Promise<void> = Promise.resolve();
   private mcpState: DurableObjectState;
   private env: Env;
@@ -455,6 +457,16 @@ export class UserDBDO {
     try {
       const url = new URL(request.url);
       const path = url.pathname;
+
+      if (path.startsWith('/internal/rdp/')) {
+        if (this.env.ENABLE_RDP !== 'true') return Response.json({ code: 'not_found' }, { status: 404 });
+        this.rdpStore ??= new RdpStore(
+          this.db, callback => this.mcpState.storage.transactionSync(callback),
+          (value, id) => this.encryptCredential(value, id),
+          (value, id) => this.decryptCredential(value, id),
+        );
+        return await this.rdpStore.handle(request);
+      }
 
       if (path === '/internal/mcp' && request.method === 'POST') {
         return await this.handleMcp(request);

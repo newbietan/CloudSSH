@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en-US">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CloudSSH · Remote Desktop</title>
+<style>
+:root{color-scheme:dark}body{background:#101827;color:#eef2fb;margin:1rem;font:16px system-ui}a{color:#a6ceff}h1{font-size:1.25rem}form{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:.5rem}label{display:flex;flex-direction:column;gap:.2rem}button,input{font:inherit;min-height:42px;padding:.35rem .55rem}button{align-self:end}#status{min-height:1.4em}.desktop-stage{width:min(100%,calc(100dvh * 1.35));background:#070b13;margin-top:.75rem}#canvas{display:block;width:100%!important;height:auto!important;aspect-ratio:16 / 9;object-fit:contain}#canvas:fullscreen{height:100%!important}
+</style>
+<a href="/" id="back">Back to CloudSSH</a>
+<h1 id="title">Remote Desktop</h1>
+<form id="credentials" autocomplete="off" action="#">
+  <label><span id="user-label">Username</span><input id="windows-user" maxlength="128" required autocomplete="off" value="Administrator"></label>
+  <label><span id="domain-label">Domain (optional)</span><input id="windows-domain" maxlength="128" autocomplete="off"></label>
+  <label><span id="password-label">Windows password</span><input id="windows-password" type="password" maxlength="1024" autocomplete="off" required></label>
+  <button id="connect" type="submit" disabled>Connect</button>
+</form>
+<button id="disconnect" type="button" disabled>Disconnect / Retry</button>
+<button id="fullscreen" type="button" disabled>Full screen</button>
+<p id="status" role="status" tabindex="-1"></p>
+<div class="desktop-stage"><canvas id="canvas" width="1280" height="720" tabindex="0"></canvas></div>
+<script data-cfasync="false" src="/rdp/assets/rdp-socket.js" defer></script>
+<script data-cfasync="false" src="/rdp/assets/desktop.js" defer></script>
+</html>

@@ -1,0 +1,3 @@
+# Generated upstream client output and the consolidated upstream license text.
+*.rdp-text -text -diff -whitespace
+*.rdp-bin binary

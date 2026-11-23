@@ -361,6 +361,10 @@ Jump hosts require no additional environment variables, but GitHub OAuth and sav
 
 Every server in a jump relation must belong to the same GitHub user. Self-references and cycles are rejected, and a jump host cannot be deleted while another server references it. Public-address SSRF checks and Durable Object region placement use the outermost address reached directly by Cloudflare. Only that entry runs automatic region inference; selecting a jump host disables the downstream server's region option and does not send its private host information to IPinfo. Private targets are accepted only inside a server-resolved saved chain, and anonymous clients cannot submit jump configuration. TOFU host-key verification runs at every hop, with private target records scoped by the complete jump path.
 
+##### Windows Remote Desktop
+
+With `ENABLE_RDP=true`, signed-in users can add a Windows remote desktop using public IPv4 on TCP 3389 or a Cloudflare `rdp://` tunnel route, and open it in a same-site browser page. Windows must use NLA. CloudSSH does not store the Windows password, and requires an independently verified SHA-256 certificate fingerprint. See the [RDP setup and limits](docs/rdp-implementation-plan.md).
+
 ##### Connecting via Cloudflare Tunnel
 
 When adding or editing a server, choose the **Cloudflare Tunnel** transport mode to directly connect to private intranet servers (homelab NAS, private LAN hosts, internal dev machines) without public IPs or port forwarding:

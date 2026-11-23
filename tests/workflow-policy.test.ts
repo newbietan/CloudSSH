@@ -31,9 +31,9 @@ describe('Fork 工作流执行策略', () => {
     expect(deploy).not.toMatch(/^\s*continue-on-error:\s*true/m);
     expect(deploy).not.toMatch(/run: pnpm run test:e2e[^\n]*\|\|/);
     const deploymentSteps = deploy.split('      - name: Deploy verified artifact').slice(1);
-    expect(deploymentSteps).toHaveLength(3);
+    expect(deploymentSteps).toHaveLength(2);
     expect(deploymentSteps.filter((step) => step.includes("github.ref == 'refs/heads/main'"))).toHaveLength(1);
-    expect(deploymentSteps.filter((step) => step.includes("github.ref == 'refs/heads/test'"))).toHaveLength(2);
+    expect(deploymentSteps.filter((step) => step.includes("github.ref == 'refs/heads/test'"))).toHaveLength(1);
   });
 
   it('Fork 可直接手动同步，定时同步需要显式开启', () => {
@@ -63,7 +63,7 @@ describe('CI 验证和部署边界', () => {
     }
     expect(deploy).toContain('run: pnpm test');
     const sections = deploy.split('      - name: Deploy verified artifact').slice(1);
-    expect(sections).toHaveLength(3);
+    expect(sections).toHaveLength(2);
     for (const section of sections) {
       expect(section).toMatch(/^        if: github.event_name == 'push' && github.ref == 'refs\/heads\/(test|main)'(?: && [^\n]+)?$/m);
       expect(section).toContain('CLOUDFLARE_API_TOKEN:');
@@ -71,30 +71,14 @@ describe('CI 验证和部署边界', () => {
     expect(deploy.slice(0, deploy.indexOf('      - name: Deploy verified artifact'))).not.toContain('secrets.');
   });
 
-  it('does not expose the optional RDP preview in production or pass secrets to the compiler', () => {
+  it('retires the RDP preview and keeps the standard deployment free of compiler steps', () => {
     const deploy = readWorkflow('deploy.yml');
-    const build = deploy.split('      - name: Build opt-in browser desktop preview (test only)\n')[1]?.split('      - name:')[0] ?? '';
-    const cache = deploy.split('      - name: Cache compiled FreeRDP assets (test only)\n')[1]?.split('      - name:')[0] ?? '';
-    const preview = deploy.split('      - name: Deploy verified artifact with browser desktop preview (test only)\n')[1]?.split('      - name:')[0] ?? '';
-    const gate = "github.event_name == 'push' && github.ref == 'refs/heads/test' && vars.CLOUDSSH_RDP_TEST_CONFIG != ''";
-    expect(build).toContain(`if: ${gate}`);
-    expect(cache).toContain(`if: ${gate}`);
-    expect(cache).toMatch(/uses: actions\/cache@[a-f0-9]{40} /);
-    expect(cache).toContain('path: tests/interop/rdp-check/preview-cache');
-    expect(cache).toContain("hashFiles('tests/interop/rdp-check/prepare-preview.sh', 'tests/interop/rdp-check/preview-cache.mjs')");
-    expect(cache).not.toMatch(/restore-keys|secrets\.|vars\.CLOUDSSH_TEST_E2E/);
-    expect(build).toContain('prepare-preview.sh --from-cache');
-    expect(build).toContain('--env test --config wrangler.toml --dry-run');
-    expect(build).not.toContain('secrets.');
-    expect(preview).toContain(`if: ${gate}`);
-    expect(preview).toContain('preview-worker.ts --env test --config wrangler.toml');
-    expect(preview).not.toContain('prepare-preview.sh');
-    expect(deploy).toContain("github.ref == 'refs/heads/test' && vars.CLOUDSSH_RDP_TEST_CONFIG == ''");
+    expect(deploy).not.toMatch(/CLOUDSSH_RDP_TEST_CONFIG|preview-worker\.ts|prepare-preview\.sh|build-freerdp\.sh/);
   });
 
-  it('runs both preview build phases as the host owner of the disposable checkout', () => {
+  it('runs both manual FreeRDP build phases as the host owner of the disposable checkout', () => {
     const script = readFileSync(
-      new URL('./interop/rdp-check/prepare-preview.sh', import.meta.url), 'utf8'
+      new URL('../scripts/build-freerdp.sh', import.meta.url), 'utf8'
     );
     expect(script.match(/docker run\b/g)).toHaveLength(1);
     expect(script).toContain('docker run --rm --user "$(id -u):$(id -g)"');

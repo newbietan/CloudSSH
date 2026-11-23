@@ -494,11 +494,11 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
     **移动阅读空间与材质**：沿用≤767px或粗指针且≤1180px断点，隐藏Agent四个`data-prompt-key`普通建议及空容器占位，但保留`agent-resume-task-chip`恢复入口，桌面不隐藏。终端更多菜单MCP入口紧邻Agent之后，所有直接子项禁止flex压缩，由整菜单纵向滚动，不能让主题选择或字号行溢出重叠；原匿名/分享权限不变。内置`data-theme="liquid-glass"`只在该移动断点通过body继承覆盖阅读表面变量，并对共用弹窗、菜单和抽屉使用实底；保留页背景、圆角、边缘和阴影，不改根内联调色板、桌面或自定义主题。`mobile-glass.spec.ts`核查15类表面、主题/断点切换、真实场景截图与菜单正文不透出终端文字，不能只靠加大模糊掩盖叠字。
 
-## #201 站内 RDP 预览（仅 test 显式配置）
+## #201 站内 RDP（登录用户，默认关闭）
 
-- 方案与完成条件见 `docs/rdp-implementation-plan.md`。测试分支 CI 仅在仓库变量 `CLOUDSSH_RDP_TEST_CONFIG` 非空时构建隔离的 `tests/interop/rdp-check/preview-worker.ts` 并作为 `cloudssh-test` 入口；正式主入口、Durable Object 绑定、迁移及生产构建保持不变。`wrangler.toml` 的 Data/Text rules 仅用于该入口显式导入的 `.rdp-bin/.rdp-text` 模块，不给主 Worker 增加 `[assets]`，以保留原生 `ctx.access`。
-- 预览 CI 仅在有配置的 `test` push 按 OS、架构及构建脚本精确缓存已编译的 FreeRDP JS/WASM/许可证（不含配置、凭据、页面）；命中须校验大小、SHA-256 和 WASM，始终使用本次提交的页面并运行 dry-run。不要把缓存复用于 PR/生产。
-- `/__rdp-preview/` 是测试入口，不是已发布的设备管理功能。显式有限有效期、CloudSSH 当前模式的有效登录（无额外账号白名单）、同源 WebSocket、固定双目标和严格 Windows TLS SHA-256 固定后才可验证；不接受客户端目的地或在仓库/变量存放 Windows 密码。不开匿名/分享/SSH/SFTP/Agent/MCP。此处的流量和会话硬预算只供受控测试环境的 P0，不能作为生产中继配额。移除仓库变量并重跑测试部署可移除预览入口。未做真机登录不要声称 #201 完成。
+- 入口、生命周期与验收见 `docs/rdp-implementation-plan.md`。Wrangler 的 `rdp-entry.ts` 重导出原 DO，显式导入有界 Data/Text 模块；不添加 `[assets]`，不削弱原生 `ctx.access`。旧 P0 路由返回 404，CI 不读取临时目标或启动 Docker；FreeRDP 由维护者显式重建后随代码提交，普通 SSH 页面不下载 WASM。仅 `ENABLE_RDP=true` 公开能力。
+- `rdp_profiles` 独立、每账户授权、只接公网 IPv4:3389 或已配置 Tunnel 主机名；Access Service Token 加密且换域不继承。票据仅通过已认证同源 WebSocket 首帧提交，单用、绑定浏览器和修订。不要把 HTTP/WS 控制、密码或目标路由混入 Windows 字节流；浏览器内一次提交密码，保持 NLA 和严格的目标证书 SHA-256 固定。清理须有界，确认代表 WASM 已消费而不是已绘制。
+- 不挂接 SSH、SFTP、MCP、Agent、分享或跳板。更新/删除撤销旧票据和租约，定期复核但不承诺强制注销 Windows。新生产链路需独立双线、Access 与弱网真机验收，不沿用 P0 作为发布结论。
 
 ## SSH 兼容增强边界
 

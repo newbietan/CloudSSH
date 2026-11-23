@@ -34,6 +34,7 @@ import { createHtmlResponse } from './html-cache';
 import { handleVersionCheck } from './version-check';
 import { handleCloudflareSshCaSign } from './cf-ssh-ca';
 import { handleMcp, handleMcpManagement } from './mcp';
+import { handleRdp, isRdpRoute, type RdpAssets } from './rdp-routes';
 export { MCPExecutionDO } from './mcp-execution';
 
 export { SSHSessionDO } from './durable-object';
@@ -185,7 +186,8 @@ export default {
   async fetch(
     request: Request,
     env: Env,
-    ctx?: Pick<ExecutionContext, 'access'>
+    ctx?: Pick<ExecutionContext, 'access'> & Partial<Pick<ExecutionContext, 'waitUntil'>>,
+    rdpAssets?: RdpAssets,
   ): Promise<Response> {
     try {
       await initializeAccessIdentity(request, ctx);
@@ -200,6 +202,10 @@ export default {
         }
       }
 
+      if (isRdpRoute(url.pathname)) return await handleRdp(request, url, env, rdpAssets, ctx);
+      if (url.pathname === '/__rdp-preview' || url.pathname.startsWith('/__rdp-preview/')) {
+        return new Response(null, { status: 404, headers: { 'Cache-Control': 'no-store' } });
+      }
       if (url.pathname === '/mcp') return await handleMcp(request, env);
       if (url.pathname.startsWith('/api/mcp/')) {
         const response = await handleMcpManagement(request, env);
@@ -411,6 +417,7 @@ export default {
           githubAuthEnabled: authMode === 'github',
           githubAuthRequired: isGitHubAuthRequired(env) || authMode === 'cf_access',
           sshSharingEnabled: isSSHSharingEnabled(env),
+          ...(rdpAssets && env.ENABLE_RDP === 'true' ? { rdpEnabled: true } : {}),
           authMode,
           cfAccessEmail,
           cfAccessTeamName: env.CF_ACCESS_TEAM_NAME || '',

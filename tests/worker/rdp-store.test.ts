@@ -1,0 +1,74 @@
+import { DatabaseSync } from 'node:sqlite';
+import { describe, expect, it } from 'vitest';
+import { parseRdpProfile } from '../../src/rdp-schema';
+import { RdpStore } from '../../src/worker/rdp-store';
+
+const certificate = '1'.repeat(64);
+const target = { name: 'Workstation', route: 'direct', host: '93.184.215.14', fingerprint: certificate };
+const bind = '2'.repeat(64);
+
+function fixture() {
+  const database = new DatabaseSync(':memory:');
+  const db = { exec(query: string, ...params: (string | number | null)[]) {
+    const stmt = database.prepare(query);
+    if (/^SELECT/i.test(query)) {
+      const rows = stmt.all(...params);
+      return { toArray: () => rows, one: () => rows[0] };
+    }
+    return { rowsWritten: Number(stmt.run(...params).changes) };
+  } } as unknown as SqlStorage;
+  const store = new RdpStore(db, (callback) => {
+    database.exec('BEGIN');
+    try { const value = callback(); database.exec('COMMIT'); return value; }
+    catch (error) { database.exec('ROLLBACK'); throw error; }
+  }, async value => Buffer.from(value).toString('base64'), async value => Buffer.from(value, 'base64').toString());
+  const request = (path: string, method: string, body?: unknown, user = 1) => store.handle(new Request(`https://internal/internal/rdp/${path}?user_id=${user}`, {
+    method, body: body === undefined ? undefined : JSON.stringify(body),
+  }));
+  return { request, database };
+}
+
+describe('RDP profiles and connection leases', () => {
+  it('rejects private/literal quirks and non-RDP target or secret fields', () => {
+    for (const host of ['127.0.0.1', '0.0.0.0', 'fd00::1', '192.168.1.1', '198.51.100.3', '10.0.0.8', '93.018.215.14', 'www.example.com']) {
+      expect(parseRdpProfile({ ...target, host })).toBeNull();
+    }
+    expect(parseRdpProfile({ ...target, password: 'not allowed' })).toBeNull();
+    expect(parseRdpProfile({ ...target, route: 'tunnel', host: 'a.test/foo' })).toBeNull();
+  });
+
+  it('isolates profiles, issues a one-use browser-bound ticket, and revokes leases on edit', async () => {
+    const { request, database } = fixture();
+    try {
+      const saved = await request('profiles', 'POST', target);
+      expect(saved.status).toBe(201);
+      const { id, revision } = await saved.json() as { id: string; revision: number };
+      expect((await request(`profiles/${id}`, 'GET', undefined, 2)).status).toBe(404);
+      expect((await request('ticket', 'POST', { profile: id, binding: bind }, 2)).status).toBe(404);
+      const { ticket } = await (await request('ticket', 'POST', { profile: id, binding: bind })).json() as { ticket: string };
+      expect(database.prepare('SELECT hash FROM rdp_tickets').get()?.hash).not.toBe(ticket);
+      expect((await request('claim', 'POST', { ticket, binding: '3'.repeat(64) })).status).toBe(409);
+      const claimed = await request('claim', 'POST', { ticket, binding: bind });
+      expect(claimed.status).toBe(200);
+      const { id: lease } = await claimed.json() as { id: string };
+      expect((await request('claim', 'POST', { ticket, binding: bind })).status).toBe(409);
+      expect((await request('renew', 'POST', { lease })).status).toBe(200);
+      expect((await request(`profiles/${id}`, 'PUT', { ...target, revision, name: 'Renamed' })).status).toBe(200);
+      expect((await request('renew', 'POST', { lease })).status).toBe(404);
+    } finally { database.close(); }
+  });
+
+  it('never returns the Access credentials in list responses and clears old-host credentials', async () => {
+    const { request, database } = fixture();
+    try {
+      const input = { ...target, route: 'tunnel', host: 'rdp.example.com', accessId: 'mock-id', accessSecret: 'mock-secret' };
+      const saved = await (await request('profiles', 'POST', input)).json() as { id: string; revision: number; hasAccessToken: boolean };
+      expect(saved.hasAccessToken).toBe(true);
+      expect(JSON.stringify(saved)).not.toContain(input.accessSecret);
+      const edited = await (await request(`profiles/${saved.id}`, 'PUT', {
+        ...target, route: 'tunnel', host: 'replacement.example.com', revision: saved.revision,
+      })).json() as { hasAccessToken: boolean };
+      expect(edited.hasAccessToken).toBe(false);
+    } finally { database.close(); }
+  });
+});
