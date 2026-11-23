@@ -108,7 +108,7 @@ test('the themed workspace stays in the current tab and a saved login is release
   await get('**/api/servers', [{ ...ssh, last_connected_at: now - 60000 }]);
   await page.route('**/api/rdp/profiles', r => r.request().method() === 'GET' ? r.fulfill({ json: { profiles: [
     { ...profile, username, last_connected_at: released ? now : null },
-    { ...profile, id: '12345678-1234-1234-1234-123456789abd', name: 'Legacy', hasLogin: false, username: null, last_connected_at: null },
+    { ...profile, id: '12345678-1234-1234-1234-123456789abd', name: 'Legacy', route: 'tunnel', host: 'office.example.com', hasLogin: false, username: null, last_connected_at: null },
   ] } }) : r.fallback());
   await get(`**/api/rdp/profiles/${id}`, profile);
   const asset = (name: string) => readFileSync(`${__dirname}/../../src/worker/rdp-client/${name}.rdp-text`, 'utf8');
@@ -136,6 +136,9 @@ test('the themed workspace stays in the current tab and a saved login is release
     return r.fulfill({ json: { ticket: '1'.repeat(64), revision: 4, login: { username: 'test-user', password: 'synthetic', domain: '' } } });
   });
   await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: async (value: string) => { document.body.dataset.copiedHost = value; },
+    } });
     if (!crossOriginIsolated) Object.defineProperty(window, 'crossOriginIsolated', { value: true });
     if (typeof SharedArrayBuffer !== 'function') Object.defineProperty(window, 'SharedArrayBuffer', { value: ArrayBuffer });
   });
@@ -144,6 +147,17 @@ test('the themed workspace stays in the current tab and a saved login is release
   await expect(card).toBeVisible();
   const firstCard = page.locator('#server-grid .server-card-title').first();
   await expect(firstCard).toHaveText('Linux workstation');
+  const windowsCard = page.locator(`#rdp-card-${id}`);
+  const direct = windowsCard.getByRole('button', { name: 'Click to copy full IP address' });
+  await expect(windowsCard.locator('.server-card-meta-row').first()).toContainText('Host');
+  await expect(direct).toHaveText('8.8.*.*:3389');
+  await direct.click();
+  await expect(page.locator('body')).toHaveAttribute('data-copied-host', '8.8.8.8');
+  const tunnel = page.locator('.server-card').filter({ hasText: 'Legacy' }).getByRole('button', { name: 'Click to copy full hostname' });
+  await expect(tunnel).toHaveText('office.example.com');
+  await tunnel.press('Enter');
+  await expect(page.locator('body')).toHaveAttribute('data-copied-host', 'office.example.com');
+  expect(released).toBe(0);
   const search = page.locator('#server-search');
   await search.fill('ops <user>');
   await expect(firstCard).toHaveText('Office Windows');
@@ -169,12 +183,30 @@ test('the themed workspace stays in the current tab and a saved login is release
   expect(await frame.locator('html').evaluate(e => e.style.getPropertyValue('--accent').trim())).toBe(await page.locator('body').evaluate(e => getComputedStyle(e).getPropertyValue('--accent').trim()));
   await page.setViewportSize({ width: 960, height: 700 });
   await expect(frame.locator('html')).toHaveAttribute('data-requested-width', '960px');
-  if (await frame.locator('#fullscreen').isEnabled() && await stage.evaluate(() => document.fullscreenEnabled)) {
-    await frame.locator('#fullscreen').click();
-    await expect.poll(() => stage.evaluate(e => document.fullscreenElement === e)).toBe(true);
+  const toolbar = workspace.locator('header');
+  await expect(toolbar.getByRole('heading')).toHaveText('Remote Desktop · Office Windows');
+  await expect(toolbar.getByRole('button')).toHaveText(['Disconnect', 'Full screen', 'Back']);
+  await expect(frame.locator('header')).toHaveCount(0);
+  const full = toolbar.getByRole('button', { name: 'Full screen' });
+  const inFullscreen = () => page.evaluate(() => document.fullscreenElement !== null);
+  expect(await inFullscreen()).toBe(false);
+  await frame.locator('#canvas').click(); // Activating the desktop is not opting in to display fullscreen.
+  expect(await inFullscreen()).toBe(false);
+  await expect(frame.locator('#stage-label')).toBeHidden();
+  const fullscreenSupported = await page.evaluate(() => !!document.fullscreenEnabled);
+  if (fullscreenSupported) {
+    await expect(full).toBeEnabled();
+    expect(await stage.evaluate(() => !!document.fullscreenEnabled)).toBe(false); // WASM cannot request it.
+    await full.click();
+    await expect.poll(() => workspace.locator('iframe').evaluate(e => document.fullscreenElement === e)).toBe(true);
     await expect(frame.locator('#stage-label')).toBeVisible();
-    await stage.evaluate(() => document.exitFullscreen());
-  }
+    await expect(frame.locator('.status-row')).toBeHidden();
+    await page.evaluate(() => document.exitFullscreen());
+    await expect(frame.locator('.status-row')).toBeVisible();
+  } else await expect(full).toBeDisabled();
+  await toolbar.getByRole('button', { name: 'Disconnect' }).click();
+  await expect(frame.locator('#status')).toHaveText('Connection ended. Return to the server list to reconnect.');
+  await expect(full).toBeDisabled();
   expect(context.pages()).toHaveLength(1);
   expect(released).toBe(1);
   await workspace.getByRole('button', { name: 'Back' }).click();

@@ -6027,11 +6027,15 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   background: var(--bg); color: var(--text); overflow: hidden;
 }
 .rdp-workspace header {
-  display: flex; justify-content: space-between; align-items: center; gap: .75rem;
+  display: flex; flex: none; align-items: center; gap: clamp(.25rem, 1vw, .75rem);
   padding: .4rem max(.8rem, env(safe-area-inset-right)) .4rem max(.8rem, env(safe-area-inset-left));
   border-bottom: 1px solid var(--border); background: var(--bg-elevated); color: var(--accent);
 }
-.rdp-workspace header button { min-height: 40px; padding: 0 .9rem; }
+.rdp-workspace header h1 {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 1rem; font-weight: bold;
+}
+.rdp-workspace header button { flex: none; min-height: 40px; padding: 0 clamp(.4rem, 1.5vw, .9rem); }
 .rdp-workspace iframe { flex: 1; min-height: 0; width: 100%; border: 0; }
 .server-kind-switch:not(.hidden) {
   display: inline-grid;

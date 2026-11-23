@@ -19,7 +19,7 @@ const [relayLabel, rttHelp] = {
   'zh-TW': ['中繼', '中繼：瀏覽器至 CloudSSH 的往返時間。RDP：Windows 回報的平均往返時間。橫線表示暫無近期資料，兩者都不是畫面反應時間。'],
 }[locale];
 const el = id => document.getElementById(id);
-for (const [id, index] of [['back', 0], ['title', 1], ['disconnect', 6], ['fullscreen', 7]]) el(id).textContent = msg[index];
+const tellWorkspace = (type, detail) => window.frameElement?.dispatchEvent(new CustomEvent('cloudssh-rdp-' + type, { detail }));
 const status = el('status');
 const show = i => { status.textContent = msg[i]; };
 const canvas = el('canvas');
@@ -127,9 +127,7 @@ async function run() {
     abort.abort();
     resetMeter();
     socket?.close();
-    el('disconnect').disabled = true;
-    el('fullscreen').disabled = true;
-    if (document.fullscreenElement === stage) void document.exitFullscreen().catch(() => {});
+    tellWorkspace('ended');
     decision = -1;
     acceptCertificate.disabled = true;
     cancelCertificate.disabled = false;
@@ -234,7 +232,7 @@ async function run() {
         ready = true;
         socket?.reportDesktopReady?.();
         monitorLatency();
-        el('fullscreen').disabled = !stage.requestFullscreen;
+        tellWorkspace('ready');
         show(15);
       },
       instantiateWasm(imports, receive) {
@@ -289,8 +287,8 @@ function validLogin(username, domain, password) {
   return typeof username === 'string' && username.trim() && username.length <= 128 && typeof domain === 'string' && domain.length <= 128 &&
     typeof password === 'string' && password && ![username, domain, password].some(value => /[\x00\r\n]/.test(value)) && new TextEncoder().encode(password).length <= 1024;
 }
-el('disconnect').onclick = () => terminate?.(16);
-el('fullscreen').onclick = () => { void stage.requestFullscreen?.().catch(() => show(23)); };
+addEventListener('cloudssh-rdp-disconnect', () => terminate?.(16));
+addEventListener('cloudssh-rdp-fullscreen-error', () => show(23));
 addEventListener('pagehide', () => terminate?.(16));
 for (const event of ['keydown', 'pointerdown', 'pointermove', 'wheel']) {
   canvas.addEventListener(event, input => { if (input.isTrusted) socket?.activity(); }, { passive: true });
@@ -298,15 +296,13 @@ for (const event of ['keydown', 'pointerdown', 'pointermove', 'wheel']) {
 void (async () => {
   if (window.frameElement?.dataset.connectSaved !== 'true') return show(9);
   delete window.frameElement.dataset.connectSaved;
-  el('back').hidden = true;
   if (!crossOriginIsolated || typeof SharedArrayBuffer !== 'function') return show(20);
   const response = await request(api, { cache: 'no-store' });
   if (!response.ok) return show(21);
   const saved = await response.json();
   if ((saved.fingerprint !== null && !/^[a-f0-9]{64}$/.test(saved.fingerprint)) || !Number.isInteger(saved.revision)) return show(21);
   profile = saved;
-  el('title').textContent = msg[1] + ' · ' + profile.name;
   if (profile.hasLogin !== true) return show(9);
-  el('disconnect').disabled = false;
+  tellWorkspace('starting', profile.name);
   void run();
 })().catch(() => show(21));

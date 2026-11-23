@@ -54,17 +54,26 @@ export class RdpWorkspace {
     dialog.className = 'rdp-workspace';
     dialog.setAttribute('aria-label', t('rdp.open'));
     const bar = document.createElement('header');
-    const brand = document.createElement('strong');
-    brand.textContent = 'CloudSSH · Windows Server';
-    const back = document.createElement('button');
-    back.className = 'cyber-button text-primary';
-    back.textContent = t('common.back');
+    const title = document.createElement('h1');
+    title.textContent = t('rdp.desktopTitle');
+    const button = (label: string) => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'cyber-button text-primary';
+      item.textContent = label;
+      return item;
+    };
+    const disconnect = button(t('rdp.disconnect'));
+    const fullscreen = button(t('rdp.fullscreen'));
+    const back = button(t('common.back'));
+    disconnect.disabled = fullscreen.disabled = true;
     back.onclick = () => { history.replaceState(null, '', '/'); this.close(); };
-    bar.append(brand, back);
+    bar.append(title, disconnect, fullscreen, back);
     const frame = document.createElement('iframe');
     frame.title = t('rdp.open');
     frame.src = `/rdp/${id}/client`;
-    frame.allow = 'fullscreen';
+    // Only the host toolbar may request fullscreen. No deferred SDL request on a canvas click.
+    frame.allow = "fullscreen 'none'";
     frame.dataset.connectSaved = 'true';
     const applyTheme = () => {
       const doc = frame.contentDocument;
@@ -74,6 +83,31 @@ export class RdpWorkspace {
       doc.documentElement.style.colorScheme = getComputedStyle(document.documentElement).colorScheme;
     };
     frame.onload = applyTheme;
+    const current = () => this.dialog === dialog && !this.events.signal.aborted;
+    frame.addEventListener('cloudssh-rdp-starting', event => {
+      if (!current()) return;
+      const name = (event as CustomEvent).detail;
+      if (typeof name === 'string') title.textContent = `${t('rdp.desktopTitle')} · ${name}`;
+      disconnect.disabled = false;
+    });
+    frame.addEventListener('cloudssh-rdp-ready', () => {
+      if (current()) fullscreen.disabled = !document.fullscreenEnabled || !frame.requestFullscreen;
+    });
+    frame.addEventListener('cloudssh-rdp-ended', () => {
+      if (!current()) return;
+      disconnect.disabled = fullscreen.disabled = true;
+      if (document.fullscreenElement === frame) void document.exitFullscreen().catch(() => {});
+    });
+    disconnect.onclick = () => frame.contentWindow?.dispatchEvent(new Event('cloudssh-rdp-disconnect'));
+    fullscreen.onclick = () => {
+      if (!current() || fullscreen.disabled) return;
+      void frame.requestFullscreen().catch(() => {
+        if (current()) frame.contentWindow?.dispatchEvent(new Event('cloudssh-rdp-fullscreen-error'));
+      });
+    };
+    frame.addEventListener('fullscreenchange', () => {
+      frame.contentDocument?.documentElement.toggleAttribute('data-desktop-fullscreen', document.fullscreenElement === frame);
+    });
     frame.addEventListener('cloudssh-rdp-recorded', () => {
       if (this.dialog === dialog && !this.events.signal.aborted) this.onRecorded();
     }, { once: true });

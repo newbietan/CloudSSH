@@ -558,6 +558,7 @@ export class ServerList {
 
     // Keep RDP out of all SSH-only card actions, sharing, and jump choices.
     for (const entry of page.items) {
+      this.bindHostCopy(entry.row.id, entry.row.host);
       if (entry.kind === 'rdp') {
         const { row } = entry;
         document.getElementById(`rdp-open-${row.id}`)?.addEventListener('click', () => {
@@ -585,19 +586,6 @@ export class ServerList {
       document
         .getElementById(`delete-${server.id}`)
         ?.addEventListener('click', () => this.deleteServer(server.id));
-      const hostBadge = document.getElementById(`host-badge-${server.id}`);
-      if (hostBadge) {
-        hostBadge.addEventListener('click', async () => {
-          const ok = await copyTextToClipboard(server.host);
-          if (ok) {
-            hostBadge.classList.add('host-ip-copied');
-            setTimeout(() => hostBadge.classList.remove('host-ip-copied'), 800);
-            notify(t('server.ipCopied'), { variant: 'success', duration: 1500 });
-          } else {
-            notify(t('server.ipCopyFailed'), { variant: 'danger' });
-          }
-        });
-      }
     }
 
     if (page.totalPages > 1) {
@@ -646,9 +634,31 @@ export class ServerList {
     return `<span class="material-symbols-outlined text-primary shrink-0" style="font-size: 20px; font-variation-settings: 'FILL' 0;">dns</span>`;
   }
 
+  private bindHostCopy(id: number | string, host: string): void {
+    const badge = document.getElementById(`host-badge-${id}`);
+    badge?.addEventListener('click', async () => {
+      const ok = await copyTextToClipboard(host); // Copy the actual host, never the mask or display port.
+      if (this.disposed) return;
+      const ip = maskIPAddress(host) !== null;
+      if (ok) {
+        badge.classList.add('host-ip-copied');
+        setTimeout(() => badge.classList.remove('host-ip-copied'), 800);
+        notify(t(ip ? 'server.ipCopied' : 'server.hostCopied'), { variant: 'success', duration: 1500 });
+      } else notify(t(ip ? 'server.ipCopyFailed' : 'server.hostCopyFailed'), { variant: 'danger' });
+    });
+  }
+
+  private renderHostRow(id: string | number, host: string, port: number | null): string {
+    const masked = maskIPAddress(host);
+    const copyLabel = this.escapeAttr(t(masked ? 'server.clickToCopyIP' : 'server.clickToCopyHost'));
+    return `<div class="server-card-meta-row flex items-center gap-2 min-w-0">
+      <span class="text-dim">${t('server.hostLabel')}</span>
+      <button type="button" class="host-ip-badge server-host-badge min-w-0 truncate" id="host-badge-${this.escapeAttr(String(id))}" title="${copyLabel}" aria-label="${copyLabel}">${this.escapeHtml(masked ?? host)}${port === null ? '' : `:${port}`}</button>
+    </div>`;
+  }
+
   private renderRdpCard(row: RdpCard): string {
     if (!isRdpId(row.id)) return '';
-    const host = row.route === 'direct' ? maskIPAddress(row.host) ?? row.host : row.host;
     const connected = row.last_connected_at ? formatTimestampWithRelative(row.last_connected_at, Date.now(), getLocale()) : t('rdp.noConnectionRecord');
     return `<div class="server-card p-5 relative group" id="rdp-card-${row.id}">
       <div class="flex items-center gap-2 mb-3 min-w-0">
@@ -657,7 +667,7 @@ export class ServerList {
         <span class="shrink-0 text-[10px] text-muted border border-dim px-2 py-0.5">RDP</span>
       </div>
       <div class="space-y-1.5 text-xs text-muted mb-4">
-        <div class="font-mono truncate">${this.escapeHtml(host)}${row.route === 'direct' ? ':3389' : ''}</div>
+        ${this.renderHostRow(row.id, row.host, row.route === 'direct' ? 3389 : null)}
         <div class="server-card-meta-row flex items-center gap-2 min-w-0"><span class="text-dim">${t('server.userLabel')}</span><span class="text-on-surface truncate" title="${this.escapeAttr(row.username ?? '—')}">${this.escapeHtml(row.username ?? '—')}</span></div>
         <div>${t(row.route === 'tunnel' ? 'rdp.tunnel' : 'rdp.direct')}</div>
         <div class="server-card-meta-row flex items-center gap-2 min-w-0"><span class="text-dim">${t('server.lastConnected')}</span><span class="text-on-surface truncate" title="${this.escapeAttr(connected)}">${this.escapeHtml(connected)}</span></div>
@@ -744,10 +754,6 @@ export class ServerList {
       ? formatTimestampWithRelative(server.last_connected_at, Date.now(), getLocale())
       : t('server.neverConnected');
 
-    const maskedHost = isTunnel ? null : maskIPAddress(server.host);
-    const copyIPLabel = this.escapeAttr(t('server.clickToCopyIP'));
-    // 隧道连接只看域名（实际端口由内网 cloudflared 配置决定）：卡片不展示端口
-    const hostDisplay = `<button type="button" class="host-ip-badge server-host-badge min-w-0 truncate" id="host-badge-${server.id}" title="${copyIPLabel}" aria-label="${copyIPLabel}">${this.escapeHtml(maskedHost ?? server.host)}${isTunnel ? '' : `:${server.port}`}</button>`;
     const shareButton = this.sharingEnabled
       ? `<button id="share-${server.id}" class="cyber-button text-primary py-1.5 px-3 text-[10px] font-bold tracking-[0.1em] flex items-center justify-center" title="${t('share.create')}">
           <span class="material-symbols-outlined" style="font-size:14px">share</span>
@@ -773,10 +779,7 @@ export class ServerList {
         </div>
 
         <div class="space-y-1.5 text-xs text-muted mb-4">
-          <div class="server-card-meta-row flex items-center gap-2 min-w-0">
-            <span class="text-dim">${t('server.hostLabel')}</span>
-            ${hostDisplay}
-          </div>
+          ${this.renderHostRow(server.id, server.host, isTunnel ? null : server.port)}
           <div class="server-card-meta-row flex items-center gap-2 min-w-0">
             <span class="text-dim">${t('server.userLabel')}</span>
             <span class="text-on-surface min-w-0 truncate">${this.escapeHtml(server.username)}</span>
