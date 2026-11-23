@@ -27,6 +27,7 @@ Edge 显示「已阻止该站点」和「恐吓软件」时，不是 Windows 的
 
 - `bash scripts/build-freerdp.sh` 是维护者用的显式重建入口，固定 FreeRDP commit、emsdk 镜像、工具及依赖；普通构建、部署和 CI 不启动 Docker 或下载 FreeRDP。审核上游安全更新和构建/许可证，用 `tests/build/rdp-assets.test.ts` 校验模块、摘要、大小和胶水边界。不要手改压缩文件；更新依赖时重新审核 JS/C++ 钩子。普通发布开关不在代码中强制开启。
 - 本地门禁：`pnpm run typecheck`、`pnpm test`、`pnpm run build:frontend`、`pnpm run test:e2e`，确认 test/main 打包均用正式 Worker 入口并保留原 DO 绑定。自动化浏览器用例采用模拟数据，不用真实凭据。
+- 无改动的设备编辑不会保存或作废租约；实际修改仍会断开该设备的活动桌面。已知断开原因（如空闲超时、会话时长上限）在原状态栏说明，未知错误不展示上游原文。服务器列表按 SSH/Windows 分别保留同账户上次成功结果并支持手动重试；明确失去访问权限时清空列表。
 - 真机门禁：在 `test` 启用正式设备配置，用同一 Windows 的公网与 Tunnel 路线分别完成登录、查看和操作。在保持 NLA 的前提下测试证书错误与更新、正确及错误密码、断线重试，另验证启用 Access Service Auth 的 Tunnel。对 1080p 办公操作记录输入到画面的延迟、持续半小时与弱网恢复是否越积越慢。测试结果应分开记录：连通、NLA、首帧、键鼠、延迟；模拟字节成功不等于真机通过。
 - 暂停或回滚：移除 `ENABLE_RDP` 可停止新桌面，不删除设备、Worker 或账户数据；正式会话在关闭连接或租约失效后释放。部署后可删除旧 `CLOUDSSH_RDP_TEST_CONFIG` 仓库变量，现有工作流不再读取。此前测试用的公开隧道路由与 token 可在不再使用时撤销。
 

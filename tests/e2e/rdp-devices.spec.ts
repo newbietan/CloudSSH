@@ -57,6 +57,11 @@ test('Windows uses the shared add-server dialog and the main server grid', async
   });
   await page.route(`**/api/rdp/profiles/${id}/login-identity`, r => r.request().method() === 'POST' ? r.fulfill({ json: { revision: 1, username: 'custom-user', domain: 'WORK' } }) : r.fallback());
   await page.route(`**/api/rdp/profiles/${id}`, route => {
+    if (route.request().method() === 'PUT') {
+      expect(route.request().postDataJSON()).toMatchObject({ name: 'Renamed device', revision: 1 });
+      expect(route.request().postDataJSON()).not.toHaveProperty('login');
+      return route.fulfill({ status: 409, json: { code: 'profile_changed', detail: 'never render this detail' } });
+    }
     if (route.request().method() !== 'DELETE') return route.fallback();
     profiles = [];
     return route.fulfill({ json: { success: true } });
@@ -114,6 +119,24 @@ test('Windows uses the shared add-server dialog and the main server grid', async
   await expect(modal.locator('#server-rdp-domain')).toHaveValue('WORK');
   await expect(modal.locator('#server-rdp-password')).toHaveValue('');
   await expect(modal.locator('#server-rdp-password')).not.toHaveAttribute('required');
+  const submit = modal.locator('#server-submit-btn');
+  await expect(submit).toBeDisabled();
+  await modal.getByLabel('Device name').fill('Windows workstation ');
+  await modal.locator('#server-rdp-tags').fill('Office， Windows, Office');
+  await expect(submit).toBeDisabled();
+  await page.locator('#server-form').evaluate(form => (form as HTMLFormElement).requestSubmit());
+  await expect(modal).toBeVisible();
+  await modal.getByLabel('Device name').fill('Renamed device');
+  await expect(submit).toBeEnabled();
+  await expect(modal.getByText(/disconnect active CloudSSH desktops/)).toBeVisible();
+  await submit.click();
+  await expect(page.getByText(/Device settings changed/)).toBeVisible();
+  await expect(page.getByText('never render this detail')).toHaveCount(0);
+  await modal.getByLabel('Device name').fill('Windows workstation');
+  await modal.locator('#server-rdp-password').fill('replacement');
+  await expect(submit).toBeEnabled();
+  await modal.locator('#server-rdp-password').fill('');
+  await expect(submit).toBeDisabled();
   await modal.locator('#server-rdp-user').fill('different-user');
   await expect(modal.locator('#server-rdp-password')).toHaveAttribute('required');
   await expect(windows).toBeHidden();
@@ -350,8 +373,8 @@ test('isolated desktop entry hides the home loader before JS; Back also works be
   expect(await page.evaluate(() => sessionStorage.getItem('cloudssh_rdp_open_once'))).toBeNull();
 });
 
-for (const scenario of ['accept', 'cancel', 'saved match', 'saved mismatch', 'save failed'] as const) {
-  test(`Windows certificate: ${scenario}`, async ({ page }) => {
+for (const scenario of ['accept', 'cancel', 'saved match', 'saved mismatch', 'save failed', 'ticket limit', 'unknown error', 'idle timeout'] as const) {
+  test(`Windows connection: ${scenario}`, async ({ page }) => {
     const fingerprint = 'ab'.repeat(32);
     const other = 'cd'.repeat(32);
     const saved = scenario === 'saved match' ? fingerprint : scenario === 'saved mismatch' ? other : null;
@@ -374,15 +397,20 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'saved mismatch', 'sa
       const m = window.Module;
       window.certificateResult = 'not checked';
       m.callMain = () => {
-        m.createRdpSocket(m.websocket.url);
+        const socket = m.createRdpSocket(m.websocket.url);
+        if ('${scenario}' === 'idle timeout') { socket.onRelayClose('idle_timeout'); return; }
         window.certificateResult = m.onWindowsCertificate('${fingerprint}');
       };
       m.onRuntimeInitialized();
     ` }));
     await page.route(`**${path}`, route => route.request().method() === 'GET'
       ? route.fulfill({ json: { id, name: 'Windows workstation', revision: 1, hasLogin: true, fingerprint: saved } }) : route.fallback());
-    await page.route(`**${path}/connect`, route => route.request().method() === 'POST'
-      ? route.fulfill({ json: { ticket: '1'.repeat(64), revision: 1, login: { username: 'test-user', domain: '', password: 'synthetic' } } }) : route.fallback());
+    await page.route(`**${path}/connect`, route => {
+      if (route.request().method() !== 'POST') return route.fallback();
+      if (scenario === 'ticket limit' || scenario === 'unknown error') return route.fulfill({ status: 429,
+        json: { code: scenario === 'ticket limit' ? 'ticket_limit' : 'unrecognized', detail: 'private upstream detail' } });
+      return route.fulfill({ json: { ticket: '1'.repeat(64), revision: 1, login: { username: 'test-user', domain: '', password: 'synthetic' } } });
+    });
     await page.route(`**${path}/trust`, route => {
       if (route.request().method() !== 'PUT') return route.fallback();
       attempts++;
@@ -401,6 +429,14 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'saved mismatch', 'sa
     const result = () => runner.locator('html').evaluate(() => Reflect.get(window, 'certificateResult'));
     const decision = () => runner.locator('html').evaluate(() => Reflect.get(window, 'Module').onWindowsCertificate(null));
     const dialog = runner.locator('#certificate');
+    if (scenario === 'ticket limit' || scenario === 'unknown error' || scenario === 'idle timeout') {
+      const status = runner.locator('#status');
+      await expect(status).toContainText(scenario === 'ticket limit' ? 'Too many connection attempts' :
+        scenario === 'idle timeout' ? 'Disconnected after inactivity' : 'Could not start the desktop');
+      await expect(status).not.toContainText('private upstream detail');
+      expect(attempts).toBe(0);
+      return;
+    }
     if (scenario === 'saved match') {
       await expect.poll(result).toBe(1);
       await expect(dialog).toBeHidden();

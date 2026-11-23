@@ -26,7 +26,9 @@ export class RdpManager {
   private readonly password: HTMLInputElement;
   private editing?: RdpProfile;
 
-  constructor(parent: HTMLFieldSetElement) {
+  private readonly editNotice = localizedElement('p', 'rdp.editEndsSession');
+
+  constructor(parent: HTMLFieldSetElement, private readonly onChange: () => void) {
     const identity = document.createElement('div');
     identity.className = 'server-identity-fields';
     const [name, nameLabel] = this.field('rdp-name', 64, 'rdp.name');
@@ -82,7 +84,9 @@ export class RdpManager {
     credentials.append(idLabel, secretLabel);
     this.access.append(legend, credentials, this.clearLabel);
     this.transport.onchange = this.clear.onchange = () => this.updateTransport();
-    parent.replaceChildren(identity, columns, this.access);
+    this.editNotice.className = 'text-xs text-muted mt-2';
+    parent.replaceChildren(identity, columns, this.access, this.editNotice);
+    for (const event of ['input', 'change']) parent.addEventListener(event, () => this.syncEdit(), { signal: this.requests.signal });
     this.reset();
   }
 
@@ -124,11 +128,13 @@ export class RdpManager {
     this.clear.checked = false;
     this.clearLabel.hidden = !row?.hasAccessToken;
     this.updateTransport();
+    this.syncEdit();
   }
 
   private async loadIdentity(row: RdpProfile, generation: number): Promise<void> {
     try {
-      const res = await this.request(`/${row.id}/login-identity`, 'POST', { revision: row.revision });
+      const res = await this.request(`/${row.id}/login-identity`, 'POST', { revision: row.revision },
+        AbortSignal.any([this.requests.signal, AbortSignal.timeout(10000)]));
       if (!res.ok) throw new Error();
       const data = await res.json() as { username: string; domain: string; revision: number };
       if (data.revision !== row.revision || typeof data.username !== 'string' || typeof data.domain !== 'string') throw new Error();
@@ -143,8 +149,25 @@ export class RdpManager {
       if (this.generation === generation) {
         this.loginFields.disabled = this.loadingIdentity = false;
         this.updatePasswordRequirement();
+        this.syncEdit();
       }
     }
+  }
+
+  get canSubmit(): boolean {
+    if (this.loadingIdentity) return false;
+    const row = this.editing;
+    if (!row) return true;
+    return this.name.value.trim() !== row.name || this.host.value.trim().toLowerCase() !== row.host ||
+      this.transport.value !== row.route || JSON.stringify(normalizeServerTags(this.tags.value)) !== JSON.stringify(row.tags ?? []) ||
+      this.username.value.trim() !== (this.identity?.username ?? 'Administrator') ||
+      this.domain.value.trim() !== (this.identity?.domain ?? '') || this.password.value !== '' ||
+      (this.transport.value === 'tunnel' && (this.clear.checked || !!this.id.value || !!this.secret.value));
+  }
+
+  private syncEdit(): void {
+    this.editNotice.hidden = !this.editing || !this.canSubmit;
+    this.onChange();
   }
 
   private canKeepPassword(): boolean {
@@ -168,16 +191,16 @@ export class RdpManager {
     this.id.disabled = this.secret.disabled = this.clear.checked;
   }
 
-  private request(path: string, method = 'GET', body?: unknown): Promise<Response> {
+  private request(path: string, method = 'GET', body?: unknown, signal = this.requests.signal): Promise<Response> {
     return fetch(API + path, {
-      method, cache: 'no-store', signal: this.requests.signal,
+      method, cache: 'no-store', signal,
       ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json', 'X-CloudSSH-RDP-Client': String(RDP_CLIENT_REVISION) }, body: JSON.stringify(body) }),
     });
   }
 
-  async list(): Promise<RdpCard[]> {
-    const response = await this.request('');
-    if (!response.ok) throw new Error(t('rdp.failed'));
+  async list(signal: AbortSignal): Promise<RdpCard[]> {
+    const response = await this.request('', 'GET', undefined, signal);
+    if (!response.ok) throw response;
     const data = await response.json() as { profiles: RdpCard[] };
     return data.profiles.filter(row => isRdpId(row.id));
   }
@@ -197,16 +220,19 @@ export class RdpManager {
     }
     const data = parseRdpProfile(input);
     if (!data) throw new Error(t('rdp.invalid'));
-    try {
-      const pending = this.request(editing ? `/${editing.id}` : '', editing ? 'PUT' : 'POST', editing ? { ...data, revision: editing.revision } : data);
-      this.secret.value = this.password.value = '';
-      const response = await pending;
-      if (!response.ok) throw new Error();
-      const saved = await response.json() as RdpProfile;
-      if (!isRdpId(saved?.id)) throw new Error();
-    } catch {
+    const pending = this.request(editing ? `/${editing.id}` : '', editing ? 'PUT' : 'POST', editing ? { ...data, revision: editing.revision } : data);
+    this.secret.value = this.password.value = '';
+    this.syncEdit();
+    const response = await pending.catch(() => null);
+    if (response?.status === 401) throw new Error(t('rdp.signInAgain'));
+    const result = await response?.json().catch(() => null);
+    if (!response?.ok) {
+      if (result?.code === 'profile_changed') throw new Error(t('rdp.profileChanged'));
+      if (result?.code === 'profile_limit') throw new Error(t('rdp.profileLimit'));
+      if (result?.code === 'invalid_profile' || result?.code === 'login_required') throw new Error(t('rdp.invalid'));
       throw new Error(t('rdp.failed'));
     }
+    if (!isRdpId(result?.id)) throw new Error(t('rdp.failed'));
   }
 
   async remove(id: string): Promise<void> {

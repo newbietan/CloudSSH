@@ -179,7 +179,11 @@ export class ServerList {
   private disposed = false;
   private modalKind: 'ssh' | 'rdp' = 'ssh';
   private rdpSaving = false;
-  private rdpListGeneration = 0;
+  private listState = {
+    ssh: { generation: 0, loaded: false, failed: false, pending: false },
+    rdp: { generation: 0, loaded: false, failed: false, pending: false },
+  };
+  private listAccessDenied = false;
   private onLogout: () => void;
   private onConnect: (wsUrl: string, serverName: string, hostInfo?: SSHHostInfo) => void;
   private editingServerId: number | null = null;
@@ -214,7 +218,7 @@ export class ServerList {
     this.sharingEnabled = config.sshSharingEnabled === true;
     this.cfSshCaEnabled = config.authMode === 'cf_access';
     const fields = document.querySelector<HTMLFieldSetElement>('#server-rdp-fields');
-    if (config.rdpEnabled === true && fields) this.rdp = new RdpManager(fields);
+    if (config.rdpEnabled === true && fields) this.rdp = new RdpManager(fields, () => this.syncRdpSubmit());
     try {
       const savedSort = localStorage.getItem(SERVER_SORT_STORAGE_KEY) as ServerSortMode | null;
       if (savedSort && ['recent', 'updated', 'created', 'name'].includes(savedSort)) {
@@ -223,13 +227,18 @@ export class ServerList {
     } catch {
       /* ignore */
     }
-    onLocaleChange(() => this.renderServerGrid());
+    const unbindLocale = onLocaleChange(() => this.renderServerGrid());
+    this.modalEvents.signal.addEventListener('abort', unbindLocale, { once: true });
     this.init();
   }
 
   disposeRdp(): void {
     this.disposed = true;
     this.modalEvents.abort();
+    this.servers = [];
+    this.rdpProfiles = [];
+    document.getElementById('server-grid')?.replaceChildren();
+    document.getElementById('server-list-notice')?.classList.add('hidden');
     this.rdp?.dispose();
     this.hideModal();
   }
@@ -240,7 +249,6 @@ export class ServerList {
     this.applyCfSshCaAvailability();
     this.renderSkeletonGrid();
     await this.fetchServers();
-    this.renderServerGrid();
 
     // 设置用户空间的版权年份
     const yearSpan = document.getElementById('user-copyright-year');
@@ -258,12 +266,7 @@ export class ServerList {
   /** 用户切回主页或重新展示时调用：先使用内存状态即时重排，再静默拉取后台最新数据同步 */
   async refresh(): Promise<void> {
     this.renderServerGrid();
-    try {
-      await this.fetchServers();
-      this.renderServerGrid();
-    } catch {
-      /* ignore network errors to keep memory state intact */
-    }
+    await this.fetchServers();
   }
 
   /** 连接后由 os_detected 消息回调：更新某台服务器的操作系统并即时重渲染图标 */
@@ -371,6 +374,13 @@ export class ServerList {
       this.renderServerGrid();
     });
 
+    document.getElementById('server-list-retry')?.addEventListener('click', () => {
+      if (this.listAccessDenied) { location.reload(); return; }
+      for (const kind of ['ssh', 'rdp'] as const) {
+        if (this.listState[kind].failed && !this.listState[kind].pending) void this.fetchList(kind);
+      }
+    }, { signal: this.modalEvents.signal });
+
     // Modal 关闭
     document.getElementById('modal-close-btn')?.addEventListener('click', () => this.hideModal());
     document.getElementById('modal-backdrop')?.addEventListener('click', () => this.hideModal());
@@ -442,39 +452,62 @@ export class ServerList {
   // ==================== 数据获取 ====================
 
   private async fetchServers(): Promise<void> {
-    const rdp = this.fetchRdpProfiles();
+    await Promise.all([this.fetchList('ssh'), this.fetchRdpProfiles()]);
+  }
+
+  fetchRdpProfiles(): Promise<void> { return this.fetchList('rdp'); }
+
+  private async fetchList(kind: 'ssh' | 'rdp'): Promise<void> {
+    if (this.disposed || this.listAccessDenied || (kind === 'rdp' && !this.rdp)) return;
+    const state = this.listState[kind];
+    const generation = ++state.generation;
+    const current = () => !this.disposed && !this.listAccessDenied && generation === state.generation;
+    state.pending = true;
+    if (state.failed) this.renderListNotice();
     try {
-      const res = await fetch('/api/servers', { cache: 'no-store' });
-      if (!res.ok) throw new Error('Failed to fetch servers');
-      const servers = (await res.json()) as ServerConfig[];
-      if (this.disposed) return;
-      this.servers = servers.map((server) => ({
-        ...server,
-        tags: Array.isArray(server.tags) ? server.tags : [],
-      }));
-      this.renderServerGrid();
-    } catch (e) {
-      console.error('Failed to fetch servers:', e);
-      this.servers = [];
-      if (!this.disposed) this.renderServerGrid();
+      const signal = AbortSignal.any([this.modalEvents.signal, AbortSignal.timeout(10000)]);
+      if (kind === 'ssh') {
+        const res = await fetch('/api/servers', { cache: 'no-store', signal });
+        if (!res.ok) throw res;
+        const rows = await res.json() as ServerConfig[];
+        if (!current()) return;
+        this.servers = rows.map(server => ({ ...server, tags: Array.isArray(server.tags) ? server.tags : [] }));
+      } else {
+        const rows = await this.rdp!.list(signal);
+        if (!current()) return;
+        this.rdpProfiles = rows;
+      }
+      state.loaded = true;
+      state.failed = false;
+    } catch (error) {
+      if (!current()) return;
+      state.failed = true;
+      // Never keep the previous account's cards on an explicit authentication/permission failure.
+      if (error instanceof Response && (error.status === 401 || error.status === 403)) {
+        this.listAccessDenied = true;
+        this.hideModal();
+        this.servers = [];
+        this.rdpProfiles = [];
+      }
     } finally {
-      await rdp;
+      if (!this.disposed && generation === state.generation) {
+        state.pending = false;
+        this.renderServerGrid();
+      }
     }
   }
 
-  async fetchRdpProfiles(): Promise<void> {
-    if (!this.rdp || this.disposed) return;
-    const generation = ++this.rdpListGeneration;
-    try {
-      const profiles = await this.rdp.list();
-      if (this.disposed || generation !== this.rdpListGeneration) return;
-      this.rdpProfiles = profiles;
-      this.renderServerGrid();
-    } catch {
-      if (!this.disposed && generation === this.rdpListGeneration) {
-        notify(t('rdp.failed'), { variant: 'danger' });
-      }
-    }
+  private renderListNotice(): void {
+    const failed = (['ssh', 'rdp'] as const).filter(kind => this.listState[kind].failed);
+    const status = document.getElementById('server-list-status');
+    if (!status) return;
+    const message = this.listAccessDenied ? t('server.listSessionChanged') : failed.map(kind =>
+      t(this.listState[kind].loaded ? 'server.listStale' : 'server.listUnavailable', { kind: kind === 'ssh' ? 'SSH' : 'Windows' })
+    ).join(' ');
+    if (status.textContent !== message) status.textContent = message;
+    status.parentElement?.classList.toggle('hidden', !this.listAccessDenied && !failed.length);
+    const retry = document.querySelector<HTMLButtonElement>('#server-list-retry');
+    if (retry) retry.disabled = !this.listAccessDenied && failed.every(kind => this.listState[kind].pending);
   }
 
   private applyCfSshCaAvailability(): void {
@@ -496,6 +529,7 @@ export class ServerList {
     const tagFilter = document.getElementById('server-tag-filter') as HTMLSelectElement | null;
     const pagination = document.getElementById('server-pagination');
     if (!grid || !emptyState || !searchWrapper || !searchEmptyState) return;
+    this.renderListNotice();
     grid.removeAttribute('aria-busy');
 
     if (this.servers.length === 0 && this.rdpProfiles.length === 0) {
@@ -505,8 +539,10 @@ export class ServerList {
       pagination?.classList.remove('flex');
       searchEmptyState.classList.add('hidden');
       searchEmptyState.classList.remove('flex');
-      emptyState.classList.remove('hidden');
-      emptyState.classList.add('flex');
+      const listed = (s: typeof this.listState.ssh) => s.loaded && !s.failed;
+      const confirmedEmpty = !this.listAccessDenied && listed(this.listState.ssh) && (!this.rdp || listed(this.listState.rdp));
+      emptyState.classList.toggle('hidden', !confirmedEmpty);
+      emptyState.classList.toggle('flex', confirmedEmpty);
       return;
     }
 
@@ -941,6 +977,9 @@ export class ServerList {
     })) || this.disposed) return;
     try {
       await this.rdp.remove(row.id);
+      if (this.disposed) return;
+      this.rdpProfiles = this.rdpProfiles.filter(profile => profile.id !== row.id);
+      this.renderServerGrid();
       await this.fetchRdpProfiles();
     } catch {
       if (!this.disposed) notify(t('rdp.failed'), { variant: 'danger' });
@@ -974,14 +1013,21 @@ export class ServerList {
     document.getElementById('server-kind-windows')?.setAttribute('aria-pressed', String(kind === 'rdp'));
     const fields = document.querySelector<HTMLElement>('#server-modal .server-modal-fields');
     if (fields) fields.scrollTop = 0;
+    this.syncRdpSubmit();
     if (!focus) return;
     if (kind === 'rdp') this.rdp?.focus();
     else document.getElementById('server-name')?.focus({ preventScroll: true });
   }
 
+  private syncRdpSubmit(): void {
+    if (this.disposed || this.modalKind !== 'rdp' || !this.rdp) return;
+    const submit = document.querySelector<HTMLButtonElement>('#server-submit-btn');
+    if (submit) submit.disabled = this.rdpSaving || !this.rdp.canSubmit;
+  }
+
   private async saveRdp(): Promise<void> {
     const submit = document.querySelector<HTMLButtonElement>('#server-submit-btn');
-    if (!this.rdp || !submit || this.rdpSaving) return;
+    if (!this.rdp?.canSubmit || !submit || this.rdpSaving) return;
     const generation = this.modalGeneration;
     this.rdpSaving = submit.disabled = true;
     try {
@@ -993,7 +1039,10 @@ export class ServerList {
         notify(error instanceof Error ? error.message : t('rdp.failed'), { variant: 'danger' });
       }
     } finally {
-      if (generation === this.modalGeneration) this.rdpSaving = submit.disabled = false;
+      if (generation === this.modalGeneration) {
+        this.rdpSaving = false;
+        this.syncRdpSubmit();
+      }
     }
   }
 

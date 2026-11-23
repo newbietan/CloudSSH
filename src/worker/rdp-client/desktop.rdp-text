@@ -1,7 +1,19 @@
 const dictionary = {
-  'en-US': ['Back to CloudSSH', 'Remote Desktop', 'Username', 'Domain (optional)', 'Windows password', 'Connect', 'Disconnect', 'Full screen', 'Loading the saved desktop…', 'Open this desktop from the server list after completing its settings.', 'Invalid Windows credentials.', 'Downloading the desktop client…', 'Starting the desktop client…', 'Connecting to Windows…', 'Checking the Windows certificate and signing in…', 'Desktop ready. Click the desktop to control it.', 'Connection ended. Return to the server list to reconnect.', 'Could not start the desktop. Return to the server list to retry.', 'Desktop startup timed out.', 'No desktop appeared. Verify the certificate and Windows credentials, then retry.', 'This browser does not support the required shared memory.', 'Device or session changed. Refresh the page.', 'The connection is too slow or ended.', 'Full screen is unavailable.'],
-  'zh-CN': ['返回 CloudSSH', '远程桌面', '用户名', '域（可选）', 'Windows 密码', '连接', '断开', '全屏', '正在读取已保存的桌面…', '请先补全设备配置，再从服务器列表打开桌面。', 'Windows 登录凭据无效。', '正在下载桌面客户端…', '正在启动桌面客户端…', '正在连接 Windows…', '正在验证 Windows 证书并登录…', 'Windows 桌面已显示，点击画布可操作。', '连接已断开，可返回服务器列表重新连接。', '桌面启动失败，请返回服务器列表重试。', '桌面客户端启动超时。', '未收到桌面画面，请核对证书和 Windows 凭据后重试。', '当前浏览器不支持所需的共享内存。', '设备或登录已变化，请刷新页面。', '连接过慢或已断开。', '当前无法进入全屏。'],
-  'zh-TW': ['返回 CloudSSH', '遠端桌面', '使用者名稱', '網域（選填）', 'Windows 密碼', '連線', '中斷', '全螢幕', '正在讀取已儲存的桌面…', '請先補全裝置設定，再從伺服器清單開啟桌面。', 'Windows 登入憑證無效。', '正在下載桌面客戶端…', '正在啟動桌面客戶端…', '正在連線至 Windows…', '正在驗證 Windows 憑證並登入…', 'Windows 桌面已顯示，點擊畫布即可操作。', '連線已中斷，可返回伺服器清單重新連線。', '桌面啟動失敗，請返回伺服器清單重試。', '桌面客戶端啟動逾時。', '未收到桌面畫面，請核對憑證和 Windows 登入資訊後重試。', '目前瀏覽器不支援所需的共享記憶體。', '裝置或登入已變更，請重新整理。', '連線過慢或已中斷。', '目前無法使用全螢幕。'],
+  'en-US': ['Back to CloudSSH', 'Remote Desktop', 'Username', 'Domain (optional)', 'Windows password', 'Connect', 'Disconnect', 'Full screen', 'Loading the saved desktop…', 'Open this desktop from the server list after completing its settings.', 'Saved Windows sign-in details are incomplete. Edit the device and try again.', 'Downloading the desktop client…', 'Starting the desktop client…', 'Connecting to Windows…', 'Checking the Windows certificate and signing in…', 'Desktop ready. Click the desktop to control it.', 'Connection ended. Return to the server list to reconnect.', 'Could not start the desktop. Return to the server list to retry.', 'Desktop startup timed out.', 'No desktop appeared. Verify the certificate and Windows credentials, then retry.', 'This browser does not support the required shared memory.', 'Device or session changed. Refresh the page.', 'The connection is too slow or ended.', 'Full screen is unavailable.'],
+  'zh-CN': ['返回 CloudSSH', '远程桌面', '用户名', '域（可选）', 'Windows 密码', '连接', '断开', '全屏', '正在读取已保存的桌面…', '请先补全设备配置，再从服务器列表打开桌面。', '保存的 Windows 登录信息不完整，请编辑设备后重试。', '正在下载桌面客户端…', '正在启动桌面客户端…', '正在连接 Windows…', '正在验证 Windows 证书并登录…', 'Windows 桌面已显示，点击画布可操作。', '连接已断开，可返回服务器列表重新连接。', '桌面启动失败，请返回服务器列表重试。', '桌面客户端启动超时。', '未收到桌面画面，请核对证书和 Windows 凭据后重试。', '当前浏览器不支持所需的共享内存。', '设备或登录已变化，请刷新页面。', '连接过慢或已断开。', '当前无法进入全屏。'],
+  'zh-TW': ['返回 CloudSSH', '遠端桌面', '使用者名稱', '網域（選填）', 'Windows 密碼', '連線', '中斷', '全螢幕', '正在讀取已儲存的桌面…', '請先補全裝置設定，再從伺服器清單開啟桌面。', '儲存的 Windows 登入資訊不完整，請編輯裝置後重試。', '正在下載桌面客戶端…', '正在啟動桌面客戶端…', '正在連線至 Windows…', '正在驗證 Windows 憑證並登入…', 'Windows 桌面已顯示，點擊畫布即可操作。', '連線已中斷，可返回伺服器清單重新連線。', '桌面啟動失敗，請返回伺服器清單重試。', '桌面客戶端啟動逾時。', '未收到桌面畫面，請核對憑證和 Windows 登入資訊後重試。', '目前瀏覽器不支援所需的共享記憶體。', '裝置或登入已變更，請重新整理。', '連線過慢或已中斷。', '目前無法使用全螢幕。'],
+};
+// Only these local messages may reach the status line, never an upstream error or close reason.
+const failureText = {
+  profile_changed: ['Device settings changed. Return to the list and reopen the device.', '设备配置已更新，请返回列表重新打开。', '裝置設定已更新，請返回清單重新開啟。'],
+  refresh_client: ['The desktop client has changed. Refresh CloudSSH.', '桌面客户端已更新，请刷新 CloudSSH。', '桌面用戶端已更新，請重新整理 CloudSSH。'],
+  authentication_required: ['Your sign-in has expired. Return and sign in again.', '登录已失效，请返回并重新登录。', '登入已失效，請返回並重新登入。'],
+  ticket_rejected: ['Connection ticket is no longer valid. Reopen the device for a new one.', '连接票据已失效，请从列表重新打开设备。', '連線票據已失效，請從清單重新開啟裝置。'],
+  ticket_limit: ['Too many connection attempts. Wait a moment, then reopen the device.', '连接请求过多，请稍候再从列表打开设备。', '連線請求過多，請稍候再從清單開啟裝置。'],
+  idle_timeout: ['Disconnected after inactivity. Reopen the device to continue.', '因长时间无操作已断开，可从列表重新连接。', '因長時間無操作已斷線，可從清單重新連線。'],
+  session_limit: ['The two-hour session limit was reached. Reopen the device to continue.', '已达到两小时会话上限，可从列表重新连接。', '已達兩小時工作階段上限，可從清單重新連線。'],
+  upstream_unavailable: ['Could not reach Windows. Check the server address or tunnel and try again.', '无法连接 Windows，请检查服务器地址或隧道后重试。', '無法連線至 Windows，請檢查伺服器位址或隧道後重試。'],
+  slow_connection: ['Data transfer stalled. Check your network and reconnect.', '数据传输停滞，请检查网络后重新连接。', '資料傳輸停滯，請檢查網路後重新連線。'],
 };
 const trustText = {
   'en-US': ['First connection to Windows', 'Verify this certificate fingerprint through a trusted source before accepting. An unexpected fingerprint may mean you reached a different server.', 'Cancel', 'Trust and connect', 'Windows certificate changed', 'Connection blocked. The received fingerprint differs from the one you saved.', 'Previously saved fingerprint', 'Could not record certificate trust. Reconnect and try again.', 'Waiting for certificate confirmation.', 'Certificate was not accepted.'],
@@ -13,6 +25,13 @@ try { requested = localStorage.getItem('cloudssh_locale') || requested; } catch 
 const locale = Object.hasOwn(dictionary, requested) ? requested : /^zh-(TW|HK|Hant)/i.test(requested) ? 'zh-TW' : /^zh/i.test(requested) ? 'zh-CN' : 'en-US';
 document.documentElement.lang = locale;
 const msg = dictionary[locale];
+const failure = code => typeof code === 'string' && Object.hasOwn(failureText, code)
+  ? failureText[code][locale === 'en-US' ? 0 : locale === 'zh-CN' ? 1 : 2] : undefined;
+async function requestFailure(response) {
+  if (response.status === 401) return failure('authentication_required');
+  const data = await response.json().catch(() => null);
+  return failure(data?.code) ?? msg[17];
+}
 const [relayLabel, rttHelp] = {
   'en-US': ['Relay', 'Relay: browser to CloudSSH. RDP: average round trip reported by Windows. A dash means no recent sample. Neither measures screen rendering.'],
   'zh-CN': ['中继', '中继：浏览器到 CloudSSH 的往返时间。RDP：Windows 上报的平均往返时间。横线表示暂无近期数据，两者都不代表画面响应耗时。'],
@@ -198,6 +217,10 @@ async function run() {
       createRdpSocket(address) {
         if (stopped || address !== url.href || !ticket || socket) throw new Error('socket unavailable');
         socket = window.createCloudSshRdpSocket(address, ticket);
+        socket.onRelayClose = reason => {
+          const detail = failure(reason === 'connect_timeout' ? 'upstream_unavailable' : reason);
+          if (detail) finish(detail);
+        };
         socket.onDesktopRecorded = () => {
           if (!stopped) window.frameElement?.dispatchEvent(new Event('cloudssh-rdp-recorded'));
         };
@@ -260,7 +283,7 @@ async function run() {
           const issued = await request(api + '/connect', { method: 'POST', signal: abort.signal, headers: {
             'X-CloudSSH-RDP-Client': clientRevision, 'X-CloudSSH-RDP-Saved-Revision': String(profile.revision),
           } });
-          if (!issued.ok) return finish(21);
+          if (!issued.ok) return finish(await requestFailure(issued));
           const info = await issued.json();
           if (stopped) return;
           if (info.revision !== profile.revision || !/^[a-f0-9]{64}$/.test(info.ticket)) return finish(21);
@@ -305,7 +328,7 @@ void (async () => {
   delete window.frameElement.dataset.connectSaved;
   if (!crossOriginIsolated || typeof SharedArrayBuffer !== 'function') return show(20);
   const response = await request(api, { cache: 'no-store' });
-  if (!response.ok) return show(21);
+  if (!response.ok) { status.textContent = await requestFailure(response); return; }
   const saved = await response.json();
   if ((saved.fingerprint !== null && !/^[a-f0-9]{64}$/.test(saved.fingerprint)) || !Number.isInteger(saved.revision)) return show(21);
   profile = saved;

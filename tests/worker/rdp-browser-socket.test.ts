@@ -10,6 +10,8 @@ interface SocketAdapter {
   readyState: number;
   lease?: string;
   reportDesktopReady(): void;
+  onRelayClose?: (reason: string) => void;
+  onclose?: (event: { reason: string }) => void;
   onDesktopRecorded?: () => void;
   probe(): void;
   cancelProbe(): void;
@@ -23,6 +25,7 @@ function fixture(clock = performance) {
   const native = {
     protocol: 'cloudssh-rdp-v1',
     send: vi.fn(), close: vi.fn(),
+    onclose: (_event: { reason: string }) => {},
     onopen: () => {}, onmessage: (_event: { data: unknown }) => {},
   };
   const browser = { setTimeout, createCloudSshRdpSocket: (_url: string, _token: string) => ({}) as SocketAdapter };
@@ -35,6 +38,16 @@ function fixture(clock = performance) {
 }
 
 describe('FreeRDP browser socket', () => {
+  it('reports the close reason before the generic runtime close callback', () => {
+    const { native, socket } = fixture();
+    const observed: string[] = [];
+    socket.onRelayClose = reason => observed.push(reason);
+    socket.onclose = () => observed.push('closed');
+    native.onclose({ reason: 'idle_timeout' });
+    expect(observed).toEqual(['idle_timeout', 'closed']);
+    expect(socket.readyState).toBe(3);
+  });
+
   it('sends the ticket before open, keeps controls outside WASM, and acknowledges consumption only', async () => {
     vi.useFakeTimers();
     try {

@@ -120,6 +120,7 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket) {
     clearTimeout(ackTimer);
     queue.length = 0;
     sink.readyState = 3;
+    sink.onRelayClose?.(event.reason);
     sink.onclose?.(event);
   };
   return sink;

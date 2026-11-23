@@ -34,6 +34,55 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
+test('list retries distinguish missing and stale data; authorization failure clears both card types', async ({ page }) => {
+  let sshStatus = 503, windowsStatus = 503, sshGets = 0;
+  const windows = { id: '12345678-1234-1234-1234-123456789abc', revision: 1, name: 'Windows desk', host: '8.8.8.8',
+    route: 'direct', tags: [], hasLogin: true, hasAccessToken: false, fingerprint: null };
+  await page.route('**/api/config', r => r.request().method() === 'GET' ? r.fulfill({ json: {
+    authMode: 'github', githubAuthEnabled: true, githubAuthRequired: true, turnstileEnabled: false, rdpEnabled: true,
+  } }) : r.fallback());
+  await page.route('**/api/servers', r => {
+    if (r.request().method() !== 'GET') return r.fallback();
+    sshGets++;
+    return r.fulfill({ status: sshStatus, json: sshStatus === 200 ? [servers[0]] : {} });
+  });
+  await page.route('**/api/rdp/profiles', r => r.request().method() === 'GET'
+    ? r.fulfill({ status: windowsStatus, json: { profiles: [windows] } }) : r.fallback());
+  await page.route('**/api/servers/1', r => r.request().method() === 'PUT' ? r.fulfill({ json: servers[0] }) : r.fallback());
+  await page.goto('/?lang=en-US');
+  const note = page.locator('#server-list-notice'), retry = page.locator('#server-list-retry');
+  await expect(note).toContainText('Could not load the SSH list');
+  await expect(note).toContainText('Could not load the Windows list');
+  await expect(page.locator('#empty-state')).toBeHidden();
+  sshStatus = 200;
+  await retry.click();
+  await expect(page.locator('#card-1')).toBeVisible();
+  await expect(note).not.toContainText('SSH');
+  windowsStatus = 200;
+  const validSshGets = sshGets;
+  await retry.click();
+  await expect(note).toBeHidden();
+  expect(sshGets).toBe(validSshGets);
+  const desktop = page.locator('#rdp-card-' + windows.id);
+  await expect(desktop).toBeVisible();
+
+  // Saving an SSH edit refreshes the real combined server list.
+  sshStatus = windowsStatus = 503;
+  await page.locator('#edit-1').click();
+  await page.locator('#server-submit-btn').click();
+  await expect(note).toContainText('Could not refresh SSH. Showing the last list.');
+  await expect(note).toContainText('Could not refresh Windows. Showing the last list.');
+  await expect(page.locator('#card-1')).toBeVisible();
+  await expect(desktop).toBeVisible();
+  sshStatus = 401;
+  windowsStatus = 200;
+  await retry.click();
+  await expect(note).toContainText('Access could not be verified');
+  await expect(desktop).toHaveCount(0);
+  await expect(page.locator('#card-1')).toHaveCount(0);
+  await expect(page.locator('#empty-state')).toBeHidden();
+});
+
 test('none 与空密码可保存，编辑留空保留旧密码，显式勾选才能清空', async ({ page }) => {
   let rows = [servers[0]];
   const added: Array<Record<string, unknown>> = [];
