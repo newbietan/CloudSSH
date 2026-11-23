@@ -105,7 +105,7 @@
 - **多种认证方式**：支持标准 SSH 密码认证、RFC 4252 §5.2 `none` 无认证、RFC 4256 `keyboard-interactive` 多轮交互认证，以及 OpenSSH 格式的 Ed25519、ECDSA P-256/P-384/P-521 和 RSA 私钥认证。选择「无认证（none）」后仅提交用户名，不发送密码或私钥；服务器必须明确允许此方式，拒绝时不会回退其他认证。这不是空密码登录；用户名可能就是访问凭据，请勿泄露，并注意本机连接历史会保存用户名。密码模式允许留空并发送空密码；编辑已有密码时留空保留原值，勾选「设为空密码」才清空。交互认证支持直接回车提交空响应、零提示轮次、密码、OTP、多字段提示与公钥后的二次验证；服务器提示会在绑定当前连接的安全对话框中展示，已保存密码仅在用户明确选择后代填。RSA 默认使用 RSA-SHA2-256/512，只有显式兼容配置才允许旧 `ssh-rsa` SHA-1。
 - **SSH 跳板机/堡垒机**：登录用户可以为已保存服务器选择另一台已保存服务器作为跳板。CloudSSH 使用标准 RFC 4254 `direct-tcpip` 通道逐层建立 SSH，不依赖远端安装 `ssh`、`nc` 或 `socat`；支持最多 3 级跳转，最终目标的终端、SFTP 与 AI Agent 均复用完整加密链路。每一跳独立认证和验证路径隔离的主机指纹。
 - **Cloudflare 隧道（Zero Trust Tunnel）**：支持通过 Cloudflare Tunnel（cloudflared）直连无公网 IP、无开放端口的内网服务器（HomeLab、局域网主机等），无需设置或租用跳板机。底层采用官方标准 WebSocket Carrier 架构将 SSH 二进制帧直接穿透传输，支持可选的 Cloudflare Zero Trust Service Token（Client ID / Client Secret）鉴权保护。上层自研 SSH 协议栈、TOFU 指纹、SFTP 文件系统及 AI Agent 全量无缝复用。
-- **一次性 SSH 授权分享**：可选启用登录用户的服务器分享。链接只包含 256 位随机能力凭证，不携带主机、用户名、密码、私钥或跳板信息；凭证仅保存哈希、只能领取一次且具有独立的领取有效期与会话最长时间。分享会话允许终端和 SFTP，服务端强制禁用 AI Agent、OS 检测、主机指纹修改与自动重连；所有者可以实时撤销，并查看仅针对分享会话生成的生命周期、SFTP 操作与终端输出记录。
+- **一次性 SSH 授权分享**：登录用户可主动分享自己保存的服务器；未创建链接的服务器不会自动共享。链接只包含 256 位随机能力凭证，不携带主机、用户名、密码、私钥或跳板信息；凭证仅保存哈希、只能领取一次且具有独立的领取有效期与会话最长时间。分享会话允许终端和 SFTP，服务端强制禁用 AI Agent、OS 检测、主机指纹修改与自动重连；所有者可以实时撤销，并查看仅针对分享会话生成的生命周期、SFTP 操作与终端输出记录。
 - **防范中间人攻击 (TOFU)**：首次连接自动提取服务器 Host Key（SHA-256 指纹）并显示，支持 Ed25519/ECDSA/RSA 签名验证，并在本地及 API 持久化缓存已知主机指纹以防范二次连接的欺骗风险。
 - **全功能极客终端**：基于 `@xterm/xterm` 与 `@xterm/addon-webgl` 硬件加速渲染引擎，保证海量日志输出顺滑不卡顿。
 - **可靠的终端剪贴板交互**：鼠标完成终端选区后自动复制，右键可直接粘贴；触摸设备通过「选择」进入选区模式，可拖动起止手柄精确调整、在屏幕上下边缘自动滚动历史，并通过独立的复制/取消操作栏结束选择；仅选择模式隔离原生长按菜单。粘贴使用独立按钮，浏览器无法读取剪贴板时提供不持久化、绑定当前会话的手动粘贴框（最多 65,536 字符，多行可能执行命令）。粘贴统一经过 xterm.js 原生输入管线，仅在远端应用启用 bracketed paste 模式时发送对应控制序列，并自动规范化换行，兼容 Vim 等交互式编辑器和普通 Shell。
@@ -249,14 +249,12 @@ Fork 仓库可以按需使用内置的 `Sync upstream` GitHub Actions 工作流�
 | `REQUIRE_GITHUB_AUTH`     | 可选               | `false`                  | 是否强制登录后才可使用 SSH 终端（GitHub 或单管理员密码会话均满足）。设为 `true` 时彻底禁用匿名直连入口。                                                                                                                                                                                           | **公网部署防被蹭推荐开启**。若不希望未授权访客将你的 Worker 用作公开 SSH 代理节点，建议配置为 `true` 并配合白名单使用。wrangler.toml `[vars]` 随部署默认下发，自定义请改配置文件。                                                                                                                |
 | `TURNSTILE_SITEKEY`       | 可选               | 无                       | Cloudflare Turnstile 人机验证的前端公开 Site Key。                                                                                                                                                                                                                                                 | 公开密钥。与 `TURNSTILE_SECRET` 配合使用，在未配置或配置任一为空时人机验证功能自动禁用。                                                                                                                                                                                                          |
 | `TURNSTILE_SECRET`        | 可选               | 无                       | Cloudflare Turnstile 人机验证的服务端 Secret Key，用于校验前端回传的人机验证 Token。                                                                                                                                                                                                               | **敏感密钥，建议保存为 Secret 类型**。开启后可有效拦截自动化扫描脚本、批量机器人和恶意滥用。默认不部署（自行选择加入）；经 Git/CLI 部署的实例建议用 Dashboard Secret 类型配置——Secret 不受 wrangler 部署覆盖。                                                                                    |
-| `ENABLE_SSH_SHARING`      | 可选               | `true`（随部署默认启用） | 是否开启一次性受控 SSH 分享功能。开启后登录用户可为已保存服务器生成临时受控分享链接。                                                                                                                                                                                                              | wrangler.toml `[vars]` 已默认置 `true`，Git 集成/CLI 部署开箱即用；关闭请改 wrangler.toml 为 `false`。分享链路仅支持受限终端与可选 SFTP，受完整操作审计记录监督，禁止使用 AI Agent、修改服务器元数据或跨网络重连；Dashboard 手动上传部署不受 `[vars]` 影响，如需启用自行添加该变量。              |
-| `STRICT_HOST_KEY_VERIFY`  | 可选               | `true`                   | SSH 远端主机公钥签名严格校验开关。默认 `true`（fail-closed，签名不合法或算法不支持时立即终止握手）。                                                                                                                                                                                               | **生产环境务必保持默认 `true`**。仅在本地调试、测试自签或老旧不兼容服务器且明确知晓安全风险时才允许设为 `false`。wrangler.toml `[vars]` 随部署默认下发，自定义请改配置文件。                                                                                                                      |
 | `DEBUG_MODE`              | 可选               | `false`                  | 详细调试模式开关。设为 `true` 时在 API 响应和前端终端中输出底层协议握手与诊断日志。                                                                                                                                                                                                                | `wrangler.toml` 默认声明为 `false`。仅在排查连接握手故障时临时开启，生产环境日常运行建议保持 `false`。                                                                                                                                                                                            |
 
 > **配置建议与补充说明**：
 >
 > 1. **Secret 安全存储**：在 Cloudflare Dashboard 的 _Settings → Variables and Secrets_ 中，强烈建议将所有包含密码、Secret、Key 等敏感凭据的变量统一选择为 **Secret** 类型。Secrets 存储在 Cloudflare 独立加密存储层中，重新构建和部署 Worker 时不会被代码覆盖。
-> 2. **预留变量说明**：代码中保留了 `MAX_CONNECTIONS` 环境变量接口定义，当前版本暂未读取生效，请勿依赖。
+> 2. SSH 主机密钥签名始终严格验证，包括跳板和重协商；验证失败即终止连接，已知指纹也不能替代验签。
 
 </details>
 
@@ -314,10 +312,9 @@ Fork 仓库可以按需使用内置的 `Sync upstream` GitHub Actions 工作流�
    - `BASE_URL` = `https://your-domain.com`（你的部署域名）
    - `GITHUB_CLIENT_SECRET` = 你的 Client Secret
 
-   还可以按部署用途设置以下三个独立的可选配置：
+   还可以按部署用途设置以下两个独立的可选配置：
    - `GITHUB_ALLOWED_USER_IDS`：允许登录的 GitHub **数字用户 ID**，多个 ID 使用英文逗号分隔，例如 `83105156,6236783`。未配置时不限制 GitHub 账号；配置为空或包含非正整数时采用 fail-closed，拒绝所有 GitHub 登录。
    - `REQUIRE_GITHUB_AUTH`：设置为 `true` 时禁用匿名 SSH，所有 SSH WebSocket 都必须带有有效 GitHub session；未配置或设置为 `false` 时保留匿名连接。
-   - `ENABLE_SSH_SHARING`：设置为 `true` 时允许登录用户为已保存服务器创建一次性分享链接。Git 集成/CLI 部署的 `wrangler.toml` 在生产与 test 环境均默认下发 `true`；关闭请改为 `false`。运行时变量未配置时关闭（如未自行配置变量的 Dashboard 手动上传部署）。启用表示允许持有分享凭证的接收者无需登录即可建立受审计 SSH 会话。
 
    **获取 GitHub 数字用户 ID**：
    - 浏览器访问 `https://api.github.com/users/octocat`（将 `octocat` 替换为实际用户名），在返回的 JSON 中读取 `id` 字段。例如响应中的 `"id": 583231` 表示数字用户 ID 为 `583231`。
@@ -338,7 +335,7 @@ Fork 仓库可以按需使用内置的 `Sync upstream` GitHub Actions 工作流�
 
 ##### 使用一次性 SSH 分享
 
-1. 配置 GitHub OAuth，并在 Worker 环境变量中设置 `ENABLE_SSH_SHARING=true` 后重新部署。
+1. 登录 CloudSSH，将要分享的 SSH 服务器保存到自己的账户，无需配置部署开关。
 2. 所有者先通过普通连接成功连接目标服务器及全部跳板节点，使路径范围内的主机指纹完成验证。
 3. 在服务器卡片点击分享按钮，选择链接领取有效期（5/15/30/60 分钟）和会话最长时间（15/30/60/120 分钟）。
 4. 创建后立即复制链接并通过可信渠道发送。CloudSSH 不保存明文分享凭证，关闭创建结果后无法再次查看同一链接。

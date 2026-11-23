@@ -8,7 +8,6 @@ export interface AppConfig {
   rdpEnabled?: boolean;
   authMode?: 'password' | 'cf_access' | 'github' | 'anonymous';
   cfAccessEmail?: string | null;
-  cfAccessTeamName?: string;
   passwordAuth?: { kdf: string; iterations: number; salt: string } | null;
   passwordHashInvalid?: boolean;
 }

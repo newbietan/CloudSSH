@@ -53,7 +53,6 @@ describe('分享 SSH 会话能力策略', () => {
       ws,
       socket,
       config,
-      true,
       false,
       undefined,
       undefined,
@@ -72,7 +71,7 @@ describe('分享 SSH 会话能力策略', () => {
     (session as any).hostKeyFingerprint = 'SHA256:changed';
     (session as any).hostKeyType = 'ssh-ed25519';
 
-    expect((session as any).finalizeHostKeyTrust(true)).toBe(false);
+    expect((session as any).finalizeHostKeyTrust()).toBe(false);
     const messages = sent.map((value) => JSON.parse(String(value)) as { type?: string });
     expect(messages).not.toContainEqual(expect.objectContaining({ type: 'host_key_changed' }));
     expect(sent.map(String).join('\n')).toContain('主机密钥指纹变更');

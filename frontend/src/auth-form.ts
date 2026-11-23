@@ -138,10 +138,6 @@ export class ConnectionForm {
         badge.classList.remove('hidden');
       }
     }
-    if (this.cfSshCaEnabled && config.cfAccessTeamName) {
-      const teamInput = document.getElementById('cf-ca-team') as HTMLInputElement | null;
-      if (teamInput && !teamInput.value) teamInput.value = config.cfAccessTeamName;
-    }
 
     // Access owns its external login flow; preserve the existing SSH CA form behavior.
     if (config.authMode === 'cf_access') return;

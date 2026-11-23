@@ -25,7 +25,6 @@ function createSession(stdout: string) {
     { readyState: WebSocket.OPEN, send } as unknown as WebSocket,
     {} as never,
     config,
-    true,
     false,
     undefined,
     env as never,

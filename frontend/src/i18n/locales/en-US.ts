@@ -368,10 +368,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
     'The server requires an expired password to be changed; changing it during authentication is not supported yet',
   'terminal.status.authProtocolError':
     'The server sent a message that does not match the current authentication flow',
-  'terminal.status.hostKeyFingerprintMatchedUnverified':
-    'The known host fingerprint matches ({keyType}), but the signature was not verified',
-  'terminal.status.hostKeyUnverifiedInstruction':
-    'Connection blocked because the host-key signature could not be verified. The new fingerprint cannot be trusted.',
   'terminal.status.hostKeyShareChangeBlocked':
     'Connection blocked. A shared session cannot replace a host fingerprint trusted by the owner.',
   'terminal.hostKeySaveTitle': 'Could not save SSH host fingerprint',
@@ -494,8 +490,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
     'Host certificate signature checked; host identity uses the underlying public-key fingerprint (TOFU), not CA trust.',
   'terminal.status.hostKeyFirstSeen':
     'Server fingerprint: {fingerprint} ({keyType}, first connection, verified)',
-  'terminal.status.hostKeyNotSaved':
-    'Server fingerprint: {fingerprint} ({keyType}, signature unverified, not saved)',
   'terminal.status.hostKeyChanged':
     'The host key fingerprint changed. Verify that this is expected.',
   'terminal.status.hostKeyKnown': 'Known fingerprint: {fingerprint}',
@@ -507,9 +501,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'terminal.status.hostKeyVerifySkipped':
     'Host-key signature verification skipped: this algorithm is not supported yet',
   'terminal.status.hostKeySignatureBlocked':
-    'Host-key signature verification failed and the connection was blocked. Set STRICT_HOST_KEY_VERIFY=false to skip it.',
-  'terminal.status.hostKeySignatureRisk':
-    'Host-key signature verification failed and may be unsafe; strict mode is disabled, so the connection was not blocked.',
+    'Host-key signature verification failed and the connection was blocked.',
   'terminal.status.hostKeySignatureError': 'Host-key signature verification error: {message}',
   'terminal.status.channelRejected': 'The server rejected the SSH channel request',
   'terminal.status.ptyShellRejected': 'The server rejected the PTY or shell request',
@@ -942,7 +934,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'share.errorAlreadyUsed':
     'This share link has already been claimed or revoked and cannot be used again',
   'share.errorLinkExpired': 'This share link has expired. Ask the owner to generate a new one',
-  'share.errorSharingDisabled': 'SSH sharing is currently disabled',
   'share.errorServiceUnavailable':
     'Share service is temporarily unavailable. Please try again later',
   'terminal.status.shareSessionExpired': 'Share session has expired, connection ended',

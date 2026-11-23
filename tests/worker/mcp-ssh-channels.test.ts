@@ -4,7 +4,7 @@ import { SSH_MSG_CHANNEL_OPEN_CONFIRMATION, SSH_MSG_CHANNEL_SUCCESS, type SSHPac
 
 function fixture() {
   const session = new SSHSession({ readyState: 1, send: vi.fn(), close: vi.fn() }, { close: vi.fn() },
-    { host: 'ssh.example.com', port: 22, username: 'test', password: '' }, true, false, undefined, undefined, undefined, undefined,
+    { host: 'ssh.example.com', port: 22, username: 'test', password: '' }, false, undefined, undefined, undefined, undefined,
     { openShellOnAuth: false, ownsWebSocket: false, allowKeyboardInteractive: false });
   const state = session as any;
   state.state = 'tunnel-ready';

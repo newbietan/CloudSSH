@@ -76,7 +76,6 @@ function createMockSession() {
       password: 'secret',
       authMethod: 'password',
     },
-    true,
     false,
     undefined,
     undefined,
@@ -229,7 +228,6 @@ describe('SSHSessionDO Re-attach Lifecycle & Security Authentication', () => {
       waitUntil: vi.fn(),
     };
     const mockEnv = {
-      STRICT_HOST_KEY_VERIFY: 'false',
       DEBUG_MODE: 'false',
     };
 

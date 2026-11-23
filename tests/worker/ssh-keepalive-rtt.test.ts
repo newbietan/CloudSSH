@@ -24,7 +24,6 @@ function createTestSession(options?: {
       password: 'pwd',
       authMethod: 'password',
     },
-    true,
     false,
     undefined,
     undefined,

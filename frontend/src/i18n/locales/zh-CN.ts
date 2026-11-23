@@ -449,24 +449,17 @@ export const zhCN = {
   'terminal.status.hostKeyInvalid': '主机密钥或证书无效，连接已终止，请核对服务器配置。',
   'terminal.status.hostKeyCertificateTofu':
     '主机证书签名已检查；主机身份按底层公钥指纹（TOFU）验证，未信任签发 CA。',
-  'terminal.status.hostKeyFingerprintMatchedUnverified':
-    '已知主机指纹匹配（{keyType}），但签名未验证',
   'terminal.status.hostKeyFirstSeen': '服务器指纹：{fingerprint}（{keyType}，首次连接，验证通过）',
-  'terminal.status.hostKeyNotSaved': '服务器指纹：{fingerprint}（{keyType}，签名未验证，未记录）',
   'terminal.status.hostKeyChanged': '主机密钥指纹发生变化，请确认是否符合预期。',
   'terminal.status.hostKeyKnown': '已知指纹：{fingerprint}',
   'terminal.status.hostKeyActual': '实际指纹：{fingerprint}（{keyType}）',
   'terminal.status.hostKeyTrustInstruction': '连接已阻断，请核对指纹后在确认对话框中决定是否信任。',
-  'terminal.status.hostKeyUnverifiedInstruction':
-    '连接已阻断，且主机密钥签名未通过验证，无法信任新指纹。',
   'terminal.status.hostKeyShareChangeBlocked':
     '连接已阻断。分享会话不允许替换所有者已信任的主机指纹。',
   'terminal.status.hostKeyUnsupported': '主机密钥签名验证失败：不支持的密钥算法',
   'terminal.status.hostKeyVerifySkipped': '已跳过主机密钥签名验证：暂不支持该算法',
   'terminal.status.hostKeySignatureBlocked':
-    '主机密钥签名验证失败，连接已阻断。可设置 STRICT_HOST_KEY_VERIFY=false 跳过验证。',
-  'terminal.status.hostKeySignatureRisk':
-    '主机密钥签名验证失败，存在安全风险；严格模式已关闭，连接未阻断。',
+    '主机密钥签名验证失败，连接已阻断。',
   'terminal.status.hostKeySignatureError': '主机密钥签名验证异常：{message}',
   'terminal.status.channelRejected': '服务器拒绝打开 SSH 通道',
   'terminal.status.ptyShellRejected': '服务器拒绝 PTY 或 Shell 请求',
@@ -883,7 +876,6 @@ export const zhCN = {
   'share.event.share.resume_denied': '恢复请求被拒绝',
   'share.errorAlreadyUsed': '该分享链接已被领取或已撤销，无法重复使用',
   'share.errorLinkExpired': '分享链接已过期，请联系分享者重新生成',
-  'share.errorSharingDisabled': 'SSH 分享功能当前未开启',
   'share.errorServiceUnavailable': '分享服务暂时不可用，请稍后重试',
   'terminal.status.shareSessionExpired': '分享会话已到期，连接已结束',
   'terminal.status.shareAuditUnavailable': '分享审计不可用，连接已终止',

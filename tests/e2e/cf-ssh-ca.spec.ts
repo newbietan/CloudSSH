@@ -19,7 +19,6 @@ test('非 Access 登录不展示 Cloudflare CA 入口', async ({ page }) => {
         sshSharingEnabled: false,
         authMode: 'anonymous',
         cfAccessEmail: 'alice@company.com',
-        cfAccessTeamName: 'my-org',
       }),
     })
   );
@@ -33,7 +32,7 @@ test('非 Access 登录不展示 Cloudflare CA 入口', async ({ page }) => {
   await expect(page.locator('#auth-cf-ca-section')).toBeHidden();
 });
 
-test('Access 登录下连接表单可切换到 Cloudflare CA 并预填团队标识', async ({ page }) => {
+test('Access 登录下连接表单可切换到 Cloudflare CA 并手填团队标识', async ({ page }) => {
   await blockOptionalThirdPartyAssets(page);
   await page.route('**/api/user/theme', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '{"theme":null}' })
@@ -50,7 +49,6 @@ test('Access 登录下连接表单可切换到 Cloudflare CA 并预填团队标�
         sshSharingEnabled: false,
         authMode: 'cf_access',
         cfAccessEmail: 'alice@company.com',
-        cfAccessTeamName: 'my-org',
       }),
     })
   );
@@ -66,9 +64,10 @@ test('Access 登录下连接表单可切换到 Cloudflare CA 并预填团队标�
   await expect(page.locator('#auth-password-section')).toBeHidden();
   await expect(page.locator('#auth-key-section')).toBeHidden();
 
-  // 验证预填的 Team Name 与检测到的 Access 邮箱 badge
+  // 团队名由用户填写；邮箱仍来自已验证的 Access 身份。
   const teamInput = page.locator('#cf-ca-team');
-  await expect(teamInput).toHaveValue('my-org');
+  await expect(teamInput).toHaveValue('');
+  await teamInput.fill('my-org');
 
   const badge = page.locator('#cf-ca-access-badge');
   await expect(badge).toBeVisible();
@@ -161,7 +160,7 @@ async function openCaForm(page: Page): Promise<void> {
   await blockOptionalThirdPartyAssets(page);
   await page.route('**/api/config', route => route.fulfill({ json: {
     turnstileEnabled: false, githubAuthEnabled: false, githubAuthRequired: false,
-    authMode: 'cf_access', cfAccessTeamName: 'my-org',
+    authMode: 'cf_access',
   } }));
   await page.route('**/api/auth/me', route => route.fulfill({ status: 401, json: { error: 'Unauthorized' } }));
   await page.route('**/api/known-hosts?**', route => {
@@ -173,6 +172,7 @@ async function openCaForm(page: Page): Promise<void> {
   await page.locator('#host').fill('ssh.example.com');
   await page.locator('#username').fill('developer');
   await page.locator('#auth-tab-cf-ca').click();
+  await page.locator('#cf-ca-team').fill('my-org');
 }
 
 for (const changed of ['host', 'username', 'port', 'team', 'mode'] as const) {

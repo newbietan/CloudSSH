@@ -32,7 +32,6 @@ function createHopSession() {
       password: 'secret',
       authMethod: 'password',
     },
-    true,
     false,
     undefined,
     undefined,

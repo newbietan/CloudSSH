@@ -5,15 +5,10 @@ workers_dev = true
 
 [vars]
 DEBUG_MODE = "false"
-# 一次性受控 SSH 分享：随部署默认启用（Git 集成/CLI 部署即生效，生产与 test 环境均置 true）。
-# 关闭改为 "false" 或删除本行；Dashboard 手动上传部署不受 [vars] 影响，如需启用需自行添加该变量。
-ENABLE_SSH_SHARING = "true"
 # 用户无操作空闲超时：默认 30 分钟（支持 30m / 1h / 1800s / 纯数字按秒）；设为 "0" 禁用
 IDLE_TIMEOUT = "30m"
 # 是否强制登录后才能使用 SSH（GitHub 或单管理员密码会话均满足）；"false" 保持匿名直连可用
 REQUIRE_GITHUB_AUTH = "false"
-# SSH 远端主机公钥签名严格校验：默认 fail-closed；仅本地调试老旧服务器时才允许 "false"
-STRICT_HOST_KEY_VERIFY = "true"
 
 # 构建监视路径：仅源代码变动时触发重新构建
 [build]
@@ -80,11 +75,9 @@ name = "cloudssh-test"
 # 启用正式 RDP 路由供已登录的测试账号验收；生产默认关闭。
 ENABLE_RDP = "true"
 DEBUG_MODE = "true"
-ENABLE_SSH_SHARING = "true"
 IDLE_TIMEOUT = "30m"
 # test 环境默认要求登录（验证强制登录链路）；生产 [vars] 保持 "false" 匿名可用
 REQUIRE_GITHUB_AUTH = "true"
-STRICT_HOST_KEY_VERIFY = "true"
 
 [[env.test.durable_objects.bindings]]
 name = "SSH_SESSION"

@@ -449,25 +449,18 @@ export const zhTW = {
   'terminal.status.hostKeyInvalid': '主機金鑰或憑證無效，連線已終止，請核對伺服器設定。',
   'terminal.status.hostKeyCertificateTofu':
     '主機憑證簽章已檢查；主機身分按底層公鑰指紋（TOFU）驗證，未信任簽發 CA。',
-  'terminal.status.hostKeyFingerprintMatchedUnverified':
-    '已知主機指紋相符（{keyType}），但簽名未驗證',
   'terminal.status.hostKeyFirstSeen': '伺服器指紋：{fingerprint}（{keyType}，首次連線，驗證通過）',
-  'terminal.status.hostKeyNotSaved': '伺服器指紋：{fingerprint}（{keyType}，簽名未驗證，未記錄）',
   'terminal.status.hostKeyChanged': '主機金鑰指紋發生變化，請確認是否符合預期。',
   'terminal.status.hostKeyKnown': '已知指紋：{fingerprint}',
   'terminal.status.hostKeyActual': '實際指紋：{fingerprint}（{keyType}）',
   'terminal.status.hostKeyTrustInstruction':
     '連線已阻斷，請核對指紋後在確認對話方塊中決定是否信任。',
-  'terminal.status.hostKeyUnverifiedInstruction':
-    '連線已阻斷，且主機金鑰簽名未通過驗證，無法信任新指紋。',
   'terminal.status.hostKeyShareChangeBlocked':
     '連線已阻斷。分享會話不允許替換所有者已信任的主機指紋。',
   'terminal.status.hostKeyUnsupported': '主機金鑰簽名驗證失敗：不支援的金鑰演算法',
   'terminal.status.hostKeyVerifySkipped': '已跳過主機金鑰簽名驗證：暫不支援該演算法',
   'terminal.status.hostKeySignatureBlocked':
-    '主機金鑰簽名驗證失敗，連線已阻斷。可設定 STRICT_HOST_KEY_VERIFY=false 跳過驗證。',
-  'terminal.status.hostKeySignatureRisk':
-    '主機金鑰簽名驗證失敗，存在安全風險；嚴格模式已關閉，連線未阻斷。',
+    '主機金鑰簽名驗證失敗，連線已阻斷。',
   'terminal.status.hostKeySignatureError': '主機金鑰簽名驗證異常：{message}',
   'terminal.status.channelRejected': '伺服器拒絕開啟 SSH 通道',
   'terminal.status.ptyShellRejected': '伺服器拒絕 PTY 或 Shell 請求',
@@ -884,7 +877,6 @@ export const zhTW = {
   'share.event.share.resume_denied': '恢復請求被拒絕',
   'share.errorAlreadyUsed': '該分享連結已被領取或已撤銷，無法重複使用',
   'share.errorLinkExpired': '分享連結已過期，請聯絡分享者重新生成',
-  'share.errorSharingDisabled': 'SSH 分享功能目前未開啟',
   'share.errorServiceUnavailable': '分享服務暫時不可用，請稍後重試',
   'terminal.status.shareSessionExpired': '分享會話已到期，連線已結束',
   'terminal.status.shareAuditUnavailable': '分享審計不可用，連線已終止',

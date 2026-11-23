@@ -49,8 +49,8 @@ describe('bounded headless MCP execution', () => {
     expect(f.fetchSpy).toHaveBeenCalledOnce();
     expect(SSHSession).toHaveBeenCalledOnce();
     const constructed = vi.mocked(SSHSession).mock.calls[0];
-    expect(constructed[3]).toBe(true);
-    expect(constructed[9]).toMatchObject({ openShellOnAuth: false, ownsWebSocket: false, allowKeyboardInteractive: false });
+    expect(constructed[2].expectedFingerprint).toBe(f.config.expectedFingerprint);
+    expect(constructed[8]).toMatchObject({ openShellOnAuth: false, ownsWebSocket: false, allowKeyboardInteractive: false });
     f.config.password = 'rotated';
     expect((await f.call()).ok).toBe(true);
     expect(f.fetchSpy).toHaveBeenCalledTimes(2);

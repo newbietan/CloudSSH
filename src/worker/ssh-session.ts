@@ -138,7 +138,6 @@ export class SSHSession {
   private sftpWs: WebSocket | null = null;
   private socket: any;
   private config: SSHConnectionConfig;
-  private strictHostKeyVerify: boolean;
   private sftpAttachUrl?: string;
 
   private transport: SSHTransport;
@@ -316,7 +315,6 @@ export class SSHSession {
     ws: SSHSessionClient,
     socket: any,
     config: SSHConnectionConfig,
-    strictHostKeyVerify: boolean = true,
     debugMode: boolean = false,
     sftpAttachUrl?: string,
     env?: Env,
@@ -327,7 +325,6 @@ export class SSHSession {
     this.ws = ws;
     this.socket = socket;
     this.config = config;
-    this.strictHostKeyVerify = strictHostKeyVerify;
     this.debugMode = debugMode;
     this.sftpAttachUrl = sftpAttachUrl;
     this.env = env || null;
@@ -1292,40 +1289,26 @@ export class SSHSession {
 
     if (this.closed) return;
     // H above deliberately contains the ORIGINAL certificate, not the normalized raw key.
-    // Certificates never inherit the legacy signature-verification escape hatch.
-    const requireSignature = this.strictHostKeyVerify || presentedKey.certificate;
-    let sigVerified = false;
     try {
-      sigVerified = await verifySSHSignature(presentedKey.publicKeyBlob, signature, H);
+      const verified = await verifySSHSignature(presentedKey.publicKeyBlob, signature, H);
       if (this.closed) return;
-      this.sendDebug(`Host key signature verification: ${sigVerified ? 'PASS' : 'FAIL'}`);
-      if (!sigVerified) {
-        if (requireSignature) {
-          this.sendError('主机密钥签名验证失败，连接已终止', 'host_key_invalid');
-          this.close(true);
-          return;
-        }
-        this.sendError(
-          '主机密钥签名验证失败 - 可能会有安全风险，但不阻断连接（严格模式已关闭）',
-          'host_key_signature_risk'
-        );
-      }
-    } catch (error) {
-      this.sendDebug(`Signature verification error: ${error instanceof Error ? error.message : 'invalid signature'}`);
-      if (requireSignature) {
-        this.sendError('主机密钥或证书无效，连接已终止', 'host_key_invalid');
+      if (!verified) {
+        this.sendError('主机密钥签名验证失败，连接已终止', 'host_key_invalid');
         this.close(true);
         return;
       }
+    } catch (error) {
+      if (this.closed) return;
+      this.sendDebug(`Signature verification error: ${error instanceof Error ? error.message : 'invalid signature'}`);
+      this.sendError('主机密钥或证书无效，连接已终止', 'host_key_invalid');
+      this.close(true);
+      return;
     }
-    if (this.closed) return;
     this.hostKeyType = presentedKey.keyType;
     this.hostKeyFingerprint = await fingerprintHostKey(presentedKey.publicKeyBlob);
-    if (this.closed || !this.finalizeHostKeyTrust(sigVerified)) return;
+    if (this.closed || !this.finalizeHostKeyTrust()) return;
     this.acceptedHostKeyFingerprint ??= this.hostKeyFingerprint;
-    if (sigVerified) {
-      this.sendDebug(`Host key fingerprint: ${this.hostKeyFingerprint} (${this.hostKeyType})`);
-    }
+    this.sendDebug(`Host key fingerprint: ${this.hostKeyFingerprint} (${this.hostKeyType})`);
     if (presentedKey.certificate && !this.isRekeying) {
       this.sendStatus('主机证书使用公钥指纹 TOFU 验证，未信任签发 CA', 'host_key_certificate_tofu');
     }
@@ -1357,7 +1340,7 @@ export class SSHSession {
   /**
    * 完成 TOFU 判定。只有服务器已证明持有当前主机私钥时，才允许浏览器记录或替换指纹。
    */
-  private finalizeHostKeyTrust(signatureVerified: boolean): boolean {
+  private finalizeHostKeyTrust(): boolean {
     if (this.isRekeying) {
       // Renewal may change certificate metadata, but never silently replace the pinned host key.
       if (this.acceptedHostKeyFingerprint !== this.hostKeyFingerprint) {
@@ -1379,7 +1362,7 @@ export class SSHSession {
 
     if (expectedFingerprint && expectedFingerprint !== this.hostKeyFingerprint) {
       const mayReplaceHostKey = this.config.sessionPolicy?.allowHostKeyMutation !== false;
-      if (signatureVerified && mayReplaceHostKey) {
+      if (mayReplaceHostKey) {
         try {
           this.ws.send(
             JSON.stringify({
@@ -1404,42 +1387,17 @@ export class SSHSession {
           keyType: this.hostKeyType,
         }
       );
-      let trustInstruction: string;
-      let trustEvent: string;
-      if (signatureVerified && mayReplaceHostKey) {
-        trustInstruction = '连接已阻断。请在确认对话框中核对并决定是否信任新指纹。';
-        trustEvent = 'host_key_trust_instruction';
-      } else if (signatureVerified) {
-        trustInstruction = '连接已阻断。分享会话不允许替换所有者已信任的主机指纹。';
-        trustEvent = 'host_key_share_change_blocked';
+      if (mayReplaceHostKey) {
+        this.sendError('连接已阻断。请在确认对话框中核对并决定是否信任新指纹。', 'host_key_trust_instruction');
       } else {
-        trustInstruction = '连接已阻断，且主机密钥签名未通过验证，无法信任新指纹。';
-        trustEvent = 'host_key_unverified_instruction';
+        this.sendError('连接已阻断。分享会话不允许替换所有者已信任的主机指纹。', 'host_key_share_change_blocked');
       }
-      this.sendError(trustInstruction, trustEvent);
       this.close(true);
       return false;
     }
 
     if (expectedFingerprint) {
-      if (signatureVerified) {
-        this.sendStatus(`主机密钥验证通过 (${this.hostKeyType}) ✓`, 'host_key_accepted');
-      } else {
-        this.sendStatus(
-          `已知主机指纹匹配 (${this.hostKeyType})，但签名未验证`,
-          'host_key_fingerprint_matched_unverified',
-          { keyType: this.hostKeyType }
-        );
-      }
-      return true;
-    }
-
-    if (!signatureVerified) {
-      this.sendStatus(
-        `服务器指纹: ${this.hostKeyFingerprint} (${this.hostKeyType})（签名未验证，未记录）`,
-        'host_key_not_saved',
-        { fingerprint: this.hostKeyFingerprint, keyType: this.hostKeyType }
-      );
+      this.sendStatus(`主机密钥验证通过 (${this.hostKeyType}) ✓`, 'host_key_accepted');
       return true;
     }
 
