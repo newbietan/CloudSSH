@@ -1,19 +1,34 @@
+import { execFileSync } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-export function resolveE2eProfile(event, ref, requested) {
-  if (event !== 'push' || ref !== 'refs/heads/test') return { profile: 'full', invalid: false };
-  if (requested === 'chromium' || requested === 'skip') return { profile: requested, invalid: false };
-  return { profile: 'full', invalid: !!requested && requested !== 'full' };
+const markerTitle = 'ci: 设置本次 test 推送的浏览器测试';
+export const markerMessage = (profile) => `${markerTitle}\n\nCloudSSH-Test-E2E: ${profile}`;
+
+function getProfile() {
+  if (process.env.GITHUB_EVENT_NAME !== 'push' || process.env.GITHUB_REF !== 'refs/heads/test') {
+    return 'full';
+  }
+  const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
+  const message = git('log', '-1', '--format=%B');
+  const profile = ['chromium', 'skip'].find((value) => message === markerMessage(value));
+  if (!profile) return 'full';
+
+  // An exact marker is only valid as a one-parent empty commit. Never reduce checks
+  // because a regular commit or a PR merge happens to contain the marker text.
+  const parents = git('log', '-1', '--format=%P').split(' ');
+  if (parents.length !== 1 || !parents[0]) return 'full';
+  const parentTree = git('rev-parse', '--verify', `${parents[0]}^{tree}`);
+  return parentTree === git('rev-parse', 'HEAD^{tree}') ? profile : 'full';
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { profile, invalid } = resolveE2eProfile(
-    process.env.GITHUB_EVENT_NAME,
-    process.env.GITHUB_REF,
-    process.env.TEST_E2E_PROFILE
-  );
-  if (invalid) console.warn('::warning::Unsupported CLOUDSSH_TEST_E2E value. Running full browser checks.');
+  let profile = 'full';
+  try {
+    profile = getProfile();
+  } catch {
+    console.warn('::warning::Could not verify the test push marker; running full browser checks.');
+  }
   if (!process.env.GITHUB_OUTPUT) throw new Error('GITHUB_OUTPUT is required');
   appendFileSync(process.env.GITHUB_OUTPUT, `profile=${profile}\n`);
 

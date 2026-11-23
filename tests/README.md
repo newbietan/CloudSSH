@@ -98,15 +98,15 @@ pnpm run verify
 ## E2E CI 并发与报告
 
 - `deploy.yml` 默认对 test/main 的 push、目标为 test/main 的 PR 和手动触发执行完整验证；只有 push 可按分支部署。PR 和手动验证不注入 Cloudflare Secrets，保留 job 级 repository_owner 限制；不使用 `pull_request_target`。
-- **仅 `test` 分支的 push** 可由维护者在 GitHub **Settings → Secrets and variables → Actions → Variables** 设置仓库变量 `CLOUDSSH_TEST_E2E`。只对接下来的运行生效，可从运行 Summary 确认实际档位：
+- **仅 `test` 分支的 push** 可在推送命令附带浏览器档位，不需要配置仓库变量。先提交改动，从运行 Summary 确认实际档位：
 
-  | 值 | 浏览器验证 |
+  | 推送命令 | 浏览器验证 |
   | --- | --- |
-  | 不设置 / `full` | 完整运行 Chromium 和移动 WebKit。 |
-  | `chromium` | 只安装 Chromium、运行其完整项目，跳过移动 WebKit。 |
-  | `skip` | 跳过两个浏览器的安装、E2E 和报告上传。 |
+  | `git push origin test` | 默认完整运行 Chromium 和移动 WebKit。 |
+  | `bash scripts/push-test.sh --e2e=chromium` | 只跑完整 Chromium 项目。 |
+  | `bash scripts/push-test.sh --e2e=skip` | 跳过浏览器安装、E2E 和报告。 |
 
-  其他值警告并按 `full`。类型检查、全量单测、前端构建和实际部署都不跳过；独立的 SSH 互操作 CI 保留现有路径筛选，不受此变量影响。后端/RDP 调试可临时用 `skip`，前端交互改动建议至少用 `chromium`；调试完删除变量，PR / `main` / 手动验证始终完整，不受变量影响。
+  脚本仅在干净且有待推送文件变更的 `test` 分支附加一条空提交，不改写实际提交、不强推。CI 只识别推送顶端严格匹配且不修改文件的标记；后续普通提交恢复全量，同一次 CI 的重跑保留原档位。类型检查、全量单测、前端构建和实际部署均不跳过；SSH 互操作仍按变更触发，PR / `main` / 手动验证始终完整。文档专用推送仍按原 paths-ignore 跳过部署。旧 `CLOUDSSH_TEST_E2E` 已不读取。
 - 开启 RDP 预览时，test 部署按构建脚本、系统和架构缓存已编译的 FreeRDP JS/WASM/许可证；命中后核验文件并打包本次网页，仍运行 Worker dry-run。首次或缓存失效会重编，不缓存配置、凭据和网页。缓存仅用于已授权的 `test` 推送，不用于 PR 或 `main`。
 - 快速检查先于浏览器安装。Worker CI 仅取消同 PR 的过期验证，不中断部署，job 上限 30 分钟。互操作 CI 允许取消旧运行，Pages 发布串行执行。
 - CI 默认使用 **2 个 worker**，本地默认并发仍由 Playwright 决定。所选浏览器项目保留全部用例、最多 2 次重试、首次重试 trace 和失败截图，不启用全程 trace 或录像。

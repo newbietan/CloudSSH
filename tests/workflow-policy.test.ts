@@ -117,7 +117,8 @@ describe('CI 验证和部署边界', () => {
     const installChromium = deploy.split('      - name: Install Playwright Chromium (reduced test profile)\n')[1]?.split('      - name:')[0] ?? '';
     expect(installChromium).toContain("if: steps.e2e-profile.outputs.profile == 'chromium'");
     expect(installChromium).toContain('run: pnpm exec playwright install --with-deps chromium\n');
-    expect(deploy).toContain('TEST_E2E_PROFILE: ${{ vars.CLOUDSSH_TEST_E2E }}');
+    expect(deploy).toContain('fetch-depth: 2');
+    expect(deploy).not.toContain('CLOUDSSH_TEST_E2E');
     expect(deploy).toContain('run: node scripts/ci-test-e2e.mjs');
     expect(readWorkflow('ssh-interop.yml')).not.toContain('CLOUDSSH_TEST_E2E');
   });

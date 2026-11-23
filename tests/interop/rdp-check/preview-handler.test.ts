@@ -108,7 +108,7 @@ describe('test-only RDP preview request routing', () => {
     const metadata = await handler(new Request(site + PREVIEW_PATH + '/config'), env, null);
     expect(await metadata.json()).toEqual({ fingerprint: token, public: true, tunnel: true });
     expect(metadata.headers.get('Cross-Origin-Embedder-Policy')).toBe('require-corp');
-    expect(metadata.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(metadata.headers.get('Cache-Control')).toBe('private, no-store, no-transform');
     const request = new Request(site + route, { headers: { ...upgrade, 'x-target': 'other' } });
     expect(await (await handler(request, env, null)).text()).toBe('fake WS');
     expect(open).toHaveBeenCalledWith(request, expect.objectContaining({

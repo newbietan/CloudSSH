@@ -348,7 +348,7 @@ pnpm run verify      # typecheck + test + build:frontend + test:e2e 完整门禁
 - 测试文件位于 `tests/` 目录，`.test.ts` 后缀（详见 Key Directories 中的 `tests/` 结构）。
 - `tests/ssh/fixtures/` 中的私钥只用于公开协议测试，绝不可用于真实服务器。
 - E2E 首次运行需安装浏览器：`pnpm exec playwright install chromium webkit`。
-- Playwright CI 默认 2 个 worker 和完整 Chromium / 移动 WebKit；仅 `test` push 可由 `CLOUDSSH_TEST_E2E` 显式选择 `chromium` 或 `skip`，不影响 PR、手动验证或 `main`。所选项目保留全部用例、最多 2 次重试、首次重试 trace 与失败截图。HTML 报告位于 `playwright-report/`，JSON 位于 `test-results/results.json`；E2E 实际执行成功或失败时在部署密钥注入前上传两目录，保留 7 天（取消/未执行时不上传），不通过 `continue-on-error` 放行失败。可用 `CI=true pnpm exec playwright test --workers=1` 对照/回退排查；以同类 runner 的多轮耗时和稳定性评估，不预设提速比例，详见 `tests/README.md`。
+- Playwright CI 默认 2 个 worker 和完整 Chromium / 移动 WebKit；仅 `test` push 可通过 `bash scripts/push-test.sh --e2e=chromium` 或 `--e2e=skip` 显式缩小当次 E2E 范围，不影响 PR、手动验证或 `main`。所选项目保留全部用例、最多 2 次重试、首次重试 trace 与失败截图。HTML 报告位于 `playwright-report/`，JSON 位于 `test-results/results.json`；E2E 实际执行成功或失败时在部署密钥注入前上传两目录，保留 7 天（取消/未执行时不上传），不通过 `continue-on-error` 放行失败。可用 `CI=true pnpm exec playwright test --workers=1` 对照/回退排查；以同类 runner 的多轮耗时和稳定性评估，不预设提速比例，详见 `tests/README.md`。
 - E2E spec 统一从 `tests/e2e/fixtures.ts` 导入 `test` / `expect`。自动 context 级基础 Mock 仅放行初始化 GET；业务接口及写操作须显式按方法 Mock，未声明请求即使被前端 catch 也会使测试失败并附脱敏路径证据。`tests/e2e-fixtures.test.ts` 防止 spec 绕过 fixture（详见 `tests/README.md`）。
 - Playwright 使用全新 `--mode e2e --strictPort` Vite（不复用普通开发服务），E2E 禁用 Worker 代理和 Service Worker；`frontend/e2e-server.ts` 对漏网 API 返回带标记的 501 JSON，而非 SPA HTML，守卫同时捕获 `route.continue()` 绕过。生产构建与正常开发代理不受影响。
 - 新增前端文案必须同时提供 zh-CN/zh-TW/en-US 词条，`i18n.test.ts` 会校验多端词条对齐。
@@ -547,7 +547,7 @@ pnpm run deploy:test     # 部署 test 环境
 - 维护者仓库 `docs/**` 变更 → 发布 GitHub Pages 主题编辑器（`github-pages.yml`）。上传与部署必须共用含 `github.run_attempt` 的产物名：Pages 按整个 run 查找产物，重跑 job 时上次尝试的同名归档仍可能存在。仅修改 Pages 工作流可在目标分支手动触发验证；重跑旧 run 不会载入新工作流。
 - Fork 仅按需运行上游 `main` 同步（`sync-upstream.yml`）：手动执行无需变量；定时同步默认关闭，仅 `AUTO_SYNC_UPSTREAM=true` 开启，删除或设为 `false` 即关闭
 
-> 部署门禁（`deploy.yml`）始终先做冻结锁文件安装 → `typecheck` → `test` → `build:frontend`，默认再运行完整浏览器验证及报告上传。**仅 `test` push** 可用仓库变量 `CLOUDSSH_TEST_E2E=chromium`（只跑 Chromium）或 `skip`（跳过浏览器）调试；不设置、`full` 或无效值为全量，Summary 显示实际档位，独立 SSH 互操作不受影响。实际运行的门禁失败仍阻断部署，E2E 失败会尝试上传报告。CI 复用同一份前端内联产物，不在注入部署 Secrets 后重复构建；本地 `deploy`/`deploy:test` 不变。
+> 部署门禁（`deploy.yml`）始终先做冻结锁文件安装 → `typecheck` → `test` → `build:frontend`，默认再运行完整浏览器验证及报告上传。**仅 `test` push** 可用 `bash scripts/push-test.sh --e2e=chromium`（只跑 Chromium）或 `--e2e=skip`（跳过浏览器）调试。助手在干净 `test` 分支附加一次空提交，不改写代码提交；CI 只认顶端严格匹配的单父空提交，默认全量，不读仓库变量。Summary 显示档位，独立 SSH 互操作不受影响。实际运行的门禁失败仍阻断部署，E2E 失败会尝试上传报告。CI 复用同一份前端内联产物，不在注入部署 Secrets 后重复构建；本地 `deploy`/`deploy:test` 不变。
 
 ### 自定义域名
 
