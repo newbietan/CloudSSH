@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 here=$(cd -- "$(dirname -- "$0")" && pwd)
+cache="$here/preview-cache"
+out="$here/preview-build"
+if [[ $# -eq 1 && $1 == --from-cache ]]; then
+  node "$here/preview-cache.mjs" stage "$cache" "$out" "$here/desktop-src"
+  printf '%s\n' 'Reused validated FreeRDP assets; packaged current preview page.'
+  exit 0
+fi
 commit=65bcca1913a28cbdd7eb913599f692bd2b707991
 image=emscripten/emsdk@sha256:77638e6c215a65f25a704c0c831d5c2463a8c0468a58c6cb82489dbe621dfa05
 
@@ -21,7 +28,7 @@ elif [[ $# -eq 2 && $1 == --reuse-source ]]; then
   source_dir=$(cd -- "$2" && pwd)
   fresh=0
 else
-  printf '%s\n' 'Usage: bash prepare-preview.sh [--reuse-source /path/to/disposable/FreeRDP]' >&2
+  printf '%s\n' 'Usage: bash prepare-preview.sh [--from-cache | --reuse-source /path/to/disposable/FreeRDP]' >&2
   exit 2
 fi
 [[ $(git -C "$source_dir" rev-parse HEAD) == "$commit" ]]
@@ -122,15 +129,11 @@ run_sdk bash -euc '
   bash scripts/emscripten.sh --no-clone "$@"
 ' build "${build_args[@]}"
 
-out="$here/preview-build"
-mkdir -p -- "$out"
+mkdir -p -- "$cache"
 artifacts="$source_dir/build-emscripten/build/freerdp/client/SDL/SDL3"
-cp -- "$artifacts/sdl-freerdp.js" "$out/sdl-freerdp.rdp-text"
-cp -- "$artifacts/sdl-freerdp.wasm" "$out/sdl-freerdp.rdp-bin"
-cp -- "$here/desktop-src/index.html" "$out/index.rdp-text"
-cp -- "$here/desktop-src/desktop.js" "$out/desktop.rdp-text"
-node -e 'const fs = require("node:fs"); const wasm = fs.readFileSync(process.argv[1]); if (wasm.length > 24 * 1024 * 1024 || !WebAssembly.validate(wasm)) process.exit(1);' "$out/sdl-freerdp.rdp-bin"
-python3 - "$source_dir" "$out/licenses.rdp-text" <<'PY'
+cp -- "$artifacts/sdl-freerdp.js" "$cache/sdl-freerdp.rdp-text"
+cp -- "$artifacts/sdl-freerdp.wasm" "$cache/sdl-freerdp.rdp-bin"
+python3 - "$source_dir" "$cache/licenses.rdp-text" <<'PY'
 from pathlib import Path
 import sys
 source, out = map(Path, sys.argv[1:]); dependencies = source / 'build-emscripten' / 'src'
@@ -149,5 +152,6 @@ with out.open('w') as f:
         f.write(f'\n--- {license.relative_to(source)} ---\n')
         f.write(license.read_text(errors='replace'))
 PY
+node "$here/preview-cache.mjs" record "$cache" "$out" "$here/desktop-src"
 if [[ $fresh == 1 ]]; then cleanup; fi
 printf '%s\n' 'Test-only FreeRDP assets prepared.'

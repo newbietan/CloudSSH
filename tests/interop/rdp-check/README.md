@@ -5,7 +5,7 @@
 ## 在 cloudssh-test 中验收网页桌面
 
 1. 维护者在 GitHub 仓库变量创建 `CLOUDSSH_RDP_TEST_CONFIG`，其值为 JSON：`expiresAt` 是不超过 24 小时后的 Unix 毫秒时间戳；`publicIp`、`publicPort`（字符串）、`tunnelHost`、`certificate`（64 位小写 SHA-256）是经授权的两个固定目标及同一 Windows 证书。**不要在此变量里放密码、令牌或 Service Token**；此预览只测无 Access 的目标隧道。预览沿用 CloudSSH 当前登录模式（包括单管理员密码），无独立白名单；旧配置里的 `owner` 字段会被忽略。
-2. 对 `test` 推送后，现有 CI 先运行 CloudSSH 门禁，再用固定上游提交、工具链与许可证构建浏览器资源，验证 test Worker 打包并部署。没有配置变量时仍部署现有 test Worker。`main` 不打包预览。
+2. 对 `test` 推送后，CI 先运行 CloudSSH 门禁（浏览器档位见 [测试说明](../../README.md#e2e-ci-并发与报告)）。FreeRDP JS/WASM/许可证首次用固定上游提交及工具链构建；之后可命中只含这三类文件及摘要的精确缓存，核验后仍打包本次页面、运行 test Worker dry-run 并部署。未开启 RDP 预览时仍部署现有 test Worker；`main` 不打包预览。
 3. 按站点配置的认证方式登录现有 CloudSSH 测试站，在**同一个站点**打开 `/__rdp-preview/`，分别点「公网 TCP」和「Cloudflare Tunnel」。仅在网页画布的 FreeRDP 登录框输入测试 Windows 凭据，试记事本打字、拖窗和滚动。每次最多 3 分钟，每方向最多 16 MiB，只供小范围验收，不用作长会话性能结论。每条线路反馈登录/画面/键鼠结果，若失败仅附脱敏页面状态或错误；不要分享凭据、帧数据或桌面内容。
 4. 若显示 404，检查是否在同一测试域名登录、测试 CI 是否成功、变量时间是否过期。不受保护的隧道路由只在授权测试窗口使用，测试后手动删除；移除仓库变量并重新部署 `test` 可彻底移除网页入口。时间到期后无需部署即可拒绝新会话。
 

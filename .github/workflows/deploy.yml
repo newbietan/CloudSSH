@@ -57,16 +57,33 @@ jobs:
       - name: Build frontend
         run: pnpm run build:frontend
 
+      - name: Select browser test profile
+        id: e2e-profile
+        env:
+          TEST_E2E_PROFILE: ${{ vars.CLOUDSSH_TEST_E2E }}
+        run: node scripts/ci-test-e2e.mjs
+
       # Fail inexpensive checks and the build before downloading browser binaries.
       - name: Install Playwright browser
+        if: steps.e2e-profile.outputs.profile != 'skip' && steps.e2e-profile.outputs.profile != 'chromium'
         run: pnpm exec playwright install --with-deps chromium webkit
+
+      - name: Install Playwright Chromium (reduced test profile)
+        if: steps.e2e-profile.outputs.profile == 'chromium'
+        run: pnpm exec playwright install --with-deps chromium
 
       - name: Browser E2E and accessibility tests
         id: e2e
+        if: steps.e2e-profile.outputs.profile != 'skip' && steps.e2e-profile.outputs.profile != 'chromium'
         run: pnpm run test:e2e
 
+      - name: Browser E2E and accessibility tests (Chromium only)
+        id: e2e-chromium
+        if: steps.e2e-profile.outputs.profile == 'chromium'
+        run: pnpm run test:e2e --project=chromium
+
       - name: Upload browser test reports
-        if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
+        if: ${{ !cancelled() && (steps.e2e.outcome == 'success' || steps.e2e.outcome == 'failure' || steps.e2e-chromium.outcome == 'success' || steps.e2e-chromium.outcome == 'failure') }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: playwright-report-${{ github.run_id }}-${{ github.run_attempt }}
@@ -76,10 +93,24 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+      - name: Cache compiled FreeRDP assets (test only)
+        id: rdp-preview-cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/test' && vars.CLOUDSSH_RDP_TEST_CONFIG != ''
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: tests/interop/rdp-check/preview-cache
+          key: cloudssh-rdp-assets-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tests/interop/rdp-check/prepare-preview.sh', 'tests/interop/rdp-check/preview-cache.mjs') }}
+
       - name: Build opt-in browser desktop preview (test only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/test' && vars.CLOUDSSH_RDP_TEST_CONFIG != ''
+        env:
+          RDP_CACHE_HIT: ${{ steps.rdp-preview-cache.outputs.cache-hit }}
         run: |
-          bash tests/interop/rdp-check/prepare-preview.sh
+          if [ "$RDP_CACHE_HIT" = 'true' ]; then
+            bash tests/interop/rdp-check/prepare-preview.sh --from-cache
+          else
+            bash tests/interop/rdp-check/prepare-preview.sh
+          fi
           pnpm exec wrangler deploy tests/interop/rdp-check/preview-worker.ts --env test --config wrangler.toml --dry-run
 
       - name: Deploy verified artifact (test)

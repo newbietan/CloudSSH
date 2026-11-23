@@ -348,7 +348,7 @@ pnpm run verify      # typecheck + test + build:frontend + test:e2e 完整门禁
 - 测试文件位于 `tests/` 目录，`.test.ts` 后缀（详见 Key Directories 中的 `tests/` 结构）。
 - `tests/ssh/fixtures/` 中的私钥只用于公开协议测试，绝不可用于真实服务器。
 - E2E 首次运行需安装浏览器：`pnpm exec playwright install chromium webkit`。
-- Playwright CI 默认 2 个 worker，保留全部浏览器项目/用例、最多 2 次重试、首次重试 trace 与失败截图。HTML 报告位于 `playwright-report/`，JSON 位于 `test-results/results.json`；E2E 实际执行成功或失败时在部署密钥注入前上传两目录，保留 7 天（取消/未执行时不上传），不通过 `continue-on-error` 放行失败。可用 `CI=true pnpm exec playwright test --workers=1` 对照/回退排查；以同类 runner 的多轮耗时和稳定性评估，不预设提速比例，详见 `tests/README.md`。
+- Playwright CI 默认 2 个 worker 和完整 Chromium / 移动 WebKit；仅 `test` push 可由 `CLOUDSSH_TEST_E2E` 显式选择 `chromium` 或 `skip`，不影响 PR、手动验证或 `main`。所选项目保留全部用例、最多 2 次重试、首次重试 trace 与失败截图。HTML 报告位于 `playwright-report/`，JSON 位于 `test-results/results.json`；E2E 实际执行成功或失败时在部署密钥注入前上传两目录，保留 7 天（取消/未执行时不上传），不通过 `continue-on-error` 放行失败。可用 `CI=true pnpm exec playwright test --workers=1` 对照/回退排查；以同类 runner 的多轮耗时和稳定性评估，不预设提速比例，详见 `tests/README.md`。
 - E2E spec 统一从 `tests/e2e/fixtures.ts` 导入 `test` / `expect`。自动 context 级基础 Mock 仅放行初始化 GET；业务接口及写操作须显式按方法 Mock，未声明请求即使被前端 catch 也会使测试失败并附脱敏路径证据。`tests/e2e-fixtures.test.ts` 防止 spec 绕过 fixture（详见 `tests/README.md`）。
 - Playwright 使用全新 `--mode e2e --strictPort` Vite（不复用普通开发服务），E2E 禁用 Worker 代理和 Service Worker；`frontend/e2e-server.ts` 对漏网 API 返回带标记的 501 JSON，而非 SPA HTML，守卫同时捕获 `route.continue()` 绕过。生产构建与正常开发代理不受影响。
 - 新增前端文案必须同时提供 zh-CN/zh-TW/en-US 词条，`i18n.test.ts` 会校验多端词条对齐。
@@ -497,6 +497,7 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 ## #201 站内 RDP 预览（仅 test 显式配置）
 
 - 方案与完成条件见 `docs/rdp-implementation-plan.md`。测试分支 CI 仅在仓库变量 `CLOUDSSH_RDP_TEST_CONFIG` 非空时构建隔离的 `tests/interop/rdp-check/preview-worker.ts` 并作为 `cloudssh-test` 入口；正式主入口、Durable Object 绑定、迁移及生产构建保持不变。`wrangler.toml` 的 Data/Text rules 仅用于该入口显式导入的 `.rdp-bin/.rdp-text` 模块，不给主 Worker 增加 `[assets]`，以保留原生 `ctx.access`。
+- 预览 CI 仅在有配置的 `test` push 按 OS、架构及构建脚本精确缓存已编译的 FreeRDP JS/WASM/许可证（不含配置、凭据、页面）；命中须校验大小、SHA-256 和 WASM，始终使用本次提交的页面并运行 dry-run。不要把缓存复用于 PR/生产。
 - `/__rdp-preview/` 是测试入口，不是已发布的设备管理功能。显式有限有效期、CloudSSH 当前模式的有效登录（无额外账号白名单）、同源 WebSocket、固定双目标和严格 Windows TLS SHA-256 固定后才可验证；不接受客户端目的地或在仓库/变量存放 Windows 密码。不开匿名/分享/SSH/SFTP/Agent/MCP。此处的流量和会话硬预算只供受控测试环境的 P0，不能作为生产中继配额。移除仓库变量并重跑测试部署可移除预览入口。未做真机登录不要声称 #201 完成。
 
 ## SSH 兼容增强边界
@@ -546,7 +547,7 @@ pnpm run deploy:test     # 部署 test 环境
 - 维护者仓库 `docs/**` 变更 → 发布 GitHub Pages 主题编辑器（`github-pages.yml`）。上传与部署必须共用含 `github.run_attempt` 的产物名：Pages 按整个 run 查找产物，重跑 job 时上次尝试的同名归档仍可能存在。仅修改 Pages 工作流可在目标分支手动触发验证；重跑旧 run 不会载入新工作流。
 - Fork 仅按需运行上游 `main` 同步（`sync-upstream.yml`）：手动执行无需变量；定时同步默认关闭，仅 `AUTO_SYNC_UPSTREAM=true` 开启，删除或设为 `false` 即关闭
 
-> 部署门禁（`deploy.yml`）依次执行：冻结锁文件安装 → `typecheck` → `test` → `build:frontend` → Playwright 浏览器安装 → `test:e2e` → 上传浏览器报告 → 按分支部署；任一环节失败即阻断部署。E2E 失败仍尝试上传报告，不放行部署。CI 部署步骤直接执行 `pnpm exec wrangler deploy [--env test]`，复用已通过测试的前端内联产物，不在注入部署 Secrets 后重复构建；本地 `deploy`/`deploy:test` 脚本仍保留一键构建部署。
+> 部署门禁（`deploy.yml`）始终先做冻结锁文件安装 → `typecheck` → `test` → `build:frontend`，默认再运行完整浏览器验证及报告上传。**仅 `test` push** 可用仓库变量 `CLOUDSSH_TEST_E2E=chromium`（只跑 Chromium）或 `skip`（跳过浏览器）调试；不设置、`full` 或无效值为全量，Summary 显示实际档位，独立 SSH 互操作不受影响。实际运行的门禁失败仍阻断部署，E2E 失败会尝试上传报告。CI 复用同一份前端内联产物，不在注入部署 Secrets 后重复构建；本地 `deploy`/`deploy:test` 不变。
 
 ### 自定义域名
 

@@ -74,10 +74,16 @@ describe('CI 验证和部署边界', () => {
   it('does not expose the optional RDP preview in production or pass secrets to the compiler', () => {
     const deploy = readWorkflow('deploy.yml');
     const build = deploy.split('      - name: Build opt-in browser desktop preview (test only)\n')[1]?.split('      - name:')[0] ?? '';
+    const cache = deploy.split('      - name: Cache compiled FreeRDP assets (test only)\n')[1]?.split('      - name:')[0] ?? '';
     const preview = deploy.split('      - name: Deploy verified artifact with browser desktop preview (test only)\n')[1]?.split('      - name:')[0] ?? '';
     const gate = "github.event_name == 'push' && github.ref == 'refs/heads/test' && vars.CLOUDSSH_RDP_TEST_CONFIG != ''";
     expect(build).toContain(`if: ${gate}`);
-    expect(build).toContain('prepare-preview.sh');
+    expect(cache).toContain(`if: ${gate}`);
+    expect(cache).toMatch(/uses: actions\/cache@[a-f0-9]{40} /);
+    expect(cache).toContain('path: tests/interop/rdp-check/preview-cache');
+    expect(cache).toContain("hashFiles('tests/interop/rdp-check/prepare-preview.sh', 'tests/interop/rdp-check/preview-cache.mjs')");
+    expect(cache).not.toMatch(/restore-keys|secrets\.|vars\.CLOUDSSH_TEST_E2E/);
+    expect(build).toContain('prepare-preview.sh --from-cache');
     expect(build).toContain('--env test --config wrangler.toml --dry-run');
     expect(build).not.toContain('secrets.');
     expect(preview).toContain(`if: ${gate}`);
@@ -99,7 +105,24 @@ describe('CI 验证和部署边界', () => {
     expect(script).not.toContain('chmod -R');
   });
 
-  it('将昂贵浏览器安装放在快速检查和构建之后，保留全部浏览器', () => {
+  it('测试档位不跳过类型检查、单测、构建或部署前打包', () => {
+    const deploy = readWorkflow('deploy.yml');
+    for (const [name, command] of [
+      ['Type check', 'pnpm run typecheck'],
+      ['Unit and integration tests', 'pnpm test'],
+      ['Build frontend', 'pnpm run build:frontend'],
+    ]) {
+      expect(deploy).toContain(`      - name: ${name}\n        run: ${command}\n`);
+    }
+    const installChromium = deploy.split('      - name: Install Playwright Chromium (reduced test profile)\n')[1]?.split('      - name:')[0] ?? '';
+    expect(installChromium).toContain("if: steps.e2e-profile.outputs.profile == 'chromium'");
+    expect(installChromium).toContain('run: pnpm exec playwright install --with-deps chromium\n');
+    expect(deploy).toContain('TEST_E2E_PROFILE: ${{ vars.CLOUDSSH_TEST_E2E }}');
+    expect(deploy).toContain('run: node scripts/ci-test-e2e.mjs');
+    expect(readWorkflow('ssh-interop.yml')).not.toContain('CLOUDSSH_TEST_E2E');
+  });
+
+  it('将完整浏览器安装放在快速检查和构建之后', () => {
     const deploy = readWorkflow('deploy.yml');
     const browsers = deploy.indexOf('run: pnpm exec playwright install --with-deps chromium webkit');
     expect(browsers).toBeGreaterThan(deploy.indexOf('run: pnpm run typecheck'));
@@ -165,8 +188,13 @@ describe('浏览器 CI 并发与报告策略', () => {
     const uploadHeader = '      - name: Upload browser test reports\n';
     const upload = deploy.split(uploadHeader)[1]?.split('\n      - name:')[0] ?? '';
     expect(deploy).toContain('          persist-credentials: false');
-    expect(deploy).toContain('        id: e2e\n        run: pnpm run test:e2e');
-    expect(upload).toContain(`if: \${{ !cancelled() && steps.e2e.outcome != 'skipped' }}`);
+    expect(deploy).toContain("id: e2e\n        if: steps.e2e-profile.outputs.profile != 'skip' && steps.e2e-profile.outputs.profile != 'chromium'\n        run: pnpm run test:e2e\n");
+    expect(deploy).toContain("id: e2e-chromium\n        if: steps.e2e-profile.outputs.profile == 'chromium'\n        run: pnpm run test:e2e --project=chromium");
+    expect(upload).toContain('!cancelled()');
+    for (const id of ['e2e', 'e2e-chromium']) {
+      expect(upload).toContain(`steps.${id}.outcome == 'success'`);
+      expect(upload).toContain(`steps.${id}.outcome == 'failure'`);
+    }
     expect(upload).toMatch(/uses: actions\/upload-artifact@[a-f0-9]{40} /);
     expect(upload).toContain(
       `name: playwright-report-\${{ github.run_id }}-\${{ github.run_attempt }}`
