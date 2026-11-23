@@ -62,7 +62,7 @@ async function run() {
     const now = performance.now();
     const fmt = (ms, age, limit) => ms !== undefined && age < limit ? `${ms} ms` : '—';
     const text = `${relayLabel} ${fmt(relayMs, now - relayAt, 10000)} · RDP ${fmt(remoteMs, now - remoteAt, 30000)}`;
-    meter.textContent = el('stage-latency').textContent = text;
+    meter.textContent = text;
   }
   function sample() {
     if (!ready || stopped || document.hidden) return;
@@ -91,7 +91,7 @@ async function run() {
   }, { signal: abort.signal });
   let negotiatedResize = false;
   let initialSize = viewportSize();
-  let resizeTimer, lastSize = '';
+  let resizeTimer, lastSize = '', settledResize;
   function layout(force = false) {
     if (stopped) return;
     let [w, h] = viewportSize();
@@ -104,12 +104,19 @@ async function run() {
     lastSize = sizeKey;
     stage.style.setProperty('--desktop-width', w + 'px');
     stage.style.setProperty('--desktop-height', h + 'px');
-    if (negotiatedResize) window.dispatchEvent(new Event('resize'));
+    if (negotiatedResize) {
+      settledResize = new Event('resize');
+      try { window.dispatchEvent(settledResize); } finally { settledResize = undefined; }
+    }
   }
   const scheduleLayout = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(layout, 250); };
   const observer = new ResizeObserver(scheduleLayout);
   observer.observe(stage);
-  document.addEventListener('fullscreenchange', scheduleLayout, { signal: abort.signal });
+  // This frame is only a FreeRDP runtime. Browsers can emit a burst of window resize events;
+  // SDL resizes the backing canvas synchronously on each. Only forward our settled layout.
+  window.addEventListener('resize', event => {
+    if (event !== settledResize) { event.stopImmediatePropagation(); scheduleLayout(); }
+  }, { capture: true, signal: abort.signal });
   layout();
   let pendingFingerprint;
   let decision = -1;

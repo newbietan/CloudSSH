@@ -114,7 +114,7 @@ test('the themed workspace stays in the current tab and a saved login is release
   const asset = (name: string) => readFileSync(`${__dirname}/../../src/worker/rdp-client/${name}.rdp-text`, 'utf8');
   await page.route(`**/rdp/${id}/client`, r => r.fulfill({ contentType: 'text/html', body: asset('index') }));
   await page.route('**/rdp/assets/desktop.js', r => r.fulfill({ contentType: 'text/javascript', body: asset('desktop') }));
-  await page.route('**/rdp/assets/rdp-socket.js', r => r.fulfill({ contentType: 'text/javascript', body: `window.createCloudSshRdpSocket = () => ({ probe() { this.onRelayRtt(24); }, reportDesktopReady() { this.onDesktopRecorded(); }, close() {} })` }));
+  await page.route('**/rdp/assets/rdp-socket.js', r => r.fulfill({ contentType: 'text/javascript', body: `window.createCloudSshRdpSocket = () => ({ probe() { this.onRelayRtt(24); }, reportDesktopReady() { this.onDesktopRecorded(); }, close() { sessionStorage.setItem('test-rdp-closed', 'yes'); } })` }));
   await page.route('**/rdp/assets/sdl-freerdp.wasm', r => r.fulfill({ contentType: 'application/wasm', body: Buffer.from([0,97,115,109,1,0,0,0]) }));
   await page.route('**/rdp/assets/sdl-freerdp.js', r => r.fulfill({ contentType: 'text/javascript', body: `
     const m = window.Module;
@@ -139,7 +139,7 @@ test('the themed workspace stays in the current tab and a saved login is release
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
       writeText: async (value: string) => { document.body.dataset.copiedHost = value; },
     } });
-    if (!crossOriginIsolated) Object.defineProperty(window, 'crossOriginIsolated', { value: true });
+    Object.defineProperty(window, 'crossOriginIsolated', { value: location.pathname.startsWith('/rdp/') });
     if (typeof SharedArrayBuffer !== 'function') Object.defineProperty(window, 'SharedArrayBuffer', { value: ArrayBuffer });
   });
   await page.goto('/?lang=en-US');
@@ -169,11 +169,18 @@ test('the themed workspace stays in the current tab and a saved login is release
   await expect(page.locator('#server-modal #server-rdp-password')).toHaveAttribute('required');
   await page.locator('#modal-close-btn').click();
   expect(released).toBe(0);
-  await card.click();
+  const redundant: string[] = [];
+  page.on('request', req => {
+    if (/\/api\/(?:config|auth\/me|servers|rdp\/profiles)$/.test(req.url()) && page.url().endsWith('/rdp/' + id)) redundant.push(req.url());
+  });
+  await card.click(); // Actual top-level navigation from the non-isolated server list.
   await expect(page).toHaveURL(new RegExp(`/rdp/${id}$`));
   const workspace = page.locator('.rdp-workspace[open]');
   const frame = workspace.frameLocator('iframe');
   await expect(frame.locator('html')).toHaveAttribute('data-login-ok', 'true');
+  await expect(page.locator('#app')).toHaveAttribute('inert');
+  await expect(page.locator('#app-loading')).toHaveCount(0);
+  expect(redundant).toEqual([]);
   await expect(frame.locator('html')).toHaveAttribute('data-dynamic', 'true');
   const stage = frame.locator('#stage');
   // Measure the initial viewport at callMain, not after the status line changes on first paint.
@@ -185,39 +192,85 @@ test('the themed workspace stays in the current tab and a saved login is release
   await expect(frame.locator('html')).toHaveAttribute('data-requested-width', '960px');
   const toolbar = workspace.locator('header');
   await expect(toolbar.getByRole('heading')).toHaveText('Remote Desktop · Office Windows');
-  await expect(toolbar.getByRole('button')).toHaveText(['Disconnect', 'Full screen', 'Back']);
+  await expect(toolbar.getByRole('button')).toHaveText(['Full screen', 'Back']);
   await expect(frame.locator('header')).toHaveCount(0);
   const full = toolbar.getByRole('button', { name: 'Full screen' });
   const inFullscreen = () => page.evaluate(() => document.fullscreenElement !== null);
   expect(await inFullscreen()).toBe(false);
   await frame.locator('#canvas').click(); // Activating the desktop is not opting in to display fullscreen.
   expect(await inFullscreen()).toBe(false);
-  await expect(frame.locator('#stage-label')).toBeHidden();
+  const frameSize = () => stage.evaluate(e => [innerWidth, innerHeight, e.clientWidth, e.clientHeight]);
+  const initialSize = await frameSize();
   const fullscreenSupported = await page.evaluate(() => !!document.fullscreenEnabled);
   if (fullscreenSupported) {
     await expect(full).toBeEnabled();
     expect(await stage.evaluate(() => !!document.fullscreenEnabled)).toBe(false); // WASM cannot request it.
-    await full.click();
-    await expect.poll(() => workspace.locator('iframe').evaluate(e => document.fullscreenElement === e)).toBe(true);
-    await expect(frame.locator('#stage-label')).toBeVisible();
-    await expect(frame.locator('.status-row')).toBeHidden();
-    await page.evaluate(() => document.exitFullscreen());
-    await expect(frame.locator('.status-row')).toBeVisible();
+    const exit = toolbar.getByRole('button', { name: 'Exit full screen' });
+    for (const how of ['button', 'browser', 'back']) {
+      await full.click();
+      await expect.poll(() => workspace.locator('.rdp-shell').evaluate(e => document.fullscreenElement === e)).toBe(true);
+      await expect(exit).toBeVisible();
+      expect(await frameSize()).toEqual(initialSize);
+      await expect(frame.locator('#latency')).toBeVisible();
+      if (how === 'back') break; // Back must end the live session even from fullscreen.
+      if (how === 'button') {
+        // Model a display substantially larger than the tab. The iframe's logical viewport and SDL canvas must not resize.
+        // CDP cannot resize an actual fullscreen OS window; resize its host viewport instead.
+        const viewport = workspace.locator('.rdp-viewport');
+        await viewport.evaluate(e => { e.style.minWidth = '1280px'; e.style.minHeight = '920px'; });
+        await expect.poll(() => frameSize()).toEqual(initialSize);
+        const target = workspace.locator('iframe');
+        await expect.poll(() => target.evaluate(e => Number(e.style.getPropertyValue('--rdp-scale')))).toBeGreaterThan(1);
+        await frame.locator('#canvas').click();
+        await viewport.evaluate(e => { e.style.removeProperty('min-width'); e.style.removeProperty('min-height'); });
+        await exit.click();
+      } else {
+        await page.keyboard.press('Escape');
+        // Headless engines need not bind a synthetic key to the OS fullscreen command.
+        if (await inFullscreen()) await page.evaluate(() => document.fullscreenElement && document.exitFullscreen());
+      }
+      await expect(full).toBeVisible();
+      await expect.poll(inFullscreen).toBe(false);
+      expect(await frameSize()).toEqual(initialSize);
+    }
   } else await expect(full).toBeDisabled();
-  await toolbar.getByRole('button', { name: 'Disconnect' }).click();
-  await expect(frame.locator('#status')).toHaveText('Connection ended. Return to the server list to reconnect.');
-  await expect(full).toBeDisabled();
   expect(context.pages()).toHaveLength(1);
   expect(released).toBe(1);
   await workspace.getByRole('button', { name: 'Back' }).click();
   await expect(workspace).toHaveCount(0);
   await expect(card).toBeVisible();
+  expect(await page.evaluate(() => sessionStorage.getItem('test-rdp-closed'))).toBe('yes');
+  expect(await inFullscreen()).toBe(false);
   await expect(firstCard).toHaveText('Office Windows');
   await expect(page.locator(`#rdp-card-${id}`)).not.toContainText('No record yet');
   await page.goto(`/rdp/${id}`); // A pasted URL is not a second user-authorized connect action.
   await expect(card).toBeVisible();
   await expect(workspace).toHaveCount(0);
   expect(released).toBe(1);
+});
+
+test('isolated desktop entry hides the home loader before JS; Back also works before first frame', async ({ page }) => {
+  const path = `/rdp/${id}`;
+  await page.goto('/?lang=en-US');
+  await page.evaluate(device => sessionStorage.setItem('cloudssh_rdp_open_once', JSON.stringify({ id: device, until: Date.now() + 30000 })), id);
+  let resume!: () => void;
+  const gate = new Promise<void>(resolve => { resume = resolve; });
+  await page.route('**/src/main.ts', async r => { await gate; await r.fallback(); });
+  await page.route(`**${path}/client`, r => r.fulfill({ contentType: 'text/html', body: '<p>Waiting for desktop…</p>' }));
+  await page.goto(path, { waitUntil: 'commit' });
+  try {
+    await expect(page.locator('html')).toHaveAttribute('data-rdp-entry', '');
+    await expect(page.locator('#app-loading')).toBeAttached();
+    await expect(page.locator('#app-loading')).toBeHidden();
+    await expect(page.locator('#app')).toBeHidden();
+  } finally { resume(); }
+  const workspace = page.locator('.rdp-workspace[open]');
+  await expect(workspace.frameLocator('iframe').getByText('Waiting for desktop…')).toBeVisible();
+  await expect(workspace.getByRole('button', { name: 'Full screen' })).toBeDisabled();
+  await workspace.getByRole('button', { name: 'Back' }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(workspace).toHaveCount(0);
+  expect(await page.evaluate(() => sessionStorage.getItem('cloudssh_rdp_open_once'))).toBeNull();
 });
 
 for (const scenario of ['accept', 'cancel', 'saved match', 'saved mismatch', 'save failed'] as const) {

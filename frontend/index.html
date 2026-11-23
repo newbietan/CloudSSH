@@ -74,6 +74,8 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
     <meta name="color-scheme" content="dark light" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>CloudSSH</title>
+    <!-- Presentation only: never flash the homepage loader during an isolated desktop navigation. -->
+    <script>if (/^\/rdp\/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(location.pathname)) document.documentElement.dataset.rdpEntry = '';</script>
     <!-- 字体已本地化：见 frontend/src/assets/fonts/fonts.css 的 @font-face，不再请求 Google Fonts。 -->
     <link rel="stylesheet" href="/src/style.css" />
     <script

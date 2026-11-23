@@ -31,7 +31,7 @@ import { requestCloudflareSshCertificate } from './cf-ssh-ca';
 import { notify } from './ui-feedback';
 import { initVersionNotice } from './version-notice';
 import { McpManager } from './mcp-manager';
-import { RdpWorkspace } from './rdp-workspace';
+import { rdpEntryId, RdpWorkspace } from './rdp-workspace';
 import { serverOwnerKey } from './server-removal';
 import { mountAssistantIcons } from './assistant-icons';
 
@@ -1031,6 +1031,15 @@ function finishAppLoading(): void {
 }
 
 async function init(): Promise<void> {
+  if (rdpEntryId()) {
+    // The Worker already authenticated this page and checked profile ownership. The iframe,
+    // profile, ticket and WS still perform their own checks. Do not mount a second server list.
+    initI18n();
+    restoreTheme();
+    document.getElementById('app-loading')?.remove(); // Keep #app hidden and inert on this route.
+    rdpWorkspace = new RdpWorkspace(() => false, () => {}, true);
+    return;
+  }
   mountAssistantIcons();
   clearLegacyAgentSessionDrafts();
   initI18n();
