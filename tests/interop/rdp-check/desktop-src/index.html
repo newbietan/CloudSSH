@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CloudSSH 本地 RDP 原型</title>
+  <style>
+    body { font: 16px system-ui; background: #101827; color: #eef2fb; margin: 1.5rem }
+    button { font: inherit; padding: .5rem 1rem; margin-right: .5rem }
+    canvas { display: block; max-width: 100%; height: auto; background: #070b13; margin-top: 1rem }
+  </style>
+  <h1>CloudSSH 本地 RDP 原型</h1>
+  <p>请选择线路。在桌面画布内出现登录对话框时，输入这台测试机的 Windows 凭据。</p>
+  <button id="public" disabled>公网 TCP</button>
+  <button id="tunnel" disabled>Cloudflare Tunnel</button>
+  <button id="disconnect" disabled>断开／重试</button>
+  <p id="status" role="status">正在读取本地测试配置。</p>
+  <canvas id="canvas" tabindex="0"></canvas>
+  <script src="desktop.js" defer></script>
+</html>

@@ -30,9 +30,10 @@ describe('Fork 工作流执行策略', () => {
     );
     expect(deploy).not.toMatch(/^\s*continue-on-error:\s*true/m);
     expect(deploy).not.toMatch(/run: pnpm run test:e2e[^\n]*\|\|/);
-    expect(
-      deploy.match(/^        if: github.event_name == 'push' && github.ref == 'refs\/heads\/(?:test|main)'$/gm)
-    ).toHaveLength(2);
+    const deploymentSteps = deploy.split('      - name: Deploy verified artifact').slice(1);
+    expect(deploymentSteps).toHaveLength(3);
+    expect(deploymentSteps.filter((step) => step.includes("github.ref == 'refs/heads/main'"))).toHaveLength(1);
+    expect(deploymentSteps.filter((step) => step.includes("github.ref == 'refs/heads/test'"))).toHaveLength(2);
   });
 
   it('Fork 可直接手动同步，定时同步需要显式开启', () => {
@@ -62,12 +63,27 @@ describe('CI 验证和部署边界', () => {
     }
     expect(deploy).toContain('run: pnpm test');
     const sections = deploy.split('      - name: Deploy verified artifact').slice(1);
-    expect(sections).toHaveLength(2);
+    expect(sections).toHaveLength(3);
     for (const section of sections) {
-      expect(section).toContain("if: github.event_name == 'push' && github.ref == 'refs/heads/");
+      expect(section).toMatch(/^        if: github.event_name == 'push' && github.ref == 'refs\/heads\/(test|main)'(?: && [^\n]+)?$/m);
       expect(section).toContain('CLOUDFLARE_API_TOKEN:');
     }
     expect(deploy.slice(0, deploy.indexOf('      - name: Deploy verified artifact'))).not.toContain('secrets.');
+  });
+
+  it('does not expose the optional RDP preview in production or pass secrets to the compiler', () => {
+    const deploy = readWorkflow('deploy.yml');
+    const build = deploy.split('      - name: Build opt-in browser desktop preview (test only)\n')[1]?.split('      - name:')[0] ?? '';
+    const preview = deploy.split('      - name: Deploy verified artifact with browser desktop preview (test only)\n')[1]?.split('      - name:')[0] ?? '';
+    const gate = "github.event_name == 'push' && github.ref == 'refs/heads/test' && vars.CLOUDSSH_RDP_TEST_CONFIG != ''";
+    expect(build).toContain(`if: ${gate}`);
+    expect(build).toContain('prepare-preview.sh');
+    expect(build).toContain('--env test --config wrangler.toml --dry-run');
+    expect(build).not.toContain('secrets.');
+    expect(preview).toContain(`if: ${gate}`);
+    expect(preview).toContain('preview-worker.ts --env test --config wrangler.toml');
+    expect(preview).not.toContain('prepare-preview.sh');
+    expect(deploy).toContain("github.ref == 'refs/heads/test' && vars.CLOUDSSH_RDP_TEST_CONFIG == ''");
   });
 
   it('将昂贵浏览器安装放在快速检查和构建之后，保留全部浏览器', () => {

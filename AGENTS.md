@@ -494,6 +494,11 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
     **移动阅读空间与材质**：沿用≤767px或粗指针且≤1180px断点，隐藏Agent四个`data-prompt-key`普通建议及空容器占位，但保留`agent-resume-task-chip`恢复入口，桌面不隐藏。终端更多菜单MCP入口紧邻Agent之后，所有直接子项禁止flex压缩，由整菜单纵向滚动，不能让主题选择或字号行溢出重叠；原匿名/分享权限不变。内置`data-theme="liquid-glass"`只在该移动断点通过body继承覆盖阅读表面变量，并对共用弹窗、菜单和抽屉使用实底；保留页背景、圆角、边缘和阴影，不改根内联调色板、桌面或自定义主题。`mobile-glass.spec.ts`核查15类表面、主题/断点切换、真实场景截图与菜单正文不透出终端文字，不能只靠加大模糊掩盖叠字。
 
+## #201 站内 RDP 预览（仅 test 显式配置）
+
+- 方案与完成条件见 `docs/rdp-implementation-plan.md`。测试分支 CI 仅在仓库变量 `CLOUDSSH_RDP_TEST_CONFIG` 非空时构建隔离的 `tests/interop/rdp-check/preview-worker.ts` 并作为 `cloudssh-test` 入口；正式主入口、Durable Object 绑定、迁移及生产构建保持不变。`wrangler.toml` 的 Data/Text rules 仅用于该入口显式导入的 `.rdp-bin/.rdp-text` 模块，不给主 Worker 增加 `[assets]`，以保留原生 `ctx.access`。
+- `/__rdp-preview/` 是测试入口，不是已发布的设备管理功能。显式有限有效期、CloudSSH 已验证的完整账户键、同源 WebSocket、固定双目标和严格 Windows TLS SHA-256 固定后才可验证；不接受客户端目的地或在仓库/变量存放 Windows 密码。不开匿名/分享/SSH/SFTP/Agent/MCP。此处的流量和会话硬预算只供单账户 P0，不能作为生产中继配额。移除仓库变量并重跑测试部署可移除预览入口。未做真机登录不要声称 #201 完成。
+
 ## SSH 兼容增强边界
 
 - `frontend/package.json` 的 `bcrypt-pbkdf@1.0.2` 仅用于浏览器解锁，不是生产 SSH 协议库。支持 OpenSSH bcrypt + AES-CTR 与 PKCS#8 PBES2/PBKDF2 + AES-CBC；口令不上传、不持久化，解锁私钥仍进入 Worker 签名。匿名导入关闭凭据记忆；保存服务器必须单独同意按既有账号加密存储（非独立 KMS），编辑器代际变化后禁止迟到解锁结果提交。预算与许可见 `docs/ssh-compatibility.md`，不要无界执行用户提供的 KDF 参数。

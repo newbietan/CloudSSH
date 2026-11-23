@@ -58,6 +58,17 @@ new_sqlite_classes = ["SSHShareDO"]
 [[migrations]]
 tag = "v3"
 new_sqlite_classes = ["MCPExecutionDO"]
+# RDP 预览的二进制/文本资源由 test CI 的独立入口按名称导入；主入口不导入这些模块。
+[[rules]]
+type = "Data"
+globs = ["**/*.rdp-bin"]
+fallthrough = true
+
+[[rules]]
+type = "Text"
+globs = ["**/*.rdp-text"]
+fallthrough = true
+
 # ========== Test 环境 ==========
 # test 分支部署到独立 Worker；DO 类绑定相同，但实例与数据和生产环境隔离
 # 自定义域名请在 Cloudflare Dashboard 中手动绑定
