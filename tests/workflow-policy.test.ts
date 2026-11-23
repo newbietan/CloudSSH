@@ -101,7 +101,7 @@ describe('CI 验证和部署边界', () => {
     expect(script).toContain('-e HOME=/src/.cloudssh-build-home');
     expect(script).toContain('-e EM_CACHE=/src/.cloudssh-build-home/emscripten-cache');
     expect(script).toMatch(/run_sdk bash -euc '[^\n]*--no-build/);
-    expect(script).toMatch(/run_sdk bash -euc '[\s\S]*?emscripten\.sh --no-clone/);
+    expect(script).toMatch(/run_sdk bash -euc '[\s\S]*?bash -e scripts\/emscripten\.sh --no-clone/);
     expect(script).not.toContain('chmod -R');
   });
 

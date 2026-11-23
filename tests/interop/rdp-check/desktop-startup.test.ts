@@ -7,9 +7,12 @@ const script = readFileSync(new URL('./desktop-src/desktop.js', import.meta.url)
 const config = { fingerprint: '1'.repeat(64), public: true, tunnel: true };
 
 function fixture() {
-  let choose: () => void = () => {};
-  const status = { textContent: '' };
-  const button = { disabled: true, addEventListener: (_: string, callback: () => void) => { choose = callback; } };
+  let submit: (event: object) => void = () => {};
+  const preventDefault = vi.fn();
+  const status = { textContent: '', focus: vi.fn() };
+  const form = { addEventListener: (_: string, callback: (event: object) => void) => { submit = callback; } };
+  const password = { value: 'test-password', disabled: false };
+  const button = { disabled: true, id: 'public' };
   const disconnect = { disabled: true, addEventListener: vi.fn() };
   const append = vi.fn();
   const wasmURL = '/__rdp-preview/sdl-freerdp.wasm';
@@ -23,12 +26,19 @@ function fixture() {
   const window = { addEventListener: vi.fn(), removeEventListener: vi.fn(), Module: undefined } as {
     addEventListener: ReturnType<typeof vi.fn>;
     removeEventListener: ReturnType<typeof vi.fn>;
-    Module?: { instantiateWasm: (imports: object, receive: (instance: object, module: object) => void) => object };
+    Module?: {
+      takeWindowsPassword: () => string | undefined;
+      onWindowsFirstFrame: () => void;
+      instantiateWasm: (imports: object, receive: (instance: object, module: object) => void) => object;
+    };
   };
   const canvas = { focus: vi.fn() };
-  const elements: Record<string, object> = { status, canvas, disconnect, public: button, tunnel: { disabled: true } };
+  const elements: Record<string, object> = {
+    status, canvas, disconnect, public: button, tunnel: { disabled: true }, credentials: form,
+    'windows-password': password,
+  };
   runInNewContext(script, {
-    crossOriginIsolated: true, SharedArrayBuffer, AbortSignal, AbortController, URL,
+    crossOriginIsolated: true, SharedArrayBuffer, AbortSignal, AbortController, URL, TextEncoder,
     location: { pathname: '/__rdp-preview/', origin: 'https://test.example', protocol: 'https:' },
     setTimeout: (...args: Parameters<typeof setTimeout>) => setTimeout(...args),
     clearTimeout: (timer: ReturnType<typeof setTimeout>) => clearTimeout(timer),
@@ -36,7 +46,10 @@ function fixture() {
     fetch: fetchResource, WebAssembly: { compileStreaming, instantiate },
     document: { getElementById: (id: string) => elements[id], head: { append }, createElement: () => ({ setAttribute: vi.fn(), addEventListener: vi.fn() }) },
   });
-  return { status, append, fetchResource, compileStreaming, instantiate, module, instance, window, click: () => choose() };
+  return {
+    status, append, fetchResource, compileStreaming, instantiate, module, instance, window, password,
+    canvas, preventDefault, click: () => submit({ preventDefault, submitter: button }),
+  };
 }
 
 describe('FreeRDP browser startup', () => {
@@ -47,11 +60,19 @@ describe('FreeRDP browser startup', () => {
     await vi.waitFor(() => expect(app.append).toHaveBeenCalledOnce());
     expect(app.fetchResource).toHaveBeenLastCalledWith('/__rdp-preview/sdl-freerdp.wasm', expect.objectContaining({ redirect: 'error', signal: expect.any(AbortSignal) }));
     expect(app.compileStreaming).toHaveBeenCalledOnce();
+    expect(app.preventDefault).toHaveBeenCalledOnce();
+    expect(app.password.value).toBe('');
+    expect(app.window.Module?.takeWindowsPassword()).toBe('test-password');
+    expect(app.window.Module?.takeWindowsPassword()).toBeUndefined();
+    expect(app.canvas.focus).not.toHaveBeenCalled();
     const receive = vi.fn();
     app.window.Module?.instantiateWasm({ shim: true }, receive);
     expect(receive).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(receive).toHaveBeenCalledWith(app.instance, app.module));
     expect(app.instantiate).toHaveBeenCalledWith(app.module, { shim: true });
+    expect(app.status.textContent).not.toContain('Windows 桌面已显示');
+    app.window.Module?.onWindowsFirstFrame();
+    expect(app.status.textContent).toContain('Windows 桌面已显示');
   });
 
   it('reports a non-WASM response instead of leaving the preview on a black screen', async () => {

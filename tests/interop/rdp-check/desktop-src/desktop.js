@@ -1,6 +1,8 @@
 const status = document.getElementById('status');
 const canvas = document.getElementById('canvas');
 const disconnect = document.getElementById('disconnect');
+const form = document.getElementById('credentials');
+const passwordInput = document.getElementById('windows-password');
 const routes = ['public', 'tunnel'];
 const preview = location.pathname.startsWith('/__rdp-preview/');
 const base = preview ? '/__rdp-preview/' : '/';
@@ -9,10 +11,11 @@ const CONFIG_TIMEOUT_MS = 15_000;
 const WASM_TIMEOUT_MS = 90_000;
 const STARTUP_TIMEOUT_MS = 30_000;
 const RELAY_TIMEOUT_MS = 15_000;
+const FIRST_FRAME_TIMEOUT_MS = 25_000;
 
 async function compileClient(signal) {
   const response = await fetch(base + 'sdl-freerdp.wasm', {
-    cache: 'no-store', credentials: 'same-origin', redirect: 'error', signal,
+    cache: 'no-cache', credentials: 'same-origin', redirect: 'error', signal,
   });
   if (!response.ok) throw new Error('wasm-http');
   if (response.headers.get('content-type')?.split(';')[0]?.trim() !== 'application/wasm') {
@@ -23,8 +26,10 @@ async function compileClient(signal) {
     : WebAssembly.compile(await response.arrayBuffer());
 }
 
-async function connectDesktop(route, fingerprint) {
+async function connectDesktop(route, fingerprint, password) {
   for (const button of Object.values(buttons)) button.disabled = true;
+  passwordInput.disabled = true;
+  status.focus({ preventScroll: true });
   disconnect.disabled = false;
   const ws = new URL((preview ? base : '/desktop/') + 'ws/' + route, location.origin);
   ws.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -40,6 +45,7 @@ async function connectDesktop(route, fingerprint) {
   function finish(message) {
     if (finished) return;
     finished = true;
+    password = undefined;
     clearTimeout(timer);
     abort.abort();
     window.removeEventListener('error', runtimeError);
@@ -73,6 +79,18 @@ async function connectDesktop(route, fingerprint) {
 
   window.Module = {
     canvas,
+    takeWindowsPassword() {
+      if (finished) return undefined;
+      const value = password;
+      password = undefined;
+      return value;
+    },
+    onWindowsFirstFrame() {
+      if (finished) return;
+      clearTimeout(timer);
+      phase = 'desktop';
+      status.textContent = 'Windows 桌面已显示。点击画布可操作。';
+    },
     websocket: { url: ws.href, subprotocol: null },
     // Use the already compiled module and pass it to Emscripten's pthreads.
     // This also gives this page control over the HTTP response and startup errors.
@@ -103,12 +121,12 @@ async function connectDesktop(route, fingerprint) {
       watch(RELAY_TIMEOUT_MS, '网页转发通道未能及时建立。');
       window.Module.websocket.on?.('open', () => {
         if (finished) return;
-        clearTimeout(timer);
-        status.textContent = '网页转发通道已打开；正在验证 Windows 证书，等待画布显示。';
+        if (phase === 'desktop') return;
+        status.textContent = '转发已打开；FreeRDP 正在校验证书并尝试登录 Windows。';
+        watch(FIRST_FRAME_TIMEOUT_MS, '转发已打开，但未收到 Windows 桌面。请核对密码或换另一条线路。');
       });
       window.Module.websocket.on?.('error', () => finish('所选线路的网页转发失败。'));
       window.Module.websocket.on?.('close', closed);
-      canvas.focus();
       setTimeout(() => {
         if (finished) return;
         try {
@@ -119,6 +137,8 @@ async function connectDesktop(route, fingerprint) {
           ]);
           if (result && typeof result.then === 'function') {
             result.then(closed, () => finish('FreeRDP 会话启动失败。'));
+          } else if (typeof result === 'number' && result !== 0) {
+            finish('FreeRDP 会话启动失败。');
           }
         } catch (error) {
           if (error?.name === 'ExitStatus') closed();
@@ -146,12 +166,19 @@ async function start() {
   const config = await response.json();
   if (!/^[0-9a-f]{64}$/.test(config.fingerprint)) throw new Error('missing pin');
   status.textContent = '请选择线路。';
-  for (const route of routes) {
-    if (!config[route]) continue;
-    const button = buttons[route];
-    button.disabled = false;
-    button.addEventListener('click', () => { void connectDesktop(route, config.fingerprint); }, { once: true });
-  }
+  for (const route of routes) buttons[route].disabled = !config[route];
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const route = event.submitter?.id;
+    if (!routes.includes(route) || buttons[route].disabled) return;
+    const password = passwordInput.value;
+    if (!password || password.includes('\x00') || new TextEncoder().encode(password).byteLength > 1024) {
+      status.textContent = '请输入有效的 Windows 密码。';
+      return;
+    }
+    passwordInput.value = '';
+    void connectDesktop(route, config.fingerprint, password);
+  });
 }
 
 disconnect.addEventListener('click', () => location.reload());

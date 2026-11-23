@@ -31,6 +31,7 @@ interface Dependencies<E extends PreviewBindings, C> {
   ): Response;
   files: ReadonlyMap<string, File>;
   gzipWasm?: ArrayBuffer;
+  clientTags?: ReadonlyMap<string, string>;
   now?: () => number;
 }
 
@@ -87,10 +88,21 @@ export function createPreviewHandler<E extends PreviewBindings, C>(deps: Depende
         headers: previewDocumentHeaders,
       });
     }
+    const headers = new Headers({ ...previewDocumentHeaders, 'Content-Type': gzipWasm ? 'application/wasm' : asset?.[1] ?? '' });
+    if (gzipWasm) headers.set('Vary', 'Accept-Encoding');
+    const tag = deps.clientTags?.get(path);
+    if (tag && /^[0-9a-f]{64}$/.test(tag)) {
+      const validator = `"${tag}"`;
+      headers.set('Cache-Control', 'private, no-cache, no-transform');
+      // Raw and gzip responses decode to the same module; use a weak validator.
+      headers.set('ETag', `W/${validator}`);
+      const candidates = request.headers.get('If-None-Match');
+      if (candidates && candidates.length <= 1024 && candidates.split(',').some((item) => {
+        const candidate = item.trim();
+        return candidate === '*' || candidate.replace(/^W\//, '') === validator;
+      })) return new Response(null, { status: 304, headers });
+    }
     if (gzipWasm) {
-      const headers = new Headers({
-        ...previewDocumentHeaders, 'Content-Type': 'application/wasm', Vary: 'Accept-Encoding',
-      });
       if (acceptsGzip(request.headers.get('Accept-Encoding'))) {
         headers.set('Content-Encoding', 'gzip');
         // These bytes are already compressed; don't have Workers encode them again.
@@ -101,6 +113,6 @@ export function createPreviewHandler<E extends PreviewBindings, C>(deps: Depende
       return new Response(body, { headers });
     }
     if (!asset) return hidden();
-    return new Response(asset[0], { headers: { ...previewDocumentHeaders, 'Content-Type': asset[1] } });
+    return new Response(asset[0], { headers });
   };
 }

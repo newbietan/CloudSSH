@@ -10,7 +10,7 @@ const script = fileURLToPath(new URL('./preview-cache.mjs', import.meta.url));
 const wasm = 'sdl-freerdp.rdp-bin';
 const glue = 'sdl-freerdp.rdp-text';
 const licenses = 'licenses.rdp-text';
-const upstreamGlue = 'initMainThread(){var pthreadPoolSize=32; const dynamicPool = true;';
+const upstreamGlue = 'initMainThread(){var pthreadPoolSize=32; takeWindowsPassword(); onWindowsFirstFrame();';
 
 function withCache(run: (fixture: ReturnType<typeof createFixture>) => void) {
   const fixture = createFixture();
@@ -72,6 +72,13 @@ describe('test-only FreeRDP cache', () => {
         expect(result.status).not.toBe(0);
         expect(result.stderr).toContain('recheck the pinned thread pool');
       }
+    });
+  });
+
+  it('rejects an unpatched client before preparing assets', () => {
+    withCache(({ cache, prepare }) => {
+      writeFileSync(join(cache, glue), upstreamGlue.replace('takeWindowsPassword', 'undefined'));
+      expect(prepare('record', 'invalid').stderr).toContain('Missing FreeRDP browser credential/first-frame bridge');
     });
   });
 

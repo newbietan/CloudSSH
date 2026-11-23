@@ -77,10 +77,100 @@ if text.count(needle) != 1:
 p.write_text(text.replace(needle, new + '\n\n' + accepted.rstrip('\n')))
 PY
 
+# Keep Windows credentials out of process arguments and SDL's modal event loop.
+# Only the browser-specific client reads the one-shot JS value; NLA and TLS
+# continue to run in FreeRDP as usual.
+python3 - "$source_dir/client/SDL/SDL3/sdl_freerdp.cpp" <<'PY'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1]); text = p.read_text()
+bridge = '''#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+EM_JS(int, cloudssh_take_password, (char* buffer, int capacity), {
+    const password = Module["takeWindowsPassword"]?.();
+    if (typeof password !== "string" || lengthBytesUTF8(password) >= capacity)
+        return 0;
+    stringToUTF8(password, buffer, capacity);
+    return 1;
+});
+#endif
+
+'''
+load = '''#ifdef __EMSCRIPTEN__
+	char browserPassword[1025] = {};
+	const bool copied = cloudssh_take_password(browserPassword, sizeof(browserPassword)) &&
+	                    browserPassword[0] &&
+	                    freerdp_settings_set_string(settings, FreeRDP_Password, browserPassword);
+	auto* volatile secret = browserPassword;
+	for (size_t i = 0; i < sizeof(browserPassword); ++i)
+		static_cast<volatile char*>(secret)[i] = 0;
+	if (!copied)
+		return -1;
+#endif
+
+'''
+if bridge in text and load in text:
+    sys.exit(0)
+main = 'int main(int argc, char* argv[])\n'
+hint = '\tif (!SDL_SetHint(SDL_HINT_ALLOW_ALT_TAB_WHILE_GRABBED, "0"))'
+if text.count(main) != 1 or text.count(hint) != 1:
+    sys.exit('FreeRDP browser credentials patch did not match the pinned source')
+p.write_text(text.replace(main, bridge + main).replace(hint, load + hint))
+PY
+python3 - "$source_dir/client/SDL/SDL3/dialogs/sdl_dialogs.cpp" <<'PY'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1]); text = p.read_text()
+needle = '''rdp_auth_reason reason)
+{
+	SDL_Event event = {};'''
+patched = '''rdp_auth_reason reason)
+{
+#ifdef __EMSCRIPTEN__
+	// The website supplies this once before starting. Never enter the native
+	// dialog or loop and prompt again on the browser main thread.
+	return reason == AUTH_NLA && username && *username && password && *password;
+#endif
+	SDL_Event event = {};'''
+if patched not in text:
+    if text.count(needle) != 1:
+        sys.exit('FreeRDP browser auth-dialog patch did not match the pinned source')
+    p.write_text(text.replace(needle, patched))
+PY
+python3 - "$source_dir/client/SDL/SDL3/sdl_freerdp.cpp" <<'PY'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1]); text = p.read_text()
+run = '[[nodiscard]] static int sdl_run(SdlContext* sdl)\n{'
+callback = '''#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+EM_JS(void, cloudssh_first_frame, (), { Module["onWindowsFirstFrame"]?.(); });
+#endif
+
+'''
+state = '''
+#ifdef __EMSCRIPTEN__
+	bool reportedBrowserFrame = false;
+#endif'''
+draw = '\t\t\t\t\t\t\t\tthrow ErrorMsg{ -1, windowEvent.type, "sdl->drawToWindows" };'
+notify = '''
+#ifdef __EMSCRIPTEN__
+							if (!reportedBrowserFrame && !rectangles.empty())
+							{
+								reportedBrowserFrame = true;
+								cloudssh_first_frame();
+							}
+#endif'''
+if callback not in text:
+    if text.count(run) != 1 or text.count(draw) != 1:
+        sys.exit('FreeRDP first-frame patch did not match the pinned source')
+    p.write_text(text.replace(run, callback + run + state).replace(draw, draw + notify))
+PY
+
 # Fetch with the official script, then confirm all the git dependency commits
 # before any dependency build. The official script verifies the LibreSSL tarball.
 if [[ $fresh == 1 ]]; then
-  run_sdk bash -euc 'git config --global --add safe.directory /src; bash scripts/emscripten.sh --no-build'
+  run_sdk bash -euc 'git config --global --add safe.directory /src; bash -e scripts/emscripten.sh --no-build'
 fi
 while read -r path sha; do
   [[ $(git -C "$source_dir/build-emscripten/src/$path" rev-parse HEAD) == "$sha" ]]
@@ -123,10 +213,13 @@ bin.chmod(0o700)
 PY
 
 build_args=()
-if [[ $fresh == 0 ]]; then build_args+=(--no-deps); fi
+if [[ $fresh == 0 ]]; then
+  build_args+=(--no-deps)
+  rm -f -- "$source_dir/build-emscripten/build/freerdp/CMakeCache.txt"
+fi
 run_sdk bash -euc '
   export PATH="/src/.cloudssh-build-tools:$PATH"
-  bash scripts/emscripten.sh --no-clone "$@"
+  bash -e scripts/emscripten.sh --no-clone "$@"
 ' build "${build_args[@]}"
 
 mkdir -p -- "$cache"

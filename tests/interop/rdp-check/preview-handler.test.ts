@@ -27,6 +27,7 @@ function fixture() {
     main, isAuthenticated, open, now: () => clock,
     files: new Map([['/index.html', ['<html></html>', 'text/html']]]),
     gzipWasm: compressed.buffer,
+    clientTags: new Map([['/sdl-freerdp.wasm', 'a'.repeat(64)]]),
   });
   return { isAuthenticated, main, open, handler, tick: () => { clock = config.expiresAt; } };
 }
@@ -135,8 +136,16 @@ describe('test-only RDP preview request routing', () => {
       expect(raw.headers.get('Content-Encoding')).toBeNull();
       expect(new Uint8Array(await raw.arrayBuffer())).toEqual(wasm);
     }
+    const tag = gzip.headers.get('ETag');
+    expect(tag).toBe(`W/"${'a'.repeat(64)}"`);
+    const revalidate = new Request(url, { headers: { 'Accept-Encoding': 'gzip', 'If-None-Match': tag ?? '' } });
+    const unchanged = await handler(revalidate, env, null);
+    expect(unchanged.status).toBe(304);
+    expect(unchanged.headers.get('Cache-Control')).toBe('private, no-cache, no-transform');
+    expect(unchanged.headers.get('Vary')).toBe('Accept-Encoding');
+    expect(unchanged.body).toBeNull();
     isAuthenticated.mockResolvedValue(false);
-    expect((await handler(request('gzip'), env, null)).status).toBe(404);
+    expect((await handler(revalidate, env, null)).status).toBe(404);
   });
 
   it('rechecks expiry after awaiting authentication', async () => {

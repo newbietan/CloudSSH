@@ -5,15 +5,24 @@
   <title>CloudSSH 本地 RDP 原型</title>
   <style>
     body { font: 16px system-ui; background: #101827; color: #eef2fb; margin: 1.5rem }
-    button { font: inherit; padding: .5rem 1rem; margin-right: .5rem }
-    canvas { display: block; max-width: 100%; height: auto; background: #070b13; margin-top: 1rem }
+    button, input { font: inherit; padding: .5rem; margin: .25rem }
+    form { margin-bottom: .5rem }
+    .desktop-stage { margin-top: 1rem; width: min(100%, calc(100dvh * 1.35)); background: #070b13; }
+    #canvas { display: block; width: 100% !important; height: auto !important; aspect-ratio: 16 / 9; object-fit: contain; }
+    #canvas:fullscreen { height: 100% !important; }
   </style>
-  <h1>CloudSSH 本地 RDP 原型</h1>
-  <p>请选择线路。在桌面画布内出现登录对话框时，输入这台测试机的 Windows 凭据。</p>
-  <button id="public" disabled>公网 TCP</button>
-  <button id="tunnel" disabled>Cloudflare Tunnel</button>
-  <button id="disconnect" disabled>断开／重试</button>
-  <p id="status" role="status">正在读取本地测试配置。</p>
-  <canvas id="canvas" tabindex="0"></canvas>
+  <h1>CloudSSH RDP 预览</h1>
+  <p>输入 Windows 本机管理员密码，再选择线路。无需填写服务器 IP 或域。</p>
+  <form id="credentials" autocomplete="off" action="#">
+    <label for="windows-password">Administrator 密码</label>
+    <input id="windows-password" type="password" autocomplete="off" maxlength="1024" required />
+    <button id="public" type="submit" disabled>公网 TCP</button>
+    <button id="tunnel" type="submit" disabled>Cloudflare Tunnel</button>
+  </form>
+  <button id="disconnect" type="button" disabled>断开／重试</button>
+  <p id="status" role="status" tabindex="-1">正在读取测试配置。</p>
+  <div class="desktop-stage">
+    <canvas id="canvas" width="1280" height="720" tabindex="0"></canvas>
+  </div>
   <script data-cfasync="false" src="desktop.js" defer></script>
 </html>
