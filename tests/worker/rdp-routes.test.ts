@@ -23,7 +23,7 @@ function fixture() {
     const url = new URL(path, origin);
     return handleRdp(new Request(url, init), url, env, enabled ? assets : undefined);
   };
-  return { handle, internal };
+  return { handle, internal, env };
 }
 
 describe('formal RDP routing', () => {
@@ -42,6 +42,43 @@ describe('formal RDP routing', () => {
     expect((await handle(path, { method: 'POST' })).status).toBe(403);
     expect((await handle('/rdp/assets/desktop.js')).status).toBe(401);
     expect(internal).not.toHaveBeenCalled();
+  });
+
+  it('isolates only a verified RDP account home, with private validators distinct from login', async () => {
+    const { env, internal } = fixture();
+    const page = (path: string, headers?: Record<string, string>, enabled = true) => worker.fetch(new Request(origin + path, { headers }), env, undefined, enabled ? assets : undefined);
+    const cookie = { Cookie: 'session=42:cookie-value' };
+    const login = await page('/');
+    const home = await page('/?lang=zh-CN', { ...cookie, 'If-None-Match': login.headers.get('ETag')! });
+    expect(home.status).toBe(200);
+    expect(home.headers.get('Cross-Origin-Opener-Policy')).toBe('same-origin');
+    expect(home.headers.get('Cross-Origin-Embedder-Policy')).toBe('require-corp');
+    expect(home.headers.get('Cache-Control')).toContain('private');
+    expect(home.headers.get('Vary')).toContain('Cookie');
+    const etag = home.headers.get('ETag')!;
+    expect(etag).not.toBe(login.headers.get('ETag'));
+    const cached = await page('/', { ...cookie, 'If-None-Match': etag });
+    expect(cached.status).toBe(304);
+    expect(cached.headers.get('Cross-Origin-Embedder-Policy')).toBe('require-corp');
+    for (const plain of [login, await page('/', { 'If-None-Match': etag }), await page('/?signin', cookie),
+      await page('/?wsUrl=ignored', cookie), await page('/', cookie, false)]) {
+      expect(plain.status).toBe(200);
+      expect(plain.headers.has('Cross-Origin-Embedder-Policy')).toBe(false);
+    }
+    internal.mockResolvedValueOnce(new Response(null, { status: 401 }));
+    expect((await page('/', cookie)).headers.has('Cross-Origin-Embedder-Policy')).toBe(false);
+    expect((await page('/', { ...cookie, 'If-None-Match': '*' })).status).toBe(200);
+  });
+
+  it('isolates the signed-in admin home but not an expired password generation', async () => {
+    const { env, internal } = fixture();
+    const hash = 'pbkdf2$sha256$1000$MTIzNDU2Nzg$' + 'A'.repeat(43);
+    env.ADMIN_PASSWORD_HASH = hash;
+    const generation = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(hash))).toString('hex').slice(0, 8);
+    internal.mockResolvedValue(Response.json({ id: 1, username: 'admin', github_id: -1 }));
+    const home = (gen: string) => worker.fetch(new Request(origin, { headers: { Cookie: `session=-1:${gen}:synthetic` } }), env, undefined, assets);
+    expect((await home(generation)).headers.get('Cross-Origin-Embedder-Policy')).toBe('require-corp');
+    expect((await home('expired')).headers.has('Cross-Origin-Embedder-Policy')).toBe(false);
   });
 
   it('only forwards trust from an authenticated same-origin client with the current ABI', async () => {

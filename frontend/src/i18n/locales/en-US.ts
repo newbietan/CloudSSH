@@ -1032,6 +1032,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'rdp.direct': 'Public IPv4 (TCP 3389)',
   'rdp.tunnel': 'Cloudflare Tunnel',
   'rdp.desktopTitle': 'Remote Desktop',
+  'rdp.returning': 'Returning to your servers…',
   'rdp.exitFullscreen': 'Exit full screen',
   'rdp.disconnectBack': 'Disconnect and return to your servers',
   'rdp.fullscreen': 'Full screen',

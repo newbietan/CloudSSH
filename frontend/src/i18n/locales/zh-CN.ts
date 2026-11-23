@@ -970,6 +970,7 @@ export const zhCN = {
   'rdp.direct': '公网 IPv4（TCP 3389）',
   'rdp.tunnel': 'Cloudflare Tunnel',
   'rdp.desktopTitle': '远程桌面',
+  'rdp.returning': '正在返回用户空间…',
   'rdp.exitFullscreen': '退出全屏',
   'rdp.disconnectBack': '断开桌面并返回用户空间',
   'rdp.fullscreen': '全屏',

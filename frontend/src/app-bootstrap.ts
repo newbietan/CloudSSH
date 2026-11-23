@@ -35,7 +35,7 @@ function isAppConfig(value: unknown): value is AppConfig {
   );
 }
 
-function isInitialUser(value: unknown): value is InitialUser {
+export function isInitialUser(value: unknown): value is InitialUser {
   if (!value || typeof value !== 'object') return false;
   const user = value as InitialUser;
   return (

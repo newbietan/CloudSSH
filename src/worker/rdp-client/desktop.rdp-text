@@ -21,7 +21,10 @@ const [relayLabel, rttHelp] = {
 const el = id => document.getElementById(id);
 const tellWorkspace = (type, detail) => window.frameElement?.dispatchEvent(new CustomEvent('cloudssh-rdp-' + type, { detail }));
 const status = el('status');
-const show = i => { status.textContent = msg[i]; };
+const show = i => {
+  status.classList.toggle('desktop-ready', i === 15); // Announce readiness without taking a row from the desktop.
+  status.textContent = msg[i];
+};
 const canvas = el('canvas');
 const stage = el('stage');
 // CSS pixels; SDL's external-canvas backend reports these to the negotiated DISP channel.
@@ -56,13 +59,11 @@ async function run() {
   let ready = false;
   let telemetry, relayMs, remoteMs;
   let relayAt = -Infinity, remoteAt = -Infinity;
-  const meter = el('latency');
-  meter.title = rttHelp;
   function paintLatency() {
     const now = performance.now();
     const fmt = (ms, age, limit) => ms !== undefined && age < limit ? `${ms} ms` : '—';
     const text = `${relayLabel} ${fmt(relayMs, now - relayAt, 10000)} · RDP ${fmt(remoteMs, now - remoteAt, 30000)}`;
-    meter.textContent = text;
+    tellWorkspace('latency', { text, help: rttHelp });
   }
   function sample() {
     if (!ready || stopped || document.hidden) return;
@@ -77,7 +78,6 @@ async function run() {
     relayMs = remoteMs = undefined;
     paintLatency();
   }
-  meter.hidden = false;
   paintLatency();
   function monitorLatency() {
     resetMeter();
@@ -140,7 +140,7 @@ async function run() {
     cancelCertificate.disabled = false;
     if (!keepDialog && certificate.open) certificate.close();
     if (typeof reason === 'number') show(reason);
-    else status.textContent = reason;
+    else { status.classList.remove('desktop-ready'); status.textContent = reason; }
   }
   function displayCertificate(fingerprint, saved) {
     el('certificate-title').textContent = trust[saved ? 4 : 0];

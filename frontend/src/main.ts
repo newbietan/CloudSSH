@@ -1,7 +1,7 @@
 import { AIConfigPanel } from './ai-config';
 import { openAdminHashGeneratorDialog } from './admin-hash-generator';
 import { ConnectionForm } from './auth-form';
-import { type AppConfig, type InitialUser, loadInitialAppState } from './app-bootstrap';
+import { type AppConfig, type InitialUser, isInitialUser, loadInitialAppState } from './app-bootstrap';
 import { clearLegacyAgentSessionDrafts, clearUserAgentSessionDrafts } from './agent/session-draft';
 import { initI18n, onLocaleChange, t } from './i18n';
 import { MobileTerminalController } from './mobile-terminal';
@@ -278,9 +278,15 @@ function deactivateTerminalView(): void {
   document.body.classList.remove('terminal-active');
 }
 
-function showAuthSection(): void {
+function showAuthSection(): boolean {
   mcpManager.setIdentity(null);
-  if (!appConfig) return;
+  if (!appConfig) return false;
+  if (window.crossOriginIsolated && appConfig.rdpEnabled && location.search !== '?signin') {
+    // A signed-out page needs the ordinary non-isolated document for OAuth/Turnstile.
+    document.getElementById('app')!.hidden = true;
+    location.replace('/?signin');
+    return false;
+  }
   deactivateTerminalView();
   document.getElementById('auth-section')!.classList.remove('hidden');
   document.getElementById('user-space-section')!.classList.add('hidden');
@@ -301,6 +307,7 @@ function showAuthSection(): void {
     });
   }
   syncConnectionBackButtons();
+  return true;
 }
 
 function showUserSpace(user: InitialUser, config: AppConfig): void {
@@ -330,7 +337,13 @@ function showUserSpace(user: InitialUser, config: AppConfig): void {
   serverList?.disposeRdp();
   rdpWorkspace?.dispose();
   rdpWorkspace = config.rdpEnabled ? new RdpWorkspace(
-    () => tabManager?.hasAnyTab() === true, () => { void serverList?.fetchRdpProfiles(); },
+    () => tabManager?.hasAnyTab() === true, () => { void serverList?.fetchRdpProfiles(); }, false,
+    async () => {
+      const response = await fetch('/api/auth/me', { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(5000) });
+      if (!response.ok) return false;
+      const fresh: unknown = await response.json();
+      return isInitialUser(fresh) && fresh.id === user.id && serverOwnerKey(fresh) === serverOwnerKey(user);
+    },
   ) : undefined;
   serverList = new ServerList(
     user,
@@ -1031,6 +1044,7 @@ function finishAppLoading(): void {
 }
 
 async function init(): Promise<void> {
+  if (!window.crossOriginIsolated && location.search === '?signin') history.replaceState(null, '', '/' + location.hash);
   if (rdpEntryId()) {
     // The Worker already authenticated this page and checked profile ownership. The iframe,
     // profile, ticket and WS still perform their own checks. Do not mount a second server list.
@@ -1154,9 +1168,7 @@ async function init(): Promise<void> {
       if (state.user) {
         showUserSpace(state.user, state.config);
         void restoreCloudTheme(initialThemeSelection, themeSelectionRevision);
-      } else {
-        showAuthSection();
-      }
+      } else if (!showAuthSection()) return;
       finishAppLoading();
     } catch {
       // Unknown configuration/authentication is not permission to show an anonymous form.

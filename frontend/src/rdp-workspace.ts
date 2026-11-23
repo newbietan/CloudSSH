@@ -11,26 +11,59 @@ export function rdpEntryId(): string | undefined {
   return isRdpId(id) ? id : undefined;
 }
 
-/** Only the RDP workspace is cross-origin isolated; normal OAuth and Turnstile pages are not. */
+/** Verified account home and RDP pages can host the isolated runtime. Login pages never need it. */
 export class RdpWorkspace {
   private dialog?: HTMLDialogElement;
   private observer?: MutationObserver;
   private readonly events = new AbortController();
   private releaseView?: () => void;
+  private returning?: HTMLDialogElement;
+  private accountUrl = '/';
 
   constructor(private readonly hasSshTabs: () => boolean, private readonly onRecorded: () => void,
-    private readonly standalone = false) {
-    window.addEventListener('popstate', () => this.restore(false), { signal: this.events.signal });
-    window.addEventListener('pagehide', () => this.close(), { signal: this.events.signal });
+    private readonly standalone = false, private readonly sameOwner?: () => Promise<boolean>) {
+    window.addEventListener('popstate', () => {
+      if (this.dialog) void this.leave(); else this.restore(false);
+    }, { signal: this.events.signal });
+    let leftDuringDesktop = false;
+    window.addEventListener('pagehide', () => {
+      leftDuringDesktop = !!this.dialog;
+      if (leftDuringDesktop) {
+        const app = document.getElementById('app');
+        if (app) { app.hidden = true; app.inert = true; }
+      }
+      this.close();
+    }, { signal: this.events.signal });
     window.addEventListener('pageshow', e => {
-      if (e.persisted && this.standalone && !this.dialog) this.leave();
+      if (e.persisted && (this.standalone || leftDuringDesktop || rdpEntryId())) location.replace('/');
     }, { signal: this.events.signal });
     this.restore(true);
   }
-  private leave(): void {
+  private async leave(): Promise<void> {
+    const dialog = this.dialog;
+    if (this.standalone || !dialog) {
+      this.close();
+      if (this.standalone) location.replace('/');
+      else history.replaceState(null, '', this.accountUrl);
+      return;
+    }
+    if (this.returning === dialog) return;
+    this.returning = dialog;
+    // Disconnect immediately. Keep the list behind the modal inert until the original owner is confirmed.
+    const message = document.createElement('p');
+    message.className = 'm-auto text-muted';
+    message.setAttribute('role', 'status');
+    message.textContent = t('rdp.returning');
+    this.observer?.disconnect();
+    this.releaseClient();
+    dialog.replaceChildren(message);
+    let ok = false;
+    try { ok = await this.sameOwner?.() === true; } catch { /* An unverifiable identity must not reveal a previous list. */ }
+    if (this.dialog !== dialog || this.events.signal.aborted) return;
+    if (!ok) { location.replace('/'); return; }
+    // popstate already restored the previous URL on browser Back. Toolbar Back consumes the entry we pushed.
+    if (rdpEntryId()) history.back();
     this.close();
-    if (this.standalone) location.replace('/');
-    else history.replaceState(null, '', '/');
   }
   private restore(consumeIntent: boolean): void {
     this.close();
@@ -60,6 +93,7 @@ export class RdpWorkspace {
       location.assign(path);
       return;
     }
+    this.accountUrl = location.pathname + location.search + location.hash;
     history.pushState(null, '', path);
     this.mount(id);
   }
@@ -86,7 +120,9 @@ export class RdpWorkspace {
     const back = button(t('common.back'));
     back.title = t('rdp.disconnectBack');
     back.onclick = () => this.leave();
-    bar.append(title, fullscreen, back);
+    const latency = document.createElement('span');
+    latency.className = 'rdp-latency';
+    bar.append(title, latency, fullscreen, back);
     const frame = document.createElement('iframe');
     frame.title = t('rdp.open');
     frame.src = `/rdp/${id}/client`;
@@ -101,7 +137,7 @@ export class RdpWorkspace {
       doc.documentElement.style.colorScheme = getComputedStyle(document.documentElement).colorScheme;
     };
     frame.onload = applyTheme;
-    const current = () => this.dialog === dialog && !this.events.signal.aborted;
+    const current = () => this.dialog === dialog && this.returning !== dialog && !this.events.signal.aborted;
     const presentation = bindRdpFullscreen(shell, viewport, frame, fullscreen, () => {
       if (current()) frame.contentWindow?.dispatchEvent(new Event('cloudssh-rdp-fullscreen-error'));
     });
@@ -115,6 +151,13 @@ export class RdpWorkspace {
       const name = (event as CustomEvent).detail;
       if (typeof name === 'string') title.textContent = `${t('rdp.desktopTitle')} · ${name}`;
     });
+    frame.addEventListener('cloudssh-rdp-latency', event => {
+      if (!current()) return;
+      const sample = (event as CustomEvent).detail;
+      if (typeof sample?.text !== 'string' || typeof sample.help !== 'string') return;
+      latency.textContent = sample.text;
+      latency.title = sample.help;
+    });
     frame.addEventListener('cloudssh-rdp-ready', () => {
       if (current()) presentation.setReady(true);
     });
@@ -122,7 +165,7 @@ export class RdpWorkspace {
       if (current()) presentation.setReady(false);
     });
     frame.addEventListener('cloudssh-rdp-recorded', () => {
-      if (this.dialog === dialog && !this.events.signal.aborted) this.onRecorded();
+      if (current()) this.onRecorded();
     }, { once: true });
     this.observer = new MutationObserver(applyTheme);
     this.observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-theme'] });
@@ -134,16 +177,18 @@ export class RdpWorkspace {
     this.dialog = dialog;
     dialog.showModal();
   }
+  private releaseClient(): void {
+    try { this.releaseView?.(); } catch { /* An already-detached client still gets removed. */ }
+    this.releaseView = undefined;
+  }
   private close(): void {
     this.observer?.disconnect();
     this.observer = undefined;
     const dialog = this.dialog;
-    this.dialog = undefined;
-    try { this.releaseView?.(); } finally {
-      this.releaseView = undefined;
-      dialog?.close();
-      dialog?.remove(); // Destroys the isolated WASM realm even if it did not acknowledge closure.
-    }
+    this.dialog = this.returning = undefined;
+    this.releaseClient();
+    dialog?.close();
+    dialog?.remove(); // Destroys the isolated WASM realm even if it did not acknowledge closure.
   }
   dispose(): void { this.events.abort(); this.close(); }
 }

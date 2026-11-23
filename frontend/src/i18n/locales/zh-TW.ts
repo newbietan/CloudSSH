@@ -971,6 +971,7 @@ export const zhTW = {
   'rdp.direct': '公網 IPv4（TCP 3389）',
   'rdp.tunnel': 'Cloudflare Tunnel',
   'rdp.desktopTitle': '遠端桌面',
+  'rdp.returning': '正在返回使用者空間…',
   'rdp.exitFullscreen': '退出全螢幕',
   'rdp.disconnectBack': '中斷桌面並返回使用者空間',
   'rdp.fullscreen': '全螢幕',

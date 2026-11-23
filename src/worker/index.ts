@@ -428,6 +428,13 @@ export default {
         });
       }
 
+      if (rdpAssets && env.ENABLE_RDP === 'true' && url.protocol === 'https:' && request.method === 'GET' &&
+          url.pathname === '/' && [...url.searchParams.keys()].every(key => key === 'lang')) {
+        // Keep the list and RDP frame in the same document. Never isolate the login flow on
+        // the strength of a cookie alone. Bootstrap and every RDP resource still recheck access.
+        const owner = await getAuthenticatedUser(request, env).catch(() => null);
+        return createHtmlResponse(request, owner ? 'account' : 'public');
+      }
       return createHtmlResponse(request);
     } catch {
       console.error('Worker request failed');

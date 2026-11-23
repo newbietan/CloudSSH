@@ -112,7 +112,12 @@ test('the themed workspace stays in the current tab and a saved login is release
   ] } }) : r.fallback());
   await get(`**/api/rdp/profiles/${id}`, profile);
   const asset = (name: string) => readFileSync(`${__dirname}/../../src/worker/rdp-client/${name}.rdp-text`, 'utf8');
-  await page.route(`**/rdp/${id}/client`, r => r.fulfill({ contentType: 'text/html', body: asset('index') }));
+  const isolation = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' };
+  await page.route('**/?lang=en-US', async r => {
+    const response = await r.fetch();
+    return r.fulfill({ response, headers: { ...response.headers(), ...isolation } });
+  });
+  await page.route(`**/rdp/${id}/client`, r => r.fulfill({ contentType: 'text/html', headers: isolation, body: asset('index') }));
   await page.route('**/rdp/assets/desktop.js', r => r.fulfill({ contentType: 'text/javascript', body: asset('desktop') }));
   await page.route('**/rdp/assets/rdp-socket.js', r => r.fulfill({ contentType: 'text/javascript', body: `window.createCloudSshRdpSocket = () => ({ probe() { this.onRelayRtt(24); }, reportDesktopReady() { this.onDesktopRecorded(); }, close() { sessionStorage.setItem('test-rdp-closed', 'yes'); } })` }));
   await page.route('**/rdp/assets/sdl-freerdp.wasm', r => r.fulfill({ contentType: 'application/wasm', body: Buffer.from([0,97,115,109,1,0,0,0]) }));
@@ -139,7 +144,7 @@ test('the themed workspace stays in the current tab and a saved login is release
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
       writeText: async (value: string) => { document.body.dataset.copiedHost = value; },
     } });
-    Object.defineProperty(window, 'crossOriginIsolated', { value: location.pathname.startsWith('/rdp/') });
+    // This case uses a stub WASM. Mobile WebKit's HTTP test context can lack SAB even with real COOP/COEP.
     if (typeof SharedArrayBuffer !== 'function') Object.defineProperty(window, 'SharedArrayBuffer', { value: ArrayBuffer });
   });
   await page.goto('/?lang=en-US');
@@ -171,14 +176,16 @@ test('the themed workspace stays in the current tab and a saved login is release
   expect(released).toBe(0);
   const redundant: string[] = [];
   page.on('request', req => {
-    if (/\/api\/(?:config|auth\/me|servers|rdp\/profiles)$/.test(req.url()) && page.url().endsWith('/rdp/' + id)) redundant.push(req.url());
+    if (/\/api\/(?:config|servers)$/.test(req.url()) || (req.isNavigationRequest() && req.frame() === page.mainFrame())) redundant.push(req.url());
   });
-  await card.click(); // Actual top-level navigation from the non-isolated server list.
+  await search.fill('ops <user>');
+  expect(await page.evaluate(() => crossOriginIsolated)).toBe(true);
+  await card.click(); // Keep the original authenticated page and its DOM alive.
   await expect(page).toHaveURL(new RegExp(`/rdp/${id}$`));
   const workspace = page.locator('.rdp-workspace[open]');
   const frame = workspace.frameLocator('iframe');
+  await expect.poll(() => frame.locator('html').evaluate(() => [window.crossOriginIsolated, window.isSecureContext])).toEqual([true, true]);
   await expect(frame.locator('html')).toHaveAttribute('data-login-ok', 'true');
-  await expect(page.locator('#app')).toHaveAttribute('inert');
   await expect(page.locator('#app-loading')).toHaveCount(0);
   expect(redundant).toEqual([]);
   await expect(frame.locator('html')).toHaveAttribute('data-dynamic', 'true');
@@ -186,7 +193,8 @@ test('the themed workspace stays in the current tab and a saved login is release
   // Measure the initial viewport at callMain, not after the status line changes on first paint.
   await expect(frame.locator('html')).toHaveAttribute('data-size', (await frame.locator('html').getAttribute('data-initial-viewport'))!);
   await expect(frame.locator('form,input,#connect')).toHaveCount(0);
-  await expect(frame.locator('#latency')).toHaveText('Relay 24 ms · RDP 83 ms');
+  await expect(workspace.locator('header .rdp-latency')).toHaveText('Relay 24 ms · RDP 83 ms');
+  await expect(frame.locator('.status-row')).toHaveCount(0);
   expect(await frame.locator('html').evaluate(e => e.style.getPropertyValue('--accent').trim())).toBe(await page.locator('body').evaluate(e => getComputedStyle(e).getPropertyValue('--accent').trim()));
   await page.setViewportSize({ width: 960, height: 700 });
   await expect(frame.locator('html')).toHaveAttribute('data-requested-width', '960px');
@@ -211,7 +219,12 @@ test('the themed workspace stays in the current tab and a saved login is release
       await expect.poll(() => workspace.locator('.rdp-shell').evaluate(e => document.fullscreenElement === e)).toBe(true);
       await expect(exit).toBeVisible();
       expect(await frameSize()).toEqual(initialSize);
-      await expect(frame.locator('#latency')).toBeVisible();
+      await expect(workspace.locator('header .rdp-latency')).toBeVisible();
+      expect(await stage.evaluate(e => e.getBoundingClientRect().top)).toBe(0);
+      const headerRect = (await toolbar.boundingBox())!;
+      const frameRect = (await workspace.locator('iframe').boundingBox())!;
+      expect(Math.abs(frameRect.y - headerRect.y - headerRect.height)).toBeLessThan(2);
+      expect(headerRect.height).toBeLessThanOrEqual(await page.evaluate(() => matchMedia('(pointer: fine)').matches ? 34 : 48));
       if (how === 'back') break; // Back must end the live session even from fullscreen.
       if (how === 'button') {
         // Model a display substantially larger than the tab. The iframe's logical viewport and SDL canvas must not resize.
@@ -241,12 +254,43 @@ test('the themed workspace stays in the current tab and a saved login is release
   await expect(card).toBeVisible();
   expect(await page.evaluate(() => sessionStorage.getItem('test-rdp-closed'))).toBe('yes');
   expect(await inFullscreen()).toBe(false);
+  await expect(page).toHaveURL(/\/\?lang=en-US$/);
+  await expect(search).toHaveValue('ops <user>');
+  expect(redundant).toEqual([]); // Neither entry nor return refetched config/list or navigated a document.
   await expect(firstCard).toHaveText('Office Windows');
   await expect(page.locator(`#rdp-card-${id}`)).not.toContainText('No record yet');
   await page.goto(`/rdp/${id}`); // A pasted URL is not a second user-authorized connect action.
   await expect(card).toBeVisible();
   await expect(workspace).toHaveCount(0);
   expect(released).toBe(1);
+});
+
+test('browser Back closes the frame before checking ownership and cannot restore a different Access account', async ({ page }) => {
+  let owner = 'first@example.test';
+  let checks = 0, resume!: () => void;
+  const gate = new Promise<void>(resolve => { resume = resolve; });
+  await page.route('**/api/config', r => r.request().method() === 'GET' ? r.fulfill({ json: { turnstileEnabled: false, githubAuthEnabled: false, githubAuthRequired: true, authMode: 'cf_access', rdpEnabled: true } }) : r.fallback());
+  await page.route('**/api/auth/me', async r => {
+    if (r.request().method() !== 'GET') return r.fallback();
+    if (++checks === 2) await gate;
+    return r.fulfill({ json: { id: 1, github_id: -2, username: owner, avatar_url: null } });
+  });
+  await page.route('**/api/servers', r => r.request().method() === 'GET' ? r.fulfill({ json: [] }) : r.fallback());
+  await page.route('**/api/rdp/profiles', r => r.request().method() === 'GET' ? r.fulfill({ json: { profiles: [{ id, name: owner, revision: 1, route: 'direct', host: '8.8.8.8', tags: [], hasLogin: true }] } }) : r.fallback());
+  await page.route(`**/rdp/${id}/client`, r => r.fulfill({ contentType: 'text/html', body: '<p>Starting…</p>' }));
+  await page.addInitScript(() => Object.defineProperty(window, 'crossOriginIsolated', { value: true }));
+  await page.goto('/?lang=en-US');
+  await page.getByRole('button', { name: 'Open desktop' }).click();
+  await expect(page.locator('.rdp-workspace iframe')).toBeVisible();
+  owner = 'second@example.test'; // Same numeric sentinels; must check the full identity.
+  await page.evaluate(() => history.back());
+  try {
+    await expect(page.locator('.rdp-workspace:modal')).toContainText('Returning to your servers');
+    await expect(page.locator('.rdp-workspace iframe')).toHaveCount(0);
+    expect(checks).toBe(2);
+  } finally { resume(); }
+  await expect(page.locator('.server-card-title')).toHaveText(owner);
+  expect(checks).toBe(3); // Fresh bootstrap, never reveal the old account list.
 });
 
 test('isolated desktop entry hides the home loader before JS; Back also works before first frame', async ({ page }) => {

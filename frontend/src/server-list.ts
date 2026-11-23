@@ -282,6 +282,8 @@ export class ServerList {
     container.innerHTML = '';
     if (this.user.avatar_url) {
       const img = document.createElement('img');
+      // GitHub's public avatar endpoint supports CORS. An isolated account page must not rely on no-cors embedding.
+      if (window.crossOriginIsolated) img.crossOrigin = 'anonymous';
       img.src = this.user.avatar_url;
       img.alt = this.user.username;
       img.className = 'user-avatar w-8 h-8';

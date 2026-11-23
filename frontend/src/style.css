@@ -6039,6 +6039,18 @@ html[data-rdp-entry] #app-loading { display: none; }
 .rdp-workspace header button { flex: none; min-height: 40px; padding: 0 clamp(.4rem, 1.5vw, .9rem); }
 .rdp-shell { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
 .rdp-shell:fullscreen { width: 100%; height: 100%; }
+.rdp-latency {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 12px/1.25 ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--text-muted);
+}
+.rdp-shell:fullscreen header { padding-block: 2px; }
+@media (pointer: fine) {
+  .rdp-shell:fullscreen header button { min-height: 28px; padding-block: 0; }
+}
+/* Letterbox below the desktop rather than inserting a black band below its controls. */
+.rdp-shell:fullscreen .rdp-viewport iframe {
+  top: 0; transform-origin: center top; transform: translateX(-50%) scale(var(--rdp-scale, 1));
+}
 .rdp-viewport { flex: 1; min-height: 0; position: relative; overflow: hidden; background: #080808; }
 .rdp-viewport iframe {
   position: absolute; top: 50%; left: 50%; width: 100%; height: 100%; border: 0;
