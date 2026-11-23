@@ -193,6 +193,7 @@ export class ServerList {
   private servers: ServerConfig[] = [];
   private rdpProfiles: RdpProfile[] = [];
   private readonly rdp?: RdpManager;
+  private readonly modalEvents = new AbortController();
   private disposed = false;
   private modalKind: 'ssh' | 'rdp' = 'ssh';
   private rdpSaving = false;
@@ -244,6 +245,7 @@ export class ServerList {
 
   disposeRdp(): void {
     this.disposed = true;
+    this.modalEvents.abort();
     this.rdp?.dispose();
     this.hideModal();
   }
@@ -392,13 +394,12 @@ export class ServerList {
     });
 
     // Modal 提交
-    const serverForm = document.querySelector<HTMLFormElement>('#server-form');
-    if (serverForm) serverForm.onsubmit = (event) => {
+    document.getElementById('server-form')?.addEventListener('submit', (event) => {
       event.preventDefault();
       if (this.disposed) return;
       if (this.modalKind === 'rdp') void this.saveRdp();
       else void this.handleSubmit();
-    };
+    }, { signal: this.modalEvents.signal });
     for (const [id, kind] of [['server-kind-linux', 'ssh'], ['server-kind-windows', 'rdp']] as const) {
       const button = document.getElementById(id);
       if (button) button.onclick = () => {
