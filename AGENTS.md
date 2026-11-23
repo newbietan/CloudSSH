@@ -497,7 +497,7 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 ## #201 站内 RDP 预览（仅 test 显式配置）
 
 - 方案与完成条件见 `docs/rdp-implementation-plan.md`。测试分支 CI 仅在仓库变量 `CLOUDSSH_RDP_TEST_CONFIG` 非空时构建隔离的 `tests/interop/rdp-check/preview-worker.ts` 并作为 `cloudssh-test` 入口；正式主入口、Durable Object 绑定、迁移及生产构建保持不变。`wrangler.toml` 的 Data/Text rules 仅用于该入口显式导入的 `.rdp-bin/.rdp-text` 模块，不给主 Worker 增加 `[assets]`，以保留原生 `ctx.access`。
-- `/__rdp-preview/` 是测试入口，不是已发布的设备管理功能。显式有限有效期、CloudSSH 已验证的完整账户键、同源 WebSocket、固定双目标和严格 Windows TLS SHA-256 固定后才可验证；不接受客户端目的地或在仓库/变量存放 Windows 密码。不开匿名/分享/SSH/SFTP/Agent/MCP。此处的流量和会话硬预算只供单账户 P0，不能作为生产中继配额。移除仓库变量并重跑测试部署可移除预览入口。未做真机登录不要声称 #201 完成。
+- `/__rdp-preview/` 是测试入口，不是已发布的设备管理功能。显式有限有效期、CloudSSH 当前模式的有效登录（无额外账号白名单）、同源 WebSocket、固定双目标和严格 Windows TLS SHA-256 固定后才可验证；不接受客户端目的地或在仓库/变量存放 Windows 密码。不开匿名/分享/SSH/SFTP/Agent/MCP。此处的流量和会话硬预算只供受控测试环境的 P0，不能作为生产中继配额。移除仓库变量并重跑测试部署可移除预览入口。未做真机登录不要声称 #201 完成。
 
 ## SSH 兼容增强边界
 

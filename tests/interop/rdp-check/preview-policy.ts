@@ -8,9 +8,8 @@ export function readPreviewConfig(raw: string | undefined, now = Date.now()) {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    const { owner, expiresAt, publicIp, publicPort, tunnelHost, certificate } = parsed as Record<string, unknown>;
+    const { expiresAt, publicIp, publicPort, tunnelHost, certificate } = parsed as Record<string, unknown>;
     if (
-      typeof owner !== 'string' || !isPreviewOwner(owner, owner) ||
       typeof expiresAt !== 'number' || !Number.isSafeInteger(expiresAt) ||
       expiresAt <= now || expiresAt - now > MAX_TEST_WINDOW_MS ||
       typeof publicIp !== 'string' || typeof publicPort !== 'string' || typeof tunnelHost !== 'string' ||
@@ -21,17 +20,10 @@ export function readPreviewConfig(raw: string | undefined, now = Date.now()) {
       RDP_CHECK_TUNNEL_HOST: tunnelHost, RDP_CHECK_CERT_SHA256: certificate,
     };
     if (!parsePublic(targets) || !parseTunnel(targets)) return null;
-    return { owner, expiresAt, targets };
+    return { expiresAt, targets };
   } catch {
     return null;
   }
-}
-
-/** Keep the test Owner configuration separate from deployment auth mode and Windows login. */
-export function isPreviewOwner(configuredOwner: string | undefined, verifiedOwner: string): boolean {
-  return !!configuredOwner &&
-    /^(?:-1|[1-9][0-9]{0,17}|cf-[0-9a-f]{32})$/.test(configuredOwner) &&
-    configuredOwner === verifiedOwner;
 }
 
 export function isPreviewRoute(path: string): boolean {

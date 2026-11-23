@@ -1,5 +1,6 @@
+import type { Env } from '../../../src/types';
+import { getAuthenticatedUser, initializeAccessIdentity } from '../../../src/worker/auth';
 import {
-  isPreviewOwner,
   isPreviewRoute,
   PREVIEW_PATH,
   previewDocumentHeaders,
@@ -11,11 +12,20 @@ export interface PreviewBindings {
   RDP_PREVIEW_CONFIG?: string;
 }
 
+export async function verifyPreviewSession(
+  request: Request,
+  env: Env,
+  ctx?: Pick<ExecutionContext, 'access'>
+): Promise<boolean> {
+  await initializeAccessIdentity(request, ctx);
+  return (await getAuthenticatedUser(request, env)) !== null;
+}
+
 type File = readonly [asset: string | ArrayBuffer, mime: string];
 
 interface Dependencies<E extends PreviewBindings, C> {
   main(request: Request, env: E, ctx: C): Promise<Response>;
-  getOwner(request: Request, env: E, ctx: C): Promise<string | null>;
+  isAuthenticated(request: Request, env: E, ctx: C): Promise<boolean>;
   open(
     request: Request, targets: RdpCheckEnv, route: 'public' | 'tunnel', origin: string, remainingMs: number
   ): Response;
@@ -45,8 +55,7 @@ export function createPreviewHandler<E extends PreviewBindings, C>(deps: Depende
     )) return hidden();
 
     try {
-      const owner = await deps.getOwner(request, env, ctx);
-      if (!owner || !isPreviewOwner(preview.owner, owner)) return hidden();
+      if (!(await deps.isAuthenticated(request, env, ctx))) return hidden();
     } catch {
       return hidden();
     }
