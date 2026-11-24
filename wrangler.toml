@@ -8,7 +8,7 @@ DEBUG_MODE = "false"
 # 用户无操作空闲超时：默认 30 分钟（支持 30m / 1h / 1800s / 纯数字按秒）；设为 "0" 禁用
 IDLE_TIMEOUT = "30m"
 # 是否强制登录后才能使用 SSH（GitHub 或单管理员密码会话均满足）；"false" 保持匿名直连可用
-REQUIRE_GITHUB_AUTH = "false"
+REQUIRE_AUTH = "false"
 
 # 构建监视路径：仅源代码变动时触发重新构建
 [build]
@@ -22,7 +22,6 @@ watch_dir = "."
 # - BASE_URL（OAuth 回调地址，需与实际域名一致）
 # - ADMIN_PASSWORD_HASH（单管理员密码登录；`pnpm run hash-password` 生成，非空即启用密码模式，
 #   与 GitHub OAuth 互斥且优先级更高；置空/删除即刻退回 GitHub 模式；务必设为 Secret 类型）
-# - ENABLE_RDP（可选；true 启用登录用户的站内 Windows RDP；Git/CLI 部署可在对应 [vars] 中设置，默认关闭）
 # - CF_ACCESS（可选；true 强制要求 ctx.access 已验证身份；请用 hostname-based Access 保护完整域名，
 #   Worker 级 Access 不支持 WebSocket。未设置时也自动感知运行时身份，不信任邮箱请求头）
 
@@ -72,12 +71,10 @@ fallthrough = true
 name = "cloudssh-test"
 
 [env.test.vars]
-# 启用正式 RDP 路由供已登录的测试账号验收；生产默认关闭。
-ENABLE_RDP = "true"
 DEBUG_MODE = "true"
 IDLE_TIMEOUT = "30m"
 # test 环境默认要求登录（验证强制登录链路）；生产 [vars] 保持 "false" 匿名可用
-REQUIRE_GITHUB_AUTH = "true"
+REQUIRE_AUTH = "true"
 
 [[env.test.durable_objects.bindings]]
 name = "SSH_SESSION"

@@ -459,7 +459,6 @@ export class UserDBDO {
       const path = url.pathname;
 
       if (path.startsWith('/internal/rdp/')) {
-        if (this.env.ENABLE_RDP !== 'true') return Response.json({ code: 'not_found' }, { status: 404 });
         this.rdpStore ??= new RdpStore(
           this.db, callback => this.mcpState.storage.transactionSync(callback),
           (value, id) => this.encryptCredential(value, id),

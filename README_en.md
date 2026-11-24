@@ -118,7 +118,7 @@
 - **SFTP Graphical File Manager**: Integrated with a complete SFTP v3 file transfer protocol, providing a graphical file browser interface. Parent-level event delegation and incremental selection updates reduce redundant listeners and DOM writes in large directories while retaining the complete list and existing selection behavior. The toolbar features hierarchical path breadcrumbs navigation (click to jump directly to parent directories, click empty space to toggle absolute path text input), and file lists support bidirectional sorting by name, size, and modified time (directories stay pinned to the top). Supports one-click creation of new blank files with automatic CodeMirror editor opening. Supports directory browsing, file upload/download, creating new folders, file renaming, and deletion, plus plain selection, `Cmd/Ctrl` toggle selection, `Shift` range selection, select all, batch file downloads, and batch deletion. Double-clicking files is handled intelligently (text files open directly in the online editor, binary or oversized files automatically route to the serial download queue). Built-in CodeMirror online editor edits remote text files in place (≤2MB; UTF-8 editable, GBK/GB18030 detected as read-only), preserving the original line endings and BOM, with automatic remote-change detection and an explicit overwrite confirmation before saving, as well as line-wrapping preference toggling in the footer. Common configs (shell/YAML/JSON/Python/Markdown/HTML/CSS/Dockerfile/systemd, etc.) get syntax highlighting. Built on the SSH subsystem, it runs alongside terminal sessions without interference and supports download queues and upload cancellation.
 - **Native File Transfer**: Integrated with [trzsz.js](https://github.com/trzsz/trzsz.js), supporting `trz` (upload) / `tsz` (download) commands for file transfer, fully compatible with tmux sessions. Also supports drag-and-drop file upload to the terminal, directory transfer, and resumable transfers. (Requires [trzsz](https://trzsz.github.io/) installed on the remote server)
 - **Multilingual UI**: Ships built-in Simplified Chinese, Traditional Chinese, and English translations, automatically following the browser language with a manual override; the choice is persisted via a URL parameter or local storage (`cloudssh_locale`).
-- **Saved servers**: GitHub, administrator password and Access accounts each have a private server list. When RDP is enabled, SSH and Windows cards share tag filters, host/username/name search, sorting and pagination (six cards on desktop/tablet, three on mobile). Duplicating an SSH configuration copies its settings, not its credentials.
+- **Saved servers**: GitHub, administrator password and Access accounts each have a private server list. SSH and Windows cards share tag filters, host/username/name search, sorting and pagination (six cards on desktop/tablet, three on mobile). Duplicating an SSH configuration copies its settings, not its credentials.
 - **Slide-Over Command Snippet Drawer & Category Management**: Completely redesigned into a slide-over drawer panel matching the SFTP layout, keeping the active terminal fully visible side-by-side. Features horizontal **Category Chips** for deduplicated count aggregation and filtering, `<datalist>` category autocompletion on the collapsible entry form, and real-time fuzzy search. Supports `{{var}}` dynamic parameter placeholders with parameter entry dialogs, one-click plain text copying, and filling into or executing directly on the active terminal. Snippets are stored with per-`user_id` row isolation in `UserDBDO` (name ≤50, command ≤2000, category ≤30, ≤100 per user); anonymous users fall back to local `localStorage`. Reachable from desktop and mobile toolbars, and hidden in one-time share sessions.
 - **Automatic Server OS Detection**: When a signed-in user first connects to a saved server without an OS record, CloudSSH uses a separate SSH exec channel after the terminal is ready to read `/etc/os-release` or `uname`, then shows the corresponding system icon on the server card. Detection runs in the background without blocking the terminal. Only recognized results are saved; unknown results are retried naturally on the next connection, and changing the host or port clears stale results. Anonymous connections do not run this check. The read-only command may appear in the target server's SSH audit logs.
 - **Private IP Display and Quick Copy**: Valid IPv4 and IPv6 addresses are visually masked in the saved-server list and connection status bar to reduce accidental disclosure in demos or screenshots. The complete connection address remains available through mouse or keyboard copy. Hostnames remain unchanged; visual masking is not encryption or access control.
@@ -156,7 +156,7 @@ flowchart TB
         SFTP["SFTP File Manager"]
         Agent["AI Agent Assistant"]
         Trzsz["trzsz file transfer"]
-        RDP["FreeRDP / WASM (optional)"]
+        RDP["FreeRDP / WASM (loaded on demand)"]
     end
 
     subgraph "Cloudflare Edge Network"
@@ -253,7 +253,7 @@ Defaults are from [wrangler.toml](wrangler.toml). A pair means **production / te
 | Variable | Default | When to set it |
 | --- | --- | --- |
 | `IDLE_TIMEOUT` | `30m` | Disconnect idle sessions; accepts `30m`, `1h` or seconds. `0` disables the inactivity timeout. Passive terminal output is not user activity. |
-| `REQUIRE_GITHUB_AUTH` | `false` / `true` | Require sign-in for ordinary SSH; an administrator password session also qualifies. One-time shares still require their own authorization. |
+| `REQUIRE_AUTH` | `false` / `true` | Require sign-in for ordinary SSH; an administrator password session also qualifies. One-time shares still require their own authorization. |
 | `GITHUB_CLIENT_ID` | — | Public GitHub OAuth client ID. Configure with the secret below; not needed for other login modes. |
 | `GITHUB_CLIENT_SECRET` | — | GitHub OAuth client secret. Store as a **Secret**. |
 | `BASE_URL` | Request origin | Optional canonical site URL for GitHub OAuth, e.g. `https://ssh.example.com`. Register `/api/auth/callback` on that origin in GitHub. |
@@ -262,12 +262,13 @@ Defaults are from [wrangler.toml](wrangler.toml). A pair means **production / te
 | `CF_ACCESS` | Runtime detection | Set to `true` to force Access mode. Browser login is denied without native identity; this does not install an edge Access policy. |
 | `TURNSTILE_SITEKEY` | — | Public browser widget site key. Configure both Turnstile keys together. |
 | `TURNSTILE_SECRET` | — | Server-side verification **Secret**. Setting only the secret requires verification without a usable browser widget. |
-| `ENABLE_RDP` | `false` / `true` | Set to `true` to offer [Windows Remote Desktop](#windows-rdp) to signed-in users over HTTPS. Does not enable anonymous RDP. |
 | `DEBUG_MODE` | `false` / `true` | Enable additional diagnostics for troubleshooting. Leave off in normal production use. |
 
 For Git/CLI deployments, configure ordinary values in the target environment’s Wrangler `vars` table. Deployments can replace ordinary Dashboard variables. Store credentials under **Settings → Variables and Secrets → Secret**. Durable Object bindings and migrations are already defined in Wrangler; they are not additional environment variables.
 
-**Upgrading an existing deployment?** Remove `MAX_CONNECTIONS` (previously unused), `ENABLE_SSH_SHARING`, `STRICT_HOST_KEY_VERIFY` and `CF_ACCESS_TEAM_NAME`. Old `false` values no longer disable sharing or bypass signature checks. No server is shared automatically. Enter the SSH CA team name in the form; existing saved team names are unchanged.
+**Upgrading an existing deployment?** `REQUIRE_GITHUB_AUTH` has been renamed to `REQUIRE_AUTH`. The old name is no longer read. If your production instance requires sign-in, set `REQUIRE_AUTH = "true"` in its `[vars]` before upgrading; otherwise ordinary SSH will allow anonymous connections by default.
+
+`ENABLE_RDP` has been removed. Even if it was `false`, signed-in users can now use [Windows Remote Desktop](#windows-rdp) over HTTPS. You can also remove `MAX_CONNECTIONS` (previously unused), `ENABLE_SSH_SHARING`, `STRICT_HOST_KEY_VERIFY` and `CF_ACCESS_TEAM_NAME`. Old `false` values no longer disable sharing or bypass signature checks. No server is shared automatically. Enter the SSH CA team name in the form; existing saved team names are unchanged.
 
 </details>
 
@@ -289,7 +290,7 @@ Prefer signing in with your own custom password instead of GitHub OAuth? The ins
 
 1. **Generate the hash**: Enter your custom password (≥ 10 characters), confirm it, click "Generate hash", and copy the result. **The password never leaves your browser** — no local tooling required. Ways to open the generator:
    - Fresh deployment (no sign-in configured): open your site and click "**Admin password sign-in setup**" at the bottom of the auth form;
-   - Instances already using GitHub sign-in (including `REQUIRE_GITHUB_AUTH=true` forced login): open `https://your-domain/#password-setup` directly — no existing variables need touching;
+   - Instances already using GitHub sign-in (including `REQUIRE_AUTH=true` forced login): open `https://your-domain/#password-setup` directly — no existing variables need touching;
    - Password rotation: open `#password-setup`, regenerate, and replace the Dashboard variable.
 2. **Configure the variable**: In the Cloudflare Dashboard → Workers → Settings → Variables and Secrets, add `ADMIN_PASSWORD_HASH` (**Secret** type), paste the generated hash, and save.
 3. **Reload** and sign in using **Admin Login**. The administrator has a separate account and saved servers.
@@ -328,7 +329,7 @@ GitHub OAuth is one way to sign in and manage saved servers. If you already use 
    The following two independent settings are optional:
 
    - `GITHUB_ALLOWED_USER_IDS`: Comma-separated GitHub **numeric user IDs** allowed to sign in, for example `83105156,6236783`. When omitted, every GitHub account may sign in. An empty or malformed configured value fails closed and denies every GitHub sign-in.
-   - `REQUIRE_GITHUB_AUTH`: Set to `true` to require login for ordinary SSH. A valid one-time share is a separate authorization path.
+   - `REQUIRE_AUTH`: Set to `true` to require login for ordinary SSH. A valid one-time share is a separate authorization path.
 
    **Find a GitHub numeric user ID**:
 
@@ -345,7 +346,7 @@ GitHub OAuth is one way to sign in and manage saved servers. If you already use 
 | ---------------                 | ----------------       | ---------------                  |
 | Neither setting                 | All GitHub users       | Allowed                          |
 | `GITHUB_ALLOWED_USER_IDS` only  | Allowlisted users only | Allowed                          |
-| `REQUIRE_GITHUB_AUTH=true` only | All GitHub users       | Disabled                         |
+| `REQUIRE_AUTH=true` only | All GitHub users       | Disabled                         |
 | Both settings                   | Allowlisted users only | Disabled (private-instance mode) |
 
 ##### Using One-Time SSH Sharing
@@ -375,7 +376,7 @@ Every server in a jump relation must belong to the same CloudSSH account. Self-r
 
 ##### Windows Remote Desktop
 
-RDP is separate from SSH: it requires HTTPS, sign-in and `ENABLE_RDP=true` (on in the repository’s test configuration, off in production by default). It does not provide SFTP, Agent, MCP, jump hosts or one-time shares.
+RDP is built in for both production and test. It requires HTTPS and a signed-in account; anonymous users and one-time share recipients have no RDP access. It does not provide SFTP, Agent, MCP, jump hosts or one-time shares.
 
 1. Choose **Add Server → Windows Server**. Use a public IPv4 address on TCP 3389, or a Cloudflare Tunnel published hostname mapped to `rdp://<windows-host>:3389`. Keep NLA enabled.
 2. Enter the Windows username (default `Administrator`), password and optional domain. The login is encrypted in your account. Older devices without credentials must be completed before connecting.

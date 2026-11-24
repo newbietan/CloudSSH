@@ -16,12 +16,12 @@ function fixture() {
     if (path === `/internal/rdp/profiles/${id}/trust`) return Response.json({ fingerprint: 'a'.repeat(64) });
     return new Response(null, { status: 404 });
   });
-  const env = { ENABLE_RDP: 'true', GITHUB_CLIENT_ID: 'mock', GITHUB_CLIENT_SECRET: 'mock',
+  const env = { GITHUB_CLIENT_ID: 'mock', GITHUB_CLIENT_SECRET: 'mock',
     USER_DB: { idFromName: (name: string) => name, get: () => ({ fetch: internal }) },
   } as unknown as Env;
-  const handle = (path: string, init?: RequestInit, enabled = true) => {
+  const handle = (path: string, init?: RequestInit, withAssets = true) => {
     const url = new URL(path, origin);
-    return handleRdp(new Request(url, init), url, env, enabled ? assets : undefined);
+    return handleRdp(new Request(url, init), url, env, withAssets ? assets : undefined);
   };
   return { handle, internal, env };
 }
@@ -34,19 +34,29 @@ describe('formal RDP routing', () => {
       expect(response.headers.get('Cache-Control')).toBe('no-store');
     }
   });
-  it('fails before side effects for disabled deployment, anonymous and cross-origin writes', async () => {
+  it('advertises built-in RDP only with client assets over HTTPS', async () => {
+    const { env } = fixture();
+    const config = async (url: string, client?: RdpAssets) =>
+      (await worker.fetch(new Request(url + '/api/config'), env, undefined, client)).json();
+    expect(await config(origin, assets)).toHaveProperty('rdpEnabled', true);
+    expect(await config(origin)).not.toHaveProperty('rdpEnabled');
+    expect(await config('http://cloudssh.example', assets)).not.toHaveProperty('rdpEnabled');
+  });
+
+  it('rejects missing assets, HTTP, anonymous access and cross-origin writes before side effects', async () => {
     const { handle, internal } = fixture();
     const path = `/api/rdp/profiles/${id}/connect`;
     expect((await handle(path, { method: 'POST', headers: { Origin: origin } }, false)).status).toBe(404);
     expect((await handle(path, { method: 'POST', headers: { Origin: 'https://other.example' } })).status).toBe(403);
     expect((await handle(path, { method: 'POST' })).status).toBe(403);
+    expect((await handle('http://cloudssh.example/rdp/assets/desktop.js')).status).toBe(404);
     expect((await handle('/rdp/assets/desktop.js')).status).toBe(401);
     expect(internal).not.toHaveBeenCalled();
   });
 
   it('isolates only a verified RDP account home, with private validators distinct from login', async () => {
     const { env, internal } = fixture();
-    const page = (path: string, headers?: Record<string, string>, enabled = true) => worker.fetch(new Request(origin + path, { headers }), env, undefined, enabled ? assets : undefined);
+    const page = (path: string, headers?: Record<string, string>, withAssets = true) => worker.fetch(new Request(origin + path, { headers }), env, undefined, withAssets ? assets : undefined);
     const cookie = { Cookie: 'session=42:cookie-value' };
     const login = await page('/');
     const home = await page('/?lang=zh-CN', { ...cookie, 'If-None-Match': login.headers.get('ETag')! });

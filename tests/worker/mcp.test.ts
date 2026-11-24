@@ -185,7 +185,7 @@ describe('real MCP client with live per-server authorization', () => {
     const client = new Client({ name: 'access-machine-regression', version: '1.0.0' });
     const transport = new StreamableHTTPClientTransport(new URL('https://cloudssh.test/mcp'), {
       requestInit: { headers: { Authorization: `Bearer ${token}`, 'CF-Access-Client-Id': 'service.access', 'CF-Access-Client-Secret': 'private-access-secret' } },
-      fetch: async (url, init) => worker.fetch(new Request(url as string, init), { ...env, REQUIRE_GITHUB_AUTH: 'true' }, ctx),
+      fetch: async (url, init) => worker.fetch(new Request(url as string, init), { ...env, REQUIRE_AUTH: 'true' }, ctx),
     });
     try {
       await client.connect(transport);
@@ -221,7 +221,7 @@ describe('real MCP client with live per-server authorization', () => {
         expect(await res.json()).toEqual({ error: 'unauthorized' });
       }
       internal.mockClear();
-      for (const overrides of [{ CF_ACCESS: 'true' }, { CF_ACCESS: 'true', REQUIRE_GITHUB_AUTH: 'true' }, {}]) {
+      for (const overrides of [{ CF_ACCESS: 'true' }, { CF_ACCESS: 'true', REQUIRE_AUTH: 'true' }, {}]) {
         expect((await worker.fetch(req(token), { ...env, ...overrides })).status).toBe(401);
       }
       expect(internal).not.toHaveBeenCalled();

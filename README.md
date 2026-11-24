@@ -118,7 +118,7 @@
 - **SFTP 图形化文件管理**：集成完整的 SFTP v3 文件传输协议，提供图形化文件浏览器界面。列表使用父容器事件委托与选区差量更新，减少大目录下的重复监听器和 DOM 写入，保留完整列表与既有选择行为。工具栏支持路径面包屑分级导航（点击直达父级目录，点击空白切换绝对路径文本输入），列表支持按文件名、大小、修改时间双向排序（目录严格优先置顶）。支持一键新建空白文件并自动唤起 CodeMirror 在线编辑。支持目录浏览、文件上传/下载、新建文件夹、文件重命名与删除等操作；支持普通单选、`Cmd/Ctrl` 切换选择、`Shift` 连选、全选，以及批量下载文件和批量删除。双击文件智能处理（文本文件直接在线编辑，二进制/超大文件自动转串行下载）。内置 CodeMirror 在线编辑器，可直接编辑远端小文本文件（≤2MB，UTF-8 可编辑，GBK/GB18030 自动识别为只读），保留原文件换行符与 BOM，保存前自动检测远端修改并提示冲突确认，支持编辑器页脚自动换行动态切换与偏好持久化，常见配置（shell/YAML/JSON/Python/Markdown/HTML/CSS/Dockerfile/systemd 等）带语法高亮。基于 SSH 子系统实现，与终端会话并行运行，互不干扰，支持下载队列及上传取消。
 - **原生文件传输**：集成 [trzsz.js](https://github.com/trzsz/trzsz.js)，支持 `trz`（上传）/ `tsz`（下载）命令进行文件传输，兼容 tmux 会话。还支持拖拽文件到终端窗口直接上传、目录传输及断点续传等高级功能。（需远程服务器安装 [trzsz](https://trzsz.github.io/)）
 - **多语言界面**：内置简体中文、繁體中文与英文三套 UI 词条，自动跟随浏览器语言并提供手动切换，选择通过 URL 参数或本地存储（`cloudssh_locale`）持久化。
-- **已保存服务器**：GitHub、管理员密码和 Access 登录用户都有自己的服务器列表。启用 RDP 后，SSH 与 Windows 卡片一起按标签筛选、按名称/主机/用户名搜索、排序和分页（桌面/平板每页 6 台，手机 3 台）。克隆 SSH 配置会复制设置，但不复制凭据。
+- **已保存服务器**：GitHub、管理员密码和 Access 登录用户都有自己的服务器列表。SSH 与 Windows 卡片一起按标签筛选、按名称/主机/用户名搜索、排序和分页（桌面/平板每页 6 台，手机 3 台）。克隆 SSH 配置会复制设置，但不复制凭据。
 - **抽屉式命令片段库与分类管理**：彻底重构为右侧滑出抽屉面板（Slide-over Drawer Panel），对齐 SFTP 面板规范，展开时终端同屏保持可见无遮挡。新增横向**分类胶囊筛选栏（Category Chips）**与表单分类建议联想（`<datalist>`），支持全分类去重聚合与组合检索；内联折叠录入表单大幅优化垂直可视空间。支持 `{{var}}` 动态参数占位符模板，执行前自动拦截并弹出参数填入对话框；支持模糊搜索、一键复制纯文本、一键填入终端或直接回车执行。片段按 `user_id` 行级隔离存储于 `UserDBDO`（名称≤50、命令≤2000、分类≤30、每用户≤100 条），匿名用户自动降级到本地 `localStorage`；桌面与移动端均可在工具栏访问，一次性分享会话中自动隐藏。
 - **服务器系统自动识别**：登录用户首次连接尚未识别的已保存服务器时，CloudSSH 会在终端就绪后通过独立 SSH exec 通道读取 `/etc/os-release` 或 `uname`，并在服务器卡片显示对应系统图标。检测在后台执行，不阻塞终端；只有成功识别的结果才会保存，未识别结果会留待下次连接重新探测，修改主机地址或端口也会清除旧结果。匿名连接不执行该检测。该只读命令可能出现在目标服务器的 SSH 审计日志中。
 - **IP 隐私展示与快捷复制**：服务器列表和连接状态栏会对有效 IPv4/IPv6 地址进行视觉掩码，减少演示或截图时意外暴露完整地址的风险；可通过鼠标点击或键盘操作复制用于连接的完整 IP。域名保持原样显示，视觉掩码不等同于加密或访问控制。
@@ -253,7 +253,7 @@ Fork 仓库可以按需使用内置的 `Sync upstream` GitHub Actions 工作流�
 | 变量 | 默认值 | 何时配置 |
 | --- | --- | --- |
 | `IDLE_TIMEOUT` | `30m` | 断开无操作会话；支持 `30m`、`1h` 或秒数，`0` 禁用。被动终端输出不算用户活动。 |
-| `REQUIRE_GITHUB_AUTH` | `false` / `true` | 要求普通 SSH 连接先登录；管理员密码会话也满足要求。一次性分享仍须单独授权。 |
+| `REQUIRE_AUTH` | `false` / `true` | 要求普通 SSH 连接先登录；管理员密码会话也满足要求。一次性分享仍须单独授权。 |
 | `GITHUB_CLIENT_ID` | — | GitHub OAuth 应用的公开 ID，与下一项成对配置。其他登录模式不需要。 |
 | `GITHUB_CLIENT_SECRET` | — | GitHub OAuth 应用密钥，以 **Secret** 保存。 |
 | `BASE_URL` | 当前请求的 origin | 需要固定 GitHub OAuth 回调域名时填写站点根地址，如 `https://ssh.example.com`；GitHub 回调为该域名下的 `/api/auth/callback`。 |
@@ -262,12 +262,13 @@ Fork 仓库可以按需使用内置的 `Sync upstream` GitHub Actions 工作流�
 | `CF_ACCESS` | 运行时识别 | 设为 `true` 强制使用 Access 模式；缺少原生身份时拒绝网页登录，不能代替边缘 Access 策略。 |
 | `TURNSTILE_SITEKEY` | — | 浏览器验证组件的公开 Site Key，两项 Turnstile 配置须成对填写。 |
 | `TURNSTILE_SECRET` | — | 服务端验证密钥，以 **Secret** 保存；只配这一项，服务端仍会要求验证，浏览器却无法正常显示组件。 |
-| `ENABLE_RDP` | `false` / `true` | 设为 `true` 后，登录用户可在 HTTPS 站点使用 [Windows 远程桌面](#windows-rdp)，不开放匿名 RDP。 |
 | `DEBUG_MODE` | `false` / `true` | 排障时启用额外诊断；生产日常使用建议关闭。 |
 
 Git 集成或 CLI 部署时，请在对应环境的 Wrangler `vars` 表中设置普通变量；部署可能覆盖 Dashboard 中的普通变量。敏感凭据请在 **Settings → Variables and Secrets** 中以 **Secret** 保存。Durable Object 绑定与迁移已写在 Wrangler 配置中，不需要作为环境变量添加。
 
-**从旧配置升级**：可以移除 `MAX_CONNECTIONS`（原本未生效）、`ENABLE_SSH_SHARING`、`STRICT_HOST_KEY_VERIFY` 和 `CF_ACCESS_TEAM_NAME`。旧的 `false` 不再关闭分享或跳过主机验签；没有服务器会被自动分享。SSH CA 团队名改为手填，已保存服务器的团队名不变。
+**从旧配置升级**：`REQUIRE_GITHUB_AUTH` 已更名为 `REQUIRE_AUTH`，旧名不再读取。原先强制登录的生产实例，请在升级前将生产 `[vars]` 中的 `REQUIRE_AUTH` 设为 `"true"`，否则普通 SSH 会按默认值允许匿名连接。
+
+`ENABLE_RDP` 已移除；即使旧值为 `false`，升级后登录用户也可通过 HTTPS 使用 [Windows 远程桌面](#windows-rdp)。还可以移除 `MAX_CONNECTIONS`（原本未生效）、`ENABLE_SSH_SHARING`、`STRICT_HOST_KEY_VERIFY` 和 `CF_ACCESS_TEAM_NAME`。旧的 `false` 不再关闭分享或跳过主机验签；没有服务器会被自动分享。SSH CA 团队名改为手填，已保存服务器的团队名不变。
 
 </details>
 
@@ -289,7 +290,7 @@ Git 集成或 CLI 部署时，请在对应环境的 Wrangler `vars` 表中设置
 
 1. **生成哈希**：输入自定义密码（≥10 位）并确认 → 点击「生成哈希」→ 复制结果。**密码全程不离开浏览器**，无需本地安装任何工具。进入生成器的方式：
    - 全新部署（未配置任何登录方式）：打开站点，在认证表单底部点击「**管理员密码登录设置**」；
-   - 已配置 GitHub 登录的实例（含 `REQUIRE_GITHUB_AUTH=true` 强制登录）：浏览器直接打开 `https://你的域名/#password-setup`，无需改动任何既有变量；
+   - 已配置 GitHub 登录的实例（含 `REQUIRE_AUTH=true` 强制登录）：浏览器直接打开 `https://你的域名/#password-setup`，无需改动任何既有变量；
    - 修改密码（轮换）：同样打开 `#password-setup` 重新生成，替换 Dashboard 变量即可。
 2. **配置变量**：在 Cloudflare Dashboard → Workers → Settings → Variables and Secrets 中添加 `ADMIN_PASSWORD_HASH`（**Secret** 类型），粘贴生成的哈希串并保存。
 3. **刷新页面**，通过「管理员登录」使用新密码。管理员拥有独立账户和服务器列表。
@@ -327,7 +328,7 @@ GitHub OAuth 是登录并管理服务器的一种方式。已使用单管理员�
 
    还可以按部署用途设置以下两个独立的可选配置：
    - `GITHUB_ALLOWED_USER_IDS`：允许登录的 GitHub **数字用户 ID**，多个 ID 使用英文逗号分隔，例如 `83105156,6236783`。未配置时不限制 GitHub 账号；配置为空或包含非正整数时采用 fail-closed，拒绝所有 GitHub 登录。
-   - `REQUIRE_GITHUB_AUTH`：设为 `true` 时普通 SSH 连接必须先登录；有效的一次性分享走独立授权路径。
+   - `REQUIRE_AUTH`：设为 `true` 时普通 SSH 连接必须先登录；有效的一次性分享走独立授权路径。
 
    **获取 GitHub 数字用户 ID**：
    - 浏览器访问 `https://api.github.com/users/octocat`（将 `octocat` 替换为实际用户名），在返回的 JSON 中读取 `id` 字段。例如响应中的 `"id": 583231` 表示数字用户 ID 为 `583231`。
@@ -343,7 +344,7 @@ GitHub OAuth 是登录并管理服务器的一种方式。已使用单管理员�
 | --------------------------------- | ---------------- | -------------------- |
 | 两项都不配置                      | 所有 GitHub 用户 | 允许                 |
 | 仅配置 `GITHUB_ALLOWED_USER_IDS`  | 仅白名单用户     | 允许                 |
-| 仅配置 `REQUIRE_GITHUB_AUTH=true` | 所有 GitHub 用户 | 禁止                 |
+| 仅配置 `REQUIRE_AUTH=true` | 所有 GitHub 用户 | 禁止                 |
 | 两项同时配置                      | 仅白名单用户     | 禁止（私有实例模式） |
 
 ##### 使用一次性 SSH 分享
@@ -373,7 +374,7 @@ SSH 跳板要求先登录并保存服务器，不限定登录方式，也不需�
 
 ##### Windows 远程桌面
 
-RDP 独立于 SSH：需要 HTTPS、已登录账户及 `ENABLE_RDP=true`（仓库测试配置已开启，生产默认关闭）。Windows 卡片不提供 SFTP、Agent、MCP、跳板或一次性分享。
+RDP 是内置功能，生产和测试环境均无需配置开关。仅已登录账户可通过 HTTPS 使用，不开放匿名或一次性分享访问。Windows 卡片不提供 SFTP、Agent、MCP、跳板或一次性分享。
 
 1. 选择「添加服务器 → Windows Server」。直连使用公网 IPv4 的 TCP 3389；使用 Cloudflare Tunnel 时，填写已映射到 `rdp://<Windows 主机>:3389` 的公开域名。Windows 须开启 NLA。
 2. 填写 Windows 用户名（默认 `Administrator`）、密码和可选域。登录凭据按账户加密保存；缺少凭据的旧设备须先补全配置。

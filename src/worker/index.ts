@@ -21,7 +21,7 @@ import {
   handleGitHubCallback,
   handleLogout,
   handlePasswordLogin,
-  isGitHubAuthRequired,
+  isAuthRequired,
   isSshIdentityAllowed,
   getPasswordAuthParams,
   parseAdminPasswordHash,
@@ -411,9 +411,10 @@ export default {
           sitekey: env.TURNSTILE_SITEKEY || '',
           // 密码模式/CF Access 模式下 GitHub 入口被禁用
           githubAuthEnabled: authMode === 'github',
-          githubAuthRequired: isGitHubAuthRequired(env) || authMode === 'cf_access',
+          // 保留现有 /api/config 字段名以兼容已加载的前端。
+          githubAuthRequired: isAuthRequired(env) || authMode === 'cf_access',
           sshSharingEnabled: true,
-          ...(rdpAssets && env.ENABLE_RDP === 'true' ? { rdpEnabled: true } : {}),
+          ...(rdpAssets && url.protocol === 'https:' ? { rdpEnabled: true } : {}),
           authMode,
           cfAccessEmail,
           // 浏览器预拉伸公开参数（盐非机密）；坏哈希时为 null
@@ -423,7 +424,7 @@ export default {
         });
       }
 
-      if (rdpAssets && env.ENABLE_RDP === 'true' && url.protocol === 'https:' && request.method === 'GET' &&
+      if (rdpAssets && url.protocol === 'https:' && request.method === 'GET' &&
           url.pathname === '/' && [...url.searchParams.keys()].every(key => key === 'lang')) {
         // Keep the list and RDP frame in the same document. Never isolate the login flow on
         // the strength of a cookie alone. Bootstrap and every RDP resource still recheck access.
@@ -1256,7 +1257,7 @@ async function handleSSHConnection(request: Request, env: Env): Promise<Response
     return new Response('Forbidden', { status: 403 });
   }
 
-  if ((isGitHubAuthRequired(env) || resolveAuthMode(env, request) === 'cf_access') &&
+  if ((isAuthRequired(env) || resolveAuthMode(env, request) === 'cf_access') &&
       !(await getAuthenticatedUser(request, env))) {
     return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
@@ -1300,7 +1301,7 @@ async function handleResumeSSHConnection(
   }
 
   const accessMode = resolveAuthMode(env, request) === 'cf_access';
-  const loginRequired = isGitHubAuthRequired(env) || accessMode;
+  const loginRequired = isAuthRequired(env) || accessMode;
   const authenticated = loginRequired ? await getAuthenticatedUser(request, env) : null;
   // Access lookup failures remain fail-closed. A public share recipient, however,
   // may resume only a device-bound share; the DO checks its actual stored policy.
@@ -1499,7 +1500,7 @@ async function handleTokenSSHConnection(
   }
 
   const authMode = resolveAuthMode(env, request);
-  const loginRequired = isGitHubAuthRequired(env) || authMode === 'cf_access';
+  const loginRequired = isAuthRequired(env) || authMode === 'cf_access';
   const authenticatedUser = loginRequired ? await getAuthenticatedUser(request, env) : null;
   if (loginRequired && !authenticatedUser) {
     return Response.json({ error: 'Authentication required' }, { status: 401 });

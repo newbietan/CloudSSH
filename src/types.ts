@@ -186,13 +186,11 @@ export interface Env {
   GITHUB_CLIENT_SECRET?: string;
   // GitHub 登录白名单（可选，逗号分隔的数字 GitHub user ID；未配置则不限制）
   GITHUB_ALLOWED_USER_IDS?: string;
-  // 是否强制 GitHub 登录后才能使用 SSH（可选，默认 false）
-  REQUIRE_GITHUB_AUTH?: string;
+  // 普通 SSH 连接是否必须先登录（生产默认 false，测试默认 true）
+  REQUIRE_AUTH?: string;
   BASE_URL?: string;
   // 调试模式（设为 true 启用调试日志输出到前端）
   DEBUG_MODE?: string;
-  /** Explicit opt-in for authenticated browser RDP. */
-  ENABLE_RDP?: string;
   // 单管理员密码认证（可选）。
   // 格式：pbkdf2$sha256$<iterations>$<salt-b64url>$<verifier-b64url>，由 `pnpm run hash-password` 生成。
   // 非空且格式合法即启用密码模式：GitHub OAuth 路由禁用，全实例仅本地管理员一个账号。
