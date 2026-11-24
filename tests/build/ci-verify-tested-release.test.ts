@@ -2,7 +2,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath, URL } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 // @ts-expect-error CI runs this dependency-free module directly in Node.js.
-import { findTestValidation } from '../../scripts/ci-verify-tested-release.mjs';
+import { findTestValidation, waitForTestPush } from '../../scripts/ci-verify-tested-release.mjs';
 
 const repository = 'newbietan/CloudSSH';
 const prefix = `/repos/${repository}`;
@@ -13,6 +13,8 @@ const differentTree = '4'.repeat(40);
 const workflow = `${prefix}/actions/workflows/deploy.yml/runs?branch=test&event=push&status=success&per_page=30`;
 const gitPath = (sha: string) => `${prefix}/git/commits/${sha}`;
 const jobsPath = (runId: number, attempt: number) => `${prefix}/actions/runs/${runId}/attempts/${attempt}/jobs?per_page=20`;
+const matchingRuns = `${prefix}/actions/workflows/deploy.yml/runs?branch=test&event=push&head_sha=${testSha}&per_page=10`;
+const runDetail = `${prefix}/actions/runs/42`;
 
 const run = {
   id: 42, run_attempt: 2, event: 'push', head_branch: 'test', head_sha: testSha,
@@ -136,5 +138,108 @@ describe('production promotion from a full test push', () => {
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('Checkout does not match the workflow event commit');
+  });
+
+  it.each(['push', 'workflow_dispatch'])('does not wait for proof on %s even if given a test head', event => {
+    const script = fileURLToPath(new URL('../../scripts/ci-verify-tested-release.mjs', import.meta.url));
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    const mockFetch = `data:text/javascript,${encodeURIComponent(`
+      globalThis.fetch = async input => {
+        if (String(input) !== 'https://api.github.com${workflow}') throw Error('unexpected wait request');
+        return Response.json({ workflow_runs: [] });
+      };
+    `)}`;
+    const result = spawnSync(process.execPath, ['--import', mockFetch, script], {
+      encoding: 'utf8',
+      env: { ...process.env, GH_TOKEN: 'local-fixture', GITHUB_REPOSITORY: repository,
+        GITHUB_SHA: head, GITHUB_EVENT_NAME: event, WAIT_TEST_HEAD: testSha },
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('No matching full test validation and test deployment');
+    expect(result.stderr).not.toContain('unexpected wait request');
+  });
+});
+
+function waiter(
+  replies: Record<string, unknown>,
+  { tree = testedTree, head = testSha }: { tree?: string; head?: string } = {}
+) {
+  let clock = 0;
+  const log = vi.fn();
+  const now = () => clock;
+  const sleep = vi.fn(async (ms: number) => { clock += ms; });
+  const responses = {
+    [gitPath(testSha)]: { sha: testSha, tree: { sha: testedTree } },
+    ...replies,
+  };
+  const get = vi.fn(async (path: string) => {
+    if (!Object.hasOwn(responses, path)) throw new Error(`Unexpected API call: ${path}`);
+    const value = responses[path];
+    return typeof value === 'function' ? value() : value;
+  });
+  return { run: () => waitForTestPush({ repository, head, tree, get, log, sleep, now }), get, log, sleep, now };
+}
+
+describe('wait for a release PR’s matching test push', () => {
+  it('handles indexing delay and a queued run, then requires the full successful attempt', async () => {
+    const list = vi.fn()
+      .mockReturnValueOnce({ workflow_runs: [] })
+      .mockReturnValueOnce({ workflow_runs: [{ ...run, status: 'pending', conclusion: null }] });
+    const detail = vi.fn()
+      .mockReturnValueOnce({ ...run, status: 'in_progress', conclusion: null })
+      .mockReturnValueOnce(run);
+    const poll = waiter({ [matchingRuns]: list, [runDetail]: detail, [jobsPath(42, 2)]: { jobs: [job] } });
+    await expect(poll.run()).resolves.toEqual({ runId: 42, runAttempt: 2, testCommit: testSha });
+    expect(poll.sleep).toHaveBeenCalledTimes(3);
+    expect(poll.log).toHaveBeenCalledWith(expect.stringContaining('/actions/runs/42'));
+    expect(poll.get).toHaveBeenLastCalledWith(jobsPath(42, 2));
+  });
+
+  it('does not wait if the prospective merge tree differs from the test head', async () => {
+    const poll = waiter({}, { tree: differentTree });
+    await expect(poll.run()).rejects.toThrow('PR merge tree differs');
+    expect(poll.get).toHaveBeenCalledExactlyOnceWith(gitPath(testSha), { allowMissing: true });
+    expect(poll.sleep).not.toHaveBeenCalled();
+  });
+
+  it('bounds the indexing wait and never follows unrelated commits, forks or manual runs', async () => {
+    const poll = waiter({ [matchingRuns]: { workflow_runs: [
+      { ...run, head_sha: candidate }, { ...run, event: 'workflow_dispatch' },
+      { ...run, head_repository: { full_name: 'another/CloudSSH' } },
+    ] } });
+    await expect(poll.run()).resolves.toBeNull();
+    expect(poll.now()).toBe(90_000);
+    expect(poll.get).toHaveBeenCalledTimes(6);
+  });
+
+  it.each(['failure', 'cancelled'])('fails when the followed test push reports %s', async conclusion => {
+    const poll = waiter({
+      [matchingRuns]: { workflow_runs: [{ ...run, status: 'queued' }] },
+      [runDetail]: { ...run, conclusion },
+    });
+    await expect(poll.run()).rejects.toThrow('Matching test push did not succeed');
+    expect(poll.sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not equate a successful reduced-profile run with proof of full validation', async () => {
+    const skipped = job.steps.map(step => step.name === fullE2E ? { ...step, conclusion: 'skipped' } : step);
+    const poll = waiter({ [matchingRuns]: { workflow_runs: [run] }, [jobsPath(42, 2)]: { jobs: [{ ...job, steps: skipped }] } });
+    await expect(poll.run()).rejects.toThrow('did not pass every full validation');
+    expect(poll.sleep).not.toHaveBeenCalled();
+  });
+
+  it('does not let an indefinitely queued run consume unbounded time', async () => {
+    const queued = { ...run, status: 'pending', conclusion: null };
+    const poll = waiter({ [matchingRuns]: { workflow_runs: [queued] }, [runDetail]: queued });
+    await expect(poll.run()).rejects.toThrow('did not complete within the wait limit');
+    expect(poll.now()).toBe(60 * 60_000);
+    expect(poll.sleep).toHaveBeenCalledTimes(180);
+  });
+
+  it('fails closed if GitHub changes the run identity or reports an API failure', async () => {
+    for (const response of [{ ...run, id: 73 }, () => { throw new Error('API unavailable'); }]) {
+      const poll = waiter({ [matchingRuns]: { workflow_runs: [{ ...run, status: 'queued' }] }, [runDetail]: response });
+      await expect(poll.run()).rejects.toThrow(/different workflow run|API unavailable/);
+    }
   });
 });

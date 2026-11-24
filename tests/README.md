@@ -97,7 +97,7 @@ pnpm run verify
 
 ## E2E CI 并发与报告
 
-- `deploy.yml` 的 `test` push、目标为 `test` 的 PR 及 `test` 手动执行默认完整验证；只有 push 部署测试环境。`main` PR / push / 手动执行先核对当前 Git tree（PR 的待合并树）与本仓库最近 30 条成功 `test` push；仅在同一尝试的全量验证和测试部署成功时放行，成功 Summary 链接相应的运行尝试。只有通过核验的 `main` push 会构建及部署生产，不安装浏览器、不重跑测试。PR 和手动验证不注入 Cloudflare Secrets，不使用 `pull_request_target`。
+- `deploy.yml` 的 `test` push、目标为 `test` 的 PR 及 `test` 手动执行默认完整验证；只有 push 部署测试环境。`main` PR / push / 手动执行先核对当前 Git tree（PR 的待合并树）与本仓库最近 30 条成功 `test` push；仅在同一尝试的全量验证和测试部署成功时放行，成功 Summary 链接相应的运行尝试。同仓库 `test → main` PR 还可等待同一头提交的有效 `test` push（待合并树须一致；含排队最多 60 分钟，未找到运行只等 90 秒）；失败或缩减档位不会放行。`main` push 和手动核验不等待。只有通过核验的 `main` push 会构建及部署生产，不安装浏览器、不重跑测试。PR 和手动验证不注入 Cloudflare Secrets，不使用 `pull_request_target`。
 - **仅 `test` 分支的 push** 可在推送命令附带浏览器档位，不需要配置仓库变量。先提交改动，从运行 Summary 确认实际档位：
 
   | 推送命令 | 浏览器验证 |
@@ -108,7 +108,7 @@ pnpm run verify
 
   脚本仅在干净且有待推送文件变更的 `test` 分支附加一条空提交，不改写实际提交、不强推。CI 只识别推送顶端严格匹配且不修改文件的标记；后续普通提交恢复全量，同一次 CI 的重跑保留原档位。类型检查、全量单测、前端构建和测试部署均不跳过，但缩减档位不具备生产放行资格；SSH 互操作仍按变更触发。文档专用推送仍按原 paths-ignore 跳过部署，文档改动可随下一次正常候选一起完成验证。若发布门禁找不到记录，重跑同一内容原本全量的 `test` push，或按普通 push 验证新的发布候选；重跑缩减版不会变成全量。旧 `CLOUDSSH_TEST_E2E` 已不读取。
 - RDP 普通构建复用随代码提交的 FreeRDP JS/WASM/许可证；`rdp-assets.test.ts` 验证摘要和大小，`rdp-store.test.ts` 检查账户、票据与租约，`rdp-devices.spec.ts` 检查用户空间 CRUD。双线路、Access 与弱网真机验收见 [RDP 说明](../docs/rdp.md)。
-- 快速检查先于浏览器安装。Worker CI 仅取消同 PR 的过期验证，不中断部署；`test` 验证/部署、生产核验、生产构建/部署分别上限 30/5/10 分钟。互操作 CI 允许取消旧运行，Pages 发布串行执行。
+- 快速检查先于浏览器安装。Worker CI 仅取消同 PR 的过期验证，不中断部署；`test` 验证/部署、发布 PR 核验、`main` push 或手动核验、生产构建/部署的 job 上限分别为 30/65/5/10 分钟。互操作 CI 允许取消旧运行，Pages 发布串行执行。
 - CI 默认使用 **2 个 worker**，本地默认并发仍由 Playwright 决定。所选浏览器项目保留全部用例、最多 2 次重试、首次重试 trace 和失败截图，不启用全程 trace 或录像。
 - CI 生成 `playwright-report/index.html` 与 `test-results/results.json`。`deploy.yml` 在 E2E 实际执行成功或失败后、部署密钥注入前，将 `playwright-report/` 与 `test-results/` 一并上传，保留 **7 天**；取消或 E2E 未执行时不上传。报告名包含 run ID 与运行尝试编号，避免重跑时覆盖或 PR ref 的斜杠导致非法名称；启动失败且尚无文件时只警告，但原测试失败仍阻止部署。
 - 在 Actions 对应运行的 **Artifacts** 中下载 `playwright-report-<run-id>-<attempt>`。解压后运行 `pnpm exec playwright show-report <解压目录>/playwright-report` 查看每条用例、耗时、重试和附件；JSON 中的 `stats` / `suites` 可用于汇总与分文件分析。报告包含测试页面及模拟数据，请勿在 E2E 中使用真实凭据。

@@ -541,9 +541,9 @@ pnpm run deploy:test     # 部署 test 环境
 官方 CI（`deploy.yml` / `github-pages.yml` / `ssh-interop.yml`）所有 job 均在分配 runner / 展开 matrix 前通过 `github.repository_owner == 'newbietan'` 限定维护者仓库，勿改为 `github.actor` 判断：外部贡献者向官方仓库提交 PR 时仍需正常检查。其他所有者的 Fork 不运行部署、Pages 或互操作 CI；GitHub 可能保留 Skipped 记录，但不执行 runner 任务。Cloudflare 面板 / Git 集成部署独立于这些工作流，无需启用 Actions 或配置 CI 的 Cloudflare Secrets。`tests/workflow-policy.test.ts` 逐个检查非同步工作流的 job 级 owner 限制，新增工作流须沿用该策略。
 
 - `test` 的 push、目标为 `test` 的 PR 与 `test` 手动执行负责完整验证：冻结依赖、类型检查、单元/集成测试、前端构建、Chromium 和移动 WebKit。仅 `test` push 复用已构建产物部署 `cloudssh-test`。
-- `main` 的 push、目标为 `main` 的 PR 与 `main` 手动执行只核验发布内容。`scripts/ci-verify-tested-release.mjs` 用只读 GitHub API 核对当前 checkout 的 Git tree（PR 用待合并树，不是 PR 头）与同一仓库最近 30 条成功 `test` push 的记录；只接受对应尝试的全量测试与测试环境部署均成功，允许 Squash SHA 不同但拒绝任何文件差异。无匹配或 API 失败时阻断生产；禁止用 PR、手动或缩减档位记录冒充。PR 和手动运行不注入 Cloudflare Secrets，不用 `pull_request_target` 执行未信任代码。
+- `main` 的 push、目标为 `main` 的 PR 与 `main` 手动执行只核验发布内容。`scripts/ci-verify-tested-release.mjs` 用只读 GitHub API 核对当前 checkout 的 Git tree（PR 用待合并树，不是 PR 头）与同一仓库最近 30 条成功 `test` push 的记录；只接受对应尝试的全量测试与测试环境部署均成功，允许 Squash SHA 不同但拒绝任何文件差异。同仓库 `test → main` 发布 PR 若尚无证明，且 PR 待合并树与 `test` 头相同，则等待该头的真实 `test` push：允许 90 秒索引延迟，整段等待最多 60 分钟；仍须同一尝试的全量步骤成功才放行。最终 `main` push / 手动核验不等待。无匹配或 API 失败时阻断生产；禁止用 PR、手动或缩减档位记录冒充。PR 和手动运行不注入 Cloudflare Secrets，不用 `pull_request_target` 执行未信任代码。
 - 仅 `main` push 且核验通过后冻结安装、构建并部署 `cloudssh`，不下载 Playwright、不重跑测试、不取用其他运行的产物执行部署。部署 Secrets 仅注入 Wrangler 步骤。
-- Worker CI 仅取消同 PR 的过期校验；`test` 验证/部署、生产核验、生产构建/部署分别上限 30/5/10 分钟。SSH 互操作仍独立执行。
+- Worker CI 仅取消同 PR 的过期校验；`test` 验证/部署、发布 PR 核验、`main` push 或手动核验、生产构建/部署的 job 上限分别为 30/65/5/10 分钟。SSH 互操作仍独立执行。
 - GitHub Pages（`github-pages.yml`）只在 `main` 的 `docs/index.html` 或 `docs/theme-editor/**` 变更时自动发布；发布包只含这两处，普通文档和 `test` push 不部署。可在 `main` 手动重新发布。Pages 同一目标串行，不取消进行中的部署。上传与部署共用含 `github.run_id` 和 `github.run_attempt` 的产物名；`scripts/ci-wait-pages-artifact.sh` 有界重试只读查询，核对上传 ID、名称、所属 run 和未过期状态后才部署，不自动重试部署写操作。重跑旧 run 不会载入新工作流。
 - Fork 仅按需运行上游 `main` 同步（`sync-upstream.yml`）：手动执行无需变量；定时同步默认关闭，仅 `AUTO_SYNC_UPSTREAM=true` 开启，删除或设为 `false` 即关闭
 

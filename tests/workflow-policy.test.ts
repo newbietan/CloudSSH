@@ -74,6 +74,7 @@ describe('CI 验证和部署边界', () => {
     expect(verify).toContain("((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main')");
     expect(verify).toContain('actions: read');
     expect(verify).toContain('GH_TOKEN: ${{ github.token }}');
+    expect(verify).toContain("WAIT_TEST_HEAD: ${{ github.event_name == 'pull_request' && github.head_ref == 'test' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.sha || '' }}");
     expect(verify).toContain('run: node scripts/ci-verify-tested-release.mjs');
     expect(verify).not.toMatch(/secrets\.|wrangler deploy|pnpm|always\(\)|continue-on-error/);
     // Checkout must use the current workflow event SHA (PR merge result), not PR head.
@@ -134,7 +135,7 @@ describe('CI 验证和部署边界', () => {
     const deploy = readWorkflow('deploy.yml');
     expect(deploy).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
     expect(readDeployJob('validate-test')).toContain('timeout-minutes: 30');
-    expect(readDeployJob('verify-production')).toContain('timeout-minutes: 5');
+    expect(readDeployJob('verify-production')).toContain("timeout-minutes: ${{ github.event_name == 'pull_request' && 65 || 5 }}");
     expect(readDeployJob('deploy-production')).toContain('timeout-minutes: 10');
     const pages = readWorkflow('github-pages.yml');
     expect(pages).toContain('    concurrency:\n      group: cloudssh-pages\n      cancel-in-progress: false');

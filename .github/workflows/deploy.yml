@@ -110,7 +110,7 @@ jobs:
       ((github.event_name == 'pull_request' && github.base_ref == 'main') ||
        ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 65 || 5 }}
     permissions:
       actions: read
       contents: read
@@ -125,6 +125,8 @@ jobs:
       - name: Check for a matching successful full test push
         env:
           GH_TOKEN: ${{ github.token }}
+          # Only a release PR from our own test branch may wait on a matching push.
+          WAIT_TEST_HEAD: ${{ github.event_name == 'pull_request' && github.head_ref == 'test' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.sha || '' }}
         run: node scripts/ci-verify-tested-release.mjs
 
   deploy-production:
