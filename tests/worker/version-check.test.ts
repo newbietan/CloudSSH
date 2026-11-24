@@ -29,7 +29,7 @@ describe('public update check', () => {
     const response = await worker.fetch(new Request(
       'https://cloudssh.example/api/version?url=http://127.0.0.1/private',
       { headers: { Cookie: 'session=secret', Authorization: 'Bearer secret' } }
-    ), { REQUIRE_GITHUB_AUTH: 'true' } as Env);
+    ), { REQUIRE_AUTH: 'true' } as Env);
     expect(await response.json()).toEqual({ latestVersion: '2.10.0' });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];

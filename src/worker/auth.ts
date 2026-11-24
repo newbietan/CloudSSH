@@ -315,8 +315,8 @@ export function isSshIdentityAllowed(env: Env, githubId: string | number | null 
  * 未配置、空字符串或 "false" 保持匿名模式；其他非空值均按开启处理
  *（fail closed），防止运维拼写错误意外重新开放匿名 SSH。
  */
-export function isGitHubAuthRequired(env: Env): boolean {
-  const raw = env.REQUIRE_GITHUB_AUTH;
+export function isAuthRequired(env: Env): boolean {
+  const raw = env.REQUIRE_AUTH;
   if (raw === undefined || raw.trim() === '') return false;
   return raw.trim().toLowerCase() !== 'false';
 }

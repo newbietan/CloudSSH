@@ -253,7 +253,7 @@ Defaults are from [wrangler.toml](wrangler.toml). A pair means **production / te
 | Variable | Default | When to set it |
 | --- | --- | --- |
 | `IDLE_TIMEOUT` | `30m` | Disconnect idle sessions; accepts `30m`, `1h` or seconds. `0` disables the inactivity timeout. Passive terminal output is not user activity. |
-| `REQUIRE_GITHUB_AUTH` | `false` / `true` | Require sign-in for ordinary SSH; an administrator password session also qualifies. One-time shares still require their own authorization. |
+| `REQUIRE_AUTH` | `false` / `true` | Require sign-in for ordinary SSH; an administrator password session also qualifies. One-time shares still require their own authorization. |
 | `GITHUB_CLIENT_ID` | — | Public GitHub OAuth client ID. Configure with the secret below; not needed for other login modes. |
 | `GITHUB_CLIENT_SECRET` | — | GitHub OAuth client secret. Store as a **Secret**. |
 | `BASE_URL` | Request origin | Optional canonical site URL for GitHub OAuth, e.g. `https://ssh.example.com`. Register `/api/auth/callback` on that origin in GitHub. |
@@ -266,7 +266,9 @@ Defaults are from [wrangler.toml](wrangler.toml). A pair means **production / te
 
 For Git/CLI deployments, configure ordinary values in the target environment’s Wrangler `vars` table. Deployments can replace ordinary Dashboard variables. Store credentials under **Settings → Variables and Secrets → Secret**. Durable Object bindings and migrations are already defined in Wrangler; they are not additional environment variables.
 
-**Upgrading an existing deployment?** `ENABLE_RDP` has been removed. Even if it was `false`, signed-in users can now use [Windows Remote Desktop](#windows-rdp) over HTTPS. You can also remove `MAX_CONNECTIONS` (previously unused), `ENABLE_SSH_SHARING`, `STRICT_HOST_KEY_VERIFY` and `CF_ACCESS_TEAM_NAME`. Old `false` values no longer disable sharing or bypass signature checks. No server is shared automatically. Enter the SSH CA team name in the form; existing saved team names are unchanged.
+**Upgrading an existing deployment?** `REQUIRE_GITHUB_AUTH` has been renamed to `REQUIRE_AUTH`. The old name is no longer read. If your production instance requires sign-in, set `REQUIRE_AUTH = "true"` in its `[vars]` before upgrading; otherwise ordinary SSH will allow anonymous connections by default.
+
+`ENABLE_RDP` has been removed. Even if it was `false`, signed-in users can now use [Windows Remote Desktop](#windows-rdp) over HTTPS. You can also remove `MAX_CONNECTIONS` (previously unused), `ENABLE_SSH_SHARING`, `STRICT_HOST_KEY_VERIFY` and `CF_ACCESS_TEAM_NAME`. Old `false` values no longer disable sharing or bypass signature checks. No server is shared automatically. Enter the SSH CA team name in the form; existing saved team names are unchanged.
 
 </details>
 
@@ -288,7 +290,7 @@ Prefer signing in with your own custom password instead of GitHub OAuth? The ins
 
 1. **Generate the hash**: Enter your custom password (≥ 10 characters), confirm it, click "Generate hash", and copy the result. **The password never leaves your browser** — no local tooling required. Ways to open the generator:
    - Fresh deployment (no sign-in configured): open your site and click "**Admin password sign-in setup**" at the bottom of the auth form;
-   - Instances already using GitHub sign-in (including `REQUIRE_GITHUB_AUTH=true` forced login): open `https://your-domain/#password-setup` directly — no existing variables need touching;
+   - Instances already using GitHub sign-in (including `REQUIRE_AUTH=true` forced login): open `https://your-domain/#password-setup` directly — no existing variables need touching;
    - Password rotation: open `#password-setup`, regenerate, and replace the Dashboard variable.
 2. **Configure the variable**: In the Cloudflare Dashboard → Workers → Settings → Variables and Secrets, add `ADMIN_PASSWORD_HASH` (**Secret** type), paste the generated hash, and save.
 3. **Reload** and sign in using **Admin Login**. The administrator has a separate account and saved servers.
@@ -327,7 +329,7 @@ GitHub OAuth is one way to sign in and manage saved servers. If you already use 
    The following two independent settings are optional:
 
    - `GITHUB_ALLOWED_USER_IDS`: Comma-separated GitHub **numeric user IDs** allowed to sign in, for example `83105156,6236783`. When omitted, every GitHub account may sign in. An empty or malformed configured value fails closed and denies every GitHub sign-in.
-   - `REQUIRE_GITHUB_AUTH`: Set to `true` to require login for ordinary SSH. A valid one-time share is a separate authorization path.
+   - `REQUIRE_AUTH`: Set to `true` to require login for ordinary SSH. A valid one-time share is a separate authorization path.
 
    **Find a GitHub numeric user ID**:
 
@@ -344,7 +346,7 @@ GitHub OAuth is one way to sign in and manage saved servers. If you already use 
 | ---------------                 | ----------------       | ---------------                  |
 | Neither setting                 | All GitHub users       | Allowed                          |
 | `GITHUB_ALLOWED_USER_IDS` only  | Allowlisted users only | Allowed                          |
-| `REQUIRE_GITHUB_AUTH=true` only | All GitHub users       | Disabled                         |
+| `REQUIRE_AUTH=true` only | All GitHub users       | Disabled                         |
 | Both settings                   | Allowlisted users only | Disabled (private-instance mode) |
 
 ##### Using One-Time SSH Sharing

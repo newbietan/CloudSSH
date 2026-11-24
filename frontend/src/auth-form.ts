@@ -212,7 +212,7 @@ export class ConnectionForm {
     });
   }
 
-  /** REQUIRE_GITHUB_AUTH=true 且密码模式：强制登录面板（文案替换为管理员语义） */
+  /** REQUIRE_AUTH=true 且密码模式：强制登录面板（文案替换为管理员语义） */
   private renderAdminAuthRequired(): void {
     const container = document.getElementById('connection-form-container');
     if (!container) return;

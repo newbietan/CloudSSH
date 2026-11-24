@@ -253,7 +253,7 @@ Fork 仓库可以按需使用内置的 `Sync upstream` GitHub Actions 工作流�
 | 变量 | 默认值 | 何时配置 |
 | --- | --- | --- |
 | `IDLE_TIMEOUT` | `30m` | 断开无操作会话；支持 `30m`、`1h` 或秒数，`0` 禁用。被动终端输出不算用户活动。 |
-| `REQUIRE_GITHUB_AUTH` | `false` / `true` | 要求普通 SSH 连接先登录；管理员密码会话也满足要求。一次性分享仍须单独授权。 |
+| `REQUIRE_AUTH` | `false` / `true` | 要求普通 SSH 连接先登录；管理员密码会话也满足要求。一次性分享仍须单独授权。 |
 | `GITHUB_CLIENT_ID` | — | GitHub OAuth 应用的公开 ID，与下一项成对配置。其他登录模式不需要。 |
 | `GITHUB_CLIENT_SECRET` | — | GitHub OAuth 应用密钥，以 **Secret** 保存。 |
 | `BASE_URL` | 当前请求的 origin | 需要固定 GitHub OAuth 回调域名时填写站点根地址，如 `https://ssh.example.com`；GitHub 回调为该域名下的 `/api/auth/callback`。 |
@@ -266,7 +266,9 @@ Fork 仓库可以按需使用内置的 `Sync upstream` GitHub Actions 工作流�
 
 Git 集成或 CLI 部署时，请在对应环境的 Wrangler `vars` 表中设置普通变量；部署可能覆盖 Dashboard 中的普通变量。敏感凭据请在 **Settings → Variables and Secrets** 中以 **Secret** 保存。Durable Object 绑定与迁移已写在 Wrangler 配置中，不需要作为环境变量添加。
 
-**从旧配置升级**：`ENABLE_RDP` 已移除；即使旧值为 `false`，升级后登录用户也可通过 HTTPS 使用 [Windows 远程桌面](#windows-rdp)。还可以移除 `MAX_CONNECTIONS`（原本未生效）、`ENABLE_SSH_SHARING`、`STRICT_HOST_KEY_VERIFY` 和 `CF_ACCESS_TEAM_NAME`。旧的 `false` 不再关闭分享或跳过主机验签；没有服务器会被自动分享。SSH CA 团队名改为手填，已保存服务器的团队名不变。
+**从旧配置升级**：`REQUIRE_GITHUB_AUTH` 已更名为 `REQUIRE_AUTH`，旧名不再读取。原先强制登录的生产实例，请在升级前将生产 `[vars]` 中的 `REQUIRE_AUTH` 设为 `"true"`，否则普通 SSH 会按默认值允许匿名连接。
+
+`ENABLE_RDP` 已移除；即使旧值为 `false`，升级后登录用户也可通过 HTTPS 使用 [Windows 远程桌面](#windows-rdp)。还可以移除 `MAX_CONNECTIONS`（原本未生效）、`ENABLE_SSH_SHARING`、`STRICT_HOST_KEY_VERIFY` 和 `CF_ACCESS_TEAM_NAME`。旧的 `false` 不再关闭分享或跳过主机验签；没有服务器会被自动分享。SSH CA 团队名改为手填，已保存服务器的团队名不变。
 
 </details>
 
@@ -288,7 +290,7 @@ Git 集成或 CLI 部署时，请在对应环境的 Wrangler `vars` 表中设置
 
 1. **生成哈希**：输入自定义密码（≥10 位）并确认 → 点击「生成哈希」→ 复制结果。**密码全程不离开浏览器**，无需本地安装任何工具。进入生成器的方式：
    - 全新部署（未配置任何登录方式）：打开站点，在认证表单底部点击「**管理员密码登录设置**」；
-   - 已配置 GitHub 登录的实例（含 `REQUIRE_GITHUB_AUTH=true` 强制登录）：浏览器直接打开 `https://你的域名/#password-setup`，无需改动任何既有变量；
+   - 已配置 GitHub 登录的实例（含 `REQUIRE_AUTH=true` 强制登录）：浏览器直接打开 `https://你的域名/#password-setup`，无需改动任何既有变量；
    - 修改密码（轮换）：同样打开 `#password-setup` 重新生成，替换 Dashboard 变量即可。
 2. **配置变量**：在 Cloudflare Dashboard → Workers → Settings → Variables and Secrets 中添加 `ADMIN_PASSWORD_HASH`（**Secret** 类型），粘贴生成的哈希串并保存。
 3. **刷新页面**，通过「管理员登录」使用新密码。管理员拥有独立账户和服务器列表。
@@ -326,7 +328,7 @@ GitHub OAuth 是登录并管理服务器的一种方式。已使用单管理员�
 
    还可以按部署用途设置以下两个独立的可选配置：
    - `GITHUB_ALLOWED_USER_IDS`：允许登录的 GitHub **数字用户 ID**，多个 ID 使用英文逗号分隔，例如 `83105156,6236783`。未配置时不限制 GitHub 账号；配置为空或包含非正整数时采用 fail-closed，拒绝所有 GitHub 登录。
-   - `REQUIRE_GITHUB_AUTH`：设为 `true` 时普通 SSH 连接必须先登录；有效的一次性分享走独立授权路径。
+   - `REQUIRE_AUTH`：设为 `true` 时普通 SSH 连接必须先登录；有效的一次性分享走独立授权路径。
 
    **获取 GitHub 数字用户 ID**：
    - 浏览器访问 `https://api.github.com/users/octocat`（将 `octocat` 替换为实际用户名），在返回的 JSON 中读取 `id` 字段。例如响应中的 `"id": 583231` 表示数字用户 ID 为 `583231`。
@@ -342,7 +344,7 @@ GitHub OAuth 是登录并管理服务器的一种方式。已使用单管理员�
 | --------------------------------- | ---------------- | -------------------- |
 | 两项都不配置                      | 所有 GitHub 用户 | 允许                 |
 | 仅配置 `GITHUB_ALLOWED_USER_IDS`  | 仅白名单用户     | 允许                 |
-| 仅配置 `REQUIRE_GITHUB_AUTH=true` | 所有 GitHub 用户 | 禁止                 |
+| 仅配置 `REQUIRE_AUTH=true` | 所有 GitHub 用户 | 禁止                 |
 | 两项同时配置                      | 仅白名单用户     | 禁止（私有实例模式） |
 
 ##### 使用一次性 SSH 分享

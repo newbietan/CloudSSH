@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 普通 SSH 的强制登录变量由 `REQUIRE_GITHUB_AUTH` 更名为 `REQUIRE_AUTH`，生产默认 `false`，测试默认 `true`。旧变量不再读取；原先强制登录的生产实例须在升级前迁移配置。
 - Windows 远程桌面不再读取 `ENABLE_RDP`。生产和测试环境的登录用户均可通过 HTTPS 使用，即使原配置为 `false`；匿名用户和一次性分享仍无权访问。
 
 ## [2.12.0] - 2026-11-24

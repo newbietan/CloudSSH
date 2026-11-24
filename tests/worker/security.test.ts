@@ -353,18 +353,20 @@ describe('安全 — GitHub 用户白名单', () => {
   });
 });
 
-describe('安全 — 强制 GitHub 登录模式', () => {
+describe('安全 — 强制登录模式', () => {
   it.each([
     [undefined, false],
     ['false', false],
     ['true', true],
     ['ture', true],
-  ])('REQUIRE_GITHUB_AUTH=%s 时 /api/config 返回 %s', async (value, expected) => {
+    [' FALSE ', false],
+    ['', false],
+  ])('REQUIRE_AUTH=%s 时 /api/config 返回 %s', async (value, expected) => {
     const worker = await loadWorker();
     const res = await worker.fetch(
       makeRequest('/api/config'),
       makeEnv({
-        REQUIRE_GITHUB_AUTH: value,
+        REQUIRE_AUTH: value,
       })
     );
     expect(
@@ -375,7 +377,7 @@ describe('安全 — 强制 GitHub 登录模式', () => {
   it('强制登录时拒绝匿名 SSH WebSocket', async () => {
     const worker = await loadWorker();
     const sshSessionStub = makeDOStub(() => new Response('forwarded'));
-    const env = makeEnv({ REQUIRE_GITHUB_AUTH: 'true', sshSessionStub });
+    const env = makeEnv({ REQUIRE_AUTH: 'true', sshSessionStub });
     const req = makeRequest('/api/ssh', {
       headers: { Upgrade: 'websocket', Origin: 'https://cloudssh.test' },
     });
@@ -398,7 +400,7 @@ describe('安全 — 强制 GitHub 登录模式', () => {
     );
     const sshSessionStub = makeDOStub(() => new Response('forwarded'));
     const env = makeEnv({
-      REQUIRE_GITHUB_AUTH: 'true',
+      REQUIRE_AUTH: 'true',
       GITHUB_ALLOWED_USER_IDS: '42',
       userDbStub,
       sshSessionStub,
@@ -1168,7 +1170,7 @@ describe('安全 — 一次性 token 与接缝鉴权', () => {
     const userDbStub = makeDOStub(() =>
       Response.json({ error: 'not authenticated' }, { status: 401 })
     );
-    const env = makeEnv({ REQUIRE_GITHUB_AUTH: 'true', userDbStub });
+    const env = makeEnv({ REQUIRE_AUTH: 'true', userDbStub });
     const req = makeRequest('/api/ssh?token=987:one-time-token', {
       headers: { Upgrade: 'websocket', Origin: 'https://cloudssh.test' },
     });
@@ -1203,7 +1205,7 @@ describe('安全 — 一次性 token 与接缝鉴权', () => {
     });
     const sshSessionStub = makeDOStub(() => new Response('forwarded'));
     const env = makeEnv({
-      REQUIRE_GITHUB_AUTH: 'true',
+      REQUIRE_AUTH: 'true',
       userDbStub,
       sshSessionStub,
     });
@@ -1418,7 +1420,7 @@ describe('安全 — 一次性 SSH 分享边界', () => {
       return new Response('forwarded');
     });
     const env = makeEnv({
-      REQUIRE_GITHUB_AUTH: 'true',
+      REQUIRE_AUTH: 'true',
       sshShareStub: shareStub,
       sshSessionStub: sessionStub,
     });

@@ -8,7 +8,7 @@ DEBUG_MODE = "false"
 # 用户无操作空闲超时：默认 30 分钟（支持 30m / 1h / 1800s / 纯数字按秒）；设为 "0" 禁用
 IDLE_TIMEOUT = "30m"
 # 是否强制登录后才能使用 SSH（GitHub 或单管理员密码会话均满足）；"false" 保持匿名直连可用
-REQUIRE_GITHUB_AUTH = "false"
+REQUIRE_AUTH = "false"
 
 # 构建监视路径：仅源代码变动时触发重新构建
 [build]
@@ -74,7 +74,7 @@ name = "cloudssh-test"
 DEBUG_MODE = "true"
 IDLE_TIMEOUT = "30m"
 # test 环境默认要求登录（验证强制登录链路）；生产 [vars] 保持 "false" 匿名可用
-REQUIRE_GITHUB_AUTH = "true"
+REQUIRE_AUTH = "true"
 
 [[env.test.durable_objects.bindings]]
 name = "SSH_SESSION"
