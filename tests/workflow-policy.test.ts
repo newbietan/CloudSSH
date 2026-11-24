@@ -5,6 +5,8 @@ const workflowDir = new URL('../.github/workflows/', import.meta.url);
 const workflows = readdirSync(workflowDir).filter((file) => /\.ya?ml$/.test(file));
 const readWorkflow = (file: string) =>
   readFileSync(new URL(file, workflowDir), 'utf8').replace(/\r\n/g, '\n');
+const readDeployJob = (name: string) =>
+  readWorkflow('deploy.yml').split(`\n  ${name}:\n`)[1]?.split(/^  [\w-]+:\n/m)[0] ?? '';
 
 describe('Fork 工作流执行策略', () => {
   // This source-level contract checks every job, including future workflows.
@@ -14,26 +16,27 @@ describe('Fork 工作流执行策略', () => {
     (file) => {
       const jobs = readWorkflow(file).split('\njobs:\n')[1] ?? '';
       const jobHeaders = jobs.match(/^  [\w-]+:$/gm) ?? [];
-      const ownerGuards = jobs.match(/^    if: github\.repository_owner == 'newbietan'$/gm) ?? [];
+      const ownerGuards = jobs.match(/^    if: (?:>-\n      )?github\.repository_owner == 'newbietan'(?: &&[^\n]*)?$/gm) ?? [];
       expect(jobHeaders.length).toBeGreaterThan(0);
       expect(ownerGuards).toHaveLength(jobHeaders.length);
     }
   );
 
-  it('deploys the already-tested frontend artifact without rebuilding it with deployment secrets', () => {
+  it('builds exactly once in each deploying job, without injecting secrets into the build', () => {
     const deploy = readWorkflow('deploy.yml');
-    expect(deploy.match(/run: pnpm run build:frontend/g)).toHaveLength(1);
-    expect(deploy.match(/run: pnpm exec wrangler deploy(?: --env test)?$/gm)).toHaveLength(2);
+    for (const job of [readDeployJob('validate-test'), readDeployJob('deploy-production')]) {
+      expect(job.match(/run: pnpm run build:frontend/g)).toHaveLength(1);
+      expect(job.match(/run: pnpm exec wrangler deploy(?: --env test)?$/gm)).toHaveLength(1);
+      const build = job.indexOf('run: pnpm run build:frontend');
+      const deployStep = job.indexOf('      - name: Deploy verified artifact');
+      expect(build).toBeLessThan(deployStep);
+      expect(job.slice(0, deployStep)).not.toContain('secrets.');
+      expect(job.slice(deployStep)).toContain('secrets.CLOUDFLARE_API_TOKEN');
+      expect(job.slice(deployStep)).toContain('secrets.CLOUDFLARE_ACCOUNT_ID');
+    }
     expect(deploy).not.toContain('run: pnpm run deploy');
-    expect(deploy.indexOf('run: pnpm run test:e2e')).toBeLessThan(
-      deploy.indexOf('run: pnpm exec wrangler deploy')
-    );
     expect(deploy).not.toMatch(/^\s*continue-on-error:\s*true/m);
     expect(deploy).not.toMatch(/run: pnpm run test:e2e[^\n]*\|\|/);
-    const deploymentSteps = deploy.split('      - name: Deploy verified artifact').slice(1);
-    expect(deploymentSteps).toHaveLength(2);
-    expect(deploymentSteps.filter((step) => step.includes("github.ref == 'refs/heads/main'"))).toHaveLength(1);
-    expect(deploymentSteps.filter((step) => step.includes("github.ref == 'refs/heads/test'"))).toHaveLength(1);
   });
 
   it('Fork 可直接手动同步，定时同步需要显式开启', () => {
@@ -53,22 +56,33 @@ describe('Fork 工作流执行策略', () => {
 });
 
 describe('CI 验证和部署边界', () => {
-  it('PR 和手动执行都经过完整验证，但部署步骤仅允许 test/main 的 push', () => {
+  it('test 分支保留全量验证，main PR 和手动触发只做内容核验，不部署', () => {
     const deploy = readWorkflow('deploy.yml');
     expect(deploy).toContain('  pull_request:\n    branches: [test, main]');
     expect(deploy).toMatch(/^  workflow_dispatch:$/m);
     expect(deploy).not.toContain('pull_request_target');
+    const validate = readDeployJob('validate-test');
+    expect(validate).toContain("(github.event_name == 'pull_request' && github.base_ref == 'test')");
+    expect(validate).toContain("((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/test')");
     for (const command of ['typecheck', 'test:e2e', 'build:frontend']) {
-      expect(deploy).toContain(`run: pnpm run ${command}`);
+      expect(validate).toContain(`run: pnpm run ${command}`);
     }
-    expect(deploy).toContain('run: pnpm test');
-    const sections = deploy.split('      - name: Deploy verified artifact').slice(1);
-    expect(sections).toHaveLength(2);
-    for (const section of sections) {
-      expect(section).toMatch(/^        if: github.event_name == 'push' && github.ref == 'refs\/heads\/(test|main)'(?: && [^\n]+)?$/m);
-      expect(section).toContain('CLOUDFLARE_API_TOKEN:');
-    }
-    expect(deploy.slice(0, deploy.indexOf('      - name: Deploy verified artifact'))).not.toContain('secrets.');
+    expect(validate).toContain('run: pnpm test');
+    expect(validate).toContain("if: github.event_name == 'push' && github.ref == 'refs/heads/test'");
+    const verify = readDeployJob('verify-production');
+    expect(verify).toContain("(github.event_name == 'pull_request' && github.base_ref == 'main')");
+    expect(verify).toContain("((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main')");
+    expect(verify).toContain('actions: read');
+    expect(verify).toContain('GH_TOKEN: ${{ github.token }}');
+    expect(verify).toContain('run: node scripts/ci-verify-tested-release.mjs');
+    expect(verify).not.toMatch(/secrets\.|wrangler deploy|pnpm|always\(\)|continue-on-error/);
+    // Checkout must use the current workflow event SHA (PR merge result), not PR head.
+    expect(verify).not.toContain('\n          ref:');
+    const production = readDeployJob('deploy-production');
+    expect(production).toContain('needs: verify-production');
+    expect(production).toMatch(/^    if: github\.repository_owner == 'newbietan' && github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'$/m);
+    expect(production).toContain('pnpm install --frozen-lockfile');
+    expect(production).not.toMatch(/playwright|pnpm test|typecheck|test:e2e|always\(\)/i);
   });
 
   it('retires the RDP preview and keeps the standard deployment free of compiler steps', () => {
@@ -119,7 +133,9 @@ describe('CI 验证和部署边界', () => {
   it('只取消过期 PR 校验，不中途取消 Worker 或 Pages 部署，并限制 job 时长', () => {
     const deploy = readWorkflow('deploy.yml');
     expect(deploy).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
-    expect(deploy).toContain('timeout-minutes: 30');
+    expect(readDeployJob('validate-test')).toContain('timeout-minutes: 30');
+    expect(readDeployJob('verify-production')).toContain('timeout-minutes: 5');
+    expect(readDeployJob('deploy-production')).toContain('timeout-minutes: 10');
     const pages = readWorkflow('github-pages.yml');
     expect(pages).toContain('group: cloudssh-pages\n  cancel-in-progress: false');
     expect(pages).toContain('timeout-minutes: 10');
