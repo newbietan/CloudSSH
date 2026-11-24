@@ -1,4 +1,5 @@
 import { normalizeServerTags } from './server-tags';
+import { isRestrictedTcpPort } from './tcp-port-policy';
 
 export type RdpRoute = 'direct' | 'tunnel';
 export const RDP_MAX_PROFILES = 32;
@@ -6,7 +7,12 @@ export const RDP_MAX_BODY = 12 * 1024;
 export const RDP_WINDOW = 1024 * 1024;
 export const RDP_FRAME = 16 * 1024;
 export const RDP_WS_PROTOCOL = 'cloudssh-rdp-v1';
-export const RDP_CLIENT_REVISION = 4;
+export const RDP_CLIENT_REVISION = 5;
+export const RDP_DEFAULT_PORT = 3389;
+
+export function isRdpPort(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 65535 && !isRestrictedTcpPort(value);
+}
 
 export interface RdpLogin { username: string; domain: string; password: string }
 export function isRdpLogin(value: unknown): value is RdpLogin {
@@ -21,6 +27,7 @@ export interface RdpProfileInput {
   name: string;
   route: RdpRoute;
   host: string;
+  port?: number; // Direct only. Omission on edit preserves the existing direct port.
   tags?: string[];
   login?: RdpLogin;
   accessId?: string;
@@ -65,7 +72,7 @@ export function isRdpId(value: unknown): value is string {
 export function parseRdpProfile(value: unknown): RdpProfileInput | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const data = value as Record<string, unknown>;
-  if (Object.keys(data).some((key) => !['name', 'tags', 'login', 'route', 'host', 'accessId', 'accessSecret', 'revision'].includes(key))) return null;
+  if (Object.keys(data).some((key) => !['name', 'tags', 'login', 'route', 'host', 'port', 'accessId', 'accessSecret', 'revision'].includes(key))) return null;
   if (typeof data.name !== 'string' || typeof data.host !== 'string') return null;
   const name = data.name.trim();
   const host = data.host.trim().toLowerCase();
@@ -77,9 +84,10 @@ export function parseRdpProfile(value: unknown): RdpProfileInput | null {
     ...(data.login === undefined ? {} : { login: data.login }) };
   if (route === 'direct') {
     if (!isPublicRdpIPv4(host) || data.accessId !== undefined || data.accessSecret !== undefined) return null;
-    return { name, host, route, ...extra };
+    if (data.port !== undefined && !isRdpPort(data.port)) return null;
+    return { name, host, route, ...(data.port === undefined ? {} : { port: data.port }), ...extra };
   }
-  if (route !== 'tunnel' || !isRdpTunnelHost(host)) return null;
+  if (route !== 'tunnel' || data.port !== undefined || !isRdpTunnelHost(host)) return null;
   const accessId = data.accessId;
   const accessSecret = data.accessSecret;
   if (accessId === undefined && accessSecret === undefined) return { name, host, route, ...extra };

@@ -7,6 +7,7 @@ import {
   type McpActivity,
   type McpPrincipal,
 } from '../mcp-schema';
+import { isRestrictedTcpPort } from '../tcp-port-policy';
 import { checkHostResolved } from './dns-check';
 import { SSHSession, type SSHSessionClient } from './ssh-session';
 import { isValidTunnelHostname, TunnelWebSocketStream } from './tunnel-stream';
@@ -26,9 +27,6 @@ type Connection = {
   expiresAt: number;
   controller?: AbortController;
 };
-const BLOCKED_PORTS = [
-  23, 80, 443, 25, 465, 587, 110, 143, 993, 995, 3306, 5432, 6379, 9200, 11211, 27017, 5060,
-];
 const silentClient: SSHSessionClient = { readyState: 1, send() {}, close() {} };
 function closeConnection(connection: Connection) {
   connection.controller?.abort();
@@ -332,7 +330,7 @@ export class MCPExecutionDO {
           !Number.isInteger(node.port) ||
           node.port < 1 ||
           node.port > 65535 ||
-          BLOCKED_PORTS.includes(node.port)
+          isRestrictedTcpPort(node.port)
         )
           throw new Error('blocked_port');
       }

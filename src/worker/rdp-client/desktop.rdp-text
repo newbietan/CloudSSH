@@ -53,7 +53,7 @@ const viewportSize = () => {
   return [Math.max(200, Math.floor(w * scale / 2) * 2), Math.max(200, Math.floor(h * scale / 2) * 2)];
 };
 const api = '/api/rdp/profiles/' + location.pathname.split('/')[2];
-const clientRevision = '4'; // Keep aligned with src/rdp-schema.ts when changing the browser ABI.
+const clientRevision = '5'; // Keep aligned with src/rdp-schema.ts when changing the browser ABI.
 const trust = trustText[locale];
 const certificate = el('certificate');
 const acceptCertificate = el('certificate-accept');
@@ -311,6 +311,7 @@ async function run() {
           window.Module.websocket.on?.('close', () => finish(ready ? 16 : 19));
           initialSize = viewportSize();
           layout(true);
+          // Local placeholder for the WASM socket adapter. Only the Worker's claimed profile selects the TCP destination.
           const args = ['/v:127.0.0.1:3389', '/u:' + username, '/sec:nla', '/cert:deny',
             '/size:' + initialSize.join('x'), '/dynamic-resolution', '-clipboard', '-auto-reconnect', '/audio-mode:2', '/log-level:OFF'];
           if (domain) args.push('/d:' + domain);

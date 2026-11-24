@@ -9,6 +9,7 @@ import {
   buildResumeChallengeMessage,
   RESUME_CHALLENGE_MAX_CLOCK_SKEW_MS,
 } from '../share-resume-schema';
+import { isRestrictedTcpPort } from '../tcp-port-policy';
 import { checkHostResolved } from './dns-check';
 import { SSHSession } from './ssh-session';
 import { isValidTunnelHostname, TunnelWebSocketStream } from './tunnel-stream';
@@ -647,10 +648,6 @@ export class SSHSessionDO {
         throw new Error('Cloudflare 隧道连接不支持跳板机');
       }
 
-      const BLOCKED_PORTS = [
-        23, 80, 443, 25, 465, 587, 110, 143, 993, 995, 3306, 5432, 6379, 9200, 11211, 27017, 5060,
-      ];
-
       const debugMode = this.env.DEBUG_MODE === 'true';
 
       let transport: any;
@@ -762,7 +759,7 @@ export class SSHSessionDO {
           if (!Number.isInteger(node.port) || node.port < 1 || node.port > 65535) {
             throw new Error('端口必须是 1-65535 之间的整数');
           }
-          if (BLOCKED_PORTS.includes(node.port)) {
+          if (isRestrictedTcpPort(node.port)) {
             throw new Error(`端口 ${node.port} 存在安全风险，已被禁止连接`);
           }
         }
