@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **生产发布不重复跑浏览器测试**：由 `test` push 完整验证并部署测试环境，`main` 核验同一 Git tree 的全量通过记录后，只重新构建和部署生产。缩减浏览器档位不具备放行资格。
+- **生产发布不重复跑浏览器测试**：由 `test` push 完整验证并部署测试环境，`main` 核验同一 Git tree 的全量通过记录后，只重新构建和部署生产。发布 PR 在内容一致时会自动等待仍在排队或运行的 `test` push；实际生产部署仍须已有合格记录，缩减浏览器档位不能放行。
 - **文档精简**：用 [RDP 使用指南](docs/rdp.md) 替代旧实施计划，保留配置、安全限制和真机验收；同步裁减字体与移动端的一次性说明。
 - **GitHub Pages 按需发布**：仅在 `main` 的主题编辑器或 Pages 首页文件变更时自动发布；普通文档或 `test` 推送不触发。保留 `main` 手动发布入口。
 
