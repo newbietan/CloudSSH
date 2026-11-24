@@ -2,26 +2,30 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [test, main]
+    branches: [main]
     paths:
-      - "docs/**"
+      - "docs/index.html"
+      - "docs/theme-editor/**"
   workflow_dispatch:
-
-# Pages has a single destination. Serialize publication without cancelling an in-flight deploy.
-concurrency:
-  group: cloudssh-pages
-  cancel-in-progress: false
 
 jobs:
   deploy:
-    if: github.repository_owner == 'newbietan'
+    if: github.repository_owner == 'newbietan' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Only eligible runs enter the publication queue; never cancel an active deploy.
+    concurrency:
+      group: cloudssh-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     # deploy-pages searches the whole run, including artifacts from previous attempts.
     env:
       PAGES_ARTIFACT_NAME: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
     permissions:
       contents: read
+      actions: read
       pages: write
       id-token: write
     steps:
@@ -34,16 +38,30 @@ jobs:
         # actions/configure-pages@v4
         uses: actions/configure-pages@1f0c5cde4bc74cd7e1254d0cb4de8d49e9068c7d
 
+      - name: Stage public site files
+        run: |
+          mkdir -p "$RUNNER_TEMP/cloudssh-pages"
+          cp docs/index.html "$RUNNER_TEMP/cloudssh-pages/"
+          cp -R docs/theme-editor "$RUNNER_TEMP/cloudssh-pages/"
+
       - name: Upload artifact
-        # actions/upload-pages-artifact@v3
-        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa
+        id: upload
+        # actions/upload-pages-artifact@v5.0.0
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
         with:
           name: ${{ env.PAGES_ARTIFACT_NAME }}
-          path: "docs"
+          path: ${{ runner.temp }}/cloudssh-pages
+
+      - name: Wait for uploaded artifact metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAGES_ARTIFACT_ID: ${{ steps.upload.outputs.artifact_id }}
+        run: bash scripts/ci-wait-pages-artifact.sh
 
       - name: Deploy to GitHub Pages
         id: deployment
-        # actions/deploy-pages@v4
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e
+        # actions/deploy-pages@v5.0.1
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346
         with:
           artifact_name: ${{ env.PAGES_ARTIFACT_NAME }}
+          timeout: '420000'

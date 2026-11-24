@@ -543,8 +543,8 @@ pnpm run deploy:test     # 部署 test 环境
 - `test` 的 push、目标为 `test` 的 PR 与 `test` 手动执行负责完整验证：冻结依赖、类型检查、单元/集成测试、前端构建、Chromium 和移动 WebKit。仅 `test` push 复用已构建产物部署 `cloudssh-test`。
 - `main` 的 push、目标为 `main` 的 PR 与 `main` 手动执行只核验发布内容。`scripts/ci-verify-tested-release.mjs` 用只读 GitHub API 核对当前 checkout 的 Git tree（PR 用待合并树，不是 PR 头）与同一仓库最近 30 条成功 `test` push 的记录；只接受对应尝试的全量测试与测试环境部署均成功，允许 Squash SHA 不同但拒绝任何文件差异。无匹配或 API 失败时阻断生产；禁止用 PR、手动或缩减档位记录冒充。PR 和手动运行不注入 Cloudflare Secrets，不用 `pull_request_target` 执行未信任代码。
 - 仅 `main` push 且核验通过后冻结安装、构建并部署 `cloudssh`，不下载 Playwright、不重跑测试、不取用其他运行的产物执行部署。部署 Secrets 仅注入 Wrangler 步骤。
-- Worker CI 仅取消同 PR 的过期校验；`test` 验证/部署、生产核验、生产构建/部署分别上限 30/5/10 分钟。互操作与 Pages 的独立触发、并发和部署不变。
-- 维护者仓库 `docs/**` 变更 → 发布 GitHub Pages 主题编辑器（`github-pages.yml`）。上传与部署必须共用含 `github.run_attempt` 的产物名：Pages 按整个 run 查找产物，重跑 job 时上次尝试的同名归档仍可能存在。仅修改 Pages 工作流可在目标分支手动触发验证；重跑旧 run 不会载入新工作流。
+- Worker CI 仅取消同 PR 的过期校验；`test` 验证/部署、生产核验、生产构建/部署分别上限 30/5/10 分钟。SSH 互操作仍独立执行。
+- GitHub Pages（`github-pages.yml`）只在 `main` 的 `docs/index.html` 或 `docs/theme-editor/**` 变更时自动发布；发布包只含这两处，普通文档和 `test` push 不部署。可在 `main` 手动重新发布。Pages 同一目标串行，不取消进行中的部署。上传与部署共用含 `github.run_id` 和 `github.run_attempt` 的产物名；`scripts/ci-wait-pages-artifact.sh` 有界重试只读查询，核对上传 ID、名称、所属 run 和未过期状态后才部署，不自动重试部署写操作。重跑旧 run 不会载入新工作流。
 - Fork 仅按需运行上游 `main` 同步（`sync-upstream.yml`）：手动执行无需变量；定时同步默认关闭，仅 `AUTO_SYNC_UPSTREAM=true` 开启，删除或设为 `false` 即关闭
 
 > **仅 `test` push** 可用 `bash scripts/push-test.sh --e2e=chromium` 或 `--e2e=skip` 调试，不可作为生产验证凭据。助手在干净 `test` 分支附加一次空提交，不改写代码提交；CI 只认顶端严格匹配的单父空提交，不读仓库变量，同一运行的重跑保留原档位。发布候选（包括引入新流水线的第一次发布）用普通 push，等 `Validate test` 全量通过并完成测试部署，再核对发布 PR 的 `Verify tested release`。合并前 `main` 若已变化，应先同步到 `test` 并全量验证最终内容。本地 `deploy` / `deploy:test` 命令不变。

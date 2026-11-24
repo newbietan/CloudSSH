@@ -137,17 +137,37 @@ describe('CI 验证和部署边界', () => {
     expect(readDeployJob('verify-production')).toContain('timeout-minutes: 5');
     expect(readDeployJob('deploy-production')).toContain('timeout-minutes: 10');
     const pages = readWorkflow('github-pages.yml');
-    expect(pages).toContain('group: cloudssh-pages\n  cancel-in-progress: false');
+    expect(pages).toContain('    concurrency:\n      group: cloudssh-pages\n      cancel-in-progress: false');
     expect(pages).toContain('timeout-minutes: 10');
     expect(pages).toContain('persist-credentials: false');
   });
 
-  it('Pages 重跑只部署本次尝试上传的产物，不匹配上一次尝试的同名归档', () => {
+  it('Pages 只在 main 静态站点文件改变时自动发布，允许 main 手动发布', () => {
+    const pages = readWorkflow('github-pages.yml');
+    expect(pages.split('\n\njobs:')[0]).toContain(
+      '  push:\n    branches: [main]\n    paths:\n      - "docs/index.html"\n      - "docs/theme-editor/**"\n  workflow_dispatch:'
+    );
+    expect(pages).not.toContain('"docs/**"');
+    expect(pages).toMatch(/^    if: github\.repository_owner == 'newbietan' && github\.ref == 'refs\/heads\/main'$/m);
+    expect(pages).toContain('cp docs/index.html');
+    expect(pages).toContain('cp -R docs/theme-editor');
+    expect(pages).not.toContain('path: "docs"');
+    expect(pages).toContain('name: github-pages');
+  });
+
+  it('Pages 先确认本次尝试的产物可见，再执行唯一的部署步骤', () => {
     const pages = readWorkflow('github-pages.yml');
     const step = (action: string) => pages.split(`uses: actions/${action}@`)[1]?.split('\n      - ')[0] ?? '';
     expect(pages).toContain('PAGES_ARTIFACT_NAME: github-pages-${{ github.run_id }}-${{ github.run_attempt }}');
     expect(step('upload-pages-artifact')).toContain('          name: ${{ env.PAGES_ARTIFACT_NAME }}');
     expect(step('deploy-pages')).toContain('          artifact_name: ${{ env.PAGES_ARTIFACT_NAME }}');
+    expect(pages).toContain('actions: read');
+    expect(pages).toContain('PAGES_ARTIFACT_ID: ${{ steps.upload.outputs.artifact_id }}');
+    const wait = pages.indexOf('run: bash scripts/ci-wait-pages-artifact.sh');
+    expect(wait).toBeGreaterThan(pages.indexOf('uses: actions/upload-pages-artifact@'));
+    expect(wait).toBeLessThan(pages.indexOf('uses: actions/deploy-pages@'));
+    expect(pages.match(/uses: actions\/deploy-pages@/g)).toHaveLength(1);
+    expect(pages).not.toMatch(/always\(\)|continue-on-error/);
   });
 
   it('互操作 push/PR 均覆盖 MCP 和共享传输的相关变更', () => {
