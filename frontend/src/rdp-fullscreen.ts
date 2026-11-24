@@ -3,7 +3,7 @@ import { t } from './i18n';
 /** Fullscreen is a local presentation change, not a Windows resolution change.
  * Keep the browsing context (and SDL backing surface) the same size through both transitions. */
 export function bindRdpFullscreen(shell: HTMLElement, viewport: HTMLElement, frame: HTMLIFrameElement,
-  button: HTMLButtonElement, onError: () => void) {
+  button: HTMLButtonElement, onError: () => void, focusDesktop: () => void) {
   let frozen: { w: number; h: number } | undefined;
   let sourceCanvas: HTMLCanvasElement | null = null;
   let restoreTimer: number | undefined;
@@ -64,8 +64,12 @@ export function bindRdpFullscreen(shell: HTMLElement, viewport: HTMLElement, fra
     } catch { if (!disposed) onError(); }
     finally { pending = false; if (!disposed) sync(); }
   };
+  const fullscreenChanged = () => {
+    sync();
+    if (ready && !disposed) focusDesktop(); // Both toolbar toggles and the system's fullscreen exit.
+  };
   button.addEventListener('click', toggle);
-  shell.addEventListener('fullscreenchange', sync);
+  shell.addEventListener('fullscreenchange', fullscreenChanged);
   sync();
   return {
     setReady(value: boolean) {
@@ -74,7 +78,7 @@ export function bindRdpFullscreen(shell: HTMLElement, viewport: HTMLElement, fra
     },
     dispose() {
       disposed = true; observer.disconnect(); sourceCanvas = null; clearTimeout(restoreTimer);
-      button.removeEventListener('click', toggle); shell.removeEventListener('fullscreenchange', sync);
+      button.removeEventListener('click', toggle); shell.removeEventListener('fullscreenchange', fullscreenChanged);
       // Removing the fullscreen shell exits fullscreen. Never wait for it to close a connection.
     },
   };

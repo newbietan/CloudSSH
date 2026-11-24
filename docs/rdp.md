@@ -12,6 +12,8 @@
 
 - Windows 与 SSH 设备共用服务器列表、标签、排序和分页，可用 Windows 用户名搜索。直连卡片显示掩码 IP 与 `:3389`、复制完整 IP；Tunnel 只显示和复制域名。收到首帧桌面画面才记录最近连接时间。
 - 桌面在同一标签打开。「返回」会断开中继，但不会注销 Windows；全屏只改变本地显示，不裁剪桌面，也不强制修改 Windows 分辨率。普通窗口仅在对端支持动态分辨率时同步尺寸。
+- 桌面就绪或切换全屏后，可直接打字，不必先点击画面；若已主动选中「返回」或正在核对证书，会保留当前焦点。需要时点击画面即可继续输入。在 RDP 工具栏按 `Esc` 不会切换到底层 SSH 标签。
+- 画面内右键交给 Windows，鼠标前进／后退侧键不触发浏览器导航。画面外仍可使用浏览器菜单和导航。「右 Shift + D」按普通组合键发送，不是断开快捷键；系统保留的快捷键（如 `Ctrl+Alt+Del`）不保证能从网页发送。
 - **中继 RTT** 测量浏览器到 Worker；**RDP RTT** 使用 Windows 上报的平均值，缺失或过期显示「—」。两者都不是键鼠输入到画面更新的时间。
 - Windows 与浏览器建立 TLS/NLA，Worker 只转发字节。Windows 登录和 Tunnel 凭据按账户加密，密钥与数据同库，并非独立 KMS。列表不返回密码、域或 Tunnel 密钥；普通详情和 WebSocket 不交付 Windows 登录，仅当前所有者主动连接的同源请求会将登录信息交给浏览器。
 - RDP 设备独立于 SSH 跳板、分享、SFTP、Agent 和 MCP。不提供剪贴板、驱动器挂载、音频转发；不承诺 Kerberos-only、RD Gateway、多屏或完整移动端键盘支持。会话受 `IDLE_TIMEOUT` 及 2 小时上限约束。
@@ -21,7 +23,7 @@
 ## 维护与真机验收
 
 - `bash scripts/build-freerdp.sh` 用于显式重建随仓库分发的客户端。常规构建不运行 Docker 或下载 FreeRDP。更新时审核依赖、许可证与 JS/C++ 钩子，用 `tests/build/rdp-assets.test.ts` 验证模块、摘要和大小；不要手改压缩产物。
-- 实现约束见 [AGENTS.md](../AGENTS.md)，自动化用例见 [测试套件](../tests/README.md)。模拟通过不等于真机验收。
+- `rdp-devices.spec.ts` 覆盖画布焦点、工具栏和鼠标侧键；`rdp-native-input.spec.ts` 在 Chromium 中加载随包的真实 WASM，验证 FreeRDP 从内存文件系统读取禁用本地快捷键的配置，不需要 Windows 凭据。自动化不能代替真机输入验收。
 - 用同一台 Windows 在公网与 Tunnel（包括 Access Service Auth）分别验证 NLA、证书信任与换证、不正确密码、桌面首帧和键鼠。另测断线重试、1080p 持续操作及弱网，分开记录连通、认证、首帧和延迟。
 
 上游：[FreeRDP](https://github.com/FreeRDP/FreeRDP/releases)、[Cloudflare 出站 TCP](https://developers.cloudflare.com/workers/runtime-apis/tcp-sockets/)、[Tunnel 已发布应用协议](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/routing-to-tunnel/protocols/)。
