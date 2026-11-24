@@ -193,7 +193,8 @@ function bindBackToTerminalButtons(): void {
   });
   // 支持 Esc 快速返回已有的终端会话
   document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
+    // RDP owns the foreground, including its toolbar and fullscreen exit. Leave the SSH view untouched.
+    if (event.key !== 'Escape' || document.querySelector('dialog.rdp-workspace[open]')) return;
     const terminalHidden =
       document.getElementById('terminal-section')?.classList.contains('hidden') ?? true;
     if (!terminalHidden) return;

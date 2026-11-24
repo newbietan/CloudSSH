@@ -149,7 +149,7 @@ test('Windows uses the shared add-server dialog and the main server grid', async
   await expect(card).toHaveCount(0);
 });
 
-test('the themed workspace stays in the current tab and a saved login is released only on connect', async ({ page, context }) => {
+test('the themed workspace stays in the current tab and a saved login is released only on connect', async ({ page, context, browserName }) => {
   const profile = { id, name: 'Office Windows', revision: 4, tags: [], host: '8.8.8.8', route: 'direct', hasLogin: true, fingerprint: 'ab'.repeat(32) };
   const get = (path: string, json: unknown) => page.route(path, r => r.request().method() === 'GET' ? r.fulfill({ json }) : r.fallback());
   await get('**/api/config', { turnstileEnabled: false, githubAuthEnabled: true, githubAuthRequired: true, authMode: 'github', rdpEnabled: true });
@@ -175,6 +175,7 @@ test('the themed workspace stays in the current tab and a saved login is release
   await page.route('**/rdp/assets/sdl-freerdp.wasm', r => r.fulfill({ contentType: 'application/wasm', body: Buffer.from([0,97,115,109,1,0,0,0]) }));
   await page.route('**/rdp/assets/sdl-freerdp.js', r => r.fulfill({ contentType: 'text/javascript', body: `
     const m = window.Module;
+    m.FS = { mkdirTree() {}, writeFile() {} };
     m.callMain = args => {
       document.documentElement.dataset.loginOk = String(args.includes('/u:test-user') && m.takeWindowsPassword() === 'synthetic' && !m.takeWindowsPassword());
       const stage = document.getElementById('stage');
@@ -226,6 +227,11 @@ test('the themed workspace stays in the current tab and a saved login is release
   await expect(page.locator('#server-modal #server-rdp-password')).toHaveAttribute('required');
   await page.locator('#modal-close-btn').click();
   expect(released).toBe(0);
+  // Keep an offline SSH tab behind the workspace so its global Esc shortcut would be active.
+  await page.evaluate(async () => {
+    const path = '/src/main.ts';
+    (await import(path)).getTabManager().createTab('Background SSH');
+  });
   const redundant: string[] = [];
   page.on('request', req => {
     if (/\/api\/(?:config|servers)$/.test(req.url()) || (req.isNavigationRequest() && req.frame() === page.mainFrame())) redundant.push(req.url());
@@ -257,7 +263,67 @@ test('the themed workspace stays in the current tab and a saved login is release
   const full = toolbar.getByRole('button', { name: 'Full screen' });
   const inFullscreen = () => page.evaluate(() => document.fullscreenElement !== null);
   expect(await inFullscreen()).toBe(false);
-  await frame.locator('#canvas').click(); // Activating the desktop is not opting in to display fullscreen.
+  const canvas = frame.locator('#canvas');
+  await test.step('first frame takes keyboard input without an activation click', async () => {
+    await expect(canvas).toBeFocused();
+    await canvas.evaluate((el: HTMLCanvasElement) => {
+      for (const type of ['keydown', 'keyup'] as const) el.addEventListener(type, e => {
+        el.dataset.keys = (el.dataset.keys ?? '') + `${type}:${e.code};`;
+      });
+    });
+    await page.keyboard.press('Enter');
+    await page.keyboard.down('ShiftRight');
+    await page.keyboard.press('KeyD');
+    await page.keyboard.up('ShiftRight');
+    await expect(canvas).toHaveAttribute('data-keys', 'keydown:Enter;keyup:Enter;keydown:ShiftRight;keydown:KeyD;keyup:KeyD;keyup:ShiftRight;');
+    await expect(workspace).toBeVisible();
+  });
+  await test.step('a desktop right-click cancels only the browser menu', async () => {
+    await canvas.evaluate((el: HTMLCanvasElement) => {
+      el.dataset.rightButtons = '';
+      for (const type of ['mousedown', 'mouseup'] as const) {
+        el.addEventListener(type, e => { if (e.button === 2) el.dataset.rightButtons += `${type};`; });
+      }
+      el.addEventListener('contextmenu', e => { el.dataset.menuCanceled = String(e.defaultPrevented); }, { once: true });
+    });
+    await canvas.click({ button: 'right' });
+    await expect(canvas).toHaveAttribute('data-right-buttons', 'mousedown;mouseup;');
+    await expect(canvas).toHaveAttribute('data-menu-canceled', 'true');
+    // Fingerprint text is inside the same iframe but must keep its normal copy/context menu.
+    expect(await frame.locator('#certificate-fingerprint').evaluate(el =>
+      el.dispatchEvent(new MouseEvent('contextmenu', { button: 2, bubbles: true, cancelable: true })),
+    )).toBe(true);
+  });
+  await test.step('side buttons keep their remote input without navigating browser history', async () => {
+    // Check the scope even on engines without trusted X1/X2 injection.
+    const mouseups = await canvas.evaluate(el => [0, 1, 2, 3, 4].map(button =>
+      el.dispatchEvent(new MouseEvent('mouseup', { button, bubbles: true, cancelable: true })),
+    ));
+    expect(mouseups).toEqual([true, true, true, false, false]);
+    expect(await toolbar.evaluate(el => el.dispatchEvent(new MouseEvent('mouseup', { button: 3, bubbles: true, cancelable: true })))).toBe(true);
+    if (browserName !== 'chromium') return;
+    await canvas.evaluate((el: HTMLCanvasElement) => {
+      for (const type of ['pointerdown', 'pointerup'] as const) el.addEventListener(type, e => {
+        el.dataset.sideButtons = (el.dataset.sideButtons ?? '') + `${type}:${e.button};`;
+      });
+    });
+    const cdp = await context.newCDPSession(page);
+    try {
+      const box = (await canvas.boundingBox())!;
+      for (const button of ['back', 'forward'] as const) {
+        const pos = { x: Math.floor(box.x + box.width / 2), y: Math.floor(box.y + box.height / 2), button, clickCount: 1 };
+        await cdp.send('Input.dispatchMouseEvent', { ...pos, type: 'mousePressed', buttons: button === 'back' ? 8 : 16 });
+        await cdp.send('Input.dispatchMouseEvent', { ...pos, type: 'mouseReleased', buttons: 0 });
+      }
+    } finally { await cdp.detach(); }
+    await expect(canvas).toHaveAttribute('data-side-buttons', 'pointerdown:3;pointerup:3;pointerdown:4;pointerup:4;');
+    await expect(page).toHaveURL(new RegExp(`/rdp/${id}$`));
+  });
+  // The local toolbar must not give the global SSH shortcut access to the background view.
+  await toolbar.getByRole('button', { name: 'Back' }).press('Escape');
+  await expect(workspace).toBeVisible();
+  await expect(page.locator('#terminal-section')).toBeHidden();
+  await canvas.click(); // Activating the desktop is not opting in to display fullscreen.
   expect(await inFullscreen()).toBe(false);
   const frameSize = () => stage.evaluate(e => [innerWidth, innerHeight, e.clientWidth, e.clientHeight]);
   const initialSize = await frameSize();
@@ -270,6 +336,9 @@ test('the themed workspace stays in the current tab and a saved login is release
       await full.click();
       await expect.poll(() => workspace.locator('.rdp-shell').evaluate(e => document.fullscreenElement === e)).toBe(true);
       await expect(exit).toBeVisible();
+      await expect(canvas).toBeFocused();
+      await page.keyboard.press('Enter'); // Input for Windows, not a second toolbar toggle.
+      expect(await inFullscreen()).toBe(true);
       expect(await frameSize()).toEqual(initialSize);
       await expect(workspace.locator('header .rdp-latency')).toBeVisible();
       expect(await stage.evaluate(e => e.getBoundingClientRect().top)).toBe(0);
@@ -299,6 +368,7 @@ test('the themed workspace stays in the current tab and a saved login is release
       }
       await expect(full).toBeVisible();
       await expect.poll(inFullscreen).toBe(false);
+      await expect(canvas).toBeFocused();
       expect(await frameSize()).toEqual(initialSize);
       await expect.poll(() => workspace.locator('iframe').evaluate(e => e.style.getPropertyValue('--rdp-fill-transform'))).toBe('');
     }
@@ -315,6 +385,8 @@ test('the themed workspace stays in the current tab and a saved login is release
   expect(redundant).toEqual([]); // Neither entry nor return refetched config/list or navigated a document.
   await expect(firstCard).toHaveText('Office Windows');
   await expect(page.locator(`#rdp-card-${id}`)).not.toContainText('No record yet');
+  await page.keyboard.press('Escape'); // The normal SSH shortcut works again after RDP closes.
+  await expect(page.locator('#terminal-section')).toBeVisible();
   await page.goto(`/rdp/${id}`); // A pasted URL is not a second user-authorized connect action.
   await expect(card).toBeVisible();
   await expect(workspace).toHaveCount(0);
@@ -333,11 +405,16 @@ test('browser Back closes the frame before checking ownership and cannot restore
   });
   await page.route('**/api/servers', r => r.request().method() === 'GET' ? r.fulfill({ json: [] }) : r.fallback());
   await page.route('**/api/rdp/profiles', r => r.request().method() === 'GET' ? r.fulfill({ json: { profiles: [{ id, name: owner, revision: 1, route: 'direct', host: '8.8.8.8', tags: [], hasLogin: true }] } }) : r.fallback());
-  await page.route(`**/rdp/${id}/client`, r => r.fulfill({ contentType: 'text/html', body: '<p>Starting…</p>' }));
+  await page.route(`**/rdp/${id}/client`, r => r.fulfill({ contentType: 'text/html', body: '<p>Starting…</p><canvas id="canvas" tabindex="0"></canvas>' }));
   await page.addInitScript(() => Object.defineProperty(window, 'crossOriginIsolated', { value: true }));
   await page.goto('/?lang=en-US');
   await page.getByRole('button', { name: 'Open desktop' }).click();
-  await expect(page.locator('.rdp-workspace iframe')).toBeVisible();
+  const runtime = page.locator('.rdp-workspace iframe');
+  await expect(runtime).toBeVisible();
+  const back = page.locator('.rdp-workspace').getByRole('button', { name: 'Back' });
+  await back.focus();
+  await runtime.evaluate(el => el.dispatchEvent(new Event('cloudssh-rdp-ready')));
+  await expect(back).toBeFocused(); // Do not override a deliberate keyboard choice on first frame.
   owner = 'second@example.test'; // Same numeric sentinels; must check the full identity.
   await page.evaluate(() => history.back());
   try {
@@ -367,7 +444,10 @@ test('isolated desktop entry hides the home loader before JS; Back also works be
   const workspace = page.locator('.rdp-workspace[open]');
   await expect(workspace.frameLocator('iframe').getByText('Waiting for desktop…')).toBeVisible();
   await expect(workspace.getByRole('button', { name: 'Full screen' })).toBeDisabled();
-  await workspace.getByRole('button', { name: 'Back' }).click();
+  await expect(workspace.getByRole('heading')).toBeFocused();
+  await page.keyboard.press('Enter'); // Loading should not default to activating Back.
+  await expect(workspace).toBeVisible();
+  await workspace.getByRole('button', { name: 'Back' }).press('Enter'); // Deliberate Back still works before the first frame.
   await expect(page).toHaveURL(/\/$/);
   await expect(workspace).toHaveCount(0);
   expect(await page.evaluate(() => sessionStorage.getItem('cloudssh_rdp_open_once'))).toBeNull();
@@ -395,6 +475,7 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'saved mismatch', 'sa
     }));
     await page.route('**/rdp/assets/sdl-freerdp.js', route => route.fulfill({ contentType: 'text/javascript', body: `
       const m = window.Module;
+      m.FS = { mkdirTree() {}, writeFile() {} };
       window.certificateResult = 'not checked';
       m.callMain = () => {
         const socket = m.createRdpSocket(m.websocket.url);

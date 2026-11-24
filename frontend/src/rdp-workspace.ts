@@ -109,6 +109,9 @@ export class RdpWorkspace {
     const bar = document.createElement('header');
     const title = document.createElement('h1');
     title.textContent = t('rdp.desktopTitle');
+    // showModal() would otherwise focus Back while Full screen is disabled.
+    title.tabIndex = -1;
+    title.autofocus = true;
     const button = (label: string) => {
       const item = document.createElement('button');
       item.type = 'button';
@@ -138,9 +141,19 @@ export class RdpWorkspace {
     };
     frame.onload = applyTheme;
     const current = () => this.dialog === dialog && this.returning !== dialog && !this.events.signal.aborted;
+    const focusDesktop = () => {
+      if (!current() || !dialog.open || document.hidden || !document.hasFocus()) return;
+      // Move the default or fullscreen focus, not a user's deliberate focus on Back or another dialog.
+      const active = document.activeElement;
+      if (![title, fullscreen, frame, shell, dialog, document.body].some(el => el === active)) return;
+      const client = frame.contentDocument;
+      if (client && !client.querySelector('dialog[open]')) {
+        client.getElementById('canvas')?.focus({ preventScroll: true });
+      }
+    };
     const presentation = bindRdpFullscreen(shell, viewport, frame, fullscreen, () => {
       if (current()) frame.contentWindow?.dispatchEvent(new Event('cloudssh-rdp-fullscreen-error'));
-    });
+    }, focusDesktop);
     this.releaseView = () => {
       presentation.dispose();
       // Ask a live same-origin client to close its socket and cancel pending work before removing it.
@@ -159,7 +172,9 @@ export class RdpWorkspace {
       latency.title = sample.help;
     });
     frame.addEventListener('cloudssh-rdp-ready', () => {
-      if (current()) presentation.setReady(true);
+      if (!current()) return;
+      presentation.setReady(true);
+      focusDesktop();
     });
     frame.addEventListener('cloudssh-rdp-ended', () => {
       if (current()) presentation.setReady(false);
