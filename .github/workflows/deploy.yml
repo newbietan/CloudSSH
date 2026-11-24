@@ -1,7 +1,7 @@
 name: Deploy to Cloudflare Workers
 
 on:
-  # Pull requests and manual runs validate only; deployment requires an actual branch push.
+  # test validates changes; main promotes exactly the tested tree. Only pushes deploy.
   pull_request:
     branches: [test, main]
   workflow_dispatch:
@@ -25,8 +25,12 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  deploy:
-    if: github.repository_owner == 'newbietan'
+  validate-test:
+    name: Validate test
+    if: >-
+      github.repository_owner == 'newbietan' &&
+      ((github.event_name == 'pull_request' && github.base_ref == 'test') ||
+       ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/test'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -99,8 +103,56 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm exec wrangler deploy --env test
 
+  verify-production:
+    name: Verify tested release
+    if: >-
+      github.repository_owner == 'newbietan' &&
+      ((github.event_name == 'pull_request' && github.base_ref == 'main') ||
+       ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 65 || 5 }}
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      # On PRs this is the prospective merge tree, not just the PR's head.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: "22"
+      - name: Check for a matching successful full test push
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Only a release PR from our own test branch may wait on a matching push.
+          WAIT_TEST_HEAD: ${{ github.event_name == 'pull_request' && github.head_ref == 'test' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.sha || '' }}
+        run: node scripts/ci-verify-tested-release.mjs
+
+  deploy-production:
+    name: Deploy production
+    needs: verify-production
+    if: github.repository_owner == 'newbietan' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa  # v4
+        with:
+          version: "11.8.0"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: "22"
+          cache: "pnpm"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build verified source
+        run: pnpm run build:frontend
       - name: Deploy verified artifact (production)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

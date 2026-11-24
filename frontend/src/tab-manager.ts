@@ -281,6 +281,7 @@ export class TabManager {
       const prevTab = this.tabs.get(this.activeTabId);
       if (prevTab) {
         prevTab.terminal.cancelPendingPaste();
+        prevTab.terminal.setRemoteCopyVisible(false);
         prevTab.terminal.setMobileSelectionMode(false);
         prevTab.agentPanel?.rejectPendingConfirmation(false);
         prevTab.agentPanel?.hide();
@@ -297,6 +298,7 @@ export class TabManager {
 
     // Mount 并 fit 终端
     tab.terminal.mount();
+    tab.terminal.setRemoteCopyVisible(true);
 
     // 更新状态栏
     this.updateStatusBar(tab);

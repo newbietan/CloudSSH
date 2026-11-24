@@ -13,7 +13,7 @@
 
 CloudSSH is a serverless Web SSH terminal built on Cloudflare Workers. Users connect to SSH servers through a browser-based terminal UI with integrated SFTP file management and AI Agent assistant.
 
-当前版本：`2.12.1`；根目录与 `frontend/package.json` 版本必须同步，更新说明见 `CHANGELOG.md`。
+当前版本：`2.12.2`；根目录与 `frontend/package.json` 版本必须同步，更新说明见 `CHANGELOG.md`。
 
 ## Architecture
 
@@ -113,6 +113,7 @@ frontend/
 │   ├── terminal-layout.ts # 响应式终端字体与本机 12–18px/自动字号偏好
 │   ├── terminal-selection.ts # xterm 公开API触摸选区端点、宽字符对齐与有界本地边缘滚动
 │   ├── manual-paste-dialog.ts # 剪贴板读取失败时的会话绑定手动粘贴（64Ki字符、临时文本销毁）
+│   ├── terminal-remote-copy.ts # OSC 52 剪贴板写入（前台手势、浏览器权限、有界）
 │   ├── terminal-status.ts # SSH 状态事件 → i18n 文案翻译与状态栏渲染
 │   ├── terminal-output-ack.ts # 当前 WebSocket 代际的累计字节接收确认（16ms 合并，不代表渲染完成）
 │   ├── terminal-text.ts   # 终端等宽文本宽度计算（CJK 全角/Emoji 占 2 列）
@@ -494,12 +495,13 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
 ## #201 站内 RDP（内置，仅登录用户可用）
 
-- 入口、生命周期与验收见 `docs/rdp-implementation-plan.md`。Wrangler 的 `rdp-entry.ts` 重导出原 DO，显式导入有界 Data/Text 模块；不添加 `[assets]`，不削弱原生 `ctx.access`。旧 P0 路由返回 404，CI 不读取临时目标或启动 Docker；FreeRDP 由维护者显式重建后随代码提交，普通 SSH 页面不下载 WASM。随包提供客户端资源时，HTTPS 站点公开 RDP 能力，不再读取部署开关；RDP 路由仍须验证登录。
+- 入口、生命周期与验收见 `docs/rdp.md`。Wrangler 的 `rdp-entry.ts` 重导出原 DO，显式导入有界 Data/Text 模块；不添加 `[assets]`，不削弱原生 `ctx.access`。旧 P0 路由返回 404，CI 不读取临时目标或启动 Docker；FreeRDP 由维护者显式重建后随代码提交，普通 SSH 页面不下载 WASM。随包提供客户端资源时，HTTPS 站点公开 RDP 能力，不再读取部署开关；RDP 路由仍须验证登录。
 - `rdp_profiles` 独立、每账户授权、只接公网 IPv4:3389 或已配置 Tunnel 主机名；Access Service Token 加密且换域不继承。票据仅通过已认证同源 WebSocket 首帧提交，单用、绑定浏览器和修订。不要把 HTTP/WS 控制、密码或目标路由混入 Windows 字节流；新建或编辑时须有完整 Windows 登录，用户名默认 Administrator、域可选，密码按账户 AES-GCM 加密到 rdp_profile_options，与 SSH 一样不是独立 KMS。卡片列表只返回所属账户的展示用户名（不含域、密码或令牌），新写入独立加密显示名，旧记录首次读取按归属/修订回填密文；普通详情 GET 和 relay claim 不下发 Windows 登录明文。同源 POST login-identity 仅回填用户名/域，绝不回传密码。保持同目标/身份时编辑可留空保留密码，修改用户名/域/线路/主机则须提交完整新凭据。旧缺凭据行仍列出但不可出票；点「补全配置」先编辑，不在桌面上提供输入或连接按钮。删除设备一并销毁保存的登录信息。仅卡片发起的同源 connect POST 显式带匹配修订才随 no-store 票据响应交付本浏览器。保持 NLA。WASM 在 TLS 握手后、CredSSP 前读取实际 Windows 叶证书 DER SHA-256；保存指纹时严格比对，不匹配直接关闭并显示新旧指纹。未保存时必须用户确认，由 `PUT /api/rdp/profiles/:id/trust` 带账号、档案修订和有效租约原子写入，成功前不得进入 NLA。TOFU 首连仍须用户独立核对；确认过期/关闭或写失败必须拒绝。不允许 CRUD 覆盖指纹，同线路同主机编辑保留，换线路或目的地址才重置。清理须有界，确认代表 WASM 已消费而不是已绘制。
 - Linux / Windows Server 平分既有「添加服务器」弹窗顶部的可用宽度，默认 Linux；隐藏字段禁用，不参与另一类型的提交。共用服务器卡片网格，不另挂新增入口；仅新增可切换，编辑不转换协议。`rdp_profiles` 不挂接 SSH、SFTP、MCP、Agent、分享或跳板。更新/删除撤销旧票据和租约，定期复核但不承诺强制注销 Windows。Windows 标签复用 SSH 规范化；卡片共用 SSH 主机行与复制：直连显示掩码 IP:3389，复制完整 IP（不含端口），隧道仅显示/复制域名。卡片展示用户名与最近连接，按用户名可搜索。所有卡片先一起排序再分页；SSH SQLite UTC 时间与 RDP Unix 毫秒使用同一时间轴。仅桌面首帧触发一次已协商的 desktop_ready，Worker 按有效租约、归属和修订记服务端时间，不记出票、传输握手、认证失败或取消，不更新设备修订/编辑时间；换目标重置，旧设备不虚构历史。`/rdp/:id` 是隔离的同标签 CloudSSH 主壳，`/rdp/:id/client` 仅允许同源嵌入，沿用主题；不全站加 COEP：仅有客户端资源、HTTPS 首页（可带 lang）并核实当前登录时下发 COOP/COEP，保留原用户空间文档以直接打开/返回；登录、登出、OAuth/Turnstile 与特殊查询入口不使用隔离。含普通/账户变体的首页使用私有重验证、区分 ETag，不能用日期跨变体 304。云端凭据不能因加载书签、前进/返回或刷新而自动取回。初始分辨率取实际可用区域；只有收到 DISP 能力才动态协商，隔离顶层 /rdp/:id 已由 Worker 校验身份及归属，直接启动工作区，不再渲染首页加载卡或重复初始化配置/列表；仍须消费一次性打开意图，刷新、书签与历史恢复不重新出票，同文档返回时先关闭 socket、销毁运行帧，再通过 no-store 的 /api/auth/me 在有界时间内核实 id、完整账户 username 与 github_id；核验期间用模态层阻止访问旧列表，失败或换号进入正常初始化。同账户保留搜索、分页、SSH 标签与原列表，不重读首页配置。单行工具栏含延迟（保留中继/RDP 两个来源）与「全屏 / 返回」，首帧就绪说明不单占行，保持错误/证书提示可见。全屏只作用于父层容器，运行帧不获 fullscreen 权限；切换与系统 Esc 恢复期间固定运行帧 CSS 视口，不借全屏触发 SDL 或远端显示器重配。全屏以运行帧内真实 canvas 的逻辑边界为源，父层沿横纵轴分别缩放至工具栏下的全部可用区域；只去掉页面留白，不裁桌面，屏幕比例不同时允许本地拉伸。不能用覆盖裁剪或更改 iframe 逻辑尺寸来消除底边；退出恢复普通窗口，指针用浏览器原生逆变换映射，不另发输入。普通窗口尺寸稳定后仍按已协商的 DISP 调整。不通过改域/改路由规避安全拦截。连接就绪且页面可见时每 5 秒做一次 ID 匹配的 WS ping/pong，标为中继 RTT，不能刷新闲置或进入 RDP 流；RDP RTT 单独取 FreeRDP 收到的 MS-RDPBCGR Network Characteristics Result 平均 RTT，原生只保留一个样本，无近期数据时为横线，不伪造色值或键鼠到画面的时延。新生产链路需独立双线、Access 与弱网真机验收，不沿用 P0 作为发布结论。
 
 ## SSH 兼容增强边界
 
+- 远端剪贴板（#204）：xterm OSC 52 仅接受 `c` 目标的非空 UTF-8 文本（最多 64KiB，不含 TAB/CR/LF 之外的终端控制字符）。忽略查询、清空和其他选择目标，不读取或回传本机剪贴板。不另设应用授权：仅前台 Shell 就绪的非分享会话，在一次可信终端操作后的 2.5 秒内受理最多一个有效请求，先用浏览器原生 Clipboard API 写入。没有本地操作的输出不写入、不提示；原生写入失败才显示 30 秒有效的单次「复制」按钮，重试仍失败才报告权限错误。自动路径不回退 execCommand、不读剪贴板。只留一次在途与最新待写，切标签/退出终端/页面失焦/断线丢弃待决文本和手势，不持久化。
 - `frontend/package.json` 的 `bcrypt-pbkdf@1.0.2` 仅用于浏览器解锁，不是生产 SSH 协议库。支持 OpenSSH bcrypt + AES-CTR 与 PKCS#8 PBES2/PBKDF2 + AES-CBC；口令不上传、不持久化，解锁私钥仍进入 Worker 签名。匿名导入关闭凭据记忆；保存服务器必须单独同意按既有账号加密存储（非独立 KMS），编辑器代际变化后禁止迟到解锁结果提交。预算与许可见 `docs/ssh-compatibility.md`，不要无界执行用户提供的 KDF 参数。
 - Go 工作区与网关统一收纳在 `tests/interop/`（`go.work` / `go.work.sum`、`gateway/go.mod` / `gateway/go.sum` / `gateway/main.go`），仅为测试工具，不参与 Worker/前端产物；不要在根目录重新创建 Go 工作区。用途与目录说明见 `tests/interop/README.md`。`test:interop` 显式启动 loopback-only OpenSSH（仅当前账号及临时授权文件）和独立 Go 网关，不修改系统账号密码/SSH 配置。普通 `verify` 不运行这些进程级测试；`.github/workflows/ssh-interop.yml` 是独立 Ubuntu/macOS CI，不部署、不使用生产 secrets。Go 依赖锁在测试模块 go.mod/go.sum，不能把该网关当生产依赖。
 
@@ -538,14 +540,14 @@ pnpm run deploy:test     # 部署 test 环境
 
 官方 CI（`deploy.yml` / `github-pages.yml` / `ssh-interop.yml`）所有 job 均在分配 runner / 展开 matrix 前通过 `github.repository_owner == 'newbietan'` 限定维护者仓库，勿改为 `github.actor` 判断：外部贡献者向官方仓库提交 PR 时仍需正常检查。其他所有者的 Fork 不运行部署、Pages 或互操作 CI；GitHub 可能保留 Skipped 记录，但不执行 runner 任务。Cloudflare 面板 / Git 集成部署独立于这些工作流，无需启用 Actions 或配置 CI 的 Cloudflare Secrets。`tests/workflow-policy.test.ts` 逐个检查非同步工作流的 job 级 owner 限制，新增工作流须沿用该策略。
 
-- 指向维护者仓库 `test` / `main` 的 PR，以及手动执行 → 完整验证但绝不部署；Fork PR 代码仅在无 Secrets 的步骤中运行，禁止改成 `pull_request_target` 执行未信任代码
-- Worker CI 并发按事件与 PR/分支分组，仅取消过期 PR 验证；push 部署不在途取消，30 分钟 job 上限。互操作无 Secrets/部署，可取消旧运行；Pages 同一目标串行发布、10 分钟 job 上限
-- 维护者仓库 `test` 分支 push → 自动部署到 `cloudssh-test`
-- 维护者仓库 `main` 分支 push → 自动部署到 `cloudssh`
-- 维护者仓库 `docs/**` 变更 → 发布 GitHub Pages 主题编辑器（`github-pages.yml`）。上传与部署必须共用含 `github.run_attempt` 的产物名：Pages 按整个 run 查找产物，重跑 job 时上次尝试的同名归档仍可能存在。仅修改 Pages 工作流可在目标分支手动触发验证；重跑旧 run 不会载入新工作流。
+- `test` 的 push、目标为 `test` 的 PR 与 `test` 手动执行负责完整验证：冻结依赖、类型检查、单元/集成测试、前端构建、Chromium 和移动 WebKit。仅 `test` push 复用已构建产物部署 `cloudssh-test`。
+- `main` 的 push、目标为 `main` 的 PR 与 `main` 手动执行只核验发布内容。`scripts/ci-verify-tested-release.mjs` 用只读 GitHub API 核对当前 checkout 的 Git tree（PR 用待合并树，不是 PR 头）与同一仓库最近 30 条成功 `test` push 的记录；只接受对应尝试的全量测试与测试环境部署均成功，允许 Squash SHA 不同但拒绝任何文件差异。同仓库 `test → main` 发布 PR 若尚无证明，且 PR 待合并树与 `test` 头相同，则等待该头的真实 `test` push：允许 90 秒索引延迟，整段等待最多 60 分钟；仍须同一尝试的全量步骤成功才放行。最终 `main` push / 手动核验不等待。无匹配或 API 失败时阻断生产；禁止用 PR、手动或缩减档位记录冒充。PR 和手动运行不注入 Cloudflare Secrets，不用 `pull_request_target` 执行未信任代码。
+- 仅 `main` push 且核验通过后冻结安装、构建并部署 `cloudssh`，不下载 Playwright、不重跑测试、不取用其他运行的产物执行部署。部署 Secrets 仅注入 Wrangler 步骤。
+- Worker CI 仅取消同 PR 的过期校验；`test` 验证/部署、发布 PR 核验、`main` push 或手动核验、生产构建/部署的 job 上限分别为 30/65/5/10 分钟。SSH 互操作仍独立执行。
+- GitHub Pages（`github-pages.yml`）只在 `main` 的 `docs/index.html` 或 `docs/theme-editor/**` 变更时自动发布；发布包只含这两处，普通文档和 `test` push 不部署。可在 `main` 手动重新发布。Pages 同一目标串行，不取消进行中的部署。上传与部署共用含 `github.run_id` 和 `github.run_attempt` 的产物名；`scripts/ci-wait-pages-artifact.sh` 有界重试只读查询，核对上传 ID、名称、所属 run 和未过期状态后才部署，不自动重试部署写操作。重跑旧 run 不会载入新工作流。
 - Fork 仅按需运行上游 `main` 同步（`sync-upstream.yml`）：手动执行无需变量；定时同步默认关闭，仅 `AUTO_SYNC_UPSTREAM=true` 开启，删除或设为 `false` 即关闭
 
-> 部署门禁（`deploy.yml`）始终先做冻结锁文件安装 → `typecheck` → `test` → `build:frontend`，默认再运行完整浏览器验证及报告上传。**仅 `test` push** 可用 `bash scripts/push-test.sh --e2e=chromium`（只跑 Chromium）或 `--e2e=skip`（跳过浏览器）调试。助手在干净 `test` 分支附加一次空提交，不改写代码提交；CI 只认顶端严格匹配的单父空提交，默认全量，不读仓库变量。Summary 显示档位，独立 SSH 互操作不受影响。实际运行的门禁失败仍阻断部署，E2E 失败会尝试上传报告。CI 复用同一份前端内联产物，不在注入部署 Secrets 后重复构建；本地 `deploy`/`deploy:test` 不变。
+> **仅 `test` push** 可用 `bash scripts/push-test.sh --e2e=chromium` 或 `--e2e=skip` 调试，不可作为生产验证凭据。助手在干净 `test` 分支附加一次空提交，不改写代码提交；CI 只认顶端严格匹配的单父空提交，不读仓库变量，同一运行的重跑保留原档位。发布候选（包括引入新流水线的第一次发布）用普通 push，等 `Validate test` 全量通过并完成测试部署，再核对发布 PR 的 `Verify tested release`。合并前 `main` 若已变化，应先同步到 `test` 并全量验证最终内容。本地 `deploy` / `deploy:test` 命令不变。
 
 ### 自定义域名
 

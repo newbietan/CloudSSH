@@ -28,6 +28,7 @@ import {
 import { currentTerminalFontSize, TERMINAL_FONT_CHANGE_EVENT } from './terminal-layout';
 import { TerminalTouchSelection } from './terminal-selection';
 import { requestManualPaste } from './manual-paste-dialog';
+import { TerminalRemoteCopy } from './terminal-remote-copy';
 import { localizedSSHMessage } from './terminal-status';
 import { TerminalOutputAck } from './terminal-output-ack';
 import { centerTerminalText } from './terminal-text';
@@ -118,6 +119,7 @@ interface ConnectOptions {
 
 interface WebSocketConnectOptions extends ConnectOptions {
   reconnectFactory?: ReconnectWebSocketFactory;
+  allowRemoteCopy?: boolean;
   /** resume-only：仅允许秒级恢复，不回退完整重连（分享会话 ticket 已一次性消费）。 */
   resumeOnly?: boolean;
 }
@@ -194,6 +196,8 @@ export class SSHTerminal {
   private readonly fontChangeListener = () => this.fit();
   private fontFitFrame: number | null = null;
   private pasteController: AbortController | null = null;
+  private remoteCopy: TerminalRemoteCopy | null = null;
+  private allowRemoteCopy = true;
   private mobileScrollGesture: MobileScrollGesture | null = null;
   private dispatchingMobileWheel = false;
   private mobileModifier: MobileModifier | null = null;
@@ -254,6 +258,9 @@ export class SSHTerminal {
     const selection = this.terminal.getSelection();
     if (selection && event.pointerType !== 'touch') {
       void this.copySelectionToClipboard(selection);
+    } else if (!handledMobileScroll && !selection && event.target instanceof Node &&
+               this.container.contains(event.target)) {
+      this.remoteCopy?.noteInteraction(event);
     }
   };
   private readonly selectionPointerCancelListener = (event: PointerEvent): void => {
@@ -327,6 +334,12 @@ export class SSHTerminal {
 
     // Terminal shortcuts: Search (Ctrl+Shift+F / Cmd+F) & Clear Buffer (Cmd+K / Ctrl+Shift+K)
     this.terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      if (e.type === 'keydown' && !this.imeIsComposing && !e.isComposing && e.keyCode !== 229 &&
+          e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyC' &&
+          this.remoteCopy?.focusAction()) {
+        e.preventDefault();
+        return false;
+      }
       if (e.key === 'Enter') {
         // Bind suppression to this Enter cycle, not a time window: Safari may end
         // composition before keypress/keyup. The next keydown is evaluated afresh.
@@ -358,6 +371,10 @@ export class SSHTerminal {
           this.hideSearch();
         }
         return false;
+      }
+      if (e.type === 'keydown' && !e.repeat && !this.imeIsComposing && !e.isComposing &&
+          e.keyCode !== 229 && !['Alt', 'Control', 'Meta', 'Shift'].includes(e.key)) {
+        this.remoteCopy?.noteInteraction(e);
       }
       return true;
     });
@@ -695,6 +712,21 @@ export class SSHTerminal {
     return screen.getBoundingClientRect().height / this.terminal.rows;
   }
 
+  setRemoteCopyVisible(visible: boolean): void {
+    if (visible) this.remoteCopy?.resume();
+    else this.remoteCopy?.suspend();
+  }
+
+  private enableRemoteCopy(socket: WebSocket): void {
+    if (!this.allowRemoteCopy || this.resumeOnlyMode || this.remoteCopy) return;
+    // Sibling of xterm: clicking the action doesn't trigger terminal selection/input.
+    this.remoteCopy = new TerminalRemoteCopy(
+      this.terminal,
+      this.container.parentElement ?? this.container,
+      () => this.ws === socket && socket.readyState === WebSocket.OPEN && this.sessionReady
+    );
+  }
+
   /** 将选中文字写入剪贴板，并按实际复制结果提供反馈。 */
   private async copySelectionToClipboard(text: string): Promise<boolean> {
     const copied = await copyTextToClipboard(text);
@@ -953,6 +985,7 @@ export class SSHTerminal {
 
   async connect(config: SSHConnectionConfig, options: ConnectOptions = {}): Promise<void> {
     this.resetActiveConnection();
+    this.allowRemoteCopy = true;
     this.lastConfig = config;
     this.lastHostInfo = null;
     this.reconnectWebSocketFactory = null;
@@ -1028,6 +1061,7 @@ export class SSHTerminal {
     this.lastHostInfo = hostInfo ?? null;
     this.reconnectWebSocketFactory = options.reconnectFactory ?? null;
     this.resumeOnlyMode = options.resumeOnly === true;
+    this.allowRemoteCopy = options.allowRemoteCopy !== false;
     this.shareResumeDeadline = null;
     this.shareResumeChallengeMissing = false;
     this.sessionRequiresDeviceSig = false;
@@ -1074,6 +1108,7 @@ export class SSHTerminal {
     // Trzsz file transfer support
     this.trzszFilter = new TrzszFilter({
       writeToTerminal: (data: string | ArrayBuffer | Uint8Array | Blob) => {
+        if (socket !== this.ws || socket.readyState !== WebSocket.OPEN) return;
         if (typeof data === 'string') {
           this.terminal.write(data);
         } else if (data instanceof Uint8Array) {
@@ -1081,7 +1116,11 @@ export class SSHTerminal {
         } else if (data instanceof ArrayBuffer) {
           this.terminal.write(new Uint8Array(data));
         } else if (data instanceof Blob) {
-          data.arrayBuffer().then((buf) => this.terminal.write(new Uint8Array(buf)));
+          void data.arrayBuffer().then(buf => {
+            if (socket === this.ws && socket.readyState === WebSocket.OPEN) {
+              this.terminal.write(new Uint8Array(buf));
+            }
+          });
         }
       },
       sendToServer: (data: string | Uint8Array) => {
@@ -1144,6 +1183,7 @@ export class SSHTerminal {
             this.shareResumeDeadline = null;
             this.shareResumeChallengeMissing = false;
             this.terminal.writeln(`\x1b[32m[*] ${t('terminal.sessionResumed')}\x1b[0m`);
+            this.enableRemoteCopy(socket);
             const termStatus = document.getElementById('term-status');
             if (termStatus)
               SSHTerminal.renderStatusDot(
@@ -1173,7 +1213,10 @@ export class SSHTerminal {
                 const wasReady = this.sessionReady;
                 this.sessionReady = true;
                 this.reconnectAttempts = 0;
-                if (!wasReady) this.onSessionReady?.(false);
+                if (!wasReady) {
+                  this.enableRemoteCopy(socket);
+                  this.onSessionReady?.(false);
+                }
               }
               break;
             case 'error':
@@ -1237,6 +1280,8 @@ export class SSHTerminal {
 
       this.authChallengeDialog?.dismiss();
       this.cancelPendingPaste();
+      this.remoteCopy?.dispose();
+      this.remoteCopy = null;
       this.setMobileSelectionMode(false);
       this.stopHeartbeat();
       this.sessionReady = false;
@@ -1700,6 +1745,8 @@ export class SSHTerminal {
   private resetActiveConnection(): void {
     this.authChallengeDialog?.dismiss();
     this.cancelPendingPaste();
+    this.remoteCopy?.dispose();
+    this.remoteCopy = null;
     this.setMobileSelectionMode(false);
     this.finishMobileScroll();
     this.stopHeartbeat();

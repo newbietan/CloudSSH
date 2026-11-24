@@ -97,7 +97,7 @@ pnpm run verify
 
 ## E2E CI 并发与报告
 
-- `deploy.yml` 默认对 test/main 的 push、目标为 test/main 的 PR 和手动触发执行完整验证；只有 push 可按分支部署。PR 和手动验证不注入 Cloudflare Secrets，保留 job 级 repository_owner 限制；不使用 `pull_request_target`。
+- `deploy.yml` 的 `test` push、目标为 `test` 的 PR 及 `test` 手动执行默认完整验证；只有 push 部署测试环境。`main` PR / push / 手动执行先核对当前 Git tree（PR 的待合并树）与本仓库最近 30 条成功 `test` push；仅在同一尝试的全量验证和测试部署成功时放行，成功 Summary 链接相应的运行尝试。同仓库 `test → main` PR 还可等待同一头提交的有效 `test` push（待合并树须一致；含排队最多 60 分钟，未找到运行只等 90 秒）；失败或缩减档位不会放行。`main` push 和手动核验不等待。只有通过核验的 `main` push 会构建及部署生产，不安装浏览器、不重跑测试。PR 和手动验证不注入 Cloudflare Secrets，不使用 `pull_request_target`。
 - **仅 `test` 分支的 push** 可在推送命令附带浏览器档位，不需要配置仓库变量。先提交改动，从运行 Summary 确认实际档位：
 
   | 推送命令 | 浏览器验证 |
@@ -106,13 +106,13 @@ pnpm run verify
   | `bash scripts/push-test.sh --e2e=chromium` | 只跑完整 Chromium 项目。 |
   | `bash scripts/push-test.sh --e2e=skip` | 跳过浏览器安装、E2E 和报告。 |
 
-  脚本仅在干净且有待推送文件变更的 `test` 分支附加一条空提交，不改写实际提交、不强推。CI 只识别推送顶端严格匹配且不修改文件的标记；后续普通提交恢复全量，同一次 CI 的重跑保留原档位。类型检查、全量单测、前端构建和实际部署均不跳过；SSH 互操作仍按变更触发，PR / `main` / 手动验证始终完整。文档专用推送仍按原 paths-ignore 跳过部署。旧 `CLOUDSSH_TEST_E2E` 已不读取。
-- RDP 已移除测试专用部署；普通构建复用随代码提交的 FreeRDP JS/WASM/许可证，`rdp-assets.test.ts` 验证摘要和大小。`rdp-store.test.ts` 检查账户、票据与租约，`rdp-devices.spec.ts` 检查用户空间 CRUD。正式双线路、Access 与弱网真机验收见 [RDP 说明](../docs/rdp-implementation-plan.md)。
-- 快速检查先于浏览器安装。Worker CI 仅取消同 PR 的过期验证，不中断部署，job 上限 30 分钟。互操作 CI 允许取消旧运行，Pages 发布串行执行。
+  脚本仅在干净且有待推送文件变更的 `test` 分支附加一条空提交，不改写实际提交、不强推。CI 只识别推送顶端严格匹配且不修改文件的标记；后续普通提交恢复全量，同一次 CI 的重跑保留原档位。类型检查、全量单测、前端构建和测试部署均不跳过，但缩减档位不具备生产放行资格；SSH 互操作仍按变更触发。文档专用推送仍按原 paths-ignore 跳过部署，文档改动可随下一次正常候选一起完成验证。若发布门禁找不到记录，重跑同一内容原本全量的 `test` push，或按普通 push 验证新的发布候选；重跑缩减版不会变成全量。旧 `CLOUDSSH_TEST_E2E` 已不读取。
+- RDP 普通构建复用随代码提交的 FreeRDP JS/WASM/许可证；`rdp-assets.test.ts` 验证摘要和大小，`rdp-store.test.ts` 检查账户、票据与租约，`rdp-devices.spec.ts` 检查用户空间 CRUD。双线路、Access 与弱网真机验收见 [RDP 说明](../docs/rdp.md)。
+- 快速检查先于浏览器安装。Worker CI 仅取消同 PR 的过期验证，不中断部署；`test` 验证/部署、发布 PR 核验、`main` push 或手动核验、生产构建/部署的 job 上限分别为 30/65/5/10 分钟。互操作 CI 允许取消旧运行，Pages 发布串行执行。
 - CI 默认使用 **2 个 worker**，本地默认并发仍由 Playwright 决定。所选浏览器项目保留全部用例、最多 2 次重试、首次重试 trace 和失败截图，不启用全程 trace 或录像。
 - CI 生成 `playwright-report/index.html` 与 `test-results/results.json`。`deploy.yml` 在 E2E 实际执行成功或失败后、部署密钥注入前，将 `playwright-report/` 与 `test-results/` 一并上传，保留 **7 天**；取消或 E2E 未执行时不上传。报告名包含 run ID 与运行尝试编号，避免重跑时覆盖或 PR ref 的斜杠导致非法名称；启动失败且尚无文件时只警告，但原测试失败仍阻止部署。
 - 在 Actions 对应运行的 **Artifacts** 中下载 `playwright-report-<run-id>-<attempt>`。解压后运行 `pnpm exec playwright show-report <解压目录>/playwright-report` 查看每条用例、耗时、重试和附件；JSON 中的 `stats` / `suites` 可用于汇总与分文件分析。报告包含测试页面及模拟数据，请勿在 E2E 中使用真实凭据。
-- E2E 不设置 `continue-on-error`；上传报告成功不代表测试成功。任一门禁失败仍阻断部署，部署沿用已验证的同一份前端产物，不在配置部署 Secrets 后重新构建。
+- E2E 不设置 `continue-on-error`；上传报告成功不代表测试成功。任一门禁失败仍阻断对应部署。`test` 沿用验证任务内构建的产物；`main` 核验后从同一 Git tree 重新构建，两者均不在注入部署 Secrets 后构建。
 
 ```bash
 # 单 worker 对照 / 排查并发问题（也可将 CI 配置回退为 1）
@@ -220,6 +220,7 @@ OpenSSH 覆盖七种裸钥/证书协商、PTY/Shell、exec 与 SFTP；Go 网关�
 - SFTP 列表选择（`sftp-list-selection.spec.ts`，Chromium + WebKit）：嵌套点击、Ctrl/Cmd、Shift、右键多选保持、排序/刷新后双击目标与高亮、全选/Escape、空目录与销毁重建；2000 项目录检查固定父容器监听与差量 ARIA 写入，附带非门禁计时证据。
 - 终端抽屉分段切换器（`terminal-drawer.spec.ts`，Chromium + WebKit）：桌面端胶囊轮廓与可辨识边缘、双边异步物理弹簧滑块位移、PC 隐藏移动端更多操作按钮、三大抽屉宽度统一、匿名隐藏 Agent 与登录同步解锁；四主题下 Agent 内嵌 SVG 与标签中心对齐、无溢出，并保持悬停缩放。
 - 移动端终端交互与用户空间：紧凑顶栏与菜单入口、视口与软键盘动态适配、单指滑动历史、字号响应式断点、移动端抽屉平行入口与 AI 设置弹窗无横向溢出；`mobile-terminal`、`mobile-user-space`、`terminal-clipboard` 同时纳入 WebKit，桌面右键场景显式使用非触摸上下文，文本缩放属性仅在引擎支持时断言。
+- `terminal-remote-copy` 在 Chromium / 移动 WebKit 以 WebSocket 输出验证 OSC 52 分帧、第一次直接写入、权限拒绝后重试、无本地操作的输出与切标签/断线隔离；同样覆盖 SGR 鼠标释放、键盘焦点恢复和四个内置主题的重试按钮对比度。模拟剪贴板权限不替代真机验收。
 - 视口与认证聚焦时序（`mobile-terminal.spec.ts` / `auth-challenge.spec.ts`）：视口测试使用受控时钟和页面已有的单一控制器/真实标签，逐帧发送键盘动画尺寸，不用固定真实等待推断初始化完成。`browser-timing.ts` 可暂缓 rAF 而继续推进计时器，覆盖旧 fit 立即取消、首帧前键盘变化、旋转基线重置和迟到聚焦不抢验证码/取消按钮；保留双引擎用例与原 CI 重试/失败门禁。
 - 移动端精细操作（`mobile-selection.spec.ts`、`mobile-sftp.spec.ts`、`mobile-terminal-actions.spec.ts`，Chromium + WebKit）：首列/宽字符选区、端点偏移与命中、跨屏本地滚动及取消、字号本机偏好/行数与列数变化；SFTP显式打开/非连续多选/批量删除、传输离开取消与过期批准；工具栏在四主题、三语和320/390px下比较滚动按钮隐藏前后的左侧截图，覆盖普通/多选状态不透字；每个主题×宽度×语言组合独立运行，保留30s单例预算、真实触摸与逐像素断言，避免Linux WebKit较慢的渲染等待在单例中累计三套场景，工具栏截图附件直接使用已核对的视口矩形而不重复滚动/稳定性等待；移动标签菜单与克隆独立令牌；手动粘贴的长度限制、换行/bracketed paste/trzsz、Shell-ready、切标签和旧socket隔离。`terminal-font-preference.test.ts` 覆盖纯策略、存储异常与范围限制。原生菜单/手柄触感与真实软键盘仍需真机验收，见 [移动端交互说明](../docs/mobile-ux.md)。
 - 移动阅读空间与材质（`mobile-glass.spec.ts`、`mcp.spec.ts`、`agent-responses.spec.ts`，Chromium + WebKit）：手机/平板隐藏四个普通建议但保留任务恢复、桌面建议可用；三语短屏更多菜单MCP紧邻Agent，主题/字号与其他行不压缩重叠，入口仍可打开。玻璃主题覆盖15类表面的320/390/900px与桌面往返、其他主题隔离，以及用户菜单、服务器表单、终端菜单、MCP、确认、SFTP、Agent真实截图；终端菜单正文区在隐藏底层终端前后须逐像素一致（不比较圆角/装饰边缘）。

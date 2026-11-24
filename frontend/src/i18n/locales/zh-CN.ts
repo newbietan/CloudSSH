@@ -314,6 +314,8 @@ export const zhCN = {
   'terminal.manualPasteText': '要粘贴的文本',
   'terminal.manualPasteConfirm': '粘贴到终端',
   'terminal.manualPasteTooLarge': '文本不能超过 65,536 个字符。请分段粘贴。',
+  'terminal.remoteCopyOnce': '复制到剪贴板',
+  'terminal.remoteCopyGestureHint': '浏览器阻止了自动复制。点击重试，或按 Alt+Shift+C 后按 Enter。',
   'terminal.selectText': '选择文本',
   'terminal.selectShort': '选择',
   'terminal.selectionStart': '选区起点',
