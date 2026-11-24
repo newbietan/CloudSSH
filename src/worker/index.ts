@@ -413,7 +413,7 @@ export default {
           githubAuthEnabled: authMode === 'github',
           githubAuthRequired: isGitHubAuthRequired(env) || authMode === 'cf_access',
           sshSharingEnabled: true,
-          ...(rdpAssets && env.ENABLE_RDP === 'true' ? { rdpEnabled: true } : {}),
+          ...(rdpAssets && url.protocol === 'https:' ? { rdpEnabled: true } : {}),
           authMode,
           cfAccessEmail,
           // 浏览器预拉伸公开参数（盐非机密）；坏哈希时为 null
@@ -423,7 +423,7 @@ export default {
         });
       }
 
-      if (rdpAssets && env.ENABLE_RDP === 'true' && url.protocol === 'https:' && request.method === 'GET' &&
+      if (rdpAssets && url.protocol === 'https:' && request.method === 'GET' &&
           url.pathname === '/' && [...url.searchParams.keys()].every(key => key === 'lang')) {
         // Keep the list and RDP frame in the same document. Never isolate the login flow on
         // the strength of a cookie alone. Bootstrap and every RDP resource still recheck access.

@@ -50,7 +50,7 @@ export async function handleRdp(
   request: Request, url: URL, env: Env, assets: RdpAssets | undefined,
   ctx?: Partial<Pick<ExecutionContext, 'waitUntil'>>,
 ): Promise<Response> {
-  if (env.ENABLE_RDP !== 'true' || !assets || url.protocol !== 'https:') return hide();
+  if (!assets || url.protocol !== 'https:') return hide();
   if (request.method !== 'GET' || request.headers.has('Upgrade')) {
     if (request.headers.get('Origin') !== url.origin) return rdpJson({ code: 'forbidden' }, 403);
   }

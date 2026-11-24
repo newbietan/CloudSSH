@@ -2,9 +2,9 @@
 
 [Issue #201](https://github.com/newbietan/CloudSSH/issues/201) 的双线路可行性已由维护者在同一台真实 Windows 上确认：浏览器内公网 TCP 和 Cloudflare Tunnel 均能登录、交互，主观延迟可接受。此前临时预览、测试目标变量和专用部署步骤不属于正式接入，已移除。此次接入改变了账户、票据和流控，须用正式入口重新做双线真机验收；不要把预览结果当作新中继、Access 策略或长期性能已经验收。
 
-## 启用并配置
+## 配置 Windows 设备
 
-1. 发布环境默认关闭；维护者的 `test` 已通过 `[env.test.vars]` 开启正式入口供验收。其他环境可设置 `ENABLE_RDP=true`，Git/CLI 部署写在对应环境的 `[vars]`，或在 Dashboard 配成 Secret 以免被部署清除。仍须登录 CloudSSH，匿名和一次性 SSH 分享不可使用。使用当前部署的 GitHub、单管理员密码或 Cloudflare Access 登录方式，不设额外账号名单。
+1. 生产和测试均内置 RDP，无需环境开关。须通过 HTTPS 登录 CloudSSH，匿名和一次性 SSH 分享不可使用。使用当前部署的 GitHub、单管理员密码或 Cloudflare Access 登录方式，不设额外账号名单。
 2. 登录后点「添加服务器」，在弹窗顶部从默认的 Linux 切换到「Windows Server」，填写远程桌面配置。保存后设备会出现在同一个服务器列表中；无需创建 SSH 设备或安装 Windows App。Windows 必须已开启远程桌面、NLA，账号须有 RDP 权限。
 3. **公网**模式填可达的公开 IPv4。首版只拨 TCP 3389，不允许任意端口、私网 IP 或未固定解析的直连域名。标准 Workers TCP 出站没有实例独享固定公网 IP；不要为了测试向全网开放 3389。有入站白名单要求时优先走 Tunnel。
 4. **Tunnel** 模式选择已经配置的 Cloudflare Published Application 主机名。在 cloudflared 端把该主机名的服务设置为 `rdp://<Windows 地址>:3389`，例如同机 `rdp://127.0.0.1:3389`。这是字节流隧道，不是 Access 浏览器桌面入口，也不能用现有 `ssh://` 路由替代。建议给目标主机名单独加 Access **Service Auth**，在设备上填该应用的 Client ID/Secret；不是 Tunnel 安装令牌。修改目的地会清空旧凭据，省略同主机的凭据则保留。
@@ -17,7 +17,7 @@
 - 公网和 Tunnel 只有传输层分流。Worker 不终止 Windows TLS、不渲染或转码，只搬运字节。浏览器与 Windows 做 NLA 及严格 Windows 证书指纹校验；隧道 HTTPS 外层的 TLS 不能替代 Windows 证书。连接路径不关闭 NLA。仅 Chromium / WebKit 实机体验另验；不承诺 Kerberos-only、RD Gateway、多屏或移动端键盘完整性。
 - 延迟指标分开显示，单位为毫秒：中继 RTT 是浏览器到 CloudSSH Worker 的 WebSocket 往返，首帧后可见时每 5s 采样、最多一个在途探针；不向 Windows 注入流量，也不续用户空闲时间。RDP RTT 是 Windows 自身通过 Network Characteristics Result 上报的平均值；不支持/未上报或过期时显示「—」，不把中继 RTT 代作整链路 RTT。两者都不测键鼠输入到绘制的延迟。
 - 桌面转发使用有界双向字节窗口与累计 ACK；浏览器下行确认发生在 WASM socket 消费字节时，而不是 JavaScript 收到消息时，也不等于渲染结束。超时、租约失效或持续积压关闭，不能继续交付丢失部分字节的 TLS 流。单次连接最多 2 小时以保留 Workers Free 的内部子请求预算；期间仍应用 `IDLE_TIMEOUT`。隧道每条出站消息最多 16 KiB，不把 RDP 包、TLS 记录和载体帧视为同一边界。Workers WebSocket 没有 drain 指标，Tunnel 向 Windows 的写入另限速并限制单会话累计 8 MiB；该限制不累计 Windows 到浏览器的画面流量。此路径仍需用真实弱网核查；不会自动重放输入或密码。剪贴板、挂载、音频转发不在首版范围。
-- `src/worker/rdp-entry.ts` 同一次 Worker 部署，重导出原 DO 类，保持原生 `ctx.access`。RDP 按需加载；仅部署已启用 RDP 时对已验证登录的用户空间首页及 RDP 页面启用 COOP/COEP，运行帧另有严格 CSP；登录页不隔离，不以 Cookie 存在代替验证。WASM 使用已压缩的 vendor 模块，主站 HTML、登录与原 SSH 终端不加载它。`/rdp/:id` 载入同一 CloudSSH 应用与当前主题，通过同源隔离运行帧操作桌面，不启动 xterm/Trzsz。从已隔离用户空间进入及返回均复用原文档，不重新启动首页。返回立即断开并销毁运行帧，复核仍为同一身份后恢复原筛选/分页；身份变化或核验失败则重新进入首页。旧的非隔离主页切入仍需在当前标签重新载入；若有 SSH 标签会先提示，取消可保留会话。Worker 校验当前登录、功能开关与设备归属后，顶层桌面壳直接消费短期、无凭据的打开意图，不再展示首页加载卡或重复拉取首页配置、身份和列表；各 API 与 WS 的独立校验保留。默认在标签页内显示，延迟数字与「全屏 / 返回」共用标题行，不再为已就绪提示/延迟占用画布高度；返回关闭 RDP 连接并回用户空间，不注销 Windows。父层工具栏全屏按钮、退出全屏按钮和系统 Esc 只改变本地展示；全屏期间锁定运行帧逻辑尺寸，把实际 Windows 画布的四边映射到工具栏下的可用区域，连同原本在帧内的页面留白一起去除。不会裁掉任务栏或改变远端分辨率；宽高比不同时，本地显示会相应拉伸。只变换父层 iframe 的显示，不触发 SDL 画布重建；Esc 后恢复原窗口布局。客户端运行帧不获全屏权限，点击画布仅用于操作桌面。初始与动态尺寸以 CSS 像素为单位（单屏上限 3840×2160），由 FreeRDP 的 MS-RDPEDISP 能力决定能否同步更新远端；不支持时等比显示，不重连或重放输入。
+- `src/worker/rdp-entry.ts` 同一次 Worker 部署，重导出原 DO 类，保持原生 `ctx.access`。RDP 按需加载；仅对带客户端资源的 HTTPS 部署中已验证登录的用户空间首页及 RDP 页面启用 COOP/COEP，运行帧另有严格 CSP；登录页不隔离，不以 Cookie 存在代替验证。WASM 使用已压缩的 vendor 模块，主站 HTML、登录与原 SSH 终端不加载它。`/rdp/:id` 载入同一 CloudSSH 应用与当前主题，通过同源隔离运行帧操作桌面，不启动 xterm/Trzsz。从已隔离用户空间进入及返回均复用原文档，不重新启动首页。返回立即断开并销毁运行帧，复核仍为同一身份后恢复原筛选/分页；身份变化或核验失败则重新进入首页。旧的非隔离主页切入仍需在当前标签重新载入；若有 SSH 标签会先提示，取消可保留会话。Worker 校验当前登录与设备归属后，顶层桌面壳直接消费短期、无凭据的打开意图，不再展示首页加载卡或重复拉取首页配置、身份和列表；各 API 与 WS 的独立校验保留。默认在标签页内显示，延迟数字与「全屏 / 返回」共用标题行，不再为已就绪提示/延迟占用画布高度；返回关闭 RDP 连接并回用户空间，不注销 Windows。父层工具栏全屏按钮、退出全屏按钮和系统 Esc 只改变本地展示；全屏期间锁定运行帧逻辑尺寸，把实际 Windows 画布的四边映射到工具栏下的可用区域，连同原本在帧内的页面留白一起去除。不会裁掉任务栏或改变远端分辨率；宽高比不同时，本地显示会相应拉伸。只变换父层 iframe 的显示，不触发 SDL 画布重建；Esc 后恢复原窗口布局。客户端运行帧不获全屏权限，点击画布仅用于操作桌面。初始与动态尺寸以 CSS 像素为单位（单屏上限 3840×2160），由 FreeRDP 的 MS-RDPEDISP 能力决定能否同步更新远端；不支持时等比显示，不重连或重放输入。
 
 ## Edge 风险提示
 
@@ -25,10 +25,10 @@ Edge 显示「已阻止该站点」和「恐吓软件」时，不是 Windows 的
 
 ## 维护和验收
 
-- `bash scripts/build-freerdp.sh` 是维护者用的显式重建入口，固定 FreeRDP commit、emsdk 镜像、工具及依赖；普通构建、部署和 CI 不启动 Docker 或下载 FreeRDP。审核上游安全更新和构建/许可证，用 `tests/build/rdp-assets.test.ts` 校验模块、摘要、大小和胶水边界。不要手改压缩文件；更新依赖时重新审核 JS/C++ 钩子。普通发布开关不在代码中强制开启。
+- `bash scripts/build-freerdp.sh` 是维护者用的显式重建入口，固定 FreeRDP commit、emsdk 镜像、工具及依赖；普通构建、部署和 CI 不启动 Docker 或下载 FreeRDP。审核上游安全更新和构建/许可证，用 `tests/build/rdp-assets.test.ts` 校验模块、摘要、大小和胶水边界。不要手改压缩文件；更新依赖时重新审核 JS/C++ 钩子。
 - 本地门禁：`pnpm run typecheck`、`pnpm test`、`pnpm run build:frontend`、`pnpm run test:e2e`，确认 test/main 打包均用正式 Worker 入口并保留原 DO 绑定。自动化浏览器用例采用模拟数据，不用真实凭据。
 - 无改动的设备编辑不会保存或作废租约；实际修改仍会断开该设备的活动桌面。已知断开原因（如空闲超时、会话时长上限）在原状态栏说明，未知错误不展示上游原文。服务器列表按 SSH/Windows 分别保留同账户上次成功结果并支持手动重试；明确失去访问权限时清空列表。
 - 真机门禁：在 `test` 启用正式设备配置，用同一 Windows 的公网与 Tunnel 路线分别完成登录、查看和操作。在保持 NLA 的前提下测试证书错误与更新、正确及错误密码、断线重试，另验证启用 Access Service Auth 的 Tunnel。对 1080p 办公操作记录输入到画面的延迟、持续半小时与弱网恢复是否越积越慢。测试结果应分开记录：连通、NLA、首帧、键鼠、延迟；模拟字节成功不等于真机通过。
-- 暂停或回滚：移除 `ENABLE_RDP` 可停止新桌面，不删除设备、Worker 或账户数据；正式会话在关闭连接或租约失效后释放。部署后可删除旧 `CLOUDSSH_RDP_TEST_CONFIG` 仓库变量，现有工作流不再读取。此前测试用的公开隧道路由与 token 可在不再使用时撤销。
+- 升级后可清理旧 `ENABLE_RDP` 变量或 Secret；旧值为 `false` 也不会禁用桌面。部署后可删除旧 `CLOUDSSH_RDP_TEST_CONFIG` 仓库变量，现有工作流不再读取。此前测试用的公开隧道路由与 token 可在不再使用时撤销。
 
 上游：[FreeRDP 3.33.1](https://github.com/FreeRDP/FreeRDP/releases/tag/3.33.1)、[Cloudflare 出站 TCP](https://developers.cloudflare.com/workers/runtime-apis/tcp-sockets/)、[Cloudflare Tunnel 已发布应用协议](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/routing-to-tunnel/protocols/)。

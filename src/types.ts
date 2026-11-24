@@ -191,8 +191,6 @@ export interface Env {
   BASE_URL?: string;
   // 调试模式（设为 true 启用调试日志输出到前端）
   DEBUG_MODE?: string;
-  /** Explicit opt-in for authenticated browser RDP. */
-  ENABLE_RDP?: string;
   // 单管理员密码认证（可选）。
   // 格式：pbkdf2$sha256$<iterations>$<salt-b64url>$<verifier-b64url>，由 `pnpm run hash-password` 生成。
   // 非空且格式合法即启用密码模式：GitHub OAuth 路由禁用，全实例仅本地管理员一个账号。

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Windows 远程桌面不再读取 `ENABLE_RDP`。生产和测试环境的登录用户均可通过 HTTPS 使用，即使原配置为 `false`；匿名用户和一次性分享仍无权访问。
+
 ## [2.12.0] - 2026-11-24
 
 > **升级注意**：原先设为 `ENABLE_SSH_SHARING=false` 的实例升级后，登录所有者仍可主动创建一次性 SSH 分享，但不会自动分享任何服务器。`STRICT_HOST_KEY_VERIFY=false` 不再跳过主机验签；依赖该设置的连接遇到无效签名将被拒绝。Windows 远程桌面在生产配置中仍默认关闭。
