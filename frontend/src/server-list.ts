@@ -14,7 +14,7 @@ import { ShareManager } from './share-manager';
 import type { SSHHostInfo } from './terminal';
 import { confirmAction, notify } from './ui-feedback';
 import { formatTimestampWithRelative } from '../../src/server-memory-schema';
-import { isRdpId, type RdpCard, type RdpProfile } from '../../src/rdp-schema';
+import { RDP_DEFAULT_PORT, isRdpId, type RdpCard, type RdpProfile } from '../../src/rdp-schema';
 import { RdpManager } from './rdp-manager';
 
 interface UserInfo {
@@ -694,7 +694,7 @@ export class ServerList {
     const copyLabel = this.escapeAttr(t(masked ? 'server.clickToCopyIP' : 'server.clickToCopyHost'));
     return `<div class="server-card-meta-row flex items-center gap-2 min-w-0">
       <span class="text-dim">${t('server.hostLabel')}</span>
-      <button type="button" class="host-ip-badge server-host-badge min-w-0 truncate" id="host-badge-${this.escapeAttr(String(id))}" title="${copyLabel}" aria-label="${copyLabel}">${this.escapeHtml(masked ?? host)}${port === null ? '' : `:${port}`}</button>
+      <button type="button" class="host-ip-badge server-host-badge min-w-0 truncate" id="host-badge-${this.escapeAttr(String(id))}" title="${copyLabel}" aria-label="${copyLabel}">${this.escapeHtml(masked ?? host)}${Number.isInteger(port) ? `:${port}` : ''}</button>
     </div>`;
   }
 
@@ -708,7 +708,7 @@ export class ServerList {
         <span class="shrink-0 text-[10px] text-muted border border-dim px-2 py-0.5">RDP</span>
       </div>
       <div class="space-y-1.5 text-xs text-muted mb-4">
-        ${this.renderHostRow(row.id, row.host, row.route === 'direct' ? 3389 : null)}
+        ${this.renderHostRow(row.id, row.host, row.route === 'direct' ? (row.port ?? RDP_DEFAULT_PORT) : null)}
         <div class="server-card-meta-row flex items-center gap-2 min-w-0"><span class="text-dim">${t('server.userLabel')}</span><span class="text-on-surface truncate" title="${this.escapeAttr(row.username ?? '—')}">${this.escapeHtml(row.username ?? '—')}</span></div>
         <div>${t(row.route === 'tunnel' ? 'rdp.tunnel' : 'rdp.direct')}</div>
         <div class="server-card-meta-row flex items-center gap-2 min-w-0"><span class="text-dim">${t('server.lastConnected')}</span><span class="text-on-surface truncate" title="${this.escapeAttr(connected)}">${this.escapeHtml(connected)}</span></div>

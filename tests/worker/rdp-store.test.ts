@@ -8,11 +8,10 @@ const endpoint = { name: 'Workstation', route: 'direct', host: '93.184.215.14' }
 const target = { ...endpoint, login: { username: 'Administrator', domain: '', password: 'test only' } };
 const bind = '2'.repeat(64);
 
-function fixture() {
-  const database = new DatabaseSync(':memory:');
+function fixture(database = new DatabaseSync(':memory:')) {
   const db = { exec(query: string, ...params: (string | number | null)[]) {
     const stmt = database.prepare(query);
-    if (/^SELECT/i.test(query)) {
+    if (/^(SELECT|PRAGMA)/i.test(query)) {
       const rows = stmt.all(...params);
       return { toArray: () => rows, one: () => rows[0] };
     }
@@ -38,6 +37,35 @@ describe('RDP profiles and connection leases', () => {
     expect(parseRdpProfile({ ...target, fingerprint: certificate })).toBeNull();
     expect(parseRdpProfile({ ...target, password: 'not allowed' })).toBeNull();
     expect(parseRdpProfile({ ...target, route: 'tunnel', host: 'a.test/foo' })).toBeNull();
+  });
+
+  it('only accepts numeric, permitted TCP ports on public direct endpoints', () => {
+    for (const port of [1, 3389, 3390, 65535]) expect(parseRdpProfile({ ...target, port })).toEqual({ ...target, port });
+    for (const port of [0, -1, 65536, 3389.5, NaN, Infinity, null, '', '3390', true, 25, 443, 6379]) {
+      expect(parseRdpProfile({ ...target, port })).toBeNull();
+    }
+    for (const port of [3389, 3390, null]) {
+      expect(parseRdpProfile({ ...target, route: 'tunnel', host: 'rdp.example.com', port })).toBeNull();
+    }
+    expect(parseRdpProfile({ ...target, host: `${target.host}:3390` })).toBeNull();
+  });
+
+  it('upgrades existing SQLite rows to 3389 without changing trust, login or revision', async () => {
+    const database = new DatabaseSync(':memory:');
+    const id = '12345678-1234-1234-1234-123456789abc';
+    try {
+      database.exec(`CREATE TABLE rdp_profiles (id TEXT PRIMARY KEY,user_id INTEGER,revision INTEGER,name TEXT,route TEXT,host TEXT,fingerprint TEXT,access TEXT);
+        CREATE TABLE rdp_profile_options(user_id INTEGER,profile TEXT,tags TEXT,login TEXT,PRIMARY KEY (user_id,profile));`);
+      database.prepare('INSERT INTO rdp_profiles VALUES (?,1,7,?,?,?,?,NULL)').run(id, target.name, target.route, target.host, certificate);
+      database.prepare('INSERT INTO rdp_profile_options VALUES (1,?,?,?)').run(id, '["old"]', Buffer.from(JSON.stringify(target.login)).toString('base64'));
+      for (let coldStart = 0; coldStart < 2; coldStart++) {
+        const { request } = fixture(database);
+        expect(await (await request(`profiles/${id}`, 'GET')).json()).toMatchObject({ port: 3389, revision: 7, fingerprint: certificate, hasLogin: true, tags: ['old'] });
+        expect(await (await request('profiles', 'GET')).json()).toMatchObject({ profiles: [{ port: 3389, username: target.login.username }] });
+      }
+      database.exec('DELETE FROM rdp_profile_options'); // Pre-login legacy profiles have no options row.
+      expect(await (await fixture(database).request(`profiles/${id}`, 'GET')).json()).toMatchObject({ port: 3389, hasLogin: false });
+    } finally { database.close(); }
   });
 
   it('isolates profiles, issues a one-use browser-bound ticket, and revokes leases on edit', async () => {
@@ -82,6 +110,41 @@ describe('RDP profiles and connection leases', () => {
       expect((await request(`${profile}/trust`, 'PUT', payload)).status).toBe(409);
       const hostEdit = await request(profile, 'PUT', { ...target, host: '8.8.8.8', revision: revision + 1 });
       expect(await hostEdit.json()).toMatchObject({ fingerprint: null });
+    } finally { database.close(); }
+  });
+
+  it('binds credentials, certificate, history and the authoritative relay destination to the direct port', async () => {
+    const { request, database } = fixture();
+    try {
+      const json = async (route: string, method: string, body?: unknown) => {
+        const response = await request(route, method, body);
+        expect(response.ok).toBe(true);
+        return await response.json() as Record<string, unknown>;
+      };
+      const { id } = await json('profiles', 'POST', { ...target, port: 53389 });
+      const path = `profiles/${id}`;
+      const ticket = async (revision: number) => (await json('ticket', 'POST', { profile: id, binding: bind, savedRevision: revision })).ticket;
+      // Old relays hard-code 3389. They must never receive a lease for a custom destination.
+      expect((await request('claim', 'POST', { ticket: await ticket(1), binding: bind })).status).toBe(409);
+      const claim = await json('claim', 'POST', { ticket: await ticket(1), binding: bind, supportsDirectPort: true });
+      expect(claim.profile).toMatchObject({ host: target.host, port: 53389 });
+      await json(`${path}/trust`, 'PUT', { revision: 1, lease: claim.id, fingerprint: certificate });
+      await json('desktop-ready', 'POST', { lease: claim.id });
+      expect(await json(path, 'PUT', { ...endpoint, revision: 1, name: 'Renamed' })).toMatchObject({ port: 53389, fingerprint: certificate });
+      expect(await json('profiles', 'GET')).toMatchObject({ profiles: [{ port: 53389, last_connected_at: expect.any(Number) }] });
+      const staleTicket = await ticket(2);
+      const oldLease = await json('claim', 'POST', { ticket: await ticket(2), binding: bind, supportsDirectPort: true });
+      expect((await request(path, 'PUT', { ...endpoint, revision: 2, port: 3389 })).status).toBe(400);
+      expect(await json(path, 'GET')).toMatchObject({ port: 53389, revision: 2, fingerprint: certificate });
+      const login = { ...target.login, password: 'replacement' };
+      expect(await json(path, 'PUT', { ...endpoint, revision: 2, port: 3389, login })).toMatchObject({ port: 3389, fingerprint: null });
+      expect(await json('profiles', 'GET')).toMatchObject({ profiles: [{ port: 3389, last_connected_at: null }] });
+      expect((await request('renew', 'POST', { lease: oldLease.id })).status).toBe(404);
+      expect((await request('claim', 'POST', { ticket: staleTicket, binding: bind, supportsDirectPort: true })).status).toBe(409);
+      expect(await json('ticket', 'POST', { profile: id, binding: bind, savedRevision: 3 })).toMatchObject({ login });
+      const tunnel = await json(path, 'PUT', { ...target, route: 'tunnel', host: 'rdp.example.com', revision: 3 });
+      expect(tunnel).not.toHaveProperty('port');
+      expect(await json(path, 'PUT', { ...target, revision: 4 })).toMatchObject({ port: 3389 });
     } finally { database.close(); }
   });
 

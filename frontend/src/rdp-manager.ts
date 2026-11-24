@@ -1,9 +1,10 @@
-import { RDP_CLIENT_REVISION, isRdpId, parseRdpProfile, type RdpCard, type RdpProfile } from '../../src/rdp-schema';
-import { localizedElement, t, type TranslationKey } from './i18n';
-
+import { RDP_CLIENT_REVISION, RDP_DEFAULT_PORT, isRdpId, isRdpPort, parseRdpProfile, type RdpCard, type RdpProfile } from '../../src/rdp-schema';
 import { normalizeServerTags } from '../../src/server-tags';
+import { localizedElement, t, type TranslationKey } from './i18n';
+import { parsePort } from './port';
 
 const API = '/api/rdp/profiles';
+type FieldPrefix = 'label' | 'person' | 'key' | '>' | ':';
 
 /** Windows fields mounted into the shared server modal, not a second dialog. */
 export class RdpManager {
@@ -11,6 +12,9 @@ export class RdpManager {
   private readonly name: HTMLInputElement;
   private readonly tags: HTMLInputElement;
   private readonly host: HTMLInputElement;
+  private readonly hostField: HTMLLabelElement;
+  private readonly port: HTMLInputElement;
+  private readonly portField: HTMLLabelElement;
   private readonly transport = document.createElement('select');
   private readonly access = document.createElement('fieldset');
   private readonly id: HTMLInputElement;
@@ -31,10 +35,12 @@ export class RdpManager {
   constructor(parent: HTMLFieldSetElement, private readonly onChange: () => void) {
     const identity = document.createElement('div');
     identity.className = 'server-identity-fields';
-    const [name, nameLabel] = this.field('rdp-name', 64, 'rdp.name');
+    const [name, nameLabel] = this.field('rdp-name', 64, 'rdp.name', 'text', 'label');
     this.name = name;
-    const routeLabel = this.label('rdp.route', this.transport);
+    name.dataset.i18nPlaceholder = 'server.namePlaceholder';
+    name.placeholder = t('server.namePlaceholder');
     this.transport.id = 'server-rdp-route';
+    const routeLabel = this.label('rdp.route', this.transport);
     this.transport.className = 'terminal-input w-full';
     for (const [key, value] of [['rdp.direct', 'direct'], ['rdp.tunnel', 'tunnel']] as const) {
       const option = localizedElement('option', key);
@@ -53,19 +59,25 @@ export class RdpManager {
     target.className = 'server-settings-section';
     const authentication = document.createElement('div');
     authentication.className = 'server-settings-section';
-    const [host, hostLabel] = this.field('rdp-host', 253, 'rdp.host');
-    this.host = host;
-    name.required = host.required = true;
-    host.spellcheck = false;
-    target.append(routeLabel, hostLabel);
-    const [username, userLabel] = this.field('rdp-user', 128, 'auth.user');
+    const endpoint = document.createElement('div');
+    endpoint.className = 'ssh-endpoint-fields';
+    [this.host, this.hostField] = this.field('rdp-host', 253, 'rdp.host', 'text', '>');
+    [this.port, this.portField] = this.field('rdp-port', null, 'auth.port', 'number', ':');
+    this.hostField.className = 'ssh-host-field';
+    this.portField.className = 'ssh-port-field';
+    Object.assign(this.port, { min: '1', max: '65535', step: '1', inputMode: 'numeric', defaultValue: String(RDP_DEFAULT_PORT) });
+    name.required = this.host.required = true;
+    this.host.spellcheck = false;
+    endpoint.append(this.hostField, this.portField);
+    target.append(routeLabel, endpoint);
+    const [username, userLabel] = this.field('rdp-user', 128, 'auth.user', 'text', 'person');
     const [domain, domainLabel] = this.field('rdp-domain', 128, 'rdp.domain');
-    const [password, passLabel] = this.field('rdp-password', 1024, 'common.password', 'password');
+    const [password, passLabel] = this.field('rdp-password', 1024, 'common.password', 'password', 'key');
     this.username = username; this.domain = domain; this.password = password;
     username.required = true;
     this.loginFields.className = 'grid gap-3 min-w-0';
     this.loginFields.append(userLabel, passLabel, domainLabel);
-    this.host.oninput = username.oninput = domain.oninput = () => this.updatePasswordRequirement();
+    this.host.oninput = this.port.oninput = username.oninput = domain.oninput = () => this.updateRequirements();
     authentication.append(this.loginFields);
     columns.append(target, authentication);
 
@@ -90,22 +102,37 @@ export class RdpManager {
     this.reset();
   }
 
-  private label(key: TranslationKey, control: HTMLInputElement | HTMLSelectElement): HTMLLabelElement {
+  private label(key: TranslationKey, control: HTMLInputElement | HTMLSelectElement, prefix?: FieldPrefix): HTMLLabelElement {
     const group = document.createElement('label');
+    group.htmlFor = control.id;
     const label = localizedElement('span', key);
     label.className = 'block text-xs font-bold tracking-[0.1em] text-muted mb-2';
-    group.append(label, control);
+    group.append(label);
+    if (prefix) {
+      const row = document.createElement('span');
+      row.className = 'flex items-center';
+      const icon = document.createElement('span');
+      icon.className = 'text-muted mr-2 shrink-0';
+      if (prefix !== '>' && prefix !== ':') {
+        icon.classList.add('material-symbols-outlined');
+        icon.style.fontSize = '16px';
+      }
+      icon.textContent = prefix;
+      icon.setAttribute('aria-hidden', 'true');
+      row.append(icon, control);
+      group.append(row);
+    } else group.append(control);
     return group;
   }
 
-  private field(id: string, max: number, label: TranslationKey, type = 'text') {
+  private field(id: string, max: number | null, label: TranslationKey, type = 'text', prefix?: FieldPrefix) {
     const field = document.createElement('input');
     field.id = `server-${id}`;
     field.className = 'terminal-input text-[13px] w-full';
     field.type = type;
-    field.maxLength = max;
+    if (max !== null) field.maxLength = max;
     field.autocomplete = 'off';
-    return [field, this.label(label, field)] as const;
+    return [field, this.label(label, field, prefix)] as const;
   }
 
   dispose(): void {
@@ -117,6 +144,7 @@ export class RdpManager {
     this.editing = row;
     this.name.value = row?.name ?? '';
     this.host.value = row?.host ?? '';
+    this.port.value = String(row?.port ?? RDP_DEFAULT_PORT);
     this.tags.value = (row?.tags ?? []).join(', ');
     this.transport.value = row?.route ?? 'direct';
     this.id.value = this.secret.value = this.domain.value = this.password.value = '';
@@ -148,7 +176,7 @@ export class RdpManager {
     } finally {
       if (this.generation === generation) {
         this.loginFields.disabled = this.loadingIdentity = false;
-        this.updatePasswordRequirement();
+        this.updateRequirements();
         this.syncEdit();
       }
     }
@@ -158,8 +186,8 @@ export class RdpManager {
     if (this.loadingIdentity) return false;
     const row = this.editing;
     if (!row) return true;
-    return this.name.value.trim() !== row.name || this.host.value.trim().toLowerCase() !== row.host ||
-      this.transport.value !== row.route || JSON.stringify(normalizeServerTags(this.tags.value)) !== JSON.stringify(row.tags ?? []) ||
+    return this.name.value.trim() !== row.name || !this.sameTarget(row) ||
+      JSON.stringify(normalizeServerTags(this.tags.value)) !== JSON.stringify(row.tags ?? []) ||
       this.username.value.trim() !== (this.identity?.username ?? 'Administrator') ||
       this.domain.value.trim() !== (this.identity?.domain ?? '') || this.password.value !== '' ||
       (this.transport.value === 'tunnel' && (this.clear.checked || !!this.id.value || !!this.secret.value));
@@ -170,13 +198,19 @@ export class RdpManager {
     this.onChange();
   }
 
-  private canKeepPassword(): boolean {
-    return !!this.identity && this.editing?.host === this.host.value.trim().toLowerCase() &&
-      this.editing.route === this.transport.value && this.identity.username === this.username.value.trim() &&
-      this.identity.domain === this.domain.value.trim();
+  private sameTarget(row: RdpProfile): boolean {
+    return row.host === this.host.value.trim().toLowerCase() && row.route === this.transport.value &&
+      (row.route === 'tunnel' || parsePort(this.port.value) === (row.port ?? RDP_DEFAULT_PORT));
   }
 
-  private updatePasswordRequirement(): void {
+  private canKeepPassword(): boolean {
+    return !!this.identity && !!this.editing && this.sameTarget(this.editing) &&
+      this.identity.username === this.username.value.trim() && this.identity.domain === this.domain.value.trim();
+  }
+
+  private updateRequirements(): void {
+    const port = parsePort(this.port.value);
+    this.port.setCustomValidity(this.port.disabled || isRdpPort(port) ? '' : t(port === null ? 'auth.validationPort' : 'rdp.restrictedPort'));
     this.password.required = !this.canKeepPassword();
     this.password.placeholder = this.password.required ? '' : t('rdp.keepLogin');
   }
@@ -184,9 +218,12 @@ export class RdpManager {
   focus(): void { this.name.focus({ preventScroll: true }); }
 
   private updateTransport(): void {
-    this.updatePasswordRequirement();
-    this.access.hidden = this.transport.value !== 'tunnel';
-    this.access.disabled = this.access.hidden;
+    const tunnel = this.transport.value === 'tunnel';
+    this.portField.hidden = this.port.disabled = tunnel;
+    this.port.required = !tunnel;
+    this.hostField.classList.toggle('ssh-host-field-wide', tunnel);
+    this.updateRequirements();
+    this.access.hidden = this.access.disabled = !tunnel;
     this.host.placeholder = this.access.hidden ? '203.0.113.10' : 'rdp.example.com';
     this.id.disabled = this.secret.disabled = this.clear.checked;
   }
@@ -210,7 +247,11 @@ export class RdpManager {
     const input: Record<string, unknown> = {
       name: this.name.value, route: this.transport.value, host: this.host.value, tags: normalizeServerTags(this.tags.value),
     };
-    if (this.transport.value === 'tunnel' && (this.clear.checked || this.id.value || this.secret.value)) {
+    if (this.transport.value === 'direct') {
+      const port = parsePort(this.port.value);
+      if (!isRdpPort(port)) throw new Error(t(port === null ? 'auth.validationPort' : 'rdp.restrictedPort'));
+      input.port = port;
+    } else if (this.clear.checked || this.id.value || this.secret.value) {
       input.accessId = this.clear.checked ? '' : this.id.value;
       input.accessSecret = this.clear.checked ? '' : this.secret.value;
     }

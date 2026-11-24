@@ -1,10 +1,11 @@
 import {
-  type RdpCard, type RdpProfile, type RdpRoute, RDP_MAX_PROFILES, isRdpId, isRdpLogin, parseRdpProfile, readRdpJson,
+  type RdpCard, type RdpProfile, type RdpRoute, RDP_DEFAULT_PORT, RDP_MAX_PROFILES, isRdpId, isRdpLogin, parseRdpProfile, readRdpJson,
 } from '../rdp-schema';
 
 import { parseStoredServerTags } from '../server-tags';
 
-const withOptions = `SELECT p.*, o.tags, o.login, m.username_enc, m.identity_revision,
+const portColumn = `port INTEGER NOT NULL DEFAULT ${RDP_DEFAULT_PORT} CHECK(typeof(port)='integer' AND port BETWEEN 1 AND 65535)`;
+const withOptions = `SELECT p.*, o.tags, o.login, COALESCE(o.port, ${RDP_DEFAULT_PORT}) AS port, m.username_enc, m.identity_revision,
   m.created_at, m.updated_at, m.last_connected_at FROM rdp_profiles p
   LEFT JOIN rdp_profile_options o ON o.profile=p.id AND o.user_id=p.user_id
   LEFT JOIN rdp_card_metadata m ON m.profile=p.id AND m.user_id=p.user_id`;
@@ -18,6 +19,7 @@ interface Row {
   name: string;
   route: RdpRoute;
   host: string;
+  port: number;
   fingerprint: string;
   access: string | null;
   tags: string | null;
@@ -35,8 +37,9 @@ export const rdpJson = (body: unknown, status = 200) => Response.json(body, {
   status, headers: { 'Cache-Control': 'no-store' },
 });
 const error = (status: number, code: string) => rdpJson({ code }, status);
-const profile = ({ id, revision, name, route, host, fingerprint, access, tags, login }: Row): RdpProfile => ({
-  id, revision, name, route, host, fingerprint: fingerprint || null, hasAccessToken: !!access, hasLogin: !!login, tags: parseStoredServerTags(tags),
+const profile = ({ id, revision, name, route, host, port, fingerprint, access, tags, login }: Row): RdpProfile => ({
+  id, revision, name, route, host, ...(route === 'direct' ? { port } : {}), fingerprint: fingerprint || null,
+  hasAccessToken: !!access, hasLogin: !!login, tags: parseStoredServerTags(tags),
 });
 const digestPattern = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 export async function rdpDigest(text: string): Promise<string> {
@@ -57,9 +60,12 @@ export class RdpStore {
       route TEXT NOT NULL, host TEXT NOT NULL, fingerprint TEXT NOT NULL, access TEXT
     )`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS rdp_profile_options (
-      user_id INTEGER NOT NULL, profile TEXT NOT NULL, tags TEXT NOT NULL, login TEXT,
+      user_id INTEGER NOT NULL, profile TEXT NOT NULL, tags TEXT NOT NULL, login TEXT, ${portColumn},
       PRIMARY KEY (user_id, profile)
     )`);
+    if (!this.sql.exec('PRAGMA table_info(rdp_profile_options)').toArray().some(col => col.name === 'port')) {
+      this.sql.exec(`ALTER TABLE rdp_profile_options ADD COLUMN ${portColumn}`);
+    }
     this.sql.exec(`CREATE TABLE IF NOT EXISTS rdp_card_metadata (
       user_id INTEGER NOT NULL, profile TEXT NOT NULL, username_enc TEXT, identity_revision INTEGER,
       created_at INTEGER, updated_at INTEGER, last_connected_at INTEGER, PRIMARY KEY(user_id,profile)
@@ -167,7 +173,7 @@ export class RdpStore {
       return this.issue(userId, body.profile, body.binding, body.savedRevision);
     }
     if (route === 'claim' && digestPattern(body.ticket) && digestPattern(body.binding)) {
-      return this.claim(userId, body.ticket, body.binding);
+      return this.claim(userId, body.ticket, body.binding, body.supportsDirectPort === true);
     }
     if (route === 'desktop-ready' && isRdpId(body.lease)) {
       const now = Date.now();
@@ -211,7 +217,10 @@ export class RdpStore {
     const input = parseRdpProfile(body);
     if (!input) return error(400, 'invalid_profile');
     if (existing && (body as { revision?: unknown }).revision !== existing.revision) return error(409, 'profile_changed');
-    const sameTarget = existing?.route === input.route && existing.host === input.host;
+    const port = input.route === 'direct'
+      ? input.port ?? (existing?.route === 'direct' ? existing.port : RDP_DEFAULT_PORT)
+      : RDP_DEFAULT_PORT; // Not exposed or used for Tunnel; its Windows endpoint belongs to cloudflared.
+    const sameTarget = existing?.route === input.route && existing.host === input.host && existing.port === port;
     if (!input.login && !(sameTarget && existing.login && input.login === undefined)) return error(400, 'login_required');
     let access = sameTarget && input.route === 'tunnel' ? existing.access : null;
     if (input.accessId !== undefined) {
@@ -236,8 +245,8 @@ export class RdpStore {
         this.sql.exec('INSERT INTO rdp_profiles VALUES (?, ?, ?, ?, ?, ?, ?, ?)', id, userId, revision, input.name, input.route, input.host, fingerprint, access);
       }
       const tags = JSON.stringify(input.tags ?? parseStoredServerTags(existing?.tags));
-      this.sql.exec(`INSERT INTO rdp_profile_options(user_id,profile,tags,login) VALUES (?,?,?,?)
-        ON CONFLICT(user_id,profile) DO UPDATE SET tags=excluded.tags,login=excluded.login`, userId, id, tags, login);
+      this.sql.exec(`INSERT INTO rdp_profile_options(user_id,profile,tags,login,port) VALUES (?,?,?,?,?)
+        ON CONFLICT(user_id,profile) DO UPDATE SET tags=excluded.tags,login=excluded.login,port=excluded.port`, userId, id, tags, login, port);
       const now = Date.now();
       this.sql.exec(`INSERT INTO rdp_card_metadata(user_id,profile,username_enc,identity_revision,created_at,updated_at)
         VALUES (?,?,?,?,?,?) ON CONFLICT(user_id,profile) DO UPDATE SET username_enc=excluded.username_enc,
@@ -276,7 +285,7 @@ export class RdpStore {
     });
   }
 
-  private async claim(userId: number, ticket: string, binding: string): Promise<Response> {
+  private async claim(userId: number, ticket: string, binding: string, supportsDirectPort: boolean): Promise<Response> {
     const hash = await rdpDigest(ticket);
     const result = this.transaction(() => {
       this.clean(Date.now());
@@ -285,6 +294,8 @@ export class RdpStore {
       this.sql.exec('DELETE FROM rdp_tickets WHERE user_id = ? AND hash = ?', userId, hash);
       const row = this.row(userId, token.profile);
       if (!row?.login || row.revision !== token.revision || this.count('rdp_leases', userId) >= MAX_SESSIONS) return null;
+      // An older relay always dials 3389; don't let it start TLS/NLA against a different endpoint.
+      if (row.route === 'direct' && row.port !== RDP_DEFAULT_PORT && !supportsDirectPort) return null;
       const lease = crypto.randomUUID();
       this.sql.exec('INSERT INTO rdp_leases VALUES (?, ?, ?, ?, ?)', lease, userId, row.id, row.revision, Date.now() + RDP_LEASE_MS);
       return { lease, row };

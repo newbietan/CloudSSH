@@ -187,7 +187,7 @@ flowchart TB
     Worker <--> MCP_DO
     MCP_DO <-->|"SSH"| SSH
     RDP <-->|"WebSocket"| Worker
-    Worker <-->|"RDP byte relay: TCP 3389 or Tunnel"| Windows
+    Worker <-->|"RDP byte relay: TCP or Tunnel"| Windows
     SSH_DO <-->|"Exec Channel"| AgentCore
     AgentCore <-->|"Work Logs & Knowledge"| User_DO
     AgentCore <-->|"LLM API"| External["External LLM Service"]
@@ -379,7 +379,7 @@ Every server in a jump relation must belong to the same CloudSSH account. Self-r
 
 RDP is built in for both production and test. It requires HTTPS and a signed-in account; anonymous users and one-time share recipients have no RDP access. It does not provide SFTP, Agent, MCP, jump hosts or one-time shares.
 
-1. Choose **Add Server → Windows Server**. Use a public IPv4 address on TCP 3389, or a Cloudflare Tunnel published hostname mapped to `rdp://<windows-host>:3389`. Keep NLA enabled.
+1. Choose **Add Server → Windows Server**. For a direct connection, enter the public IPv4 address and TCP port (default `3389`). For Cloudflare Tunnel, enter only the published hostname; set the Windows port in the `cloudflared` service URL (`rdp://<windows-host>:<port>`). Keep NLA enabled.
 2. Enter the Windows username (default `Administrator`), password and optional domain. The login is encrypted in your account. Older devices without credentials must be completed before connecting.
 3. Connect from the card. On first use, verify the Windows certificate’s SHA-256 fingerprint before accepting; a changed pin blocks login. The desktop opens in the same tab. **Back** disconnects without signing out of Windows; **Full screen** scales the entire image below the toolbar without renegotiating resolution.
 

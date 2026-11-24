@@ -1,5 +1,5 @@
 import { connect } from 'cloudflare:sockets';
-import { RDP_FRAME, RDP_WINDOW, isPublicRdpIPv4, isRdpTunnelHost, readRdpJson } from '../rdp-schema';
+import { RDP_FRAME, RDP_WINDOW, isPublicRdpIPv4, isRdpPort, isRdpTunnelHost, readRdpJson } from '../rdp-schema';
 import { isBlockedIP } from './dns-check';
 import type { RdpLease } from './rdp-store';
 
@@ -44,11 +44,12 @@ export async function checkRdpTunnelHost(host: string, signal: AbortSignal): Pro
 }
 
 export async function openRdpTransport(lease: RdpLease, signal: AbortSignal): Promise<RdpTransport> {
-  const { host, route } = lease.profile;
+  const { host, route, port } = lease.profile;
   signal.throwIfAborted();
   if (route === 'direct') {
-    if (!isPublicRdpIPv4(host)) throw new Error('invalid_target');
-    const socket = connect({ hostname: host, port: 3389 });
+    // The store resolves legacy rows to 3389. Never guess a missing port on an ambiguous lease.
+    if (!isPublicRdpIPv4(host) || !isRdpPort(port)) throw new Error('invalid_target');
+    const socket = connect({ hostname: host, port });
     const close = () => { void socket.close().catch(() => {}); };
     signal.addEventListener('abort', close, { once: true });
     void socket.closed.catch(() => {});
@@ -80,6 +81,7 @@ export async function openRdpTransport(lease: RdpLease, signal: AbortSignal): Pr
       };
     } catch (err) { close(); throw err; }
   }
+  if (route !== 'tunnel' || port !== undefined) throw new Error('invalid_tunnel');
   await checkRdpTunnelHost(host, signal);
   const headers = new Headers({ Upgrade: 'websocket' });
   if (lease.accessId && lease.accessSecret) {

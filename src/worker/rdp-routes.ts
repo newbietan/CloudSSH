@@ -76,7 +76,7 @@ export async function handleRdp(
       idleMs: parseIdleTimeout(env.IDLE_TIMEOUT),
       waitUntil: typeof ctx?.waitUntil === 'function' ? ctx.waitUntil.bind(ctx) : undefined,
       async claim(ticket) {
-        const response = await call('claim', 'POST', { ticket, binding: digest });
+        const response = await call('claim', 'POST', { ticket, binding: digest, supportsDirectPort: true });
         return response.ok ? response.json<RdpLease>() : null;
       },
       async renew(lease) {

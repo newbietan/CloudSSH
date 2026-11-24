@@ -45,6 +45,7 @@ test('Windows uses the shared add-server dialog and the main server grid', async
   await page.route('**/api/servers', route => route.request().method() === 'GET' ? route.fulfill({ json: [ssh] }) : route.fallback());
   let profiles: Record<string, unknown>[] = [];
   let saved: Record<string, unknown> | undefined;
+  let portEdit: Record<string, unknown> | undefined;
   await page.route('**/api/rdp/profiles', route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: { profiles } });
     if (route.request().method() === 'POST') {
@@ -58,8 +59,14 @@ test('Windows uses the shared add-server dialog and the main server grid', async
   await page.route(`**/api/rdp/profiles/${id}/login-identity`, r => r.request().method() === 'POST' ? r.fulfill({ json: { revision: 1, username: 'custom-user', domain: 'WORK' } }) : r.fallback());
   await page.route(`**/api/rdp/profiles/${id}`, route => {
     if (route.request().method() === 'PUT') {
-      expect(route.request().postDataJSON()).toMatchObject({ name: 'Renamed device', revision: 1 });
-      expect(route.request().postDataJSON()).not.toHaveProperty('login');
+      const body = route.request().postDataJSON();
+      if (body.port === 54321) {
+        portEdit = body;
+        profiles = [{ ...profiles[0], port: body.port, revision: 2 }];
+        return route.fulfill({ json: profiles[0] });
+      }
+      expect(body).toMatchObject({ name: 'Renamed device', port: 53389, revision: 1 });
+      expect(body).not.toHaveProperty('login');
       return route.fulfill({ status: 409, json: { code: 'profile_changed', detail: 'never render this detail' } });
     }
     if (route.request().method() !== 'DELETE') return route.fallback();
@@ -84,13 +91,38 @@ test('Windows uses the shared add-server dialog and the main server grid', async
   await expect(windows).toHaveAttribute('aria-pressed', 'true');
   await expect(modal.locator('#server-ssh-fields')).toBeHidden();
   await expect(modal.locator('#server-name')).toBeDisabled();
+  const rdp = modal.locator('#server-rdp-fields');
+  const port = rdp.getByRole('spinbutton', { name: 'Port', exact: true });
+  const portInput = rdp.locator('#server-rdp-port');
+  await expect(port).toHaveValue('3389');
+  await expect(port).toHaveAttribute('min', '1');
+  await expect(port).toHaveAttribute('max', '65535');
+  for (const [field, glyph, label] of [['name', 'label', 'Device name'], ['user', 'person', 'Username'], ['password', 'key', 'Password']]) {
+    const icon = rdp.locator(`label[for="server-rdp-${field}"] .material-symbols-outlined[aria-hidden="true"]`);
+    await expect(icon).toBeVisible();
+    await expect(icon).toHaveText(glyph);
+    await expect(icon).toHaveCSS('font-size', '16px');
+    await expect(rdp.locator(`#server-rdp-${field}`)).toHaveAccessibleName(label);
+  }
+  const hostBox = (await rdp.locator('#server-rdp-host').boundingBox())!;
+  const portBox = (await port.boundingBox())!;
+  if (await page.evaluate(() => matchMedia('(min-width:480px)').matches)) expect(portBox.x).toBeGreaterThan(hostBox.x + hostBox.width);
+  else expect(portBox.y).toBeGreaterThan(hostBox.y + hostBox.height);
+  await port.fill('53389');
   await modal.getByLabel('Device name').fill('Windows workstation');
   await modal.getByLabel('Connection route').selectOption('tunnel');
+  await expect(portInput).toBeHidden();
+  await expect(portInput).toBeDisabled();
+  await expect(portInput).not.toHaveAttribute('required');
+  await expect(rdp.locator('.ssh-host-field')).toHaveClass(/ssh-host-field-wide/);
   const clientSecret = modal.getByLabel('Client Secret', { exact: true });
   await expect(clientSecret).toBeVisible();
   await modal.getByLabel('Connection route').selectOption('direct');
   await expect(clientSecret).toBeHidden();
+  await expect(port).toHaveValue('53389'); // Switching routes keeps the direct draft, not a Tunnel port.
   await linux.click();
+  await expect(portInput).toBeDisabled();
+  await expect(modal.locator('#server-port')).toHaveValue('22');
   await expect(modal.locator('#server-name')).toHaveValue('SSH draft');
   await windows.click();
   await expect(modal.getByLabel('Device name')).toHaveValue('Windows workstation');
@@ -105,10 +137,18 @@ test('Windows uses the shared add-server dialog and the main server grid', async
   await modal.locator('#server-rdp-user').fill('custom-user');
   await modal.locator('#server-rdp-domain').fill('WORK');
   await modal.locator('#server-rdp-password').fill('synthetic');
+  for (const invalid of ['', '0', '65536', '3389.5', '443']) {
+    await port.fill(invalid);
+    expect(await port.evaluate((el: HTMLInputElement) => el.validity.valid)).toBe(false);
+    await modal.locator('#server-submit-btn').click();
+    expect(saved).toBeUndefined();
+  }
+  await port.fill('53389');
   await modal.locator('#server-submit-btn').click();
   const card = page.locator(`#server-grid #rdp-card-${id}`);
   await expect(card.getByRole('button', { name: 'Open desktop' })).toBeVisible();
-  expect(saved).toEqual({ name: 'Windows workstation', route: 'direct', host: '93.184.215.14', tags: ['Office', 'Windows'], login: { username: 'custom-user', domain: 'WORK', password: 'synthetic' } });
+  await expect(card.getByRole('button', { name: 'Click to copy full IP address' })).toHaveText('93.184.*.*:53389');
+  expect(saved).toEqual({ name: 'Windows workstation', route: 'direct', host: '93.184.215.14', port: 53389, tags: ['Office', 'Windows'], login: { username: 'custom-user', domain: 'WORK', password: 'synthetic' } });
   await expect(card).toContainText('Office');
   await page.locator('#server-tag-filter').selectOption('Office');
   await expect(card).toBeVisible();
@@ -117,6 +157,7 @@ test('Windows uses the shared add-server dialog and the main server grid', async
   await expect(modal.getByLabel('Device name')).toHaveValue('Windows workstation');
   await expect(modal.locator('#server-rdp-user')).toHaveValue('custom-user');
   await expect(modal.locator('#server-rdp-domain')).toHaveValue('WORK');
+  await expect(port).toHaveValue('53389');
   await expect(modal.locator('#server-rdp-password')).toHaveValue('');
   await expect(modal.locator('#server-rdp-password')).not.toHaveAttribute('required');
   const submit = modal.locator('#server-submit-btn');
@@ -132,6 +173,8 @@ test('Windows uses the shared add-server dialog and the main server grid', async
   await submit.click();
   await expect(page.getByText(/Device settings changed/)).toBeVisible();
   await expect(page.getByText('never render this detail')).toHaveCount(0);
+  // On a narrow screen the dismissible notification overlaps the next save action.
+  await page.getByRole('alert').filter({ hasText: /Device settings changed/ }).getByRole('button').click();
   await modal.getByLabel('Device name').fill('Windows workstation');
   await modal.locator('#server-rdp-password').fill('replacement');
   await expect(submit).toBeEnabled();
@@ -140,13 +183,35 @@ test('Windows uses the shared add-server dialog and the main server grid', async
   await modal.locator('#server-rdp-user').fill('different-user');
   await expect(modal.locator('#server-rdp-password')).toHaveAttribute('required');
   await expect(windows).toBeHidden();
-  await modal.locator('#modal-close-btn').click();
-  await page.locator('#add-server-btn').click();
-  await expect(linux).toHaveAttribute('aria-pressed', 'true');
-  await modal.locator('#modal-close-btn').click();
+  await modal.locator('#server-rdp-user').fill('custom-user');
+  await port.fill('54321');
+  await expect(modal.locator('#server-rdp-password')).toHaveAttribute('required');
+  await submit.click();
+  expect(portEdit).toBeUndefined();
+  await port.fill('53389');
+  await expect(submit).toBeDisabled();
+  await expect(modal.locator('#server-rdp-password')).not.toHaveAttribute('required');
+  await port.fill('54321');
+  await modal.locator('#server-rdp-password').fill('new-endpoint');
+  await submit.click();
+  await expect(card.getByRole('button', { name: 'Click to copy full IP address' })).toHaveText('93.184.*.*:54321');
+  expect(portEdit).toMatchObject({ port: 54321, revision: 1, login: { password: 'new-endpoint' } });
   await card.getByRole('button', { name: 'Delete device' }).click();
   await page.getByRole('dialog', { name: 'Delete device' }).getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(card).toHaveCount(0);
+  await page.locator('#add-server-btn').click();
+  await expect(linux).toHaveAttribute('aria-pressed', 'true');
+  await windows.click();
+  await expect(port).toHaveValue('3389');
+  await port.fill('65536'); // A stale invalid direct draft must not block or enter a Tunnel save.
+  await rdp.getByLabel('Connection route').selectOption('tunnel');
+  await rdp.getByLabel('Device name').fill('Tunnel');
+  await rdp.locator('#server-rdp-host').fill('rdp.example.com');
+  await rdp.locator('#server-rdp-password').fill('tunnel-example');
+  await submit.click();
+  await expect(card.getByRole('button', { name: 'Click to copy full hostname' })).toHaveText('rdp.example.com');
+  expect(saved).toMatchObject({ route: 'tunnel', host: 'rdp.example.com' });
+  expect(saved).not.toHaveProperty('port');
 });
 
 test('the themed workspace stays in the current tab and a saved login is released only on connect', async ({ page, context, browserName }) => {
