@@ -88,6 +88,8 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'terminal.manualPasteText': 'Text to paste',
   'terminal.manualPasteConfirm': 'Paste into terminal',
   'terminal.manualPasteTooLarge': 'Text must not exceed 65,536 characters. Paste it in smaller parts.',
+  'terminal.remoteCopyOnce': 'Copy to clipboard',
+  'terminal.remoteCopyGestureHint': 'The browser blocked automatic copying. Click to retry, or press Alt+Shift+C and then Enter.',
   'terminal.selectText': 'Select text',
   'terminal.selectShort': 'Select',
   'terminal.selectionStart': 'Selection start',

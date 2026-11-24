@@ -1914,6 +1914,23 @@ html[data-ui-motion='none'] .auth-aurora::after {
   resize: vertical;
 }
 .terminal-paste-dialog .app-dialog__message { margin-top: 0; }
+
+.terminal-remote-copy {
+  position: absolute;
+  z-index: 12;
+  inset-inline-end: 8px;
+  inset-block-start: 8px;
+  max-width: calc(100% - 16px);
+  min-height: 44px;
+  padding: 6px 14px;
+  border-radius: var(--control-radius);
+  color: var(--on-accent);
+  background: var(--accent);
+  font-weight: 600;
+  box-shadow: var(--shadow-floating);
+}
+.terminal-remote-copy:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+
 #tab-context-menu button:disabled { opacity: 0.4; cursor: default; }
 
 .app-dialog[data-variant="success"] {

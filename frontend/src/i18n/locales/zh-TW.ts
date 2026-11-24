@@ -314,6 +314,8 @@ export const zhTW = {
   'terminal.manualPasteText': '要貼上的文字',
   'terminal.manualPasteConfirm': '貼上到終端',
   'terminal.manualPasteTooLarge': '文字不能超過 65,536 個字元。請分段貼上。',
+  'terminal.remoteCopyOnce': '複製到剪貼簿',
+  'terminal.remoteCopyGestureHint': '瀏覽器阻止了自動複製。點擊重試，或按 Alt+Shift+C 後按 Enter。',
   'terminal.selectText': '選擇文字',
   'terminal.selectShort': '選取',
   'terminal.selectionStart': '選區起點',
