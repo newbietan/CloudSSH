@@ -225,9 +225,49 @@
   justify-content: flex-end;
   gap: 0.5rem;
 }
+.mcp-activity-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.3rem 0 0.5rem;
+}
+.mcp-activity-toolbar .assistant-action[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.mcp-activity-scope:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 100%;
+  font-size: 0.8125rem;
+}
+.mcp-activity-scope select {
+  min-width: 0;
+  max-width: min(13rem, 60vw);
+  cursor: pointer;
+}
+.mcp-activity-scope option {
+  background: var(--bg);
+  color: var(--on-surface);
+}
 #mcp-activity-list {
   max-height: min(20rem, 45dvh);
   overflow: auto;
+}
+.mcp-activity-day {
+  margin: 0;
+  padding: 0.25rem 0;
+  color: var(--on-surface-variant);
+  font-size: 0.75rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.mcp-activity-rows {
+  list-style: none;
+  margin: 0 0 0.3rem;
+  padding: 0;
 }
 .mcp-dialog .mcp-operation {
   min-width: max-content;
@@ -238,7 +278,13 @@
   line-height: 1.6;
   white-space: nowrap;
 }
+.mcp-operation[data-status="error"],
+.mcp-operation[data-status="failed"],
+.mcp-operation[data-status="unknown"] {
+  font-weight: 600;
+}
 @media (pointer: coarse), (max-width: 520px) {
+  .mcp-activity-scope select,
   .mcp-dialog label,
   .mcp-dialog summary,
   .mcp-dialog .assistant-action {

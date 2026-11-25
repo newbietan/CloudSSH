@@ -42,6 +42,29 @@ function fixture(env: Partial<Env> = {}) {
   return { database, object, call, storage, remove, ticket, consume, reopen, alarm: () => alarm };
 }
 describe('MCP saved configuration and shared Alarm integration', () => {
+  it('upgrades legacy activity rows and only stores and displays whitelisted failure reasons', async () => {
+    const f = fixture();
+    const now = Date.now();
+    f.database.exec('ALTER TABLE mcp_activity DROP COLUMN failure_reason');
+    f.database.prepare(`INSERT INTO mcp_activity(id,user_id,client,server_id,tool,status,started_at)
+      VALUES('legacy',7,'test',1,'ssh_exec','error',?)`).run(now);
+    const upgraded = f.reopen();
+    f.reopen(); // schema initialization is idempotent
+    const call = (body: Record<string, unknown>) => upgraded.fetch(new Request('http://internal/internal/mcp', {
+      method: 'POST', body: JSON.stringify({ userId: 7, ...body }),
+    }));
+    const base = { id: 'current', client: 'test', serverId: 1, tool: 'ssh_exec', startedAt: now + 1 };
+    await call({ action: 'record', activity: { ...base, status: 'running', finishedAt: null } });
+    await call({ action: 'record', activity: { ...base, status: 'error', finishedAt: now + 2, failureReason: 'exec_rejected' } });
+    await call({ action: 'record', activity: { ...base, id: 'untrusted', status: 'unknown', finishedAt: now + 2, failureReason: 'private command' } });
+    expect(f.database.prepare('SELECT failure_reason FROM mcp_activity WHERE id = ?').get('untrusted')?.failure_reason).toBeNull();
+    // Even invalid DB values from past versions cannot be echoed as diagnostic metadata.
+    f.database.prepare('UPDATE mcp_activity SET failure_reason = ? WHERE id = ?').run('private log', 'untrusted');
+    const items = await (await call({ action: 'activity' })).json() as McpActivity[];
+    expect(items.find(item => item.id === 'current')).toMatchObject({ status: 'error', failureReason: 'exec_rejected' });
+    expect(items.find(item => item.id === 'legacy')).not.toHaveProperty('failureReason');
+    expect(items.find(item => item.id === 'untrusted')).not.toHaveProperty('failureReason');
+  });
   it('resolves only owned saved servers, requires existing trust, and does not issue browser tokens or reorder servers', async () => {
     const f = fixture();
     const created = await f.call({ action: 'create', input: { grants: [{ serverId: 1, scopes: ['exec'] }] } });

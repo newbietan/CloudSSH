@@ -1,3 +1,5 @@
+import { SSH_EXEC_ERROR_CODES } from './ssh/exec-error';
+
 /** Personal automation, not a terminal takeover or an audit protocol. */
 export const MCP_SCOPES = ['read', 'write', 'exec', 'context'] as const;
 export type McpScope = (typeof MCP_SCOPES)[number];
@@ -37,12 +39,27 @@ export interface McpPrincipal {
   expiresAt: number;
   createdAt: number;
 }
+export const MCP_FAILURE_REASONS = [
+  ...SSH_EXEC_ERROR_CODES,
+  'host_verification_required',
+  'interactive_auth_required',
+  'connection_failed',
+  'operation_timeout',
+  'operation_cancelled',
+  'operation_failed',
+] as const;
+export type McpFailureReason = (typeof MCP_FAILURE_REASONS)[number];
+export function isMcpFailureReason(value: unknown): value is McpFailureReason {
+  return MCP_FAILURE_REASONS.includes(value as McpFailureReason);
+}
+
 export interface McpActivity {
   id: string;
   client: string;
   serverId: number;
   tool: string;
-  status: 'running' | 'success' | 'error' | 'unknown';
+  status: 'running' | 'success' | 'failed' | 'error' | 'unknown';
+  failureReason?: McpFailureReason;
   startedAt: number;
   finishedAt: number | null;
 }

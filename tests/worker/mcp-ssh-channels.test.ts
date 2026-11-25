@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SSHSession } from '../../src/worker/ssh-session';
-import { SSH_MSG_CHANNEL_OPEN_CONFIRMATION, SSH_MSG_CHANNEL_SUCCESS, type SSHPacket } from '../../src/types';
+import { concat, encodeString } from '../../src/ssh/utils';
+import { SSH_MSG_CHANNEL_FAILURE, SSH_MSG_CHANNEL_OPEN_CONFIRMATION, SSH_MSG_CHANNEL_OPEN_FAILURE,
+  SSH_MSG_CHANNEL_SUCCESS, type SSHPacket } from '../../src/types';
+
+function packet(type: number, id = 1, tail = new Uint8Array()): SSHPacket {
+  const payload = concat(Uint8Array.of(type, 0, 0, 0, id), tail);
+  return { length: payload.length, paddingLength: 4, payload };
+}
+const openConfirmation = () => packet(SSH_MSG_CHANNEL_OPEN_CONFIRMATION, 1, new Uint8Array(12));
 
 function fixture() {
   const session = new SSHSession({ readyState: 1, send: vi.fn(), close: vi.fn() }, { close: vi.fn() },
@@ -20,8 +28,7 @@ describe('headless SSH operation channels', () => {
     vi.spyOn(channel, 'handleOpenConfirmation').mockImplementation(() => {});
     const subsystem = vi.spyOn(channel, 'buildSubsystemRequest');
     const pty = vi.spyOn(channel, 'buildPTYRequest');
-    const packet = (type: number): SSHPacket => ({ length: 5, paddingLength: 4, payload: new Uint8Array([type, 0, 0, 0, 1]) });
-    await state.handlePacket(packet(SSH_MSG_CHANNEL_OPEN_CONFIRMATION));
+    await state.handlePacket(openConfirmation());
     expect(subsystem).toHaveBeenCalledWith('sftp');
     expect(state.pendingDirectTcpip.has(1)).toBe(true);
     await state.handlePacket(packet(SSH_MSG_CHANNEL_SUCCESS));
@@ -35,15 +42,62 @@ describe('headless SSH operation channels', () => {
     vi.useFakeTimers();
     const { session, state, sent } = fixture();
     const running = session.executeCommand('must-not-execute', 1000);
-    const outcome = expect(running).rejects.toThrow('timeout');
+    const outcome = expect(running).rejects.toMatchObject({ code: 'exec_channel_timeout', outcome: 'not_executed' });
     await vi.advanceTimersByTimeAsync(1001);
     await outcome;
     expect(state.activeExecChannels.size).toBe(0);
     expect(state.channels.size).toBe(1);
+    await state.handlePacket(openConfirmation());
     await vi.runOnlyPendingTimersAsync();
     expect(sent).toHaveBeenCalledOnce(); // Only channel OPEN; never exec.
     expect(vi.getTimerCount()).toBe(0);
     session.close(true);
+  });
+  it('distinguishes channel open rejection from exec request rejection without logging the command', async () => {
+    const first = fixture();
+    const open = first.session.executeCommand('private command', 1000);
+    const rejectedOpen = expect(open).rejects.toMatchObject({ code: 'exec_channel_rejected', outcome: 'not_executed' });
+    await first.state.handlePacket(packet(SSH_MSG_CHANNEL_OPEN_FAILURE, 1,
+      concat(Uint8Array.of(0, 0, 0, 1), encodeString('sensitive rejection text'), encodeString(''))));
+    await rejectedOpen;
+    expect(first.sent).toHaveBeenCalledOnce();
+    expect(first.session.isOperational()).toBe(true);
+    first.session.close(true);
+
+    const second = fixture();
+    const running = second.session.executeCommand('private command', 1000);
+    const rejectedExec = expect(running).rejects.toMatchObject({ code: 'exec_rejected', outcome: 'not_executed' });
+    await second.state.handlePacket(openConfirmation());
+    expect(second.sent.mock.calls.map(([bytes]) => (bytes as Uint8Array)[0])).toEqual([90, 98]);
+    await second.state.handlePacket(packet(SSH_MSG_CHANNEL_FAILURE, 2));
+    expect(second.state.activeExecChannels.size).toBe(1);
+    await second.state.handlePacket(packet(SSH_MSG_CHANNEL_FAILURE));
+    await rejectedExec;
+    expect(second.sent.mock.calls.map(([bytes]) => (bytes as Uint8Array)[0])).toEqual([90, 98, 97]);
+    expect(second.session.isOperational()).toBe(true);
+    second.session.close(true);
+  });
+  it('never promises non-execution on command timeout or lost transport after exec was sent', async () => {
+    vi.useFakeTimers();
+    const first = fixture();
+    const running = first.session.executeCommand('printf ok', 1000);
+    const result = expect(running).rejects.toMatchObject({ code: 'exec_timeout', outcome: 'unknown' });
+    await first.state.handlePacket(openConfirmation());
+    await first.state.handlePacket(packet(SSH_MSG_CHANNEL_SUCCESS));
+    // A duplicate contradictory failure cannot override an acknowledged request.
+    await first.state.handlePacket(packet(SSH_MSG_CHANNEL_FAILURE));
+    await vi.advanceTimersByTimeAsync(1001);
+    await result;
+    expect(vi.getTimerCount()).toBe(0);
+    first.session.close(true);
+
+    const second = fixture();
+    const disconnected = second.session.executeCommand('printf ok', 1000);
+    const lost = expect(disconnected).rejects.toMatchObject({ code: 'exec_transport_closed', outcome: 'unknown' });
+    await second.state.handlePacket(openConfirmation());
+    second.session.close(true);
+    await lost;
+    expect(second.sent.mock.calls.map(([bytes]) => (bytes as Uint8Array)[0])).toEqual([90, 98]);
   });
   it('closes only the opened exec channel on cancellation and preserves the SSH connection', async () => {
     const { session, state } = fixture();
@@ -60,7 +114,7 @@ describe('headless SSH operation channels', () => {
     const running = session.executeCommand('sleep 100', 10_000, controller.signal);
     await ready;
     controller.abort();
-    await expect(running).rejects.toThrow('aborted');
+    await expect(running).rejects.toMatchObject({ code: 'exec_cancelled', outcome: 'unknown' });
     expect(state.closed).toBe(false);
     expect(state.activeExecChannels.size).toBe(0);
     session.close(true);
