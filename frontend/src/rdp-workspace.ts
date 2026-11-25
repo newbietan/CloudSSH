@@ -162,10 +162,13 @@ export class RdpWorkspace {
     let retried = false;
     frame.addEventListener('cloudssh-rdp-reconnect', event => {
       if (!current() || retried) return;
+      const { revision, fingerprint } = (event as CustomEvent).detail ?? {};
+      if (!Number.isSafeInteger(revision) || revision < 1 || typeof fingerprint !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(fingerprint)) return;
       retried = true;
-      event.preventDefault();
       presentation.setReady(false);
-      if (frame.contentDocument) frame.contentWindow?.dispatchEvent(new Event('cloudssh-rdp-disconnect'));
+      frame.dataset.reconnectRevision = String(revision);
+      frame.dataset.reconnectFingerprint = fingerprint;
       frame.dataset.connectSaved = 'true';
       frame.src = `/rdp/${id}/client`;
     });

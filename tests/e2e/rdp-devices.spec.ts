@@ -669,11 +669,14 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'saved mismatch', 'sa
   });
 }
 
-test('keeps the first-use certificate dialog open when the upstream closes early, then reconnects seamlessly on confirm', async ({ page }) => {
+for (const scenario of ['reconnect', 'revision changed', 'fingerprint changed', 'lease ended', 'upstream write failed',
+  'confirmation timeout'] as const) test(`first-use certificate recovery: ${scenario}`, async ({ page }) => {
   const fingerprint = 'ef'.repeat(32);
   let savedFingerprint: string | null = null;
+  let revision = 1;
   let connectCount = 0;
   let trustCount = 0;
+  if (scenario === 'confirmation timeout') await page.clock.install();
   const asset = (name: string) => readFileSync(`${__dirname}/../../src/worker/rdp-client/${name}.rdp-text`, 'utf8');
   const isolation = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' };
   await page.route('**/api/config', r => r.request().method() === 'GET' ? r.fulfill({ json: {
@@ -686,16 +689,20 @@ test('keeps the first-use certificate dialog open when the upstream closes early
     { id, name: 'Domain Win', revision: 1, tags: [], route: 'direct', host: 'rdp.example.com', port: 53389, hasLogin: true, fingerprint: savedFingerprint, username: 'Administrator', last_connected_at: null, created_at: null, updated_at: null },
   ] } }) : r.fallback());
   await page.route(`**/api/rdp/profiles/${id}`, r => r.request().method() === 'GET'
-    ? r.fulfill({ json: { id, name: 'Domain Win', revision: 1, route: 'direct', host: 'rdp.example.com', port: 53389, hasLogin: true, fingerprint: savedFingerprint } }) : r.fallback());
+    ? r.fulfill({ json: { id, name: 'Domain Win', revision, route: 'direct', host: 'rdp.example.com', port: 53389, hasLogin: true, fingerprint: savedFingerprint } }) : r.fallback());
   await page.route(`**/api/rdp/profiles/${id}/connect`, r => {
     if (r.request().method() !== 'POST') return r.fallback();
+    expect(r.request().headers()['x-cloudssh-rdp-saved-revision']).toBe('1');
     connectCount++;
     return r.fulfill({ json: { ticket: String(connectCount).repeat(64), revision: 1, login: { username: 'Administrator', domain: '', password: 'synthetic' } } });
   });
   await page.route(`**/api/rdp/profiles/${id}/trust`, r => {
     if (r.request().method() !== 'PUT') return r.fallback();
+    expect(r.request().postDataJSON()).toEqual({ fingerprint, revision: 1, lease: id });
     trustCount++;
-    savedFingerprint = fingerprint;
+    // The competing edit lands after the original pin was saved and before the retry reads the row.
+    if (scenario === 'revision changed') revision++;
+    savedFingerprint = scenario === 'fingerprint changed' ? 'cd'.repeat(32) : fingerprint;
     return r.fulfill({ json: { fingerprint } });
   });
   await page.route('**/?lang=en-US', async r => {
@@ -705,28 +712,46 @@ test('keeps the first-use certificate dialog open when the upstream closes early
   await page.route(`**/rdp/${id}/client`, r => r.fulfill({ contentType: 'text/html', headers: isolation, body: asset('index') }));
   await page.route('**/rdp/assets/desktop.js', r => r.fulfill({ contentType: 'text/javascript', body: asset('desktop') }));
   await page.route('**/rdp/assets/rdp-socket.js', r => r.fulfill({ contentType: 'text/javascript', body: `
-    window.createCloudSshRdpSocket = (_url, ticket) => {
-      const s = { lease: '${id}', certHold: false, incomingBytes: 0, beginCertWait() {}, endCertWait() {}, reportDesktopReady() {}, close() { this.lease = undefined; } };
-      window.__lastSocket = s;
-      window.__lastTicket = ticket;
-      return s;
+    // Exercise the real browser adapter against a controlled relay, independently of native RDP.
+    window.WebSocket = class {
+      constructor(_url, protocol) {
+        this.protocol = protocol;
+        queueMicrotask(() => this.onopen?.());
+      }
+      control(message) { this.onmessage?.({ data: JSON.stringify(message) }); }
+      send(data) {
+        if (typeof data !== 'string') return;
+        const msg = JSON.parse(data);
+        if (msg.type === 'ticket') {
+          window.__lastTicket = msg.ticket;
+          queueMicrotask(() => this.control({ type: 'ready', lease: '${id}', desktopReport: true }));
+        } else if (msg.type === 'cert_wait') {
+          queueMicrotask(() => {
+            if ('${scenario}' !== 'upstream write failed') this.control({ type: 'cert_hold' });
+            window.__certWaitSent = true;
+          });
+        } else if (msg.type === 'cert_done') {
+          const reason = '${scenario}' === 'lease ended' ? 'lease_ended'
+            : '${scenario}' === 'upstream write failed' ? 'upstream_write_failed' : 'cert_reconnect';
+          queueMicrotask(() => this.onclose?.({ reason }));
+        }
+      }
+      close() {}
     };
+    ${asset('rdp-socket')}
   ` }));
   await page.route('**/rdp/assets/sdl-freerdp.wasm', r => r.fulfill({ contentType: 'application/wasm', body: Buffer.from([0, 97, 115, 109, 1, 0, 0, 0]) }));
   await page.route('**/rdp/assets/sdl-freerdp.js', r => r.fulfill({ contentType: 'text/javascript', body: `
     const m = window.Module;
     m.FS = { mkdirTree() {}, writeFile() {} };
     m.callMain = () => {
-      const sock = m.createRdpSocket(m.websocket.url);
-      if (window.__lastTicket.startsWith('1')) {
-        const res = m.onWindowsCertificate('${fingerprint}');
-        if (res === 0) {
-          setTimeout(() => { sock.certHold = true; sock.onCertHold?.(); }, 40);
+      const socket = m.createRdpSocket(m.websocket.url);
+      socket.onopen = () => {
+        if (m.onWindowsCertificate('${fingerprint}') === 1) {
+          m.onWindowsDisplayControl();
+          m.onWindowsFirstFrame();
         }
-      } else {
-        const res = m.onWindowsCertificate('${fingerprint}');
-        if (res === 1) { m.onWindowsDisplayControl(); m.onWindowsFirstFrame(); }
-      }
+      };
     };
     m.onRuntimeInitialized();
   ` }));
@@ -737,22 +762,47 @@ test('keeps the first-use certificate dialog open when the upstream closes early
   });
   await page.goto('/?lang=en-US');
   await page.getByRole('button', { name: 'Open desktop' }).click();
-  const frame = page.locator('.rdp-workspace[open]').frameLocator('iframe');
+  const iframe = page.locator('.rdp-workspace[open] iframe');
+  const frame = iframe.contentFrame();
   const dialog = frame.locator('#certificate');
+  const status = frame.locator('#status');
+  const fromFrame = (key: string) => frame.locator('html').evaluate((_, name) => Reflect.get(window, name), key);
+  await expect.poll(() => fromFrame('__certWaitSent')).toBe(true);
   await expect(dialog).toBeVisible();
-  // Wait longer than the cert_hold arrival; dialog must remain open instead of flashing shut.
-  await page.waitForTimeout(250);
-  await expect(dialog).toBeVisible();
+  if (scenario === 'confirmation timeout') {
+    await page.clock.fastForward(85_000);
+    await expect(status).toContainText('Certificate confirmation timed out');
+    await expect(dialog).toBeHidden();
+    expect(trustCount).toBe(0);
+    expect(connectCount).toBe(1);
+    return;
+  }
   await dialog.getByRole('button', { name: 'Trust and connect' }).click();
-  await expect(frame.locator('#status')).toContainText('Desktop ready');
+  if (scenario === 'reconnect') {
+    await expect(status).toContainText('Desktop ready');
+    expect(await fromFrame('__lastTicket')).toBe('2'.repeat(64));
+    const launchedAgain = await iframe.evaluate((node, fingerprint) => {
+      const frame = node as HTMLIFrameElement;
+      frame.dispatchEvent(new CustomEvent('cloudssh-rdp-reconnect', { detail: { revision: 1, fingerprint } }));
+      return frame.dataset.connectSaved;
+    }, fingerprint);
+    expect(launchedAgain).toBeUndefined();
+  } else if (scenario === 'lease ended') {
+    await expect(status).toContainText('This desktop session is no longer valid');
+  } else if (scenario === 'upstream write failed') {
+    await expect(status).toContainText('The connection to Windows ended before the desktop appeared');
+  } else {
+    await expect(status).toContainText('Device settings changed');
+  }
+  await expect(dialog).toBeHidden();
   expect(trustCount).toBe(1);
-  expect(connectCount).toBe(2);
+  expect(connectCount).toBe(scenario === 'reconnect' ? 2 : 1);
 });
 
 for (const [errCode, expected] of [
   ['ERRCONNECT_AUTHENTICATION_FAILED', 'Windows rejected the sign-in credentials'],
   ['ERRCONNECT_SECURITY_NEGO_CONNECT_FAILED', 'Security negotiation failed'],
-  ['ERRCONNECT_CONNECT_TRANSPORT_FAILED', 'Windows closed the connection before the desktop appeared'],
+  ['ERRCONNECT_CONNECT_TRANSPORT_FAILED', 'The connection to Windows ended before the desktop appeared'],
 ] as const) {
   test(`reports distinct safe error message for ${errCode}`, async ({ page }) => {
     const asset = (name: string) => readFileSync(`${__dirname}/../../src/worker/rdp-client/${name}.rdp-text`, 'utf8');
@@ -760,7 +810,7 @@ for (const [errCode, expected] of [
     await page.route(`**/rdp/${id}`, r => r.fulfill({ contentType: 'text/html', body: `<iframe src="/rdp/${id}/client" data-connect-saved="true"></iframe>` }));
     await page.route(`**/rdp/${id}/client`, r => r.fulfill({ contentType: 'text/html', headers: isolation, body: asset('index') }));
     await page.route('**/rdp/assets/desktop.js', r => r.fulfill({ contentType: 'text/javascript', body: asset('desktop') }));
-    await page.route('**/rdp/assets/rdp-socket.js', r => r.fulfill({ contentType: 'text/javascript', body: `window.createCloudSshRdpSocket = () => ({ lease: '${id}', incomingBytes: 0, close() { this.lease = undefined; } });` }));
+    await page.route('**/rdp/assets/rdp-socket.js', r => r.fulfill({ contentType: 'text/javascript', body: `window.createCloudSshRdpSocket = () => ({ lease: '${id}', close() { this.lease = undefined; } });` }));
     await page.route('**/rdp/assets/sdl-freerdp.wasm', r => r.fulfill({ contentType: 'application/wasm', body: Buffer.from([0, 97, 115, 109, 1, 0, 0, 0]) }));
     await page.route('**/rdp/assets/sdl-freerdp.js', r => r.fulfill({ contentType: 'text/javascript', body: `
       const m = window.Module;

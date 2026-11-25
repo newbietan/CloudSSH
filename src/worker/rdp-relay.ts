@@ -15,6 +15,8 @@ interface SessionHooks {
 const CERT_WAIT_MS = 90_000;
 const CERT_HOLD_GRACE_MS = 5_000;
 
+type UpstreamEnd = 'upstream_closed' | 'upstream_read_failed' | 'upstream_write_failed';
+
 /** One ordered, binary socket per desktop. Control frames never enter the RDP/TLS stream. */
 export function startRdpRelay(hooks: SessionHooks): Response {
   const [client, ws] = Object.values(new WebSocketPair());
@@ -35,9 +37,7 @@ export function startRdpRelay(hooks: SessionHooks): Response {
   let outAck = 0;
   let controls = 0;
   let reportedDesktop = false;
-  let certPending = false;
-  let certWait = false;
-  let certDone = false;
+  let certificate: 'pending' | 'waiting' | 'resolved' = 'resolved';
   let upstreamClosed = false;
   let lastProbe = -Infinity;
   let creditWake: (() => void) | undefined;
@@ -50,17 +50,17 @@ export function startRdpRelay(hooks: SessionHooks): Response {
   const monitor = setInterval(() => {
     const now = Date.now();
     if (stage !== 'ready') return;
-    if (!certWait && !upstreamClosed && hooks.idleMs && now - lastActivity >= hooks.idleMs) return finish(1000, 'idle_timeout');
-    if (!certWait && !upstreamClosed && ((inSent > inAck && now - lastInputProgress >= 30_000) ||
+    if (certificate !== 'waiting' && !upstreamClosed && hooks.idleMs && now - lastActivity >= hooks.idleMs) return finish(1000, 'idle_timeout');
+    if (certificate !== 'waiting' && !upstreamClosed && ((inSent > inAck && now - lastInputProgress >= 30_000) ||
         (outSent > outAck && now - lastOutputProgress >= 30_000))) return finish(1008, 'slow_connection');
-    if (now - lastRenew >= 40_000) return finish(1000, 'session_ended');
+    if (now - lastRenew >= 40_000) return finish(1000, 'lease_ended');
     controls = 0;
     if (!renewing && lease && now - lastRenew >= 15_000) {
       renewing = true;
       void hooks.renew(lease.id).then(ok => {
-        if (!ok) finish(1000, 'session_ended');
+        if (!ok) finish(1000, 'lease_ended');
         else lastRenew = Date.now();
-      }, () => finish(1000, 'session_ended')).finally(() => { renewing = false; });
+      }, () => finish(1000, 'lease_ended')).finally(() => { renewing = false; });
     }
   }, 1000);
 
@@ -91,13 +91,32 @@ export function startRdpRelay(hooks: SessionHooks): Response {
   function control(message: object) {
     if (stage !== 'closed') ws.send(JSON.stringify(message));
   }
+  function endUpstream(reason: UpstreamEnd) {
+    if (stage !== 'ready' || upstreamClosed) return;
+    const code = reason === 'upstream_closed' ? 1000 : 1011;
+    // TLS bytes can reach the browser just before the remote closes. Allow a short,
+    // bounded grace period for its cert_wait, even if a write detects the close first.
+    if (certificate !== 'waiting' && !(certificate === 'pending' && outSent > 0)) {
+      return finish(code, reason);
+    }
+    upstreamClosed = true;
+    const closed = transport;
+    transport = undefined; // A write aborted by close must not tear down the held lease.
+    creditWake?.();
+    creditWake = undefined;
+    closed?.close();
+    try { control({ type: 'cert_hold' }); } catch { return finish(1011, 'session_ended'); }
+    if (certificate !== 'waiting') {
+      certTimer = setTimeout(() => finish(code, reason), CERT_HOLD_GRACE_MS);
+    }
+  }
   async function deliver(data: Uint8Array): Promise<void> {
     for (let offset = 0; offset < data.length; offset += RDP_FRAME) {
       const frame = data.subarray(offset, offset + RDP_FRAME);
-      while (stage === 'ready' && outSent - outAck + frame.length > RDP_WINDOW) {
+      while (stage === 'ready' && !upstreamClosed && outSent - outAck + frame.length > RDP_WINDOW) {
         await new Promise<void>(resolve => { creditWake = resolve; });
       }
-      if (stage !== 'ready') return;
+      if (stage !== 'ready' || upstreamClosed) return;
       if (outSent === outAck) lastOutputProgress = Date.now();
       outSent += frame.length;
       ws.send(frame);
@@ -112,33 +131,22 @@ export function startRdpRelay(hooks: SessionHooks): Response {
       if (!claimed) return finish(1008, 'ticket_rejected');
       if (abort.signal.aborted) return release(claimed.id);
       lease = claimed;
-      certPending = claimed.profile.fingerprint === null;
+      certificate = claimed.profile.fingerprint === null ? 'pending' : 'resolved';
       transport = await openRdpTransport(claimed, abort.signal);
       if (abort.signal.aborted) return transport.close();
-      if (!(await hooks.renew(claimed.id)) || abort.signal.aborted) return finish(1000, 'session_ended');
+      if (!(await hooks.renew(claimed.id).catch(() => false)) || abort.signal.aborted) {
+        return finish(1000, 'lease_ended');
+      }
       clearTimeout(phaseTimer);
       lastInputProgress = lastOutputProgress = lastActivity = lastRenew = Date.now();
       stage = 'ready';
       control({ type: 'ready', lease: claimed.id, desktopReport: true });
-      let readError: unknown;
       try {
         await transport.read(deliver);
-      } catch (err) {
-        readError = err;
+      } catch {
+        return endUpstream('upstream_read_failed');
       }
-      if (stage !== 'ready' || abort.signal.aborted) return;
-      if (!reportedDesktop && (certWait || (certPending && !certDone && outSent > 0))) {
-        upstreamClosed = true;
-        transport?.close();
-        transport = undefined;
-        control({ type: 'cert_hold' });
-        if (!certWait && !certTimer) {
-          certTimer = setTimeout(() => finish(1000, 'session_ended'), CERT_HOLD_GRACE_MS);
-        }
-        return;
-      }
-      if (readError) throw readError;
-      finish(1000, 'session_ended');
+      endUpstream('upstream_closed');
     } catch (err) {
       finish(1011, err instanceof RdpDirectDnsError ? err.code : 'upstream_unavailable');
     }
@@ -156,19 +164,17 @@ export function startRdpRelay(hooks: SessionHooks): Response {
         }
         if (stage !== 'ready') return finish(1008, 'invalid_frame');
         if (msg?.type === 'cert_wait') {
-          if (reportedDesktop || certDone || !certPending) return finish(1008, 'invalid_frame');
-          if (!certWait) {
-            certWait = true;
+          if (certificate === 'resolved') return finish(1008, 'invalid_frame');
+          if (certificate === 'pending') {
+            certificate = 'waiting';
             clearCertTimer();
             certTimer = setTimeout(() => finish(1000, 'cert_timeout'), CERT_WAIT_MS);
           }
           return;
         }
         if (msg?.type === 'cert_done') {
-          if (reportedDesktop || !certPending) return finish(1008, 'invalid_frame');
-          certPending = false;
-          certWait = false;
-          certDone = true;
+          if (certificate !== 'waiting') return finish(1008, 'invalid_frame');
+          certificate = 'resolved';
           clearCertTimer();
           lastInputProgress = lastOutputProgress = lastActivity = Date.now();
           if (upstreamClosed) finish(1000, 'cert_reconnect');
@@ -176,9 +182,9 @@ export function startRdpRelay(hooks: SessionHooks): Response {
         }
         if (msg?.type === 'desktop_ready' && lease) {
           if (reportedDesktop) return;
+          if (upstreamClosed || certificate === 'waiting') return finish(1008, 'invalid_frame');
           reportedDesktop = true;
-          certPending = false;
-          certWait = false;
+          certificate = 'resolved';
           clearCertTimer();
           // Metadata is best-effort and once per live lease. Never block the byte stream or count activity.
           const write = hooks.desktopReady(lease.id).then(ok => { if (ok) control({ type: 'desktop_recorded' }); }).catch(() => {});
@@ -206,19 +212,19 @@ export function startRdpRelay(hooks: SessionHooks): Response {
       if (stage !== 'ready' || !(data instanceof ArrayBuffer) || data.byteLength === 0 || data.byteLength > RDP_FRAME || inSent - inAck + data.byteLength > RDP_WINDOW) {
         return finish(1008, 'invalid_frame');
       }
-      if (upstreamClosed) {
-        if (certWait || certPending) return;
-        return finish(1011, 'upstream_write_failed');
-      }
+      if (upstreamClosed) return;
       if (inSent === inAck) lastInputProgress = Date.now();
       inSent += data.byteLength;
       writes = writes.then(async () => {
-        if (stage !== 'ready' || !transport) return;
-        await transport.write(new Uint8Array(data));
+        const active = transport;
+        if (stage !== 'ready' || !active) return;
+        try { await active.write(new Uint8Array(data)); }
+        catch { return endUpstream('upstream_write_failed'); }
+        if (stage !== 'ready' || transport !== active) return;
         inAck += data.byteLength;
         lastInputProgress = Date.now();
         control({ type: 'ack', bytes: inAck });
-      }).catch(() => finish(1011, 'upstream_write_failed'));
+      }).catch(() => finish(1011, 'session_ended'));
     } catch { finish(1008, 'invalid_frame'); }
   });
   ws.addEventListener('close', () => finish(1000, 'session_ended'));

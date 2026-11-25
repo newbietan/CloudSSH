@@ -10,11 +10,9 @@ interface SocketAdapter {
   readyState: number;
   lease?: string;
   certHold: boolean;
-  incomingBytes: number;
   beginCertWait(): void;
   endCertWait(): void;
   reportDesktopReady(): void;
-  onCertHold?: () => void;
   onRelayClose?: (reason: string) => void;
   onclose?: (event: { reason: string }) => void;
   onDesktopRecorded?: () => void;
@@ -117,18 +115,16 @@ describe('FreeRDP browser socket', () => {
     expect(native.close).toHaveBeenCalledOnce();
   });
 
-  it('tracks certificate wait state, cert_hold signal, and incoming binary bytes', () => {
+  it('keeps certificate hold and completion outside the WASM stream', () => {
     const { native, socket } = fixture();
-    const onCertHold = socket.onCertHold = vi.fn();
+    const onData = socket.onmessage = vi.fn();
     native.onmessage({ data: ready });
     socket.beginCertWait();
     socket.beginCertWait();
     expect(native.send).toHaveBeenCalledExactlyOnceWith('{"type":"cert_wait"}');
-    native.onmessage({ data: new ArrayBuffer(20) });
-    expect(socket.incomingBytes).toBe(20);
     native.onmessage({ data: '{"type":"cert_hold"}' });
     expect(socket.certHold).toBe(true);
-    expect(onCertHold).toHaveBeenCalledOnce();
+    expect(onData).not.toHaveBeenCalled();
     socket.endCertWait();
     expect(native.send).toHaveBeenLastCalledWith('{"type":"cert_done"}');
   });

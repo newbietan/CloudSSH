@@ -7,7 +7,7 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket) {
   ws.binaryType = 'arraybuffer';
   const sink = {
     CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3, readyState: 0,
-    binaryType: 'arraybuffer', lease: undefined, certHold: false, incomingBytes: 0,
+    binaryType: 'arraybuffer', lease: undefined, certHold: false,
     send(value) {
       if (sink.readyState !== 1 || (!(value instanceof ArrayBuffer) && !ArrayBuffer.isView(value))) return fail();
       if (value.byteLength > limit || pending + sent - acknowledged + value.byteLength > limit) return fail();
@@ -107,7 +107,6 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket) {
           sink.onopen?.(new Event('open'));
         } else if (value?.type === 'cert_hold' && sink.readyState === 1) {
           sink.certHold = true;
-          sink.onCertHold?.();
         } else if (value?.type === 'desktop_recorded' && sink.readyState === 1 && reported) {
           sink.onDesktopRecorded?.();
         } else if (value?.type === 'pong' && sink.readyState === 1) {
@@ -124,7 +123,6 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket) {
       }
       if (sink.readyState !== 1 || !(data instanceof ArrayBuffer) || data.byteLength === 0 || data.byteLength > frame || incoming - consumed + data.byteLength > limit) return fail();
       incoming += data.byteLength;
-      sink.incomingBytes = incoming;
       sink.onmessage?.({ data });
     } catch { fail(); }
   };

@@ -145,13 +145,14 @@ it('handles the race where upstream closes right after sending TLS bytes before 
     send({ type: 'cert_wait' });
     await vi.advanceTimersByTimeAsync(89_000);
     expect(ws.close).not.toHaveBeenCalled();
+    send({ type: 'cert_wait' }); // A duplicate must not extend the original confirmation deadline.
     await vi.advanceTimersByTimeAsync(1_000);
     expect(ws.close).toHaveBeenCalledExactlyOnceWith(1000, 'cert_timeout');
     expect(release).toHaveBeenCalledExactlyOnceWith(lease);
   } finally { vi.unstubAllGlobals(); vi.useRealTimers(); }
 });
 
-it('closes immediately with session_ended on upstream EOF when certificate fingerprint is already trusted', async () => {
+it('closes immediately with upstream_closed on EOF when the certificate fingerprint is already trusted', async () => {
   vi.useFakeTimers();
   try {
     const ws = Object.assign(new EventTarget(), { accept: vi.fn(), send: vi.fn(), close: vi.fn() });
@@ -174,7 +175,78 @@ it('closes immediately with session_ended on upstream EOF when certificate finge
     });
     ws.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ type: 'ticket', ticket: 'a'.repeat(64) }) }));
     await vi.advanceTimersByTimeAsync(0);
-    expect(ws.close).toHaveBeenCalledExactlyOnceWith(1000, 'session_ended');
+    expect(ws.close).toHaveBeenCalledExactlyOnceWith(1000, 'upstream_closed');
+    expect(release).toHaveBeenCalledExactlyOnceWith(lease);
+  } finally { vi.unstubAllGlobals(); vi.useRealTimers(); }
+});
+
+it.each(['write rejects first', 'read closes first', 'write rejects before cert_wait', 'lease ends while held',
+  'write rejects after cert_done', 'cert_wait never arrives'] as const)('handles first-use certificate ordering: %s', async scenario => {
+  vi.useFakeTimers();
+  try {
+    const ws = Object.assign(new EventTarget(), { accept: vi.fn(), send: vi.fn(), close: vi.fn() });
+    vi.stubGlobal('WebSocketPair', class { 0 = {}; 1 = ws; });
+    vi.stubGlobal('Response', class {});
+    let endRead!: () => void;
+    let rejectWrite!: () => void;
+    const write = vi.fn(() => new Promise<void>((_, reject) => { rejectWrite = () => reject(new Error('closed')); }));
+    const closeTransport = vi.fn(() => rejectWrite());
+    vi.mocked(openRdpTransport).mockResolvedValue({
+      read: async deliver => {
+        await deliver(new Uint8Array(32));
+        await new Promise<void>(resolve => { endRead = resolve; });
+      },
+      write, close: closeTransport,
+    });
+    const lease = '12345678-1234-1234-1234-123456789abc';
+    const release = vi.fn(async () => {});
+    const renew = vi.fn(async () => true);
+    startRdpRelay({ desktopReady: async () => true, idleMs: 2000, renew, release, claim: async () => ({ id: lease,
+      profile: { id: lease, revision: 1, name: 'Win', host: 'rdp.example.com', port: 53389, route: 'direct',
+        hasLogin: true, hasAccessToken: false, tags: [], fingerprint: null },
+    }) });
+    const frame = (data: string | ArrayBuffer) => ws.dispatchEvent(new MessageEvent('message', { data }));
+    const send = (data: object) => frame(JSON.stringify(data));
+    send({ type: 'ticket', ticket: 'a'.repeat(64) });
+    await vi.advanceTimersByTimeAsync(0);
+    frame(new ArrayBuffer(16));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(write).toHaveBeenCalledOnce();
+
+    if (scenario !== 'write rejects before cert_wait' && scenario !== 'cert_wait never arrives') send({ type: 'cert_wait' });
+    if (scenario === 'write rejects after cert_done') send({ type: 'cert_done' });
+    if (scenario === 'read closes first') endRead(); // Closing the transport rejects the queued write.
+    else rejectWrite();
+    await vi.advanceTimersByTimeAsync(0);
+    if (scenario !== 'read closes first') endRead();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(closeTransport).toHaveBeenCalledOnce();
+
+    const holds = () => ws.send.mock.calls.filter(([message]) => message === '{"type":"cert_hold"}');
+    if (scenario === 'write rejects after cert_done') {
+      expect(holds()).toHaveLength(0);
+      expect(ws.close).toHaveBeenCalledExactlyOnceWith(1011, 'upstream_write_failed');
+    } else {
+      expect(holds()).toHaveLength(1);
+      expect(ws.close).not.toHaveBeenCalled();
+      expect(release).not.toHaveBeenCalled();
+      frame(new ArrayBuffer(16));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(write).toHaveBeenCalledOnce();
+      expect(ws.send).toHaveBeenLastCalledWith('{"type":"cert_hold"}');
+      if (scenario === 'cert_wait never arrives') {
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(ws.close).toHaveBeenCalledExactlyOnceWith(1011, 'upstream_write_failed');
+      } else if (scenario === 'lease ends while held') {
+        renew.mockResolvedValueOnce(false);
+        await vi.advanceTimersByTimeAsync(15_000);
+        expect(ws.close).toHaveBeenCalledExactlyOnceWith(1000, 'lease_ended');
+      } else {
+        if (scenario === 'write rejects before cert_wait') send({ type: 'cert_wait' });
+        send({ type: 'cert_done' });
+        expect(ws.close).toHaveBeenCalledExactlyOnceWith(1000, 'cert_reconnect');
+      }
+    }
     expect(release).toHaveBeenCalledExactlyOnceWith(lease);
   } finally { vi.unstubAllGlobals(); vi.useRealTimers(); }
 });
