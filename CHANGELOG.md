@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Windows 远程桌面双栈直连**：支持公网 IPv6、域名和 DDNS，以及既有公网 IPv4。域名在每次连接时校验 A/AAAA，双栈可在 TCP 未建立时换地址。DDNS 改址不影响既有登录配置，仍严格核对 Windows 证书；内网设备继续使用 Cloudflare Tunnel。
+
 ## [2.12.4] - 2026-11-24
 
 ### Added

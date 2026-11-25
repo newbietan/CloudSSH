@@ -1,4 +1,5 @@
 import { expect, it, vi } from 'vitest';
+import { RdpDirectDnsError } from '../../src/worker/rdp-direct-dns';
 import { startRdpRelay } from '../../src/worker/rdp-relay';
 import { openRdpTransport } from '../../src/worker/rdp-transport';
 
@@ -37,5 +38,32 @@ it('rate-limits relay pong without entering the RDP transport or extending user 
     expect(ws.close).toHaveBeenCalledWith(1000, 'idle_timeout');
     expect(write).not.toHaveBeenCalled();
     expect(release).toHaveBeenCalledWith(lease);
+  } finally { vi.unstubAllGlobals(); vi.useRealTimers(); }
+});
+
+it.each([
+  [new RdpDirectDnsError('direct_dns_failed'), 'direct_dns_failed'],
+  [new RdpDirectDnsError('direct_dns_blocked'), 'direct_dns_blocked'],
+  [new Error('do not expose upstream diagnostic'), 'upstream_unavailable'],
+] as const)('releases a failed lease and exposes only the fixed relay reason %s', async (error, reason) => {
+  vi.useFakeTimers();
+  try {
+    const ws = Object.assign(new EventTarget(), { accept: vi.fn(), send: vi.fn(), close: vi.fn() });
+    vi.stubGlobal('WebSocketPair', class { 0 = {}; 1 = ws; });
+    vi.stubGlobal('Response', class {});
+    vi.mocked(openRdpTransport).mockRejectedValueOnce(error);
+    const lease = '12345678-1234-1234-1234-123456789abc';
+    const release = vi.fn(async () => {});
+    const renew = vi.fn(async () => true);
+    startRdpRelay({ desktopReady: async () => true, idleMs: 0, renew, release, claim: async () => ({ id: lease,
+      profile: { id: lease, revision: 1, name: 'test', host: 'rdp.example.com', port: 3389, route: 'direct',
+        hasLogin: true, hasAccessToken: false, tags: [], fingerprint: null },
+    }) });
+    ws.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ type: 'ticket', ticket: 'a'.repeat(64) }) }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ws.close).toHaveBeenCalledExactlyOnceWith(1011, reason);
+    expect(ws.send).not.toHaveBeenCalled();
+    expect(renew).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledExactlyOnceWith(lease);
   } finally { vi.unstubAllGlobals(); vi.useRealTimers(); }
 });

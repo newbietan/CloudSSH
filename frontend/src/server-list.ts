@@ -691,10 +691,11 @@ export class ServerList {
 
   private renderHostRow(id: string | number, host: string, port: number | null): string {
     const masked = maskIPAddress(host);
+    const display = Number.isInteger(port) && masked && host.includes(':') ? `[${masked}]` : masked ?? host;
     const copyLabel = this.escapeAttr(t(masked ? 'server.clickToCopyIP' : 'server.clickToCopyHost'));
     return `<div class="server-card-meta-row flex items-center gap-2 min-w-0">
       <span class="text-dim">${t('server.hostLabel')}</span>
-      <button type="button" class="host-ip-badge server-host-badge min-w-0 truncate" id="host-badge-${this.escapeAttr(String(id))}" title="${copyLabel}" aria-label="${copyLabel}">${this.escapeHtml(masked ?? host)}${Number.isInteger(port) ? `:${port}` : ''}</button>
+      <button type="button" class="host-ip-badge server-host-badge min-w-0 truncate" id="host-badge-${this.escapeAttr(String(id))}" title="${copyLabel}" aria-label="${copyLabel}">${this.escapeHtml(display)}${Number.isInteger(port) ? `:${port}` : ''}</button>
     </div>`;
   }
 

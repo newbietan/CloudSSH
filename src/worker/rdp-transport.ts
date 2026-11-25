@@ -1,6 +1,7 @@
 import { connect } from 'cloudflare:sockets';
-import { RDP_FRAME, RDP_WINDOW, isPublicRdpIPv4, isRdpPort, isRdpTunnelHost, readRdpJson } from '../rdp-schema';
+import { RDP_FRAME, RDP_WINDOW, isPublicRdpIPv4, isRdpPort, isRdpTunnelHost, parseRdpDirectHost, readRdpJson } from '../rdp-schema';
 import { isBlockedIP } from './dns-check';
+import { resolveRdpDirectHost } from './rdp-direct-dns';
 import type { RdpLease } from './rdp-store';
 
 // Tunnel carriers do not expose drain or peer acknowledgments to Workers.
@@ -43,43 +44,89 @@ export async function checkRdpTunnelHost(host: string, signal: AbortSignal): Pro
   if (answers[0] + answers[1] === 0) throw new Error('dns_failed');
 }
 
+type DirectSocket = ReturnType<typeof connect>;
+
+function closeDirectSocket(socket: DirectSocket): void {
+  void socket.close().catch(() => {});
+}
+
+async function dialDirectSocket(ip: string, port: number, signal: AbortSignal, timeoutMs: number): Promise<DirectSocket> {
+  signal.throwIfAborted();
+  // Workerd appends ':port' to the hostname; IPv6 literals require brackets here only.
+  const socket = connect({ hostname: ip.includes(':') ? `[${ip}]` : ip, port });
+  void socket.closed.catch(() => {});
+  let cancel!: () => void;
+  let expire!: () => void;
+  const stopped = new Promise<never>((_, reject) => {
+    cancel = () => reject(signal.reason);
+    expire = () => reject(new Error('dial_timeout'));
+  });
+  const timer = setTimeout(expire, timeoutMs);
+  signal.addEventListener('abort', cancel, { once: true });
+  if (signal.aborted) cancel();
+  try {
+    await Promise.race([socket.opened, stopped]);
+    signal.throwIfAborted();
+    return socket;
+  } catch (err) {
+    closeDirectSocket(socket);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener('abort', cancel);
+  }
+}
+
+async function selectDirectSocket(candidates: string[], port: number, signal: AbortSignal): Promise<DirectSocket> {
+  // Within the outer 10 s relay deadline, leave room for bounded DNS and lease checks.
+  const timeoutMs = candidates.length === 1 ? 6000 : 2000;
+  for (const ip of candidates) {
+    try { return await dialDirectSocket(ip, port, signal, timeoutMs); }
+    catch { signal.throwIfAborted(); }
+  }
+  throw new Error('dial_failed');
+}
+
+function directTransport(socket: DirectSocket, signal: AbortSignal): RdpTransport {
+  try {
+    signal.throwIfAborted();
+    const writer = socket.writable.getWriter();
+    let released = false;
+    const finish = () => {
+      if (released) return;
+      released = true;
+      signal.removeEventListener('abort', finish);
+      closeDirectSocket(socket);
+      void writer.abort().catch(() => {}).finally(() => writer.releaseLock());
+    };
+    signal.addEventListener('abort', finish, { once: true });
+    return {
+      async read(deliver) {
+        const reader = socket.readable.getReader();
+        try {
+          for (;;) {
+            const frame = await reader.read();
+            if (frame.done) return;
+            await deliver(frame.value);
+          }
+        } finally { reader.releaseLock(); }
+      },
+      write: data => writer.write(data),
+      close: finish,
+    };
+  } catch (err) { closeDirectSocket(socket); throw err; }
+}
+
 export async function openRdpTransport(lease: RdpLease, signal: AbortSignal): Promise<RdpTransport> {
   const { host, route, port } = lease.profile;
   signal.throwIfAborted();
   if (route === 'direct') {
     // The store resolves legacy rows to 3389. Never guess a missing port on an ambiguous lease.
-    if (!isPublicRdpIPv4(host) || !isRdpPort(port)) throw new Error('invalid_target');
-    const socket = connect({ hostname: host, port });
-    const close = () => { void socket.close().catch(() => {}); };
-    signal.addEventListener('abort', close, { once: true });
-    void socket.closed.catch(() => {});
-    try {
-      await socket.opened;
-      signal.throwIfAborted();
-      const writer = socket.writable.getWriter();
-      let released = false;
-      const finish = () => {
-        if (released) return;
-        released = true;
-        signal.removeEventListener('abort', close);
-        close();
-        void writer.abort().catch(() => {}).finally(() => writer.releaseLock());
-      };
-      return {
-        async read(deliver) {
-          const reader = socket.readable.getReader();
-          try {
-            for (;;) {
-              const frame = await reader.read();
-              if (frame.done) return;
-              await deliver(frame.value);
-            }
-          } finally { reader.releaseLock(); }
-        },
-        write: data => writer.write(data),
-        close: finish,
-      };
-    } catch (err) { close(); throw err; }
+    const target = parseRdpDirectHost(host);
+    if (!target || !isRdpPort(port)) throw new Error('invalid_target');
+    const candidates = target.kind === 'domain' ? await resolveRdpDirectHost(target.host, signal) : [target.host];
+    // Only TCP establishment can fall back. TLS, pin verification and NLA see one socket.
+    return directTransport(await selectDirectSocket(candidates, port, signal), signal);
   }
   if (route !== 'tunnel' || port !== undefined) throw new Error('invalid_tunnel');
   await checkRdpTunnelHost(host, signal);
