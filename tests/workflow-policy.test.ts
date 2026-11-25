@@ -86,6 +86,26 @@ describe('CI 验证和部署边界', () => {
     expect(production).not.toMatch(/playwright|pnpm test|typecheck|test:e2e|always\(\)/i);
   });
 
+  it('aligns test only after a proven main push deploy with an isolated repository token', () => {
+    const deploy = readWorkflow('deploy.yml');
+    const sync = readDeployJob('sync-released-test');
+    const verify = readDeployJob('verify-production');
+    expect(verify).toContain('tested_sha: ${{ steps.proof.outputs.tested_sha }}');
+    expect(verify).toContain('id: proof');
+    expect(readFileSync(new URL('../scripts/ci-verify-tested-release.mjs', import.meta.url), 'utf8'))
+      .toContain('`tested_sha=${result.testCommit}\\n`');
+    expect(sync).toContain('needs: [verify-production, deploy-production]');
+    expect(sync).toContain("github.repository == 'newbietan/CloudSSH' &&");
+    expect(sync).toContain("github.event_name == 'push' && github.ref == 'refs/heads/main'");
+    expect(sync).toContain('contents: write\n      pull-requests: read');
+    expect(deploy.match(/contents: write/g)).toHaveLength(1);
+    expect(sync).toContain('ref: ${{ github.sha }}\n          persist-credentials: false');
+    expect(sync).toContain('GH_TOKEN: ${{ github.token }}');
+    expect(sync).toContain('TESTED_SHA: ${{ needs.verify-production.outputs.tested_sha }}');
+    expect(sync).toContain('run: node scripts/ci-sync-released-test.mjs');
+    expect(sync).not.toMatch(/secrets\.|pull_request_target|always\(\)|continue-on-error|wrangler|pnpm/);
+  });
+
   it('retires the RDP preview and keeps the standard deployment free of compiler steps', () => {
     const deploy = readWorkflow('deploy.yml');
     expect(deploy).not.toMatch(/CLOUDSSH_RDP_TEST_CONFIG|preview-worker\.ts|prepare-preview\.sh|build-freerdp\.sh/);

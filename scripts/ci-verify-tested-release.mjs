@@ -172,6 +172,9 @@ async function main() {
   const summary = `Verified tree \`${tree}\` against [full test push](${url}) (\`${result.testCommit}\`).`;
   console.log(summary);
   if (GITHUB_STEP_SUMMARY) appendFileSync(GITHUB_STEP_SUMMARY, `${summary}\n`);
+  if (process.env.GITHUB_OUTPUT) {
+    appendFileSync(process.env.GITHUB_OUTPUT, `tested_sha=${result.testCommit}\n`);
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

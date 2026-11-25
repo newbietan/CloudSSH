@@ -549,6 +549,7 @@ pnpm run deploy:test     # 部署 test 环境
 - `test` 的 push、目标为 `test` 的 PR 与 `test` 手动执行负责完整验证：冻结依赖、类型检查、单元/集成测试、前端构建、Chromium 和移动 WebKit。仅 `test` push 复用已构建产物部署 `cloudssh-test`。
 - `main` 的 push、目标为 `main` 的 PR 与 `main` 手动执行只核验发布内容。`scripts/ci-verify-tested-release.mjs` 用只读 GitHub API 核对当前 checkout 的 Git tree（PR 用待合并树，不是 PR 头）与同一仓库最近 30 条成功 `test` push 的记录；只接受对应尝试的全量测试与测试环境部署均成功，允许 Squash SHA 不同但拒绝任何文件差异。同仓库 `test → main` 发布 PR 若尚无证明，且 PR 待合并树与 `test` 头相同，则等待该头的真实 `test` push：允许 90 秒索引延迟，整段等待最多 60 分钟；仍须同一尝试的全量步骤成功才放行。最终 `main` push / 手动核验不等待。无匹配或 API 失败时阻断生产；禁止用 PR、手动或缩减档位记录冒充。PR 和手动运行不注入 Cloudflare Secrets，不用 `pull_request_target` 执行未信任代码。
 - 仅 `main` push 且核验通过后冻结安装、构建并部署 `cloudssh`，不下载 Playwright、不重跑测试、不取用其他运行的产物执行部署。部署 Secrets 仅注入 Wrangler 步骤。
+- 生产部署成功后，`sync-released-test` 仅对官方 `main` push 运行，最多 3 分钟。只执行已部署的 `main` 代码，用仓库原生 `GITHUB_TOKEN`（独立 job 的 `contents: write` / `pull-requests: read`，无 PAT 或 Cloudflare Secrets）。必须唯一匹配已合并的同仓库 `test → main` PR、部署 SHA、发布证明的确切 test 头和同一 Git tree；写前复核两个远端分支，仅以已验证的原 test SHA 作 `--force-with-lease` 更新 `refs/heads/test`。新提交（即使同树）或删除均不覆盖，不以新租约重试。不触发新的 GitHub Actions push 构建；Cloudflare 独立 Git 集成不受此规则控制。普通开发推送的测试和部署规则不变。
 - Worker CI 仅取消同 PR 的过期校验；`test` 验证/部署、发布 PR 核验、`main` push 或手动核验、生产构建/部署的 job 上限分别为 30/65/5/10 分钟。SSH 互操作仍独立执行。
 - GitHub Pages（`github-pages.yml`）只在 `main` 的 `docs/index.html` 或 `docs/theme-editor/**` 变更时自动发布；发布包只含这两处，普通文档和 `test` push 不部署。可在 `main` 手动重新发布。Pages 同一目标串行，不取消进行中的部署。上传与部署共用含 `github.run_id` 和 `github.run_attempt` 的产物名；`scripts/ci-wait-pages-artifact.sh` 有界重试只读查询，核对上传 ID、名称、所属 run 和未过期状态后才部署，不自动重试部署写操作。重跑旧 run 不会载入新工作流。
 - Fork 仅按需运行上游 `main` 同步（`sync-upstream.yml`）：手动执行无需变量；定时同步默认关闭，仅 `AUTO_SYNC_UPSTREAM=true` 开启，删除或设为 `false` 即关闭
@@ -606,11 +607,4 @@ CLI: `npx wrangler secret set <SECRET_NAME>`
       - 正文必须说明本次版本的更新内容：包含提交列表、关联 Issue/PR、验证结果。
       - **Issue 默认保持 open**：发布 PR 正文不得使用 `Closes #xxx` / `Fixes #xxx` 等自动关闭关键字，除非用户明确要求关闭；关联 Issue 仅以「关联 Issue：#xxx」形式列出，由用户后续手动关闭（用户可能仍有反馈需要跟进）。
    3. **PR 的审核与合并由用户手动完成**：AI 创建 PR 后应等待用户审核并合并，不得自行合并或使用管理员旁路合并。
-   4. 用户合并 PR 到 `main` 后（生产环境自动部署），AI 执行以下命令同步本地分支：
-
-      ```bash
-      git fetch origin && git reset --hard origin/main && git push origin test --force
-      ```
-
-      - 该操作使本地 `test` 分支与已发布的 `main` 完全一致。
-      - 若此前还有未发布的 `test` 提交，会被强制覆盖，请确认已合并完成后再执行。
+   4. 用户合并后，生产部署与远端 `test` 对齐由上述 CI 分开完成；不要再从本地强推。需要更新本地时先 `git fetch origin`。仅在远端已对齐、当前分支是 `test`、工作区干净且本地 HEAD 仍是该发布 PR 原头时，可用 `git reset --keep origin/test` 对齐本地；已对齐则不操作。任何未发布提交或未提交修改都要保留。同步跳过或失败时看该 job 的 Summary/日志，不覆盖新工作，不放宽保护规则，也不因此重新部署生产。
