@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SSH 保活兼容性**：修复 MikroTik RouterOS 已回复保活请求却被误判为超时并重连的问题。仅将与本次探针序号匹配的“不支持”回复视为在线，保留真正无响应时的断线保护。关联 Issue：[#211](https://github.com/newbietan/CloudSSH/issues/211)。
 - **发布核验**：测试运行成功但 GitHub Actions 的步骤详情尚未同步时，会限时重查同一次运行。明确失败、取消、跳过或最终缺少验证证据，仍会阻止发布。
 
+### Changed
+
+- **发布后分支同步**：生产部署成功后自动将仍停留在发布候选的 `test` 对齐到 `main`，不再因这次同步重复触发 GitHub Actions 构建。发布期间新增的 `test` 提交会保留；正常开发推送仍完整验证。
+
 ## [2.12.4] - 2026-11-24
 
 ### Added
