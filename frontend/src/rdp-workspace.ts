@@ -159,6 +159,16 @@ export class RdpWorkspace {
       // Ask a live same-origin client to close its socket and cancel pending work before removing it.
       if (frame.contentDocument) frame.contentWindow?.dispatchEvent(new Event('cloudssh-rdp-disconnect'));
     };
+    let retried = false;
+    frame.addEventListener('cloudssh-rdp-reconnect', event => {
+      if (!current() || retried) return;
+      retried = true;
+      event.preventDefault();
+      presentation.setReady(false);
+      if (frame.contentDocument) frame.contentWindow?.dispatchEvent(new Event('cloudssh-rdp-disconnect'));
+      frame.dataset.connectSaved = 'true';
+      frame.src = `/rdp/${id}/client`;
+    });
     frame.addEventListener('cloudssh-rdp-starting', event => {
       if (!current()) return;
       const name = (event as CustomEvent).detail;

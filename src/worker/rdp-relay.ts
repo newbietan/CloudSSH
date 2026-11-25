@@ -12,6 +12,9 @@ interface SessionHooks {
   waitUntil?: (task: Promise<unknown>) => void;
 }
 
+const CERT_WAIT_MS = 90_000;
+const CERT_HOLD_GRACE_MS = 5_000;
+
 /** One ordered, binary socket per desktop. Control frames never enter the RDP/TLS stream. */
 export function startRdpRelay(hooks: SessionHooks): Response {
   const [client, ws] = Object.values(new WebSocketPair());
@@ -32,9 +35,14 @@ export function startRdpRelay(hooks: SessionHooks): Response {
   let outAck = 0;
   let controls = 0;
   let reportedDesktop = false;
+  let certPending = false;
+  let certWait = false;
+  let certDone = false;
+  let upstreamClosed = false;
   let lastProbe = -Infinity;
   let creditWake: (() => void) | undefined;
   let writes = Promise.resolve();
+  let certTimer: ReturnType<typeof setTimeout> | undefined;
   let phaseTimer = setTimeout(() => finish(1008, 'ticket_timeout'), 5000);
   // Two internal requests per 15 s renewal stay below the Workers Free 1,000-request
   // invocation budget over two hours, including claim/initial authentication and release.
@@ -42,9 +50,9 @@ export function startRdpRelay(hooks: SessionHooks): Response {
   const monitor = setInterval(() => {
     const now = Date.now();
     if (stage !== 'ready') return;
-    if (hooks.idleMs && now - lastActivity >= hooks.idleMs) return finish(1000, 'idle_timeout');
-    if ((inSent > inAck && now - lastInputProgress >= 30_000) ||
-        (outSent > outAck && now - lastOutputProgress >= 30_000)) return finish(1008, 'slow_connection');
+    if (!certWait && !upstreamClosed && hooks.idleMs && now - lastActivity >= hooks.idleMs) return finish(1000, 'idle_timeout');
+    if (!certWait && !upstreamClosed && ((inSent > inAck && now - lastInputProgress >= 30_000) ||
+        (outSent > outAck && now - lastOutputProgress >= 30_000))) return finish(1008, 'slow_connection');
     if (now - lastRenew >= 40_000) return finish(1000, 'session_ended');
     controls = 0;
     if (!renewing && lease && now - lastRenew >= 15_000) {
@@ -56,6 +64,12 @@ export function startRdpRelay(hooks: SessionHooks): Response {
     }
   }, 1000);
 
+  function clearCertTimer() {
+    if (certTimer !== undefined) {
+      clearTimeout(certTimer);
+      certTimer = undefined;
+    }
+  }
   function release(id: string) {
     const result = hooks.release(id).catch(() => {});
     hooks.waitUntil?.(result);
@@ -65,6 +79,7 @@ export function startRdpRelay(hooks: SessionHooks): Response {
     stage = 'closed';
     clearTimeout(life);
     clearTimeout(phaseTimer);
+    clearCertTimer();
     clearInterval(monitor);
     abort.abort();
     creditWake?.();
@@ -97,6 +112,7 @@ export function startRdpRelay(hooks: SessionHooks): Response {
       if (!claimed) return finish(1008, 'ticket_rejected');
       if (abort.signal.aborted) return release(claimed.id);
       lease = claimed;
+      certPending = claimed.profile.fingerprint === null;
       transport = await openRdpTransport(claimed, abort.signal);
       if (abort.signal.aborted) return transport.close();
       if (!(await hooks.renew(claimed.id)) || abort.signal.aborted) return finish(1000, 'session_ended');
@@ -104,7 +120,24 @@ export function startRdpRelay(hooks: SessionHooks): Response {
       lastInputProgress = lastOutputProgress = lastActivity = lastRenew = Date.now();
       stage = 'ready';
       control({ type: 'ready', lease: claimed.id, desktopReport: true });
-      await transport.read(deliver);
+      let readError: unknown;
+      try {
+        await transport.read(deliver);
+      } catch (err) {
+        readError = err;
+      }
+      if (stage !== 'ready' || abort.signal.aborted) return;
+      if (!reportedDesktop && (certWait || (certPending && !certDone && outSent > 0))) {
+        upstreamClosed = true;
+        transport?.close();
+        transport = undefined;
+        control({ type: 'cert_hold' });
+        if (!certWait && !certTimer) {
+          certTimer = setTimeout(() => finish(1000, 'session_ended'), CERT_HOLD_GRACE_MS);
+        }
+        return;
+      }
+      if (readError) throw readError;
       finish(1000, 'session_ended');
     } catch (err) {
       finish(1011, err instanceof RdpDirectDnsError ? err.code : 'upstream_unavailable');
@@ -122,9 +155,31 @@ export function startRdpRelay(hooks: SessionHooks): Response {
           return;
         }
         if (stage !== 'ready') return finish(1008, 'invalid_frame');
+        if (msg?.type === 'cert_wait') {
+          if (reportedDesktop || certDone || !certPending) return finish(1008, 'invalid_frame');
+          if (!certWait) {
+            certWait = true;
+            clearCertTimer();
+            certTimer = setTimeout(() => finish(1000, 'cert_timeout'), CERT_WAIT_MS);
+          }
+          return;
+        }
+        if (msg?.type === 'cert_done') {
+          if (reportedDesktop || !certPending) return finish(1008, 'invalid_frame');
+          certPending = false;
+          certWait = false;
+          certDone = true;
+          clearCertTimer();
+          lastInputProgress = lastOutputProgress = lastActivity = Date.now();
+          if (upstreamClosed) finish(1000, 'cert_reconnect');
+          return;
+        }
         if (msg?.type === 'desktop_ready' && lease) {
           if (reportedDesktop) return;
           reportedDesktop = true;
+          certPending = false;
+          certWait = false;
+          clearCertTimer();
           // Metadata is best-effort and once per live lease. Never block the byte stream or count activity.
           const write = hooks.desktopReady(lease.id).then(ok => { if (ok) control({ type: 'desktop_recorded' }); }).catch(() => {});
           hooks.waitUntil?.(write);
@@ -150,6 +205,10 @@ export function startRdpRelay(hooks: SessionHooks): Response {
       }
       if (stage !== 'ready' || !(data instanceof ArrayBuffer) || data.byteLength === 0 || data.byteLength > RDP_FRAME || inSent - inAck + data.byteLength > RDP_WINDOW) {
         return finish(1008, 'invalid_frame');
+      }
+      if (upstreamClosed) {
+        if (certWait || certPending) return;
+        return finish(1011, 'upstream_write_failed');
       }
       if (inSent === inAck) lastInputProgress = Date.now();
       inSent += data.byteLength;
