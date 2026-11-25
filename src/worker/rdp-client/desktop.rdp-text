@@ -286,6 +286,7 @@ async function run() {
         negotiatedResize = true;
         // SDL enables its resizable window after processing the server capabilities.
         clearTimeout(resizeTimer); resizeTimer = setTimeout(() => layout(true), 550);
+        tellWorkspace('display-control');
       },
       onWindowsFirstFrame() {
         if (stopped || ready) return;

@@ -6056,12 +6056,17 @@ html[data-rdp-entry] #app-loading { display: none; }
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font: 12px/1.25 ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--text-muted);
 }
+.rdp-resolution {
+  flex: none; max-width: min(10rem, 33vw); min-height: 40px;
+  padding-inline-start: .35rem; border: 1px solid var(--border); border-radius: 5px;
+  background: var(--bg); color: var(--text); font-size: .8125rem;
+}
 .rdp-shell:fullscreen header { padding-block: 2px; }
 @media (pointer: fine) {
-  .rdp-shell:fullscreen header button { min-height: 28px; padding-block: 0; }
+  .rdp-shell:fullscreen header :is(button, select) { min-height: 28px; padding-block: 0; }
 }
-/* Fullscreen fits the entire Windows canvas edge-to-edge below the toolbar, without
-   resizing the running iframe or clipping any desktop content. */
+/* Fit the whole Windows canvas below the toolbar. Fullscreen itself does not resize
+   the running iframe; an explicit resolution selection may change its logical size. */
 .rdp-shell:fullscreen .rdp-viewport iframe {
   top: 0; left: 0; transform-origin: top left; transform: var(--rdp-fill-transform, none);
 }

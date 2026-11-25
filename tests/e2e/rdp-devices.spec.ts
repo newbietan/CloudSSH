@@ -310,10 +310,13 @@ test('the themed workspace stays in the current tab and a saved login is release
       document.documentElement.dataset.initialViewport = '/size:' + (stage.clientWidth & ~1) + 'x' + (stage.clientHeight & ~1);
       document.documentElement.dataset.size = args.find(a => a.startsWith('/size:'));
       document.documentElement.dataset.dynamic = String(args.includes('/dynamic-resolution'));
-      window.addEventListener('resize', () => { document.documentElement.dataset.requestedWidth = document.getElementById('stage').style.getPropertyValue('--desktop-width'); });
+      window.addEventListener('resize', () => {
+        document.documentElement.dataset.requestedWidth = stage.style.getPropertyValue('--desktop-width');
+        document.documentElement.dataset.requestedHeight = stage.style.getPropertyValue('--desktop-height');
+      });
       m.createRdpSocket(m.websocket.url);
       m._cloudssh_take_rdp_rtt = () => 83;
-      m.onWindowsDisplayControl(); m.onWindowsFirstFrame();
+      m.onWindowsFirstFrame();
     }; m.onRuntimeInitialized();` }));
   await page.route(`**/api/rdp/profiles/${id}/connect`, r => {
     if (r.request().method() !== 'POST') return r.fallback();
@@ -383,8 +386,10 @@ test('the themed workspace stays in the current tab and a saved login is release
   await expect(frame.locator('.status-row')).toHaveCount(0);
   expect(await frame.locator('html').evaluate(e => e.style.getPropertyValue('--accent').trim())).toBe(await page.locator('body').evaluate(e => getComputedStyle(e).getPropertyValue('--accent').trim()));
   await page.setViewportSize({ width: 960, height: 700 });
-  await expect(frame.locator('html')).toHaveAttribute('data-requested-width', '960px');
+  await expect.poll(() => stage.evaluate(e => e.clientWidth)).toBe(960);
   const toolbar = workspace.locator('header');
+  const resolution = toolbar.getByRole('combobox', { name: 'Full-screen desktop resolution', includeHidden: true });
+  await expect(resolution).toBeHidden();
   await expect(toolbar.getByRole('heading')).toHaveText('Remote Desktop · Office Windows');
   await expect(toolbar.getByRole('button')).toHaveText(['Full screen', 'Back']);
   await expect(frame.locator('header')).toHaveCount(0);
@@ -488,16 +493,45 @@ test('the themed workspace stays in the current tab and a saved login is release
         }
         await canvas.evaluate(e => { e.style.removeProperty('width'); e.style.removeProperty('height'); });
         await viewport.evaluate(e => { e.style.removeProperty('flex'); e.style.removeProperty('width'); e.style.removeProperty('height'); });
+        await expect(resolution).toBeHidden(); // No requests or selector until DISP is negotiated.
+        await expect(frame.locator('html')).not.toHaveAttribute('data-requested-width');
+        await stage.evaluate(() => (window as unknown as { Module: { onWindowsDisplayControl(): void } }).Module.onWindowsDisplayControl());
+        await expect(resolution).toHaveValue('local');
+        await expect(frame.locator('html')).toHaveAttribute('data-requested-width', '960px');
+        await resolution.selectOption('fit');
+        const setArea = (w: number, h: number) => viewport.evaluate((e, [width, height]) => {
+          e.style.flex = 'none'; e.style.width = `${width}px`; e.style.height = `${height}px`;
+        }, [w, h]);
+        for (const [w, h] of [[701, 401], [801, 451]]) {
+          await setArea(w, h);
+          await expect(frame.locator('html')).toHaveAttribute('data-requested-width', `${w - 1}px`);
+          await expect(frame.locator('html')).toHaveAttribute('data-requested-height', `${h - 1}px`);
+          await expectFullscreenFit(page, true);
+        }
+        await resolution.selectOption('720p');
+        await expect(frame.locator('html')).toHaveAttribute('data-requested-width', '1280px');
+        await expect(frame.locator('html')).toHaveAttribute('data-requested-height', '720px');
+        await expectFullscreenFit(page, true);
+        await resolution.selectOption('local');
+        await expect(frame.locator('html')).toHaveAttribute('data-requested-width', '960px');
+        await viewport.evaluate(e => { e.style.removeProperty('flex'); e.style.removeProperty('width'); e.style.removeProperty('height'); });
         await exit.click();
       } else {
+        await expect(resolution).toHaveValue('local');
+        await resolution.selectOption('1080p');
+        await expect(frame.locator('html')).toHaveAttribute('data-requested-width', '1920px');
+        await expect(frame.locator('html')).toHaveAttribute('data-requested-height', '1080px');
         await page.keyboard.press('Escape');
         // Headless engines need not bind a synthetic key to the OS fullscreen command.
         if (await inFullscreen()) await page.evaluate(() => document.fullscreenElement && document.exitFullscreen());
       }
       await expect(full).toBeVisible();
       await expect.poll(inFullscreen).toBe(false);
+      await expect(resolution).toBeHidden();
       await expect(canvas).toBeFocused();
-      expect(await frameSize()).toEqual(initialSize);
+      await expect.poll(frameSize).toEqual(initialSize);
+      await expect(frame.locator('html')).toHaveAttribute('data-requested-width', '960px');
+      await expect(full).toBeEnabled();
       await expect.poll(() => workspace.locator('iframe').evaluate(e => e.style.getPropertyValue('--rdp-fill-transform'))).toBe('');
     }
   } else await expect(full).toBeDisabled();
