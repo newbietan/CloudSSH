@@ -9,6 +9,7 @@ const MAX_RUNS = 30;
 const INDEX_WAIT_MS = 90_000;
 const RUN_WAIT_MS = 60 * 60_000;
 const POLL_MS = 20_000;
+const EVIDENCE_RETRY_MS = [2_000, 4_000, 8_000, 12_000];
 const ACTIVE_STATES = new Set(['queued', 'pending', 'requested', 'waiting', 'in_progress']);
 const REQUIRED_STEPS = [
   'Type check',
@@ -34,23 +35,43 @@ async function commitTree(root, sha, get) {
   return info.tree.sha;
 }
 
-async function verifyAttempt(root, run, get) {
-  if (run.status !== 'completed' || run.conclusion !== 'success') return null;
-  const attempt = await get(`${root}/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=20`);
+function inspectAttempt(attempt, run) {
+  if (attempt === null) return 'pending';
   if (!Array.isArray(attempt?.jobs)) throw new Error('Invalid GitHub workflow job response.');
   const job = attempt.jobs.find(item => item?.name === TEST_JOB && item.run_id === run.id &&
     item.run_attempt === run.run_attempt && item.head_sha === run.head_sha);
-  if (job?.status !== 'completed' || job.conclusion !== 'success' || !Array.isArray(job.steps)) return null;
-  const passed = new Set(job.steps.filter(step =>
-    step?.status === 'completed' && step.conclusion === 'success'
-  ).map(step => step.name));
-  return REQUIRED_STEPS.every(name => passed.has(name))
-    ? { runId: run.id, runAttempt: run.run_attempt, testCommit: run.head_sha }
-    : null;
+  if (!job || job.status !== 'completed' || job.conclusion == null) return 'pending';
+  if (job.conclusion !== 'success') return 'rejected';
+  if (job.steps == null) return 'pending';
+  if (!Array.isArray(job.steps)) throw new Error('Invalid GitHub workflow steps response.');
+
+  const required = job.steps.filter(step => REQUIRED_STEPS.includes(step?.name));
+  if (required.some(step => step.status === 'completed' && step.conclusion != null && step.conclusion !== 'success')) {
+    return 'rejected';
+  }
+  return REQUIRED_STEPS.every(name => required.some(step =>
+    step.name === name && step.status === 'completed' && step.conclusion === 'success'
+  )) ? 'verified' : 'pending';
+}
+
+async function verifyAttempt(root, run, { get, sleep, log }) {
+  if (run.status !== 'completed' || run.conclusion !== 'success') return null;
+  const path = `${root}/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=20`;
+  for (let index = 0; index <= EVIDENCE_RETRY_MS.length; index++) {
+    const evidence = inspectAttempt(await get(path, { allowMissing: true }), run);
+    if (evidence === 'verified') {
+      return { runId: run.id, runAttempt: run.run_attempt, testCommit: run.head_sha };
+    }
+    if (evidence === 'rejected' || index === EVIDENCE_RETRY_MS.length) return null;
+    // GitHub may mark the run successful before publishing all of this attempt's steps.
+    if (index === 0) log(`Waiting for complete step metadata for test run ${run.id}, attempt ${run.run_attempt}.`);
+    await sleep(EVIDENCE_RETRY_MS[index]);
+  }
+  return null;
 }
 
 /** Use GitHub-owned run/attempt metadata, not status labels, artifacts or executable files from test. */
-export async function findTestValidation({ repository, commit, tree, get }) {
+export async function findTestValidation({ repository, commit, tree, get, sleep = delay, log = console.log }) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository) || !isSha(commit) || !isSha(tree)) {
     throw new Error('Invalid repository or commit metadata.');
   }
@@ -68,7 +89,7 @@ export async function findTestValidation({ repository, commit, tree, get }) {
   for (const run of candidates) {
     if (!trees.has(run.head_sha)) trees.set(run.head_sha, await commitTree(root, run.head_sha, get));
     if (trees.get(run.head_sha) !== tree) continue;
-    const result = await verifyAttempt(root, run, get);
+    const result = await verifyAttempt(root, run, { get, sleep, log });
     if (result) return result;
   }
   return null;
@@ -109,8 +130,8 @@ export async function waitForTestPush({
   if (run.conclusion !== 'success') {
     throw new Error(`Matching test push did not succeed: ${url}`);
   }
-  const result = await verifyAttempt(root, run, get);
-  if (!result) throw new Error(`The matching test push did not pass every full validation and test deployment step: ${url}`);
+  const result = await verifyAttempt(root, run, { get, sleep, log });
+  if (!result) throw new Error(`Could not verify every full validation and test deployment step for the matching test push: ${url}`);
   return result;
 }
 
@@ -151,6 +172,9 @@ async function main() {
   const summary = `Verified tree \`${tree}\` against [full test push](${url}) (\`${result.testCommit}\`).`;
   console.log(summary);
   if (GITHUB_STEP_SUMMARY) appendFileSync(GITHUB_STEP_SUMMARY, `${summary}\n`);
+  if (process.env.GITHUB_OUTPUT) {
+    appendFileSync(process.env.GITHUB_OUTPUT, `tested_sha=${result.testCommit}\n`);
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

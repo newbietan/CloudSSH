@@ -13,7 +13,7 @@
 
 CloudSSH is a serverless Web SSH terminal built on Cloudflare Workers. Users connect to SSH servers through a browser-based terminal UI with integrated SFTP file management and AI Agent assistant.
 
-当前版本：`2.12.4`；根目录与 `frontend/package.json` 版本必须同步，更新说明见 `CHANGELOG.md`。
+当前版本：`2.12.5`；根目录与 `frontend/package.json` 版本必须同步，更新说明见 `CHANGELOG.md`。
 
 ## Architecture
 
@@ -496,13 +496,16 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 ## #201 站内 RDP（内置，仅登录用户可用）
 
 - 入口、生命周期与验收见 `docs/rdp.md`。Wrangler 的 `rdp-entry.ts` 重导出原 DO，显式导入有界 Data/Text 模块；不添加 `[assets]`，不削弱原生 `ctx.access`。旧 P0 路由返回 404，CI 不读取临时目标或启动 Docker；FreeRDP 由维护者显式重建后随代码提交，普通 SSH 页面不下载 WASM。随包提供客户端资源时，HTTPS 站点公开 RDP 能力，不再读取部署开关；RDP 路由仍须验证登录。
-- `rdp_profiles` 独立、每账户授权、只接公网 IPv4 + 可配置 TCP 端口（默认 3389，`src/tcp-port-policy.ts` 的受限端口与 SSH/MCP 共用）或已配置 Tunnel 主机名（域名不拼端口）；Access Service Token 加密且换域不继承。票据仅通过已认证同源 WebSocket 首帧提交，单用、绑定浏览器和修订。不要把 HTTP/WS 控制、密码或目标路由混入 Windows 字节流；新建或编辑时须有完整 Windows 登录，用户名默认 Administrator、域可选，密码按账户 AES-GCM 加密到 rdp_profile_options，与 SSH 一样不是独立 KMS。卡片列表只返回所属账户的展示用户名（不含域、密码或令牌），新写入独立加密显示名，旧记录首次读取按归属/修订回填密文；普通详情 GET 和 relay claim 不下发 Windows 登录明文。同源 POST login-identity 仅回填用户名/域，绝不回传密码。保持同目标/身份时编辑可留空保留密码，修改用户名/域/线路/主机/直连端口则须提交完整新凭据。旧缺凭据行仍列出但不可出票；点「补全配置」先编辑，不在桌面上提供输入或连接按钮。删除设备一并销毁保存的登录信息。仅卡片发起的同源 connect POST 显式带匹配修订才随 no-store 票据响应交付本浏览器。保持 NLA。WASM 在 TLS 握手后、CredSSP 前读取实际 Windows 叶证书 DER SHA-256；保存指纹时严格比对，不匹配直接关闭并显示新旧指纹。未保存时必须用户确认，由 `PUT /api/rdp/profiles/:id/trust` 带账号、档案修订和有效租约原子写入，成功前不得进入 NLA。TOFU 首连仍须用户独立核对；确认过期/关闭或写失败必须拒绝。不允许 CRUD 覆盖指纹，同线路、同主机、同端口编辑保留，换线路、主机或直连端口才重置。清理须有界，确认代表 WASM 已消费而不是已绘制。
-- Linux / Windows Server 平分既有「添加服务器」弹窗顶部的可用宽度，默认 Linux；隐藏字段禁用，不参与另一类型的提交。共用服务器卡片网格，不另挂新增入口；仅新增可切换，编辑不转换协议。`rdp_profiles` 不挂接 SSH、SFTP、MCP、Agent、分享或跳板。更新/删除撤销旧票据和租约，定期复核但不承诺强制注销 Windows。Windows 标签复用 SSH 规范化；卡片共用 SSH 主机行与复制：直连显示掩码 IP 和实际端口，复制完整 IP（不含端口），隧道仅显示/复制域名。卡片展示用户名与最近连接，按用户名可搜索。所有卡片先一起排序再分页；SSH SQLite UTC 时间与 RDP Unix 毫秒使用同一时间轴。仅桌面首帧触发一次已协商的 desktop_ready，Worker 按有效租约、归属和修订记服务端时间，不记出票、传输握手、认证失败或取消，不更新设备修订/编辑时间；换目标重置，旧设备不虚构历史。`/rdp/:id` 是隔离的同标签 CloudSSH 主壳，`/rdp/:id/client` 仅允许同源嵌入，沿用主题；不全站加 COEP：仅有客户端资源、HTTPS 首页（可带 lang）并核实当前登录时下发 COOP/COEP，保留原用户空间文档以直接打开/返回；登录、登出、OAuth/Turnstile 与特殊查询入口不使用隔离。含普通/账户变体的首页使用私有重验证、区分 ETag，不能用日期跨变体 304。云端凭据不能因加载书签、前进/返回或刷新而自动取回。初始分辨率取实际可用区域；只有收到 DISP 能力才动态协商，隔离顶层 /rdp/:id 已由 Worker 校验身份及归属，直接启动工作区，不再渲染首页加载卡或重复初始化配置/列表；仍须消费一次性打开意图，刷新、书签与历史恢复不重新出票，同文档返回时先关闭 socket、销毁运行帧，再通过 no-store 的 /api/auth/me 在有界时间内核实 id、完整账户 username 与 github_id；核验期间用模态层阻止访问旧列表，失败或换号进入正常初始化。同账户保留搜索、分页、SSH 标签与原列表，不重读首页配置。单行工具栏含延迟（保留中继/RDP 两个来源）与「全屏 / 返回」，首帧就绪说明不单占行，保持错误/证书提示可见。全屏只作用于父层容器，运行帧不获 fullscreen 权限；切换与系统 Esc 恢复期间固定运行帧 CSS 视口，不借全屏触发 SDL 或远端显示器重配。全屏以运行帧内真实 canvas 的逻辑边界为源，父层沿横纵轴分别缩放至工具栏下的全部可用区域；只去掉页面留白，不裁桌面，屏幕比例不同时允许本地拉伸。不能用覆盖裁剪或更改 iframe 逻辑尺寸来消除底边；退出恢复普通窗口，指针用浏览器原生逆变换映射，不另发输入。普通窗口尺寸稳定后仍按已协商的 DISP 调整。不通过改域/改路由规避安全拦截。连接就绪且页面可见时每 5 秒做一次 ID 匹配的 WS ping/pong，标为中继 RTT，不能刷新闲置或进入 RDP 流；RDP RTT 单独取 FreeRDP 收到的 MS-RDPBCGR Network Characteristics Result 平均 RTT，原生只保留一个样本，无近期数据时为横线，不伪造色值或键鼠到画面的时延。新生产链路需独立双线、Access 与弱网真机验收，不沿用 P0 作为发布结论。
+- `rdp_profiles` 独立、每账户授权、只接受公网 IPv4 / 全球可路由 IPv6 / 公网域名 + 可配置 TCP 端口（默认 3389，`src/tcp-port-policy.ts` 的受限端口与 SSH/MCP 共用）或已配置 Tunnel 主机名（域名不拼端口）；Access Service Token 加密且换域不继承。票据仅通过已认证同源 WebSocket 首帧提交，单用、绑定浏览器和修订。不要把 HTTP/WS 控制、密码或目标路由混入 Windows 字节流；新建或编辑时须有完整 Windows 登录，用户名默认 Administrator、域可选，密码按账户 AES-GCM 加密到 rdp_profile_options，与 SSH 一样不是独立 KMS。卡片列表只返回所属账户的展示用户名（不含域、密码或令牌），新写入独立加密显示名，旧记录首次读取按归属/修订回填密文；普通详情 GET 和 relay claim 不下发 Windows 登录明文。同源 POST login-identity 仅回填用户名/域，绝不回传密码。保持同目标/身份时编辑可留空保留密码，修改用户名/域/线路/主机/直连端口则须提交完整新凭据。旧缺凭据行仍列出但不可出票；点「补全配置」先编辑，不在桌面上提供输入或连接按钮。删除设备一并销毁保存的登录信息。仅卡片发起的同源 connect POST 显式带匹配修订才随 no-store 票据响应交付本浏览器。保持 NLA。WASM 在 TLS 握手后、CredSSP 前读取实际 Windows 叶证书 DER SHA-256；保存指纹时严格比对，不匹配直接关闭并显示新旧指纹。未保存时必须用户确认，由 `PUT /api/rdp/profiles/:id/trust` 带账号、档案修订和有效租约原子写入，成功前不得进入 NLA。TOFU 首连仍须用户独立核对；确认过期/关闭或写失败必须拒绝。不允许 CRUD 覆盖指纹，同线路、同主机、同端口编辑保留，换线路、主机或直连端口才重置。清理须有界，确认代表 WASM 已消费而不是已绘制。
+- Linux / Windows Server 平分既有「添加服务器」弹窗顶部的可用宽度，默认 Linux；隐藏字段禁用，不参与另一类型的提交。共用服务器卡片网格，不另挂新增入口；仅新增可切换，编辑不转换协议。`rdp_profiles` 不挂接 SSH、SFTP、MCP、Agent、分享或跳板。更新/删除撤销旧票据和租约，定期复核但不承诺强制注销 Windows。Windows 标签复用 SSH 规范化；卡片共用 SSH 主机行与复制：直连显示掩码 IP 或域名及实际端口，只复制完整主机（不含端口），隧道仅显示/复制域名。卡片展示用户名与最近连接，按用户名可搜索。所有卡片先一起排序再分页；SSH SQLite UTC 时间与 RDP Unix 毫秒使用同一时间轴。仅桌面首帧触发一次已协商的 desktop_ready，Worker 按有效租约、归属和修订记服务端时间，不记出票、传输握手、认证失败或取消，不更新设备修订/编辑时间；换目标重置，旧设备不虚构历史。`/rdp/:id` 是隔离的同标签 CloudSSH 主壳，`/rdp/:id/client` 仅允许同源嵌入，沿用主题；不全站加 COEP：仅有客户端资源、HTTPS 首页（可带 lang）并核实当前登录时下发 COOP/COEP，保留原用户空间文档以直接打开/返回；登录、登出、OAuth/Turnstile 与特殊查询入口不使用隔离。含普通/账户变体的首页使用私有重验证、区分 ETag，不能用日期跨变体 304。云端凭据不能因加载书签、前进/返回或刷新而自动取回。初始分辨率取实际可用区域；只有收到 DISP 能力才动态协商，隔离顶层 /rdp/:id 已由 Worker 校验身份及归属，直接启动工作区，不再渲染首页加载卡或重复初始化配置/列表；仍须消费一次性打开意图，刷新、书签与历史恢复不重新出票，同文档返回时先关闭 socket、销毁运行帧，再通过 no-store 的 /api/auth/me 在有界时间内核实 id、完整账户 username 与 github_id；核验期间用模态层阻止访问旧列表，失败或换号进入正常初始化。同账户保留搜索、分页、SSH 标签与原列表，不重读首页配置。单行工具栏含延迟（保留中继/RDP 两个来源）与「全屏 / 返回」，首帧就绪说明不单占行，保持错误/证书提示可见。全屏只作用于父层容器，运行帧不获 fullscreen 权限；切换与系统 Esc 恢复期间固定运行帧 CSS 视口，不借全屏触发 SDL 或远端显示器重配。全屏以运行帧内真实 canvas 的逻辑边界为源，父层沿横纵轴分别缩放至工具栏下的全部可用区域；只去掉页面留白，不裁桌面，屏幕比例不同时允许本地拉伸。不能用覆盖裁剪或更改 iframe 逻辑尺寸来消除底边；退出恢复普通窗口，指针用浏览器原生逆变换映射，不另发输入。普通窗口尺寸稳定后仍按已协商的 DISP 调整。不通过改域/改路由规避安全拦截。连接就绪且页面可见时每 5 秒做一次 ID 匹配的 WS ping/pong，标为中继 RTT，不能刷新闲置或进入 RDP 流；RDP RTT 单独取 FreeRDP 收到的 MS-RDPBCGR Network Characteristics Result 平均 RTT，原生只保留一个样本，无近期数据时为横线，不伪造色值或键鼠到画面的时延。新生产链路需独立双线、Access 与弱网真机验收，不沿用 P0 作为发布结论。
 
 - RDP 端口（#208）：直连用与 SSH 相同的主机／端口布局；Tunnel 禁用隐藏端口并由 cloudflared 配置。旧设备的 `rdp_profile_options` 幂等补列，默认为 3389；编辑省略端口保留原直连端口，不能静默切回 3389。改端口重置凭据继承、TOFU 和最近连接，撤销旧票据/租约。仅以 UserDB claim 的权威端口出站；旧中继不领取非默认端口租约，WASM 的 loopback 地址只是适配器占位。
+- RDP 双栈直连与 DDNS：`parseRdpDirectHost` 共享规范域名/字面量，保存稳定主机名，不保存 DNS 结果。不复用 SSH 的宽松查验：`rdp-direct-dns.ts` 在每次拨号并行读取固定 DoH 源的 A/AAAA，预算 2.5s、每响应 ≤12KiB / 64 条；解析失败、截断、无地址或任何非公网记录则拒绝。仅传已验证字面量给 `connect`，至多 3 个、IPv4 与 IPv6 交错尝试，所有失败或取消的 socket 及时清理。仅 TCP 建连前可回退；DNS 改址不改已存目标或 TOFU，任何证书不匹配仍在 CredSSP 前拒绝。私网目标仍走 Tunnel，不能放宽 Worker 直连；真实 IPv6/AAAA-only/双栈首帧须用部署后的 Worker 与授权 Windows 验收。
 - RDP 键鼠：打开工作区时不要默认聚焦「返回」。首帧与全屏切换后交还画布焦点，保留明确选择的返回按钮和证书弹窗；RDP 模态期间 SSH 的 Esc 返回快捷键不得改变底层视图。仅在就绪画布上取消右键菜单及前进/后退侧键的浏览器默认行为，不截断 SDL 指针事件、不屏蔽站点导航。FreeRDP 启动前在 MEMFS 写入 `SDL_KeyModMask: ["KMOD_NONE"]` 禁用本地快捷键，不用 JS 改写远端扫描码；更新随包客户端时用 `rdp-native-input.spec.ts` 验证其实际读取路径。
 
 ## SSH 兼容增强边界
+
+- SSH 保活（#211）：每个 SSH 会话最多一个排队或待答探针，在发送锁内取得实际出站 uint32 序号，写入前登记。标准 81/82 和长度恰为 5、被拒序号匹配的 `SSH_MSG_UNIMPLEMENTED` 均可确认本轮 RTT；无关/过期类型 3 不能确认。回复、写失败、超时或关闭只结算一次，写入完成不得复活已确认探针。保留 25s 周期、写成后 10s 等待、3 次失败和独立 60s 无入站保护；保活不是用户活动，不按设备型号放宽超时。
 
 - 远端剪贴板（#204）：xterm OSC 52 仅接受 `c` 目标的非空 UTF-8 文本（最多 64KiB，不含 TAB/CR/LF 之外的终端控制字符）。忽略查询、清空和其他选择目标，不读取或回传本机剪贴板。不另设应用授权：仅前台 Shell 就绪的非分享会话，在一次可信终端操作后的 2.5 秒内受理最多一个有效请求，先用浏览器原生 Clipboard API 写入。没有本地操作的输出不写入、不提示；原生写入失败才显示 30 秒有效的单次「复制」按钮，重试仍失败才报告权限错误。自动路径不回退 execCommand、不读剪贴板。只留一次在途与最新待写，切标签/退出终端/页面失焦/断线丢弃待决文本和手势，不持久化。
 - `frontend/package.json` 的 `bcrypt-pbkdf@1.0.2` 仅用于浏览器解锁，不是生产 SSH 协议库。支持 OpenSSH bcrypt + AES-CTR 与 PKCS#8 PBES2/PBKDF2 + AES-CBC；口令不上传、不持久化，解锁私钥仍进入 Worker 签名。匿名导入关闭凭据记忆；保存服务器必须单独同意按既有账号加密存储（非独立 KMS），编辑器代际变化后禁止迟到解锁结果提交。预算与许可见 `docs/ssh-compatibility.md`，不要无界执行用户提供的 KDF 参数。
@@ -546,6 +549,7 @@ pnpm run deploy:test     # 部署 test 环境
 - `test` 的 push、目标为 `test` 的 PR 与 `test` 手动执行负责完整验证：冻结依赖、类型检查、单元/集成测试、前端构建、Chromium 和移动 WebKit。仅 `test` push 复用已构建产物部署 `cloudssh-test`。
 - `main` 的 push、目标为 `main` 的 PR 与 `main` 手动执行只核验发布内容。`scripts/ci-verify-tested-release.mjs` 用只读 GitHub API 核对当前 checkout 的 Git tree（PR 用待合并树，不是 PR 头）与同一仓库最近 30 条成功 `test` push 的记录；只接受对应尝试的全量测试与测试环境部署均成功，允许 Squash SHA 不同但拒绝任何文件差异。同仓库 `test → main` 发布 PR 若尚无证明，且 PR 待合并树与 `test` 头相同，则等待该头的真实 `test` push：允许 90 秒索引延迟，整段等待最多 60 分钟；仍须同一尝试的全量步骤成功才放行。最终 `main` push / 手动核验不等待。无匹配或 API 失败时阻断生产；禁止用 PR、手动或缩减档位记录冒充。PR 和手动运行不注入 Cloudflare Secrets，不用 `pull_request_target` 执行未信任代码。
 - 仅 `main` push 且核验通过后冻结安装、构建并部署 `cloudssh`，不下载 Playwright、不重跑测试、不取用其他运行的产物执行部署。部署 Secrets 仅注入 Wrangler 步骤。
+- 生产部署成功后，`sync-released-test` 仅对官方 `main` push 运行，最多 3 分钟。只执行已部署的 `main` 代码，用仓库原生 `GITHUB_TOKEN`（独立 job 的 `contents: write` / `pull-requests: read`，无 PAT 或 Cloudflare Secrets）。必须唯一匹配已合并的同仓库 `test → main` PR、部署 SHA、发布证明的确切 test 头和同一 Git tree；写前复核两个远端分支，仅以已验证的原 test SHA 作 `--force-with-lease` 更新 `refs/heads/test`。新提交（即使同树）或删除均不覆盖，不以新租约重试。不触发新的 GitHub Actions push 构建；Cloudflare 独立 Git 集成不受此规则控制。普通开发推送的测试和部署规则不变。
 - Worker CI 仅取消同 PR 的过期校验；`test` 验证/部署、发布 PR 核验、`main` push 或手动核验、生产构建/部署的 job 上限分别为 30/65/5/10 分钟。SSH 互操作仍独立执行。
 - GitHub Pages（`github-pages.yml`）只在 `main` 的 `docs/index.html` 或 `docs/theme-editor/**` 变更时自动发布；发布包只含这两处，普通文档和 `test` push 不部署。可在 `main` 手动重新发布。Pages 同一目标串行，不取消进行中的部署。上传与部署共用含 `github.run_id` 和 `github.run_attempt` 的产物名；`scripts/ci-wait-pages-artifact.sh` 有界重试只读查询，核对上传 ID、名称、所属 run 和未过期状态后才部署，不自动重试部署写操作。重跑旧 run 不会载入新工作流。
 - Fork 仅按需运行上游 `main` 同步（`sync-upstream.yml`）：手动执行无需变量；定时同步默认关闭，仅 `AUTO_SYNC_UPSTREAM=true` 开启，删除或设为 `false` 即关闭
@@ -603,11 +607,4 @@ CLI: `npx wrangler secret set <SECRET_NAME>`
       - 正文必须说明本次版本的更新内容：包含提交列表、关联 Issue/PR、验证结果。
       - **Issue 默认保持 open**：发布 PR 正文不得使用 `Closes #xxx` / `Fixes #xxx` 等自动关闭关键字，除非用户明确要求关闭；关联 Issue 仅以「关联 Issue：#xxx」形式列出，由用户后续手动关闭（用户可能仍有反馈需要跟进）。
    3. **PR 的审核与合并由用户手动完成**：AI 创建 PR 后应等待用户审核并合并，不得自行合并或使用管理员旁路合并。
-   4. 用户合并 PR 到 `main` 后（生产环境自动部署），AI 执行以下命令同步本地分支：
-
-      ```bash
-      git fetch origin && git reset --hard origin/main && git push origin test --force
-      ```
-
-      - 该操作使本地 `test` 分支与已发布的 `main` 完全一致。
-      - 若此前还有未发布的 `test` 提交，会被强制覆盖，请确认已合并完成后再执行。
+   4. 用户合并后，生产部署与远端 `test` 对齐由上述 CI 分开完成；不要再从本地强推。需要更新本地时先 `git fetch origin`。仅在远端已对齐、当前分支是 `test`、工作区干净且本地 HEAD 仍是该发布 PR 原头时，可用 `git reset --keep origin/test` 对齐本地；已对齐则不操作。任何未发布提交或未提交修改都要保留。同步跳过或失败时看该 job 的 Summary/日志，不覆盖新工作，不放宽保护规则，也不因此重新部署生产。

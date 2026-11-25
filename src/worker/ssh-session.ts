@@ -38,6 +38,7 @@ import { ECDHKeyExchange } from '../ssh/kex-ecdh';
 import { KeyDerivation } from '../ssh/keys';
 import { nextSequenceNumber, SSHPacketBuilder, SSHPacketParser } from '../ssh/packet';
 import { SSHTransport } from '../ssh/transport';
+import { concat, encodeString, readUint32 } from '../ssh/utils';
 import type { Env } from '../types';
 import { normalizeResponseDiagnostics, responseErrorDebugMessage } from '../agent-response-diagnostics';
 import { DetachedSessionBuffer } from './ssh-detached-buffer';
@@ -89,7 +90,14 @@ import { detectAndPersistRemoteOS } from './os-detect';
 import { SFTPHandler } from './sftp-handler';
 
 const LOCAL_WINDOW_ADJUST_THRESHOLD = 512 * 1024;
-const KEEPALIVE_REQUEST_NAME = new TextEncoder().encode('keepalive@openssh.com');
+const KEEPALIVE_REQUEST = concat(
+  Uint8Array.of(SSH_MSG_GLOBAL_REQUEST),
+  encodeString('keepalive@openssh.com'),
+  Uint8Array.of(1) // want_reply
+);
+const KEEPALIVE_INTERVAL_MS = 25_000;
+const KEEPALIVE_REPLY_TIMEOUT_MS = 10_000;
+const MAX_KEEPALIVE_FAILURES = 3;
 const MAX_PARTIAL_AUTHENTICATION_STAGES = 8;
 // Socket 写超时（write deadline）：弱网 TCP 半开时 write() 可能永不 settle，
 // 超时即关闭底层 socket 会拒绝所有 pending 写，读循环随之走正常 close() 流程。
@@ -106,6 +114,12 @@ const MAX_SSH_VERSION_PREAMBLE_BYTES = 64 * 1024;
 const MAX_SSH_IDENTIFICATION_BYTES = 255; // RFC 4253 §4.2, including CRLF.
 
 type ActiveAuthMethod = 'none' | 'password' | 'publickey' | 'keyboard-interactive';
+
+interface KeepaliveProbe {
+  sequence: number | null; // null while queued: no reply can belong to this probe yet.
+  sentAt: number;
+  timeout?: ReturnType<typeof setTimeout>;
+}
 
 /** Browser sockets and headless operation sinks share only lifecycle notifications. */
 export type SSHSessionClient = Pick<WebSocket, 'send' | 'close' | 'readyState'>;
@@ -223,11 +237,8 @@ export class SSHSession {
   private negotiatedMacS2C: string = 'none';
 
   private keepaliveInterval: ReturnType<typeof setInterval> | null = null;
-  private keepaliveFailCount: number = 0;
-  private readonly maxKeepaliveFails: number = 3;
-  private keepalivePending: boolean = false;
-  private keepaliveTimeout: ReturnType<typeof setTimeout> | null = null;
-  private keepaliveSentAt: number | null = null;
+  private keepaliveFailCount = 0;
+  private keepaliveProbe: KeepaliveProbe | null = null;
   private colo: string = 'UNKNOWN';
   private readonly onRttUpdated?: (latency: number, colo: string) => void;
   private lastPacketAt: number = Date.now();
@@ -767,30 +778,27 @@ export class SSHSession {
       this.close(true);
       return;
     }
-    if (
-      msgType === SSH_MSG_IGNORE ||
-      msgType === SSH_MSG_DEBUG ||
-      msgType === SSH_MSG_UNIMPLEMENTED
-    ) {
-      return;
-    }
+    if (msgType === SSH_MSG_IGNORE || msgType === SSH_MSG_DEBUG) return;
     if (msgType === SSH_MSG_GLOBAL_REQUEST) {
       await this.handleGlobalRequest(packet.payload);
       return;
     }
-    if (msgType === SSH_MSG_REQUEST_SUCCESS || msgType === SSH_MSG_REQUEST_FAILURE) {
-      // Response to our global request (e.g., keepalive)
-      if (this.keepalivePending && this.keepaliveSentAt !== null) {
-        const latency = Math.round(performance.now() - this.keepaliveSentAt);
-        this.keepaliveSentAt = null;
-        this.emitKeepaliveRtt(latency);
+    if (
+      msgType === SSH_MSG_REQUEST_SUCCESS ||
+      msgType === SSH_MSG_REQUEST_FAILURE ||
+      msgType === SSH_MSG_UNIMPLEMENTED
+    ) {
+      const probe = this.keepaliveProbe;
+      if (!probe || probe.sequence === null) return;
+      // Keepalive is our only outbound global request expecting a reply (81/82).
+      // RouterOS may reject the packet itself instead (RFC 4253 §11.4).
+      if (msgType === SSH_MSG_UNIMPLEMENTED) {
+        if (packet.payload.length !== 5 || readUint32(packet.payload, 1) !== probe.sequence) return;
+        this.sendDebug(() => `Keepalive UNIMPLEMENTED matched seq=${probe.sequence}`);
       }
-      this.keepalivePending = false;
+      this.clearKeepaliveProbe();
       this.keepaliveFailCount = 0;
-      if (this.keepaliveTimeout) {
-        clearTimeout(this.keepaliveTimeout);
-        this.keepaliveTimeout = null;
-      }
+      this.emitKeepaliveRtt(Math.round(performance.now() - probe.sentAt));
       return;
     }
 
@@ -868,59 +876,53 @@ export class SSHSession {
   }
 
   private startKeepalive(): void {
-    this.keepaliveFailCount = 0;
-    this.keepalivePending = false;
+    if (this.closed || this.keepaliveInterval !== null) return;
     this.startIdleWatchdog();
-    this.keepaliveInterval = setInterval(async () => {
-      if (this.keepalivePending) {
-        this.keepaliveFailCount++;
-        this.sendDebug(`Keepalive timeout (${this.keepaliveFailCount}/${this.maxKeepaliveFails})`);
-        if (this.keepaliveFailCount >= this.maxKeepaliveFails) {
-          this.sendError('SSH 连接超时，保活失败', 'keepalive_timeout');
-          this.close();
-          return;
+    this.keepaliveInterval = setInterval(() => void this.sendKeepalive(), KEEPALIVE_INTERVAL_MS);
+  }
+
+  private async sendKeepalive(): Promise<void> {
+    if (this.closed || this.keepaliveProbe) return;
+    const probe: KeepaliveProbe = { sequence: null, sentAt: 0 };
+    this.keepaliveProbe = probe;
+    try {
+      await this.sendEncryptedPacket(
+        () => this.buildEncryptedPacket(KEEPALIVE_REQUEST),
+        (sequence) => {
+          probe.sequence = sequence;
+          probe.sentAt = performance.now();
         }
-      }
+      );
+    } catch {
+      this.failKeepalive(probe, 'send failed');
+      return;
+    }
+    // A fast reply (or close) may already have consumed this probe during write().
+    if (this.keepaliveProbe === probe) {
+      probe.timeout = setTimeout(
+        () => this.failKeepalive(probe, 'response timeout'),
+        KEEPALIVE_REPLY_TIMEOUT_MS
+      );
+    }
+  }
 
-      try {
-        const payload = new Uint8Array(1 + 4 + KEEPALIVE_REQUEST_NAME.length + 1);
-        payload[0] = SSH_MSG_GLOBAL_REQUEST;
-        new DataView(payload.buffer).setUint32(1, KEEPALIVE_REQUEST_NAME.length, false);
-        payload.set(KEEPALIVE_REQUEST_NAME, 5);
-        payload[5 + KEEPALIVE_REQUEST_NAME.length] = 1; // want_reply = true
+  private clearKeepaliveProbe(): void {
+    const probe = this.keepaliveProbe;
+    if (probe?.timeout !== undefined) clearTimeout(probe.timeout);
+    this.keepaliveProbe = null;
+  }
 
-        this.keepaliveSentAt = performance.now();
-        await this.sendEncrypted(payload);
-        this.keepalivePending = true;
-
-        if (this.keepaliveTimeout) clearTimeout(this.keepaliveTimeout);
-        this.keepaliveTimeout = setTimeout(() => {
-          if (this.keepalivePending) {
-            this.keepaliveFailCount++;
-            this.sendDebug(
-              `Keepalive response timeout (${this.keepaliveFailCount}/${this.maxKeepaliveFails})`
-            );
-            this.keepalivePending = false;
-            this.keepaliveSentAt = null;
-            if (this.keepaliveFailCount >= this.maxKeepaliveFails) {
-              this.sendError('SSH 连接超时，保活失败', 'keepalive_timeout');
-              this.close();
-            }
-          }
-        }, 10000);
-      } catch (e) {
-        this.keepaliveFailCount++;
-        this.keepalivePending = false;
-        this.keepaliveSentAt = null;
-        this.sendDebug(
-          `Keepalive send failed (${this.keepaliveFailCount}/${this.maxKeepaliveFails}): ${e instanceof Error ? e.message : String(e)}`
-        );
-        if (this.keepaliveFailCount >= this.maxKeepaliveFails) {
-          this.sendError('SSH 连接超时，保活失败', 'keepalive_timeout');
-          this.close();
-        }
-      }
-    }, 25000);
+  private failKeepalive(probe: KeepaliveProbe, reason: 'response timeout' | 'send failed'): void {
+    if (this.keepaliveProbe !== probe) return;
+    this.clearKeepaliveProbe();
+    this.keepaliveFailCount++;
+    this.sendDebug(
+      () => `Keepalive ${reason} (${this.keepaliveFailCount}/${MAX_KEEPALIVE_FAILURES})`
+    );
+    if (this.keepaliveFailCount >= MAX_KEEPALIVE_FAILURES) {
+      this.sendError('SSH 连接超时，保活失败', 'keepalive_timeout');
+      this.close();
+    }
   }
 
   /**
@@ -2740,25 +2742,26 @@ export class SSHSession {
     await this.sendEncryptedPacket(() => this.buildEncryptedChannelDataPacket(chunk, channel));
   }
 
-  private async sendEncryptedPacket(buildPacket: () => Promise<Uint8Array>): Promise<void> {
+  private async sendEncryptedPacket(
+    buildPacket: () => Promise<Uint8Array>,
+    beforeWrite?: (sequence: number) => void
+  ): Promise<void> {
     this.sendMutexPendingCount++;
     const operation = this.sendMutex.then(async () => {
+      if (this.closed) throw new Error('SSH session closed');
+      // Capture the builder's actual uint32 sequence under the shared send lock,
+      // not at enqueue time or after write() (other packets / fast replies).
+      const sequence = this.seqNumSend;
       const encrypted = await buildPacket();
+      if (this.closed) throw new Error('SSH session closed');
+      beforeWrite?.(sequence);
       await this.writeSocket(encrypted);
     });
 
-    this.sendMutex = operation.then(
-      () => {
-        if (--this.sendMutexPendingCount === 0) {
-          this.sendMutex = Promise.resolve();
-        }
-      },
-      () => {
-        if (--this.sendMutexPendingCount === 0) {
-          this.sendMutex = Promise.resolve();
-        }
-      }
-    );
+    const release = () => {
+      if (--this.sendMutexPendingCount === 0) this.sendMutex = Promise.resolve();
+    };
+    this.sendMutex = operation.then(release, release);
     await operation;
   }
 
@@ -3498,12 +3501,7 @@ export class SSHSession {
       clearInterval(this.keepaliveInterval);
       this.keepaliveInterval = null;
     }
-    if (this.keepaliveTimeout) {
-      clearTimeout(this.keepaliveTimeout);
-      this.keepaliveTimeout = null;
-    }
-    this.keepalivePending = false;
-    this.keepaliveSentAt = null;
+    this.clearKeepaliveProbe();
     if (this.idleWatchdogInterval) {
       clearInterval(this.idleWatchdogInterval);
       this.idleWatchdogInterval = null;
@@ -3552,8 +3550,8 @@ export class SSHSession {
     this.channelDataQueueBytes = 0;
     this.isRekeying = false;
     this.rekeyWaiters = [];
+    // In-flight and queued writes release their own slots as they settle.
     this.sendMutex = Promise.resolve();
-    this.sendMutexPendingCount = 0;
     try {
       this.socketWriter?.releaseLock();
     } catch (e) {

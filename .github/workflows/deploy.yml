@@ -114,6 +114,8 @@ jobs:
     permissions:
       actions: read
       contents: read
+    outputs:
+      tested_sha: ${{ steps.proof.outputs.tested_sha }}
     steps:
       # On PRs this is the prospective merge tree, not just the PR's head.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
@@ -123,6 +125,7 @@ jobs:
         with:
           node-version: "22"
       - name: Check for a matching successful full test push
+        id: proof
         env:
           GH_TOKEN: ${{ github.token }}
           # Only a release PR from our own test branch may wait on a matching push.
@@ -157,3 +160,29 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm exec wrangler deploy
+
+  sync-released-test:
+    name: Align test with deployed main
+    needs: [verify-production, deploy-production]
+    if: >-
+      github.repository_owner == 'newbietan' && github.repository == 'newbietan/CloudSSH' &&
+      github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      # Only execute the deployed main commit; never check out the PR head or test.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: "22"
+      - name: Sync only the merged and verified test head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TESTED_SHA: ${{ needs.verify-production.outputs.tested_sha }}
+        run: node scripts/ci-sync-released-test.mjs

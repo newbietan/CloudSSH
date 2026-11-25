@@ -1,4 +1,5 @@
 import { RDP_FRAME, RDP_WINDOW, RDP_WS_PROTOCOL } from '../rdp-schema';
+import { RdpDirectDnsError } from './rdp-direct-dns';
 import type { RdpLease } from './rdp-store';
 import { openRdpTransport, type RdpTransport } from './rdp-transport';
 
@@ -105,7 +106,9 @@ export function startRdpRelay(hooks: SessionHooks): Response {
       control({ type: 'ready', lease: claimed.id, desktopReport: true });
       await transport.read(deliver);
       finish(1000, 'session_ended');
-    } catch { finish(1011, 'upstream_unavailable'); }
+    } catch (err) {
+      finish(1011, err instanceof RdpDirectDnsError ? err.code : 'upstream_unavailable');
+    }
   }
 
   ws.addEventListener('message', ({ data }) => {

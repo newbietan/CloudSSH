@@ -1,4 +1,4 @@
-import { RDP_CLIENT_REVISION, RDP_DEFAULT_PORT, isRdpId, isRdpPort, parseRdpProfile, type RdpCard, type RdpProfile } from '../../src/rdp-schema';
+import { RDP_CLIENT_REVISION, RDP_DEFAULT_PORT, isRdpId, isRdpPort, isRdpTunnelHost, parseRdpDirectHost, parseRdpProfile, type RdpCard, type RdpProfile } from '../../src/rdp-schema';
 import { normalizeServerTags } from '../../src/server-tags';
 import { localizedElement, t, type TranslationKey } from './i18n';
 import { parsePort } from './port';
@@ -61,7 +61,7 @@ export class RdpManager {
     authentication.className = 'server-settings-section';
     const endpoint = document.createElement('div');
     endpoint.className = 'ssh-endpoint-fields';
-    [this.host, this.hostField] = this.field('rdp-host', 253, 'rdp.host', 'text', '>');
+    [this.host, this.hostField] = this.field('rdp-host', 254, 'rdp.host', 'text', '>');
     [this.port, this.portField] = this.field('rdp-port', null, 'auth.port', 'number', ':');
     this.hostField.className = 'ssh-host-field';
     this.portField.className = 'ssh-port-field';
@@ -199,8 +199,18 @@ export class RdpManager {
   }
 
   private sameTarget(row: RdpProfile): boolean {
-    return row.host === this.host.value.trim().toLowerCase() && row.route === this.transport.value &&
-      (row.route === 'tunnel' || parsePort(this.port.value) === (row.port ?? RDP_DEFAULT_PORT));
+    if (row.route !== this.transport.value) return false;
+    const host = this.host.value;
+    return row.route === 'tunnel' ? row.host === host.trim().toLowerCase() :
+      row.host === parseRdpDirectHost(host)?.host && parsePort(this.port.value) === (row.port ?? RDP_DEFAULT_PORT);
+  }
+
+  private hostError(): TranslationKey | null {
+    const host = this.host.value;
+    if (this.transport.value === 'tunnel') {
+      return isRdpTunnelHost(host.trim().toLowerCase()) ? null : 'rdp.invalidTunnelHost';
+    }
+    return parseRdpDirectHost(host) ? null : 'rdp.invalidDirectHost';
   }
 
   private canKeepPassword(): boolean {
@@ -209,6 +219,8 @@ export class RdpManager {
   }
 
   private updateRequirements(): void {
+    const hostError = this.host.value ? this.hostError() : null;
+    this.host.setCustomValidity(hostError ? t(hostError) : '');
     const port = parsePort(this.port.value);
     this.port.setCustomValidity(this.port.disabled || isRdpPort(port) ? '' : t(port === null ? 'auth.validationPort' : 'rdp.restrictedPort'));
     this.password.required = !this.canKeepPassword();
@@ -224,7 +236,7 @@ export class RdpManager {
     this.hostField.classList.toggle('ssh-host-field-wide', tunnel);
     this.updateRequirements();
     this.access.hidden = this.access.disabled = !tunnel;
-    this.host.placeholder = this.access.hidden ? '203.0.113.10' : 'rdp.example.com';
+    this.host.placeholder = tunnel ? 'tunnel.example.com' : 'rdp.example.com';
     this.id.disabled = this.secret.disabled = this.clear.checked;
   }
 
@@ -255,6 +267,8 @@ export class RdpManager {
       input.accessId = this.clear.checked ? '' : this.id.value;
       input.accessSecret = this.clear.checked ? '' : this.secret.value;
     }
+    const hostError = this.hostError();
+    if (hostError) throw new Error(t(hostError));
     if (this.loadingIdentity) throw new Error(t('rdp.loadingIdentity'));
     if (!this.canKeepPassword() || this.password.value) {
       input.login = { username: this.username.value.trim(), domain: this.domain.value.trim(), password: this.password.value };

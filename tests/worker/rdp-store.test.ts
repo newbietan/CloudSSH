@@ -30,13 +30,28 @@ function fixture(database = new DatabaseSync(':memory:')) {
 
 describe('RDP profiles and connection leases', () => {
   it('rejects private/literal quirks and non-RDP target or secret fields', () => {
-    for (const host of ['127.0.0.1', '0.0.0.0', 'fd00::1', '192.168.1.1', '198.51.100.3', '10.0.0.8', '93.018.215.14', 'www.example.com']) {
+    for (const host of ['127.0.0.1', '0.0.0.0', 'fd00::1', '192.168.1.1', '198.51.100.3', '10.0.0.8', '93.018.215.14', 'www.example.invalid']) {
       expect(parseRdpProfile({ ...target, host })).toBeNull();
     }
     expect(parseRdpProfile(target)).toEqual(target);
     expect(parseRdpProfile({ ...target, fingerprint: certificate })).toBeNull();
     expect(parseRdpProfile({ ...target, password: 'not allowed' })).toBeNull();
     expect(parseRdpProfile({ ...target, route: 'tunnel', host: 'a.test/foo' })).toBeNull();
+  });
+
+  it('normalizes public dual-stack endpoints but rejects ambiguous addresses and URLs', () => {
+    for (const [host, canonical] of [
+      [' RDP.Example.COM. ', 'rdp.example.com'], ['Bücher.Example.COM', 'xn--bcher-kva.example.com'],
+      ['[2600:0001:ABCD:0000:0000:0000:0000:0001]', '2600:1:abcd::1'], ['2600:1:abcd::1', '2600:1:abcd::1'],
+    ]) expect(parseRdpProfile({ ...target, host, port: 53389 })).toMatchObject({ host: canonical, port: 53389 });
+    for (const host of ['https://rdp.example.com', 'rdp.example.com:3389', 'u@rdp.example.com', 'rdp.example.com/a',
+      'rdp%2eexample.com', 'rdp..example.com', 'rdp.example.com..', 'rdp.example.com\\foo', 'rdp.local', 'win.home.arpa',
+      '127.1', '2130706433', '0x7f.0x0.0x0.0x1', '8.8.8.8.', '[2600:1::1]:3389', '2600:1::1%eth0',
+      '::1', '::ffff:8.8.8.8', '64:ff9b::808:808', 'fec0::1', 'ff02::1', '2001:1ff::1', '2001:db8::1', '3fff:fff::1']) {
+      expect(parseRdpProfile({ ...target, host })).toBeNull();
+    }
+    expect(parseRdpProfile({ ...target, route: 'tunnel', host: '2600:1::1' })).toBeNull();
+    expect(parseRdpProfile({ ...target, host: 'rdp.example.com', accessId: 'id', accessSecret: 'secret' })).toBeNull();
   });
 
   it('only accepts numeric, permitted TCP ports on public direct endpoints', () => {
@@ -110,6 +125,35 @@ describe('RDP profiles and connection leases', () => {
       expect((await request(`${profile}/trust`, 'PUT', payload)).status).toBe(409);
       const hostEdit = await request(profile, 'PUT', { ...target, host: '8.8.8.8', revision: revision + 1 });
       expect(await hostEdit.json()).toMatchObject({ fingerprint: null });
+    } finally { database.close(); }
+  });
+
+  it('binds credentials and trust to the canonical domain, not an address selected by the relay', async () => {
+    const { request, database } = fixture();
+    try {
+      const host = 'rdp.example.com';
+      const saved = await request('profiles', 'POST', { ...target, host: 'RDP.Example.COM.' });
+      expect(saved.status).toBe(201);
+      const { id, revision } = await saved.json() as { id: string; revision: number };
+      const path = `profiles/${id}`;
+      const issue = async (savedRevision: number) => (await (await request('ticket', 'POST', { profile: id, binding: bind, savedRevision })).json()) as { ticket: string };
+      const claim = async (ticket: string) => (await (await request('claim', 'POST', { ticket, binding: bind })).json()) as { id: string; profile: Record<string, unknown> };
+      const opened = await claim((await issue(revision)).ticket);
+      expect(opened.profile).toMatchObject({ host, port: 3389, fingerprint: null });
+      expect((await request(`${path}/trust`, 'PUT', { revision, lease: opened.id, fingerprint: certificate })).status).toBe(200);
+      expect((await request('desktop-ready', 'POST', { lease: opened.id })).status).toBe(200);
+      const relabel = await request(path, 'PUT', { ...endpoint, revision, host: ' RDP.Example.COM. ', name: 'Renamed' });
+      expect(await relabel.json()).toMatchObject({ host, fingerprint: certificate, hasLogin: true });
+      const reopened = await claim((await issue(revision + 1)).ticket);
+      expect(reopened.profile).toMatchObject({ host, port: 3389, fingerprint: certificate });
+      expect(await (await request('profiles', 'GET')).json()).toMatchObject({ profiles: [{ last_connected_at: expect.any(Number) }] });
+      const newHost = '2600:1:abcd::1';
+      const replacement = { ...endpoint, revision: revision + 1, host: `[${newHost}]` };
+      expect((await request(path, 'PUT', replacement)).status).toBe(400);
+      const switched = await request(path, 'PUT', { ...replacement, login: target.login });
+      expect(await switched.json()).toMatchObject({ host: newHost, fingerprint: null });
+      expect(await (await request('profiles', 'GET')).json()).toMatchObject({ profiles: [{ last_connected_at: null }] });
+      expect((await request('renew', 'POST', { lease: reopened.id })).status).toBe(404);
     } finally { database.close(); }
   });
 

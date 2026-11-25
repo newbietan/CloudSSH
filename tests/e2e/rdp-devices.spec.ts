@@ -126,7 +126,7 @@ test('Windows uses the shared add-server dialog and the main server grid', async
   await expect(modal.locator('#server-name')).toHaveValue('SSH draft');
   await windows.click();
   await expect(modal.getByLabel('Device name')).toHaveValue('Windows workstation');
-  await modal.getByLabel('IPv4 address or tunnel hostname').fill('93.184.215.14');
+  await modal.getByLabel('IP address or hostname').fill('93.184.215.14');
   await expect(modal.getByText('On your first connection, check and confirm the Windows certificate.')).toHaveCount(0);
   await modal.locator('#server-rdp-tags').fill('Office, Office, Windows');
   await expect(modal.getByLabel(/fingerprint/i)).toHaveCount(0);
@@ -213,6 +213,69 @@ test('Windows uses the shared add-server dialog and the main server grid', async
   expect(saved).toMatchObject({ route: 'tunnel', host: 'rdp.example.com' });
   expect(saved).not.toHaveProperty('port');
 });
+
+for (const { input, host, alternate, badge, copyLabel } of [
+  { input: ' RDP.Example.COM. ', host: 'rdp.example.com', alternate: 'Rdp.Example.Com', badge: 'rdp.example.com:53389', copyLabel: 'Click to copy full hostname' },
+  { input: '[2600:0001:ABCD::1]', host: '2600:1:abcd::1', alternate: '2600:1:ABCD:0:0:0:0:1', badge: '[2600:1:…]:53389', copyLabel: 'Click to copy full IP address' },
+]) {
+  test(`Windows supports a canonical public direct endpoint: ${host}`, async ({ page }) => {
+    await page.route('**/api/config', r => r.request().method() === 'GET' ? r.fulfill({ json: {
+      turnstileEnabled: false, githubAuthEnabled: true, githubAuthRequired: true, authMode: 'github', rdpEnabled: true,
+    } }) : r.fallback());
+    await page.route('**/api/auth/me', r => r.request().method() === 'GET' ? r.fulfill({ json: {
+      id: 1, github_id: 42, username: 'tester', avatar_url: null,
+    } }) : r.fallback());
+    await page.route('**/api/servers', r => r.request().method() === 'GET' ? r.fulfill({ json: [] }) : r.fallback());
+    let saved: Record<string, unknown> | undefined;
+    let profiles: Record<string, unknown>[] = [];
+    await page.route('**/api/rdp/profiles', r => {
+      if (r.request().method() === 'GET') return r.fulfill({ json: { profiles } });
+      if (r.request().method() !== 'POST') return r.fallback();
+      saved = r.request().postDataJSON();
+      const { login: _login, ...metadata } = saved!;
+      profiles = [{ ...metadata, id, revision: 1, hasAccessToken: false, hasLogin: true }];
+      return r.fulfill({ status: 201, json: profiles[0] });
+    });
+    await page.route(`**/api/rdp/profiles/${id}/login-identity`, r => r.request().method() === 'POST'
+      ? r.fulfill({ json: { revision: 1, username: 'Administrator', domain: '' } }) : r.fallback());
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (text: string) => { document.body.dataset.copiedHost = text; } } });
+    });
+    await page.goto('/?lang=en-US');
+    await page.locator('#add-server-btn').click();
+    const modal = page.locator('#server-modal');
+    await modal.getByRole('button', { name: 'Windows Server' }).click();
+    const address = modal.getByRole('textbox', { name: 'IP address or hostname' });
+    await modal.getByLabel('Device name').fill('Dual-stack Windows');
+    const password = modal.locator('#server-rdp-password');
+    await password.fill('synthetic');
+    await modal.getByRole('spinbutton', { name: 'Port', exact: true }).fill('53389');
+    const submit = modal.locator('#server-submit-btn');
+    for (const invalid of ['127.0.0.1', 'fd00::1', 'rdp.example.com:3389']) {
+      await address.fill(invalid);
+      expect(await address.evaluate((el: HTMLInputElement) => el.validationMessage)).toContain('Enter a public IPv4 address');
+      await submit.click();
+      expect(saved).toBeUndefined();
+    }
+    await address.fill(input);
+    await submit.click();
+    const card = page.locator(`#rdp-card-${id}`);
+    const copy = card.getByRole('button', { name: copyLabel });
+    await expect(copy).toHaveText(badge);
+    expect(saved).toMatchObject({ host, port: 53389, route: 'direct' });
+    await copy.click();
+    await expect(page.locator('body')).toHaveAttribute('data-copied-host', host);
+    await card.getByRole('button', { name: 'Edit device' }).click();
+    await expect(address).toHaveValue(host);
+    await expect(modal.locator('#server-rdp-user')).toHaveValue('Administrator');
+    await address.fill(alternate);
+    await expect(submit).toBeDisabled();
+    await expect(password).not.toHaveAttribute('required');
+    await address.fill('another.example.net');
+    await expect(submit).toBeEnabled();
+    await expect(password).toHaveAttribute('required');
+  });
+}
 
 test('the themed workspace stays in the current tab and a saved login is released only on connect', async ({ page, context, browserName }) => {
   const profile = { id, name: 'Office Windows', revision: 4, tags: [], host: '8.8.8.8', route: 'direct', hasLogin: true, fingerprint: 'ab'.repeat(32) };

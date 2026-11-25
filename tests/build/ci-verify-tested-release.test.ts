@@ -39,7 +39,7 @@ function api(replies: Record<string, unknown>) {
   });
 }
 const check = (get: ReturnType<typeof api>, commit = candidate) =>
-  findTestValidation({ repository, commit, tree: testedTree, get });
+  findTestValidation({ repository, commit, tree: testedTree, get, sleep: vi.fn(), log: vi.fn() });
 
 describe('production promotion from a full test push', () => {
   it('accepts the same Git tree after a squash changed the SHA, including a successful rerun', async () => {
@@ -192,7 +192,7 @@ describe('wait for a release PR’s matching test push', () => {
     await expect(poll.run()).resolves.toEqual({ runId: 42, runAttempt: 2, testCommit: testSha });
     expect(poll.sleep).toHaveBeenCalledTimes(3);
     expect(poll.log).toHaveBeenCalledWith(expect.stringContaining('/actions/runs/42'));
-    expect(poll.get).toHaveBeenLastCalledWith(jobsPath(42, 2));
+    expect(poll.get).toHaveBeenLastCalledWith(jobsPath(42, 2), { allowMissing: true });
   });
 
   it('does not wait if the prospective merge tree differs from the test head', async () => {
@@ -221,10 +221,33 @@ describe('wait for a release PR’s matching test push', () => {
     expect(poll.sleep).toHaveBeenCalledTimes(1);
   });
 
-  it('does not equate a successful reduced-profile run with proof of full validation', async () => {
-    const skipped = job.steps.map(step => step.name === fullE2E ? { ...step, conclusion: 'skipped' } : step);
-    const poll = waiter({ [matchingRuns]: { workflow_runs: [run] }, [jobsPath(42, 2)]: { jobs: [{ ...job, steps: skipped }] } });
-    await expect(poll.run()).rejects.toThrow('did not pass every full validation');
+  it('rereads the same successful attempt until delayed job and step metadata become visible', async () => {
+    const partial = { ...job, steps: job.steps.filter(step => step.name !== testDeployment) };
+    const jobs = vi.fn()
+      .mockReturnValueOnce(null) // 404 before the attempt is visible through the jobs API
+      .mockReturnValueOnce({ jobs: [{ ...job, run_attempt: 1 }] })
+      .mockReturnValueOnce({ jobs: [partial] })
+      .mockReturnValueOnce({ jobs: [job] });
+    const poll = waiter({ [matchingRuns]: { workflow_runs: [run] }, [jobsPath(42, 2)]: jobs });
+    await expect(poll.run()).resolves.toEqual({ runId: 42, runAttempt: 2, testCommit: testSha });
+    expect(poll.sleep.mock.calls).toEqual([[2_000], [4_000], [8_000]]);
+    expect(poll.get.mock.calls.filter(([path]) => path.includes('/jobs'))).toEqual(
+      Array.from({ length: 4 }, () => [jobsPath(42, 2), { allowMissing: true }])
+    );
+  });
+
+  it('does not treat absent test-deployment evidence as successful after retries', async () => {
+    const jobs = vi.fn(() => ({ jobs: [{ ...job, steps: job.steps.filter(step => step.name !== testDeployment) }] }));
+    const poll = waiter({ [matchingRuns]: { workflow_runs: [run] }, [jobsPath(42, 2)]: jobs });
+    await expect(poll.run()).rejects.toThrow('Could not verify every full validation');
+    expect(jobs).toHaveBeenCalledTimes(5);
+    expect(poll.now()).toBe(26_000);
+  });
+
+  it.each(['skipped', 'failure', 'cancelled'])('does not retry when a required step is explicitly %s', async conclusion => {
+    const steps = job.steps.map(step => step.name === fullE2E ? { ...step, conclusion } : step);
+    const poll = waiter({ [matchingRuns]: { workflow_runs: [run] }, [jobsPath(42, 2)]: { jobs: [{ ...job, steps }] } });
+    await expect(poll.run()).rejects.toThrow('Could not verify every full validation');
     expect(poll.sleep).not.toHaveBeenCalled();
   });
 
