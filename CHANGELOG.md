@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Windows 远程桌面双栈直连**：支持公网 IPv6、域名和 DDNS，以及既有公网 IPv4。域名在每次连接时校验 A/AAAA，双栈可在 TCP 未建立时换地址。DDNS 改址不影响既有登录配置，仍严格核对 Windows 证书；内网设备继续使用 Cloudflare Tunnel。
 
+### Fixed
+
+- **SSH 保活兼容性（#211）**：修复 MikroTik RouterOS 已回复保活请求却被误判为超时并重连的问题，仅将与本次探针序号匹配的“不支持”回复视为在线，保留真正无响应时的断线保护。
+
 ## [2.12.4] - 2026-11-24
 
 ### Added
