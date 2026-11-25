@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { SshExecError } from '../../src/ssh/exec-error';
 import type { Env, SSHConnectionConfig } from '../../src/types';
 import { MCPExecutionDO } from '../../src/worker/mcp-execution';
 import { SSHSession } from '../../src/worker/ssh-session';
@@ -60,6 +61,55 @@ describe('bounded headless MCP execution', () => {
     expect(f.rows.at(-1).status).toBe('success');
     expect(JSON.stringify(f.rows)).not.toContain('pwd');
     await f.object.fetch(new Request('https://internal/invalidate', { method: 'POST' }));
+  });
+  it('returns fixed exec errors, records their reason and accepts a fresh operation without replay', async () => {
+    const f = fixture();
+    const execute = vi.fn().mockRejectedValueOnce(new SshExecError('exec_rejected', 'not_executed'))
+      .mockRejectedValueOnce(new SshExecError('exec_timeout', 'unknown'))
+      .mockRejectedValueOnce(new Error('arbitrary secret from upstream'))
+      .mockResolvedValue({ stdout: 'private output', stderr: '', exitCode: 7 });
+    const close = vi.fn();
+    vi.mocked(SSHSession).mockImplementation(class {
+      startHandshake = async () => {}; waitUntilAuthenticated = async () => {};
+      isOperational = () => true; close = close; executeCommand = execute;
+    } as never);
+    try {
+      for (const [error, status] of [['exec_rejected', 'not_executed'], ['exec_timeout', 'unknown'], ['operation_failed', 'unknown']]) {
+        const response = await f.call({ command: 'private command' });
+        const result = await response.json();
+        expect(result).toMatchObject({ error, status });
+        expect(JSON.stringify(result)).not.toMatch(/private command|arbitrary secret/);
+      }
+      const nonzero = await f.call();
+      expect(nonzero.ok).toBe(true);
+      expect(await nonzero.json()).toMatchObject({ exitCode: 7, stdout: 'private output' });
+      expect(execute).toHaveBeenCalledTimes(4);
+      expect(f.fetchSpy).toHaveBeenCalledTimes(4);
+      await Promise.all(f.pending);
+      const ended = f.rows.filter(row => row.status !== 'running');
+      expect(ended.map(row => [row.status, row.failureReason])).toEqual([
+        ['error', 'exec_rejected'], ['unknown', 'exec_timeout'], ['unknown', 'operation_failed'], ['failed', undefined],
+      ]);
+      expect(JSON.stringify(f.rows)).not.toMatch(/private (command|output)|arbitrary secret/);
+    } finally {
+      vi.mocked(SSHSession).mockReset();
+      await f.object.fetch(new Request('https://internal/invalidate', { method: 'POST' }));
+    }
+  });
+  it('reports a channel close without exit status as unknown and still returns bounded partial output', async () => {
+    const f = fixture();
+    vi.mocked(SSHSession).mockImplementationOnce(class {
+      startHandshake = async () => {}; waitUntilAuthenticated = async () => {}; close = vi.fn();
+      executeCommand = async () => ({ stdout: 'x'.repeat(38_000), stderr: '', exitCode: -1 });
+    } as never);
+    const response = await f.call();
+    expect(response.status).toBe(409);
+    const result = await response.json() as { stdout: string };
+    expect(result).toMatchObject({ error: 'exec_result_unknown', status: 'unknown', exitCode: -1, truncated: true });
+    expect(result.stdout.length).toBeLessThan(32_100);
+    await Promise.all(f.pending);
+    expect(f.rows.at(-1)).toMatchObject({ status: 'unknown', failureReason: 'exec_result_unknown' });
+    expect(f.rows.at(-1)).not.toHaveProperty('stdout');
   });
   it('blocks unauthorized servers, missing permissions, unsafe commands and missing fingerprints before dispatch', async () => {
     const f = fixture();

@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.6] - 2026-11-25
+
+### Added
+
+- **Windows 远程桌面全屏分辨率**：默认仍为「仅缩放」。支持动态分辨率的 Windows 可在全屏工具栏选「适配全屏」、720p 或 1080p，向远端请求调整实际分辨率；退出全屏后恢复窗口尺寸同步。中继选址策略不变。关联 Issue：[#213](https://github.com/newbietan/CloudSSH/issues/213)。
+
+### Fixed
+
+- **Windows 首次证书确认与连接诊断**：确认期间上游提前断开时，在租约有效且等待未超时的前提下保留弹窗；成功保存信任、且中继确认上游已断开后，才用新票据重连一次，并复核设备修订和证书指纹。分别提示 Windows 登录被拒绝、安全协商失败、首帧前断开及确认超时。关联 Issue：[#216](https://github.com/newbietan/CloudSSH/issues/216)。
+- **MCP 命令执行结果**：区分已知退出码、明确未执行和执行结果未知；为通道拒绝、超时、连接中断及缺少退出状态提供对应诊断，不自动重试结果未知的命令。
+
+### Changed
+
+- **MCP 操作日志**：按本地日期分组，合并相邻的成功执行、读取和列目录，显示次数和最长单次耗时。写入和异常逐条展示，可按服务器、异常状态筛选或展开逐条记录；仍不保存命令、路径和输出。
+
 ## [2.12.5] - 2026-11-25
 
 ### Added

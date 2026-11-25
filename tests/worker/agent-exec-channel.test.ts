@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { SSHChannel } from '../../src/ssh/channel';
 import { AgentExecChannel, MAX_EXEC_CAPTURE_BYTES } from '../../src/worker/agent/exec-channel';
 
 const encoder = new TextEncoder();
 
 function makeChannel() {
-  return new AgentExecChannel(7, new SSHChannel());
+  const channel = new AgentExecChannel();
+  channel.onOpenConfirmation();
+  expect(channel.startExecRequest()).toBe(true);
+  return channel;
 }
 
 describe('AgentExecChannel — 输出捕获有界化（防止 docker logs 等大输出打爆 DO 内存）', () => {

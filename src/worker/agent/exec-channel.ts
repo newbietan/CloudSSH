@@ -1,6 +1,5 @@
 // Agent exec channel — manages SSH exec channel lifecycle for command execution
 
-import type { SSHChannel } from '../../ssh/channel';
 import type { ExecResult } from './types';
 
 /**
@@ -113,37 +112,34 @@ class BoundedStreamCapture {
 }
 
 export class AgentExecChannel {
-  private channelID: number;
-  private channel: SSHChannel;
   private exitCode: number = -1;
   private closed: boolean = false;
   private closedResolve!: (result: ExecResult) => void;
   private closedPromise: Promise<ExecResult>;
-  private openConfirmed: boolean = false;
-  private openFailed: boolean = false;
+  private openConfirmed = false;
+  private openFailed = false;
+  private openedResolve!: (opened: boolean) => void;
+  private openedPromise = new Promise<boolean>((resolve) => {
+    this.openedResolve = resolve;
+  });
+  private requestState: 'idle' | 'pending' | 'accepted' | 'rejected' = 'idle';
 
   private readonly budget: CaptureBudget = { captured: 0, limitExceeded: false };
   private readonly stdoutCapture = new BoundedStreamCapture(this.budget);
   private readonly stderrCapture = new BoundedStreamCapture(this.budget);
 
-  constructor(channelID: number, channel: SSHChannel) {
-    this.channelID = channelID;
-    this.channel = channel;
+  constructor() {
     this.closedPromise = new Promise<ExecResult>((resolve) => {
       this.closedResolve = resolve;
     });
   }
 
-  getChannelID(): number {
-    return this.channelID;
-  }
-
-  getChannel(): SSHChannel {
-    return this.channel;
-  }
-
   getClosedPromise(): Promise<ExecResult> {
     return this.closedPromise;
+  }
+
+  getOpenedPromise(): Promise<boolean> {
+    return this.openedPromise;
   }
 
   isOpenConfirmed(): boolean {
@@ -156,37 +152,62 @@ export class AgentExecChannel {
 
   /** 返回 false 表示已超过捕获硬上限，调用方必须停止续 window 并关闭通道。 */
   onData(data: Uint8Array): boolean {
+    if (data.length) this.onRequestSuccess();
     return this.stdoutCapture.append(data);
   }
 
   /** 返回 false 表示已超过捕获硬上限，调用方必须停止续 window 并关闭通道。 */
   onExtendedData(data: Uint8Array): boolean {
+    if (data.length) this.onRequestSuccess();
     return this.stderrCapture.append(data);
   }
 
   onExitStatus(exitCode: number): void {
-    this.exitCode = exitCode;
+    if (this.requestState === 'pending' || this.requestState === 'accepted') {
+      this.requestState = 'accepted';
+      this.exitCode = exitCode;
+    }
   }
 
   onOpenConfirmation(): void {
-    this.openConfirmed = true;
+    if (!this.closed) {
+      this.openConfirmed = true;
+      this.openedResolve(true);
+    }
   }
 
-  onChannelOpenFailure(reasonCode: number, description: string): void {
-    if (!this.closed) {
+  onChannelOpenFailure(): void {
+    if (!this.closed && !this.openConfirmed) {
       this.openFailed = true;
-      this.closed = true;
-      this.closedResolve({
-        stdout: '',
-        stderr: `Channel open failed (reason=${reasonCode}): ${description}`,
-        exitCode: -1,
-      });
+      this.onClose();
     }
+  }
+
+  startExecRequest(): boolean {
+    if (this.closed || !this.openConfirmed || this.requestState !== 'idle') return false;
+    this.requestState = 'pending';
+    return true;
+  }
+
+  onRequestSuccess(): void {
+    if (this.requestState === 'pending') this.requestState = 'accepted';
+  }
+
+  onRequestFailure(): void {
+    if (!this.closed && this.requestState === 'pending') {
+      this.requestState = 'rejected';
+      this.onClose();
+    }
+  }
+
+  wasRequestRejected(): boolean {
+    return this.requestState === 'rejected';
   }
 
   onClose(): void {
     if (!this.closed) {
       this.closed = true;
+      this.openedResolve(false);
       const notes: string[] = [];
       if (this.budget.limitExceeded) {
         notes.push(

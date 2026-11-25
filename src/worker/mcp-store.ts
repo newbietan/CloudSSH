@@ -1,4 +1,5 @@
 import {
+  isMcpFailureReason,
   mcpHash,
   mcpTokenRoute,
   parseMcpConfigInput,
@@ -44,7 +45,11 @@ export class McpStore {
       window_start INTEGER NOT NULL DEFAULT 0, request_count INTEGER NOT NULL DEFAULT 0)`);
     sql.exec(`CREATE TABLE IF NOT EXISTS mcp_activity (
       id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, client TEXT NOT NULL, server_id INTEGER NOT NULL,
-      tool TEXT NOT NULL, status TEXT NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER)`);
+      tool TEXT NOT NULL, status TEXT NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER,
+      failure_reason TEXT)`);
+    if (!sql.exec('PRAGMA table_info(mcp_activity)').toArray().some((row) => row.name === 'failure_reason')) {
+      sql.exec('ALTER TABLE mcp_activity ADD COLUMN failure_reason TEXT');
+    }
     // Older versions filtered deleted servers on read, but never removed the stored references.
     this.pruneMissingServers();
   }
@@ -301,15 +306,19 @@ export class McpStore {
           row.status === 'running' && Number(row.started_at) < Date.now() - 120_000
             ? 'unknown'
             : (row.status as McpActivity['status']),
+        ...((row.status === 'error' || row.status === 'unknown') && isMcpFailureReason(row.failure_reason)
+          ? { failureReason: row.failure_reason }
+          : {}),
         startedAt: Number(row.started_at),
         finishedAt: row.finished_at === null ? null : Number(row.finished_at),
       }));
   }
   record(userId: number, activity: McpActivity): void {
     this.sql.exec(
-      `INSERT INTO mcp_activity (id, user_id, client, server_id, tool, status, started_at, finished_at)
-      SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM servers WHERE id = ? AND user_id = ?)
-      ON CONFLICT(id) DO UPDATE SET status = excluded.status, finished_at = excluded.finished_at
+      `INSERT INTO mcp_activity (id, user_id, client, server_id, tool, status, started_at, finished_at, failure_reason)
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM servers WHERE id = ? AND user_id = ?)
+      ON CONFLICT(id) DO UPDATE SET status = excluded.status, finished_at = excluded.finished_at,
+        failure_reason = excluded.failure_reason
       WHERE mcp_activity.user_id = excluded.user_id AND mcp_activity.server_id = excluded.server_id
       AND mcp_activity.status = 'running'`,
       activity.id,
@@ -320,6 +329,9 @@ export class McpStore {
       activity.status,
       activity.startedAt,
       activity.finishedAt,
+      (activity.status === 'error' || activity.status === 'unknown') && isMcpFailureReason(activity.failureReason)
+        ? activity.failureReason
+        : null,
       activity.serverId,
       userId
     );

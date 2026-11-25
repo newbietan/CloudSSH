@@ -6,6 +6,8 @@ import { join, resolve } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { once } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
+import { readUint32 } from '../../src/ssh/utils';
+import { SSH_MSG_CHANNEL_CLOSE } from '../../src/types';
 import { SSHSession } from '../../src/worker/ssh-session';
 import { withMcpSftp, mcpRead, mcpWrite, mcpList } from '../../src/worker/mcp-sftp';
 import { readFileSync } from 'node:fs';
@@ -77,6 +79,8 @@ describe.skipIf(!enabled)('real OpenSSH loopback interoperability', () => {
         'StrictModes no', 'UsePAM no', 'PubkeyAuthentication yes',
         'PasswordAuthentication no', 'KbdInteractiveAuthentication no',
         'AuthenticationMethods publickey', 'PermitRootLogin yes',
+        // Headless fixture reserves the only session channel with SFTP to test explicit open denial.
+        ...(headless ? ['MaxSessions 1'] : []),
         'Subsystem sftp internal-sftp', 'LogLevel ERROR',
       ].join('\n') + '\n');
       child = spawn(sshd, ['-D', '-e', '-f', config], { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -110,10 +114,17 @@ describe.skipIf(!enabled)('real OpenSSH loopback interoperability', () => {
         { timeout: 7000, interval: 25 });
       const internal = session as any;
       expect(internal.negotiatedHostKeyAlgorithm).toBe(algorithm);
-      const result = await internal.executeAgentCommand('printf CLOUDSSH_INTEROP_OK', 5000);
+      const result = await session.executeCommand('printf CLOUDSSH_INTEROP_OK', 5000);
       expect(result).toMatchObject({ stdout: 'CLOUDSSH_INTEROP_OK', exitCode: 0 });
       if (headless) {
+        const nonzero = await session.executeCommand('printf before-exit; exit 7', 5000);
+        expect(nonzero).toMatchObject({ stdout: 'before-exit', exitCode: 7 });
+        const sftpChannelId = internal.nextChannelID as number;
+        const packets = vi.spyOn(internal, 'handleSessionPacket');
         await withMcpSftp(session, async sftp => {
+          await expect(session!.executeCommand('printf must-not-run', 5000)).rejects.toMatchObject({
+            code: 'exec_channel_rejected', outcome: 'not_executed',
+          });
           const path = join(directory, 'mcp-text.txt');
           await mcpWrite(sftp, path, 'MCP first 你好');
           const first = await mcpRead(sftp, path);
@@ -121,6 +132,17 @@ describe.skipIf(!enabled)('real OpenSSH loopback interoperability', () => {
           await mcpWrite(sftp, path, 'MCP replacement', first.fileHash!);
           expect((await mcpRead(sftp, path)).content).toBe('MCP replacement');
           expect((await mcpList(sftp, directory, 100)).entries.some(entry => entry.name === 'mcp-text.txt')).toBe(true);
+        });
+        // withMcpSftp closes locally; wait for sshd to release its single channel slot.
+        await vi.waitFor(() => expect(packets.mock.calls.some(([type, payload]) =>
+          type === SSH_MSG_CHANNEL_CLOSE && readUint32(payload as Uint8Array, 1) === sftpChannelId
+        )).toBe(true), { timeout: 3000, interval: 10 });
+        packets.mockRestore();
+        expect(await session.executeCommand('printf recovered', 5000)).toMatchObject({
+          stdout: 'recovered', exitCode: 0,
+        });
+        await expect(session.executeCommand('exec sleep 3', 1000)).rejects.toMatchObject({
+          code: 'exec_timeout', outcome: 'unknown',
         });
         expect(messages.some(message => message.event === 'shell_ready')).toBe(false);
         return;

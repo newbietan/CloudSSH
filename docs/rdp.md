@@ -12,11 +12,13 @@
 
 - 域名每次连接都向 Cloudflare DoH 查询 A 与 AAAA（DNS 递归解析器仍遵守记录 TTL）。解析失败、无可用结果，或任一地址为私网、保留或不支持的地址时拒绝；只向本次校验过的地址拨号，不再用域名做第二次解析。双栈优先尝试 IPv4；TCP 未建立时可在预算内换地址，一旦建立不因证书错误或登录失败重试另一台机器。
 - 同一 DDNS 域名换 IP 不会改变保存的主机、凭据或指纹；只要仍是同一 Windows 证书，无需重填密码。指纹变化仍在登录前阻止；手动修改所保存的主机或直连端口仍视为更换目标。
+- 首次确认时，即使上游已断开，确认框也会在有界等待期内保持可用（浏览器确认窗口 85 秒；会话租约仍须有效）。只有成功保存指纹、且中继确认原上游在等待期间已断开时，工作区才会用新票据重连一次；设备修订或指纹变化时不会重连。会话失效、确认超时和连接中断分别提示，不会因普通握手或登录失败自动重试。
 - Windows 与 SSH 设备共用服务器列表、标签、排序和分页，可用 Windows 用户名搜索。直连卡片显示掩码 IP 或域名及已保存的端口，复制仅包含完整主机（不含端口）；Tunnel 只显示和复制域名。收到首帧桌面画面才记录最近连接时间。
-- 桌面在同一标签打开。「返回」会断开中继，但不会注销 Windows；全屏只改变本地显示，不裁剪桌面，也不强制修改 Windows 分辨率。普通窗口仅在对端支持动态分辨率时同步尺寸。
+- 桌面在同一标签打开。「返回」会断开中继，但不会注销 Windows。全屏默认「仅缩放」，不裁剪桌面，也不主动更改 Windows 分辨率。若 Windows 协商了动态分辨率（RDP Display Control），全屏工具栏也可选「适配全屏」、1280 × 720 或 1920 × 1080。自适应使用工具栏下方的 CSS 像素，不按 DPR 放大，最高 3840 × 2160；Windows 可拒绝调整。切回「仅缩放」时请求恢复入全屏前的大小；退出后恢复普通窗口的自适应，不保存全屏选项。弱网可先试 720p，画面像素更少，但流畅度仍取决于线路及画面变化。
 - 桌面就绪或切换全屏后，可直接打字，不必先点击画面；若已主动选中「返回」或正在核对证书，会保留当前焦点。需要时点击画面即可继续输入。在 RDP 工具栏按 `Esc` 不会切换到底层 SSH 标签。
 - 画面内右键交给 Windows，鼠标前进／后退侧键不触发浏览器导航。画面外仍可使用浏览器菜单和导航。「右 Shift + D」按普通组合键发送，不是断开快捷键；系统保留的快捷键（如 `Ctrl+Alt+Del`）不保证能从网页发送。
-- **中继 RTT** 测量浏览器到 Worker；**RDP RTT** 使用 Windows 上报的平均值，缺失或过期显示「—」。两者都不是键鼠输入到画面更新的时间。
+- **中继 RTT** 测量浏览器到 Worker；**RDP RTT** 使用 Windows 上报的平均值，缺失或过期显示「—」。后者不是 Worker 到 Windows 的独立测量；两者也都不是键鼠输入到画面更新的时间。
+- RDP 由处理 WebSocket 的 Worker 出站，不使用 SSH 服务器的地区设置。标准部署的 Worker 默认靠近 Cloudflare 收到请求的位置；Cloudflare [Placement](https://developers.cloudflare.com/workers/configuration/placement/) 是 Worker 级配置，不是逐设备路由。让 Worker 靠近 Windows 可能缩短出站一段，却拉长浏览器到 Worker 的一段，跨境线路也不一定改善。若要评估，建议用独立测试 Worker 对同一台 Windows、相同分辨率和相同画面操作做 A/B，记录首帧、两种 RTT、持续操作体验和断线次数；不要据此为共享的 SSH/RDP Worker 改默认位置。
 - Windows 与浏览器建立 TLS/NLA，Worker 只转发字节。Windows 登录和 Tunnel 凭据按账户加密，密钥与数据同库，并非独立 KMS。列表不返回密码、域或 Tunnel 密钥；普通详情和 WebSocket 不交付 Windows 登录，仅当前所有者主动连接的同源请求会将登录信息交给浏览器。
 - RDP 设备独立于 SSH 跳板、分享、SFTP、Agent 和 MCP。不提供剪贴板、驱动器挂载、音频转发；不承诺 Kerberos-only、RD Gateway、多屏或完整移动端键盘支持。会话受 `IDLE_TIMEOUT` 及 2 小时上限约束。
 
@@ -25,8 +27,8 @@
 ## 维护与真机验收
 
 - `bash scripts/build-freerdp.sh` 用于显式重建随仓库分发的客户端。常规构建不运行 Docker 或下载 FreeRDP。更新时审核依赖、许可证与 JS/C++ 钩子，用 `tests/build/rdp-assets.test.ts` 验证模块、摘要和大小；不要手改压缩产物。
-- `rdp-devices.spec.ts` 覆盖画布焦点、工具栏和鼠标侧键；`rdp-native-input.spec.ts` 在 Chromium 中加载随包的真实 WASM，验证 FreeRDP 从内存文件系统读取禁用本地快捷键的配置，不需要 Windows 凭据。自动化不能代替真机输入验收。
+- `rdp-devices.spec.ts` 覆盖画布焦点、工具栏、鼠标侧键与首次证书确认（模拟中继和 FreeRDP，使用真实浏览器适配器）；`rdp-native-input.spec.ts` 在 Chromium 中加载随包的真实 WASM，验证 FreeRDP 从内存文件系统读取禁用本地快捷键的配置，不需要 Windows 凭据。`rdp-relay-rtt.test.ts` 覆盖证书等待期间读写中断的顺序、租约失效与超时。自动化不能代替真实 Windows 首帧和键鼠验收。
 - 用授权的 Windows 主机和已部署的 Cloudflare 测试 Worker 验证，而不是用本地 mock 代替。分别以公网 IPv4、IPv6 字面量、仅 A 域名、仅 AAAA 域名及双栈域名确认 NLA 与桌面首帧，覆盖自定义端口及一条 TCP 路径不可达；DDNS 改址后验证同证书可用、不同证书在登录前被阻止。记录所用地区、线路、证书和首帧结果，不记录密码或未脱敏的地址。
-- 另测 Tunnel（包括 Access Service Auth）的 NLA、证书信任与换证、错误密码、桌面首帧和键鼠，并回归断线、1080p 持续操作及弱网；分开记录连通、认证、首帧和延迟。
+- 另测 Tunnel（包括 Access Service Auth）的 NLA、证书信任与换证、错误密码、桌面首帧和键鼠，并回归断线、1080p 持续操作及弱网；分开记录连通、认证、首帧和延迟。在支持和不支持 DISP 的 Windows 上分别验证默认全屏、适配与固定分辨率（以 Windows 内部显示设置为准）、Esc 返回和画面四角的键鼠定位。
 
 上游：[FreeRDP](https://github.com/FreeRDP/FreeRDP/releases)、[Cloudflare 出站 TCP](https://developers.cloudflare.com/workers/runtime-apis/tcp-sockets/)、[Tunnel 已发布应用协议](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/routing-to-tunnel/protocols/)。

@@ -7,7 +7,7 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket) {
   ws.binaryType = 'arraybuffer';
   const sink = {
     CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3, readyState: 0,
-    binaryType: 'arraybuffer', lease: undefined,
+    binaryType: 'arraybuffer', lease: undefined, certHold: false,
     send(value) {
       if (sink.readyState !== 1 || (!(value instanceof ArrayBuffer) && !ArrayBuffer.isView(value))) return fail();
       if (value.byteLength > limit || pending + sent - acknowledged + value.byteLength > limit) return fail();
@@ -47,6 +47,16 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket) {
       lastActivity = now;
       ws.send('{"type":"activity"}');
     },
+    beginCertWait() {
+      if (sink.readyState !== 1 || certWaitSent) return;
+      certWaitSent = true;
+      try { ws.send('{"type":"cert_wait"}'); } catch { fail(); }
+    },
+    endCertWait() {
+      if (sink.readyState !== 1 || !certWaitSent) return;
+      certWaitSent = false;
+      try { ws.send('{"type":"cert_done"}'); } catch { fail(); }
+    },
     close() {
       if (sink.readyState < 2) {
         probe = undefined;
@@ -55,7 +65,7 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket) {
       }
     },
   };
-  let canReport = false, reported = false;
+  let canReport = false, reported = false, certWaitSent = false;
   let sequence = 0, probe;
   let sent = 0;
   let acknowledged = 0;
@@ -95,6 +105,8 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket) {
           sink.lease = value.lease;
           sink.readyState = 1;
           sink.onopen?.(new Event('open'));
+        } else if (value?.type === 'cert_hold' && sink.readyState === 1) {
+          sink.certHold = true;
         } else if (value?.type === 'desktop_recorded' && sink.readyState === 1 && reported) {
           sink.onDesktopRecorded?.();
         } else if (value?.type === 'pong' && sink.readyState === 1) {

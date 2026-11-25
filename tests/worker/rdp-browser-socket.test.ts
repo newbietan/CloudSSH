@@ -9,6 +9,9 @@ interface SocketAdapter {
   consumed(bytes: number): void;
   readyState: number;
   lease?: string;
+  certHold: boolean;
+  beginCertWait(): void;
+  endCertWait(): void;
   reportDesktopReady(): void;
   onRelayClose?: (reason: string) => void;
   onclose?: (event: { reason: string }) => void;
@@ -110,5 +113,19 @@ describe('FreeRDP browser socket', () => {
     expect(native.send.mock.calls.every(([frame]) => frame.byteLength === 16 * 1024)).toBe(true);
     socket.send(new ArrayBuffer(1));
     expect(native.close).toHaveBeenCalledOnce();
+  });
+
+  it('keeps certificate hold and completion outside the WASM stream', () => {
+    const { native, socket } = fixture();
+    const onData = socket.onmessage = vi.fn();
+    native.onmessage({ data: ready });
+    socket.beginCertWait();
+    socket.beginCertWait();
+    expect(native.send).toHaveBeenCalledExactlyOnceWith('{"type":"cert_wait"}');
+    native.onmessage({ data: '{"type":"cert_hold"}' });
+    expect(socket.certHold).toBe(true);
+    expect(onData).not.toHaveBeenCalled();
+    socket.endCertWait();
+    expect(native.send).toHaveBeenLastCalledWith('{"type":"cert_done"}');
   });
 });

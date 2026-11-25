@@ -310,10 +310,13 @@ test('the themed workspace stays in the current tab and a saved login is release
       document.documentElement.dataset.initialViewport = '/size:' + (stage.clientWidth & ~1) + 'x' + (stage.clientHeight & ~1);
       document.documentElement.dataset.size = args.find(a => a.startsWith('/size:'));
       document.documentElement.dataset.dynamic = String(args.includes('/dynamic-resolution'));
-      window.addEventListener('resize', () => { document.documentElement.dataset.requestedWidth = document.getElementById('stage').style.getPropertyValue('--desktop-width'); });
+      window.addEventListener('resize', () => {
+        document.documentElement.dataset.requestedWidth = stage.style.getPropertyValue('--desktop-width');
+        document.documentElement.dataset.requestedHeight = stage.style.getPropertyValue('--desktop-height');
+      });
       m.createRdpSocket(m.websocket.url);
       m._cloudssh_take_rdp_rtt = () => 83;
-      m.onWindowsDisplayControl(); m.onWindowsFirstFrame();
+      m.onWindowsFirstFrame();
     }; m.onRuntimeInitialized();` }));
   await page.route(`**/api/rdp/profiles/${id}/connect`, r => {
     if (r.request().method() !== 'POST') return r.fallback();
@@ -383,8 +386,10 @@ test('the themed workspace stays in the current tab and a saved login is release
   await expect(frame.locator('.status-row')).toHaveCount(0);
   expect(await frame.locator('html').evaluate(e => e.style.getPropertyValue('--accent').trim())).toBe(await page.locator('body').evaluate(e => getComputedStyle(e).getPropertyValue('--accent').trim()));
   await page.setViewportSize({ width: 960, height: 700 });
-  await expect(frame.locator('html')).toHaveAttribute('data-requested-width', '960px');
+  await expect.poll(() => stage.evaluate(e => e.clientWidth)).toBe(960);
   const toolbar = workspace.locator('header');
+  const resolution = toolbar.getByRole('combobox', { name: 'Full-screen desktop resolution', includeHidden: true });
+  await expect(resolution).toBeHidden();
   await expect(toolbar.getByRole('heading')).toHaveText('Remote Desktop · Office Windows');
   await expect(toolbar.getByRole('button')).toHaveText(['Full screen', 'Back']);
   await expect(frame.locator('header')).toHaveCount(0);
@@ -488,16 +493,45 @@ test('the themed workspace stays in the current tab and a saved login is release
         }
         await canvas.evaluate(e => { e.style.removeProperty('width'); e.style.removeProperty('height'); });
         await viewport.evaluate(e => { e.style.removeProperty('flex'); e.style.removeProperty('width'); e.style.removeProperty('height'); });
+        await expect(resolution).toBeHidden(); // No requests or selector until DISP is negotiated.
+        await expect(frame.locator('html')).not.toHaveAttribute('data-requested-width');
+        await stage.evaluate(() => (window as unknown as { Module: { onWindowsDisplayControl(): void } }).Module.onWindowsDisplayControl());
+        await expect(resolution).toHaveValue('local');
+        await expect(frame.locator('html')).toHaveAttribute('data-requested-width', '960px');
+        await resolution.selectOption('fit');
+        const setArea = (w: number, h: number) => viewport.evaluate((e, [width, height]) => {
+          e.style.flex = 'none'; e.style.width = `${width}px`; e.style.height = `${height}px`;
+        }, [w, h]);
+        for (const [w, h] of [[701, 401], [801, 451]]) {
+          await setArea(w, h);
+          await expect(frame.locator('html')).toHaveAttribute('data-requested-width', `${w - 1}px`);
+          await expect(frame.locator('html')).toHaveAttribute('data-requested-height', `${h - 1}px`);
+          await expectFullscreenFit(page, true);
+        }
+        await resolution.selectOption('720p');
+        await expect(frame.locator('html')).toHaveAttribute('data-requested-width', '1280px');
+        await expect(frame.locator('html')).toHaveAttribute('data-requested-height', '720px');
+        await expectFullscreenFit(page, true);
+        await resolution.selectOption('local');
+        await expect(frame.locator('html')).toHaveAttribute('data-requested-width', '960px');
+        await viewport.evaluate(e => { e.style.removeProperty('flex'); e.style.removeProperty('width'); e.style.removeProperty('height'); });
         await exit.click();
       } else {
+        await expect(resolution).toHaveValue('local');
+        await resolution.selectOption('1080p');
+        await expect(frame.locator('html')).toHaveAttribute('data-requested-width', '1920px');
+        await expect(frame.locator('html')).toHaveAttribute('data-requested-height', '1080px');
         await page.keyboard.press('Escape');
         // Headless engines need not bind a synthetic key to the OS fullscreen command.
         if (await inFullscreen()) await page.evaluate(() => document.fullscreenElement && document.exitFullscreen());
       }
       await expect(full).toBeVisible();
       await expect.poll(inFullscreen).toBe(false);
+      await expect(resolution).toBeHidden();
       await expect(canvas).toBeFocused();
-      expect(await frameSize()).toEqual(initialSize);
+      await expect.poll(frameSize).toEqual(initialSize);
+      await expect(frame.locator('html')).toHaveAttribute('data-requested-width', '960px');
+      await expect(full).toBeEnabled();
       await expect.poll(() => workspace.locator('iframe').evaluate(e => e.style.getPropertyValue('--rdp-fill-transform'))).toBe('');
     }
   } else await expect(full).toBeDisabled();
@@ -666,5 +700,174 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'saved mismatch', 'sa
       }
     }
     expect(attempts).toBe(scenario === 'accept' || scenario === 'save failed' ? 1 : 0);
+  });
+}
+
+for (const scenario of ['reconnect', 'revision changed', 'fingerprint changed', 'lease ended', 'upstream write failed',
+  'confirmation timeout'] as const) test(`first-use certificate recovery: ${scenario}`, async ({ page }) => {
+  const fingerprint = 'ef'.repeat(32);
+  let savedFingerprint: string | null = null;
+  let revision = 1;
+  let connectCount = 0;
+  let trustCount = 0;
+  if (scenario === 'confirmation timeout') await page.clock.install();
+  const asset = (name: string) => readFileSync(`${__dirname}/../../src/worker/rdp-client/${name}.rdp-text`, 'utf8');
+  const isolation = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' };
+  await page.route('**/api/config', r => r.request().method() === 'GET' ? r.fulfill({ json: {
+    turnstileEnabled: false, githubAuthEnabled: true, githubAuthRequired: true, authMode: 'github', rdpEnabled: true,
+  } }) : r.fallback());
+  await page.route('**/api/auth/me', r => r.request().method() === 'GET'
+    ? r.fulfill({ json: { id: 1, github_id: 42, username: 'tester', avatar_url: null } }) : r.fallback());
+  await page.route('**/api/servers', r => r.request().method() === 'GET' ? r.fulfill({ json: [] }) : r.fallback());
+  await page.route('**/api/rdp/profiles', r => r.request().method() === 'GET' ? r.fulfill({ json: { profiles: [
+    { id, name: 'Domain Win', revision: 1, tags: [], route: 'direct', host: 'rdp.example.com', port: 53389, hasLogin: true, fingerprint: savedFingerprint, username: 'Administrator', last_connected_at: null, created_at: null, updated_at: null },
+  ] } }) : r.fallback());
+  await page.route(`**/api/rdp/profiles/${id}`, r => r.request().method() === 'GET'
+    ? r.fulfill({ json: { id, name: 'Domain Win', revision, route: 'direct', host: 'rdp.example.com', port: 53389, hasLogin: true, fingerprint: savedFingerprint } }) : r.fallback());
+  await page.route(`**/api/rdp/profiles/${id}/connect`, r => {
+    if (r.request().method() !== 'POST') return r.fallback();
+    expect(r.request().headers()['x-cloudssh-rdp-saved-revision']).toBe('1');
+    connectCount++;
+    return r.fulfill({ json: { ticket: String(connectCount).repeat(64), revision: 1, login: { username: 'Administrator', domain: '', password: 'synthetic' } } });
+  });
+  await page.route(`**/api/rdp/profiles/${id}/trust`, r => {
+    if (r.request().method() !== 'PUT') return r.fallback();
+    expect(r.request().postDataJSON()).toEqual({ fingerprint, revision: 1, lease: id });
+    trustCount++;
+    // The competing edit lands after the original pin was saved and before the retry reads the row.
+    if (scenario === 'revision changed') revision++;
+    savedFingerprint = scenario === 'fingerprint changed' ? 'cd'.repeat(32) : fingerprint;
+    return r.fulfill({ json: { fingerprint } });
+  });
+  await page.route('**/?lang=en-US', async r => {
+    const response = await r.fetch();
+    return r.fulfill({ response, headers: { ...response.headers(), ...isolation } });
+  });
+  await page.route(`**/rdp/${id}/client`, r => r.fulfill({ contentType: 'text/html', headers: isolation, body: asset('index') }));
+  await page.route('**/rdp/assets/desktop.js', r => r.fulfill({ contentType: 'text/javascript', body: asset('desktop') }));
+  await page.route('**/rdp/assets/rdp-socket.js', r => r.fulfill({ contentType: 'text/javascript', body: `
+    // Exercise the real browser adapter against a controlled relay, independently of native RDP.
+    window.WebSocket = class {
+      constructor(_url, protocol) {
+        this.protocol = protocol;
+        queueMicrotask(() => this.onopen?.());
+      }
+      control(message) { this.onmessage?.({ data: JSON.stringify(message) }); }
+      send(data) {
+        if (typeof data !== 'string') return;
+        const msg = JSON.parse(data);
+        if (msg.type === 'ticket') {
+          window.__lastTicket = msg.ticket;
+          queueMicrotask(() => this.control({ type: 'ready', lease: '${id}', desktopReport: true }));
+        } else if (msg.type === 'cert_wait') {
+          queueMicrotask(() => {
+            if ('${scenario}' !== 'upstream write failed') this.control({ type: 'cert_hold' });
+            window.__certWaitSent = true;
+          });
+        } else if (msg.type === 'cert_done') {
+          const reason = '${scenario}' === 'lease ended' ? 'lease_ended'
+            : '${scenario}' === 'upstream write failed' ? 'upstream_write_failed' : 'cert_reconnect';
+          queueMicrotask(() => this.onclose?.({ reason }));
+        }
+      }
+      close() {}
+    };
+    ${asset('rdp-socket')}
+  ` }));
+  await page.route('**/rdp/assets/sdl-freerdp.wasm', r => r.fulfill({ contentType: 'application/wasm', body: Buffer.from([0, 97, 115, 109, 1, 0, 0, 0]) }));
+  await page.route('**/rdp/assets/sdl-freerdp.js', r => r.fulfill({ contentType: 'text/javascript', body: `
+    const m = window.Module;
+    m.FS = { mkdirTree() {}, writeFile() {} };
+    m.callMain = () => {
+      const socket = m.createRdpSocket(m.websocket.url);
+      socket.onopen = () => {
+        if (m.onWindowsCertificate('${fingerprint}') === 1) {
+          m.onWindowsDisplayControl();
+          m.onWindowsFirstFrame();
+        }
+      };
+    };
+    m.onRuntimeInitialized();
+  ` }));
+  await page.addInitScript(() => {
+    localStorage.setItem('cloudssh_locale', 'en-US');
+    if (!crossOriginIsolated) Object.defineProperty(window, 'crossOriginIsolated', { value: true });
+    if (typeof SharedArrayBuffer !== 'function') Object.defineProperty(window, 'SharedArrayBuffer', { value: ArrayBuffer });
+  });
+  await page.goto('/?lang=en-US');
+  await page.getByRole('button', { name: 'Open desktop' }).click();
+  const iframe = page.locator('.rdp-workspace[open] iframe');
+  const frame = iframe.contentFrame();
+  const dialog = frame.locator('#certificate');
+  const status = frame.locator('#status');
+  const fromFrame = (key: string) => frame.locator('html').evaluate((_, name) => Reflect.get(window, name), key);
+  await expect.poll(() => fromFrame('__certWaitSent')).toBe(true);
+  await expect(dialog).toBeVisible();
+  if (scenario === 'confirmation timeout') {
+    await page.clock.fastForward(85_000);
+    await expect(status).toContainText('Certificate confirmation timed out');
+    await expect(dialog).toBeHidden();
+    expect(trustCount).toBe(0);
+    expect(connectCount).toBe(1);
+    return;
+  }
+  await dialog.getByRole('button', { name: 'Trust and connect' }).click();
+  if (scenario === 'reconnect') {
+    await expect(status).toContainText('Desktop ready');
+    expect(await fromFrame('__lastTicket')).toBe('2'.repeat(64));
+    const launchedAgain = await iframe.evaluate((node, fingerprint) => {
+      const frame = node as HTMLIFrameElement;
+      frame.dispatchEvent(new CustomEvent('cloudssh-rdp-reconnect', { detail: { revision: 1, fingerprint } }));
+      return frame.dataset.connectSaved;
+    }, fingerprint);
+    expect(launchedAgain).toBeUndefined();
+  } else if (scenario === 'lease ended') {
+    await expect(status).toContainText('This desktop session is no longer valid');
+  } else if (scenario === 'upstream write failed') {
+    await expect(status).toContainText('The connection to Windows ended before the desktop appeared');
+  } else {
+    await expect(status).toContainText('Device settings changed');
+  }
+  await expect(dialog).toBeHidden();
+  expect(trustCount).toBe(1);
+  expect(connectCount).toBe(scenario === 'reconnect' ? 2 : 1);
+});
+
+for (const [errCode, expected] of [
+  ['ERRCONNECT_AUTHENTICATION_FAILED', 'Windows rejected the sign-in credentials'],
+  ['ERRCONNECT_SECURITY_NEGO_CONNECT_FAILED', 'Security negotiation failed'],
+  ['ERRCONNECT_CONNECT_TRANSPORT_FAILED', 'The connection to Windows ended before the desktop appeared'],
+] as const) {
+  test(`reports distinct safe error message for ${errCode}`, async ({ page }) => {
+    const asset = (name: string) => readFileSync(`${__dirname}/../../src/worker/rdp-client/${name}.rdp-text`, 'utf8');
+    const isolation = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' };
+    await page.route(`**/rdp/${id}`, r => r.fulfill({ contentType: 'text/html', body: `<iframe src="/rdp/${id}/client" data-connect-saved="true"></iframe>` }));
+    await page.route(`**/rdp/${id}/client`, r => r.fulfill({ contentType: 'text/html', headers: isolation, body: asset('index') }));
+    await page.route('**/rdp/assets/desktop.js', r => r.fulfill({ contentType: 'text/javascript', body: asset('desktop') }));
+    await page.route('**/rdp/assets/rdp-socket.js', r => r.fulfill({ contentType: 'text/javascript', body: `window.createCloudSshRdpSocket = () => ({ lease: '${id}', close() { this.lease = undefined; } });` }));
+    await page.route('**/rdp/assets/sdl-freerdp.wasm', r => r.fulfill({ contentType: 'application/wasm', body: Buffer.from([0, 97, 115, 109, 1, 0, 0, 0]) }));
+    await page.route('**/rdp/assets/sdl-freerdp.js', r => r.fulfill({ contentType: 'text/javascript', body: `
+      const m = window.Module;
+      m.FS = { mkdirTree() {}, writeFile() {} };
+      m.callMain = () => {
+        m.createRdpSocket(m.websocket.url);
+        m.printErr('[ERROR][com.freerdp.core] - ${errCode} [0x00020000] private-host-secret');
+        m.onExit(0);
+      };
+      m.onRuntimeInitialized();
+    ` }));
+    await page.route(`**/api/rdp/profiles/${id}`, r => r.request().method() === 'GET'
+      ? r.fulfill({ json: { id, name: 'Win', revision: 1, hasLogin: true, fingerprint: 'ab'.repeat(32) } }) : r.fallback());
+    await page.route(`**/api/rdp/profiles/${id}/connect`, r => r.request().method() === 'POST'
+      ? r.fulfill({ json: { ticket: '1'.repeat(64), revision: 1, login: { username: 'Administrator', domain: '', password: 'synthetic' } } }) : r.fallback());
+    await page.addInitScript(() => {
+      localStorage.setItem('cloudssh_locale', 'en-US');
+      if (!crossOriginIsolated) Object.defineProperty(window, 'crossOriginIsolated', { value: true });
+      if (typeof SharedArrayBuffer !== 'function') Object.defineProperty(window, 'SharedArrayBuffer', { value: ArrayBuffer });
+    });
+    await page.goto(`/rdp/${id}`);
+    const status = page.frameLocator('iframe').locator('#status');
+    await expect(status).toContainText(expected);
+    await expect(status).not.toContainText('private-host-secret');
   });
 }

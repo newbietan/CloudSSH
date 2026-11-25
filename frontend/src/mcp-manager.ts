@@ -2,13 +2,10 @@ import './mcp-manager.css';
 import { onServerRemoved } from './server-removal';
 import { getLocale, localizedElement as element, onLocaleChange, t, type TranslationKey } from './i18n';
 import { copyTextToClipboard } from './clipboard';
-import type {
-  McpActivity,
-  McpConfigInfo,
-  McpSavedCredentials,
-} from '../../src/mcp-schema';
+import type { McpActivity, McpConfigInfo, McpSavedCredentials } from '../../src/mcp-schema';
 import type { AppConfig } from './app-bootstrap';
 import { createAssistantIcon } from './assistant-icons';
+import { createMcpActivityView } from './mcp-activity-view';
 import { buildMcpClientConfig, normalizeMcpAccessCredentials } from './mcp-client-config';
 import { createMcpPermissionEditor, type McpServerOption } from './mcp-permission-editor';
 import './assistant-ui.css';
@@ -474,17 +471,10 @@ export class McpManager {
     return section;
   }
   private buildActivity(parent: HTMLElement, servers: { id: number; name: string }[]) {
-    const names = new Map(servers.map((server) => [server.id, server.name]));
-    const section = disclosure('mcp.activity');
-    section.id = 'mcp-activity-section';
-    const list = element('div');
-    list.id = 'mcp-activity-list';
-    list.setAttribute('role', 'list');
-    list.setAttribute('aria-label', t('mcp.activity'));
-    list.dataset.i18nAriaLabel = 'mcp.activity';
-    list.tabIndex = 0;
-    section.append(list);
+    const view = createMcpActivityView(servers);
+    const { section } = view;
     parent.append(section);
+    this.controller!.signal.addEventListener('abort', onLocaleChange(() => view.render()), { once: true });
     const generation = this.generation;
     let refreshId = 0;
     const refresh = async (id: number) => {
@@ -493,41 +483,9 @@ export class McpManager {
         try {
           const items = await this.api<McpActivity[]>('/api/mcp/activity');
           if (id !== refreshId || generation !== this.generation || !section.open) return;
-          list.replaceChildren();
-          const live = items.slice(0, 100).filter((item) => names.has(item.serverId));
-          if (!live.length) list.append(element('p', 'mcp.noActivity'));
-          const dateTime = new Intl.DateTimeFormat(getLocale(), {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false,
-          });
-          const time = new Intl.DateTimeFormat(getLocale(), {
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false,
-          });
-          for (const item of live) {
-            const record = element('div');
-            record.dataset.serverId = String(item.serverId);
-            record.className = 'mcp-operation';
-            record.setAttribute('role', 'listitem');
-            const start = new Date(item.startedAt);
-            const end = item.finishedAt === null ? null : new Date(item.finishedAt);
-            const period =
-              dateTime.format(start) +
-              (end
-                ? ` — ${end.toDateString() === start.toDateString() ? time.format(end) : dateTime.format(end)}`
-                : '');
-            record.textContent = `${period}  ${names.get(item.serverId)} · ${t(`mcp.status.${item.status}`)}  ${item.tool}`;
-            list.append(record);
-          }
+          view.setItems(items);
         } catch {
-          if (generation === this.generation) this.message('mcp.error');
+          if (id === refreshId && generation === this.generation && section.open) view.setError();
         }
       }
       if (id === refreshId && generation === this.generation && section.open)
@@ -537,12 +495,11 @@ export class McpManager {
       if (this.timer !== undefined) clearTimeout(this.timer);
       this.timer = undefined;
       refreshId++;
-      if (section.open) void refresh(refreshId);
+      if (section.open) {
+        view.render();
+        void refresh(refreshId);
+      }
     });
-    return (id: number) => {
-      if (!names.delete(id)) return;
-      list.querySelectorAll(`[data-server-id="${id}"]`).forEach((row) => row.remove());
-      if (section.open && !list.childElementCount) list.append(element('p', 'mcp.noActivity'));
-    };
+    return view.removeServer;
   }
 }

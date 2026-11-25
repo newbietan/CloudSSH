@@ -1,7 +1,7 @@
 const dictionary = {
-  'en-US': ['Back to CloudSSH', 'Remote Desktop', 'Username', 'Domain (optional)', 'Windows password', 'Connect', 'Disconnect', 'Full screen', 'Loading the saved desktop…', 'Open this desktop from the server list after completing its settings.', 'Saved Windows sign-in details are incomplete. Edit the device and try again.', 'Downloading the desktop client…', 'Starting the desktop client…', 'Connecting to Windows…', 'Checking the Windows certificate and signing in…', 'Desktop ready. Click the desktop to control it.', 'Connection ended. Return to the server list to reconnect.', 'Could not start the desktop. Return to the server list to retry.', 'Desktop startup timed out.', 'No desktop appeared. Verify the certificate and Windows credentials, then retry.', 'This browser does not support the required shared memory.', 'Device or session changed. Refresh the page.', 'The connection is too slow or ended.', 'Full screen is unavailable.'],
-  'zh-CN': ['返回 CloudSSH', '远程桌面', '用户名', '域（可选）', 'Windows 密码', '连接', '断开', '全屏', '正在读取已保存的桌面…', '请先补全设备配置，再从服务器列表打开桌面。', '保存的 Windows 登录信息不完整，请编辑设备后重试。', '正在下载桌面客户端…', '正在启动桌面客户端…', '正在连接 Windows…', '正在验证 Windows 证书并登录…', 'Windows 桌面已显示，点击画布可操作。', '连接已断开，可返回服务器列表重新连接。', '桌面启动失败，请返回服务器列表重试。', '桌面客户端启动超时。', '未收到桌面画面，请核对证书和 Windows 凭据后重试。', '当前浏览器不支持所需的共享内存。', '设备或登录已变化，请刷新页面。', '连接过慢或已断开。', '当前无法进入全屏。'],
-  'zh-TW': ['返回 CloudSSH', '遠端桌面', '使用者名稱', '網域（選填）', 'Windows 密碼', '連線', '中斷', '全螢幕', '正在讀取已儲存的桌面…', '請先補全裝置設定，再從伺服器清單開啟桌面。', '儲存的 Windows 登入資訊不完整，請編輯裝置後重試。', '正在下載桌面客戶端…', '正在啟動桌面客戶端…', '正在連線至 Windows…', '正在驗證 Windows 憑證並登入…', 'Windows 桌面已顯示，點擊畫布即可操作。', '連線已中斷，可返回伺服器清單重新連線。', '桌面啟動失敗，請返回伺服器清單重試。', '桌面客戶端啟動逾時。', '未收到桌面畫面，請核對憑證和 Windows 登入資訊後重試。', '目前瀏覽器不支援所需的共享記憶體。', '裝置或登入已變更，請重新整理。', '連線過慢或已中斷。', '目前無法使用全螢幕。'],
+  'en-US': ['Back to CloudSSH', 'Remote Desktop', 'Username', 'Domain (optional)', 'Windows password', 'Connect', 'Disconnect', 'Full screen', 'Loading the saved desktop…', 'Open this desktop from the server list after completing its settings.', 'Saved Windows sign-in details are incomplete. Edit the device and try again.', 'Downloading the desktop client…', 'Starting the desktop client…', 'Connecting to Windows…', 'Checking the Windows certificate and signing in…', 'Desktop ready. Click the desktop to control it.', 'Connection ended. Return to the server list to reconnect.', 'Could not start the desktop. Return to the server list to retry.', 'Desktop startup timed out.', 'No desktop appeared. Verify the certificate and Windows credentials, then retry.', 'This browser does not support the required shared memory.', 'Device or session changed. Refresh the page.', 'The connection is too slow or ended.', 'Full screen is unavailable.', 'Windows rejected the sign-in credentials, or NLA sign-in is not allowed for this account.', 'Security negotiation failed. Ensure Windows Remote Desktop enables NLA (CredSSP) and no proxy alters TLS.', 'The connection to Windows ended before the desktop appeared. Check NLA, credentials, or any port forwarder.'],
+  'zh-CN': ['返回 CloudSSH', '远程桌面', '用户名', '域（可选）', 'Windows 密码', '连接', '断开', '全屏', '正在读取已保存的桌面…', '请先补全设备配置，再从服务器列表打开桌面。', '保存的 Windows 登录信息不完整，请编辑设备后重试。', '正在下载桌面客户端…', '正在启动桌面客户端…', '正在连接 Windows…', '正在验证 Windows 证书并登录…', 'Windows 桌面已显示，点击画布可操作。', '连接已断开，可返回服务器列表重新连接。', '桌面启动失败，请返回服务器列表重试。', '桌面客户端启动超时。', '未收到桌面画面，请核对证书和 Windows 凭据后重试。', '当前浏览器不支持所需的共享内存。', '设备或登录已变化，请刷新页面。', '连接过慢或已断开。', '当前无法进入全屏。', 'Windows 拒绝了当前登录凭据，或该账号不允许通过 NLA 远程登录。', '安全协商失败：请确认 Windows 远程桌面已启用 NLA（CredSSP），且链路未替换 TLS 证书。', '与 Windows 的连接在显示桌面前中断，请核对 NLA、Windows 凭据或端口转发/代理设置。'],
+  'zh-TW': ['返回 CloudSSH', '遠端桌面', '使用者名稱', '網域（選填）', 'Windows 密碼', '連線', '中斷', '全螢幕', '正在讀取已儲存的桌面…', '請先補全裝置設定，再從伺服器清單開啟桌面。', '儲存的 Windows 登入資訊不完整，請編輯裝置後重試。', '正在下載桌面客戶端…', '正在啟動桌面客戶端…', '正在連線至 Windows…', '正在驗證 Windows 憑證並登入…', 'Windows 桌面已顯示，點擊畫布即可操作。', '連線已中斷，可返回伺服器清單重新連線。', '桌面啟動失敗，請返回伺服器清單重試。', '桌面客戶端啟動逾時。', '未收到桌面畫面，請核對憑證和 Windows 登入資訊後重試。', '目前瀏覽器不支援所需的共享記憶體。', '裝置或登入已變更，請重新整理。', '連線過慢或已中斷。', '目前無法使用全螢幕。', 'Windows 拒絕了目前的登入憑證，或該帳號不允許透過 NLA 遠端登入。', '安全協商失敗：請確認 Windows 遠端桌面已啟用 NLA（CredSSP），且連線未替換 TLS 憑證。', '與 Windows 的連線在顯示桌面前中斷，請核對 NLA、Windows 登入資訊或連接埠轉發/代理設定。'],
 };
 // Only these local messages may reach the status line, never an upstream error or close reason.
 const failureText = {
@@ -10,7 +10,9 @@ const failureText = {
   authentication_required: ['Your sign-in has expired. Return and sign in again.', '登录已失效，请返回并重新登录。', '登入已失效，請返回並重新登入。'],
   ticket_rejected: ['Connection ticket is no longer valid. Reopen the device for a new one.', '连接票据已失效，请从列表重新打开设备。', '連線票據已失效，請從清單重新開啟裝置。'],
   ticket_limit: ['Too many connection attempts. Wait a moment, then reopen the device.', '连接请求过多，请稍候再从列表打开设备。', '連線請求過多，請稍候再從清單開啟裝置。'],
+  lease_ended: ['This desktop session is no longer valid. Return to the list and reopen the device.', '此桌面会话已失效，请返回列表重新打开设备。', '此桌面工作階段已失效，請返回清單重新開啟裝置。'],
   idle_timeout: ['Disconnected after inactivity. Reopen the device to continue.', '因长时间无操作已断开，可从列表重新连接。', '因長時間無操作已斷線，可從清單重新連線。'],
+  cert_timeout: ['Certificate confirmation timed out. Reopen the device to try again.', '证书确认超时，请重新打开设备后重试。', '憑證確認逾時，請重新開啟裝置後重試。'],
   session_limit: ['The two-hour session limit was reached. Reopen the device to continue.', '已达到两小时会话上限，可从列表重新连接。', '已達兩小時工作階段上限，可從清單重新連線。'],
   upstream_unavailable: ['Could not reach Windows. Check the server address or tunnel and try again.', '无法连接 Windows，请检查服务器地址或隧道后重试。', '無法連線至 Windows，請檢查伺服器位址或隧道後重試。'],
   direct_dns_failed: ['Could not resolve the hostname. Check its public A or AAAA records and try again.', '无法解析域名，请检查公网 A 或 AAAA 记录后重试。', '無法解析網域，請檢查公網 A 或 AAAA 記錄後重試。'],
@@ -54,7 +56,11 @@ const viewportSize = () => {
   const scale = Math.min(1, 3840 / w, 2160 / h);
   return [Math.max(200, Math.floor(w * scale / 2) * 2), Math.max(200, Math.floor(h * scale / 2) * 2)];
 };
-const api = '/api/rdp/profiles/' + location.pathname.split('/')[2];
+const deviceId = location.pathname.split('/')[2];
+const api = '/api/rdp/profiles/' + deviceId;
+const authErrors = /\bERRCONNECT_(?:AUTHENTICATION_FAILED|LOGON_FAILURE|WRONG_PASSWORD|ACCOUNT_DISABLED|ACCOUNT_EXPIRED|ACCOUNT_LOCKED_OUT|ACCOUNT_RESTRICTION|PASSWORD_CERTAINLY_EXPIRED|PASSWORD_EXPIRED|PASSWORD_MUST_CHANGE|LOGON_TYPE_NOT_GRANTED|NO_OR_MISSING_CREDENTIALS|NTLM_BLOCKED|ACCESS_DENIED|INSUFFICIENT_PRIVILEGES|KDC_UNREACHABLE)\b/;
+const securityErrors = /\bERRCONNECT_(?:SECURITY_NEGO_CONNECT_FAILED|TLS_CONNECT_FAILED|HYBRID_REQUIRED_BY_SERVER)\b/;
+const transportErrors = /\bERRCONNECT_CONNECT_TRANSPORT_FAILED\b/;
 const clientRevision = '5'; // Keep aligned with src/rdp-schema.ts when changing the browser ABI.
 const trust = trustText[locale];
 const certificate = el('certificate');
@@ -141,6 +147,8 @@ async function run() {
   layout();
   let pendingFingerprint;
   let decision = -1;
+  let acceptedTrust;
+  let freerdpError = 0;
   const watch = (ms, reason) => {
     clearTimeout(timer);
     timer = setTimeout(() => finish(reason), ms);
@@ -186,17 +194,28 @@ async function run() {
     if (stopped || !pendingFingerprint || !socket?.lease || acceptCertificate.disabled) return;
     const fingerprint = pendingFingerprint;
     const lease = socket.lease;
+    const revision = profile.revision;
     acceptCertificate.disabled = cancelCertificate.disabled = true;
     void (async () => {
       const response = await request(api + '/trust', {
         method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-CloudSSH-RDP-Client': clientRevision },
-        body: JSON.stringify({ fingerprint, revision: profile.revision, lease }),
+        signal: AbortSignal.any([abort.signal, AbortSignal.timeout(10_000)]),
+        body: JSON.stringify({ fingerprint, revision, lease }),
       });
       if (!response.ok || (await response.json()).fingerprint !== fingerprint) throw new Error('trust rejected');
-      if (stopped || pendingFingerprint !== fingerprint) return;
+      if (stopped || pendingFingerprint !== fingerprint || socket.lease !== lease) return;
+      acceptedTrust = { revision, fingerprint };
+      socket.endCertWait?.();
+      if (stopped) return;
+      certificate.close();
+      if (socket.certHold) {
+        // Keep native TLS waiting. Only the relay can confirm this held socket needs a retry.
+        show(13);
+        watch(5_000, 26);
+        return;
+      }
       profile.fingerprint = fingerprint;
       decision = 1;
-      certificate.close();
       show(14);
       watch(30_000, 19);
     })().catch(() => finish(trust[7]));
@@ -220,8 +239,17 @@ async function run() {
         if (stopped || address !== url.href || !ticket || socket) throw new Error('socket unavailable');
         socket = window.createCloudSshRdpSocket(address, ticket);
         socket.onRelayClose = reason => {
+          if (stopped) return;
+          if (reason === 'cert_reconnect' && acceptedTrust && !ready) {
+            finish(26);
+            tellWorkspace('reconnect', acceptedTrust);
+            return;
+          }
           const detail = failure(reason === 'connect_timeout' ? 'upstream_unavailable' : reason);
           if (detail) finish(detail);
+          else if (!ready && (reason === 'upstream_closed' || reason === 'upstream_read_failed' || reason === 'upstream_write_failed')) {
+            finish(freerdpError || 26);
+          }
         };
         socket.onDesktopRecorded = () => {
           if (!stopped) window.frameElement?.dispatchEvent(new Event('cloudssh-rdp-recorded'));
@@ -247,9 +275,10 @@ async function run() {
         if (pendingFingerprint) return fingerprint === pendingFingerprint ? decision : -1;
         pendingFingerprint = fingerprint;
         decision = 0;
+        socket?.beginCertWait?.();
         displayCertificate(fingerprint);
         status.textContent = trust[8];
-        watch(85_000, trust[9]);
+        watch(85_000, failure('cert_timeout'));
         return 0;
       },
       onWindowsDisplayControl() {
@@ -257,6 +286,7 @@ async function run() {
         negotiatedResize = true;
         // SDL enables its resizable window after processing the server capabilities.
         clearTimeout(resizeTimer); resizeTimer = setTimeout(() => layout(true), 550);
+        tellWorkspace('display-control');
       },
       onWindowsFirstFrame() {
         if (stopped || ready) return;
@@ -282,8 +312,16 @@ async function run() {
         }).catch(() => finish(17));
         return {};
       },
-      print() {}, printErr() {},
-      onExit(code) { finish(code ? (ready ? 22 : 19) : 16); },
+      print() {},
+      printErr(line) {
+        if (typeof line !== 'string') return;
+        if (authErrors.test(line)) freerdpError = 24;
+        else if (securityErrors.test(line)) freerdpError = 25;
+        else if (!freerdpError && transportErrors.test(line)) freerdpError = 26;
+      },
+      onExit(code) {
+        finish(code ? (ready ? 22 : (freerdpError || 19)) : (ready ? 16 : (freerdpError || 19)));
+      },
       onAbort() { finish(17); },
       onRuntimeInitialized() {
         if (stopped) return;
@@ -310,15 +348,17 @@ async function run() {
           ticket = info.ticket;
           window.Module.websocket.on?.('open', () => { if (!stopped) { show(14); watch(30_000, 19); } });
           window.Module.websocket.on?.('error', () => finish(22));
-          window.Module.websocket.on?.('close', () => finish(ready ? 16 : 19));
+          window.Module.websocket.on?.('close', () => finish(ready ? 16 : (freerdpError || 19)));
           initialSize = viewportSize();
           layout(true);
           // Local placeholder for the WASM socket adapter. Only the Worker's claimed profile selects the TCP destination.
           const args = ['/v:127.0.0.1:3389', '/u:' + username, '/sec:nla', '/cert:deny',
-            '/size:' + initialSize.join('x'), '/dynamic-resolution', '-clipboard', '-auto-reconnect', '/audio-mode:2', '/log-level:OFF'];
+            '/size:' + initialSize.join('x'), '/dynamic-resolution', '-clipboard', '-auto-reconnect', '/audio-mode:2', '/log-level:ERROR'];
           if (domain) args.push('/d:' + domain);
           const result = window.Module.callMain(args);
-          if (result && typeof result.then === 'function') result.then(code => finish(code ? 19 : 16), () => finish(17));
+          if (result && typeof result.then === 'function') {
+            result.then(code => finish(code ? (ready ? 22 : (freerdpError || 19)) : (ready ? 16 : (freerdpError || 19))), () => finish(17));
+          }
         })().catch(() => finish(17));
       },
     };
@@ -341,13 +381,23 @@ for (const event of ['keydown', 'pointerdown', 'pointermove', 'wheel']) {
   canvas.addEventListener(event, input => { if (input.isTrusted) socket?.activity(); }, { passive: true });
 }
 void (async () => {
-  if (window.frameElement?.dataset.connectSaved !== 'true') return show(9);
-  delete window.frameElement.dataset.connectSaved;
+  const intent = window.frameElement?.dataset;
+  if (intent?.connectSaved !== 'true') return show(9);
+  const { reconnectRevision, reconnectFingerprint } = intent;
+  delete intent.connectSaved;
+  delete intent.reconnectRevision;
+  delete intent.reconnectFingerprint;
   if (!crossOriginIsolated || typeof SharedArrayBuffer !== 'function') return show(20);
   const response = await request(api, { cache: 'no-store' });
   if (!response.ok) { status.textContent = await requestFailure(response); return; }
   const saved = await response.json();
-  if ((saved.fingerprint !== null && !/^[a-f0-9]{64}$/.test(saved.fingerprint)) || !Number.isInteger(saved.revision)) return show(21);
+  if ((saved.fingerprint !== null && (typeof saved.fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(saved.fingerprint))) ||
+      !Number.isSafeInteger(saved.revision) || saved.revision < 1) return show(21);
+  if ((reconnectRevision !== undefined || reconnectFingerprint !== undefined) &&
+      (reconnectRevision !== String(saved.revision) || reconnectFingerprint !== saved.fingerprint)) {
+    status.textContent = failure('profile_changed');
+    return;
+  }
   profile = saved;
   if (profile.hasLogin !== true) return show(9);
   tellWorkspace('starting', profile.name);

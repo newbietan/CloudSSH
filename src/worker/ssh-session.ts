@@ -19,6 +19,7 @@ import {
   SSHAESGCMCipher,
   SSHHMAC,
 } from '../ssh/crypto';
+import { SshExecError } from '../ssh/exec-error';
 import {
   assertHostKeyAlgorithm,
   fingerprintHostKey,
@@ -1842,15 +1843,9 @@ export class SSHSession {
           this.sendSFTPError('init', `服务器不支持 SFTP: ${description}`);
           this.sftpHandler = null;
         } else if (this.isExecChannel(channelID)) {
-          // Exec channel open failed - reject just this command, keep SSH session alive
-          const execCh = this.activeExecChannels.get(channelID);
-          if (execCh) {
-            execCh.onChannelOpenFailure(reasonCode, description);
-            this.activeExecChannels.delete(channelID);
-          }
-          this.sendDebug(
-            `Exec channel open failed: channelID=${channelID}, reason=${reasonCode}, desc=${description}`
-          );
+          // Exec channel open failed - reject just this command, keep SSH session alive.
+          this.activeExecChannels.get(channelID)?.onChannelOpenFailure();
+          this.sendDebug(`Exec channel open failed: channelID=${channelID}, reason=${reasonCode}`);
         } else {
           // Shell channel failed - close connection
           this.sendError('通道打开被拒绝', 'channel_rejected');
@@ -1904,12 +1899,7 @@ export class SSHSession {
             }
           });
         } else {
-          // Exec channel success — could be exec request confirmed or exit-status
-          // Try to parse exit-status from payload
-          const execCh = this.activeExecChannels.get(channelID);
-          if (execCh) {
-            this.sendDebug(`Exec channel success: channelID=${channelID}`);
-          }
+          this.activeExecChannels.get(channelID)?.onRequestSuccess();
         }
         break;
       }
@@ -1928,7 +1918,12 @@ export class SSHSession {
           this.sendSFTPError('init', 'SFTP subsystem 请求被拒绝');
           this.sftpHandler.dispose();
           this.sftpHandler = null;
-        } else if (this.state === 'shell' || this.state === 'shell-requested') {
+        } else if (this.activeExecChannels.has(channelID)) {
+          this.activeExecChannels.get(channelID)?.onRequestFailure();
+        } else if (
+          channelID === this.shellChannel.getLocalChannelID() &&
+          (this.state === 'shell' || this.state === 'shell-requested')
+        ) {
           this.sendError('PTY 或 Shell 请求被拒绝', 'pty_shell_rejected');
           this.close();
         }
@@ -2146,12 +2141,8 @@ export class SSHSession {
 
         if (reqType === 'exit-status') {
           const execCh = this.activeExecChannels.get(reqChannelID);
-          if (execCh) {
-            const exitCode =
-              (payload[offset] << 24) |
-              (payload[offset + 1] << 16) |
-              (payload[offset + 2] << 8) |
-              payload[offset + 3];
+          if (execCh && payload.length - offset >= 4) {
+            const exitCode = readUint32(payload, offset);
             execCh.onExitStatus(exitCode);
             this.sendDebug(
               `Exec channel exit-status: channelID=${reqChannelID}, exitCode=${exitCode}`
@@ -3146,34 +3137,60 @@ export class SSHSession {
 
   /** Shared, bounded non-PTY exec. Approval belongs to the calling interface. */
   async executeCommand(command: string, timeout: number, signal?: AbortSignal): Promise<import('./agent/types').ExecResult> {
-    if (this.closed || !['ready', 'tunnel-ready', 'rekey'].includes(this.state)) throw new Error('SSH unavailable');
-    signal?.throwIfAborted();
+    if (!this.isOperational()) {
+      throw new SshExecError(this.closed ? 'exec_transport_closed' : 'exec_failed', 'not_executed');
+    }
+    if (signal?.aborted) throw new SshExecError('exec_cancelled', 'not_executed');
     this.recordUserActivity();
     const channelID = this.nextChannelID++;
     const channel = new SSHChannel(this.channelMaxPacketSize);
-    const execCh = new AgentExecChannel(channelID, channel);
+    const execCh = new AgentExecChannel();
     this.channels.set(channelID, channel);
     this.activeExecChannels.set(channelID, execCh);
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let rejectAbort: ((error: Error) => void) | undefined;
-    const onAbort = () => rejectAbort?.(new Error('Exec aborted'));
-    const cancelled = new Promise<never>((_, reject) => {
-      rejectAbort = reject;
-      timer = setTimeout(() => reject(new Error('Exec timeout')), timeout);
-      signal?.addEventListener('abort', onAbort, { once: true });
-    });
+    let openTimer: ReturnType<typeof setTimeout> | undefined;
+    let rejectStop!: (error: SshExecError) => void;
+    let stopped: SshExecError | undefined;
+    let requestStarted = false;
+    const outcome = () => requestStarted ? 'unknown' : 'not_executed';
+    const stop = (error: SshExecError) => {
+      if (stopped) return;
+      stopped = error;
+      rejectStop(error);
+    };
+    const onAbort = () => stop(new SshExecError('exec_cancelled', outcome()));
+    const cancelled = new Promise<never>((_, reject) => { rejectStop = reject; });
+    timer = setTimeout(() => stop(new SshExecError(
+      requestStarted ? 'exec_timeout' : 'exec_channel_timeout', outcome()
+    )), timeout);
+    openTimer = setTimeout(() => stop(new SshExecError('exec_channel_timeout', 'not_executed')), 5000);
+    signal?.addEventListener('abort', onAbort, { once: true });
     const work = (async () => {
       await this.sendEncrypted(channel.buildOpenSession(channelID));
-      const opened = await this.waitForExecChannelOpen(execCh, channel, '');
-      if (!opened) return execCh.getClosedPromise();
-      signal?.throwIfAborted();
-      if (this.closed || !this.activeExecChannels.has(channelID)) throw new Error('Exec cancelled');
+      const opened = await execCh.getOpenedPromise();
+      clearTimeout(openTimer);
+      if (stopped) throw stopped;
+      if (execCh.isOpenFailed()) throw new SshExecError('exec_channel_rejected', 'not_executed');
+      if (this.closed) throw new SshExecError('exec_transport_closed', 'not_executed');
+      if (!opened || !execCh.startExecRequest()) {
+        throw new SshExecError('exec_channel_closed', 'not_executed');
+      }
+      // Once a write is attempted, neither a write error nor cancellation proves non-execution.
+      requestStarted = true;
       await this.sendEncrypted(channel.buildExecRequest(command));
-      return execCh.getClosedPromise();
+      const result = await execCh.getClosedPromise();
+      if (execCh.wasRequestRejected()) throw new SshExecError('exec_rejected', 'not_executed');
+      if (this.closed && result.exitCode < 0) throw new SshExecError('exec_transport_closed', 'unknown');
+      return result;
     })();
-    try { return await Promise.race([work, cancelled]); }
-    finally {
-      if (timer !== undefined) clearTimeout(timer);
+    try {
+      return await Promise.race([work, cancelled]);
+    } catch (error) {
+      if (error instanceof SshExecError) throw error;
+      throw new SshExecError(this.closed ? 'exec_transport_closed' : 'exec_failed', outcome());
+    } finally {
+      clearTimeout(timer);
+      clearTimeout(openTimer);
       signal?.removeEventListener('abort', onAbort);
       this.activeExecChannels.delete(channelID);
       this.channels.delete(channelID);
@@ -3183,42 +3200,6 @@ export class SSHSession {
         try { await this.sendEncrypted(channel.buildClose()); } catch { /* transport closing */ }
       }
     }
-  }
-
-  private waitForExecChannelOpen(
-    execCh: AgentExecChannel,
-    channel: SSHChannel,
-    command: string
-  ): Promise<boolean> {
-    return new Promise((resolve, reject) => {
-      const start = Date.now();
-      const timeout = 5000;
-
-      const check = () => {
-        if (this.closed || !this.activeExecChannels.has(execCh.getChannelID())) { resolve(false); return; }
-        // Open rejected by server — return false, caller will await closedPromise
-        if (execCh.isOpenFailed()) {
-          resolve(false);
-          return;
-        }
-
-        // Open succeeded — return true, caller will send exec request
-        if (execCh.isOpenConfirmed() || channel.getRemoteChannelID() !== 0) {
-          resolve(true);
-          return;
-        }
-
-        // Timeout — reject with error
-        if (Date.now() - start > timeout) {
-          reject(new Error(`Exec channel open timeout (5s) for command: ${command}`));
-          return;
-        }
-
-        setTimeout(check, 50);
-      };
-
-      check();
-    });
   }
 
   /** Waiting is not active execution: user inactivity continues to expire it. */

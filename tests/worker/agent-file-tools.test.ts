@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import { SSHChannel } from '../../src/ssh/channel';
 import { AgentExecChannel } from '../../src/worker/agent/exec-channel';
 import {
   isBlockedFilePath,
@@ -238,7 +237,7 @@ describe('ToolExecutor: write_file', () => {
 
   describe('patch mode (search provided)', () => {
     it('refuses to overwrite a file when the real exec capture has discarded its middle', async () => {
-      const channel = new AgentExecChannel(7, new SSHChannel());
+      const channel = new AgentExecChannel();
       const original = new TextEncoder().encode('UNIQUE\n' + 'x'.repeat(600_000));
       for (let offset = 0; offset < original.length; offset += 32_768) {
         channel.onData(original.subarray(offset, offset + 32_768));
