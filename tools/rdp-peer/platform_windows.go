@@ -12,10 +12,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
-	"unicode/utf16"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -29,6 +27,7 @@ const serviceName = "CloudSSHRdpConnector"
 const displayName = "CloudSSH RDP Connector"
 const configFile = "identity.bin"
 const installedExe = "connector.exe"
+const bindingFile = "cloudssh-binding.cloudssh-rdp.json"
 
 func platformMain() {
 	service, err := svc.IsWindowsService()
@@ -212,6 +211,20 @@ func copyInstaller(dest string) error {
 	return nil
 }
 
+func installerBinding(exe string, now time.Time) (enrollment, error) {
+	// UAC and shortcuts may change the current directory. Only the exact sibling of this EXE is used.
+	path := filepath.Join(filepath.Dir(exe), bindingFile)
+	if noReparse(path, false) != nil {
+		return enrollment{}, errors.New("extract the entire CloudSSH setup ZIP, then run the installer from the extracted folder")
+	}
+	raw, err := readLimit(path, maxConfig)
+	if err != nil {
+		return enrollment{}, errors.New("could not read the adjacent CloudSSH installation authorization")
+	}
+	defer clear(raw)
+	return parseEnrollment(raw, now)
+}
+
 func setup(in *bufio.Reader) error {
 	dir, err := directory()
 	if err != nil {
@@ -230,25 +243,21 @@ func setup(in *bufio.Reader) error {
 	if !errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST) {
 		return err
 	}
-	path, err := selectBindingFile()
-	if err != nil || path == "" {
-		return err
-	}
-	raw, err := readLimit(path, maxConfig)
+	sourceExe, err := os.Executable()
 	if err != nil {
-		return errors.New("cannot read the selected binding file")
+		return errors.New("cannot determine the installer directory")
 	}
-	grant, err := parseEnrollment(raw, time.Now())
-	clear(raw)
+	grant, err := installerBinding(sourceExe, time.Now())
 	if err != nil {
 		return err
 	}
-	fmt.Printf("CloudSSH site: %s\nThis PC will accept approved RDP sessions from this exact site.\n", grant.Origin)
-	if !confirm(in, "Does the site match the address in your CloudSSH browser? [y/N] ") {
-		return nil
-	}
+	fmt.Printf("CloudSSH site: %s\nThis PC will link automatically when its service comes online.\n", grant.Origin)
 	var access accessCredentials
 	if grant.AccessRequired {
+		// Do not send separately entered Access secrets to a modified or unexpected binding-file origin.
+		if !confirm(in, "Verify this site before entering its Access credentials. Continue? [y/N] ") {
+			return nil
+		}
 		fmt.Print("Access Service Token Client ID: ")
 		id, err := in.ReadString('\n')
 		if err != nil {
@@ -314,7 +323,7 @@ func setup(in *bufio.Reader) error {
 	}
 	logInstalled = eventlog.InstallAsEventCreate(serviceName, eventlog.Error|eventlog.Info) == nil
 	label, _ := os.Hostname()
-	id, fingerprint, err := register(context.Background(), clientForConnector(), grant, label, access)
+	id, _, err := register(context.Background(), clientForConnector(), grant, label, access)
 	if err != nil {
 		return err
 	}
@@ -329,7 +338,7 @@ func setup(in *bufio.Reader) error {
 		return err
 	}
 	ok = true
-	fmt.Printf("\nInstalled. Windows service starts automatically.\nIn CloudSSH, match this device-key SHA-256 fingerprint and click Confirm device:\n%s\n", fingerprint)
+	fmt.Println("\nInstalled. The service links automatically as soon as it comes online. Return to CloudSSH and open the desktop.")
 	return nil
 }
 func confirm(in *bufio.Reader, prompt string) bool {
@@ -437,40 +446,4 @@ func (windowsService) Execute(_ []string, request <-chan svc.ChangeRequest, stat
 			}
 		}
 	}
-}
-
-// The platform-native file picker handles Unicode paths. No scripts, file associations, shell
-// commands, or untrusted arguments are created from the selected file contents.
-type openFileName struct {
-	size                                 uint32
-	owner, instance                      uintptr
-	filter, customFilter                 *uint16
-	maxCustom, filterIndex               uint32
-	file                                 *uint16
-	maxFile                              uint32
-	fileTitle                            *uint16
-	maxFileTitle                         uint32
-	initialDir, title                    *uint16
-	flags                                uint32
-	fileOffset, fileExtension            uint16
-	defExt                               *uint16
-	customData, hook, template, reserved uintptr
-	reserved32, flagsEx                  uint32
-}
-
-func selectBindingFile() (string, error) {
-	buf := make([]uint16, 32768)
-	filter := utf16.Encode([]rune("CloudSSH binding file (*.cloudssh-rdp.json)\x00*.cloudssh-rdp.json\x00\x00"))
-	o := openFileName{size: uint32(unsafe.Sizeof(openFileName{})), filter: &filter[0], file: &buf[0], maxFile: uint32(len(buf)),
-		title: wide("Select the CloudSSH binding file downloaded for this PC"), flags: 0x80000 | 0x1000 | 0x800 | 0x8 | 0x02000000}
-	dll := windows.NewLazySystemDLL("comdlg32.dll")
-	ret, _, _ := dll.NewProc("GetOpenFileNameW").Call(uintptr(unsafe.Pointer(&o)))
-	runtime.KeepAlive(&o)
-	if ret == 0 {
-		if n, _, _ := dll.NewProc("CommDlgExtendedError").Call(); n != 0 {
-			return "", errors.New("the Windows file picker failed")
-		}
-		return "", nil
-	}
-	return windows.UTF16ToString(buf), nil
 }

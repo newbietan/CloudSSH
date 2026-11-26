@@ -36,8 +36,9 @@ async function expectFullscreenFit(page: Page, checkHits = false) {
   }
 }
 
-test('new Windows device offers connector and binding downloads in-app without a second connection button', async ({ page }) => {
-  const fp = 'a'.repeat(64), connectorId = '13345678-1234-1234-1234-123456789abc';
+test('new Windows device downloads a single setup ZIP and detects automatic binding without confirmation', async ({ page }) => {
+  const fp = 'a'.repeat(64);
+  let downloads = 0;
   let state: Record<string, unknown> = { state: 'unbound' };
   let profile: Record<string, unknown> | undefined;
   await page.route('**/api/config', r => r.request().method() === 'GET' ? r.fulfill({ json: {
@@ -54,21 +55,13 @@ test('new Windows device offers connector and binding downloads in-app without a
     return r.fulfill({ status: 201, json: profile });
   });
   await page.route(`**/api/rdp/profiles/${id}/connector`, r => r.request().method() === 'GET' ? r.fulfill({ json: state }) : r.fallback());
-  await page.route(`**/api/rdp/profiles/${id}/connector-enroll`, r => {
+  await page.route(`**/api/rdp/profiles/${id}/connector-setup`, r => {
     if (r.request().method() !== 'POST') return r.fallback();
     expect(r.request().postDataJSON()).toEqual({ revision: 1 });
-    const expires = Date.now() + 60_000;
-    state = { state: 'pending', id: connectorId, label: 'WIN-TEST', fingerprint: fp, expires };
-    return r.fulfill({ json: { origin: new URL(r.request().url()).origin, version: 2, expires, grant: `e2.${'a'.repeat(120)}` } });
+    downloads++;
+    state = { state: 'waiting', expires: Date.now() + 60_000 };
+    return r.fulfill({ contentType: 'application/zip', headers: { 'Content-Length': '4096' }, body: Buffer.alloc(4096) });
   });
-  await page.route(`**/api/rdp/profiles/${id}/connector-confirm`, r => {
-    if (r.request().method() !== 'POST') return r.fallback();
-    expect(r.request().postDataJSON()).toEqual({ device: connectorId, fingerprint: fp });
-    state = { state: 'offline', label: 'WIN-TEST', fingerprint: fp };
-    return r.fulfill({ json: { ok: true } });
-  });
-  await page.route('**/rdp/download/windows-x64', r => r.request().method() === 'GET'
-    ? r.fulfill({ contentType: 'application/zip', headers: { 'Content-Length': '4096' }, body: Buffer.alloc(4096) }) : r.fallback());
   await page.goto('/?lang=en-US');
   await page.locator('#add-server-btn').click();
   const modal = page.locator('#server-modal');
@@ -80,15 +73,16 @@ test('new Windows device offers connector and binding downloads in-app without a
   await modal.locator('#server-submit-btn').click();
   const setup = page.getByRole('dialog', { name: 'Set up Windows direct access' });
   await expect(setup).toBeVisible();
+  expect(downloads).toBe(0);
   const installerEvent = page.waitForEvent('download');
-  await setup.getByRole('button', { name: 'Download Windows connector' }).click();
-  expect((await installerEvent).suggestedFilename()).toBe('cloudssh-rdp-connector-windows-amd64.zip');
-  const fileEvent = page.waitForEvent('download');
-  await setup.getByRole('button', { name: 'Download this device’s binding file' }).click();
-  expect((await fileEvent).suggestedFilename()).toBe('cloudssh-binding.cloudssh-rdp.json');
-  await expect(setup.getByText(fp)).toBeVisible();
-  await setup.getByRole('button', { name: 'Confirm device and connect' }).click();
-  await expect(setup.getByText(/Waiting for the Windows service/)).toBeVisible();
+  await setup.getByRole('button', { name: 'Download and link this device' }).click();
+  expect((await installerEvent).suggestedFilename()).toBe('cloudssh-windows-setup-12345678.zip');
+  await expect(setup.getByText(/Waiting for the Windows connector/)).toBeVisible();
+  await expect(setup.getByRole('button', { name: /Confirm device|binding file/ })).toHaveCount(0);
+  state = { state: 'online', label: 'WIN-TEST', fingerprint: fp };
+  await expect(setup.getByText('Connector online')).toBeVisible();
+  await expect(setup.getByRole('button', { name: 'Open desktop' })).toBeVisible();
+  expect(downloads).toBe(1);
   await setup.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(page.locator(`#rdp-card-${id} button[id^=rdp-open-]`)).toHaveCount(1);
   await expect(page.locator(`#rdp-card-${id} button[id^=rdp-peer-]`)).toHaveCount(0);

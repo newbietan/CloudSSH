@@ -62,7 +62,7 @@ export async function deviceKeyFingerprint(key: string): Promise<string> {
   return bytesToHex(await crypto.subtle.digest('SHA-256', b64url(key, 32)!));
 }
 export const registrationMessage = (token: string, key: string, label: string) =>
-  `cloudssh-rdp-register-v2\n${token}\n${key}\n${label}`;
+  `cloudssh-rdp-register-v3\n${token}\n${key}\n${label}`;
 export const standbyMessage = (token: string, challenge: string) =>
   `cloudssh-rdp-standby-v2\n${token}\n${challenge}`;
 
@@ -78,7 +78,8 @@ export interface EnrollScope extends Scope {
 export interface DeviceScope extends Scope {
   device: string;
 }
-type ScopeByKind = { e2: EnrollScope; d2: DeviceScope };
+// New download-to-bind grants never accept old manual-confirmation capabilities.
+type ScopeByKind = { e3: EnrollScope; d2: DeviceScope };
 
 /** One stable key per deployment; no external route exposes the key or permits signing arbitrary input. */
 export class RdpAuthorityDO {
@@ -140,7 +141,7 @@ async function authority(
   const mode = resolveAuthMode(env, request);
   // Password rotation invalidates pending enrollment, but does not change installed device identity.
   const epoch =
-    payload.startsWith('e2.') && mode === 'password'
+    payload.startsWith('e3.') && mode === 'password'
       ? bytesToHex(
           await crypto.subtle.digest('SHA-256', encoder.encode(env.ADMIN_PASSWORD_HASH ?? ''))
         )
@@ -154,7 +155,7 @@ async function authority(
 export function signDeviceScope(
   env: Env,
   req: Request,
-  kind: 'e2',
+  kind: 'e3',
   value: EnrollScope
 ): Promise<string>;
 export function signDeviceScope(
@@ -171,7 +172,7 @@ export async function signDeviceScope(
 ) {
   const enrollment = value as EnrollScope;
   const suffix =
-    kind === 'e2' ? `${enrollment.expires}.${enrollment.proof}` : (value as DeviceScope).device;
+    kind === 'e3' ? `${enrollment.expires}.${enrollment.proof}` : (value as DeviceScope).device;
   const payload = `${kind}.${value.route}.${value.uid}.${value.profile}.${suffix}`;
   const res = await authority(env, 'sign', req, payload);
   const signature: unknown = res?.ok ? (await res.json<{ signature?: unknown }>()).signature : null;
@@ -181,14 +182,14 @@ export async function signDeviceScope(
 export function verifyDeviceScope(
   env: Env,
   req: Request,
-  kind: 'e2'
+  kind: 'e3'
 ): Promise<(EnrollScope & { token: string }) | null>;
 export function verifyDeviceScope(
   env: Env,
   req: Request,
   kind: 'd2'
 ): Promise<(DeviceScope & { token: string }) | null>;
-export async function verifyDeviceScope(env: Env, req: Request, kind: 'e2' | 'd2') {
+export async function verifyDeviceScope(env: Env, req: Request, kind: 'e3' | 'd2') {
   const header = req.headers.get('Authorization') ?? '';
   if (
     header.length > 295 ||
@@ -199,7 +200,7 @@ export async function verifyDeviceScope(env: Env, req: Request, kind: 'e2' | 'd2
     return null;
   const token = header.slice(7),
     parts = token.split('.');
-  if (parts.length !== (kind === 'e2' ? 7 : 6)) return null;
+  if (parts.length !== (kind === 'e3' ? 7 : 6)) return null;
   const [, route, rawUid, profile, first, second] = parts;
   const mode = resolveAuthMode(env, req),
     uid = Number(rawUid),
@@ -217,7 +218,7 @@ export async function verifyDeviceScope(env: Env, req: Request, kind: 'e2' | 'd2
     return null;
   const expires = Number(first);
   if (
-    kind === 'e2'
+    kind === 'e3'
       ? !/^\d{13}$/.test(first) || expires <= now || expires > now + ENROLL_MS || !digestHex(second)
       : !isRdpId(first)
   )
@@ -229,6 +230,6 @@ export async function verifyDeviceScope(env: Env, req: Request, kind: 'e2' | 'd2
     uid,
     profile,
     token,
-    ...(kind === 'e2' ? { expires, proof: second } : { device: first }),
+    ...(kind === 'e3' ? { expires, proof: second } : { device: first }),
   };
 }

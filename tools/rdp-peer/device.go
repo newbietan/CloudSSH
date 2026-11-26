@@ -72,9 +72,9 @@ func isToken(s, prefix string) bool {
 }
 func parseEnrollment(raw []byte, now time.Time) (enrollment, error) {
 	var e enrollment
-	if len(raw) > maxConfig || json.Unmarshal(raw, &e) != nil || e.Version != 2 || !validOrigin(e.Origin) ||
-		!isToken(e.Grant, "e2") || e.Expires <= now.UnixMilli() || e.Expires > now.Add(16*time.Minute).UnixMilli() {
-		return enrollment{}, errors.New("invalid or expired binding file; download a fresh file from CloudSSH")
+	if len(raw) > maxConfig || json.Unmarshal(raw, &e) != nil || e.Version != 3 || !validOrigin(e.Origin) ||
+		!isToken(e.Grant, "e3") || e.Expires <= now.UnixMilli() || e.Expires > now.Add(16*time.Minute).UnixMilli() {
+		return enrollment{}, errors.New("invalid or expired installation authorization; download a fresh ZIP from CloudSSH")
 	}
 	return e, nil
 }
@@ -146,10 +146,19 @@ func register(ctx context.Context, client *http.Client, e enrollment, label stri
 		Identity    string `json:"identity"`
 		Fingerprint string `json:"fingerprint"`
 	}
-	body := map[string]string{"key": public, "label": label, "signature": signature(priv, "cloudssh-rdp-register-v2\n"+e.Grant+"\n"+public+"\n"+label)}
-	if err := requestMachine(ctx, client, e.Origin, "register", e.Grant, a, body, &result); err != nil {
-		clear(priv)
-		return identity{}, "", err
+	body := map[string]string{"key": public, "label": label, "signature": signature(priv, "cloudssh-rdp-register-v3\n"+e.Grant+"\n"+public+"\n"+label)}
+	// Retry a lost or temporarily unavailable reply once with the SAME key; do not replay a rejected grant.
+	for attempt := 0; ; attempt++ {
+		result.Identity, result.Fingerprint = "", ""
+		err := requestMachine(ctx, client, e.Origin, "register", e.Grant, a, body, &result)
+		if err == nil {
+			break
+		}
+		var status machineStatus
+		if attempt > 0 || ctx.Err() != nil || (errors.As(err, &status) && status.code < 500) {
+			clear(priv)
+			return identity{}, "", err
+		}
 	}
 	if !isToken(result.Identity, "d2") || result.Fingerprint != fingerprint {
 		clear(priv)

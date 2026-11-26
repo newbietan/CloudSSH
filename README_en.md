@@ -386,7 +386,7 @@ RDP is built in for both production and test. It requires HTTPS and a signed-in 
 2. Enter the Windows username (default `Administrator`), password and optional domain. The login is encrypted in your account. Older devices without credentials must be completed before connecting.
 3. Connect from the card. On first use, verify the Windows certificate’s SHA-256 fingerprint before accepting; a changed pin blocks login. The desktop opens in the same tab. **Back** disconnects without signing out of Windows; **Full screen** scales the entire image below the toolbar without renegotiating resolution.
 
-Download the [resident Windows connector](docs/rdp-peer.md) directly from the device setup page. Install and link it once; no Worker secret is required. Open Desktop prefers WebRTC and silently uses a configured relay if direct setup fails before sign-in. The toolbar shows the chosen path’s RTT and, when available, Windows RDP RTT. See [RDP setup and limits](docs/rdp.md).
+Choose **Download and link this device** on the setup page. Extract the [device-specific ZIP](docs/rdp-peer.md) on the target Windows PC and run the installer. The service links automatically. No binding code, extra confirmation, or Worker secret is required. Open Desktop prefers WebRTC and silently uses a configured relay if direct setup fails before sign-in. The toolbar shows the chosen path’s RTT and, when available, Windows RDP RTT. See [RDP setup and limits](docs/rdp.md).
 
 ##### Connecting via Cloudflare Tunnel
 

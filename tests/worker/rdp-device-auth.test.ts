@@ -19,7 +19,7 @@ const fixture = (options?: Record<string, string>) => {
   return { env, db, restart() { signer = new RdpAuthorityDO(state); } };
 };
 const request = (code: string, site = url, headers = {}) => new Request(site, { headers: { Authorization: `Bearer ${code}`, ...headers } });
-const e2 = (env: Env, route = '42') => signDeviceScope(env, new Request(url), 'e2', { route, uid: 2, profile, proof: rand, expires: Date.now() + ENROLL_MS });
+const e3 = (env: Env, route = '42') => signDeviceScope(env, new Request(url), 'e3', { route, uid: 2, profile, proof: rand, expires: Date.now() + ENROLL_MS });
 const d2 = (env: Env, route = '42') => signDeviceScope(env, new Request(url), 'd2', { route, uid: 2, profile, device });
 
 function b64(raw: ArrayBuffer) { return Buffer.from(raw).toString('base64url'); }
@@ -27,31 +27,31 @@ function b64(raw: ArrayBuffer) { return Buffer.from(raw).toString('base64url'); 
 describe('deployment-owned RDP authority', () => {
   it('uses no Worker secret, survives reconstruction, isolates deployments and does not initialize on verification', async () => {
     const f = fixture(), other = fixture();
-    const token = await e2(f.env);
+    const token = await e3(f.env);
     expect(f.db.size).toBe(1);
     f.restart();
-    expect(await verifyDeviceScope(f.env, request(token), 'e2')).toMatchObject({ profile, uid: 2, proof: rand });
-    expect(await verifyDeviceScope(other.env, request(token), 'e2')).toBeNull();
+    expect(await verifyDeviceScope(f.env, request(token), 'e3')).toMatchObject({ profile, uid: 2, proof: rand });
+    expect(await verifyDeviceScope(other.env, request(token), 'e3')).toBeNull();
     expect(other.db.size).toBe(0);
-    await e2(other.env);
-    expect(await verifyDeviceScope(other.env, request(token), 'e2')).toBeNull();
+    await e3(other.env);
+    expect(await verifyDeviceScope(other.env, request(token), 'e3')).toBeNull();
   });
   it('rejects scope tampering, origin aliases, replay past expiry, browser headers and revoked GitHub identities', async () => {
     vi.useFakeTimers();
     try {
       const { env } = fixture();
-      const token = await e2(env);
+      const token = await e3(env);
       for (const req of [request(token.replace('.42.', '.43.')), request(token.replace('.2.', '.3.')), request(token, url.replace('desk.', 'alias.')),
-        request(token, url, { Origin: 'https://desk.example' }), request(token, url, { Cookie: 'session=x' })]) expect(await verifyDeviceScope(env, req, 'e2')).toBeNull();
-      expect(await verifyDeviceScope({ ...env, GITHUB_ALLOWED_USER_IDS: '41' }, request(token), 'e2')).toBeNull();
+        request(token, url, { Origin: 'https://desk.example' }), request(token, url, { Cookie: 'session=x' })]) expect(await verifyDeviceScope(env, req, 'e3')).toBeNull();
+      expect(await verifyDeviceScope({ ...env, GITHUB_ALLOWED_USER_IDS: '41' }, request(token), 'e3')).toBeNull();
       vi.advanceTimersByTime(ENROLL_MS + 1);
-      expect(await verifyDeviceScope(env, request(token), 'e2')).toBeNull();
+      expect(await verifyDeviceScope(env, request(token), 'e3')).toBeNull();
     } finally { vi.useRealTimers(); }
   });
   it('invalidates pending enrollments but not approved device routing on password rotation; requires native Access', async () => {
     const { env } = fixture({ ADMIN_PASSWORD_HASH: 'epoch-A' });
     const rotated = { ...env, ADMIN_PASSWORD_HASH: 'epoch-B' };
-    expect(await verifyDeviceScope(rotated, request(await e2(env, '-1')), 'e2')).toBeNull();
+    expect(await verifyDeviceScope(rotated, request(await e3(env, '-1')), 'e3')).toBeNull();
     expect(await verifyDeviceScope(rotated, request(await d2(env, '-1')), 'd2')).toMatchObject({ device });
     const cf = fixture({ CF_ACCESS: 'true' }).env;
     const req = request(await d2(cf, `cf-${'e'.repeat(32)}`), url.replace('/register', '/challenge'), { 'CF-Access-Authenticated-User-Email': 'fake@example.com' });
@@ -60,6 +60,15 @@ describe('deployment-owned RDP authority', () => {
     await initializeAccessIdentity(req, { access: { aud: 'native', getIdentity: identity } });
     expect(await verifyDeviceScope(cf, req, 'd2')).toMatchObject({ device });
     expect(identity).not.toHaveBeenCalled();
+  });
+  it('refuses a valid legacy manual-confirmation grant instead of automatically approving it', async () => {
+    const f = fixture();
+    const signed = await e3(f.env);
+    const old = signed.split('.').slice(0, -1).join('.').replace(/^e3\./, 'e2.');
+    const key = await crypto.subtle.importKey('raw', f.db.get('rdp-signing-key-v2')!, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`cloudssh-rdp-capability-v2\nhttps://desk.example\ngithub\n\n${old}`));
+    const candidate = request(`${old}.${Buffer.from(mac).toString('hex')}`);
+    expect(await verifyDeviceScope(f.env, candidate, 'e3')).toBeNull();
   });
   it('checks Ed25519 proof of possession with distinct registration and standby audiences', async () => {
     const keys = await crypto.subtle.generateKey('Ed25519', true, ['sign', 'verify']) as CryptoKeyPair;
@@ -74,7 +83,7 @@ describe('deployment-owned RDP authority', () => {
     const { env } = fixture();
     env.USER_DB = { idFromName: lookedUp } as unknown as DurableObjectNamespace;
     const assets: RdpAssets = { page: '', bootstrap: '', socket: '', peer: '', freerdp: '', wasm: new ArrayBuffer(0), license: '', tags: [] };
-    const token = await e2(env);
+    const token = await e3(env);
     const req = new Request(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ key: 'invalid', label: 'WINDOWS', signature: 'x' }) });
     expect((await handleRdp(req, new URL(req.url), env, assets)).status).toBe(401);
     const old = request('p1.removed', 'https://desk.example/api/rdp/peer/agent', { Upgrade: 'websocket' });

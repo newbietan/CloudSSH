@@ -1,4 +1,4 @@
-import { isRdpId, type RdpConnector } from '../rdp-schema';
+import type { RdpConnector } from '../rdp-schema';
 import {
   DEVICE_PING,
   DEVICE_PONG,
@@ -15,6 +15,7 @@ import {
 } from './rdp-device-auth';
 
 const challengeMs = 30_000;
+const installVersion = 3;
 const noStore = (value: unknown, status = 200) =>
   Response.json(value, { status, headers: { 'Cache-Control': 'no-store' } });
 const denied = (status = 409) => noStore({ code: 'connector_unavailable' }, status);
@@ -53,7 +54,18 @@ export class RdpDevices {
       PRIMARY KEY(user_id,profile))`);
     sql.exec(`CREATE TABLE IF NOT EXISTS rdp_device_enrollments(user_id INTEGER NOT NULL, profile TEXT NOT NULL,
       revision INTEGER NOT NULL, origin TEXT NOT NULL, proof TEXT NOT NULL, expires INTEGER NOT NULL,
-      device TEXT NOT NULL, key TEXT, label TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL DEFAULT '', PRIMARY KEY(user_id,profile))`);
+      device TEXT NOT NULL, key TEXT, label TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL DEFAULT '',
+      grant_version INTEGER NOT NULL DEFAULT 2, PRIMARY KEY(user_id,profile))`);
+    if (
+      !sql
+        .exec('PRAGMA table_info(rdp_device_enrollments)')
+        .toArray()
+        .some((row) => row.name === 'grant_version')
+    ) {
+      sql.exec(
+        'ALTER TABLE rdp_device_enrollments ADD COLUMN grant_version INTEGER NOT NULL DEFAULT 2'
+      );
+    }
     sql.exec(`CREATE TABLE IF NOT EXISTS rdp_device_challenges(user_id INTEGER NOT NULL, profile TEXT NOT NULL,
       device TEXT NOT NULL, nonce TEXT NOT NULL, expires INTEGER NOT NULL, PRIMARY KEY(user_id, profile))`);
     if (state?.setWebSocketAutoResponse && typeof WebSocketRequestResponsePair === 'function') {
@@ -74,11 +86,12 @@ export class RdpDevices {
       .exec(
         `SELECT e.device,e.proof,e.expires,e.key,e.label,e.fingerprint FROM rdp_device_enrollments e JOIN rdp_profiles p
       ON p.user_id=e.user_id AND p.id=e.profile AND p.revision=e.revision
-      WHERE e.user_id=? AND e.profile=? AND e.origin=? AND e.expires>?`,
+      WHERE e.user_id=? AND e.profile=? AND e.origin=? AND e.expires>? AND e.grant_version=?`,
         user,
         profile,
         origin,
-        Date.now()
+        Date.now(),
+        installVersion
       )
       .toArray()[0] as unknown as Enrollment | undefined;
   }
@@ -110,14 +123,6 @@ export class RdpDevices {
       };
     }
     const e = this.pending(user, profile, origin);
-    if (e?.key)
-      return {
-        state: 'pending',
-        id: e.device,
-        label: e.label,
-        fingerprint: e.fingerprint,
-        expires: e.expires,
-      };
     return e ? { state: 'waiting', expires: e.expires } : { state: 'unbound' };
   }
   begin(
@@ -133,15 +138,16 @@ export class RdpDevices {
       this.sql.exec('DELETE FROM rdp_device_enrollments WHERE expires<=?', Date.now());
       if (this.approved(user, profile)) return denied(); // Only explicit unlink may replace an identity.
       const result = this.sql.exec(
-        `INSERT INTO rdp_device_enrollments (user_id,profile,revision,origin,proof,expires,device)
-        SELECT p.user_id,p.id,p.revision,?,?,?,? FROM rdp_profiles p JOIN rdp_profile_options o ON p.user_id=o.user_id AND p.id=o.profile
+        `INSERT INTO rdp_device_enrollments (user_id,profile,revision,origin,proof,expires,device,grant_version)
+        SELECT p.user_id,p.id,p.revision,?,?,?,?,? FROM rdp_profiles p JOIN rdp_profile_options o ON p.user_id=o.user_id AND p.id=o.profile
         WHERE p.user_id=? AND p.id=? AND p.revision=? AND o.login IS NOT NULL
         ON CONFLICT(user_id,profile) DO UPDATE SET revision=excluded.revision,origin=excluded.origin,proof=excluded.proof,
-          expires=excluded.expires,device=excluded.device,key=NULL,label='',fingerprint=''`,
+          expires=excluded.expires,device=excluded.device,grant_version=excluded.grant_version,key=NULL,label='',fingerprint=''`,
         origin,
         proof,
         expires,
         crypto.randomUUID(),
+        installVersion,
         user,
         profile,
         revision
@@ -159,9 +165,10 @@ export class RdpDevices {
   ): Promise<Response> {
     const fingerprint = await deviceKeyFingerprint(key);
     return this.tx(() => {
-      const e = this.pending(user, profile, origin);
-      if (!e || e.proof !== proof || this.approved(user, profile)) return denied(401);
-      // Repeat only the same key+label if the response was lost; never transfer a pending identity to another key.
+      const e = this.pending(user, profile, origin),
+        bound = this.approved(user, profile);
+      if (!e || e.proof !== proof || (bound && bound.id !== e.device)) return denied(401);
+      // One key consumes the grant. The same key+label may recover a lost response, never another key.
       if (e.key && (e.key !== key || e.label !== label)) return denied(401);
       if (!e.key)
         this.sql.exec(
@@ -175,35 +182,18 @@ export class RdpDevices {
       return noStore({ device: e.device, fingerprint });
     });
   }
-  confirm(
+  private candidate(
     user: number,
     profile: string,
-    origin: string,
     device: string,
-    fingerprint: string
-  ): Response {
-    return this.tx(() => {
-      const e = this.pending(user, profile, origin);
-      if (
-        !e?.key ||
-        e.device !== device ||
-        e.fingerprint !== fingerprint ||
-        this.approved(user, profile)
-      )
-        return denied();
-      this.sql.exec(
-        'INSERT INTO rdp_devices VALUES (?,?,?,?,?,?,?)',
-        user,
-        profile,
-        device,
-        origin,
-        e.key,
-        e.label,
-        fingerprint
-      );
-      this.clearPending(user, profile);
-      return noStore({ ok: true });
-    });
+    origin: string
+  ): DeviceRow | undefined {
+    const bound = this.approved(user, profile);
+    if (bound) return bound.id === device && bound.origin === origin ? bound : undefined;
+    const e = this.pending(user, profile, origin);
+    return e?.device === device && e.key
+      ? { id: device, origin, key: e.key, label: e.label, fingerprint: e.fingerprint }
+      : undefined;
   }
   clearPending(user: number, profile: string) {
     this.sql.exec(
@@ -232,10 +222,7 @@ export class RdpDevices {
   }
   challenge(user: number, profile: string, device: string, origin: string): Response {
     return this.tx(() => {
-      if (!this.matches(user, profile, device, origin)) {
-        const e = this.pending(user, profile, origin);
-        return e?.device === device && e.key ? denied(409) : denied(410);
-      }
+      if (!this.candidate(user, profile, device, origin)) return denied(410);
       const current = this.sql
         .exec(
           `SELECT nonce FROM rdp_device_challenges WHERE user_id=? AND profile=? AND device=? AND expires>?`,
@@ -268,18 +255,18 @@ export class RdpDevices {
     signature: string,
     token: string
   ): Promise<Response> {
-    const row = this.approved(user, profile);
+    const row = this.candidate(user, profile, device, origin);
     if (
       !this.state ||
-      row?.id !== device ||
-      row.origin !== origin ||
+      !row ||
       !digestHex(nonce) ||
       !isDeviceSignature(signature) ||
       !(await verifyDeviceSignature(row.key, signature, standbyMessage(token, nonce)))
     )
       return denied(401);
     return this.tx(() => {
-      if (!this.matches(user, profile, device, origin)) return denied(401);
+      const current = this.candidate(user, profile, device, origin);
+      if (!current || current.key !== row.key) return denied(401);
       const consumed = this.sql.exec(
         'DELETE FROM rdp_device_challenges WHERE user_id=? AND profile=? AND device=? AND nonce=? AND expires>?',
         user,
@@ -289,6 +276,19 @@ export class RdpDevices {
         Date.now()
       );
       if (!consumed.rowsWritten) return denied(401);
+      // Binding becomes durable only when the installed service proves the key. If installation failed
+      // before standby, the owner can download a replacement package without a separate unlink step.
+      if (!this.approved(user, profile))
+        this.sql.exec(
+          'INSERT INTO rdp_devices VALUES (?,?,?,?,?,?,?)',
+          user,
+          profile,
+          device,
+          origin,
+          current.key,
+          current.label,
+          current.fingerprint
+        );
       const previous = this.online(user, profile, device, origin);
       const [client, ws] = Object.values(new WebSocketPair());
       this.state!.acceptWebSocket(ws, [tag(profile)]);
@@ -336,9 +336,4 @@ export function validRegistration(
   v: Record<string, unknown>
 ): v is { key: string; label: string; signature: string } {
   return isDeviceKey(v.key) && deviceLabel(v.label) && isDeviceSignature(v.signature);
-}
-export function validConfirmation(
-  v: Record<string, unknown>
-): v is { device: string; fingerprint: string } {
-  return isRdpId(v.device) && digestHex(v.fingerprint);
 }

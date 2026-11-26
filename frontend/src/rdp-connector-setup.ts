@@ -1,33 +1,24 @@
 import {
-  isRdpId,
   RDP_CLIENT_REVISION,
-  RDP_CONNECTOR_FILENAME,
   RDP_CONNECTOR_MAX_DOWNLOAD,
+  rdpConnectorSetupFilename,
   type RdpConnector,
   type RdpProfile,
 } from '../../src/rdp-schema';
 import { localizedElement, t, type TranslationKey } from './i18n';
 import { confirmAction } from './ui-feedback';
 
-const selector = '/api/rdp/profiles/';
-const fingerprint = /^[a-f0-9]{64}$/;
 const stateKeys = {
   unbound: 'rdp.connectorUnbound',
   waiting: 'rdp.connectorWaiting',
-  pending: 'rdp.connectorPending',
   online: 'rdp.connectorOnline',
   offline: 'rdp.connectorOffline',
   other_origin: 'rdp.connectorOtherOrigin',
 } as const;
-export function connectorState(state: unknown): TranslationKey {
-  return typeof state === 'string' && Object.hasOwn(stateKeys, state)
-    ? stateKeys[state as keyof typeof stateKeys]
-    : stateKeys.unbound;
-}
 
 function saveFile(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob),
+    link = document.createElement('a');
   link.href = url;
   link.download = name;
   document.body.append(link);
@@ -39,7 +30,7 @@ function saveFile(blob: Blob, name: string) {
   }
 }
 
-/** Owned by the authenticated device list. Never transfers the short-lived grant via URL or clipboard. */
+/** Only an explicit download authorizes the current device. No grant in URLs, storage, or clipboard. */
 export class RdpConnectorSetup {
   private closeView?: () => void;
   constructor(
@@ -51,7 +42,7 @@ export class RdpConnectorSetup {
     this.closeView?.();
   }
 
-  open(profile: RdpProfile, launchAfterConfirm = true): void {
+  open(profile: RdpProfile, showOpen = true): void {
     this.dispose();
     const dialog = document.createElement('dialog');
     dialog.className = 'rdp-connector-dialog';
@@ -70,22 +61,17 @@ export class RdpConnectorSetup {
     };
     const title = localizedElement('h2', 'rdp.connectorSetup');
     title.id = 'rdp-connector-title';
-    const who = document.createElement('p');
-    who.textContent = profile.name;
+    const name = document.createElement('p');
+    name.textContent = profile.name;
     const steps = localizedElement('p', 'rdp.connectorIntro');
-    const actionHint = document.createElement('p');
-    actionHint.setAttribute('role', 'status');
+    const previewNote = localizedElement('p', 'rdp.connectorPreviewNotice');
+    const hint = document.createElement('p');
+    hint.setAttribute('role', 'status');
     const result = document.createElement('p');
     result.setAttribute('role', 'alert');
-    const detail = document.createElement('section');
-    detail.hidden = true;
-    const label = document.createElement('p');
-    const key = document.createElement('code');
-    const check = localizedElement('p', 'rdp.connectorCheckKey');
-    const tools = document.createElement('div');
-    tools.className = 'rdp-connector-actions';
-    const controls = document.createElement('div');
-    controls.className = 'rdp-connector-actions';
+    const site = document.createElement('code');
+    const actions = document.createElement('div');
+    actions.className = 'rdp-connector-actions';
     const button = (key: TranslationKey) => {
       const b = localizedElement('button', key);
       b.type = 'button';
@@ -93,31 +79,26 @@ export class RdpConnectorSetup {
       return b;
     };
     const download = button('rdp.connectorDownload'),
-      enroll = button('rdp.connectorBindingFile');
-    const confirm = button(
-      launchAfterConfirm ? 'rdp.connectorApproveOpen' : 'rdp.connectorApprove'
-    );
-    const unlink = button('rdp.connectorUnlink'),
-      open = button('rdp.open'),
+      unlink = button('rdp.connectorUnlink');
+    const open = button('rdp.open'),
       back = button('common.close');
-    detail.append(label, check, key, confirm);
-    tools.append(download, enroll);
-    const previewNotice = localizedElement('p', 'rdp.connectorPreviewNotice');
-    previewNotice.hidden = !this.preview;
-    controls.append(open, unlink, back);
-    dialog.append(title, who, steps, previewNotice, tools, actionHint, detail, result, controls);
+    actions.append(download, open, unlink, back);
+    dialog.append(title, name, steps, previewNote, hint, site, result, actions);
     back.onclick = dismiss;
-    const goto = () => {
+    open.onclick = () => {
       dismiss();
       this.openDesktop(profile.id);
     };
-    open.onclick = goto;
+
+    const api = `/api/rdp/profiles/${profile.id}/connector`;
     let state: RdpConnector = profile.connector ?? { state: 'unbound' };
     let busy = false,
       downloading = false,
-      waitUntil = 0;
-    const api = `${selector}${profile.id}`;
-    const get = (path: string, method = 'GET', data?: object, timeout = 10_000) =>
+      failures = 0,
+      statusRequest = false;
+    let until = Date.now() + 16 * 60_000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const request = (path: string, method = 'GET', data?: object, timeout = 10_000) =>
       fetch(path, {
         method,
         cache: 'no-store',
@@ -131,61 +112,75 @@ export class RdpConnectorSetup {
         ...(data ? { body: JSON.stringify(data) } : {}),
       });
     const paint = () => {
-      const current = state;
-      const phase = current.state;
-      const waiting = waitUntil > Date.now();
-      const caption =
-        waiting && phase !== 'online' ? t('rdp.connectorStarting') : t(connectorState(phase));
-      if (actionHint.textContent !== caption) actionHint.textContent = caption;
-      const installed = phase === 'online' || phase === 'offline' || phase === 'other_origin';
-      tools.hidden = installed;
-      steps.hidden = installed;
-      previewNotice.hidden = installed || !this.preview;
-      enroll.disabled = busy;
-      confirm.disabled = busy;
-      detail.hidden = phase !== 'pending' && phase !== 'other_origin';
-      check.hidden = confirm.hidden = phase !== 'pending';
-      label.textContent = phase === 'pending' ? current.label : '';
-      key.textContent =
-        phase === 'pending' ? current.fingerprint : phase === 'other_origin' ? current.origin : '';
-      open.hidden = phase !== 'online' || !launchAfterConfirm;
+      const current = state,
+        phase = current.state,
+        fresh = phase === 'unbound' || phase === 'waiting';
+      const text = t(downloading ? 'rdp.connectorPackaging' : stateKeys[phase]);
+      if (hint.textContent !== text) hint.textContent = text;
+      steps.hidden = download.hidden = !fresh;
+      previewNote.hidden = !fresh || !this.preview;
+      site.hidden = phase !== 'other_origin';
+      site.textContent = phase === 'other_origin' ? current.origin : '';
+      open.hidden = phase !== 'online' || !showOpen;
       unlink.hidden = phase === 'unbound';
-      unlink.disabled = busy;
-      download.disabled = downloading;
+      unlink.disabled = download.disabled = busy;
     };
     const refresh = async () => {
-      const res = await get(`${api}/connector`);
+      const res = await request(api);
       if (!res.ok) throw new Error();
-      const latest = (await res.json()) as RdpConnector;
-      if (life.signal.aborted || !Object.hasOwn(stateKeys, latest?.state)) return;
-      state = latest;
+      const current = (await res.json()) as RdpConnector;
+      if (life.signal.aborted || !Object.hasOwn(stateKeys, current?.state)) return;
+      const old = state.state;
+      state = current;
       paint();
-      if (waitUntil > Date.now() && state.state === 'online') goto();
+      if (state.state === 'online' && old !== 'online') this.refreshCards();
     };
-    const handle = (
-      operation: () => Promise<void>,
-      errKey: TranslationKey = 'rdp.connectorActionFailed'
-    ) => {
+    const refreshPresence = async () => {
+      timer = undefined;
+      if (life.signal.aborted || Date.now() >= until || statusRequest) return;
+      statusRequest = true;
+      try {
+        if (!document.hidden && !busy) {
+          await refresh();
+          failures = 0;
+        }
+      } catch {
+        if (++failures === 2 && !life.signal.aborted)
+          result.textContent = t('rdp.connectorActionFailed');
+      } finally {
+        statusRequest = false;
+      }
+      if (!life.signal.aborted)
+        timer = setTimeout(refreshPresence, failures || state.state === 'online' ? 5000 : 2000);
+    };
+    life.signal.addEventListener('abort', () => clearTimeout(timer), { once: true });
+    const handle = (operation: () => Promise<void>, key: TranslationKey) => {
       if (busy || life.signal.aborted) return;
       busy = true;
       result.textContent = '';
       paint();
       void operation()
         .catch(() => {
-          if (!life.signal.aborted) result.textContent = t(errKey);
+          if (!life.signal.aborted) result.textContent = t(key);
         })
         .finally(() => {
-          busy = false;
-          if (!life.signal.aborted) paint();
+          busy = downloading = false;
+          if (!life.signal.aborted) {
+            paint();
+            if (timer === undefined && Date.now() < until) void refreshPresence();
+          }
         });
     };
-    download.onclick = () => {
-      if (downloading) return;
-      downloading = true;
-      result.textContent = '';
-      paint();
-      void (async () => {
-        const res = await get('/rdp/download/windows-x64', 'GET', undefined, 60_000);
+    download.onclick = () =>
+      handle(async () => {
+        downloading = true;
+        paint();
+        const res = await request(`${api}-setup`, 'POST', { revision: profile.revision }, 60_000);
+        if (res.status === 409) {
+          result.textContent = t('rdp.connectorActionFailed');
+          await refresh();
+          return;
+        }
         if (
           !res.ok ||
           !res.body ||
@@ -193,8 +188,8 @@ export class RdpConnectorSetup {
           (res.headers.get('X-CloudSSH-Connector-Build') === 'test-unsigned' && !this.preview)
         )
           throw new Error();
-        const size = res.headers.get('Content-Length');
-        const reader = res.body.getReader();
+        const size = res.headers.get('Content-Length'),
+          reader = res.body.getReader();
         const parts: Uint8Array<ArrayBuffer>[] = [];
         let bytes = 0;
         try {
@@ -208,53 +203,15 @@ export class RdpConnectorSetup {
         } finally {
           void reader.cancel().catch(() => {});
         }
-        if (bytes < 1024 || (size !== null && Number(size) !== bytes) || life.signal.aborted)
-          throw new Error();
-        saveFile(new Blob(parts, { type: 'application/zip' }), RDP_CONNECTOR_FILENAME);
-      })()
-        .catch(() => {
-          if (!life.signal.aborted) result.textContent = t('rdp.connectorDownloadFailed');
-        })
-        .finally(() => {
-          downloading = false;
-          if (!life.signal.aborted) paint();
-        });
-    };
-    enroll.onclick = () =>
-      handle(async () => {
-        const res = await get(`${api}/connector-enroll`, 'POST', { revision: profile.revision });
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-        if (
-          data?.version !== 2 ||
-          data.origin !== location.origin ||
-          !/^e2\.[a-zA-Z0-9.-]{100,277}$/.test(data.grant) ||
-          !Number.isSafeInteger(data.expires) ||
-          data.expires <= Date.now() ||
-          life.signal.aborted
-        )
+        if (!bytes || (size !== null && Number(size) !== bytes) || life.signal.aborted)
           throw new Error();
         saveFile(
-          new Blob([JSON.stringify(data)], { type: 'application/json' }),
-          'cloudssh-binding.cloudssh-rdp.json'
+          new Blob(parts, { type: 'application/zip' }),
+          rdpConnectorSetupFilename(profile.id)
         );
-        state = { state: 'waiting', expires: data.expires };
-        paint();
-      });
-    confirm.onclick = () =>
-      handle(async () => {
-        if (state.state !== 'pending' || !isRdpId(state.id) || !fingerprint.test(state.fingerprint))
-          return;
-        const res = await get(`${api}/connector-confirm`, 'POST', {
-          device: state.id,
-          fingerprint: state.fingerprint,
-        });
-        if (!res.ok) throw new Error();
-        if (life.signal.aborted) return;
-        if (launchAfterConfirm) waitUntil = Date.now() + 35_000;
-        this.refreshCards();
-        await refresh();
-      });
+        until = Date.now() + 16 * 60_000;
+        await refresh().catch(() => {}); // The downloaded ZIP is usable even if the status check failed.
+      }, 'rdp.connectorDownloadFailed');
     unlink.onclick = () =>
       handle(async () => {
         if (
@@ -268,33 +225,13 @@ export class RdpConnectorSetup {
           life.signal.aborted
         )
           return;
-        const res = await get(`${api}/connector`, 'DELETE');
-        if (!res.ok) throw new Error();
-        waitUntil = 0;
+        if (!(await request(api, 'DELETE')).ok) throw new Error();
         this.refreshCards();
         await refresh();
-      });
+      }, 'rdp.connectorActionFailed');
     paint();
     document.body.append(dialog);
     dialog.showModal();
-    let failedReads = 0;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    life.signal.addEventListener('abort', () => clearTimeout(timer), { once: true });
-    const until = Date.now() + 16 * 60_000;
-    const refreshPresence = async () => {
-      if (life.signal.aborted || Date.now() >= until) return;
-      if (!document.hidden && !busy) {
-        try {
-          await refresh();
-          failedReads = 0;
-        } catch {
-          if (++failedReads === 2 && !life.signal.aborted)
-            result.textContent = t('rdp.connectorActionFailed');
-        }
-      }
-      if (!life.signal.aborted)
-        timer = setTimeout(refreshPresence, failedReads || state.state === 'online' ? 5000 : 2000);
-    };
     void refreshPresence();
   }
 }

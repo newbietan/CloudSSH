@@ -1,4 +1,4 @@
-import { RDP_CLIENT_REVISION, RDP_WS_PROTOCOL, isRdpId, readRdpJson } from '../rdp-schema';
+import { RDP_CLIENT_REVISION, RDP_WS_PROTOCOL, isRdpId, readRdpJson, rdpConnectorSetupFilename, type RdpProfile } from '../rdp-schema';
 import type { Env } from '../types';
 import { getAuthenticatedUser, hasVerifiedAccessContext, resolveAuthMode, userDbRouteKey } from './auth';
 import { createHtmlResponse } from './html-cache';
@@ -6,8 +6,9 @@ import { parseIdleTimeout } from './idle-timeout';
 import { type RdpLease, rdpDigest, rdpJson } from './rdp-store';
 import { deviceMachinePath, digestHex, ENROLL_MS, PEER_PROTOCOL, isDeviceSignature, randomProof, registrationMessage,
   signDeviceScope, STANDBY_PROTOCOL, verifyDeviceScope, verifyDeviceSignature } from './rdp-device-auth';
-import { validConfirmation, validRegistration } from './rdp-devices';
+import { validRegistration } from './rdp-devices';
 import { downloadRdpConnector } from './rdp-connector-download';
+import { inspectRdpConnectorArchive, personalRdpConnectorArchive } from './rdp-connector-archive';
 
 export interface RdpAssets {
   page: string;
@@ -58,7 +59,7 @@ async function handleDeviceMachine(request: Request, url: URL, env: Env, action:
   if (socket ? (request.method !== 'GET' || request.headers.get('Upgrade')?.toLowerCase() !== 'websocket' ||
       request.headers.get('Sec-WebSocket-Protocol') !== protocol) : (request.method !== 'POST' || request.headers.has('Upgrade'))) return hide();
   if (action === 'register') {
-    const cap = await verifyDeviceScope(env, request, 'e2');
+    const cap = await verifyDeviceScope(env, request, 'e3');
     if (!cap) return rdpJson({ code: 'connector_unavailable' }, 401);
     const data = await readRdpJson(request) as Record<string, unknown> | null;
     if (!data || !validRegistration(data) ||
@@ -114,9 +115,6 @@ export async function handleRdp(
     }));
   }
   const path = url.pathname;
-  if (path === ROOT + 'download/windows-x64' && !url.search && request.method === 'GET') {
-    return env.RDP_AUTHORITY && assets.peer !== undefined ? downloadRdpConnector(request.signal, fetch, assets.connectorPreview) : hide();
-  }
   if (path === API + 'peer/session') {
     const key = cookie(request, COOKIE);
     if (resolveAuthMode(env, request) === 'anonymous' || !env.RDP_AUTHORITY || !isPeerWs() || !/^[a-f0-9]{64}$/.test(key)) return hide();
@@ -153,7 +151,7 @@ export async function handleRdp(
       if (request.method === 'GET') return call('profiles');
       if (request.method === 'POST') return call('profiles', 'POST', await readRdpJson(request));
     }
-    const match = /^profiles\/([a-f0-9-]{36})(\/(?:connect|trust|login-identity|peer-renew|connector|connector-enroll|connector-confirm))?$/.exec(resource);
+    const match = /^profiles\/([a-f0-9-]{36})(\/(?:connect|trust|login-identity|peer-renew|connector|connector-setup))?$/.exec(resource);
     if (!match || !isRdpId(match[1])) return hide();
     const [, id, action] = match;
     if (action?.startsWith('/connector')) {
@@ -161,15 +159,36 @@ export async function handleRdp(
       if (action === '/connector' && request.method === 'GET') return call(`profiles/${id}/connector`);
       if (request.headers.get('X-CloudSSH-RDP-Client') !== String(RDP_CLIENT_REVISION)) return hide();
       if (action === '/connector' && request.method === 'DELETE') return call(`profiles/${id}/connector`, 'DELETE');
-      if (request.method !== 'POST') return hide();
-      const data = await readRdpJson(request) as Record<string, unknown> | null;
-      if (action === '/connector-confirm' && data && validConfirmation(data)) return call(`profiles/${id}/connector-confirm`, 'POST', data);
-      if (action !== '/connector-enroll' || !Number.isSafeInteger(data?.revision)) return hide();
+      if (action !== '/connector-setup' || request.method !== 'POST') return hide();
+      const data = await readRdpJson(request) as { revision?: unknown } | null;
+      if (typeof data?.revision !== 'number' || !Number.isSafeInteger(data.revision) || data.revision < 1) return hide();
+      // Check ownership and obvious conflicts before fetching the generic installer. The final write
+      // underneath rechecks current revision and registration, so this snapshot is not authority.
+      const current = await call(`profiles/${id}`);
+      if (!current.ok) return current;
+      const saved = await current.json<RdpProfile>();
+      if (!saved.hasLogin || saved.revision !== data.revision ||
+          (saved.connector && !['unbound', 'waiting'].includes(saved.connector.state))) {
+        return rdpJson({ code: 'connector_unavailable' }, 409);
+      }
+      const base = await downloadRdpConnector(request.signal, fetch, assets.connectorPreview);
+      if (!base.ok) return base;
+      const template = await base.arrayBuffer().then(inspectRdpConnectorArchive, () => null);
+      const unavailable = () => rdpJson({ code: 'connector_download_unavailable' }, 503);
+      if (!template || request.signal.aborted) return unavailable();
       const proof = randomProof(), expires = Date.now() + ENROLL_MS;
-      const enrollment = await signDeviceScope(env, request, 'e2', { route: routeKey, uid: user.id, profile: id, proof, expires });
-      const prepared = await call(`profiles/${id}/connector-enroll`, 'POST', { proof: await rdpDigest(proof), revision: data?.revision, expires });
-      return prepared.ok ? rdpJson({ version: 2, origin: url.origin, grant: enrollment, expires,
-        ...(resolveAuthMode(env, request) === 'cf_access' || env.CF_ACCESS === 'true' || hasVerifiedAccessContext(request) ? { accessRequired: true } : {}) }) : prepared;
+      const grant = await signDeviceScope(env, request, 'e3', { route: routeKey, uid: user.id, profile: id, proof, expires });
+      const body = personalRdpConnectorArchive(template, { version: 3, origin: url.origin, grant, expires,
+        ...(resolveAuthMode(env, request) === 'cf_access' || env.CF_ACCESS === 'true' || hasVerifiedAccessContext(request) ? { accessRequired: true } : {}) });
+      if (!body || request.signal.aborted) return unavailable();
+      const prepared = await call(`profiles/${id}/connector-setup`, 'POST', { proof: await rdpDigest(proof), revision: data.revision, expires });
+      if (!prepared.ok) return prepared;
+      return new Response(body, { headers: {
+        'Content-Type': 'application/zip', 'Content-Length': String(body.size),
+        'Content-Disposition': `attachment; filename="${rdpConnectorSetupFilename(id)}"`,
+        'Cache-Control': 'private, no-store, no-transform', 'Cross-Origin-Resource-Policy': 'same-origin',
+        'X-Content-Type-Options': 'nosniff', ...(assets.connectorPreview ? { 'X-CloudSSH-Connector-Build': 'test-unsigned' } : {}),
+      } });
     }
     if (action === '/peer-renew' && request.method === 'POST') {
       if (!env.RDP_AUTHORITY || request.headers.get('X-CloudSSH-RDP-Client') !== String(RDP_CLIENT_REVISION)) return hide();

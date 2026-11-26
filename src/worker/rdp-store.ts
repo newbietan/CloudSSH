@@ -197,7 +197,7 @@ export class RdpStore {
       if (request.method === 'POST') return this.save(userId, null, await readRdpJson(request));
     }
     const [kind, id, action] = route.split('/');
-    if (kind === 'profiles' && isRdpId(id) && ['connector', 'connector-enroll', 'connector-confirm'].includes(action) &&
+    if (kind === 'profiles' && isRdpId(id) && ['connector', 'connector-setup'].includes(action) &&
         route === `profiles/${id}/${action}` && origin) {
       if (!this.row(userId, id)) return error(404, 'not_found');
       if (action === 'connector' && request.method === 'GET') return rdpJson(this.devices.status(userId, id, origin));
@@ -209,12 +209,10 @@ export class RdpStore {
         return rdpJson({ ok: true });
       }
       const body = request.method === 'POST' ? await readRdpJson(request) as Record<string, unknown> | null : null;
-      if (action === 'connector-enroll' && body && digestPattern(body.proof) && typeof body.revision === 'number' &&
+      if (action === 'connector-setup' && body && digestPattern(body.proof) && typeof body.revision === 'number' &&
           Number.isSafeInteger(body.revision) && typeof body.expires === 'number' && Number.isSafeInteger(body.expires)) {
         return this.devices.begin(userId, id, origin, body.revision, body.proof, body.expires);
       }
-      if (action === 'connector-confirm' && body && isRdpId(body.device) && digestPattern(body.fingerprint))
-        return this.devices.confirm(userId, id, origin, body.device, body.fingerprint);
       return error(400, 'invalid_request');
     }
     if (kind === 'profiles' && isRdpId(id) && route === `profiles/${id}`) {

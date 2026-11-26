@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -29,13 +31,45 @@ func TestEnrollmentOriginAndExpiry(t *testing.T) {
 	}
 	const origin = "https://site.example:444"
 	now := time.Now()
-	f := enrollment{Version: 2, Origin: origin, Grant: "e2." + strings.Repeat("a", 180), Expires: now.Add(10 * time.Minute).UnixMilli()}
+	f := enrollment{Version: 3, Origin: origin, Grant: "e3." + strings.Repeat("a", 180), Expires: now.Add(10 * time.Minute).UnixMilli()}
 	b, _ := json.Marshal(f)
 	if got, err := parseEnrollment(b, now); err != nil || got.Origin != origin {
 		t.Fatal("valid site rejected", err)
 	}
 	if _, err := parseEnrollment(b, now.Add(11*time.Minute)); err == nil {
 		t.Fatal("expired enrollment accepted")
+	}
+	f.Version, f.Grant = 2, "e2."+strings.Repeat("a", 180)
+	old, _ := json.Marshal(f)
+	if _, err := parseEnrollment(old, now); err == nil {
+		t.Fatal("legacy manual-confirmation grant accepted")
+	}
+}
+
+func TestRegisterRetryKeepsTheSameDeviceKey(t *testing.T) {
+	body := make(chan string, 2)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		body <- string(raw)
+		if len(body) == 1 {
+			w.WriteHeader(503)
+			return
+		}
+		var data map[string]string
+		if json.Unmarshal(raw, &data) != nil {
+			w.WriteHeader(400)
+			return
+		}
+		pub, _ := base64.RawURLEncoding.DecodeString(data["key"])
+		fp := sha256.Sum256(pub)
+		_ = json.NewEncoder(w).Encode(map[string]string{"identity": "d2." + strings.Repeat("a", 140), "fingerprint": fmt.Sprintf("%x", fp)})
+	}))
+	defer srv.Close()
+	e := enrollment{Version: 3, Origin: srv.URL, Grant: "e3." + strings.Repeat("a", 180)}
+	id, _, err := register(context.Background(), clientForConnector(), e, "WINDOWS", accessCredentials{})
+	defer clear(id.Private)
+	if err != nil || len(body) != 2 || <-body != <-body {
+		t.Fatal("temporary failure must retry once without changing the device key", err)
 	}
 }
 

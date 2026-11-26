@@ -14,7 +14,7 @@ import { ShareManager } from './share-manager';
 import type { SSHHostInfo } from './terminal';
 import { confirmAction, notify } from './ui-feedback';
 import { formatTimestampWithRelative } from '../../src/server-memory-schema';
-import { RDP_DEFAULT_PORT, isRdpId, type RdpCard, type RdpProfile } from '../../src/rdp-schema';
+import { RDP_DEFAULT_PORT, isRdpId, type RdpCard, type RdpConnector, type RdpProfile } from '../../src/rdp-schema';
 import { RdpManager } from './rdp-manager';
 import { RdpConnectorSetup } from './rdp-connector-setup';
 
@@ -610,13 +610,8 @@ export class ServerList {
       this.bindHostCopy(entry.row.id, entry.row.host);
       if (entry.kind === 'rdp') {
         const { row } = entry;
-        document.getElementById(`rdp-open-${row.id}`)?.addEventListener('click', () => {
-          if (this.disposed) return;
-          if (!row.hasLogin) this.editRdp(row);
-          else if (row.route === 'connector' && this.rdpConnector && (!row.connector || ['unbound', 'waiting', 'pending', 'other_origin'].includes(row.connector.state))) {
-            this.rdpConnector.open(row);
-          } else this.openRdp?.(row.id);
-        });
+        const open = document.querySelector<HTMLButtonElement>(`#rdp-open-${row.id}`);
+        open?.addEventListener('click', () => { void this.openWindowsCard(row, open); });
         document.getElementById(`rdp-edit-${row.id}`)?.addEventListener('click', () => this.editRdp(row));
         document.getElementById(`rdp-delete-${row.id}`)?.addEventListener('click', () => { void this.deleteRdp(row); });
         continue;
@@ -707,6 +702,26 @@ export class ServerList {
       <span class="text-dim">${t('server.hostLabel')}</span>
       <button type="button" class="host-ip-badge server-host-badge min-w-0 truncate" id="host-badge-${this.escapeAttr(String(id))}" title="${copyLabel}" aria-label="${copyLabel}">${this.escapeHtml(display)}${Number.isInteger(port) ? `:${port}` : ''}</button>
     </div>`;
+  }
+
+  private async openWindowsCard(row: RdpCard, button: HTMLButtonElement): Promise<void> {
+    if (this.disposed || button.disabled) return;
+    if (!row.hasLogin) return this.editRdp(row);
+    if (row.route === 'connector' && this.rdpConnector && (!row.connector || ['unbound', 'waiting', 'other_origin'].includes(row.connector.state))) {
+      // The user may have closed the installer guide before Windows came online. A stale card must not
+      // send them back through setup when they explicitly ask to open the already installed desktop.
+      button.disabled = true;
+      const connector = await fetch(`/api/rdp/profiles/${row.id}/connector`, { cache: 'no-store', redirect: 'error',
+        signal: AbortSignal.any([this.modalEvents.signal, AbortSignal.timeout(4000)]),
+      }).then(res => res.ok ? res.json() as Promise<RdpConnector> : undefined).catch(() => undefined);
+      button.disabled = false;
+      if (this.disposed || !button.isConnected) return;
+      if (connector?.state !== 'online' && connector?.state !== 'offline') {
+        this.rdpConnector.open({ ...row, connector: connector ?? row.connector });
+        return;
+      }
+    }
+    this.openRdp?.(row.id);
   }
 
   private renderRdpCard(row: RdpCard): string {

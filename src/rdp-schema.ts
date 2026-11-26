@@ -3,10 +3,11 @@ import { isRestrictedTcpPort } from './tcp-port-policy';
 
 export type RdpRoute = 'direct' | 'tunnel' | 'connector';
 export const RDP_CONNECTOR_FILENAME = 'cloudssh-rdp-connector-windows-amd64.zip';
-export const RDP_CONNECTOR_DOWNLOAD = `https://github.com/newbietan/CloudSSH/releases/download/rdp-connector-v2/${RDP_CONNECTOR_FILENAME}`;
+export const RDP_CONNECTOR_DOWNLOAD = `https://github.com/newbietan/CloudSSH/releases/download/rdp-connector-v3/${RDP_CONNECTOR_FILENAME}`;
 export const RDP_CONNECTOR_MAX_DOWNLOAD = 16 * 1024 * 1024;
+export const RDP_CONNECTOR_BINDING_FILENAME = 'cloudssh-binding.cloudssh-rdp.json';
+export const rdpConnectorSetupFilename = (profile: string) => `cloudssh-windows-setup-${profile.slice(0, 8)}.zip`;
 export type RdpConnector = { state: 'unbound' } | { state: 'waiting'; expires: number }
-  | { state: 'pending'; id: string; label: string; fingerprint: string; expires: number }
   | { state: 'online' | 'offline'; label: string; fingerprint: string } | { state: 'other_origin'; origin: string };
 export const RDP_MAX_PROFILES = 32;
 export const RDP_MAX_BODY = 12 * 1024;

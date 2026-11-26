@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -11,17 +12,13 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 )
 
-func TestWindowsNativeFormats(t *testing.T) {
-	if unsafe.Sizeof(uintptr(0)) == 8 && unsafe.Sizeof(openFileName{}) != 152 {
-		t.Fatal("OPENFILENAMEW x64 layout")
-	}
+func TestWindowsDPAPI(t *testing.T) {
 	p := []byte("temporary fixture; not a key")
 	enc, err := crypt(p, true)
 	if err != nil || len(enc) == 0 || bytes.Contains(enc, p) {
@@ -30,6 +27,29 @@ func TestWindowsNativeFormats(t *testing.T) {
 	dec, err := crypt(enc, false)
 	if err != nil || !bytes.Equal(p, dec) {
 		t.Fatal("DPAPI recovery", err)
+	}
+}
+
+func TestAdjacentInstallationAuthorization(t *testing.T) {
+	dir := t.TempDir()
+	const exe = "cloudssh-rdp-connector-windows-amd64.exe"
+	now := time.Now()
+	grant := enrollment{Version: 3, Origin: "https://desk.example", Grant: "e3." + strings.Repeat("a", 180), Expires: now.Add(time.Minute).UnixMilli()}
+	blob, _ := json.Marshal(grant)
+	if _, err := installerBinding(filepath.Join(dir, exe), now); err == nil {
+		t.Fatal("accepted a partial extraction")
+	}
+	if err := os.WriteFile(filepath.Join(dir, bindingFile), blob, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := installerBinding(filepath.Join(dir, exe), now); err != nil || got != grant {
+		t.Fatal("expected exact sibling", err)
+	}
+	if _, err := installerBinding(filepath.Join(t.TempDir(), exe), now); err == nil {
+		t.Fatal("used a different directory")
+	}
+	if _, err := installerBinding(filepath.Join(dir, exe), now.Add(2*time.Minute)); err == nil {
+		t.Fatal("accepted expired authorization")
 	}
 }
 
