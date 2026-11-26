@@ -189,6 +189,10 @@ CI=true pnpm exec playwright test --workers=2
 - 构建可复现性、xterm 生产构建兼容和原生弹窗禁用
 - `workflow-policy.test.ts`：源码级检查所有非同步工作流的每个 job 均有维护者仓库 owner 限制（在分配 runner 前跳过 Fork CI），并保留 Fork 的免变量手动同步与显式开启的定时同步
 
+### WebRTC RDP 连接器（显式运行）
+
+`pnpm run build:frontend && node scripts/test-rdp-peer.mjs`（或 `--webkit`）在回环工作区连接真实浏览器、workerd UserDBDO 和 Pion，校验分片/ACK、2 MiB 双向流、真实直连候选、零桌面中继帧、续租与编辑撤销。TCP 对端是临时回显，不是 Windows。测试使用独立 `tools/rdp-peer/go.mod`，不修改 SSH 测试工作区；依赖与实机对照步骤见 [直连测试说明](../docs/rdp-peer.md)。
+
 ### 真实 SSH 互操作（显式运行）
 
 `pnpm run test:interop` 在 macOS/Linux 上启动 loopback-only OpenSSH 和独立 Go SSH 网关，

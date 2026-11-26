@@ -201,6 +201,7 @@ export class ServerList {
   private currentPage = 1;
   private pageSize = currentServerPageSize();
   private sharingEnabled = false;
+  private readonly peerTest: boolean;
   /** 与连接表单一致：只有 Cloudflare Access 登录才显示 SSH CA 入口。 */
   private cfSshCaEnabled = false;
   private readonly shareManager = new ShareManager();
@@ -210,9 +211,10 @@ export class ServerList {
     onLogout: () => void,
     onConnect: (wsUrl: string, serverName: string, hostInfo?: SSHHostInfo) => void,
     config: AppConfig,
-    private readonly openRdp?: (id: string) => void,
+    private readonly openRdp?: (id: string, peer?: boolean) => void,
   ) {
     this.user = user;
+    this.peerTest = config.rdpPeerEnabled === true;
     this.onLogout = onLogout;
     this.onConnect = onConnect;
     this.sharingEnabled = config.sshSharingEnabled === true;
@@ -607,6 +609,7 @@ export class ServerList {
           if (!row.hasLogin) this.editRdp(row);
           else this.openRdp?.(row.id);
         });
+        document.getElementById(`rdp-peer-${row.id}`)?.addEventListener('click', () => { if (!this.disposed) this.openRdp?.(row.id, true); });
         document.getElementById(`rdp-edit-${row.id}`)?.addEventListener('click', () => this.editRdp(row));
         document.getElementById(`rdp-delete-${row.id}`)?.addEventListener('click', () => { void this.deleteRdp(row); });
         continue;
@@ -717,6 +720,7 @@ export class ServerList {
       </div>
       <div class="server-card-actions flex gap-2 pt-3 border-t border-[var(--border)]">
         <button type="button" id="rdp-open-${row.id}" class="server-connect-button cyber-button text-primary flex-1 min-w-0 py-1.5 px-3 text-xs flex items-center justify-center">${t(row.hasLogin ? 'rdp.open' : 'rdp.complete')}</button>
+        ${this.peerTest && row.hasLogin && row.fingerprint ? `<button type="button" id="rdp-peer-${row.id}" class="cyber-button text-primary px-2 text-xs">${t('rdp.peerTest')}</button>` : ''}
         <button type="button" id="rdp-edit-${row.id}" class="cyber-button text-primary px-3" aria-label="${this.escapeAttr(t('rdp.edit'))}">
           <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px">edit</span>
         </button>

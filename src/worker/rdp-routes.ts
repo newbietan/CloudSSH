@@ -1,14 +1,16 @@
 import { RDP_CLIENT_REVISION, RDP_WS_PROTOCOL, isRdpId, readRdpJson } from '../rdp-schema';
 import type { Env } from '../types';
-import { getAuthenticatedUser, userDbRouteKey } from './auth';
+import { getAuthenticatedUser, resolveAuthMode, userDbRouteKey } from './auth';
 import { createHtmlResponse } from './html-cache';
 import { parseIdleTimeout } from './idle-timeout';
 import { type RdpLease, rdpDigest, rdpJson } from './rdp-store';
+import { makePeerCode, peerEnabled, PEER_PROTOCOL, randomProof, verifyPeerCode } from './rdp-peer-auth';
 
 export interface RdpAssets {
   page: string;
   bootstrap: string;
   socket: string;
+  peer?: string;
   freerdp: string;
   wasm: ArrayBuffer;
   license: string;
@@ -51,6 +53,17 @@ export async function handleRdp(
   ctx?: Partial<Pick<ExecutionContext, 'waitUntil'>>,
 ): Promise<Response> {
   if (!assets || url.protocol !== 'https:') return hide();
+  const isPeerWs = () => !url.search && request.method === 'GET' && request.headers.get('Upgrade')?.toLowerCase() === 'websocket' && request.headers.get('Sec-WebSocket-Protocol') === PEER_PROTOCOL;
+  if (url.pathname === API + 'peer/agent') {
+    // This capability is NOT a user login. It can join exactly one waiting connector socket.
+    if (!peerEnabled(env) || !isPeerWs() || request.headers.has('Origin') || request.headers.has('Cookie')) return hide();
+    const cap = await verifyPeerCode(env, request);
+    if (!cap) return rdpJson({ code: 'peer_unavailable' }, 401);
+    const db = env.USER_DB.get(env.USER_DB.idFromName(cap.route));
+    return db.fetch(new Request(`https://internal/internal/rdp/peer-agent?user_id=${cap.uid}`, { headers: {
+      Upgrade: 'websocket', 'Sec-WebSocket-Protocol': PEER_PROTOCOL, 'X-RDP-Profile': cap.id, 'X-RDP-Binding': await rdpDigest(cap.proof),
+    } }));
+  }
   if (request.method !== 'GET' || request.headers.has('Upgrade')) {
     if (request.headers.get('Origin') !== url.origin) return rdpJson({ code: 'forbidden' }, 403);
   }
@@ -66,6 +79,14 @@ export async function handleRdp(
     }));
   }
   const path = url.pathname;
+  if (path === API + 'peer/session') {
+    const key = cookie(request, COOKIE);
+    if (resolveAuthMode(env, request) === 'anonymous' || !peerEnabled(env) || !isPeerWs() || !/^[a-f0-9]{64}$/.test(key)) return hide();
+    return db.fetch(new Request(`https://internal/internal/rdp/peer-browser?user_id=${user.id}`, { headers: {
+      Upgrade: 'websocket', 'Sec-WebSocket-Protocol': PEER_PROTOCOL, 'X-RDP-Binding': await binding(request, key),
+      'X-RDP-Idle': String(parseIdleTimeout(env.IDLE_TIMEOUT)),
+    } }));
+  }
   if (path === API + 'session' && request.method === 'GET') {
     if (url.search || request.headers.get('Origin') !== url.origin || request.headers.get('Upgrade')?.toLowerCase() !== 'websocket' || request.headers.get('Sec-WebSocket-Protocol') !== RDP_WS_PROTOCOL) return hide();
     const browserKey = cookie(request, COOKIE);
@@ -94,9 +115,31 @@ export async function handleRdp(
       if (request.method === 'GET') return call('profiles');
       if (request.method === 'POST') return call('profiles', 'POST', await readRdpJson(request));
     }
-    const match = /^profiles\/([a-f0-9-]{36})(\/(?:connect|trust|login-identity))?$/.exec(resource);
+    const match = /^profiles\/([a-f0-9-]{36})(\/(?:connect|trust|login-identity|peer-pair|peer-renew|peer-cancel))?$/.exec(resource);
     if (!match || !isRdpId(match[1])) return hide();
     const [, id, action] = match;
+    if ((action === '/peer-pair' || action === '/peer-renew' || action === '/peer-cancel') && request.method === 'POST') {
+      if (resolveAuthMode(env, request) === 'anonymous' || !peerEnabled(env) || request.headers.get('X-CloudSSH-RDP-Client') !== String(RDP_CLIENT_REVISION)) return hide();
+      const data = await readRdpJson(request) as { revision?: number; lease?: string; attempt?: string } | null;
+      let key = cookie(request, COOKIE);
+      const needsCookie = !/^[a-f0-9]{64}$/.test(key);
+      if (action === '/peer-cancel') {
+        if (needsCookie || typeof data?.attempt !== 'string' || !/^[a-f0-9]{64}$/.test(data.attempt)) return hide();
+        return call('peer-cancel', 'POST', { profile: id, proof: data.attempt, binding: await binding(request, key) });
+      }
+      if (action === '/peer-renew') {
+        if (needsCookie || !isRdpId(data?.lease)) return hide();
+        return call('peer-renew', 'POST', { profile: id, lease: data.lease, binding: await binding(request, key) });
+      }
+      if (!Number.isSafeInteger(data?.revision)) return hide();
+      if (needsCookie) key = newBrowserKey();
+      const proof = randomProof(), attempt = await rdpDigest(proof);
+      const paired = await call('peer-pair', 'POST', { profile: id, revision: data!.revision, proof: attempt, binding: await binding(request, key) });
+      if (!paired.ok) return paired;
+      const response = rdpJson({ attempt, code: await makePeerCode(env, request, routeKey, user.id, id, proof) });
+      if (needsCookie) response.headers.append('Set-Cookie', `${COOKIE}=${key}; Path=/; Secure; HttpOnly; SameSite=Strict`);
+      return response;
+    }
     if (action === '/login-identity' && request.method === 'POST') {
       if (request.headers.get('X-CloudSSH-RDP-Client') !== String(RDP_CLIENT_REVISION)) return rdpJson({ code: 'refresh_client' }, 409);
       return call(`profiles/${id}/login-identity`, 'POST', await readRdpJson(request));
@@ -152,6 +195,7 @@ export async function handleRdp(
     ['assets/sdl-freerdp.wasm', [assets.wasm, 'application/wasm', assets.tags[1]]],
     ['assets/licenses.txt', [assets.license, 'text/plain; charset=utf-8']],
   ]);
+  if (assets.peer) resources.set('assets/rdp-peer.js', [assets.peer, 'text/javascript; charset=utf-8']);
   const entry = resources.get(resource);
   if (!entry) return hide();
   const [data, mime, tag] = entry;

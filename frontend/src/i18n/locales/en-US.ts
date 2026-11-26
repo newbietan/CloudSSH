@@ -1070,6 +1070,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   'rdp.scaleOnly': 'Scale only',
   'rdp.matchFullscreen': 'Fit full screen',
   'rdp.open': 'Open desktop',
+  'rdp.peerTest': 'WebRTC test',
   'rdp.edit': 'Edit device',
   'rdp.remove': 'Delete device',
   'rdp.name': 'Device name',

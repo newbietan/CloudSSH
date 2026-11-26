@@ -1011,6 +1011,7 @@ export const zhTW = {
   'rdp.scaleOnly': '僅縮放',
   'rdp.matchFullscreen': '配合全螢幕',
   'rdp.open': '開啟桌面',
+  'rdp.peerTest': 'WebRTC 測試',
   'rdp.edit': '編輯裝置',
   'rdp.remove': '刪除裝置',
   'rdp.name': '裝置名稱',

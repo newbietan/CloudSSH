@@ -1,5 +1,7 @@
 # Windows 远程桌面（RDP）
 
+**可选实验**：已核验过证书的设备可在测试部署上使用 [WebRTC 浏览器直连原型与 A/B 步骤](rdp-peer.md)。普通「打开桌面」仍走下面的 Worker 路线。
+
 ## 配置设备
 
 1. 通过 HTTPS 登录 CloudSSH。在「添加服务器」顶部切换到 **Windows Server**；不需要 SSH 设备或本地 Windows App。Windows 必须已开启远程桌面和 NLA，且账号有 RDP 权限。匿名用户和一次性 SSH 分享不可用。

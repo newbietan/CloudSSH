@@ -1010,6 +1010,7 @@ export const zhCN = {
   'rdp.scaleOnly': '仅缩放',
   'rdp.matchFullscreen': '适配全屏',
   'rdp.open': '打开桌面',
+  'rdp.peerTest': 'WebRTC 测试',
   'rdp.edit': '编辑设备',
   'rdp.remove': '删除设备',
   'rdp.name': '设备名称',

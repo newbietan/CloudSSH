@@ -383,7 +383,7 @@ RDP is built in for both production and test. It requires HTTPS and a signed-in 
 2. Enter the Windows username (default `Administrator`), password and optional domain. The login is encrypted in your account. Older devices without credentials must be completed before connecting.
 3. Connect from the card. On first use, verify the Windows certificate’s SHA-256 fingerprint before accepting; a changed pin blocks login. The desktop opens in the same tab. **Back** disconnects without signing out of Windows; **Full screen** scales the entire image below the toolbar without renegotiating resolution.
 
-The toolbar shows browser-to-relay RTT and, when Windows reports it, average RDP RTT. See [RDP setup and limits](docs/rdp.md).
+The toolbar shows browser-to-relay RTT and, when Windows reports it, average RDP RTT. See [RDP setup and limits](docs/rdp.md). An opt-in [direct WebRTC prototype](docs/rdp-peer.md) is available for side-by-side route testing; it is off by default.
 
 ##### Connecting via Cloudflare Tunnel
 

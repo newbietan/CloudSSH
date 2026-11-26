@@ -3,6 +3,7 @@ import {
 } from '../rdp-schema';
 
 import { parseStoredServerTags } from '../server-tags';
+import { RdpPeerRooms } from './rdp-peer-rooms';
 
 const portColumn = `port INTEGER NOT NULL DEFAULT ${RDP_DEFAULT_PORT} CHECK(typeof(port)='integer' AND port BETWEEN 1 AND 65535)`;
 const withOptions = `SELECT p.*, o.tags, o.login, COALESCE(o.port, ${RDP_DEFAULT_PORT}) AS port, m.username_enc, m.identity_revision,
@@ -79,6 +80,31 @@ export class RdpStore {
       expires INTEGER NOT NULL
     )`);
   }
+  private peerRooms?: RdpPeerRooms;
+  private get peers(): RdpPeerRooms {
+    return this.peerRooms ??= new RdpPeerRooms(this.sql, {
+      claim: async (user, ticket, binding) => {
+        const response = await this.claim(user, ticket, binding, true, true);
+        return response.ok ? response.json<{ lease: string; profile: string; revision: number }>() : null;
+      },
+      record: (user, lease) => this.recordDesktop(user, lease),
+      renew: (user, lease) => this.renewLease(user, lease),
+      release: (user, lease) => { this.sql.exec('DELETE FROM rdp_leases WHERE user_id=? AND id=?', user, lease); },
+    });
+  }
+  private recordDesktop(userId: number, lease: string): boolean {
+    const now = Date.now();
+    return !!this.sql.exec(`INSERT INTO rdp_card_metadata(user_id,profile,last_connected_at)
+      SELECT p.user_id,p.id,? FROM rdp_leases l JOIN rdp_profiles p ON p.id=l.profile AND p.user_id=l.user_id AND p.revision=l.revision
+      WHERE l.id=? AND l.user_id=? AND l.expires>?
+      ON CONFLICT(user_id,profile) DO UPDATE SET last_connected_at=MAX(COALESCE(last_connected_at,0),excluded.last_connected_at)`, now, lease, userId, now).rowsWritten;
+  }
+  private renewLease(userId: number, lease: string): boolean {
+    const now = Date.now();
+    return !!this.sql.exec(`UPDATE rdp_leases SET expires=? WHERE user_id=? AND id=? AND expires>?
+      AND EXISTS (SELECT 1 FROM rdp_profiles p WHERE p.user_id=rdp_leases.user_id AND p.id=rdp_leases.profile
+        AND p.revision=rdp_leases.revision)`, now + RDP_LEASE_MS, userId, lease, now).rowsWritten;
+  }
   private row(userId: number, id: string): Row | undefined {
     return this.sql.exec(`${withOptions} WHERE p.user_id = ? AND p.id = ?`, userId, id).toArray()[0] as unknown as Row | undefined;
   }
@@ -128,6 +154,15 @@ export class RdpStore {
     const userId = Number(url.searchParams.get('user_id'));
     if (!Number.isSafeInteger(userId) || userId < 1) return error(400, 'invalid_request');
     const route = url.pathname.slice('/internal/rdp/'.length);
+    if (route === 'peer-browser' || route === 'peer-agent') {
+      if (request.method !== 'GET' || request.headers.get('Upgrade') !== 'websocket') return error(400, 'invalid_request');
+      const digest = request.headers.get('X-RDP-Binding');
+      if (!digestPattern(digest)) return error(400, 'invalid_request');
+      const id = request.headers.get('X-RDP-Profile');
+      const idleMs = Number(request.headers.get('X-RDP-Idle'));
+      if (route === 'peer-agent') return isRdpId(id) ? this.peers.agent(userId, id, digest) : error(400, 'invalid_request');
+      return Number.isSafeInteger(idleMs) && idleMs >= 0 ? this.peers.browser(userId, digest, idleMs) : error(400, 'invalid_request');
+    }
     if (route === 'profiles') {
       if (request.method === 'GET') return this.cards(userId);
       if (request.method === 'POST') return this.save(userId, null, await readRdpJson(request));
@@ -140,6 +175,7 @@ export class RdpStore {
       if (request.method === 'PUT') return this.save(userId, row, await readRdpJson(request));
       if (request.method === 'DELETE') {
         this.transaction(() => {
+          this.peers.invalidate(userId, id);
           this.sql.exec('DELETE FROM rdp_card_metadata WHERE user_id=? AND profile=?', userId, id);
           this.sql.exec('DELETE FROM rdp_profile_options WHERE user_id=? AND profile=?', userId, id);
           this.sql.exec('DELETE FROM rdp_profiles WHERE user_id = ? AND id = ?', userId, id);
@@ -168,6 +204,16 @@ export class RdpStore {
     if (request.method !== 'POST') return error(405, 'method_not_allowed');
     const body = await readRdpJson(request) as Record<string, unknown> | null;
     if (!body || typeof body !== 'object') return error(400, 'invalid_request');
+    if (route === 'peer-pair' && isRdpId(body.profile) && digestPattern(body.binding) && digestPattern(body.proof) &&
+        typeof body.revision === 'number' && Number.isSafeInteger(body.revision)) {
+      return this.peers.prepare(userId, body.profile, body.revision, body.binding, body.proof);
+    }
+    if (route === 'peer-cancel' && isRdpId(body.profile) && digestPattern(body.binding) && digestPattern(body.proof)) {
+      return this.peers.cancelWaiting(userId, body.profile, body.binding, body.proof);
+    }
+    if (route === 'peer-renew' && isRdpId(body.profile) && digestPattern(body.binding)) {
+      return this.peers.renew(userId, body.profile, body.lease, body.binding);
+    }
     if (route === 'ticket' && isRdpId(body.profile) && digestPattern(body.binding)) {
       if (typeof body.savedRevision !== 'number' || !Number.isSafeInteger(body.savedRevision) || body.savedRevision < 1) return error(400, 'invalid_request');
       return this.issue(userId, body.profile, body.binding, body.savedRevision);
@@ -176,23 +222,14 @@ export class RdpStore {
       return this.claim(userId, body.ticket, body.binding, body.supportsDirectPort === true);
     }
     if (route === 'desktop-ready' && isRdpId(body.lease)) {
-      const now = Date.now();
-      const result = this.sql.exec(`INSERT INTO rdp_card_metadata(user_id,profile,last_connected_at)
-        SELECT p.user_id,p.id,? FROM rdp_leases l JOIN rdp_profiles p ON p.id=l.profile AND p.user_id=l.user_id AND p.revision=l.revision
-        WHERE l.id=? AND l.user_id=? AND l.expires>?
-        ON CONFLICT(user_id,profile) DO UPDATE SET last_connected_at=MAX(COALESCE(last_connected_at,0),excluded.last_connected_at)`, now, body.lease, userId, now);
-      return result.rowsWritten ? rdpJson({ success: true }) : error(409, 'session_ended');
+      return this.recordDesktop(userId, body.lease) ? rdpJson({ success: true }) : error(409, 'session_ended');
     }
     if ((route === 'renew' || route === 'release') && isRdpId(body.lease)) {
       if (route === 'release') {
         this.sql.exec('DELETE FROM rdp_leases WHERE user_id = ? AND id = ?', userId, body.lease);
         return rdpJson({ success: true });
       }
-      const now = Date.now();
-      const result = this.sql.exec(`UPDATE rdp_leases SET expires = ? WHERE user_id = ? AND id = ? AND expires > ?
-        AND EXISTS (SELECT 1 FROM rdp_profiles p WHERE p.user_id = rdp_leases.user_id
-          AND p.id = rdp_leases.profile AND p.revision = rdp_leases.revision)`, now + RDP_LEASE_MS, userId, body.lease, now);
-      return result.rowsWritten ? rdpJson({ success: true }) : error(404, 'session_ended');
+      return this.renewLease(userId, body.lease) ? rdpJson({ success: true }) : error(404, 'session_ended');
     }
     return error(404, 'not_found');
   }
@@ -238,6 +275,7 @@ export class RdpStore {
         const result = this.sql.exec(`UPDATE rdp_profiles SET revision=?, name=?, route=?, host=?, fingerprint=?, access=?
           WHERE user_id=? AND id=? AND revision=?`, revision, input.name, input.route, input.host, fingerprint, access, userId, id, existing.revision);
         if (!result.rowsWritten) return error(409, 'profile_changed');
+        this.peers.invalidate(userId, id);
         this.sql.exec('DELETE FROM rdp_tickets WHERE user_id = ? AND profile = ?', userId, id);
         this.sql.exec('DELETE FROM rdp_leases WHERE user_id = ? AND profile = ?', userId, id);
       } else {
@@ -285,7 +323,7 @@ export class RdpStore {
     });
   }
 
-  private async claim(userId: number, ticket: string, binding: string, supportsDirectPort: boolean): Promise<Response> {
+  private async claim(userId: number, ticket: string, binding: string, supportsDirectPort: boolean, peer = false): Promise<Response> {
     const hash = await rdpDigest(ticket);
     const result = this.transaction(() => {
       this.clean(Date.now());
@@ -296,12 +334,15 @@ export class RdpStore {
       if (!row?.login || row.revision !== token.revision || this.count('rdp_leases', userId) >= MAX_SESSIONS) return null;
       // An older relay always dials 3389; don't let it start TLS/NLA against a different endpoint.
       if (row.route === 'direct' && row.port !== RDP_DEFAULT_PORT && !supportsDirectPort) return null;
+      if (peer && !digestPattern(row.fingerprint)) return null;
       const lease = crypto.randomUUID();
       this.sql.exec('INSERT INTO rdp_leases VALUES (?, ?, ?, ?, ?)', lease, userId, row.id, row.revision, Date.now() + RDP_LEASE_MS);
       return { lease, row };
     });
     if (!result) return error(409, 'ticket_rejected');
     const { lease, row } = result;
+    // Peer signaling never needs the target address, Tunnel service token or Windows login.
+    if (peer) return rdpJson({ lease, profile: row.id, revision: row.revision });
     try {
       const access: [string, string] | null = row.access ? JSON.parse(await this.decrypt(row.access, userId)) : null;
       if (this.row(userId, row.id)?.revision !== row.revision) return error(409, 'profile_changed');

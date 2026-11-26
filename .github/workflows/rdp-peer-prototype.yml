@@ -1,0 +1,44 @@
+name: RDP peer prototype connector
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [test]
+    paths:
+      - 'tools/rdp-peer/**'
+      - 'scripts/build-rdp-peer.sh'
+      - '.github/workflows/rdp-peer-prototype.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-connector:
+    if: github.repository_owner == 'newbietan' && github.ref == 'refs/heads/test'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: tools/rdp-peer
+    env:
+      GOWORK: 'off'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.x'
+          cache-dependency-path: tools/rdp-peer/go.sum
+      - name: Check the connector and build a portable Windows executable
+        run: |
+          go mod verify
+          go vet -mod=readonly ./...
+          go test -mod=readonly -race ./...
+          bash ../../scripts/build-rdp-peer.sh
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: cloudssh-rdp-peer-windows-amd64-${{ github.sha }}
+          path: dist/rdp-peer/
+          if-no-files-found: error
+          retention-days: 7

@@ -497,6 +497,8 @@ release: 发布 vX.Y.Z <主题>版本（如 `release: 发布 v1.10.2 工作流�
 
 ## #201 站内 RDP（内置，仅登录用户可用）
 
+- 可选直连原型（[使用与 A/B 测试](docs/rdp-peer.md)）：`RDP_P2P_SECRET` 必须为 32 随机字节的小写 hex，缺省/非法值关闭 WebRTC 实验，不影响常规中继。已核对 Windows 指纹的设备才可显式配对。`peer-pair/cancel/renew` 与 `/api/rdp/peer/session` 走原同源账号授权，前端不自动回退。仅 `/api/rdp/peer/agent` 接受无 Cookie/Origin 的机器 WebSocket：先验本站/认证模式 HMAC，再消费所属账号、设备修订与浏览器绑定的一次性 5 分钟配对证明；Access 仍要求原生准入。UserDBDO `rdp-peer-rooms.ts` 只交换有界控制帧，SDP 不落盘；撤销/丢控制/租约失效关闭双方。独立 Go 模块 `tools/rdp-peer/` 是可选 Windows 前台连接器，不进入 Worker 构建，不属于 SSH 的测试工作区。它只拨 `127.0.0.1:3389`，不接受任意目标；无 TURN，保留 TLS/NLA、既有指纹、累计消费 ACK/背压。`scripts/test-rdp-peer.mjs` 显式执行回环浏览器/DO/Pion 互操作，不替代真机验收。
+
 - 首次证书确认（#216）：上游读 EOF、读异常和写失败走同一有界保持路径，关闭上游但保留浏览器确认与续租。浏览器确认限 85s、中继限 90s；尚未收到 `cert_wait` 时最多保持 5s，重复消息不能延长。只有信任已保存且收到中继 `cert_reconnect`，父工作区才可重连一次；新运行帧必须核对原设备修订与确认的 SHA-256 指纹后才能出票。禁止 iframe 自行刷新或按字节数、一般断线、租约失效、NLA/FreeRDP 错误猜测重试。租约失效与上游中断分别提示，不记为 Windows 主动关闭。
 
 - 入口、生命周期与验收见 `docs/rdp.md`。Wrangler 的 `rdp-entry.ts` 重导出原 DO，显式导入有界 Data/Text 模块；不添加 `[assets]`，不削弱原生 `ctx.access`。旧 P0 路由返回 404，CI 不读取临时目标或启动 Docker；FreeRDP 由维护者显式重建后随代码提交，普通 SSH 页面不下载 WASM。随包提供客户端资源时，HTTPS 站点公开 RDP 能力，不再读取部署开关；RDP 路由仍须验证登录。
@@ -548,7 +550,7 @@ pnpm run deploy:test     # 部署 test 环境
 
 **方式三：GitHub Actions（CI/CD）**
 
-官方 CI（`deploy.yml` / `github-pages.yml` / `ssh-interop.yml`）所有 job 均在分配 runner / 展开 matrix 前通过 `github.repository_owner == 'newbietan'` 限定维护者仓库，勿改为 `github.actor` 判断：外部贡献者向官方仓库提交 PR 时仍需正常检查。其他所有者的 Fork 不运行部署、Pages 或互操作 CI；GitHub 可能保留 Skipped 记录，但不执行 runner 任务。Cloudflare 面板 / Git 集成部署独立于这些工作流，无需启用 Actions 或配置 CI 的 Cloudflare Secrets。`tests/workflow-policy.test.ts` 逐个检查非同步工作流的 job 级 owner 限制，新增工作流须沿用该策略。
+官方 CI（`deploy.yml` / `github-pages.yml` / `ssh-interop.yml` / `rdp-peer-prototype.yml`）所有 job 均在分配 runner / 展开 matrix 前通过 `github.repository_owner == 'newbietan'` 限定维护者仓库，勿改为 `github.actor` 判断：外部贡献者向官方仓库提交 PR 时仍需正常检查。其他所有者的 Fork 不运行部署、Pages 或互操作 CI；GitHub 可能保留 Skipped 记录，但不执行 runner 任务。Cloudflare 面板 / Git 集成部署独立于这些工作流，无需启用 Actions 或配置 CI 的 Cloudflare Secrets。`tests/workflow-policy.test.ts` 逐个检查非同步工作流的 job 级 owner 限制，新增工作流须沿用该策略。
 
 - `test` 的 push、目标为 `test` 的 PR 与 `test` 手动执行负责完整验证：冻结依赖、类型检查、单元/集成测试、前端构建、Chromium 和移动 WebKit。仅 `test` push 复用已构建产物部署 `cloudssh-test`。
 - `main` 的 push、目标为 `main` 的 PR 与 `main` 手动执行只核验发布内容。`scripts/ci-verify-tested-release.mjs` 用只读 GitHub API 核对当前 checkout 的 Git tree（PR 用待合并树，不是 PR 头）与同一仓库最近 30 条成功 `test` push 的记录；只接受对应尝试的全量测试与测试环境部署均成功，允许 Squash SHA 不同但拒绝任何文件差异。同仓库 `test → main` 发布 PR 若尚无证明，且 PR 待合并树与 `test` 头相同，则等待该头的真实 `test` push：允许 90 秒索引延迟，整段等待最多 60 分钟；仍须同一尝试的全量步骤成功才放行。最终 `main` push / 手动核验不等待。无匹配或 API 失败时阻断生产；禁止用 PR、手动或缩减档位记录冒充。PR 和手动运行不注入 Cloudflare Secrets，不用 `pull_request_target` 执行未信任代码。
@@ -556,6 +558,7 @@ pnpm run deploy:test     # 部署 test 环境
 - 生产部署成功后，`sync-released-test` 仅对官方 `main` push 运行，最多 3 分钟。只执行已部署的 `main` 代码，用仓库原生 `GITHUB_TOKEN`（独立 job 的 `contents: write` / `pull-requests: read`，无 PAT 或 Cloudflare Secrets）。必须唯一匹配已合并的同仓库 `test → main` PR、部署 SHA、发布证明的确切 test 头和同一 Git tree；写前复核两个远端分支，仅以已验证的原 test SHA 作 `--force-with-lease` 更新 `refs/heads/test`。新提交（即使同树）或删除均不覆盖，不以新租约重试。不触发新的 GitHub Actions push 构建；Cloudflare 独立 Git 集成不受此规则控制。普通开发推送的测试和部署规则不变。
 - Worker CI 仅取消同 PR 的过期校验；`test` 验证/部署、发布 PR 核验、`main` push 或手动核验、生产构建/部署的 job 上限分别为 30/65/5/10 分钟。SSH 互操作仍独立执行。
 - GitHub Pages（`github-pages.yml`）只在 `main` 的 `docs/index.html` 或 `docs/theme-editor/**` 变更时自动发布；发布包只含这两处，普通文档和 `test` push 不部署。可在 `main` 手动重新发布。Pages 同一目标串行，不取消进行中的部署。上传与部署共用含 `github.run_id` 和 `github.run_attempt` 的产物名；`scripts/ci-wait-pages-artifact.sh` 有界重试只读查询，核对上传 ID、名称、所属 run 和未过期状态后才部署，不自动重试部署写操作。重跑旧 run 不会载入新工作流。
+- `rdp-peer-prototype.yml` 对 `test` 的连接器变更或 `test` 手动运行构建 Windows x64 原型与 SHA-256 校验文件；产物保留 7 天，无部署/Secrets，不发布 Release。
 - Fork 仅按需运行上游 `main` 同步（`sync-upstream.yml`）：手动执行无需变量；定时同步默认关闭，仅 `AUTO_SYNC_UPSTREAM=true` 开启，删除或设为 `false` 即关闭
 
 > **仅 `test` push** 可用 `bash scripts/push-test.sh --e2e=chromium` 或 `--e2e=skip` 调试，不可作为生产验证凭据。助手在干净 `test` 分支附加一次空提交，不改写代码提交；CI 只认顶端严格匹配的单父空提交，不读仓库变量，同一运行的重跑保留原档位。发布候选（包括引入新流水线的第一次发布）用普通 push，等 `Validate test` 全量通过并完成测试部署，再核对发布 PR 的 `Verify tested release`。合并前 `main` 若已变化，应先同步到 `test` 并全量验证最终内容。本地 `deploy` / `deploy:test` 命令不变。

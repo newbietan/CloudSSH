@@ -1,9 +1,9 @@
 // Local adapter for the pinned FreeRDP browser build. It intentionally does not
 // modify the global WebSocket constructor, and never forwards relay controls to WASM.
-window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket) {
+window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket, carrier) {
   const limit = 1024 * 1024;
   const frame = 16 * 1024;
-  const ws = new WebSocket(url, 'cloudssh-rdp-v1');
+  const ws = carrier ?? new WebSocket(url, 'cloudssh-rdp-v1');
   ws.binaryType = 'arraybuffer';
   const sink = {
     CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3, readyState: 0,

@@ -5,6 +5,10 @@ const dictionary = {
 };
 // Only these local messages may reach the status line, never an upstream error or close reason.
 const failureText = {
+  peer_unavailable: ['No paired connector for this browser and device. Reopen the test and wait for Paired.', '此浏览器和设备没有已配对的连接器，请重新打开测试并等待 Paired。', '此瀏覽器與裝置沒有已配對的連接器，請重新開啟測試並等待 Paired。'],
+  peer_timeout: ['Direct connection timed out. No relay fallback was used.', '直连超时，未回退中继。', '直連逾時，未回退中繼。'],
+  peer_failed: ['Direct setup failed. Check the connector, UDP connectivity and local RDP. No relay fallback was used.', '直连失败，请检查连接器、UDP 网络和本机 RDP。未回退中继。', '直連失敗，請檢查連接器、UDP 網路與本機 RDP。未回退中繼。'],
+  peer_ended: ['The WebRTC connector or its control channel disconnected.', 'WebRTC 连接器或其控制通道已断开。', 'WebRTC 連接器或其控制通道已中斷。'],
   profile_changed: ['Device settings changed. Return to the list and reopen the device.', '设备配置已更新，请返回列表重新打开。', '裝置設定已更新，請返回清單重新開啟。'],
   refresh_client: ['The desktop client has changed. Refresh CloudSSH.', '桌面客户端已更新，请刷新 CloudSSH。', '桌面用戶端已更新，請重新整理 CloudSSH。'],
   authentication_required: ['Your sign-in has expired. Return and sign in again.', '登录已失效，请返回并重新登录。', '登入已失效，請返回並重新登入。'],
@@ -41,6 +45,8 @@ const [relayLabel, rttHelp] = {
   'zh-CN': ['中继', '中继：浏览器到 CloudSSH 的往返时间。RDP：Windows 上报的平均往返时间。横线表示暂无近期数据，两者都不代表画面响应耗时。'],
   'zh-TW': ['中繼', '中繼：瀏覽器至 CloudSSH 的往返時間。RDP：Windows 回報的平均往返時間。橫線表示暫無近期資料，兩者都不是畫面反應時間。'],
 }[locale];
+const peerHelp = { 'en-US': 'WebRTC: browser to connector over the direct data channel (ICE types: browser / connector). RDP: Windows average; neither measures rendering.', 'zh-CN': 'WebRTC：浏览器到连接器的直连数据通道往返时间（ICE 类型：浏览器 / 连接器）。RDP：Windows 上报的平均值；都不是渲染延迟。', 'zh-TW': 'WebRTC：瀏覽器至連接器的直連資料通道往返時間（ICE 類型：瀏覽器 / 連接器）。RDP：Windows 回報的平均值；均非繪製延遲。' }[locale];
+let peerMode = false, icePath = '', cancelWaitingPair;
 const el = id => document.getElementById(id);
 const tellWorkspace = (type, detail) => window.frameElement?.dispatchEvent(new CustomEvent('cloudssh-rdp-' + type, { detail }));
 const status = el('status');
@@ -89,8 +95,8 @@ async function run() {
   function paintLatency() {
     const now = performance.now();
     const fmt = (ms, age, limit) => ms !== undefined && age < limit ? `${ms} ms` : '—';
-    const text = `${relayLabel} ${fmt(relayMs, now - relayAt, 10000)} · RDP ${fmt(remoteMs, now - remoteAt, 30000)}`;
-    tellWorkspace('latency', { text, help: rttHelp });
+    const text = `${peerMode ? 'WebRTC' : relayLabel} ${fmt(relayMs, now - relayAt, 10000)} · RDP ${fmt(remoteMs, now - remoteAt, 30000)}`;
+    tellWorkspace('latency', { text, help: peerMode ? `${peerHelp} ${icePath}` : rttHelp });
   }
   function sample() {
     if (!ready || stopped || document.hidden) return;
@@ -157,6 +163,7 @@ async function run() {
     if (stopped) return;
     stopped = true;
     password = ticket = undefined;
+    cancelWaitingPair?.(); cancelWaitingPair = undefined;
     clearTimeout(timer);
     clearTimeout(resizeTimer);
     observer.disconnect();
@@ -230,14 +237,15 @@ async function run() {
     if (stopped) return;
     show(12);
     watch(30_000, 18);
-    const url = new URL('/api/rdp/session', location.origin);
+    const url = new URL(peerMode ? '/api/rdp/peer/session' : '/api/rdp/session', location.origin);
     url.protocol = 'wss:';
     window.Module = {
       canvas,
       websocket: { url: url.href, subprotocol: null },
       createRdpSocket(address) {
         if (stopped || address !== url.href || !ticket || socket) throw new Error('socket unavailable');
-        socket = window.createCloudSshRdpSocket(address, ticket);
+        const carrier = peerMode ? window.createCloudSshPeerCarrier(address, api, clientRevision, (local, remote) => { cancelWaitingPair = undefined; icePath = `${local} / ${remote}`; paintLatency(); }) : undefined;
+        socket = window.createCloudSshRdpSocket(address, ticket, carrier);
         socket.onRelayClose = reason => {
           if (stopped) return;
           if (reason === 'cert_reconnect' && acceptedTrust && !ready) {
@@ -333,7 +341,7 @@ async function run() {
           window.Module.FS.mkdirTree(prefs);
           window.Module.FS.writeFile(prefs + '/sdl-freerdp.json', '{"SDL_KeyModMask":["KMOD_NONE"]}');
           show(13);
-          watch(20_000, 22);
+          watch(peerMode ? 40_000 : 20_000, peerMode ? failure('peer_timeout') : 22);
           const issued = await request(api + '/connect', { method: 'POST', signal: abort.signal, headers: {
             'X-CloudSSH-RDP-Client': clientRevision, 'X-CloudSSH-RDP-Saved-Revision': String(profile.revision),
           } });
@@ -384,6 +392,8 @@ void (async () => {
   const intent = window.frameElement?.dataset;
   if (intent?.connectSaved !== 'true') return show(9);
   const { reconnectRevision, reconnectFingerprint } = intent;
+  peerMode = intent.peerTest === 'true';
+  delete intent.peerTest;
   delete intent.connectSaved;
   delete intent.reconnectRevision;
   delete intent.reconnectFingerprint;
@@ -401,5 +411,19 @@ void (async () => {
   profile = saved;
   if (profile.hasLogin !== true) return show(9);
   tellWorkspace('starting', profile.name);
+  if (peerMode) {
+    // Only a previously verified Windows pin can authorize NLA on the alternate path.
+    if (!profile.fingerprint) { status.textContent = failure('peer_unavailable'); return; }
+    const controller = new AbortController(); terminate = () => controller.abort();
+    try {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script'); script.src = base + 'rdp-peer.js'; script.setAttribute('data-cfasync', 'false');
+        script.onload = resolve; script.onerror = reject; document.head.append(script);
+      });
+      if (controller.signal.aborted) return;
+      cancelWaitingPair = await window.prepareCloudSshPeer(api, profile.revision, clientRevision, locale, controller.signal);
+      if (controller.signal.aborted) { cancelWaitingPair(); cancelWaitingPair = undefined; return; }
+    } catch (err) { if (err?.message !== 'expired') status.textContent = failure('peer_unavailable'); return; }
+  }
   void run();
 })().catch(() => show(21));
