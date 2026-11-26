@@ -1,19 +1,11 @@
-// One foreground process, one owner-paired desktop. No listener for RDP, persistent token, or selectable TCP destination.
+// One owner-authorized desktop at a time. Windows sign-in stays in FreeRDP; the connector has no selectable TCP target.
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
-	"fmt"
-	"io"
 	"net"
-	"net/http"
-	"net/url"
-	"os"
-	"os/signal"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -21,10 +13,9 @@ import (
 	"github.com/coder/websocket"
 	"github.com/pion/logging"
 	"github.com/pion/webrtc/v4"
-	"golang.org/x/term"
 )
 
-const protocol = "cloudssh-rdp-peer-v1"
+const protocol = "cloudssh-rdp-peer-v2"
 const localRDP = "127.0.0.1:3389"
 const frame = 16 * 1024
 const window = 1024 * 1024
@@ -33,76 +24,6 @@ type control struct {
 	Type  string `json:"type"`
 	SDP   string `json:"sdp,omitempty"`
 	Until int64  `json:"until,omitempty"`
-}
-
-func publicEndpoint(site string) (string, error) {
-	u, err := url.Parse(site)
-	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Fragment != "" || u.RawQuery != "" || u.ForceQuery || (u.Path != "" && u.Path != "/") {
-		return "", errors.New("-site must be the HTTPS origin of your CloudSSH deployment")
-	}
-	u.Scheme, u.Path = "wss", "/api/rdp/peer/agent"
-	return u.String(), nil
-}
-
-func main() {
-	site := flag.String("site", "", "your CloudSSH HTTPS origin (no path)")
-	flag.Parse()
-	endpoint, err := publicEndpoint(*site)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
-	}
-	fmt.Fprintln(os.Stderr, "Paste the one-time pairing code from that CloudSSH desktop, then press Enter:")
-	var line string
-	if term.IsTerminal(int(os.Stdin.Fd())) {
-		var secret []byte
-		secret, err = term.ReadPassword(int(os.Stdin.Fd()))
-		line = string(secret)
-		clear(secret)
-		fmt.Fprintln(os.Stderr)
-	} else {
-		line, err = bufio.NewReader(io.LimitReader(os.Stdin, 300)).ReadString('\n')
-	}
-	code := strings.TrimSpace(line)
-	if (err != nil && err != io.EOF) || !strings.HasPrefix(code, "p1.") || len(code) > 280 || strings.ContainsAny(code, " \r\n\t") {
-		fmt.Fprintln(os.Stderr, "Invalid pairing code.")
-		os.Exit(2)
-	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-	headers := http.Header{"Authorization": {"Bearer " + code}}
-	// Optional machine admission to the CloudSSH site, NOT a Tunnel's credentials or a browser cookie.
-	if id, secret := os.Getenv("CF_ACCESS_CLIENT_ID"), os.Getenv("CF_ACCESS_CLIENT_SECRET"); id != "" && secret != "" {
-		headers.Set("CF-Access-Client-Id", id)
-		headers.Set("CF-Access-Client-Secret", secret)
-	}
-	dialCtx, end := context.WithTimeout(ctx, 12*time.Second)
-	ws, res, err := websocket.Dial(dialCtx, endpoint, &websocket.DialOptions{HTTPHeader: headers, Subprotocols: []string{protocol},
-		HTTPClient: &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}})
-	end()
-	clear(headers)
-	line, code = "", ""
-	if err != nil {
-		status := 0
-		if res != nil {
-			status = res.StatusCode
-		}
-		fmt.Fprintf(os.Stderr, "Pairing rejected or site unreachable (HTTP %d). Check the site, code and Access policy.\n", status)
-		os.Exit(1)
-	}
-	if ws.Subprotocol() != protocol {
-		ws.CloseNow()
-		fmt.Fprintln(os.Stderr, "Wrong signaling protocol.")
-		os.Exit(1)
-	}
-	config := webrtc.Configuration{ICEServers: []webrtc.ICEServer{{URLs: []string{"stun:stun.cloudflare.com:3478"}}}}
-	err = run(ctx, ws, config, func(ctx context.Context) (net.Conn, error) {
-		return (&net.Dialer{Timeout: 4 * time.Second}).DialContext(ctx, "tcp4", localRDP)
-	}, func(s string) { fmt.Fprintln(os.Stderr, s) })
-	if err != nil && ctx.Err() == nil {
-		fmt.Fprintln(os.Stderr, "Session ended:", err)
-		os.Exit(1)
-	}
 }
 
 func run(parent context.Context, ws *websocket.Conn, config webrtc.Configuration, dial func(context.Context) (net.Conn, error), note func(string)) error {
@@ -125,7 +46,7 @@ func run(parent context.Context, ws *websocket.Conn, config webrtc.Configuration
 	var authorized atomic.Bool
 	started := time.Now()
 	monotonicMS := func() int64 { return time.Since(started).Milliseconds() }
-	expires.Store((5 * time.Minute).Milliseconds())
+	expires.Store((8 * time.Second).Milliseconds())
 	// Independent fail-closed deadline even when neither the browser nor Worker delivers a close frame.
 	go func() {
 		tick := time.NewTicker(250 * time.Millisecond)
@@ -148,7 +69,6 @@ func run(parent context.Context, ws *websocket.Conn, config webrtc.Configuration
 			_ = pc.Close()
 		}
 	}()
-	paired := false
 	for ctx.Err() == nil {
 		kind, b, err := ws.Read(ctx)
 		if err != nil {
@@ -163,16 +83,9 @@ func run(parent context.Context, ws *websocket.Conn, config webrtc.Configuration
 			break
 		}
 		switch m.Type {
-		case "waiting":
-			if paired {
-				fail("duplicate pairing")
-				break
-			}
-			paired = true
-			note("Paired. Click Start WebRTC test in the browser.")
 		case "lease":
 			now := time.Now().UnixMilli()
-			if !paired || m.Until <= now || m.Until > now+45_000 {
+			if m.Until <= now || m.Until > now+45_000 {
 				fail("invalid lease or system clock")
 				break
 			}

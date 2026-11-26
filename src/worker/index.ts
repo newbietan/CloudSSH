@@ -35,7 +35,6 @@ import { handleVersionCheck } from './version-check';
 import { handleCloudflareSshCaSign } from './cf-ssh-ca';
 import { handleMcp, handleMcpManagement } from './mcp';
 import { handleRdp, isRdpRoute, type RdpAssets } from './rdp-routes';
-import { peerEnabled } from './rdp-peer-auth';
 export { MCPExecutionDO } from './mcp-execution';
 
 export { SSHSessionDO } from './durable-object';
@@ -416,7 +415,8 @@ export default {
           githubAuthRequired: isAuthRequired(env) || authMode === 'cf_access',
           sshSharingEnabled: true,
           ...(rdpAssets && url.protocol === 'https:' ? { rdpEnabled: true } : {}),
-          ...(rdpAssets?.peer && url.protocol === 'https:' && authMode !== 'anonymous' && peerEnabled(env) ? { rdpPeerEnabled: true } : {}),
+          ...(rdpAssets?.peer && url.protocol === 'https:' && authMode !== 'anonymous' && env.RDP_AUTHORITY
+            ? { rdpConnectorEnabled: true, ...(rdpAssets.connectorPreview ? { rdpConnectorPreview: true } : {}) } : {}),
           authMode,
           cfAccessEmail,
           // 浏览器预拉伸公开参数（盐非机密）；坏哈希时为 null

@@ -36,6 +36,64 @@ async function expectFullscreenFit(page: Page, checkHits = false) {
   }
 }
 
+test('new Windows device offers connector and binding downloads in-app without a second connection button', async ({ page }) => {
+  const fp = 'a'.repeat(64), connectorId = '13345678-1234-1234-1234-123456789abc';
+  let state: Record<string, unknown> = { state: 'unbound' };
+  let profile: Record<string, unknown> | undefined;
+  await page.route('**/api/config', r => r.request().method() === 'GET' ? r.fulfill({ json: {
+    turnstileEnabled: false, githubAuthEnabled: true, githubAuthRequired: true, authMode: 'github', rdpEnabled: true, rdpConnectorEnabled: true,
+  } }) : r.fallback());
+  await page.route('**/api/auth/me', r => r.request().method() === 'GET' ? r.fulfill({ json: { id: 1, github_id: 42, username: 'tester', avatar_url: null } }) : r.fallback());
+  await page.route('**/api/servers', r => r.request().method() === 'GET' ? r.fulfill({ json: [] }) : r.fallback());
+  await page.route('**/api/rdp/profiles', r => {
+    if (r.request().method() === 'GET') return r.fulfill({ json: { profiles: profile ? [{ ...profile, connector: state }] : [] } });
+    if (r.request().method() !== 'POST') return r.fallback();
+    const body = r.request().postDataJSON();
+    expect(body).toEqual({ name: 'Private Windows', host: '', route: 'connector', tags: [], login: { username: 'Administrator', domain: '', password: 'synthetic' } });
+    profile = { id, name: body.name, host: body.host, route: body.route, tags: [], revision: 1, fingerprint: null, hasLogin: true, hasAccessToken: false };
+    return r.fulfill({ status: 201, json: profile });
+  });
+  await page.route(`**/api/rdp/profiles/${id}/connector`, r => r.request().method() === 'GET' ? r.fulfill({ json: state }) : r.fallback());
+  await page.route(`**/api/rdp/profiles/${id}/connector-enroll`, r => {
+    if (r.request().method() !== 'POST') return r.fallback();
+    expect(r.request().postDataJSON()).toEqual({ revision: 1 });
+    const expires = Date.now() + 60_000;
+    state = { state: 'pending', id: connectorId, label: 'WIN-TEST', fingerprint: fp, expires };
+    return r.fulfill({ json: { origin: new URL(r.request().url()).origin, version: 2, expires, grant: `e2.${'a'.repeat(120)}` } });
+  });
+  await page.route(`**/api/rdp/profiles/${id}/connector-confirm`, r => {
+    if (r.request().method() !== 'POST') return r.fallback();
+    expect(r.request().postDataJSON()).toEqual({ device: connectorId, fingerprint: fp });
+    state = { state: 'offline', label: 'WIN-TEST', fingerprint: fp };
+    return r.fulfill({ json: { ok: true } });
+  });
+  await page.route('**/rdp/download/windows-x64', r => r.request().method() === 'GET'
+    ? r.fulfill({ contentType: 'application/zip', headers: { 'Content-Length': '4096' }, body: Buffer.alloc(4096) }) : r.fallback());
+  await page.goto('/?lang=en-US');
+  await page.locator('#add-server-btn').click();
+  const modal = page.locator('#server-modal');
+  await modal.getByRole('button', { name: 'Windows Server' }).click();
+  await expect(modal.getByLabel('Connection route')).toHaveValue('connector');
+  await expect(modal.locator('#server-rdp-host')).toBeHidden();
+  await modal.locator('#server-rdp-name').fill('Private Windows');
+  await modal.locator('#server-rdp-password').fill('synthetic');
+  await modal.locator('#server-submit-btn').click();
+  const setup = page.getByRole('dialog', { name: 'Set up Windows direct access' });
+  await expect(setup).toBeVisible();
+  const installerEvent = page.waitForEvent('download');
+  await setup.getByRole('button', { name: 'Download Windows connector' }).click();
+  expect((await installerEvent).suggestedFilename()).toBe('cloudssh-rdp-connector-windows-amd64.zip');
+  const fileEvent = page.waitForEvent('download');
+  await setup.getByRole('button', { name: 'Download this device’s binding file' }).click();
+  expect((await fileEvent).suggestedFilename()).toBe('cloudssh-binding.cloudssh-rdp.json');
+  await expect(setup.getByText(fp)).toBeVisible();
+  await setup.getByRole('button', { name: 'Confirm device and connect' }).click();
+  await expect(setup.getByText(/Waiting for the Windows service/)).toBeVisible();
+  await setup.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.locator(`#rdp-card-${id} button[id^=rdp-open-]`)).toHaveCount(1);
+  await expect(page.locator(`#rdp-card-${id} button[id^=rdp-peer-]`)).toHaveCount(0);
+});
+
 test('Windows uses the shared add-server dialog and the main server grid', async ({ page }) => {
   await page.route('**/api/config', route => route.request().method() === 'GET' ? route.fulfill({ json: {
     turnstileEnabled: false, githubAuthEnabled: true, githubAuthRequired: true, authMode: 'github', rdpEnabled: true,
@@ -382,7 +440,8 @@ test('the themed workspace stays in the current tab and a saved login is release
   // Measure the initial viewport at callMain, not after the status line changes on first paint.
   await expect(frame.locator('html')).toHaveAttribute('data-size', (await frame.locator('html').getAttribute('data-initial-viewport'))!);
   await expect(frame.locator('form,input,#connect')).toHaveCount(0);
-  await expect(workspace.locator('header .rdp-latency')).toHaveText('Relay 24 ms · RDP 83 ms');
+  await expect(workspace.locator('header .rdp-latency')).toHaveText('RTT 24 ms · RDP 83 ms');
+  await expect(workspace.locator('header .rdp-latency')).toHaveAttribute('title', /Relay: browser to CloudSSH/);
   await expect(frame.locator('.status-row')).toHaveCount(0);
   expect(await frame.locator('html').evaluate(e => e.style.getPropertyValue('--accent').trim())).toBe(await page.locator('body').evaluate(e => getComputedStyle(e).getPropertyValue('--accent').trim()));
   await page.setViewportSize({ width: 960, height: 700 });

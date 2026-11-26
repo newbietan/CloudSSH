@@ -69,7 +69,7 @@ export class RdpWorkspace {
     this.close();
     const id = rdpEntryId();
     if (!id) { if (this.standalone) this.leave(); return; }
-    let connect = false, peer = false;
+    let connect = false;
     if (consumeIntent) {
       try {
         const saved = sessionStorage.getItem(intentKey);
@@ -77,28 +77,27 @@ export class RdpWorkspace {
         const now = Date.now();
         const intent = JSON.parse(saved ?? 'null');
         connect = intent?.id === id && intent.until >= now && intent.until <= now + 30000;
-        peer = intent?.peer === true;
       } catch { /* Deep links and unavailable storage require a Connect click. */ }
     }
-    if (connect) this.mount(id, peer);
+    if (connect) this.mount(id);
     else this.leave(); // Bookmark/refresh is not permission to release credentials.
   }
-  async open(id: string, peer = false): Promise<void> {
+  async open(id: string): Promise<void> {
     if (!isRdpId(id) || this.events.signal.aborted) return;
     const path = `/rdp/${id}`;
     if (!window.crossOriginIsolated) {
       if (this.hasSshTabs() && !await confirmAction({ title: t('rdp.open'), message: t('rdp.leaveSsh'),
         confirmText: t('authChallenge.continue'), cancelText: t('common.cancel') })) return;
       if (this.events.signal.aborted) return;
-      try { sessionStorage.setItem(intentKey, JSON.stringify({ id, peer, until: Date.now() + 30000 })); } catch { /* ask on entry */ }
+      try { sessionStorage.setItem(intentKey, JSON.stringify({ id, until: Date.now() + 30000 })); } catch { /* ask on entry */ }
       location.assign(path);
       return;
     }
     this.accountUrl = location.pathname + location.search + location.hash;
     history.pushState(null, '', path);
-    this.mount(id, peer);
+    this.mount(id);
   }
-  private mount(id: string, peer = false): void {
+  private mount(id: string): void {
     this.close();
     const dialog = document.createElement('dialog');
     dialog.className = 'rdp-workspace';
@@ -134,7 +133,6 @@ export class RdpWorkspace {
     frame.src = `/rdp/${id}/client`;
     // Only the host toolbar may request fullscreen. No deferred SDL request on a canvas click.
     frame.allow = "fullscreen 'none'";
-    if (peer) frame.dataset.peerTest = 'true';
     frame.dataset.connectSaved = 'true';
     const applyTheme = () => {
       const doc = frame.contentDocument;
@@ -166,7 +164,7 @@ export class RdpWorkspace {
     };
     let retried = false;
     frame.addEventListener('cloudssh-rdp-reconnect', event => {
-      if (!current() || peer || retried) return;
+      if (!current() || retried) return;
       const { revision, fingerprint } = (event as CustomEvent).detail ?? {};
       if (!Number.isSafeInteger(revision) || revision < 1 || typeof fingerprint !== 'string' ||
           !/^[a-f0-9]{64}$/.test(fingerprint)) return;

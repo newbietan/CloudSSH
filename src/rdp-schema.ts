@@ -1,7 +1,13 @@
 import { normalizeServerTags } from './server-tags';
 import { isRestrictedTcpPort } from './tcp-port-policy';
 
-export type RdpRoute = 'direct' | 'tunnel';
+export type RdpRoute = 'direct' | 'tunnel' | 'connector';
+export const RDP_CONNECTOR_FILENAME = 'cloudssh-rdp-connector-windows-amd64.zip';
+export const RDP_CONNECTOR_DOWNLOAD = `https://github.com/newbietan/CloudSSH/releases/download/rdp-connector-v2/${RDP_CONNECTOR_FILENAME}`;
+export const RDP_CONNECTOR_MAX_DOWNLOAD = 16 * 1024 * 1024;
+export type RdpConnector = { state: 'unbound' } | { state: 'waiting'; expires: number }
+  | { state: 'pending'; id: string; label: string; fingerprint: string; expires: number }
+  | { state: 'online' | 'offline'; label: string; fingerprint: string } | { state: 'other_origin'; origin: string };
 export const RDP_MAX_PROFILES = 32;
 export const RDP_MAX_BODY = 12 * 1024;
 export const RDP_WINDOW = 1024 * 1024;
@@ -40,6 +46,7 @@ export interface RdpProfile extends Omit<RdpProfileInput, 'accessId' | 'accessSe
   hasAccessToken: boolean;
   hasLogin: boolean;
   tags: string[];
+  connector?: RdpConnector;
 }
 
 /** Authenticated card projection. No domain, password, token or encrypted login blob. */
@@ -123,6 +130,10 @@ export function parseRdpProfile(value: unknown): RdpProfileInput | null {
   if (data.login !== undefined && !isRdpLogin(data.login)) return null;
   const extra = { ...(data.tags === undefined ? {} : { tags: normalizeServerTags(data.tags) }),
     ...(data.login === undefined ? {} : { login: data.login }) };
+  if (route === 'connector') {
+    if (host !== '' || data.port !== undefined || data.accessId !== undefined || data.accessSecret !== undefined) return null;
+    return { name, host: '', route, ...extra };
+  }
   if (route === 'direct') {
     const direct = parseRdpDirectHost(data.host);
     if (!direct || data.accessId !== undefined || data.accessSecret !== undefined) return null;

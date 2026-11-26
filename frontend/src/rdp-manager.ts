@@ -13,6 +13,8 @@ export class RdpManager {
   private readonly tags: HTMLInputElement;
   private readonly host: HTMLInputElement;
   private readonly hostField: HTMLLabelElement;
+  private readonly endpoint = document.createElement('div');
+  private readonly connectorHint = localizedElement('p', 'rdp.connectorOnlyHint');
   private readonly port: HTMLInputElement;
   private readonly portField: HTMLLabelElement;
   private readonly transport = document.createElement('select');
@@ -31,8 +33,10 @@ export class RdpManager {
   private editing?: RdpProfile;
 
   private readonly editNotice = localizedElement('p', 'rdp.editEndsSession');
+  private readonly setupConnector = localizedElement('button', 'rdp.connectorSetup');
 
-  constructor(parent: HTMLFieldSetElement, private readonly onChange: () => void) {
+  constructor(parent: HTMLFieldSetElement, private readonly onChange: () => void, private readonly connectorEnabled = false,
+    onConnectorSetup?: (profile: RdpProfile) => void) {
     const identity = document.createElement('div');
     identity.className = 'server-identity-fields';
     const [name, nameLabel] = this.field('rdp-name', 64, 'rdp.name', 'text', 'label');
@@ -42,7 +46,9 @@ export class RdpManager {
     this.transport.id = 'server-rdp-route';
     const routeLabel = this.label('rdp.route', this.transport);
     this.transport.className = 'terminal-input w-full';
-    for (const [key, value] of [['rdp.direct', 'direct'], ['rdp.tunnel', 'tunnel']] as const) {
+    const options = [['rdp.connectorRoute', 'connector'], ['rdp.direct', 'direct'], ['rdp.tunnel', 'tunnel']] as const;
+    for (const [key, value] of options) {
+      if (value === 'connector' && !connectorEnabled) continue;
       const option = localizedElement('option', key);
       option.value = value;
       this.transport.append(option);
@@ -59,8 +65,7 @@ export class RdpManager {
     target.className = 'server-settings-section';
     const authentication = document.createElement('div');
     authentication.className = 'server-settings-section';
-    const endpoint = document.createElement('div');
-    endpoint.className = 'ssh-endpoint-fields';
+    this.endpoint.className = 'ssh-endpoint-fields';
     [this.host, this.hostField] = this.field('rdp-host', 254, 'rdp.host', 'text', '>');
     [this.port, this.portField] = this.field('rdp-port', null, 'auth.port', 'number', ':');
     this.hostField.className = 'ssh-host-field';
@@ -68,8 +73,9 @@ export class RdpManager {
     Object.assign(this.port, { min: '1', max: '65535', step: '1', inputMode: 'numeric', defaultValue: String(RDP_DEFAULT_PORT) });
     name.required = this.host.required = true;
     this.host.spellcheck = false;
-    endpoint.append(this.hostField, this.portField);
-    target.append(routeLabel, endpoint);
+    this.endpoint.append(this.hostField, this.portField);
+    this.connectorHint.className = 'text-xs text-muted';
+    target.append(routeLabel, this.endpoint, this.connectorHint);
     const [username, userLabel] = this.field('rdp-user', 128, 'auth.user', 'text', 'person');
     const [domain, domainLabel] = this.field('rdp-domain', 128, 'rdp.domain');
     const [password, passLabel] = this.field('rdp-password', 1024, 'common.password', 'password', 'key');
@@ -97,7 +103,10 @@ export class RdpManager {
     this.access.append(legend, credentials, this.clearLabel);
     this.transport.onchange = this.clear.onchange = () => this.updateTransport();
     this.editNotice.className = 'text-xs text-muted mt-2';
-    parent.replaceChildren(identity, columns, this.access, this.editNotice);
+    this.setupConnector.type = 'button';
+    this.setupConnector.className = 'cyber-button text-primary px-3 py-2 mt-3';
+    this.setupConnector.onclick = () => { if (this.editing) onConnectorSetup?.(this.editing); };
+    parent.replaceChildren(identity, columns, this.access, this.editNotice, this.setupConnector);
     for (const event of ['input', 'change']) parent.addEventListener(event, () => this.syncEdit(), { signal: this.requests.signal });
     this.reset();
   }
@@ -142,11 +151,12 @@ export class RdpManager {
 
   reset(row?: RdpProfile): void {
     this.editing = row;
+    this.setupConnector.hidden = !this.connectorEnabled || !row?.hasLogin;
     this.name.value = row?.name ?? '';
     this.host.value = row?.host ?? '';
     this.port.value = String(row?.port ?? RDP_DEFAULT_PORT);
     this.tags.value = (row?.tags ?? []).join(', ');
-    this.transport.value = row?.route ?? 'direct';
+    this.transport.value = row?.route ?? (this.connectorEnabled ? 'connector' : 'direct');
     this.id.value = this.secret.value = this.domain.value = this.password.value = '';
     this.username.value = row?.hasLogin ? '' : 'Administrator';
     this.identity = undefined;
@@ -200,12 +210,14 @@ export class RdpManager {
 
   private sameTarget(row: RdpProfile): boolean {
     if (row.route !== this.transport.value) return false;
+    if (row.route === 'connector') return true;
     const host = this.host.value;
     return row.route === 'tunnel' ? row.host === host.trim().toLowerCase() :
       row.host === parseRdpDirectHost(host)?.host && parsePort(this.port.value) === (row.port ?? RDP_DEFAULT_PORT);
   }
 
   private hostError(): TranslationKey | null {
+    if (this.transport.value === 'connector') return null;
     const host = this.host.value;
     if (this.transport.value === 'tunnel') {
       return isRdpTunnelHost(host.trim().toLowerCase()) ? null : 'rdp.invalidTunnelHost';
@@ -231,8 +243,13 @@ export class RdpManager {
 
   private updateTransport(): void {
     const tunnel = this.transport.value === 'tunnel';
-    this.portField.hidden = this.port.disabled = tunnel;
-    this.port.required = !tunnel;
+    const connector = this.transport.value === 'connector';
+    this.endpoint.hidden = connector;
+    this.connectorHint.hidden = !connector;
+    this.host.disabled = connector;
+    this.host.required = !connector;
+    this.portField.hidden = this.port.disabled = tunnel || connector;
+    this.port.required = !(tunnel || connector);
     this.hostField.classList.toggle('ssh-host-field-wide', tunnel);
     this.updateRequirements();
     this.access.hidden = this.access.disabled = !tunnel;
@@ -254,16 +271,16 @@ export class RdpManager {
     return data.profiles.filter(row => isRdpId(row.id));
   }
 
-  async save(): Promise<void> {
+  async save(): Promise<RdpProfile> {
     const editing = this.editing;
     const input: Record<string, unknown> = {
-      name: this.name.value, route: this.transport.value, host: this.host.value, tags: normalizeServerTags(this.tags.value),
+      name: this.name.value, route: this.transport.value, host: this.transport.value === 'connector' ? '' : this.host.value, tags: normalizeServerTags(this.tags.value),
     };
     if (this.transport.value === 'direct') {
       const port = parsePort(this.port.value);
       if (!isRdpPort(port)) throw new Error(t(port === null ? 'auth.validationPort' : 'rdp.restrictedPort'));
       input.port = port;
-    } else if (this.clear.checked || this.id.value || this.secret.value) {
+    } else if (this.transport.value === 'tunnel' && (this.clear.checked || this.id.value || this.secret.value)) {
       input.accessId = this.clear.checked ? '' : this.id.value;
       input.accessSecret = this.clear.checked ? '' : this.secret.value;
     }
@@ -287,7 +304,8 @@ export class RdpManager {
       if (result?.code === 'invalid_profile' || result?.code === 'login_required') throw new Error(t('rdp.invalid'));
       throw new Error(t('rdp.failed'));
     }
-    if (!isRdpId(result?.id)) throw new Error(t('rdp.failed'));
+    if (!isRdpId(result?.id) || !Number.isSafeInteger(result.revision)) throw new Error(t('rdp.failed'));
+    return result as RdpProfile;
   }
 
   async remove(id: string): Promise<void> {

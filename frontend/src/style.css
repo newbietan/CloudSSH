@@ -6035,6 +6035,20 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 }
 
 html[data-rdp-entry] #app-loading { display: none; }
+.ssh-endpoint-fields[hidden] { display: none; }
+.rdp-connector-dialog {
+  width: min(35rem, calc(100% - 2rem)); max-height: calc(100dvh - 2rem);
+  border: 1px solid var(--border-strong); border-radius: 1rem; padding: 1.25rem;
+  background: var(--bg-elevated); color: var(--text); box-shadow: 0 1rem 3rem #0005;
+  overflow: auto; margin: auto;
+}
+.rdp-connector-dialog::backdrop { background: #0008; }
+.rdp-connector-dialog h2 { font-size: 1.13rem; font-weight: 700; }
+.rdp-connector-dialog p { margin: .55rem 0; color: var(--text-muted); }
+.rdp-connector-dialog code { display: block; overflow-wrap: anywhere; padding: .5rem; }
+.rdp-connector-dialog [role="alert"] { color: var(--error, var(--text)); }
+.rdp-connector-actions:not([hidden]) { display: flex; gap: .5rem; flex-wrap: wrap; margin: .6rem 0; }
+.rdp-connector-dialog button { min-height: 44px; padding: .4rem .75rem; }
 .rdp-workspace[open] {
   position: fixed; inset: 0; width: 100%; height: 100dvh; max-width: none; max-height: none;
   margin: 0; padding: 0; border: 0; display: flex; flex-direction: column;

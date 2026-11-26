@@ -180,7 +180,7 @@ export interface Env {
   SSH_SHARE: DurableObjectNamespace;
   IDLE_TIMEOUT?: string;
   /** Optional 32-byte lowercase hex secret; enables the opt-in WebRTC RDP A/B prototype. */
-  RDP_P2P_SECRET?: string;
+  RDP_AUTHORITY?: DurableObjectNamespace;
   TURNSTILE_SECRET?: string;
   TURNSTILE_SITEKEY?: string;
   // GitHub OAuth（可选，未配置则登录功能自动禁用）

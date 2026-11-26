@@ -135,5 +135,6 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket, c
     sink.onRelayClose?.(event.reason);
     sink.onclose?.(event);
   };
+  ws.activate?.(); // Prepared direct carriers replay only Ready, not the consumed ticket.
   return sink;
 };

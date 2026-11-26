@@ -73,9 +73,9 @@ export async function initializeAccessIdentity(
   const aud = ctx.access.aud;
   if (typeof aud !== 'string' || !/^[\x21-\x7e]{1,256}$/.test(aud)) return;
   accessAdmissions.add(request);
-  // Machine requests need native admission + their personal MCP token, not user profile data.
-  // Management APIs still resolve an email; /mcp/ and other paths are NOT this fast path.
-  if (new URL(request.url).pathname === '/mcp') return;
+  // Only exact machine endpoints use native admission plus their own capability instead of user profile data.
+  const path = new URL(request.url).pathname;
+  if (path === '/mcp' || /^\/api\/rdp\/device\/(register|challenge|standby|attach)$/.test(path)) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const identity = await Promise.race([

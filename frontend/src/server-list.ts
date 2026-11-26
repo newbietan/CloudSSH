@@ -16,6 +16,7 @@ import { confirmAction, notify } from './ui-feedback';
 import { formatTimestampWithRelative } from '../../src/server-memory-schema';
 import { RDP_DEFAULT_PORT, isRdpId, type RdpCard, type RdpProfile } from '../../src/rdp-schema';
 import { RdpManager } from './rdp-manager';
+import { RdpConnectorSetup } from './rdp-connector-setup';
 
 interface UserInfo {
   id: number;
@@ -175,6 +176,7 @@ export class ServerList {
   private servers: ServerConfig[] = [];
   private rdpProfiles: RdpCard[] = [];
   private readonly rdp?: RdpManager;
+  private readonly rdpConnector?: RdpConnectorSetup;
   private readonly modalEvents = new AbortController();
   private disposed = false;
   private modalKind: 'ssh' | 'rdp' = 'ssh';
@@ -201,7 +203,6 @@ export class ServerList {
   private currentPage = 1;
   private pageSize = currentServerPageSize();
   private sharingEnabled = false;
-  private readonly peerTest: boolean;
   /** 与连接表单一致：只有 Cloudflare Access 登录才显示 SSH CA 入口。 */
   private cfSshCaEnabled = false;
   private readonly shareManager = new ShareManager();
@@ -211,16 +212,20 @@ export class ServerList {
     onLogout: () => void,
     onConnect: (wsUrl: string, serverName: string, hostInfo?: SSHHostInfo) => void,
     config: AppConfig,
-    private readonly openRdp?: (id: string, peer?: boolean) => void,
+    private readonly openRdp?: (id: string) => void,
   ) {
     this.user = user;
-    this.peerTest = config.rdpPeerEnabled === true;
     this.onLogout = onLogout;
     this.onConnect = onConnect;
     this.sharingEnabled = config.sshSharingEnabled === true;
     this.cfSshCaEnabled = config.authMode === 'cf_access';
     const fields = document.querySelector<HTMLFieldSetElement>('#server-rdp-fields');
-    if (config.rdpEnabled === true && fields) this.rdp = new RdpManager(fields, () => this.syncRdpSubmit());
+    if (config.rdpEnabled === true && fields) {
+      if (config.rdpConnectorEnabled === true) this.rdpConnector = new RdpConnectorSetup(
+        id => { if (!this.disposed) this.openRdp?.(id); }, () => { void this.fetchRdpProfiles(); }, config.rdpConnectorPreview === true);
+      this.rdp = new RdpManager(fields, () => this.syncRdpSubmit(), !!this.rdpConnector,
+        row => { if (!this.disposed) this.rdpConnector?.open(row, false); });
+    }
     try {
       const savedSort = localStorage.getItem(SERVER_SORT_STORAGE_KEY) as ServerSortMode | null;
       if (savedSort && ['recent', 'updated', 'created', 'name'].includes(savedSort)) {
@@ -242,6 +247,7 @@ export class ServerList {
     document.getElementById('server-grid')?.replaceChildren();
     document.getElementById('server-list-notice')?.classList.add('hidden');
     this.rdp?.dispose();
+    this.rdpConnector?.dispose();
     this.hideModal();
   }
 
@@ -607,9 +613,10 @@ export class ServerList {
         document.getElementById(`rdp-open-${row.id}`)?.addEventListener('click', () => {
           if (this.disposed) return;
           if (!row.hasLogin) this.editRdp(row);
-          else this.openRdp?.(row.id);
+          else if (row.route === 'connector' && this.rdpConnector && (!row.connector || ['unbound', 'waiting', 'pending', 'other_origin'].includes(row.connector.state))) {
+            this.rdpConnector.open(row);
+          } else this.openRdp?.(row.id);
         });
-        document.getElementById(`rdp-peer-${row.id}`)?.addEventListener('click', () => { if (!this.disposed) this.openRdp?.(row.id, true); });
         document.getElementById(`rdp-edit-${row.id}`)?.addEventListener('click', () => this.editRdp(row));
         document.getElementById(`rdp-delete-${row.id}`)?.addEventListener('click', () => { void this.deleteRdp(row); });
         continue;
@@ -712,15 +719,14 @@ export class ServerList {
         <span class="shrink-0 text-[10px] text-muted border border-dim px-2 py-0.5">RDP</span>
       </div>
       <div class="space-y-1.5 text-xs text-muted mb-4">
-        ${this.renderHostRow(row.id, row.host, row.route === 'direct' ? (row.port ?? RDP_DEFAULT_PORT) : null)}
+        ${row.route !== 'connector' ? this.renderHostRow(row.id, row.host, row.route === 'direct' ? (row.port ?? RDP_DEFAULT_PORT) : null) : ''}
         <div class="server-card-meta-row flex items-center gap-2 min-w-0"><span class="text-dim">${t('server.userLabel')}</span><span class="text-on-surface truncate" title="${this.escapeAttr(row.username ?? '—')}">${this.escapeHtml(row.username ?? '—')}</span></div>
-        <div>${t(row.route === 'tunnel' ? 'rdp.tunnel' : 'rdp.direct')}</div>
+        <div>${t(row.route === 'connector' ? 'rdp.connectorRoute' : row.route === 'tunnel' ? 'rdp.tunnel' : 'rdp.direct')}</div>
         <div class="server-card-meta-row flex items-center gap-2 min-w-0"><span class="text-dim">${t('server.lastConnected')}</span><span class="text-on-surface truncate" title="${this.escapeAttr(connected)}">${this.escapeHtml(connected)}</span></div>
         ${(row.tags ?? []).length ? `<div class="flex flex-wrap gap-1 mt-3">${row.tags.map(tag => `<span class="text-[9px] text-primary border border-[var(--border-strong)] px-1.5 py-0.5">#${this.escapeHtml(tag)}</span>`).join('')}</div>` : ''}
       </div>
       <div class="server-card-actions flex gap-2 pt-3 border-t border-[var(--border)]">
         <button type="button" id="rdp-open-${row.id}" class="server-connect-button cyber-button text-primary flex-1 min-w-0 py-1.5 px-3 text-xs flex items-center justify-center">${t(row.hasLogin ? 'rdp.open' : 'rdp.complete')}</button>
-        ${this.peerTest && row.hasLogin && row.fingerprint ? `<button type="button" id="rdp-peer-${row.id}" class="cyber-button text-primary px-2 text-xs">${t('rdp.peerTest')}</button>` : ''}
         <button type="button" id="rdp-edit-${row.id}" class="cyber-button text-primary px-3" aria-label="${this.escapeAttr(t('rdp.edit'))}">
           <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px">edit</span>
         </button>
@@ -1036,8 +1042,11 @@ export class ServerList {
     const generation = this.modalGeneration;
     this.rdpSaving = submit.disabled = true;
     try {
-      await this.rdp.save();
-      if (generation === this.modalGeneration) this.hideModal();
+      const saved = await this.rdp.save();
+      if (!this.disposed && generation === this.modalGeneration) {
+        this.hideModal();
+        if (saved.revision === 1) this.rdpConnector?.open(saved);
+      }
       await this.fetchRdpProfiles();
     } catch (error) {
       if (!this.disposed && generation === this.modalGeneration) {

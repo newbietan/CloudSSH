@@ -1,6 +1,7 @@
 import { normalizeAIBaseUrl } from '../ai-endpoint';
 import { McpStore } from './mcp-store';
 import { RdpStore } from './rdp-store';
+import { RdpDevices } from './rdp-devices';
 import { executionName } from './mcp-auth';
 import type { McpActivity } from '../mcp-schema';
 import { resolveModelBudget } from '../ai-model-policy';
@@ -453,6 +454,11 @@ export class UserDBDO {
     this.db.exec('DROP TABLE IF EXISTS server_task_checkpoints');
   }
 
+  // Only the resident RDP standby uses the Hibernation API. Its exact ping is handled by the runtime.
+  webSocketMessage(ws: WebSocket): void { RdpDevices.unexpected(ws); }
+  webSocketError(ws: WebSocket): void { RdpDevices.unexpected(ws); }
+  webSocketClose(ws: WebSocket): void { try { ws.close(1000); } catch { /* already closed */ } }
+
   async fetch(request: Request): Promise<Response> {
     try {
       const url = new URL(request.url);
@@ -463,6 +469,7 @@ export class UserDBDO {
           this.db, callback => this.mcpState.storage.transactionSync(callback),
           (value, id) => this.encryptCredential(value, id),
           (value, id) => this.decryptCredential(value, id),
+          this.mcpState,
         );
         return await this.rdpStore.handle(request);
       }

@@ -26,7 +26,7 @@ describe('Fork 工作流执行策略', () => {
     const deploy = readWorkflow('deploy.yml');
     for (const job of [readDeployJob('validate-test'), readDeployJob('deploy-production')]) {
       expect(job.match(/run: pnpm run build:frontend/g)).toHaveLength(1);
-      expect(job.match(/run: pnpm exec wrangler deploy(?: --env test)?$/gm)).toHaveLength(1);
+      expect(job.match(/run: pnpm exec wrangler deploy(?: --env test src\/worker\/rdp-preview-entry\.ts)?$/gm)).toHaveLength(1);
       const build = job.indexOf('run: pnpm run build:frontend');
       const deployStep = job.indexOf('      - name: Deploy verified artifact');
       expect(build).toBeLessThan(deployStep);

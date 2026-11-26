@@ -1,11 +1,11 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -21,14 +21,41 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
-func TestEndpoint(t *testing.T) {
-	for _, p := range []string{"http://example.com", "https://user@site.example/path", "https://site.example?code=123", "file:///tmp/a", "https://site.example/secret"} {
-		if _, e := publicEndpoint(p); e == nil {
+func TestEnrollmentOriginAndExpiry(t *testing.T) {
+	for _, p := range []string{"http://example.com", "https://user@site.example", "https://site.example?code=123", "file:///tmp/a", "https://site.example/secret", "https://site.example#fragment"} {
+		if validOrigin(p) {
 			t.Fatal("accepted non-origin")
 		}
 	}
-	if got, e := publicEndpoint("https://site.example/"); e != nil || got != "wss://site.example/api/rdp/peer/agent" {
-		t.Fatal("endpoint")
+	const origin = "https://site.example:444"
+	now := time.Now()
+	f := enrollment{Version: 2, Origin: origin, Grant: "e2." + strings.Repeat("a", 180), Expires: now.Add(10 * time.Minute).UnixMilli()}
+	b, _ := json.Marshal(f)
+	if got, err := parseEnrollment(b, now); err != nil || got.Origin != origin {
+		t.Fatal("valid site rejected", err)
+	}
+	if _, err := parseEnrollment(b, now.Add(11*time.Minute)); err == nil {
+		t.Fatal("expired enrollment accepted")
+	}
+}
+
+func TestMachineDoesNotFollowRedirects(t *testing.T) {
+	landed := make(chan struct{}, 1)
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { landed <- struct{}{} }))
+	defer other.Close()
+	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL, http.StatusTemporaryRedirect)
+	}))
+	defer site.Close()
+	var reply map[string]string
+	err := requestMachine(context.Background(), clientForConnector(), site.URL, "register", "not-a-secret", accessCredentials{}, nil, &reply)
+	if err == nil || err.Error() != "register: HTTP 307" {
+		t.Fatal("expected bounded local error", err)
+	}
+	select {
+	case <-landed:
+		t.Fatal("cross-origin redirect followed")
+	default:
 	}
 }
 
@@ -42,7 +69,6 @@ func TestConnectorLeaseDeadline(t *testing.T) {
 			return
 		}
 		defer ws.CloseNow()
-		_ = ws.Write(ctx, websocket.MessageText, []byte(`{"type":"waiting"}`))
 		_ = ws.Write(ctx, websocket.MessageText, []byte(fmt.Sprintf(`{"type":"lease","until":%d}`, time.Now().Add(500*time.Millisecond).UnixMilli())))
 		_, _, _ = ws.Read(ctx)
 	}))
@@ -51,21 +77,24 @@ func TestConnectorLeaseDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = run(ctx, ws, webrtc.Configuration{}, func(context.Context) (net.Conn, error) { t.Fatal("pairing alone dialed RDP"); return nil, nil }, func(string) {})
+	err = run(ctx, ws, webrtc.Configuration{}, func(context.Context) (net.Conn, error) {
+		t.Error("lease alone dialed RDP")
+		return nil, fmt.Errorf("invalid")
+	}, func(string) {})
 	if err == nil || err.Error() != "lease expired" || ctx.Err() != nil {
 		t.Fatal("expected independent lease expiry", err)
 	}
 }
 
-// Only invoked by scripts/test-rdp-peer.mjs. Real Pion/DTLS/SCTP and loopback TCP, no public RDP or STUN.
-// Only the TEST binary knows about the ephemeral CA and echo listener; neither is a connector option.
+// Only scripts/test-rdp-peer.mjs runs this real resident with hermetic TLS and TCP endpoints.
+// The test binary alone accepts this temporary CA, RAM-scope test identity file and echo destination.
 func TestBrowserInterop(t *testing.T) {
 	site := os.Getenv("CLOUDSSH_PEER_TEST_SITE")
 	if site == "" {
 		t.Skip("opt-in browser interoperability")
 	}
 	u, e := url.Parse(site)
-	if e != nil || u.Scheme != "https" || u.Hostname() != "127.0.0.1" {
+	if e != nil || !validOrigin(site) || u.Hostname() != "127.0.0.1" {
 		t.Fatal("loopback HTTPS required")
 	}
 	pem, e := os.ReadFile(os.Getenv("CLOUDSSH_PEER_TEST_CA"))
@@ -76,52 +105,70 @@ func TestBrowserInterop(t *testing.T) {
 	if !roots.AppendCertsFromPEM(pem) {
 		t.Fatal("CA")
 	}
-	code, e := bufio.NewReader(io.LimitReader(os.Stdin, 300)).ReadString('\n')
-	if e != nil {
-		t.Fatal("no test code")
-	}
-	code = strings.TrimSpace(code)
-	ctx, stop := context.WithTimeout(context.Background(), 65*time.Second)
+	client := clientForConnector()
+	client.Transport = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}}
+	ctx, stop := context.WithTimeout(context.Background(), 180*time.Second)
 	defer stop()
-	endpoint, _ := publicEndpoint(site)
-	ws, _, e := websocket.Dial(ctx, endpoint, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + code}}, Subprotocols: []string{protocol}, HTTPClient: &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}}}})
-	if e != nil {
-		t.Fatal("agent handshake:", e)
+	identityFile := os.Getenv("CLOUDSSH_PEER_TEST_ID")
+	if identityFile == "" {
+		t.Fatal("missing private test path")
+	}
+	var id identity
+	if raw, err := os.ReadFile(identityFile); err == nil {
+		if json.Unmarshal(raw, &id) != nil || !id.valid() || id.Origin != site {
+			t.Fatal("invalid test identity")
+		}
+	} else if os.IsNotExist(err) {
+		raw, err := io.ReadAll(io.LimitReader(os.Stdin, maxConfig+1))
+		if err != nil {
+			t.Fatal("no enrollment")
+		}
+		f, err := parseEnrollment(raw, time.Now())
+		if err != nil || f.Origin != site {
+			t.Fatal("invalid enrollment")
+		}
+		var fingerprint string
+		id, fingerprint, err = register(ctx, client, f, "Test-Windows", accessCredentials{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		blob, _ := json.Marshal(id)
+		if err := os.WriteFile(identityFile, blob, 0600); err != nil {
+			t.Fatal(err)
+		}
+		fmt.Println("Device registered:", fingerprint)
+	} else {
+		t.Fatal("could not read test identity")
 	}
 	listener, e := net.Listen("tcp4", "127.0.0.1:0")
 	if e != nil {
 		t.Fatal(e)
 	}
 	defer listener.Close()
-	done := make(chan struct{})
 	go func() {
-		defer close(done)
-		c, err := listener.Accept()
-		if err == nil {
-			defer c.Close()
-			if os.Getenv("CLOUDSSH_PEER_TEST_NATIVE") == "1" {
-				// Read only the initial TPKT / X.224 connection request. Do not act as Windows or accept credentials.
-				_ = c.SetReadDeadline(time.Now().Add(10 * time.Second))
-				var h [6]byte
-				if _, e := io.ReadFull(c, h[:]); e != nil || h[0] != 3 || h[1] != 0 || h[5] != 0xe0 || binary.BigEndian.Uint16(h[2:4]) < 11 {
-					t.Error("no native X.224 connection request")
-					return
-				}
-				fmt.Println("Native RDP negotiation reached loopback TCP.")
+		for {
+			c, err := listener.Accept()
+			if err != nil {
 				return
 			}
-			_, _ = io.Copy(c, c)
+			func() {
+				defer func() { c.Close(); fmt.Println("Loopback TCP closed.") }()
+				if os.Getenv("CLOUDSSH_PEER_TEST_NATIVE") == "1" {
+					// Stop at the first TPKT/X.224 request, before credentials. This is not Windows.
+					_ = c.SetReadDeadline(time.Now().Add(10 * time.Second))
+					var h [6]byte
+					if _, err := io.ReadFull(c, h[:]); err != nil || h[0] != 3 || h[1] != 0 || h[5] != 0xe0 || binary.BigEndian.Uint16(h[2:4]) < 11 {
+						fmt.Println("Invalid native X.224 connection request")
+						return
+					}
+					fmt.Println("Native RDP negotiation reached loopback TCP.")
+					return
+				}
+				_, _ = io.Copy(c, c)
+			}()
 		}
 	}()
-	err := run(ctx, ws, webrtc.Configuration{}, func(ctx context.Context) (net.Conn, error) {
+	resident{client: client, id: id, ice: webrtc.Configuration{}, dial: func(ctx context.Context) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "tcp4", listener.Addr().String())
-	}, func(s string) { fmt.Println(s) })
-	if ctx.Err() != nil || err == nil {
-		t.Fatal("expected prompt session revocation")
-	}
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("TCP not closed")
-	}
+	}, note: func(s string) { fmt.Println(s) }}.loop(ctx)
 }

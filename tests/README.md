@@ -191,7 +191,7 @@ CI=true pnpm exec playwright test --workers=2
 
 ### WebRTC RDP 连接器（显式运行）
 
-`pnpm run build:frontend && node scripts/test-rdp-peer.mjs`（或 `--webkit`）在回环工作区连接真实浏览器、workerd UserDBDO 和 Pion，校验分片/ACK、2 MiB 双向流、真实直连候选、零桌面中继帧、续租与编辑撤销。TCP 对端是临时回显，不是 Windows。测试使用独立 `tools/rdp-peer/go.mod`，不修改 SSH 测试工作区；依赖与实机对照步骤见 [直连测试说明](../docs/rdp-peer.md)。
+`pnpm run build:frontend && node scripts/test-rdp-peer.mjs`（可加 `--webkit` / `--native`）在回环连接真实浏览器、workerd 签名 DO/UserDBDO 和 Pion。覆盖零 Secret 注册/确认、第一次指纹、2 MiB 流控、换浏览器/进程重启、续租/编辑撤销与故障时只启动一次客户端；`--native` 检查随包 FreeRDP 首个协商包。TCP 对端不是真实 Windows；独立 Windows CI 另跑 DPAPI/ACL 与 LocalService SCM 测试。依赖和真机步骤见 [连接器说明](../docs/rdp-peer.md)。
 
 ### 真实 SSH 互操作（显式运行）
 

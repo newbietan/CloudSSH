@@ -376,7 +376,7 @@ function showUserSpace(user: InitialUser, config: AppConfig): void {
     (wsUrl: string, serverName: string, hostInfo?: SSHHostInfo) => {
       showTerminalFromServer(wsUrl, serverName, hostInfo);
     },
-    config, (id, peer) => { void rdpWorkspace?.open(id, peer); }
+    config, id => { void rdpWorkspace?.open(id); }
   );
 }
 

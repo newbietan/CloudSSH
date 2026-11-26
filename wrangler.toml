@@ -20,7 +20,6 @@ watch_dir = "."
 # - TURNSTILE_SECRET / TURNSTILE_SITEKEY（Bot 验证；默认不部署，用户自行选择加入。
 #   经 Git/CLI 部署的实例建议 SECRET 用 Dashboard Secret 类型——Secret 不受部署覆盖）
 # - BASE_URL（OAuth 回调地址，需与实际域名一致）
-# - RDP_P2P_SECRET（可选实验：32 随机字节的小写 hex，仅设为 Secret；见 docs/rdp-peer.md）
 # - ADMIN_PASSWORD_HASH（单管理员密码登录；`pnpm run hash-password` 生成，非空即启用密码模式，
 #   与 GitHub OAuth 互斥且优先级更高；置空/删除即刻退回 GitHub 模式；务必设为 Secret 类型）
 # - CF_ACCESS（可选；true 强制要求 ctx.access 已验证身份；请用 hostname-based Access 保护完整域名，
@@ -41,6 +40,10 @@ class_name = "SSHShareDO"
 [[durable_objects.bindings]]
 name = "MCP_EXECUTION"
 class_name = "MCPExecutionDO"
+
+[[durable_objects.bindings]]
+name = "RDP_AUTHORITY"
+class_name = "RdpAuthorityDO"
 # 首次部署及后续迁移通过 migration tag 初始化 SQLite Durable Object 类；
 # 已有环境新增或变更 DO 类时必须追加新的、不可复用的 migration tag
 [[migrations]]
@@ -54,6 +57,10 @@ new_sqlite_classes = ["SSHShareDO"]
 [[migrations]]
 tag = "v3"
 new_sqlite_classes = ["MCPExecutionDO"]
+
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["RdpAuthorityDO"]
 # 浏览器 RDP 资源与 SSH 内联 HTML 分离；避免 Static Assets 路由改变原生 Access 上下文。
 [[rules]]
 type = "Data"
@@ -91,3 +98,6 @@ class_name = "SSHShareDO"
 [[env.test.durable_objects.bindings]]
 name = "MCP_EXECUTION"
 class_name = "MCPExecutionDO"
+[[env.test.durable_objects.bindings]]
+name = "RDP_AUTHORITY"
+class_name = "RdpAuthorityDO"

@@ -1,61 +1,36 @@
-# WebRTC 直连原型：同一台 Windows 做 A/B 测试
+# Windows 直连连接器
 
-**目标**：用现有浏览器、FreeRDP、Windows 账号和分辨率，单独比较「Worker 转发」和「浏览器直连 Windows 连接器」的手感。不承诺打洞成功或直连一定更快。本原型只支持单台机器本地的 `127.0.0.1:3389`，不做无人值守、网段代理、视频转码或会话迁移。
+CloudSSH 的「打开桌面」优先用 WebRTC 将浏览器接到目标 Windows 上的连接器。Worker 授权、交换信令，不转发直连桌面的画面或输入；Windows RDP 的证书和 NLA 仍由浏览器端 FreeRDP 验证。直连前置协商失败时，已有备用线路的设备会静默使用 Worker 中继。两条线路不会同时登录 Windows。
 
-## 测试前准备
+## 第一次配置
 
-1. 在 **CloudSSH 测试实例**保存 Windows 设备，用原来的「打开桌面」连接一次，通过可信渠道独立核对并保存该 Windows 的 **DER SHA-256 证书指纹**。两个入口必须是同一台 Windows；未保存指纹的设备不会显示测试按钮。不为了测试公开 3389，可以用已授权的 Tunnel 完成首次核对。外部端口映射可以不同，但连接器所在机器的 RDP 服务必须真的监听本机 3389，NLA 保持开启。
-2. 在测试 Worker 设置一个名为 **`RDP_P2P_SECRET`** 的 Secret：32 个随机字节编码为 **64 个小写十六进制字符**。它只用于 Worker 签名，不给连接器，不进仓库。维护者可对已部署的测试实例执行下面的命令（不要漏 `--env test`）；使用 Dashboard 的人可自行生成随机值，选择 `cloudssh-test` 的 Secret 类型。未设置或格式错误时，已有 RDP 不变，原型不开启。
+1. **登录 CloudSSH → 添加服务器 → Windows Server**。目标 Windows 须开启远程桌面和 NLA，允许运行连接器的 Windows 本机访问 `127.0.0.1:3389`。默认「仅连接器」不用填写公网地址，但没有备用中继；有公网 TCP 或 Cloudflare Tunnel 线路的，可以选相应线路作为备用。
+2. 保存 Windows 登录资料后，CloudSSH 自动打开「设置 Windows 直连」。在页面下载 **Windows x64 连接器 ZIP** 和 **此设备的绑定文件**，传到目标 Windows。已有设备可以从编辑中进入「设置 Windows 直连」，无需删除旧设备和指纹。不要分享 15 分钟有效的绑定文件。
+3. 在目标 Windows 解压 ZIP，运行 `cloudssh-rdp-connector-windows-amd64.exe`。按 Windows 提示批准安装服务，选择原样下载的 `*.cloudssh-rdp.json` 文件，核对安装器显示的站点地址与你实际登录的 HTTPS 域名一致。安装器不需要 Windows 登录密码，也不需要在访客电脑上安装 FreeRDP。可从云控制台、现有远程管理工具或 Windows 本机操作；**不要为了安装将 RDP 端口公开到全网**。
+4. 安装器显示此机器为 CloudSSH 生成的 **设备密钥 SHA-256 指纹**。在仍打开的 CloudSSH 页面核对完整指纹，再点「确认绑定并连接」。之后服务会自行上线；换浏览器、重新启动 Windows 或修改设备名称、凭据不需要重新绑定。首个 RDP 会话还要独立核对 **Windows 本身的 RDP 证书 DER SHA-256**，这和安装时的设备密钥指纹不是一回事。
+5. 下次只点同一个 **「打开桌面」**。连接器在线时先尝试直连，兼容浏览器没有 WebRTC、设备离线、ICE 失败或本机 RDP TCP 未打开时，在尚未发送 RDP 字节前才可能回退。已经开始的桌面会话、证书变化、NLA/密码失败、账号或设备状态变化都不会自动改线重试。鼠标悬停在桌面工具栏 RTT 可以看到实际路径；不弹回退提示，不使用 TURN。
 
-   ```sh
-   openssl rand -hex 32 | pnpm exec wrangler secret put RDP_P2P_SECRET --env test
-   ```
+**Access 部署**：浏览器仍按站点策略登录。若站点以 Cloudflare Access 保护，Windows 安装器也需要允许访问**该站点**的独立 Service Auth 凭据，在安装器内录入。它不是 Windows 密码、Tunnel 安装令牌或目标隧道的 Service Token。不要为此配置 Bypass；如果策略要求桌面字节必须经过 Access/Tunnel，应只用中继并且不要绑定连接器。
 
-3. 获取 **Windows x64** 连接器。官方仓库 `test` 分支的 [RDP peer prototype connector](https://github.com/newbietan/CloudSSH/actions/workflows/rdp-peer-prototype.yml) 工作流为连接器代码变更提供 Actions 产物（保留 7 天，不是 Release 或已签名的安装包）。下载与测试代码对应的 `cloudssh-rdp-peer-windows-amd64-<SHA>`，解压后用 `Get-FileHash .\cloudssh-rdp-peer-windows-amd64.exe -Algorithm SHA256` 比对同包 `SHA256SUMS`。仅使用自己信任的构建，不关闭安全软件。也可从仓库源码，在装有 Bash 和 Go ≥1.24 的开发机交叉构建（输出 `dist/rdp-peer/`，含校验和与许可证）；不需在目标 Windows 上安装 Go：
+**测试站与正式站**：官方 `test` 部署可在页面下载当前提交的**未签名测试构建**；仅用于受控机器，请比对包内 SHA-256，不要关闭系统保护。正常部署只提供维护者发布的签名 ZIP；若该发行包尚未发布，页面明确提示暂不可下载，不替换为未签名构建。使用本机官方测试程序不需要新的 Worker 密钥或额外 Cloudflare API 权限。
 
-   ```sh
-   bash scripts/build-rdp-peer.sh
-   ```
+## 运行、撤销与问题排查
 
-## 连接一次
+- Windows 服务 **CloudSSH RDP Connector** 开机自动启动；关闭安装器窗口不影响它。它以 LocalService 运行，仅为已授权的会话连接本机 `127.0.0.1:3389`，不监听管理端口、不做网段代理、不安装驱动。站点身份、设备私钥和可选的站点 Access 凭据由机器范围 DPAPI + 目录 ACL 保存，仅服务 SID、Administrators 和 SYSTEM 可读；不是 TPM/硬件保险库，也不防操作系统被控制。
+- 在 CloudSSH **编辑设备 → 设置 Windows 直连 → 取消绑定**，会关闭旧连接器及其活动直连；普通中继（如有配置）不受影响。删除设备、换目标/线路/公网端口同样撤销绑定；单纯改名称或 Windows 登录凭据仍保留设备身份。需要换域名时在原账号取消绑定，再在正确域名重新安装/绑定。Windows 上再次运行安装器可看服务状态并卸载。解绑或卸载不强制注销 Windows 桌面。
+- 连接器离线：先检查 Windows 服务、系统时间、目标 Windows 到实际站点域名的 HTTPS/WSS 连通性及边缘 Access，Windows 事件查看器中该服务只记录简短状态。如果 TLS 成功但无直连，检查是否允许出站 UDP、NAT 是否支持打洞和本机 RDP 服务。Cloudflare STUN 与对端会看到建立连接需要的网络地址；不使用 TURN，网络不支持时有备用中继才可切换。
+- 直连路径不用公网 3389，但连接器仍要求本机 RDP 监听 **3389**。卡片内的公网 TCP 端口或 Tunnel 配置只属于备用线路，不会传给连接器。第一次核对证书期间若直连被外部中断，需重新从卡片进入，不会改用中继重新登录。
+- 旧的手输配对码原型和下载程序已停用；旧测试 Worker 配过的 `RDP_P2P_SECRET` **新版不读取**，部署新版后可删除。已有 RDP 设备、证书和中继配置保留，旧连接器不会自动成为常驻服务。
 
-1. 用已登录账号刷新测试站。在 Windows 卡片点击 **WebRTC 测试**（不是「打开桌面」），页面显示 5 分钟有效的一次性配对码。
-2. 在**目标 Windows 本机**的 PowerShell，通过已有可信控制台运行：
+## 维护者打包、发布与验证
 
-   ```powershell
-   .\cloudssh-rdp-peer-windows-amd64.exe -site https://你的测试站域名
-   ```
+- 常规 Worker 部署由版本化的发布资源提供下载，**不构建或打包 Go**。固定入口 `/rdp/download/windows-x64` 由 Worker 向官方发布源取文件并有界传输，最终用户不需要进入 GitHub；同一来源包可供不同部署的连接器使用。`RdpAuthorityDO` 的 v4 迁移在两个环境均已绑定；部署无需额外 Secret。首次绑定时 DO 生成随机签名根密钥，重启/升级不会重建，不能手工从一个部署复制到另一个部署。签名根与账号数据库不是外部 KMS。
+- `bash scripts/build-rdp-peer.sh`（Go ≥1.24、Bash）生成 `dist/rdp-connector/` 下 Windows x64 EXE、许可证及校验文件。官方 CI `.github/workflows/rdp-connector.yml` 生成同样的**未签名候选**并在 Windows runner 验证 DPAPI、目录 ACL 与 LocalService 重启；它不自动创建 Release。维护者需验证候选来源、用可信 Authenticode 签名器对 EXE 签名并加时间戳，再在 Windows 运行：
 
-   只在程序提示后粘贴配对码、按 Enter。交互终端不回显；不要将码写进命令行、聊天或日志，复制后可清空剪贴板。`-site` 必须是签发配对码的同一个 HTTPS 源，不能用别名，不跟随重定向。不要关闭这个 PowerShell 窗口。
-3. 看到 **`Paired`** 后，在浏览器点 **开始 WebRTC 测试**。桌面显示后，工具栏的 **WebRTC … ms** 是浏览器在**桌面数据通道**上到连接器的实际往返；鼠标悬停可看已选的 ICE 类型（浏览器 / 连接器），不会展示 IP。**RDP … ms** 仍是 Windows 上报的协议指标，不是输入到画面的延迟。
-4. 「返回」或在连接器按 Ctrl+C 结束本次试验，重新测试需新码。直接修改/删除设备也会关闭本次会话。点原来的 **打开桌面** 就是 Worker 路线，对照时不必清除设备或证书。
+  ```powershell
+  .\scripts\package-rdp-connector.ps1 -InputDirectory .\dist\rdp-connector -OutputDirectory .\dist\rdp-release
+  ```
 
-**本站在 Cloudflare Access 后面？** 浏览器仍必须是已验证邮箱的所有者。机器端要有被**本站**边缘策略允许的独立 Service Auth 凭据，通过连接器进程的 `CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET` 环境变量提供；不使用 Windows 密码、浏览器 Cookie、Tunnel 安装 token 或设备的 Tunnel 凭据代替。Worker 同时要求可信的原生 Access 准入和有效的一次性码。不要为此配置 Bypass。若组织策略要求所有桌面数据都经 Access/Tunnel，这条替代数据路径不适用，请勿开启。
-
-## 延迟怎么比
-
-同一浏览器、同一网络、同一台 Windows，两条路径都使用**相同的远端分辨率**（支持动态分辨率时可在全屏均选 720p）。每组交替做三次，避免只比较第一次加载或单个瞬时 RTT。
-
-| 路线 | 是否出现首帧 | 工具栏 RTT / Windows RTT | 空闲时单击菜单到展开 | 快速滚动后多久停住 |
-| --- | --- | --- | --- | --- |
-| 打开桌面（Worker） | | | | |
-| WebRTC 测试（直连） | | | | |
-
-可用手机慢动作粗测点击到画面的时间，**不要把两个 RTT 相减或相加**。在家宽、办公网、手机热点分开记；未能打洞也是有效结果，不把失败样本排除后再报告成功率。反馈只需网络类型、上述表格及 ICE 类型，不要提交地址、凭据或 SDP。
-
-## 如果不通
-
-| 现象 | 先检查 |
-| --- | --- |
-| 看不到测试按钮 | 分支/部署及正确环境的 Secret、刷新页面、设备已保存登录信息和已核验指纹。 |
-| 连接器未显示 Paired | 同一站点、未过期/未消费的新码、Access 策略。确认 Windows 系统时钟已同步；不要把站点密钥贴到连接器。 |
-| Paired 但超时 | UDP、防火墙与 NAT 可能阻止直连。只在组织允许时授权该应用的 UDP 流量；无需打开公网 RDP 或关闭防火墙。可分别换一个网络重测。**没有 TURN，也不会暗中改走 Worker。** |
-| 已建立直连但没有桌面 | 先确认连接器能访问本机 RDP、实际 Windows 证书仍匹配、NLA 登录正常。指纹变化必须重新独立核对，不跳过校验。 |
-| 切后台或断网后会话结束 | 浏览器约每 12 秒通过原账号 HTTPS 续租。控制通道丢失或约 35 秒收不到有效授权，连接器自行关闭。后台定时器受浏览器限制。这是前台测试原型，不保证恢复，也不等于注销 Windows。 |
-
-## 数据边界与本地验证
-
-- Worker/UserDBDO 只交换一次性票据、短期授权和有界 SDP；信令 WebSocket 不接受桌面二进制帧。两个控制 WebSocket 在会话期间保持在线，但**所有键鼠、画面及其 ACK/探针**走同一个可靠、有序的 DataChannel。TLS/NLA 仍在浏览器和 Windows 之间完成；配对不能修改原 Windows 指纹。
-- `stun:stun.cloudflare.com:3478` 用于发现地址，STUN 不转发桌面。Cloudflare STUN 和对端会看到建立连接所需的网络地址；信令期间 Worker 可见 SDP，但不持久化、不写日志。只保存短期配对证明的摘要；不允许指定任意 TCP 主机/端口或转入 TURN。
-- 每次配对绑定当前账户、浏览器、设备及修订，单次消费；会话沿用账户并发、`IDLE_TIMEOUT` 和两小时上限。断开授权通道会结束数据通道，不承诺从已断开的桌面切换到中继。要停用原型，删除测试环境的 Secret 并刷新；原有中继不受影响，活动直连不再续租。
-- 普通 Worker 构建不用 Go。开发机可运行 `pnpm run build:frontend` 后执行 `node scripts/test-rdp-peer.mjs` 或加 `--webkit`（需项目依赖、Playwright 对应浏览器、Go、OpenSSL）。它用临时回环 HTTPS、真实 workerd/SQLite DO、生产信令与浏览器适配器、真实 Pion 和临时 TCP 回显，验证跨流控窗口的 2 MiB 往返、已选候选、数据不经信令、续租与撤销。加 `--native` 则不用回显驱动替代桌面客户端，验证随包 FreeRDP WASM 发出的首个 X.224 协商包确实到达 TCP 后立即结束。无公网 STUN、无 Windows 凭据；不替代 Windows 真机或实际线路验收。
+  把输出 ZIP（固定名 `cloudssh-rdp-connector-windows-amd64.zip`）和校验文件放在官方仓库的 **`rdp-connector-v2`** Release。此步骤是维护者的一次发行操作，不是自部署用户的安装步骤。未签名、签名不受信任或没时间戳的包不会通过打包脚本。生产开放前应从已部署页面实际下载并校验；不要以临时 CI 产物直链替代。
+- 官方 `test` 部署构建 `scripts/build-rdp-preview.sh` 的 ZIP，并显式用 `rdp-preview-entry.ts` 部署，正式入口 `rdp-entry.ts` 不包含该二进制。普通 Git 集成入口也不会隐式构建未签名包。避免把测试入口用于生产。
+- `pnpm run build:frontend && node scripts/test-rdp-peer.mjs` 使用回环 HTTPS、真实 workerd 的签名 DO 及 UserDBDO、Pion 和 Chromium；加 `--webkit` 使用 WebKit。验证一次注册/确认、进程重启 + 新浏览器登录、首次证书确认信令、2 MiB 分片流控、续租与编辑关闭、ICE 不可用时预登录回退且只启动一次客户端。加 `--native` 验证随包 FreeRDP TCP 首个 X.224 包；不使用真实 Windows 凭据。仍需在 Windows 真机分别测试安装、服务重启、换浏览器直连、无公网 RDP 的仅连接器模式、禁 UDP 的备用路径及解绑，记录两条线路的首帧与操作延迟。
