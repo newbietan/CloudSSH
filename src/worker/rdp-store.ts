@@ -6,6 +6,7 @@ import { parseStoredServerTags } from '../server-tags';
 import { RdpPeerRooms } from './rdp-peer-rooms';
 import { RdpDevices } from './rdp-devices';
 import { deviceLabel, isDeviceKey, isDeviceSignature } from './rdp-device-auth';
+import { importRdpConnectKey, sealRdpLogin, type RdpLoginEnvelope } from './rdp-connect-crypto';
 
 const portColumn = `port INTEGER NOT NULL DEFAULT ${RDP_DEFAULT_PORT} CHECK(typeof(port)='integer' AND port BETWEEN 1 AND 65535)`;
 const withOptions = `SELECT p.*, o.tags, o.login, COALESCE(o.port, ${RDP_DEFAULT_PORT}) AS port, m.username_enc, m.identity_revision,
@@ -256,9 +257,11 @@ export class RdpStore {
       return this.peers.renew(userId, body.profile, body.lease, body.binding, origin);
     }
     if (route === 'ticket' && isRdpId(body.profile) && digestPattern(body.binding)) {
-      if (typeof body.savedRevision !== 'number' || !Number.isSafeInteger(body.savedRevision) || body.savedRevision < 1 ||
-          (body.transport !== undefined && (body.transport !== 'device' || !origin))) return error(400, 'invalid_request');
-      return this.issue(userId, body.profile, body.binding, body.savedRevision, body.transport === 'device' ? origin : '');
+      if (!origin || typeof body.clientKey !== 'string' || typeof body.savedRevision !== 'number' ||
+          !Number.isSafeInteger(body.savedRevision) || body.savedRevision < 1 ||
+          (body.transport !== undefined && body.transport !== 'device')) return error(400, 'invalid_request');
+      return this.issue(userId, body.profile, body.binding, body.savedRevision, origin,
+        body.transport === 'device' ? 'device' : 'relay', body.clientKey);
     }
     if (route === 'claim' && digestPattern(body.ticket) && digestPattern(body.binding)) {
       return this.claim(userId, body.ticket, body.binding, body.supportsDirectPort === true);
@@ -350,11 +353,20 @@ export class RdpStore {
     } catch { return error(500, 'login_unavailable'); }
   }
 
-  private async issue(userId: number, id: string, binding: string, savedRevision: number, deviceOrigin: string): Promise<Response> {
+  private async issue(userId: number, id: string, binding: string, savedRevision: number,
+    origin: string, transport: 'device' | 'relay', clientKey: string): Promise<Response> {
+    const recipient = await importRdpConnectKey(clientKey);
+    if (!recipient) return error(400, 'invalid_request');
     const ticket = Array.from(crypto.getRandomValues(new Uint8Array(32)), byte => byte.toString(16).padStart(2, '0')).join('');
     const hash = await rdpDigest(ticket);
     const login = await this.readLogin(userId, id, savedRevision);
     if (login instanceof Response) return login;
+    let loginEnvelope: RdpLoginEnvelope;
+    try {
+      loginEnvelope = await sealRdpLogin(login, recipient, { origin, profile: id, revision: savedRevision, transport, ticket });
+    } catch { return error(500, 'login_unavailable'); }
+    const deviceOrigin = transport === 'device' ? origin : '';
+    // Crypto yielded; recheck the profile and connector before minting any usable ticket.
     return this.transaction(() => {
       const now = Date.now();
       this.clean(now);
@@ -365,8 +377,8 @@ export class RdpStore {
       if (deviceOrigin ? !device : row.route === 'connector') return error(409, 'peer_unavailable');
       if (this.count('rdp_tickets', userId) >= MAX_TICKETS) return error(429, 'ticket_limit');
       this.sql.exec('INSERT INTO rdp_tickets (hash,user_id,profile,revision,binding,expires,transport,origin,device) VALUES (?,?,?,?,?,?,?,?,?)',
-        hash, userId, id, row.revision, binding, now + TICKET_MS, deviceOrigin ? 'device' : 'relay', deviceOrigin, device!);
-      return rdpJson({ ticket, revision: row.revision, login });
+        hash, userId, id, row.revision, binding, now + TICKET_MS, transport, deviceOrigin, device!);
+      return rdpJson({ ticket, revision: row.revision, loginEnvelope });
     });
   }
 

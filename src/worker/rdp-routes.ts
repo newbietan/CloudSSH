@@ -1,4 +1,4 @@
-import { RDP_CLIENT_REVISION, RDP_WS_PROTOCOL, isRdpId, readRdpJson, rdpConnectorSetupFilename, type RdpProfile } from '../rdp-schema';
+import { RDP_CLIENT_REVISION, RDP_CONNECT_KEY_HEADER, RDP_CONNECT_REVISION, RDP_WS_PROTOCOL, isRdpId, readRdpJson, rdpConnectorSetupFilename, type RdpProfile } from '../rdp-schema';
 import type { Env } from '../types';
 import { getAuthenticatedUser, hasVerifiedAccessContext, resolveAuthMode, userDbRouteKey } from './auth';
 import { createHtmlResponse } from './html-cache';
@@ -9,6 +9,7 @@ import { deviceMachinePath, digestHex, ENROLL_MS, PEER_PROTOCOL, isDeviceSignatu
 import { validRegistration } from './rdp-devices';
 import { downloadRdpConnector } from './rdp-connector-download';
 import { inspectRdpConnectorArchive, personalRdpConnectorArchive } from './rdp-connector-archive';
+import { isRdpConnectKey, parseRdpConnectGrant } from './rdp-connect-crypto';
 
 export interface RdpAssets {
   page: string;
@@ -25,6 +26,7 @@ export interface RdpAssets {
 const ROOT = '/rdp/';
 const API = '/api/rdp/';
 const COOKIE = '__Host-cloudssh_rdp';
+const ticketErrors = new Set(['invalid_request', 'not_found', 'profile_changed', 'login_unavailable', 'peer_unavailable', 'ticket_limit']);
 const securityHeaders = {
   'Cache-Control': 'private, no-store, no-transform',
   'Cross-Origin-Opener-Policy': 'same-origin',
@@ -206,23 +208,33 @@ export async function handleRdp(
       return call(`profiles/${id}/trust`, 'PUT', await readRdpJson(request));
     }
     if (action === '/connect' && request.method === 'POST') {
-      let key = cookie(request, COOKIE);
-      const issueCookie = !/^[a-f0-9]{64}$/.test(key);
-      if (issueCookie) key = newBrowserKey();
-      if (request.headers.get('X-CloudSSH-RDP-Client') !== String(RDP_CLIENT_REVISION)) {
+      if (request.headers.get('X-CloudSSH-RDP-Client') !== String(RDP_CONNECT_REVISION)) {
         return rdpJson({ code: 'refresh_client' }, 409);
       }
       const savedRevision = request.headers.get('X-CloudSSH-RDP-Saved-Revision');
       if (!savedRevision || !/^[1-9]\d{0,9}$/.test(savedRevision)) return rdpJson({ code: 'invalid_revision' }, 400);
+      const clientKey = request.headers.get(RDP_CONNECT_KEY_HEADER);
+      if (!isRdpConnectKey(clientKey)) return rdpJson({ code: 'invalid_request' }, 400);
       const transport = request.headers.get('X-CloudSSH-RDP-Transport');
       if (transport !== null && transport !== 'device') return hide();
       if (transport === 'device' && (!env.RDP_AUTHORITY || assets.peer === undefined)) return hide();
+      let key = cookie(request, COOKIE);
+      const issueCookie = !digestHex(key);
+      if (issueCookie) key = newBrowserKey();
       const response = await call('ticket', 'POST', { profile: id, binding: await binding(request, key),
-        savedRevision: Number(savedRevision), ...(transport === 'device' ? { transport } : {}) });
-      if (!response.ok || !issueCookie) return response;
-      const headers = new Headers(response.headers);
-      headers.append('Set-Cookie', `${COOKIE}=${key}; Path=/; Secure; HttpOnly; SameSite=Strict`);
-      return new Response(response.body, { status: response.status, headers });
+        clientKey, savedRevision: Number(savedRevision), ...(transport === 'device' ? { transport } : {}) });
+      const data = await readRdpJson(response, request.signal);
+      if (!response.ok) {
+        const code = data && typeof data === 'object' && 'code' in data ? data.code : null;
+        // Never relay arbitrary DO JSON/error bodies, including stale or mixed-version replies.
+        return typeof code === 'string' && ticketErrors.has(code) && response.status >= 400
+          ? rdpJson({ code }, response.status) : rdpJson({ code: 'login_unavailable' }, 500);
+      }
+      const grant = parseRdpConnectGrant(data);
+      if (!grant || grant.revision !== Number(savedRevision)) return rdpJson({ code: 'refresh_client' }, 409);
+      const result = rdpJson(grant);
+      if (issueCookie) result.headers.append('Set-Cookie', `${COOKIE}=${key}; Path=/; Secure; HttpOnly; SameSite=Strict`);
+      return result;
     }
     if (!action && ['GET', 'PUT', 'DELETE'].includes(request.method)) {
       return call(`profiles/${id}`, request.method, request.method === 'PUT' ? await readRdpJson(request) : undefined);

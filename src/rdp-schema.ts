@@ -15,6 +15,9 @@ export const RDP_WINDOW = 1024 * 1024;
 export const RDP_FRAME = 16 * 1024;
 export const RDP_WS_PROTOCOL = 'cloudssh-rdp-v1';
 export const RDP_CLIENT_REVISION = 5;
+// Only credential-bearing connect changed. Existing trust and renewal requests keep their ABI.
+export const RDP_CONNECT_REVISION = 6;
+export const RDP_CONNECT_KEY_HEADER = 'X-CloudSSH-RDP-Client-Key';
 export const RDP_DEFAULT_PORT = 3389;
 
 export function isRdpPort(value: unknown): value is number {

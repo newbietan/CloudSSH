@@ -1,7 +1,17 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from './fixtures';
+import { RDP_CONNECT_KEY_HEADER, RDP_CONNECT_REVISION } from '../../src/rdp-schema';
+import { testRdpGrant } from '../fixtures/rdp-connect';
 
 const id = '12345678-1234-1234-1234-123456789abc';
+const syntheticLogin = { username: 'Administrator', domain: '', password: 'synthetic' };
+const keyHeader = RDP_CONNECT_KEY_HEADER.toLowerCase();
+function connectReply(request: { headers(): Record<string, string>; url(): string }, ticket: string, revision: number, login = syntheticLogin) {
+  const headers = request.headers();
+  expect(headers['x-cloudssh-rdp-client']).toBe(String(RDP_CONNECT_REVISION));
+  return testRdpGrant(headers[keyHeader], { origin: new URL(request.url()).origin, profile: id, revision,
+    transport: headers['x-cloudssh-rdp-transport'] === 'device' ? 'device' : 'relay', ticket }, login);
+}
 const ssh = {
   id: 1, user_id: 1, name: 'Linux workstation', host: 'ssh.example.com', port: 22,
   username: 'deploy', auth_method: 'password', tags: [], created_at: '', updated_at: '',
@@ -443,11 +453,11 @@ test('the themed workspace stays in the current tab and a saved login is release
       m._cloudssh_take_rdp_rtt = () => 83;
       m.onWindowsFirstFrame();
     }; m.onRuntimeInitialized();` }));
-  await page.route(`**/api/rdp/profiles/${id}/connect`, r => {
+  await page.route(`**/api/rdp/profiles/${id}/connect`, async r => {
     if (r.request().method() !== 'POST') return r.fallback();
     expect(r.request().headers()['x-cloudssh-rdp-saved-revision']).toBe('4');
     released++;
-    return r.fulfill({ json: { ticket: '1'.repeat(64), revision: 4, login: { username: 'test-user', password: 'synthetic', domain: '' } } });
+    return r.fulfill({ json: await connectReply(r.request(), '1'.repeat(64), 4, { ...syntheticLogin, username: 'test-user' }) });
   });
   await page.addInitScript(() => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
@@ -775,11 +785,11 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'saved mismatch', 'sa
     ` }));
     await page.route(`**${path}`, route => route.request().method() === 'GET'
       ? route.fulfill({ json: { id, name: 'Windows workstation', revision: 1, hasLogin: true, fingerprint: saved } }) : route.fallback());
-    await page.route(`**${path}/connect`, route => {
+    await page.route(`**${path}/connect`, async route => {
       if (route.request().method() !== 'POST') return route.fallback();
       if (scenario === 'ticket limit' || scenario === 'unknown error') return route.fulfill({ status: 429,
         json: { code: scenario === 'ticket limit' ? 'ticket_limit' : 'unrecognized', detail: 'private upstream detail' } });
-      return route.fulfill({ json: { ticket: '1'.repeat(64), revision: 1, login: { username: 'test-user', domain: '', password: 'synthetic' } } });
+      return route.fulfill({ json: await connectReply(route.request(), '1'.repeat(64), 1, { ...syntheticLogin, username: 'test-user' }) });
     });
     await page.route(`**${path}/trust`, route => {
       if (route.request().method() !== 'PUT') return route.fallback();
@@ -837,6 +847,7 @@ for (const scenario of ['reconnect', 'revision changed', 'fingerprint changed', 
   let revision = 1;
   let connectCount = 0;
   let trustCount = 0;
+  const clientKeys = new Set<string>();
   if (scenario === 'confirmation timeout') await page.clock.install();
   const asset = (name: string) => readFileSync(`${__dirname}/../../src/worker/rdp-client/${name}.rdp-text`, 'utf8');
   const isolation = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' };
@@ -851,11 +862,12 @@ for (const scenario of ['reconnect', 'revision changed', 'fingerprint changed', 
   ] } }) : r.fallback());
   await page.route(`**/api/rdp/profiles/${id}`, r => r.request().method() === 'GET'
     ? r.fulfill({ json: { id, name: 'Domain Win', revision, route: 'direct', host: 'rdp.example.com', port: 53389, hasLogin: true, fingerprint: savedFingerprint } }) : r.fallback());
-  await page.route(`**/api/rdp/profiles/${id}/connect`, r => {
+  await page.route(`**/api/rdp/profiles/${id}/connect`, async r => {
     if (r.request().method() !== 'POST') return r.fallback();
     expect(r.request().headers()['x-cloudssh-rdp-saved-revision']).toBe('1');
     connectCount++;
-    return r.fulfill({ json: { ticket: String(connectCount).repeat(64), revision: 1, login: { username: 'Administrator', domain: '', password: 'synthetic' } } });
+    clientKeys.add(r.request().headers()[keyHeader]);
+    return r.fulfill({ json: await connectReply(r.request(), String(connectCount).repeat(64), 1) });
   });
   await page.route(`**/api/rdp/profiles/${id}/trust`, r => {
     if (r.request().method() !== 'PUT') return r.fallback();
@@ -958,14 +970,19 @@ for (const scenario of ['reconnect', 'revision changed', 'fingerprint changed', 
   await expect(dialog).toBeHidden();
   expect(trustCount).toBe(1);
   expect(connectCount).toBe(scenario === 'reconnect' ? 2 : 1);
+  expect(clientKeys.size).toBe(connectCount);
 });
 
 for (const [errCode, expected] of [
   ['ERRCONNECT_AUTHENTICATION_FAILED', 'Windows rejected the sign-in credentials'],
   ['ERRCONNECT_SECURITY_NEGO_CONNECT_FAILED', 'Security negotiation failed'],
   ['ERRCONNECT_CONNECT_TRANSPORT_FAILED', 'The connection to Windows ended before the desktop appeared'],
+  ['legacy plaintext', 'Could not securely load Windows sign-in details'],
+  ['tampered envelope', 'Could not securely load Windows sign-in details'],
 ] as const) {
   test(`reports distinct safe error message for ${errCode}`, async ({ page }) => {
+    const invalidEnvelope = !errCode.startsWith('ERRCONNECT_');
+    let attempts = 0;
     const asset = (name: string) => readFileSync(`${__dirname}/../../src/worker/rdp-client/${name}.rdp-text`, 'utf8');
     const isolation = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' };
     await page.route(`**/rdp/${id}`, r => r.fulfill({ contentType: 'text/html', body: `<iframe src="/rdp/${id}/client" data-connect-saved="true"></iframe>` }));
@@ -977,6 +994,7 @@ for (const [errCode, expected] of [
       const m = window.Module;
       m.FS = { mkdirTree() {}, writeFile() {} };
       m.callMain = () => {
+        document.documentElement.dataset.rdpStarted = 'true';
         m.createRdpSocket(m.websocket.url);
         m.printErr('[ERROR][com.freerdp.core] - ${errCode} [0x00020000] private-host-secret');
         m.onExit(0);
@@ -985,16 +1003,30 @@ for (const [errCode, expected] of [
     ` }));
     await page.route(`**/api/rdp/profiles/${id}`, r => r.request().method() === 'GET'
       ? r.fulfill({ json: { id, name: 'Win', revision: 1, hasLogin: true, fingerprint: 'ab'.repeat(32) } }) : r.fallback());
-    await page.route(`**/api/rdp/profiles/${id}/connect`, r => r.request().method() === 'POST'
-      ? r.fulfill({ json: { ticket: '1'.repeat(64), revision: 1, login: { username: 'Administrator', domain: '', password: 'synthetic' } } }) : r.fallback());
+    await page.route(`**/api/rdp/profiles/${id}/connect`, async r => {
+      if (r.request().method() !== 'POST') return r.fallback();
+      attempts++;
+      const ticket = '1'.repeat(64);
+      if (errCode === 'legacy plaintext') return r.fulfill({ json: { ticket, revision: 1, login: syntheticLogin } });
+      const grant = await connectReply(r.request(), ticket, 1);
+      if (errCode === 'tampered envelope') {
+        const bytes = Buffer.from(grant.loginEnvelope.ciphertext, 'base64url');
+        bytes[0] ^= 1;
+        grant.loginEnvelope.ciphertext = bytes.toString('base64url');
+      }
+      return r.fulfill({ json: grant });
+    });
     await page.addInitScript(() => {
       localStorage.setItem('cloudssh_locale', 'en-US');
       if (!crossOriginIsolated) Object.defineProperty(window, 'crossOriginIsolated', { value: true });
       if (typeof SharedArrayBuffer !== 'function') Object.defineProperty(window, 'SharedArrayBuffer', { value: ArrayBuffer });
     });
     await page.goto(`/rdp/${id}`);
-    const status = page.frameLocator('iframe').locator('#status');
+    const frame = page.frameLocator('iframe');
+    const status = frame.locator('#status');
     await expect(status).toContainText(expected);
     await expect(status).not.toContainText('private-host-secret');
+    if (invalidEnvelope) await expect(frame.locator('html')).not.toHaveAttribute('data-rdp-started', 'true');
+    expect(attempts).toBe(1);
   });
 }

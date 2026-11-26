@@ -121,7 +121,8 @@ try {
     }, fault);
     if (!native) await page.route('**/rdp/assets/sdl-freerdp.js', r => r.fulfill({ contentType: 'text/javascript', body: `const M=window.Module;
       M.FS={mkdirTree(){},writeFile(){}};M.websocket.on=()=>{};M._cloudssh_take_rdp_rtt=()=>-1;
-      M.callMain=()=>{window.__wire.native++;const s=M.createRdpSocket(M.websocket.url);let total=0,offset=0,size=16384;
+      M.callMain=args=>{if(!args.includes('/u:fixture')||M.takeWindowsPassword()!=='synthetic'||M.takeWindowsPassword()!==undefined)throw Error('credential handoff failed');
+        window.__wire.native++;const s=M.createRdpSocket(M.websocket.url);let total=0,offset=0,size=16384;
         const fill=(n)=>Uint8Array.from({length:size},(_,i)=>(n+i)%251);const next=()=>{for(let i=0;i<4;i++){s.send(fill(offset));offset+=size}};
         s.onopen=()=>{if(${forceFallback}){M.onWindowsFirstFrame();document.body.dataset.verified='relay';return}
           const decision=M.onWindowsCertificate('${fingerprint}');
@@ -190,7 +191,25 @@ try {
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 30_000 });
   const open = async page => { await page.locator(`#rdp-open-${id}`).click(); return page.frameLocator('iframe[src$="/client"]'); };
   const inspect = async page => page.frames().find(f => f.url().endsWith('/client')).evaluate(() => window.__wire);
+  const connectResponse = (page, transport) => page.waitForResponse(r => r.url().endsWith('/connect') &&
+    (r.request().headers()['x-cloudssh-rdp-transport'] || 'relay') === transport);
+  async function inspectGrant(response) {
+    assert.ok(response.ok(), 'connect must return a sealed grant');
+    assert.match(response.headers()['cache-control'], /no-store/);
+    assert.equal(response.request().headers()['x-cloudssh-rdp-client'], '6');
+    const clientKey = response.request().headers()['x-cloudssh-rdp-client-key'];
+    assert.match(clientKey, /^[A-Za-z0-9_-]{87}$/);
+    const wire = await response.text();
+    assert.ok(!wire.includes(fixture.login.password) && !wire.includes(fixture.login.username), 'no clear credentials on the wire');
+    const { ticket, revision, loginEnvelope, ...rest } = JSON.parse(wire);
+    assert.deepEqual(rest, {});
+    assert.match(ticket, /^[a-f0-9]{64}$/);
+    assert.ok(Number.isSafeInteger(revision) && loginEnvelope?.version === 1);
+    return { ticket, clientKey, senderKey: loginEnvelope.senderKey };
+  }
+  const firstGrant = connectResponse(page, 'device').then(inspectGrant);
   const frame = await open(page);
+  await firstGrant;
   if (native) {
     await agent.wait('Native RDP negotiation reached loopback TCP.', 35000);
     assert.equal((await inspect(page)).relay, 0);
@@ -224,9 +243,12 @@ try {
     assert.equal((await api(second.page, p + '/connector')).state, 'online');
     await second.ctx.close();
     const fallback = await client(route === 'tunnel' ? 'constructor' : 'offer');
-    let transportRequests = [];
+    const transportRequests = [];
     fallback.page.on('request', req => { if (req.url().endsWith('/connect')) transportRequests.push(req.headers()['x-cloudssh-rdp-transport'] || 'relay'); });
+    const grants = Promise.all(['device', 'relay'].map(transport => connectResponse(fallback.page, transport).then(inspectGrant)));
     const three = await open(fallback.page);
+    const [directGrant, relayGrant] = await grants;
+    for (const field of ['ticket', 'clientKey', 'senderKey']) assert.notEqual(directGrant[field], relayGrant[field]);
     await three.locator('body[data-verified="relay"]').waitFor({ timeout: 24000 });
     await fallback.page.waitForFunction(() => /^Relay \d+ ms · RDP /.test(document.querySelector('.rdp-latency')?.textContent || ''), {}, { timeout: 14000, polling: 200 }).catch(async error => {
       const meter = await fallback.page.locator('.rdp-latency').textContent();

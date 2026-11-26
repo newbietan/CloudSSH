@@ -21,7 +21,7 @@
 - 画面内右键交给 Windows，鼠标前进／后退侧键不触发浏览器导航。画面外仍可使用浏览器菜单和导航。「右 Shift + D」按普通组合键发送，不是断开快捷键；系统保留的快捷键（如 `Ctrl+Alt+Del`）不保证能从网页发送。
 - 右上角直连显示 **WebRTC** 延迟（浏览器到连接器），使用公网或隧道中继时显示 **中继** 延迟（浏览器到 Worker）。**RDP** 仍独立显示 Windows 上报的平均 RTT，缺失或过期显示「—」。后者不是 Worker 到 Windows 的独立测量；两者也都不是键鼠输入到画面更新的时间。
 - 中继线路由处理 WebSocket 的 Worker 出站，不使用 SSH 服务器的地区设置。标准部署的 Worker 默认靠近 Cloudflare 收到请求的位置；Cloudflare [Placement](https://developers.cloudflare.com/workers/configuration/placement/) 是 Worker 级配置，不是逐设备路由。让 Worker 靠近 Windows 可能缩短出站一段，却拉长浏览器到 Worker 的一段，跨境线路也不一定改善。若要评估，建议用独立测试 Worker 对同一台 Windows、相同分辨率和相同画面操作做 A/B，记录首帧、两种 RTT、持续操作体验和断线次数；不要据此为共享的 SSH/RDP Worker 改默认位置。
-- Windows 与浏览器建立 TLS/NLA；Worker 在中继路径只转发字节，在直连路径不接触 RDP 字节。Windows 登录和 Tunnel 凭据按账户加密，密钥与数据同库，并非独立 KMS。列表不返回密码、域或 Tunnel 密钥；普通详情和 WebSocket 不交付 Windows 登录，仅当前所有者主动连接的同源请求会将登录信息交给浏览器。
+- Windows 与浏览器建立 TLS/NLA；Worker 在中继路径只转发字节，在直连路径不接触 RDP 字节。Windows 登录和 Tunnel 凭据按账户加密，密钥与数据同库，并非独立 KMS。列表不返回密码、域或 Tunnel 密钥；普通详情和 WebSocket 不交付 Windows 登录。所有者主动连接时，同源 `connect` 在 HTTPS 上只返回禁止缓存的票据和加密登录封装，绑定当前浏览器临时密钥、设备修订和线路。最终选中的客户端只在内存解密后交给 FreeRDP；旧页面需刷新，不降级取明文。这个边界防止在 `connect` 响应或 HAR 里直接看到密码，不防已控制的页面或扩展；HAR 仍可能包含登录票据、保存配置等敏感信息，不应直接分享。
 - RDP 设备独立于 SSH 跳板、分享、SFTP、Agent 和 MCP。不提供剪贴板、驱动器挂载、音频转发；不承诺 Kerberos-only、RD Gateway、多屏或完整移动端键盘支持。会话受 `IDLE_TIMEOUT` 及 2 小时上限约束。
 
 若 Edge 显示「已阻止该站点」或「恐吓软件」，这是浏览器的 [Scareware blocker](https://support.microsoft.com/en-us/edge/prevent-online-scams-with-the-scareware-blocker-in-microsoft-edge)，不是 RDP 证书弹窗。先核实站点、部署、配置的 Windows 设备和证书；不可仅凭截图认定误报。确认正常后可向 Microsoft 提交不含凭据及桌面隐私的反馈，不建议关闭保护或绕过拦截。
