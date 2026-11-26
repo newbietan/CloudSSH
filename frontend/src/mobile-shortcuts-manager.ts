@@ -137,7 +137,10 @@ export class MobileShortcutsManager {
     const modal = document.createElement('div');
     modal.id = 'mobile-shortcuts-modal';
     modal.className =
-      'responsive-modal hidden fixed inset-0 z-[110] flex items-center justify-center';
+      'app-modal responsive-modal hidden fixed inset-0 z-[110] flex items-center justify-center';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'mobile-shortcuts-title');
 
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-overlay absolute inset-0';
@@ -145,24 +148,20 @@ export class MobileShortcutsManager {
 
     const panel = document.createElement('div');
     panel.className =
-      'responsive-modal-panel cyber-box p-4 sm:p-6 shadow-2xl relative z-10 w-full max-w-lg mx-3 flex flex-col max-h-[88vh]';
+      'app-modal__panel app-modal__inset responsive-modal-panel z-10 w-full max-w-lg mx-3 flex flex-col max-h-[88vh]';
 
-    const accentLine = document.createElement('div');
-    accentLine.className =
-      'theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent opacity-50';
+    const header = document.createElement('header');
+    header.className = 'app-modal__header mb-3';
 
-    // Header
-    const header = document.createElement('div');
-    header.className = 'flex items-center justify-between pb-3 mb-3 border-b border-dim shrink-0';
-
-    const titleEl = document.createElement('span');
-    titleEl.className = 'text-xs font-bold tracking-[0.08em] text-primary';
+    const titleEl = document.createElement('h2');
+    titleEl.id = 'mobile-shortcuts-title';
+    titleEl.className = 'app-modal__title';
     titleEl.dataset.i18n = 'mobileShortcuts.title';
     titleEl.textContent = t('mobileShortcuts.title');
 
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
-    closeBtn.className = 'panel-close-btn';
+    closeBtn.className = 'app-modal__close';
     closeBtn.dataset.i18nAriaLabel = 'common.close';
     closeBtn.setAttribute('aria-label', t('common.close'));
     const closeIcon = document.createElement('span');
@@ -296,7 +295,7 @@ export class MobileShortcutsManager {
     rightActions.append(cancelBtn, saveBtn);
     footer.append(resetBtn, rightActions);
 
-    panel.append(accentLine, header, body, footer);
+    panel.append(header, body, footer);
     modal.append(backdrop, panel);
     document.body.appendChild(modal);
     this.modalEl = modal;

@@ -2,9 +2,16 @@ import { isRdpId } from '../../src/rdp-schema';
 import { t } from './i18n';
 import { confirmAction } from './ui-feedback';
 import { bindRdpFullscreen } from './rdp-fullscreen';
+import modalCss from './app-modal.css?inline';
 
 const intentKey = 'cloudssh_rdp_open_once'; // Contains no credentials; never sufficient for authorization.
-const themeProperties = ['--bg', '--bg-elevated', '--text', '--text-muted', '--accent', '--border', '--border-strong'];
+const themeProperties = [
+  '--bg', '--bg-surface', '--bg-elevated', '--text', '--text-muted', '--on-surface',
+  '--on-surface-variant', '--accent', '--accent-secondary', '--accent-bg', '--on-accent', '--border',
+  '--border-strong', '--font-ui', '--modal-radius', '--modal-overlay', '--shadow-modal',
+  '--control-radius', '--control-min-height', '--card-padding', '--surface-blur',
+  '--surface-saturate', '--app-modal-filter',
+];
 
 export function rdpEntryId(): string | undefined {
   const id = /^\/rdp\/([^/]+)$/.exec(location.pathname)?.[1];
@@ -137,9 +144,14 @@ export class RdpWorkspace {
     const applyTheme = () => {
       const doc = frame.contentDocument;
       if (!doc || doc.location.origin !== location.origin) return;
+      const sheet = doc.getElementById('cloudssh-modal-css');
+      if (sheet && !sheet.textContent) sheet.textContent = modalCss;
       const style = getComputedStyle(document.body);
-      for (const key of themeProperties) doc.documentElement.style.setProperty(key, style.getPropertyValue(key));
-      doc.documentElement.style.colorScheme = getComputedStyle(document.documentElement).colorScheme;
+      const root = doc.documentElement;
+      for (const key of themeProperties) root.style.setProperty(key, style.getPropertyValue(key));
+      root.dataset.uiStyle = document.documentElement.dataset.uiStyle ?? '';
+      root.dataset.theme = document.documentElement.dataset.theme ?? '';
+      root.style.colorScheme = getComputedStyle(document.documentElement).colorScheme;
     };
     frame.onload = applyTheme;
     const current = () => this.dialog === dialog && this.returning !== dialog && !this.events.signal.aborted;
@@ -202,7 +214,7 @@ export class RdpWorkspace {
       if (current()) this.onRecorded();
     }, { once: true });
     this.observer = new MutationObserver(applyTheme);
-    this.observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-theme'] });
+    this.observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-theme', 'data-ui-style'] });
     dialog.oncancel = event => { event.preventDefault(); }; // Don't drop a desktop on an accidental Esc.
     viewport.append(frame);
     shell.append(bar, viewport);

@@ -358,7 +358,7 @@ export class CustomThemeModal {
     this.modalEl = document.createElement('div');
     this.modalEl.id = 'custom-theme-modal';
     this.modalEl.className =
-      'responsive-modal hidden fixed inset-0 z-[100] flex items-center justify-center';
+      'app-modal responsive-modal hidden fixed inset-0 z-[100] flex items-center justify-center';
     this.modalEl.setAttribute('role', 'dialog');
     this.modalEl.setAttribute('aria-modal', 'true');
     this.modalEl.setAttribute('aria-labelledby', 'custom-theme-modal-title');
@@ -372,37 +372,26 @@ export class CustomThemeModal {
     // 主面板
     const panel = document.createElement('div');
     panel.className =
-      'responsive-modal-panel cyber-box p-6 shadow-2xl relative z-10 w-full max-w-lg mx-4 flex flex-col max-h-[90vh]';
+      'app-modal__panel app-modal__inset responsive-modal-panel z-10 w-full max-w-lg mx-4 flex flex-col max-h-[90vh]';
 
-    // 顶部强调线
-    const accentLine = document.createElement('div');
-    accentLine.className =
-      'theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent opacity-50';
-    panel.appendChild(accentLine);
-
-    // 头部
-    const header = document.createElement('div');
-    header.className = 'flex items-center justify-between mb-4 pb-3 border-b border-dim shrink-0';
-
-    const titleGroup = document.createElement('div');
-    titleGroup.className = 'flex items-center gap-2';
+    const header = document.createElement('header');
+    header.className = 'app-modal__header mb-4';
 
     const titleIcon = document.createElement('span');
-    titleIcon.className = 'material-symbols-outlined text-[var(--accent)] text-lg';
+    titleIcon.className = 'app-modal__icon material-symbols-outlined';
+    titleIcon.setAttribute('aria-hidden', 'true');
     titleIcon.textContent = 'palette';
-    titleGroup.appendChild(titleIcon);
 
-    const titleText = document.createElement('span');
+    const titleText = document.createElement('h2');
     titleText.id = 'custom-theme-modal-title';
-    titleText.className = 'text-sm font-bold tracking-[0.08em] text-[var(--accent)]';
+    titleText.className = 'app-modal__title';
     titleText.textContent = t('theme.manageTitle');
-    titleGroup.appendChild(titleText);
-    header.appendChild(titleGroup);
+    header.append(titleIcon, titleText);
 
     const closeBtn = document.createElement('button');
     closeBtn.id = 'custom-theme-modal-close-btn';
     closeBtn.type = 'button';
-    closeBtn.className = 'panel-close-btn';
+    closeBtn.className = 'app-modal__close';
     closeBtn.title = t('common.close');
     closeBtn.setAttribute('aria-label', t('common.close'));
 

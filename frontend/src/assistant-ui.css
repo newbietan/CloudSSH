@@ -1,34 +1,19 @@
 /* Shared assistant components: MCP settings and the built-in Agent use one UI family. */
 .assistant-panel-surface {
-  background: var(--bg);
   color: var(--on-surface);
   font-family: var(--font-ui);
 }
+.assistant-panel-surface:not(.app-modal__panel) {
+  background: var(--bg);
+}
 .assistant-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-shrink: 0;
   height: 48px;
-  min-height: 48px;
-  gap: 8px;
-  padding: 0 16px;
-  background: var(--bg-elevated);
-  border-bottom: 1px solid var(--border);
 }
 .assistant-panel-footer {
   flex-shrink: 0;
   padding: 12px 16px;
   border-top: 1px solid var(--border);
   background: var(--bg-elevated);
-}
-.assistant-panel-title {
-  min-width: 0;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.4;
-  letter-spacing: 0.1em;
-  color: var(--accent-secondary);
 }
 .assistant-panel-icon {
   font-size: 18px;
@@ -66,7 +51,7 @@
   min-height: 36px;
   padding: 6px 12px;
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--bg);
   color: var(--on-surface);
   font: inherit;
@@ -90,43 +75,24 @@
   box-shadow: none;
 }
 .assistant-panel-surface .terminal-input.assistant-field {
+  /* Reuse the theme's boxed/underline field, not a private assistant skin. */
   font-size: 16px;
-  font-family: var(--font-ui);
   line-height: 1.5;
-  border: 0;
-  border-bottom: 1px solid var(--border-strong);
-  border-radius: 8px;
-  padding: 8px 12px;
-  color: var(--text);
-  background: transparent;
-}
-.assistant-panel-surface .terminal-input.assistant-field:focus {
-  outline: none;
-  border-bottom-color: var(--accent);
-  box-shadow: none;
 }
 .assistant-shell :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-html[data-ui-style="liquid"] :is(#agent-panel.assistant-shell, .mcp-dialog__panel.assistant-shell) {
-  background: color-mix(in srgb, var(--bg) 96%, transparent);
-  -webkit-backdrop-filter: blur(32px) saturate(200%) contrast(115%) brightness(108%);
-  backdrop-filter: blur(32px) saturate(200%) contrast(115%) brightness(108%);
+html[data-ui-style="liquid"] #agent-panel.assistant-shell {
+  background: var(--app-modal-fill);
+  -webkit-backdrop-filter: var(--app-modal-filter);
+  backdrop-filter: var(--app-modal-filter);
   box-shadow: var(--shadow-modal);
-}
-html[data-ui-style="liquid"] .assistant-shell .assistant-panel-header {
-  background: color-mix(in srgb, var(--bg-surface) 25%, rgba(255, 255, 255, 0.5));
-  border-bottom-color: rgba(0, 0, 0, 0.06);
 }
 @media (max-width: 520px) {
   .assistant-panel-header {
     padding-left: max(12px, env(safe-area-inset-left));
     padding-right: max(12px, env(safe-area-inset-right));
-  }
-  .assistant-panel-title {
-    font-size: 11px;
-    letter-spacing: 0.02em;
   }
 }
 @media (pointer: coarse), (max-width: 520px) {

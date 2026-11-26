@@ -7,12 +7,15 @@ export function requestManualPaste(signal: AbortSignal): Promise<string | null> 
   if (signal.aborted) return Promise.resolve(null);
   return new Promise(resolve => {
     const dialog = document.createElement('dialog');
-    dialog.className = 'app-dialog terminal-paste-dialog';
+    dialog.className = 'app-modal app-modal--motion app-dialog terminal-paste-dialog';
     dialog.dataset.variant = 'warning';
     const form = document.createElement('form');
-    form.className = 'app-dialog__panel';
+    form.className = 'app-modal__panel app-modal__inset app-dialog__panel';
+    const header = document.createElement('header');
+    header.className = 'app-modal__header';
     const title = document.createElement('h2');
-    title.className = 'app-dialog__title';
+    title.className = 'app-modal__title';
+    header.append(title);
     const hint = document.createElement('p');
     hint.className = 'app-dialog__message';
     const textarea = document.createElement('textarea');
@@ -34,7 +37,7 @@ export function requestManualPaste(signal: AbortSignal): Promise<string | null> 
     submit.className = 'app-dialog__button app-dialog__button--confirm';
     submit.disabled = true;
     actions.append(cancel, submit);
-    form.append(title, hint, textarea, error, actions);
+    form.append(header, hint, textarea, error, actions);
     dialog.append(form);
     let settled = false;
     let composing = false;

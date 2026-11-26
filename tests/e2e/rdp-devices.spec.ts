@@ -43,10 +43,12 @@ for (const [route, routeLabel, host] of [
 ] as const) test(`Windows ${route} supports automatic WebRTC binding and an in-column setup button`, async ({ page }) => {
   const fp = 'a'.repeat(64);
   let downloads = 0;
+  let unlinks = 0;
   let state: Record<string, unknown> = { state: 'unbound' };
   let profile: Record<string, unknown> | undefined;
+  const preview = route === 'tunnel';
   await page.route('**/api/config', r => r.request().method() === 'GET' ? r.fulfill({ json: {
-    turnstileEnabled: false, githubAuthEnabled: true, githubAuthRequired: true, authMode: 'github', rdpEnabled: true, rdpConnectorEnabled: true,
+    turnstileEnabled: false, githubAuthEnabled: true, githubAuthRequired: true, authMode: 'github', rdpEnabled: true, rdpConnectorEnabled: true, rdpConnectorPreview: preview,
   } }) : r.fallback());
   await page.route('**/api/auth/me', r => r.request().method() === 'GET' ? r.fulfill({ json: { id: 1, github_id: 42, username: 'tester', avatar_url: null } }) : r.fallback());
   await page.route('**/api/servers', r => r.request().method() === 'GET' ? r.fulfill({ json: [] }) : r.fallback());
@@ -59,7 +61,13 @@ for (const [route, routeLabel, host] of [
     profile = { id, name: body.name, host: body.host, route: body.route, port: body.port, tags: [], revision: 1, fingerprint: null, hasLogin: true, hasAccessToken: false };
     return r.fulfill({ status: 201, json: profile });
   });
-  await page.route(`**/api/rdp/profiles/${id}/connector`, r => r.request().method() === 'GET' ? r.fulfill({ json: state }) : r.fallback());
+  await page.route(`**/api/rdp/profiles/${id}/connector`, r => {
+    if (r.request().method() === 'GET') return r.fulfill({ json: state });
+    if (r.request().method() !== 'DELETE') return r.fallback();
+    unlinks++;
+    state = { state: 'unbound' };
+    return r.fulfill({ json: { ok: true } });
+  });
   await page.route(`**/api/rdp/profiles/${id}/login-identity`, r => r.request().method() === 'POST'
     ? r.fulfill({ json: { revision: 1, username: 'Administrator', domain: '' } }) : r.fallback());
   await page.route(`**/api/rdp/profiles/${id}/connector-setup`, r => {
@@ -88,14 +96,32 @@ for (const [route, routeLabel, host] of [
   await modal.locator('#server-submit-btn').click();
   const setup = page.getByRole('dialog', { name: 'WebRTC direct settings' });
   await expect(setup).toBeVisible();
+  const instruction = setup.getByText(/extract the entire ZIP and run the installer/);
+  const status = setup.locator('[role="status"]');
+  const details = setup.getByText('Setup details', { exact: true });
+  const expiry = setup.getByText(/expires in 15 minutes/);
+  const warning = setup.getByText(/Unsigned test build/);
+  await expect(instruction).toBeVisible();
+  await expect(status).toBeEmpty();
+  await expect(expiry).toBeHidden();
+  if (preview) await expect(warning).toBeVisible();
+  else await expect(warning).toBeHidden();
+  await details.click();
+  await expect(expiry).toBeVisible();
+  if (preview) await expect(setup.getByText(/included SHA-256/)).toBeVisible();
+  await details.click();
   expect(downloads).toBe(0);
   const installerEvent = page.waitForEvent('download');
   await setup.getByRole('button', { name: 'Download and link this device' }).click();
   expect((await installerEvent).suggestedFilename()).toBe('cloudssh-windows-setup-12345678.zip');
-  await expect(setup.getByText(/Waiting for the Windows connector/)).toBeVisible();
+  await expect(status).toHaveText('Waiting for the connector…');
+  await expect(setup.getByRole('button', { name: 'Download again' })).toBeVisible();
   await expect(setup.getByRole('button', { name: /Confirm device|binding file/ })).toHaveCount(0);
   state = { state: 'online', label: 'WIN-TEST', fingerprint: fp };
-  await expect(setup.getByText('Connector online')).toBeVisible();
+  await expect(status).toHaveText('Connector online');
+  await expect(instruction).toBeHidden();
+  await expect(details).toBeHidden();
+  await expect(warning).toBeHidden();
   await expect(setup.getByRole('button', { name: 'Open desktop' })).toBeVisible();
   expect(downloads).toBe(1);
   await setup.getByRole('button', { name: 'Close', exact: true }).click();
@@ -121,6 +147,18 @@ for (const [route, routeLabel, host] of [
   await configure.click();
   await expect(setup.getByText('Connector online')).toBeVisible();
   expect(downloads).toBe(1);
+  if (route === 'connector') {
+    const unlink = setup.getByRole('button', { name: 'Unlink connector' });
+    const confirmation = page.getByRole('dialog', { name: 'Unlink connector' });
+    await unlink.click();
+    await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
+    expect(unlinks).toBe(0);
+    await unlink.click();
+    await confirmation.getByRole('button', { name: 'Unlink connector' }).click();
+    await expect(instruction).toBeVisible();
+    await expect(expiry).toBeHidden();
+    expect(unlinks).toBe(1);
+  }
 });
 
 test('Windows uses the shared add-server dialog and the main server grid', async ({ page }) => {
@@ -480,7 +518,8 @@ test('the themed workspace stays in the current tab and a saved login is release
   await expect(resolution).toBeHidden();
   await expect(toolbar.getByRole('heading')).toHaveText('Remote Desktop · Office Windows');
   await expect(toolbar.getByRole('button')).toHaveText(['Full screen', 'Back']);
-  await expect(frame.locator('header')).toHaveCount(0);
+  // The certificate prompt has a heading; the desktop frame still has no toolbar of its own.
+  await expect(frame.locator('header:not(#certificate header)')).toHaveCount(0);
   const full = toolbar.getByRole('button', { name: 'Full screen' });
   const inFullscreen = () => page.evaluate(() => document.fullscreenElement !== null);
   expect(await inFullscreen()).toBe(false);

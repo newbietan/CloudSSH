@@ -77,8 +77,9 @@ describe('keyboard-interactive 浏览器交互边界', () => {
     new URL('../frontend/src/auth-form.ts', import.meta.url),
     'utf8',
   );
-  const styleSource = readFileSync(
-    new URL('../frontend/src/style.css', import.meta.url),
+  const styleSource = readFileSync(new URL('../frontend/src/style.css', import.meta.url), 'utf8');
+  const modalStyles = readFileSync(
+    new URL('../frontend/src/app-modal.css', import.meta.url),
     'utf8',
   );
 
@@ -90,8 +91,10 @@ describe('keyboard-interactive 浏览器交互边界', () => {
     expect(dialogSource).toContain('label.htmlFor = inputId');
     expect(dialogSource).toContain('element.textContent = text');
     expect(dialogSource).not.toContain('innerHTML');
-    expect(styleSource).toContain('.auth-challenge-dialog::backdrop');
-    expect(styleSource).toContain('var(--visual-viewport-height)');
+    expect(dialogSource).toMatch(/dialog\.className\s*=\s*'app-modal\s/);
+    expect(styleSource).toContain("@import './app-modal.css'");
+    expect(modalStyles).toContain('dialog.app-modal::backdrop');
+    expect(modalStyles).toContain('var(--visual-viewport-height, 100dvh)');
     expect(dialogSource).toContain('if (!opened)');
     expect(dialogSource).toContain('options.onShown(challenge.id)');
     expect(dialogSource).toContain('onCancel(challengeId)');

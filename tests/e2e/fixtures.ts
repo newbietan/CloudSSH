@@ -2,7 +2,7 @@ import { test as base } from '@playwright/test';
 import { installApiMocks } from './api-mocks';
 
 export { expect } from '@playwright/test';
-export type { Page } from '@playwright/test';
+export type { Locator, Page } from '@playwright/test';
 
 export const test = base.extend<{ apiIsolation: void }>({
   apiIsolation: [

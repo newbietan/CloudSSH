@@ -196,6 +196,13 @@ try {
     assert.equal((await inspect(page)).relay, 0);
     console.log(`${engine.name()}: installed identity → bundled FreeRDP WASM → WebRTC → Pion → TCP: X.224 (no Windows sign-in)`);
   } else {
+    await frame.locator('#certificate-accept').waitFor();
+    const material = el => {
+      const css = getComputedStyle(el);
+      return [css.backgroundColor, css.borderTopLeftRadius, css.boxShadow];
+    };
+    assert.deepEqual(await frame.locator('#certificate .app-modal__panel').evaluate(material),
+      await page.locator('#server-modal .app-modal__panel').evaluate(material), 'certificate frame must use shared modal chrome');
     await frame.locator('#certificate-accept').click();
     await frame.locator('body[data-verified="2097152"]').waitFor({ timeout: 26000 });
     const wire = await inspect(page);

@@ -6,10 +6,11 @@ import {
   type RdpProfile,
 } from '../../src/rdp-schema';
 import { localizedElement, t, type TranslationKey } from './i18n';
+import { createModalHeader } from './modal-ui';
 import { confirmAction } from './ui-feedback';
 
 const stateKeys = {
-  unbound: 'rdp.connectorUnbound',
+  unbound: null,
   waiting: 'rdp.connectorWaiting',
   online: 'rdp.connectorOnline',
   offline: 'rdp.connectorOffline',
@@ -45,7 +46,7 @@ export class RdpConnectorSetup {
   open(profile: RdpProfile, showOpen = true): void {
     this.dispose();
     const dialog = document.createElement('dialog');
-    dialog.className = 'rdp-connector-dialog';
+    dialog.className = 'app-modal rdp-connector-dialog';
     dialog.setAttribute('aria-labelledby', 'rdp-connector-title');
     const life = new AbortController();
     const dismiss = () => {
@@ -59,32 +60,42 @@ export class RdpConnectorSetup {
       e.preventDefault();
       dismiss();
     };
-    const title = localizedElement('h2', 'rdp.connectorSetup');
-    title.id = 'rdp-connector-title';
+    const { header } = createModalHeader('rdp-connector-title', 'rdp.connectorSetup', dismiss);
+    const panel = document.createElement('div');
+    panel.className = 'app-modal__panel app-modal__inset';
     const name = document.createElement('p');
+    name.className = 'rdp-connector-device';
     name.textContent = profile.name;
     const steps = localizedElement('p', 'rdp.connectorIntro');
     const previewNote = localizedElement('p', 'rdp.connectorPreviewNotice');
+    previewNote.className = 'rdp-connector-preview';
+    const help = document.createElement('details');
+    help.className = 'rdp-connector-help';
+    help.append(
+      localizedElement('summary', 'rdp.connectorInstallDetails'),
+      localizedElement('p', 'rdp.connectorPackageHint')
+    );
+    if (this.preview) help.append(localizedElement('p', 'rdp.connectorPreviewHelp'));
     const hint = document.createElement('p');
     hint.setAttribute('role', 'status');
     const result = document.createElement('p');
     result.setAttribute('role', 'alert');
     const site = document.createElement('code');
     const actions = document.createElement('div');
-    actions.className = 'rdp-connector-actions';
+    actions.className = 'app-modal__actions rdp-connector-actions';
     const button = (key: TranslationKey) => {
       const b = localizedElement('button', key);
       b.type = 'button';
-      b.className = 'cyber-button text-primary';
+      b.className = 'app-modal__button';
       return b;
     };
     const download = button('rdp.connectorDownload'),
-      unlink = button('rdp.connectorUnlink');
-    const open = button('rdp.open'),
-      back = button('common.close');
-    actions.append(download, open, unlink, back);
-    dialog.append(title, name, steps, previewNote, hint, site, result, actions);
-    back.onclick = dismiss;
+      unlink = button('rdp.connectorUnlink'),
+      open = button('rdp.open');
+    for (const primary of [download, open]) primary.classList.add('app-modal__button--primary');
+    actions.append(unlink, download, open);
+    panel.append(header, name, steps, hint, site, previewNote, help, result, actions);
+    dialog.append(panel);
     open.onclick = () => {
       dismiss();
       this.openDesktop(profile.id);
@@ -115,9 +126,16 @@ export class RdpConnectorSetup {
       const current = state,
         phase = current.state,
         fresh = phase === 'unbound' || phase === 'waiting';
-      const text = t(downloading ? 'rdp.connectorPackaging' : stateKeys[phase]);
+      const key = downloading ? 'rdp.connectorPackaging' : stateKeys[phase];
+      const text = key ? t(key) : '';
       if (hint.textContent !== text) hint.textContent = text;
-      steps.hidden = download.hidden = !fresh;
+      steps.hidden = download.hidden = help.hidden = !fresh;
+      if (!fresh) help.open = false;
+      const downloadKey = phase === 'waiting' ? 'rdp.connectorRedownload' : 'rdp.connectorDownload';
+      if (download.dataset.i18n !== downloadKey) {
+        download.dataset.i18n = downloadKey;
+        download.textContent = t(downloadKey);
+      }
       previewNote.hidden = !fresh || !this.preview;
       site.hidden = phase !== 'other_origin';
       site.textContent = phase === 'other_origin' ? current.origin : '';

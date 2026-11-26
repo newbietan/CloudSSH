@@ -147,33 +147,29 @@ export class AuthChallengeDialog {
     const titleId = `auth-challenge-title-${sequence}`;
     const descriptionId = `auth-challenge-description-${sequence}`;
     const dialog = document.createElement('dialog');
-    dialog.className = 'auth-challenge-dialog';
+    dialog.className = 'app-modal app-modal--motion auth-challenge-dialog';
     dialog.setAttribute('aria-labelledby', titleId);
     dialog.setAttribute('aria-describedby', descriptionId);
     dialog.setAttribute('aria-modal', 'true');
 
     const form = document.createElement('form');
-    form.className = 'auth-challenge-dialog__panel';
+    form.className = 'app-modal__panel app-modal__inset auth-challenge-dialog__panel';
     form.method = 'dialog';
     form.noValidate = true;
 
-    const accent = document.createElement('div');
-    accent.className = 'auth-challenge-dialog__accent';
-    accent.setAttribute('aria-hidden', 'true');
-
-    const header = document.createElement('div');
-    header.className = 'auth-challenge-dialog__header';
+    const header = document.createElement('header');
+    header.className = 'app-modal__header';
     const icon = appendTextElement(
       header,
       'span',
-      'auth-challenge-dialog__icon material-symbols-outlined',
+      'app-modal__icon auth-challenge-dialog__icon material-symbols-outlined',
       'key'
     );
     icon.setAttribute('aria-hidden', 'true');
     const title = appendTextElement(
       header,
       'h2',
-      'auth-challenge-dialog__title',
+      'app-modal__title',
       t('authChallenge.title')
     );
     title.id = titleId;
@@ -278,7 +274,7 @@ export class AuthChallengeDialog {
     const initialFocus = inputs[0] ?? storedPasswordButton ?? submitButton;
     initialFocus.autofocus = true;
 
-    form.prepend(accent, header);
+    form.prepend(header);
     form.append(target, description, promptList, sensitiveHint, actions);
     dialog.appendChild(form);
     document.body.appendChild(dialog);
