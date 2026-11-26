@@ -12,25 +12,21 @@ CloudSSH 的「打开桌面」优先用 WebRTC 将浏览器接到目标 Windows 
 
 **Access 部署**：浏览器仍按站点策略登录。若站点以 Cloudflare Access 保护，Windows 安装器也需要允许访问**该站点**的独立 Service Auth 凭据，在安装器内录入。它不是 Windows 密码、Tunnel 安装令牌或目标隧道的 Service Token。不要为此配置 Bypass；如果策略要求桌面字节必须经过 Access/Tunnel，应只用中继并且不要绑定连接器。
 
-**测试站与正式站**：官方 `test` 部署可在页面下载当前提交的**未签名测试构建**；仅用于受控机器，请比对包内 SHA-256，不要关闭系统保护。正常部署只提供维护者发布的签名 ZIP；若该发行包尚未发布，页面明确提示暂不可下载，不替换为未签名构建。使用本机官方测试程序不需要新的 Worker 密钥或额外 Cloudflare API 权限。
+**安装包来源**：正式站下载维护者通过官方 CI 发布的固定 ZIP，安装器不使用 Authenticode；Windows 可能提示未知发布者，受管机器可能按本机策略阻止安装。核对官方来源及 SHA-256，遵守系统策略，不要关闭防护。官方 `test` 可下载与当前提交对应的测试构建，仅用于受控测试。缺少正式发行包时提示暂不可下载，不以测试构建代替。两种部署都不需要额外 Worker 密钥。
 
 ## 运行、撤销与问题排查
 
 - Windows 服务 **CloudSSH RDP Connector** 开机自动启动；关闭安装器窗口不影响它。它以 LocalService 运行，仅为已授权的会话连接本机 `127.0.0.1:3389`，不监听管理端口、不做网段代理、不安装驱动。站点身份、设备私钥和可选的站点 Access 凭据由机器范围 DPAPI + 目录 ACL 保存，仅服务 SID、Administrators 和 SYSTEM 可读；不是 TPM/硬件保险库，也不防操作系统被控制。
 - 在 CloudSSH **编辑设备 → WebRTC直连配置 → 取消绑定**，会关闭旧连接器及其活动直连；普通中继（如有配置）不受影响。删除设备、换目标/线路/公网端口同样撤销绑定；单纯改名称或 Windows 登录凭据仍保留设备身份。需要换域名时在原账号取消绑定，再在正确域名重新安装/绑定。Windows 上再次运行安装器可看服务状态并卸载。解绑或卸载不强制注销 Windows 桌面。
-- 连接器离线：先检查 Windows 服务、系统时间、目标 Windows 到实际站点域名的 HTTPS/WSS 连通性及边缘 Access，Windows 事件查看器中该服务只记录简短状态。如果 TLS 成功但无直连，检查是否允许出站 UDP、NAT 是否支持打洞和本机 RDP 服务。Cloudflare STUN 与对端会看到建立连接需要的网络地址；不使用 TURN，网络不支持时有备用中继才可切换。
+- 连接器离线：先检查 Windows 服务、系统时间、目标 Windows 到实际站点域名的 HTTPS/WSS 连通性及边缘 Access。浏览器和连接器都使用 [Cloudflare STUN 官方端口](https://developers.cloudflare.com/realtime/realtimekit/platform/network-allowlist/) `stun.cloudflare.com:3478/UDP` 与 `53/UDP`；不使用 TURN，STUN 可达不代表对等 UDP 一定可达。STUN 与对端会看到建立连接需要的地址。受限网络有备用中继才可切换。
+- 在线但使用中继：在 Edge 开发者工具 Console 启用「详细」（Verbose）并筛选 `CloudSSH WebRTC`。重新连接后，`source=deadline`、`phase=opening`、`ice=checking` 表示信令已完成，但约 14 秒预检内没有可用路径或未就绪；`afterAnswerMs` 是浏览器实际应用应答后的时长。对比关闭本机代理/TUN 前后、两端候选类型数量和 ICE 状态。没有 `srflx` 可能是 STUN 或策略问题，不足以否定可达的公网 `host` 候选。`source=answer` 表示浏览器拒绝应答；数据通道已 `open` 但未就绪时，再看 Windows「应用程序」事件日志 `CloudSSHRdpConnector`，例如 `local_rdp_unavailable`。诊断只在本地输出阶段、用时、状态、候选类别数量或固定原因，不输出地址、SDP、票据或凭据。
 - 直连路径不用公网 3389，但连接器仍要求本机 RDP 监听 **3389**。卡片内的公网 TCP 端口或 Tunnel 配置只属于备用线路，不会传给连接器。第一次核对证书期间若直连被外部中断，需重新从卡片进入，不会改用中继重新登录。
 - 已绑定的常驻服务、RDP 设备、证书及中继配置升级后继续有效。旧的手动原型和待确认绑定文件不能自动升级成已绑定，请从卡片重新下载 ZIP；若已装过但未绑定，先卸载旧服务。新版不读取旧的 `RDP_P2P_SECRET`。若安装包过期、错发或尚未成功上线，可重新下载作废旧包；已经上线绑定的设备必须先取消绑定，不能覆盖。
 
 ## 维护者打包、发布与验证
 
-- 常规 Worker 部署由版本化的发布资源提供下载，**不构建或打包 Go**。已登录同源 `POST /api/rdp/profiles/:id/connector-setup` 从固定发布源验证有界 ZIP，将授权加入同一归档，不解压/重压或修改 EXE 签名；最终用户不需要进入 GitHub。专用 ZIP 私有、禁止缓存，旧手动确认授权不转换，首个已签名的设备待机握手才持久绑定。`RdpAuthorityDO` 的 v4 迁移在两个环境均已绑定；部署无需额外 Secret。首次绑定时 DO 生成随机签名根密钥，重启/升级不会重建，不能手工从一个部署复制到另一个部署。签名根与账号数据库不是外部 KMS。
-- `bash scripts/build-rdp-peer.sh`（Go ≥1.24、Bash）生成 `dist/rdp-connector/` 下 Windows x64 EXE、许可证及校验文件。官方 CI `.github/workflows/rdp-connector.yml` 生成同样的**未签名候选**并在 Windows runner 验证 DPAPI、目录 ACL 与 LocalService 重启；它不自动创建 Release。维护者需验证候选来源、用可信 Authenticode 签名器对 EXE 签名并加时间戳，再在 Windows 运行：
-
-  ```powershell
-  .\scripts\package-rdp-connector.ps1 -InputDirectory .\dist\rdp-connector -OutputDirectory .\dist\rdp-release
-  ```
-
-  把输出 ZIP（固定名 `cloudssh-rdp-connector-windows-amd64.zip`）和校验文件放在官方仓库的 **`rdp-connector-v3`** Release。此步骤是维护者的一次发行操作，不是自部署用户的安装步骤。未签名、签名不受信任或没时间戳的包不会通过打包脚本。生产开放前应从已部署页面实际下载并校验；不要以临时 CI 产物直链替代。
-- 官方 `test` 部署构建 `scripts/build-rdp-preview.sh` 的 ZIP，并显式用 `rdp-preview-entry.ts` 部署，正式入口 `rdp-entry.ts` 不包含该二进制。普通 Git 集成入口也不会隐式构建未签名包。避免把测试入口用于生产。
-- `pnpm run build:frontend && node scripts/test-rdp-peer.mjs` 使用回环 HTTPS、真实 workerd 的签名 DO 及 UserDBDO、Pion 和 Chromium（需 zip/unzip）；加 `--webkit` 使用 WebKit，加 `--tunnel` 验证保留 Cloudflare Tunnel 线路与凭据的备用路径（默认验证公网 TCP）。验证专用 ZIP 完整可解压、EXE 字节不变、自动绑定、进程重启 + 新浏览器登录、首次证书确认信令、2 MiB 分片流控、续租与编辑关闭、ICE 不可用时预登录回退且只启动一次客户端。加 `--native` 验证随包 FreeRDP TCP 首个 X.224 包；不使用真实 Windows 凭据。仍需在 Windows 真机分别测试安装、服务重启、换浏览器直连、无公网 RDP 的「连接器」模式、禁 UDP 的备用路径及解绑，记录两条线路的首帧与操作延迟。
+- 常规 Worker 部署由版本化的发布资源提供下载，**不构建或打包 Go**。已登录同源 `POST /api/rdp/profiles/:id/connector-setup` 从固定发布源验证有界 ZIP，将授权加入同一归档，不解压、重压或修改原 EXE；最终用户不需要进入 GitHub。专用 ZIP 私有、禁止缓存，旧手动确认授权不转换，首个已签名的设备待机握手才持久绑定。`RdpAuthorityDO` 的 v4 迁移在两个环境均已绑定；部署无需额外 Secret。首次绑定时 DO 生成随机签名根密钥，重启/升级不会重建，不能手工从一个部署复制到另一个部署。签名根与账号数据库不是外部 KMS。
+- 官方 CI **RDP Windows connector** 产出 `rdp-connector-release-<commit>`，内含 `cloudssh-rdp-connector-windows-amd64.zip` 和 `SHA256SUMS`；独立 Windows runner 验证 DPAPI、目录 ACL 与 LocalService 启停。维护者核对提交并等两个作业都通过后，下载这两份文件，发布到官方仓库的 **`rdp-connector-v3`** Release（文件名不变）。CI 不自动发布，正式包不要求 Authenticode 或时间戳。发布前后核对哈希与下载，不以 CI 产物临时直链替代。
+- 本地可以运行 `bash scripts/build-rdp-peer.sh`（Go ≥1.24）构建，再执行 `bash scripts/package-rdp-connector.sh dist/rdp-connector dist/rdp-release`（Bash、zip）。打包校验候选 EXE 的 SHA-256，归档只包含 EXE、许可证和内层哈希；外层哈希校验整个正式 ZIP。授权文件只由站点按设备动态注入，不进 Release。
+- 官方 `test` 部署复用打包器生成提交内的 ZIP，并显式用 `rdp-preview-entry.ts` 提供测试下载；正式入口 `rdp-entry.ts` 不嵌入该二进制。常规 Git 集成也不隐式构建连接器；不要把测试入口用于生产。
+- `pnpm run build:frontend && node scripts/test-rdp-peer.mjs` 使用回环 HTTPS、真实 workerd 的签名 DO 及 UserDBDO、Pion 和 Chromium（需 zip/unzip）；加 `--webkit` 使用 WebKit，加 `--tunnel` 验证保留 Cloudflare Tunnel 线路与凭据的备用路径（默认验证公网 TCP）。验证专用 ZIP 完整可解压、EXE 字节不变、自动绑定、进程重启 + 新浏览器登录、首次证书确认信令、2 MiB 分片流控、续租与编辑关闭、ICE 不可用时预登录回退且只启动一次客户端。`--blocked-ice` 在回环保留实际信令和 SDP 应答，将两端测试候选指向不回复的回环 UDP 套接字，验证 ICE 在 `checking` 时被直连截止收口，并记录不含敏感数据的诊断。加 `--native` 验证随包 FreeRDP TCP 首个 X.224 包；不使用真实 Windows 凭据。仍需在 Windows 真机分别测试安装、服务重启、换浏览器直连、无公网 RDP 的「连接器」模式、禁 UDP 的备用路径及解绑，记录两条线路的首帧与操作延迟。

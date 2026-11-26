@@ -301,17 +301,43 @@ func (r resident) listen(parent context.Context) error {
 			defer jobs.Done()
 			defer active.Store(false)
 			peer, err := dialControl(ctx, r.client, r.id, "attach", protocol, proof, "")
-			if err == nil {
-				_ = run(ctx, peer, r.ice, r.dial, r.note)
-				r.note("Desktop ended")
+			if err != nil {
+				r.note("Desktop did not start (signaling_attach)")
+				return
 			}
+			r.note("Desktop ended (" + desktopEndReason(run(ctx, peer, r.ice, r.dial, r.note)) + ")")
 		}(m.Proof)
+	}
+}
+
+// Use fixed reasons in Windows Event Log; never record network errors, SDP or device credentials.
+func desktopEndReason(err error) string {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return "closed"
+	}
+	switch err.Error() {
+	case "control connection closed", "signaling closed":
+		return "signaling_closed"
+	case "ICE gathering timed out":
+		return "ice_gather_timeout"
+	case "direct connection lost":
+		return "ice_or_dtls_disconnected"
+	case "direct ICE pair required":
+		return "no_direct_pair"
+	case "cannot open local RDP":
+		return "local_rdp_unavailable"
+	case "lease expired", "invalid lease or system clock":
+		return "lease_ended"
+	default:
+		return "peer_error"
 	}
 }
 
 func productionResident(id identity, note func(string)) resident {
 	return resident{client: clientForConnector(), id: id, note: note,
-		ice: webrtc.Configuration{ICEServers: []webrtc.ICEServer{{URLs: []string{"stun:stun.cloudflare.com:3478"}}}},
+		ice: webrtc.Configuration{ICEServers: []webrtc.ICEServer{{URLs: []string{
+			"stun:stun.cloudflare.com:3478", "stun:stun.cloudflare.com:53",
+		}}}},
 		dial: func(ctx context.Context) (net.Conn, error) {
 			return (&net.Dialer{Timeout: 4 * time.Second}).DialContext(ctx, "tcp4", localRDP)
 		},

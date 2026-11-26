@@ -10,12 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Windows WebRTC 直连**：浏览器优先通过目标 Windows 上的连接器访问桌面，Worker 负责授权和信令，不转发直连桌面流量。「连接器」模式无需公网地址或入站 RDP 端口，没有备用中继；已有公网直连和 Cloudflare Tunnel 配置也可启用 WebRTC，不需要迁移。关联 Issue：[#201](https://github.com/newbietan/CloudSSH/issues/201)。
-- **站内下载与自动绑定**：从「WebRTC直连配置」下载设备专用 Windows x64 ZIP，完整解压后运行安装器，服务上线即自动绑定。无需配对码、网页再次确认或配置额外 Worker Secret；正式站只提供签名安装包，Windows 登录密码不进入安装包。详见 [Windows 连接器指南](docs/rdp-peer.md)。
+- **站内下载与自动绑定**：从「WebRTC直连配置」下载设备专用 Windows x64 ZIP，完整解压后运行安装器，服务上线即自动绑定。无需配对码、网页再次确认或配置额外 Worker Secret；正式站提供官方发布的 Windows x64 安装包，Windows 登录密码不进入安装包。详见 [Windows 连接器指南](docs/rdp-peer.md)。
 
 ### Changed
 
 - **桌面选路与延迟显示**：「打开桌面」优先 WebRTC；只有在发送 RDP 字节前直连建立失败，才静默切回该设备已配置的公网或隧道中继，不重复发起 Windows 登录。工具栏按实际线路显示「WebRTC」或「中继」延迟，仍另列 Windows 上报的 RDP 延迟。
 - **站内弹窗风格统一**：添加服务器、AI 配置、MCP、Windows 引导、认证和编辑等复用同一套主题面板、标题栏与遮罩；保留各主题材质及移动 Liquid Glass 的实底。安装引导只显示当前步骤，时效和校验说明收在「安装须知」，测试包的未签名警示仍直接可见。
+
+### Fixed
+
+- **WebRTC 直连预检**：浏览器和 Windows 连接器支持 Cloudflare STUN 的备用 UDP 53 端口；对等访问受限时仍按配置静默回退。预检失败时可从本地 Console 核对阶段、用时与 ICE 状态，不记录地址、票据或凭据。
 
 ### Security
 

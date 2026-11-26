@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the separate Windows service installer. Never invoked by Worker deployment.
+# Builds the separate Windows service installer for the release workflow or explicit test preview.
 set -euo pipefail
 root=$(cd -- "$(dirname -- "$0")/.." && pwd)
 out="$root/dist/rdp-connector"

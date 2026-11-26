@@ -7,7 +7,7 @@ on:
     paths:
       - 'tools/rdp-peer/**'
       - 'scripts/build-rdp-peer.sh'
-      - 'scripts/package-rdp-connector.ps1'
+      - 'scripts/package-rdp-connector.sh'
       - '.github/workflows/rdp-connector.yml'
 
 permissions:
@@ -26,7 +26,7 @@ jobs:
         with:
           go-version: '1.26.x'
           cache-dependency-path: tools/rdp-peer/go.sum
-      - name: Verify Go and build unsigned Windows installer candidate
+      - name: Verify Go and build Windows installer
         working-directory: tools/rdp-peer
         env:
           GOWORK: 'off'
@@ -35,10 +35,12 @@ jobs:
           go vet -mod=readonly ./...
           go test -mod=readonly -race ./...
           bash ../../scripts/build-rdp-peer.sh
+      - name: Package the official Windows ZIP and checksums
+        run: bash scripts/package-rdp-connector.sh dist/rdp-connector dist/rdp-release
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: rdp-connector-unsigned-${{ github.sha }}
-          path: dist/rdp-connector/
+          name: rdp-connector-release-${{ github.sha }}
+          path: dist/rdp-release/
           if-no-files-found: error
           retention-days: 14
   windows-service:
