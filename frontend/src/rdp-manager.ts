@@ -12,9 +12,9 @@ export class RdpManager {
   private readonly name: HTMLInputElement;
   private readonly tags: HTMLInputElement;
   private readonly host: HTMLInputElement;
-  private readonly hostField: HTMLLabelElement;
+  private readonly hostGroup = document.createElement('div');
   private readonly endpoint = document.createElement('div');
-  private readonly connectorHint = localizedElement('p', 'rdp.connectorOnlyHint');
+  private readonly connectorDetails = document.createElement('div');
   private readonly port: HTMLInputElement;
   private readonly portField: HTMLLabelElement;
   private readonly transport = document.createElement('select');
@@ -66,16 +66,22 @@ export class RdpManager {
     const authentication = document.createElement('div');
     authentication.className = 'server-settings-section';
     this.endpoint.className = 'ssh-endpoint-fields';
-    [this.host, this.hostField] = this.field('rdp-host', 254, 'rdp.host', 'text', '>');
+    const [host, hostField] = this.field('rdp-host', 254, 'rdp.host', 'text', '>');
+    this.host = host;
     [this.port, this.portField] = this.field('rdp-port', null, 'auth.port', 'number', ':');
-    this.hostField.className = 'ssh-host-field';
+    hostField.className = 'ssh-host-field';
+    this.hostGroup.className = 'rdp-host-group';
     this.portField.className = 'ssh-port-field';
     Object.assign(this.port, { min: '1', max: '65535', step: '1', inputMode: 'numeric', defaultValue: String(RDP_DEFAULT_PORT) });
     name.required = this.host.required = true;
     this.host.spellcheck = false;
-    this.endpoint.append(this.hostField, this.portField);
-    this.connectorHint.className = 'text-xs text-muted';
-    target.append(routeLabel, this.endpoint, this.connectorHint);
+    this.hostGroup.append(hostField);
+    this.endpoint.append(this.hostGroup, this.portField);
+    this.connectorDetails.className = 'rdp-connector-details';
+    const connectorHint = localizedElement('p', 'rdp.connectorOnlyHint');
+    connectorHint.className = 'text-xs text-muted';
+    this.connectorDetails.append(connectorHint);
+    target.append(routeLabel, this.endpoint, this.connectorDetails);
     const [username, userLabel] = this.field('rdp-user', 128, 'auth.user', 'text', 'person');
     const [domain, domainLabel] = this.field('rdp-domain', 128, 'rdp.domain');
     const [password, passLabel] = this.field('rdp-password', 1024, 'common.password', 'password', 'key');
@@ -104,9 +110,9 @@ export class RdpManager {
     this.transport.onchange = this.clear.onchange = () => this.updateTransport();
     this.editNotice.className = 'text-xs text-muted mt-2';
     this.setupConnector.type = 'button';
-    this.setupConnector.className = 'cyber-button text-primary px-3 py-2 mt-3';
-    this.setupConnector.onclick = () => { if (this.editing) onConnectorSetup?.(this.editing); };
-    parent.replaceChildren(identity, columns, this.access, this.editNotice, this.setupConnector);
+    this.setupConnector.className = 'rdp-connector-action cyber-button text-primary';
+    this.setupConnector.onclick = () => { if (this.editing && this.sameTarget(this.editing)) onConnectorSetup?.(this.editing); };
+    parent.replaceChildren(identity, columns, this.access, this.editNotice);
     for (const event of ['input', 'change']) parent.addEventListener(event, () => this.syncEdit(), { signal: this.requests.signal });
     this.reset();
   }
@@ -204,6 +210,10 @@ export class RdpManager {
   }
 
   private syncEdit(): void {
+    // Enrollment uses the saved destination, not a different, unsaved address or route visible in this form.
+    const changedTarget = !!this.editing && !this.sameTarget(this.editing);
+    this.setupConnector.disabled = changedTarget;
+    this.setupConnector.title = changedTarget ? t('rdp.connectorSaveTargetFirst') : '';
     this.editNotice.hidden = !this.editing || !this.canSubmit;
     this.onChange();
   }
@@ -245,12 +255,14 @@ export class RdpManager {
     const tunnel = this.transport.value === 'tunnel';
     const connector = this.transport.value === 'connector';
     this.endpoint.hidden = connector;
-    this.connectorHint.hidden = !connector;
+    this.connectorDetails.hidden = !connector;
+    const location = connector ? this.connectorDetails : this.hostGroup;
+    if (this.setupConnector.parentElement !== location) location.append(this.setupConnector);
     this.host.disabled = connector;
     this.host.required = !connector;
     this.portField.hidden = this.port.disabled = tunnel || connector;
     this.port.required = !(tunnel || connector);
-    this.hostField.classList.toggle('ssh-host-field-wide', tunnel);
+    this.hostGroup.classList.toggle('ssh-host-field-wide', tunnel);
     this.updateRequirements();
     this.access.hidden = this.access.disabled = !tunnel;
     this.host.placeholder = tunnel ? 'tunnel.example.com' : 'rdp.example.com';

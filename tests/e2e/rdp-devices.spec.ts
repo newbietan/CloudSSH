@@ -36,7 +36,11 @@ async function expectFullscreenFit(page: Page, checkHits = false) {
   }
 }
 
-test('new Windows device downloads a single setup ZIP and detects automatic binding without confirmation', async ({ page }) => {
+for (const [route, routeLabel, host] of [
+  ['connector', 'Connector', ''],
+  ['direct', 'Public direct (TCP)', '93.184.215.14'],
+  ['tunnel', 'Cloudflare Tunnel', 'tunnel.example.com'],
+] as const) test(`Windows ${route} supports automatic WebRTC binding and an in-column setup button`, async ({ page }) => {
   const fp = 'a'.repeat(64);
   let downloads = 0;
   let state: Record<string, unknown> = { state: 'unbound' };
@@ -50,11 +54,14 @@ test('new Windows device downloads a single setup ZIP and detects automatic bind
     if (r.request().method() === 'GET') return r.fulfill({ json: { profiles: profile ? [{ ...profile, connector: state }] : [] } });
     if (r.request().method() !== 'POST') return r.fallback();
     const body = r.request().postDataJSON();
-    expect(body).toEqual({ name: 'Private Windows', host: '', route: 'connector', tags: [], login: { username: 'Administrator', domain: '', password: 'synthetic' } });
-    profile = { id, name: body.name, host: body.host, route: body.route, tags: [], revision: 1, fingerprint: null, hasLogin: true, hasAccessToken: false };
+    expect(body).toEqual({ name: 'Windows device', host, route, tags: [], ...(route === 'direct' ? { port: 53389 } : {}),
+      login: { username: 'Administrator', domain: '', password: 'synthetic' } });
+    profile = { id, name: body.name, host: body.host, route: body.route, port: body.port, tags: [], revision: 1, fingerprint: null, hasLogin: true, hasAccessToken: false };
     return r.fulfill({ status: 201, json: profile });
   });
   await page.route(`**/api/rdp/profiles/${id}/connector`, r => r.request().method() === 'GET' ? r.fulfill({ json: state }) : r.fallback());
+  await page.route(`**/api/rdp/profiles/${id}/login-identity`, r => r.request().method() === 'POST'
+    ? r.fulfill({ json: { revision: 1, username: 'Administrator', domain: '' } }) : r.fallback());
   await page.route(`**/api/rdp/profiles/${id}/connector-setup`, r => {
     if (r.request().method() !== 'POST') return r.fallback();
     expect(r.request().postDataJSON()).toEqual({ revision: 1 });
@@ -66,12 +73,20 @@ test('new Windows device downloads a single setup ZIP and detects automatic bind
   await page.locator('#add-server-btn').click();
   const modal = page.locator('#server-modal');
   await modal.getByRole('button', { name: 'Windows Server' }).click();
-  await expect(modal.getByLabel('Connection route')).toHaveValue('connector');
-  await expect(modal.locator('#server-rdp-host')).toBeHidden();
-  await modal.locator('#server-rdp-name').fill('Private Windows');
+  const routes = modal.getByLabel('Connection route');
+  await expect(routes).toHaveValue('connector');
+  await expect(routes.getByRole('option', { name: 'Connector', exact: true })).toHaveCount(1);
+  await routes.selectOption({ label: routeLabel });
+  const address = modal.locator('#server-rdp-host');
+  const port = modal.locator('#server-rdp-port');
+  if (route === 'connector') await expect(address).toBeHidden();
+  else await address.fill(host);
+  if (route === 'direct') await port.fill('53389');
+  else await expect(port).toBeHidden();
+  await modal.locator('#server-rdp-name').fill('Windows device');
   await modal.locator('#server-rdp-password').fill('synthetic');
   await modal.locator('#server-submit-btn').click();
-  const setup = page.getByRole('dialog', { name: 'Set up Windows direct access' });
+  const setup = page.getByRole('dialog', { name: 'WebRTC direct settings' });
   await expect(setup).toBeVisible();
   expect(downloads).toBe(0);
   const installerEvent = page.waitForEvent('download');
@@ -84,8 +99,28 @@ test('new Windows device downloads a single setup ZIP and detects automatic bind
   await expect(setup.getByRole('button', { name: 'Open desktop' })).toBeVisible();
   expect(downloads).toBe(1);
   await setup.getByRole('button', { name: 'Close', exact: true }).click();
-  await expect(page.locator(`#rdp-card-${id} button[id^=rdp-open-]`)).toHaveCount(1);
-  await expect(page.locator(`#rdp-card-${id} button[id^=rdp-peer-]`)).toHaveCount(0);
+  const card = page.locator(`#rdp-card-${id}`);
+  await expect(card.getByRole('button', { name: 'Open desktop', exact: true })).toHaveCount(1);
+  await expect(card.locator('button[id^=rdp-peer-]')).toHaveCount(0);
+  await card.getByRole('button', { name: 'Edit device' }).click();
+  await expect(routes).toHaveValue(route);
+  const configure = modal.getByRole('button', { name: 'WebRTC direct settings' });
+  if (route === 'connector') {
+    await expect(modal.locator('.rdp-connector-details').getByRole('button', { name: 'WebRTC direct settings' })).toBeVisible();
+  } else {
+    const group = modal.locator('.rdp-host-group');
+    await expect(group.getByRole('button', { name: 'WebRTC direct settings' })).toBeVisible();
+    const [field, shortcut] = await Promise.all([address.boundingBox(), configure.boundingBox()]);
+    expect(shortcut!.y).toBeGreaterThanOrEqual(field!.y + field!.height - 1);
+    expect(shortcut!.x + shortcut!.width).toBeLessThanOrEqual(field!.x + field!.width + 1);
+    await address.fill('changed.example.com');
+    await expect(configure).toBeDisabled();
+    await address.fill(host);
+    await expect(configure).toBeEnabled();
+  }
+  await configure.click();
+  await expect(setup.getByText('Connector online')).toBeVisible();
+  expect(downloads).toBe(1);
 });
 
 test('Windows uses the shared add-server dialog and the main server grid', async ({ page }) => {
@@ -166,7 +201,7 @@ test('Windows uses the shared add-server dialog and the main server grid', async
   await expect(portInput).toBeHidden();
   await expect(portInput).toBeDisabled();
   await expect(portInput).not.toHaveAttribute('required');
-  await expect(rdp.locator('.ssh-host-field')).toHaveClass(/ssh-host-field-wide/);
+  await expect(rdp.locator('.rdp-host-group')).toHaveClass(/ssh-host-field-wide/);
   const clientSecret = modal.getByLabel('Client Secret', { exact: true });
   await expect(clientSecret).toBeVisible();
   await modal.getByLabel('Connection route').selectOption('direct');
@@ -434,7 +469,7 @@ test('the themed workspace stays in the current tab and a saved login is release
   // Measure the initial viewport at callMain, not after the status line changes on first paint.
   await expect(frame.locator('html')).toHaveAttribute('data-size', (await frame.locator('html').getAttribute('data-initial-viewport'))!);
   await expect(frame.locator('form,input,#connect')).toHaveCount(0);
-  await expect(workspace.locator('header .rdp-latency')).toHaveText('RTT 24 ms · RDP 83 ms');
+  await expect(workspace.locator('header .rdp-latency')).toHaveText('Relay 24 ms · RDP 83 ms');
   await expect(workspace.locator('header .rdp-latency')).toHaveAttribute('title', /Relay: browser to CloudSSH/);
   await expect(frame.locator('.status-row')).toHaveCount(0);
   expect(await frame.locator('html').evaluate(e => e.style.getPropertyValue('--accent').trim())).toBe(await page.locator('body').evaluate(e => getComputedStyle(e).getPropertyValue('--accent').trim()));

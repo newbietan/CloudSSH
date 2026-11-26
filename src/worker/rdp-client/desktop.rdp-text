@@ -29,8 +29,12 @@ const trustText = {
   'zh-CN': ['首次连接此 Windows 服务器', '请通过可信方式核对证书指纹再确认。意外的指纹可能表示你连接到了另一台服务器。', '取消', '信任并连接', 'Windows 证书已变化', '连接已阻止：收到的证书指纹与已保存的指纹不一致。', '已保存的指纹', '无法保存证书信任，请重新连接。', '等待确认 Windows 证书。', '未接受 Windows 证书。'],
   'zh-TW': ['首次連線至此 Windows 伺服器', '請透過可信方式核對憑證指紋再確認。意外的指紋可能表示你連線到了另一台伺服器。', '取消', '信任並連線', 'Windows 憑證已變更', '連線已阻擋：收到的憑證指紋與已儲存的指紋不一致。', '已儲存的指紋', '無法儲存憑證信任，請重新連線。', '等待確認 Windows 憑證。', '未接受 Windows 憑證。'],
 };
-let requested = navigator.language;
-try { requested = localStorage.getItem('cloudssh_locale') || requested; } catch { /* optional */ }
+// Match the workspace language, including an explicit ?lang override in the parent.
+let requested = window.frameElement?.ownerDocument.documentElement.lang;
+if (!requested || !Object.hasOwn(dictionary, requested)) {
+  requested = navigator.language;
+  try { requested = localStorage.getItem('cloudssh_locale') || requested; } catch { /* optional */ }
+}
 const locale = Object.hasOwn(dictionary, requested) ? requested : /^zh-(TW|HK|Hant)/i.test(requested) ? 'zh-TW' : /^zh/i.test(requested) ? 'zh-CN' : 'en-US';
 document.documentElement.lang = locale;
 const msg = dictionary[locale];
@@ -41,13 +45,13 @@ async function requestFailure(response) {
   const data = await response.json().catch(() => null);
   return failure(data?.code) ?? msg[17];
 }
+const relayLabel = { 'en-US': 'Relay', 'zh-CN': '中继', 'zh-TW': '中繼' }[locale];
 const rttHelp = {
   'en-US': 'Relay: browser to CloudSSH. RDP: average round trip reported by Windows. A dash means no recent sample. Neither measures screen rendering.',
   'zh-CN': '中继：浏览器到 CloudSSH 的往返时间。RDP：Windows 上报的平均往返时间。横线表示暂无近期数据，两者都不代表画面响应耗时。',
   'zh-TW': '中繼：瀏覽器至 CloudSSH 的往返時間。RDP：Windows 回報的平均往返時間。橫線表示暫無近期資料，兩者都不是畫面反應時間。',
 }[locale];
 const peerHelp = { 'en-US': 'WebRTC: browser to connector over the direct data channel (ICE types: browser / connector). RDP: Windows average; neither measures rendering.', 'zh-CN': 'WebRTC：浏览器到连接器的直连数据通道往返时间（ICE 类型：浏览器 / 连接器）。RDP：Windows 上报的平均值；都不是渲染延迟。', 'zh-TW': 'WebRTC：瀏覽器至連接器的直連資料通道往返時間（ICE 類型：瀏覽器 / 連接器）。RDP：Windows 回報的平均值；均非繪製延遲。' }[locale];
-let peerMode = false, icePath = '';
 const el = id => document.getElementById(id);
 const tellWorkspace = (type, detail) => window.frameElement?.dispatchEvent(new CustomEvent('cloudssh-rdp-' + type, { detail }));
 const status = el('status');
@@ -91,13 +95,17 @@ async function run(preferDirect) {
   let ticket;
   let timer;
   let ready = false;
-  let telemetry, relayMs, remoteMs;
-  let relayAt = -Infinity, remoteAt = -Infinity;
+  let activePath, icePath = '';
+  let telemetry, pathMs, remoteMs;
+  let pathAt = -Infinity, remoteAt = -Infinity;
   function paintLatency() {
+    // No route label during preflight. A WebRTC attempt that falls back never appeared as a live route.
+    if (!activePath) return tellWorkspace('latency', { text: '', help: '' });
+    const peer = activePath === 'webrtc';
     const now = performance.now();
     const fmt = (ms, age, limit) => ms !== undefined && age < limit ? `${ms} ms` : '—';
-    const text = `RTT ${fmt(relayMs, now - relayAt, 10000)} · RDP ${fmt(remoteMs, now - remoteAt, 30000)}`;
-    tellWorkspace('latency', { text, help: peerMode ? `${peerHelp} ${icePath}` : rttHelp });
+    const text = `${peer ? 'WebRTC' : relayLabel} ${fmt(pathMs, now - pathAt, 10000)} · RDP ${fmt(remoteMs, now - remoteAt, 30000)}`;
+    tellWorkspace('latency', { text, help: peer ? `${peerHelp} ${icePath}` : rttHelp });
   }
   function sample() {
     if (!ready || stopped || document.hidden) return;
@@ -109,7 +117,7 @@ async function run(preferDirect) {
   function resetMeter() {
     clearInterval(telemetry); telemetry = undefined;
     socket?.cancelProbe?.();
-    relayMs = remoteMs = undefined;
+    pathMs = remoteMs = undefined;
     paintLatency();
   }
   paintLatency();
@@ -276,9 +284,8 @@ async function run(preferDirect) {
                 icePath = `${local} / ${remote}`; paintLatency();
               });
               if (stopped) { directCarrier.close(); return; }
-              peerMode = true; url = peerUrl;
+              url = peerUrl;
               window.Module.websocket.url = url.href;
-              paintLatency();
               return info;
             } catch (err) {
               reason = err?.message;
@@ -308,9 +315,11 @@ async function run(preferDirect) {
       createRdpSocket(address) {
         if (stopped || address !== url.href || !ticket || socket) throw new Error('socket unavailable');
         socket = window.createCloudSshRdpSocket(address, ticket, directCarrier);
+        activePath = directCarrier ? 'webrtc' : 'relay';
+        paintLatency();
         socket.onRelayClose = reason => {
           if (stopped) return;
-          if (!peerMode && reason === 'cert_reconnect' && acceptedTrust && !ready) {
+          if (activePath === 'relay' && reason === 'cert_reconnect' && acceptedTrust && !ready) {
             finish(26);
             tellWorkspace('reconnect', acceptedTrust);
             return;
@@ -326,7 +335,7 @@ async function run(preferDirect) {
         };
         socket.onRelayRtt = value => {
           if (!ready || stopped || document.hidden) return;
-          relayMs = value; relayAt = performance.now(); paintLatency();
+          pathMs = value; pathAt = performance.now(); paintLatency();
         };
         ticket = undefined;
         return socket;

@@ -3,8 +3,9 @@
   const protocol = 'cloudssh-rdp-peer-v2', frame = 16 * 1024, limit = 1024 * 1024;
   window.prepareCloudSshPeerCarrier = (address, api, abi, ticket, signal, pathSample) => {
     if (signal.aborted || typeof RTCPeerConnection !== 'function') return Promise.reject(new Error('peer_unavailable'));
-    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }] });
-    let ws;
+    let pc, ws;
+    try { pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }] }); }
+    catch { return Promise.reject(new Error('peer_unavailable')); }
     try { ws = new WebSocket(address, protocol); } catch { pc.close(); return Promise.reject(new Error('peer_failed')); }
     const abort = new AbortController();
     let channel, lease, stage = 'ticket', stopped = false, activated = false, busy = false, renewal, iceTimer, lastActivity = -Infinity, didReport = false;

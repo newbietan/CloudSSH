@@ -6036,6 +6036,16 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 
 html[data-rdp-entry] #app-loading { display: none; }
 .ssh-endpoint-fields[hidden] { display: none; }
+/* Keep the WebRTC action in the connection column, not in a full-width modal row. */
+.rdp-host-group > .ssh-host-field { display: block; }
+.rdp-host-group > .rdp-connector-action:not([hidden]) { margin-top: .375rem; }
+.rdp-connector-action { min-height: 32px; max-width: 100%; padding: .25rem .65rem; font-size: .8125rem; }
+.rdp-connector-action:disabled { opacity: .55; cursor: default; }
+.rdp-connector-details:not([hidden]) { display: flex; flex-wrap: wrap; align-items: center; gap: .375rem .75rem; }
+.rdp-connector-details > p { flex: 1 1 12rem; }
+@media (pointer: coarse), (max-width: 520px) {
+  .rdp-connector-action { min-height: 44px; }
+}
 .rdp-connector-dialog {
   width: min(35rem, calc(100% - 2rem)); max-height: calc(100dvh - 2rem);
   border: 1px solid var(--border-strong); border-radius: 1rem; padding: 1.25rem;

@@ -382,11 +382,11 @@ Every server in a jump relation must belong to the same CloudSSH account. Self-r
 
 RDP is built in for both production and test. It requires HTTPS and a signed-in account; anonymous users and one-time share recipients have no RDP access. It does not provide SFTP, Agent, MCP, jump hosts or one-time shares.
 
-1. Choose **Add Server → Windows Server**. Connector-only mode needs no public IP or inbound port. To configure a fallback, enter a public IPv4/IPv6 address or hostname (including DDNS) and TCP port (default `3389`), or enter a published Cloudflare Tunnel hostname. Keep RDP and NLA enabled on Windows.
+1. Choose **Add Server → Windows Server**. The **Connector** route needs no public IP or inbound port and has no relay fallback. To configure a fallback, enter a public IPv4/IPv6 address or hostname (including DDNS) and TCP port (default `3389`), or enter a published Cloudflare Tunnel hostname. Keep RDP and NLA enabled on Windows.
 2. Enter the Windows username (default `Administrator`), password and optional domain. The login is encrypted in your account. Older devices without credentials must be completed before connecting.
 3. Connect from the card. On first use, verify the Windows certificate’s SHA-256 fingerprint before accepting; a changed pin blocks login. The desktop opens in the same tab. **Back** disconnects without signing out of Windows; **Full screen** scales the entire image below the toolbar without renegotiating resolution.
 
-Choose **Download and link this device** on the setup page. Extract the [device-specific ZIP](docs/rdp-peer.md) on the target Windows PC and run the installer. The service links automatically. No binding code, extra confirmation, or Worker secret is required. Open Desktop prefers WebRTC and silently uses a configured relay if direct setup fails before sign-in. The toolbar shows the chosen path’s RTT and, when available, Windows RDP RTT. See [RDP setup and limits](docs/rdp.md).
+Choose **Download and link this device** on the setup page. Extract the [device-specific ZIP](docs/rdp-peer.md) on the target Windows PC and run the installer. The service links automatically. No binding code, extra confirmation, or Worker secret is required. All three routes can use WebRTC. Open Desktop prefers it and silently uses the configured public TCP or Tunnel relay if direct setup fails before sign-in. The toolbar labels the active delay as **WebRTC** or **Relay**, and shows Windows RDP RTT separately. See [RDP setup and limits](docs/rdp.md).
 
 ##### Connecting via Cloudflare Tunnel
 

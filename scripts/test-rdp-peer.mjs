@@ -1,6 +1,7 @@
 // Explicit opt-in interoperability. No deployment, real account data, public RDP or external ICE.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -17,6 +18,12 @@ const native = process.argv.includes('--native');
 const preview = process.argv.includes('--preview');
 const engine = process.argv.includes('--webkit') ? webkit : chromium;
 const fingerprint = 'b'.repeat(64);
+const route = process.argv.includes('--tunnel') ? 'tunnel' : 'direct';
+const fixture = {
+  name: 'Loopback smoke', route, host: 'rdp.example.com',
+  ...(route === 'tunnel' ? { accessId: 'tunnel-fixture', accessSecret: 'synthetic-service-token' } : { port: 53389 }),
+  login: { username: 'fixture', domain: '', password: 'synthetic' },
+};
 const exe = 'cloudssh-rdp-connector-windows-amd64.exe';
 const bindingName = 'cloudssh-binding.cloudssh-rdp.json';
 const upstream = 'https://github.com/newbietan/CloudSSH/releases/download/rdp-connector-v3/cloudssh-rdp-connector-windows-amd64.zip';
@@ -80,16 +87,21 @@ try {
   };
   const user = await internal('oauth-user', { github_id: 42, username: 'rtc-test', avatar_url: '' });
   browser = await engine.launch();
-  async function client(forceFallback = false) {
+  async function client(fault = '') {
+    const forceFallback = !!fault;
     const { token } = await internal('session/create', { user_id: user.id });
-    const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+    // The workspace's ?lang must also win in the desktop frame, regardless of the browser language.
+    const ctx = await browser.newContext({ ignoreHTTPSErrors: true, locale: 'zh-CN' });
     await ctx.addCookies([{ name: 'session', value: token, url: site, secure: true }]);
     const page = await ctx.newPage(); page.setDefaultTimeout(16000);
     await page.addInitScript(failing => {
       const Native = window.RTCPeerConnection;
       window.RTCPeerConnection = class extends Native {
-        constructor(config) { super({ ...config, iceServers: [] }); }
-        createOffer(...args) { return failing ? Promise.reject(new Error('ICE unavailable fixture')) : super.createOffer(...args); }
+        constructor(config) {
+          if (failing === 'constructor') throw new DOMException('WebRTC disabled fixture', 'NotSupportedError');
+          super({ ...config, iceServers: [] });
+        }
+        createOffer(...args) { return failing === 'offer' ? Promise.reject(new Error('ICE unavailable fixture')) : super.createOffer(...args); }
       };
       const Ws = window.WebSocket;
       window.__wire = { signal: 0, binary: 0, relay: 0, native: 0, events: [] };
@@ -106,7 +118,7 @@ try {
         send(data) { if (new URL(this.url).pathname === '/api/rdp/peer/session' && typeof data !== 'string') window.__wire.binary++; super.send(data); }
         close(...args) { if (new URL(this.url).pathname === '/api/rdp/peer/session') window.__wire.events.push('stop-peer'); super.close(...args); }
       };
-    }, forceFallback);
+    }, fault);
     if (!native) await page.route('**/rdp/assets/sdl-freerdp.js', r => r.fulfill({ contentType: 'text/javascript', body: `const M=window.Module;
       M.FS={mkdirTree(){},writeFile(){}};M.websocket.on=()=>{};M._cloudssh_take_rdp_rtt=()=>-1;
       M.callMain=()=>{window.__wire.native++;const s=M.createRdpSocket(M.websocket.url);let total=0,offset=0,size=16384;
@@ -116,13 +128,29 @@ try {
           const ready=()=>{M.onWindowsFirstFrame();next()};if(decision===1)ready();else if(decision===0){const t=setInterval(()=>{if(M.onWindowsCertificate(null)===1){clearInterval(t);ready()}},20)}};
         s.onmessage=({data})=>{const b=new Uint8Array(data);for(let i=0;i<b.length;i++)if(b[i]!==((total+i)%251))throw Error('corrupt echo');total+=b.length;s.consumed(b.length);if(total===offset){if(total<2097152)next();else document.body.dataset.verified=String(total)}};
       };M.onRuntimeInitialized();` }));
+    let relayPings = 0;
     if (forceFallback) await page.routeWebSocket('**/api/rdp/session', ws => {
-      ws.onMessage(data => {
-        if (typeof data === 'string' && JSON.parse(data).type === 'ticket') ws.send(JSON.stringify({ type: 'ready', lease: '00000002-0000-0000-0000-000000000000', desktopReport: true }));
+      ws.onMessage(async data => {
+        if (typeof data !== 'string') return;
+        const value = JSON.parse(data);
+        if (value.type === 'ping') { relayPings++; ws.send(JSON.stringify({ type: 'pong', id: value.id })); return; }
+        if (value.type !== 'ticket') return;
+        // Claim the real, fresh browser-bound relay ticket, but don't dial an external Windows server.
+        const cookies = await ctx.cookies(site);
+        const key = cookies.find(cookie => cookie.name === '__Host-cloudssh_rdp')?.value;
+        assert.match(key, /^[a-f0-9]{64}$/);
+        const binding = createHash('sha256').update(`${key}\n${token}`).digest('hex');
+        const relay = await internal(`rdp/claim?user_id=${user.id}`, { ticket: value.ticket, binding, supportsDirectPort: true });
+        assert.equal(relay.profile.route, route);
+        assert.equal(relay.profile.host, fixture.host);
+        assert.equal(relay.profile.port, fixture.port);
+        assert.equal(relay.accessId, fixture.accessId);
+        assert.equal(relay.accessSecret, fixture.accessSecret);
+        ws.send(JSON.stringify({ type: 'ready', lease: relay.id, desktopReport: true }));
       });
     });
     await page.goto(site + '/?lang=en-US', { waitUntil: 'domcontentloaded', timeout: 30_000 });
-    return { ctx, page };
+    return { ctx, page, relayPings: () => relayPings };
   }
   async function api(page, path, method = 'GET', data) {
     const response = await page.evaluate(async ({ path, method, data }) => {
@@ -137,7 +165,6 @@ try {
   const config = await api(page, '/api/config');
   assert.equal(config.rdpConnectorEnabled, true);
   assert.equal(config.rdpConnectorPreview === true, preview);
-  const fixture = { name: 'Loopback smoke', route: 'direct', host: 'rdp.example.com', login: { username: 'fixture', domain: '', password: 'synthetic' } };
   const { id, revision } = await api(page, '/api/rdp/profiles', 'POST', fixture), p = `/api/rdp/profiles/${id}`;
   const setup = () => ctx.request.post(site + p + '/connector-setup', {
     headers: { Origin: site, 'X-CloudSSH-RDP-Client': '5' }, data: { revision },
@@ -173,7 +200,7 @@ try {
     await frame.locator('body[data-verified="2097152"]').waitFor({ timeout: 26000 });
     const wire = await inspect(page);
     assert.deepEqual(wire, { signal: 1, binary: 0, relay: 0, native: 1, events: ['peer'] });
-    await page.waitForFunction(() => /RTT \d+ ms/.test(document.querySelector('.rdp-latency')?.textContent || ''), {}, { timeout: 12000 });
+    await page.waitForFunction(() => /^WebRTC \d+ ms · RDP /.test(document.querySelector('.rdp-latency')?.textContent || ''), {}, { timeout: 12000 });
     const typ = (await page.locator('.rdp-latency').getAttribute('title')).match(/(?:host|srflx|prflx) \/ (?:host|srflx|prflx)$/)?.[0];
     assert.ok(typ, 'an actual non-relay candidate pair is required');
     assert.equal((await api(page, p)).fingerprint, fingerprint);
@@ -189,20 +216,26 @@ try {
     await agent.wait('Loopback TCP closed.');
     assert.equal((await api(second.page, p + '/connector')).state, 'online');
     await second.ctx.close();
-    const fallback = await client(true);
+    const fallback = await client(route === 'tunnel' ? 'constructor' : 'offer');
     let transportRequests = [];
     fallback.page.on('request', req => { if (req.url().endsWith('/connect')) transportRequests.push(req.headers()['x-cloudssh-rdp-transport'] || 'relay'); });
     const three = await open(fallback.page);
     await three.locator('body[data-verified="relay"]').waitFor({ timeout: 24000 });
+    await fallback.page.waitForFunction(() => /^Relay \d+ ms · RDP /.test(document.querySelector('.rdp-latency')?.textContent || ''), {}, { timeout: 14000, polling: 200 }).catch(async error => {
+      const meter = await fallback.page.locator('.rdp-latency').textContent();
+      const visibility = await three.locator('body').evaluate(() => document.visibilityState);
+      throw new Error(`Relay latency not shown: meter=${meter}, visibility=${visibility}, pings=${fallback.relayPings()}`, { cause: error });
+    });
     const fb = await inspect(fallback.page);
     assert.deepEqual(transportRequests, ['device', 'relay']);
     assert.equal(fb.native, 1); assert.equal(fb.binary, 0);
     // Playwright's mocked relay socket can bypass the constructor wrapper; the two ordered ticket requests and
     // the started fallback desktop independently prove that route. The real direct socket must have been closed.
-    assert.deepEqual(fb.events.slice(0, 2), ['peer', 'stop-peer']);
+    if (route === 'direct') assert.deepEqual(fb.events.slice(0, 2), ['peer', 'stop-peer']);
+    else assert.ok(!fb.events.includes('peer'), 'no signaling socket when RTC construction is unavailable');
     await api(fallback.page, p + '/connector', 'DELETE');
     assert.equal((await api(fallback.page, p + '/connector')).state, 'unbound');
-    console.log(`${engine.name()}: single ZIP with unchanged EXE → installed key + automatic binding → direct ${typ} / first trust, 2 MiB byte check and renewal → process restart + new login opens without pairing → ICE failure silently falls back with one native start → unlink`);
+    console.log(`${engine.name()}: single ZIP with unchanged EXE → installed key + automatic binding → direct ${typ} / first trust, 2 MiB byte check and renewal → process restart + new login opens without pairing → failed WebRTC setup silently uses saved ${route} relay with one native start and Relay latency → unlink`);
   }
 } finally {
   await agent?.stop();
