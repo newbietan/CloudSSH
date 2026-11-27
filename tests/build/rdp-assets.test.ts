@@ -8,8 +8,14 @@ import { RDP_CLIENT_REVISION, RDP_CONNECT_REVISION } from '../../src/rdp-schema'
 const root = new URL('../../src/worker/rdp-client/vendor/', import.meta.url);
 const asset = (file: string) => readFileSync(new URL(file, root));
 const sha = (value: Buffer) => createHash('sha256').update(value).digest('hex');
+const upstream = 'https://github.com/FreeRDP/FreeRDP';
 
 describe('bundled FreeRDP client', () => {
+  it.each(['README.md', 'README_en.md'])('%s credits the upstream repository', (file) => {
+    const readme = readFileSync(new URL(`../../${file}`, import.meta.url), 'utf8');
+    expect(readme).toContain(`[FreeRDP](${upstream})`);
+  });
+
   it('requires the new connect-only ABI without rotating trust or peer renewal', () => {
     const bootstrap = asset('../desktop.rdp-text').toString();
     expect(bootstrap).toContain(`const clientRevision = '${RDP_CLIENT_REVISION}'`);
@@ -28,7 +34,9 @@ describe('bundled FreeRDP client', () => {
       glue: sha(glue), wasm: sha(wasm), licenses: sha(licenses),
     });
     expect(JSON.parse(asset('client-tags.rdp-text').toString())).toEqual([sha(glue), sha(raw)]);
-    expect(licenses.toString()).toContain('65bcca1913a28cbdd7eb913599f692bd2b707991');
+    expect(licenses.toString()).toContain(
+      `${upstream}/tree/65bcca1913a28cbdd7eb913599f692bd2b707991`,
+    );
     expect(glue.toString()).toContain('Module["createRdpSocket"](url)');
     expect(glue.toString()).toContain('.socket.consumed(bytesRead)');
     expect(glue.toString()).toContain('pthreadPoolSize=4;');
