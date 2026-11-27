@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.13.1] - 2026-11-27
+
+### Added
+
+- **MCP 个人密钥轮换**：已配置的账户可在「外部 AI 助手 MCP 设置」中手动轮换。旧密钥立即失效，没有宽限期；服务器权限、Cloudflare Access Service Token 和操作记录不变。轮换后请重新复制配置并更新所有客户端。无须数据库迁移，详见 [MCP 指南](docs/mcp.md)。
+
+### Changed
+
+- **MCP 配置导出**：移除「查看配置」和明文预览，仅在用户明确点击「复制 MCP 配置」时读取凭据。
+- **设置保存状态**：编辑已有设置时，未修改或改回原值都会禁用保存按钮，不发送重复保存请求；新建流程不变。
+- **分享弹窗**：精简链接是临时访问凭证的提示，保留创建前的主机指纹校验。
+
+### Fixed
+
+- **MCP 操作日志筛选栏**：窄屏或放大字号时，「服务器」标签保持完整单行，空间不足时筛选控件换行。
+
 ## [2.13.0] - 2026-11-26
 
 ### Added
