@@ -181,6 +181,8 @@ export class ServerList {
   private disposed = false;
   private modalKind: 'ssh' | 'rdp' = 'ssh';
   private rdpSaving = false;
+  private sshSaving = false;
+  private savedSshForm: string | null = null;
   private listState = {
     ssh: { generation: 0, loaded: false, failed: false, pending: false },
     rdp: { generation: 0, loaded: false, failed: false, pending: false },
@@ -223,7 +225,7 @@ export class ServerList {
     if (config.rdpEnabled === true && fields) {
       if (config.rdpConnectorEnabled === true) this.rdpConnector = new RdpConnectorSetup(
         id => { if (!this.disposed) this.openRdp?.(id); }, () => { void this.fetchRdpProfiles(); }, config.rdpConnectorPreview === true);
-      this.rdp = new RdpManager(fields, () => this.syncRdpSubmit(), !!this.rdpConnector,
+      this.rdp = new RdpManager(fields, () => this.syncModalSubmit(), !!this.rdpConnector,
         row => { if (!this.disposed) this.rdpConnector?.open(row, false); });
     }
     try {
@@ -399,8 +401,12 @@ export class ServerList {
       }
     });
 
-    // Modal 提交
-    document.getElementById('server-form')?.addEventListener('submit', (event) => {
+    // Modal 提交与当前表单状态。RDP 字段由 RdpManager 同步。
+    const form = document.getElementById('server-form');
+    for (const event of ['input', 'change']) form?.addEventListener(event, () => {
+      if (this.modalKind === 'ssh') this.syncModalSubmit();
+    }, { signal: this.modalEvents.signal });
+    form?.addEventListener('submit', (event) => {
       event.preventDefault();
       if (this.disposed) return;
       if (this.modalKind === 'rdp') void this.saveRdp();
@@ -1039,16 +1045,48 @@ export class ServerList {
     document.getElementById('server-kind-windows')?.setAttribute('aria-pressed', String(kind === 'rdp'));
     const fields = document.querySelector<HTMLElement>('#server-modal .server-modal-fields');
     if (fields) fields.scrollTop = 0;
-    this.syncRdpSubmit();
+    this.syncModalSubmit();
     if (!focus) return;
     if (kind === 'rdp') this.rdp?.focus();
     else document.getElementById('server-name')?.focus({ preventScroll: true });
   }
 
-  private syncRdpSubmit(): void {
-    if (this.disposed || this.modalKind !== 'rdp' || !this.rdp) return;
+  private sshFormSnapshot(): string {
+    const value = (id: string) => (document.getElementById(id) as HTMLInputElement | null)?.value ?? '';
+    const tunnel = this.modalTransportMode === 'cf_tunnel';
+    const jump = tunnel ? '' : value('server-jump-host');
+    const mode = this.modalAuthMode;
+    // Compare the effective draft, not hidden fields or the previous secret's placeholder.
+    // Secret replacements count as a change without retaining their contents in the baseline.
+    return JSON.stringify({
+      name: value('server-name').trim(),
+      host: value('server-host').trim(),
+      port: tunnel ? null : parsePort(value('server-port')),
+      username: value('server-username').trim(),
+      tags: normalizeTagsInput(value('server-tags')),
+      region: jump ? '' : value('server-region'),
+      transport: this.modalTransportMode,
+      jump,
+      mode,
+      team: mode === 'cf_ca' ? value('server-cf-ca-team').trim().toLowerCase() : '',
+      clientId: tunnel ? value('server-cf-client-id').trim() : '',
+      replaceSecret: tunnel && (!!value('server-cf-client-secret').trim() || this.clearCfAccessClientSecret),
+      replaceLogin: mode === 'key' ? value('server-private-key') !== '' : mode === 'password' && (
+        value('server-password') !== '' || document.querySelector<HTMLInputElement>('#server-empty-password')?.checked === true
+      ),
+    });
+  }
+
+  private hasSshChanges(): boolean {
+    return this.savedSshForm === null || this.sshFormSnapshot() !== this.savedSshForm;
+  }
+
+  private syncModalSubmit(): void {
+    if (this.disposed) return;
     const submit = document.querySelector<HTMLButtonElement>('#server-submit-btn');
-    if (submit) submit.disabled = this.rdpSaving || !this.rdp.canSubmit;
+    if (submit) submit.disabled = this.modalKind === 'rdp'
+      ? this.rdpSaving || !this.rdp?.canSubmit
+      : this.sshSaving || !this.hasSshChanges();
   }
 
   private async saveRdp(): Promise<void> {
@@ -1070,7 +1108,7 @@ export class ServerList {
     } finally {
       if (generation === this.modalGeneration) {
         this.rdpSaving = false;
-        this.syncRdpSubmit();
+        this.syncModalSubmit();
       }
     }
   }
@@ -1080,7 +1118,8 @@ export class ServerList {
   showModal(mode: 'add' | 'edit' | 'clone', server?: ServerConfig): void {
     if (this.disposed) return;
     this.modalGeneration++;
-    this.rdpSaving = false;
+    this.rdpSaving = this.sshSaving = false;
+    this.savedSshForm = null;
     this.rdp?.reset();
     this.setModalKind('ssh', false);
     document.getElementById('server-kind-switch')?.classList.toggle('hidden', !this.rdp || mode !== 'add');
@@ -1093,7 +1132,6 @@ export class ServerList {
     const title = document.getElementById('modal-title');
     const submitBtn = document.getElementById('server-submit-btn');
     if (!modal || !title || !submitBtn) return;
-    (submitBtn as HTMLButtonElement).disabled = false;
     (document.getElementById('server-empty-password') as HTMLInputElement).checked = false;
 
     const titleKey = mode === 'add' ? 'server.add' : mode === 'clone' ? 'server.cloneTitle' : 'server.edit';
@@ -1216,6 +1254,8 @@ export class ServerList {
     }
 
     this.updateRegionControls();
+    if (this.editingServerId !== null) this.savedSshForm = this.sshFormSnapshot();
+    this.syncModalSubmit();
 
     modal.classList.remove('hidden');
     modal.classList.add('flex');
@@ -1232,7 +1272,8 @@ export class ServerList {
     this.resetKeyPicker?.();
     const key = document.querySelector<HTMLTextAreaElement>('#server-private-key');
     if (key) key.value = '';
-    this.rdpSaving = false;
+    this.rdpSaving = this.sshSaving = false;
+    this.savedSshForm = null;
     this.rdp?.reset();
     const modal = document.getElementById('server-modal');
     if (modal) {
@@ -1282,6 +1323,7 @@ export class ServerList {
     hostField?.classList.toggle('ssh-host-field-wide', isTunnel);
 
     this.updateRegionControls();
+    this.syncModalSubmit();
   }
 
   private setCfAccessFieldsOpen(open: boolean): void {
@@ -1311,6 +1353,7 @@ export class ServerList {
     if (clearBtn) {
       clearBtn.classList.add('hidden');
     }
+    this.syncModalSubmit();
   }
 
   private setModalAuthMode(mode: 'password' | 'key' | 'none' | 'cf_ca'): void {
@@ -1338,6 +1381,7 @@ export class ServerList {
     document.getElementById('server-password-hint')!.classList.toggle('hidden', !editingPassword);
     if (editingPassword) password.setAttribute('aria-describedby', 'server-password-hint');
     else password.removeAttribute('aria-describedby');
+    this.syncModalSubmit();
   }
 
   private getJumpPath(server: ServerConfig): string[] {
@@ -1436,7 +1480,7 @@ export class ServerList {
   private async handleSubmit(): Promise<void> {
     const generation = this.modalGeneration;
     const editingServerId = this.editingServerId;
-    if ((document.getElementById('server-submit-btn') as HTMLButtonElement).disabled) return;
+    if (this.sshSaving || !this.hasSshChanges()) return;
     const name = (document.getElementById('server-name') as HTMLInputElement).value.trim();
     const host = (document.getElementById('server-host') as HTMLInputElement).value.trim();
     const portInput = document.getElementById('server-port') as HTMLInputElement;
@@ -1548,7 +1592,7 @@ export class ServerList {
     }
 
     const submitBtn = document.getElementById('server-submit-btn') as HTMLButtonElement;
-    submitBtn.disabled = true;
+    this.sshSaving = submitBtn.disabled = true;
     submitBtn.innerHTML = `
       <span class="material-symbols-outlined animate-spin" style="font-size: 18px;">progress_activity</span>
       ${t('server.saving')}
@@ -1630,6 +1674,10 @@ export class ServerList {
       }
 
       const responseData = await readApiJson<ServerSaveResponse>(res, 'api.requestFailed');
+      if (generation !== this.modalGeneration || this.disposed) {
+        if (!this.disposed) await this.fetchServers();
+        return;
+      }
       const debugLines = Array.isArray(responseData._debug)
         ? responseData._debug.filter((line): line is string => typeof line === 'string')
         : null;
@@ -1675,14 +1723,17 @@ export class ServerList {
       this.hideModal();
       await this.fetchServers();
     } catch (e) {
-      notify(e instanceof Error ? e.message : String(e), {
-        title: t('feedback.danger'),
-        variant: 'danger',
-      });
+      if (generation === this.modalGeneration && !this.disposed) {
+        notify(e instanceof Error ? e.message : String(e), {
+          title: t('feedback.danger'),
+          variant: 'danger',
+        });
+      }
     } finally {
       // An old unlock/save must never mutate a subsequently opened editor's controls.
       if (generation === this.modalGeneration) {
-        submitBtn.disabled = false;
+        this.sshSaving = false;
+        this.syncModalSubmit();
         submitBtn.innerHTML = `
           <span class="material-symbols-outlined" style="font-size: 18px;">save</span>
           ${this.editingServerId ? t('server.update') : t('server.save')}

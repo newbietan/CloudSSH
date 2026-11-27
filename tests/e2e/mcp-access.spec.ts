@@ -1,6 +1,6 @@
 import { expect, test, type Page } from './fixtures';
 import AxeBuilder from '@axe-core/playwright';
-import { revealMcpGrant } from './helpers';
+import { mcpCopies, mockMcpClipboard, revealMcpGrant } from './helpers';
 const server = { id: 1, user_id: 1, name: 'Access test server', host: 'ssh.example.com', port: 22,
   username: 'deploy', auth_method: 'password', tags: [], os: null, created_at: '', updated_at: '' };
 const token = 'SAVED-ACCOUNT-TOKEN'; const clientId = 'SERVICE-ID.access'; const secret = 'SERVICE-SECRET';
@@ -27,6 +27,7 @@ async function setup(page: Page, mode: 'cf_access' | 'password' = 'cf_access') {
     state.exports++; return route.fulfill({ json: { token, ...(state.access ? { access: state.access } : {}) } });
   });
   await page.route('**/api/mcp/activity', route => route.request().method() === 'GET' ? route.fulfill({ json: [] }) : route.fallback());
+  await mockMcpClipboard(page);
   return state;
 }
 async function open(page: Page) {
@@ -52,13 +53,16 @@ test('Access credentials are explicitly saved with the unique account configurat
   expect(state.writes[0]).toEqual({ grants: [{ serverId: 1, scopes: ['read'] }], access: { clientId, clientSecret: secret } });
   await expect(page.locator('#mcp-access-client-secret')).toHaveValue('');
   await expect(page.locator('#mcp-access-guide')).not.toHaveAttribute('open', ''); expect(state.exports).toBe(0);
-  await page.locator('#mcp-view-config').click();
-  const config = JSON.parse(await page.locator('#mcp-client-config').inputValue());
+  await page.locator('#mcp-copy-config').click();
+  await expect.poll(async () => (await mcpCopies(page)).length).toBe(1);
+  const [text] = await mcpCopies(page);
+  const config = JSON.parse(text);
   expect(config.mcpServers.cloudssh.headers).toEqual({ Authorization: `Bearer ${token}`, 'CF-Access-Client-Id': clientId, 'CF-Access-Client-Secret': secret });
   await page.locator('#mcp-dialog').getByRole('button', { name: 'Close', exact: true }).click(); await open(page);
-  await expect(page.locator('#mcp-client-config')).toHaveCount(0);
+  expect(state.exports).toBe(1);
   await expect(page.locator('#mcp-access-guide')).not.toHaveAttribute('open', '');
-  await page.locator('#mcp-view-config').click(); await expect(page.locator('#mcp-client-config')).toHaveValue(new RegExp(secret));
+  await page.locator('#mcp-copy-config').click();
+  await expect.poll(() => mcpCopies(page)).toEqual([text, text]);
   await revealMcpGrant(page, 1);
   await page.locator('input[data-server-id="1"][value="context"]').check(); await page.locator('#mcp-save-config').click();
   await expect.poll(() => state.writes.length).toBe(2);

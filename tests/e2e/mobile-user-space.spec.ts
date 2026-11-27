@@ -249,3 +249,40 @@ test('移动端用户空间提供自定义快捷键入口且桌面端隐藏', as
   await page.setViewportSize({ width: 1280, height: 800 });
   await expect(mobileShortcutBtn).toBeHidden();
 });
+
+test('移动快捷键仅在实际修改顺序或内容后允许保存', async ({ page }) => {
+  const shortcuts = [{ id: 'escape', type: 'key', label: 'Esc' }, { id: 'delete', type: 'key', label: 'Del' }];
+  const writes: unknown[] = [];
+  await page.route('**/api/user/mobile-shortcuts', route => {
+    const method = route.request().method();
+    if (method === 'GET') return route.fulfill({ json: { shortcuts } });
+    if (method !== 'PUT') return route.fallback();
+    writes.push(route.request().postDataJSON());
+    return route.fulfill({ json: { success: true } });
+  });
+  const loaded = page.waitForResponse(response => response.url().endsWith('/api/user/mobile-shortcuts'));
+  await page.goto('/?lang=zh-CN');
+  await loaded;
+  await page.locator('#user-space-more-btn').click();
+  await page.locator('#mobile-shortcuts-config-btn').click();
+  const modal = page.locator('#mobile-shortcuts-modal');
+  const chips = modal.locator('.mobile-shortcut-active-chip');
+  const moveFirstRight = chips.first().locator('.mobile-shortcut-chip-controls button').nth(1);
+  const save = modal.locator('#mobile-shortcuts-save-btn');
+  await expect(chips).toHaveCount(2);
+  await expect(save).toBeDisabled();
+  await moveFirstRight.click();
+  await expect(save).toBeEnabled();
+  await moveFirstRight.click();
+  await expect(save).toBeDisabled();
+  await modal.locator('#mobile-shortcut-custom-label').fill('Tmp');
+  await expect(save).toBeDisabled();
+  expect(writes).toEqual([]);
+  await moveFirstRight.click();
+  await save.click();
+  await expect(modal).toBeHidden();
+  expect(writes).toEqual([{ shortcuts: [...shortcuts].reverse() }]);
+  await page.locator('#user-space-more-btn').click();
+  await page.locator('#mobile-shortcuts-config-btn').click();
+  await expect(save).toBeDisabled();
+});

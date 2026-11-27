@@ -23,6 +23,21 @@ type ConfigRow = {
 };
 type Crypt = (value: string, userId: number) => Promise<string>;
 
+export class McpConfigError extends Error {
+  constructor(readonly code: 'mcp_config_changed' | 'mcp_not_configured') {
+    super(code);
+  }
+}
+
+function newMcpToken(routeKey: string): string {
+  const secret = [...crypto.getRandomValues(new Uint8Array(32))]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  const token = `mcp_${routeKey}:${secret}`;
+  if (!mcpTokenRoute(token)) throw new Error('invalid_identity');
+  return token;
+}
+
 /** One encrypted configuration per owner; operation summaries never contain payloads. */
 export class McpStore {
   private creating = new Map<number, Promise<McpConfigInfo>>();
@@ -153,11 +168,7 @@ export class McpStore {
     this.owned(value.grants, userId);
     if (modeTag === 'cf_access' && !value.access) throw new Error('access_required');
     if (modeTag !== 'cf_access' && value.access) throw new Error('invalid_access');
-    const secret = [...crypto.getRandomValues(new Uint8Array(32))]
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-    const token = 'mcp_' + routeKey + ':' + secret;
-    if (!mcpTokenRoute(token)) throw new Error('invalid_identity');
+    const token = newMcpToken(routeKey);
     const credentials: McpSavedCredentials = {
       token,
       ...(value.access ? { access: value.access } : {}),
@@ -211,18 +222,64 @@ export class McpStore {
         );
       }
       this.owned(value.grants, userId);
-      this.sql.exec(
-        'UPDATE mcp_configs SET grants = ?, credentials_enc = ?, has_access = ?, mode_tag = ? WHERE user_id = ?',
+      const updated = this.sql.exec(
+        `UPDATE mcp_configs SET grants = ?, credentials_enc = ?, has_access = ?, mode_tag = ?
+         WHERE user_id = ? AND route_key = ? AND id = ? AND credentials_enc = ? AND mode_tag = ?
+         RETURNING id`,
         JSON.stringify(value.grants),
         encrypted,
         value.access ? 1 : row.has_access,
         modeTag,
-        userId
-      );
+        userId,
+        routeKey,
+        row.id,
+        row.credentials_enc,
+        row.mode_tag
+      ).toArray();
+      // Async Access encryption must not restore the token from an older generation.
+      if (!updated.length) throw new McpConfigError('mcp_config_changed');
       return this.get(userId, routeKey, modeTag);
     } finally {
       this.updating = false;
     }
+  }
+  async rotate(
+    userId: number,
+    routeKey: string,
+    modeTag: string,
+    expectedId: string
+  ): Promise<{ id: string; previousId: string }> {
+    const row = this.row(userId);
+    if (!row) throw new McpConfigError('mcp_not_configured');
+    if (row.route_key !== routeKey) throw new Error('invalid_identity');
+    if (row.id !== expectedId) throw new McpConfigError('mcp_config_changed');
+    const { access } = JSON.parse(await this.decrypt(row.credentials_enc, userId)) as McpSavedCredentials;
+    if (modeTag === 'cf_access' && !access) throw new Error('access_required');
+    const token = newMcpToken(routeKey);
+    const [digest, encrypted] = await Promise.all([
+      mcpHash(token),
+      this.encrypt(JSON.stringify({ token, ...(access ? { access } : {}) }), userId),
+    ]);
+    if (digest === row.token_hash) throw new Error('token_collision');
+    const id = crypto.randomUUID();
+    // Switch authentication and execution-pool generation together. Match the original
+    // ciphertext as well: a concurrent Access credential edit doesn't change the ID.
+    const updated = this.sql.exec(
+      `UPDATE mcp_configs SET id = ?, token_hash = ?, credentials_enc = ?, mode_tag = ?
+       WHERE user_id = ? AND route_key = ? AND id = ? AND credentials_enc = ? AND mode_tag = ?
+       RETURNING id`,
+      id,
+      digest,
+      encrypted,
+      modeTag,
+      userId,
+      routeKey,
+      row.id,
+      row.credentials_enc,
+      row.mode_tag
+    ).toArray();
+    if (!updated.length) throw new McpConfigError('mcp_config_changed');
+    return { id, previousId: row.id };
   }
   async credentials(
     userId: number,
@@ -235,9 +292,15 @@ export class McpStore {
     const value = JSON.parse(
       await this.decrypt(row.credentials_enc, userId)
     ) as McpSavedCredentials;
-    // Explicit authenticated POST copy/view can rebind after password rotation; GET never mutates.
-    if (row.mode_tag !== modeTag)
-      this.sql.exec('UPDATE mcp_configs SET mode_tag = ? WHERE user_id = ?', modeTag, userId);
+    const current = this.row(userId);
+    if (
+      !current || current.route_key !== routeKey || current.id !== row.id ||
+      current.credentials_enc !== row.credentials_enc ||
+      (current.mode_tag !== row.mode_tag && current.mode_tag !== modeTag)
+    ) throw new McpConfigError('mcp_config_changed');
+    // Explicit authenticated POST copy can rebind after password rotation; GET never mutates.
+    if (current.mode_tag !== modeTag)
+      this.sql.exec('UPDATE mcp_configs SET mode_tag = ? WHERE user_id = ? AND id = ?', modeTag, userId, row.id);
     return {
       token: value.token,
       ...(modeTag === 'cf_access' && value.access ? { access: value.access } : {}),

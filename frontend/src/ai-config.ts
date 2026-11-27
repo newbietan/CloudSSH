@@ -9,19 +9,39 @@ export class AIConfigPanel {
   private modalEl: HTMLElement | null = null;
   private hasConfiguredKey = false;
   private savedBaseUrl = '';
+  private savedModel: string | null = null;
+  private generation = 0;
+  private loadingConfig = false;
+  private savingConfig = false;
   private loadedModels: Array<{ id: string } & Partial<AIModelBudgets>> = [];
   private isDropdownOpen = false;
   private outsideClickListener: ((e: MouseEvent) => void) | null = null;
 
   show(): void {
     if (!this.modalEl) this.render();
+    const generation = ++this.generation;
+    this.setConfigLoading(true);
+    this.savingConfig = false;
+    this.savedModel = null;
     this.closeDropdown();
+    this.clearStatus();
+    this.modalEl!.querySelectorAll<HTMLInputElement>('#ai-base-url, #ai-model, #ai-api-key')
+      .forEach(input => { input.value = ''; });
+    const hint = this.modalEl!.querySelector<HTMLElement>('#ai-key-hint');
+    if (hint) delete hint.dataset.last4;
+    this.modalEl!.querySelector('#ai-fetch-status')?.classList.add('hidden');
+    this.updateKeyHint();
+    this.updateClearButtonVisibility();
+    this.syncSaveButton();
     this.modalEl!.classList.remove('hidden');
-    void this.loadConfig();
+    void this.loadConfig(generation);
   }
 
   hide(): void {
+    this.generation++;
     this.closeDropdown();
+    const key = this.modalEl?.querySelector<HTMLInputElement>('#ai-api-key');
+    if (key) key.value = '';
     this.modalEl?.classList.add('hidden');
   }
 
@@ -138,6 +158,12 @@ export class AIConfigPanel {
       .querySelector('#ai-fetch-models-btn')
       ?.addEventListener('click', () => this.fetchModels());
     this.modalEl.querySelector('#ai-save-btn')?.addEventListener('click', () => this.saveConfig());
+    const form = this.modalEl.querySelector('#ai-config-form');
+    for (const event of ['input', 'change']) form?.addEventListener(event, () => this.syncSaveButton());
+    form?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      void this.saveConfig();
+    });
 
     this.setupComboboxEvents();
   }
@@ -181,6 +207,7 @@ export class AIConfigPanel {
       if (inputEl) {
         inputEl.value = '';
         this.updateClearButtonVisibility();
+        this.syncSaveButton();
         this.clearStatus();
         inputEl.focus();
         if (this.loadedModels.length > 0) {
@@ -225,7 +252,7 @@ export class AIConfigPanel {
     const currentBaseUrl = baseUrlEl?.value.trim() || '';
     const hasApiKeyInput = Boolean(apiKeyEl?.value.trim());
 
-    if (this.hasConfiguredKey && this.savedBaseUrl && !hasApiKeyInput) {
+    if (!this.loadingConfig && this.hasConfiguredKey && this.savedBaseUrl && !hasApiKeyInput) {
       if (!this.isSameBaseUrl(currentBaseUrl, this.savedBaseUrl)) {
         hintEl.textContent = t('aiConfig.urlChangedKeyRequired');
         hintEl.className = 'text-[10px] text-[var(--accent-secondary)] mt-1';
@@ -362,6 +389,7 @@ export class AIConfigPanel {
       if (inputEl) {
         inputEl.value = modelId;
         this.updateClearButtonVisibility();
+        this.syncSaveButton();
         this.clearStatus();
         inputEl.focus();
       }
@@ -378,30 +406,69 @@ export class AIConfigPanel {
     successEl?.classList.add('hidden');
   }
 
-  private async loadConfig(): Promise<void> {
+  private readDraft() {
+    const value = (id: string) => this.modalEl?.querySelector<HTMLInputElement>(id)?.value.trim() ?? '';
+    return { baseUrl: value('#ai-base-url'), model: value('#ai-model'), apiKey: value('#ai-api-key') };
+  }
+
+  private hasChanges({ baseUrl, model, apiKey } = this.readDraft()): boolean {
+    return this.savedModel === null || model !== this.savedModel || !!apiKey ||
+      !this.isSameBaseUrl(baseUrl, this.savedBaseUrl);
+  }
+
+  private syncSaveButton(): void {
+    const button = this.modalEl?.querySelector<HTMLButtonElement>('#ai-save-btn');
+    if (button) button.disabled = this.loadingConfig || this.savingConfig || !this.hasChanges();
+  }
+
+  private setConfigLoading(loading: boolean): void {
+    this.loadingConfig = loading;
+    this.modalEl?.querySelectorAll<HTMLButtonElement>('#ai-fetch-models-btn, #ai-model-dropdown-btn')
+      .forEach(button => { button.disabled = loading; });
+    this.syncSaveButton();
+  }
+
+  private async loadConfig(generation: number): Promise<void> {
     try {
-      const res = await fetch('/api/ai/config');
-      if (res.ok) {
-        const data = (await res.json()) as any;
-        if (data.configured) {
-          const baseUrlEl = this.modalEl?.querySelector('#ai-base-url') as HTMLInputElement;
-          const modelEl = this.modalEl?.querySelector('#ai-model') as HTMLInputElement;
-          const hintEl = this.modalEl?.querySelector<HTMLElement>('#ai-key-hint');
-          if (baseUrlEl) baseUrlEl.value = data.base_url || '';
-          if (modelEl) modelEl.value = data.model || '';
-          this.savedBaseUrl = data.base_url || '';
-          this.hasConfiguredKey = Boolean(data.api_key_last4);
-          if (hintEl) hintEl.dataset.last4 = data.api_key_last4 || '';
-          this.updateKeyHint();
-          this.updateClearButtonVisibility();
-        }
+      const res = await fetch('/api/ai/config', { cache: 'no-store', signal: AbortSignal.timeout(10_000) });
+      if (!res.ok) throw new Error('config_load_failed');
+      const data = (await res.json()) as any;
+      if (generation !== this.generation) return;
+      if (!data.configured) {
+        this.clearSavedConfig();
+        return;
       }
+      const baseUrlEl = this.modalEl?.querySelector<HTMLInputElement>('#ai-base-url');
+      const modelEl = this.modalEl?.querySelector<HTMLInputElement>('#ai-model');
+      const hintEl = this.modalEl?.querySelector<HTMLElement>('#ai-key-hint');
+      const baseUrl = data.base_url || '';
+      if (!this.isSameBaseUrl(this.savedBaseUrl, baseUrl)) this.loadedModels = [];
+      this.savedBaseUrl = baseUrl;
+      if (baseUrlEl) baseUrlEl.value = baseUrl;
+      if (modelEl) modelEl.value = data.model || '';
+      this.savedModel = modelEl?.value.trim() ?? '';
+      this.hasConfiguredKey = Boolean(data.api_key_last4);
+      if (hintEl) hintEl.dataset.last4 = data.api_key_last4 || '';
+      this.updateKeyHint();
+      this.updateClearButtonVisibility();
     } catch {
-      /* AI 配置加载为可选功能，解析失败保持默认即可 */
+      if (generation === this.generation) this.clearSavedConfig();
+    } finally {
+      if (generation === this.generation) this.setConfigLoading(false);
     }
   }
 
+  private clearSavedConfig(): void {
+    this.savedBaseUrl = '';
+    this.savedModel = null;
+    this.hasConfiguredKey = false;
+    this.loadedModels = [];
+    this.updateKeyHint();
+  }
+
   private async fetchModels(): Promise<void> {
+    if (this.loadingConfig) return;
+    const generation = this.generation;
     const baseUrlEl = this.modalEl?.querySelector('#ai-base-url') as HTMLInputElement;
     const apiKeyEl = this.modalEl?.querySelector('#ai-api-key') as HTMLInputElement;
     const modelEl = this.modalEl?.querySelector('#ai-model') as HTMLInputElement;
@@ -449,6 +516,7 @@ export class AIConfigPanel {
       });
 
       const data = (await res.json()) as any;
+      if (generation !== this.generation || !this.isSameBaseUrl(this.readDraft().baseUrl, root)) return;
 
       if (data.error) {
         this.showFetchStatus(data.code ? responseErrorMessage(data.code) : data.error, true);
@@ -472,6 +540,7 @@ export class AIConfigPanel {
           if (modelEl) modelEl.value = '';
         }
         this.updateClearButtonVisibility();
+        this.syncSaveButton();
         this.showFetchStatus(t('aiConfig.modelsLoaded', { count: modelIds.length }), false);
         // 拉取成功后自动展开全量模型下拉菜单，并将焦点移到输入框
         this.openDropdown(true);
@@ -480,14 +549,14 @@ export class AIConfigPanel {
         this.showFetchStatus(t('aiConfig.modelsLoaded', { count: 0 }), false);
       }
     } catch (e) {
-      this.showFetchStatus(
+      if (generation === this.generation) this.showFetchStatus(
         t('aiConfig.loadFailed', {
           message: e instanceof Error ? e.message : t('aiConfig.networkError'),
         }),
         true
       );
     } finally {
-      if (fetchBtn) fetchBtn.disabled = false;
+      if (generation === this.generation && fetchBtn) fetchBtn.disabled = false;
     }
   }
 
@@ -500,13 +569,12 @@ export class AIConfigPanel {
   }
 
   private async saveConfig(): Promise<void> {
-    const baseUrlEl = this.modalEl?.querySelector('#ai-base-url') as HTMLInputElement | null;
-    const apiKeyEl = this.modalEl?.querySelector('#ai-api-key') as HTMLInputElement | null;
-    const modelEl = this.modalEl?.querySelector('#ai-model') as HTMLInputElement | null;
-
-    let baseUrl = baseUrlEl?.value.trim() || '';
-    const apiKey = apiKeyEl?.value.trim() || '';
-    const model = modelEl?.value.trim() || '';
+    const draft = this.readDraft();
+    if (this.loadingConfig || this.savingConfig || !this.hasChanges(draft)) return;
+    const generation = this.generation;
+    const apiKeyEl = this.modalEl?.querySelector<HTMLInputElement>('#ai-api-key');
+    const { model, apiKey } = draft;
+    let { baseUrl } = draft;
 
     const errorEl = this.modalEl?.querySelector('#ai-config-error') as HTMLElement;
     const successEl = this.modalEl?.querySelector('#ai-config-success') as HTMLElement;
@@ -533,6 +601,8 @@ export class AIConfigPanel {
     }
 
     const matched = this.loadedModels.find(item => item.id === model);
+    this.savingConfig = true;
+    this.syncSaveButton();
     try {
       const body: { base_url: string; model: string; api_key?: string;
         provider_context_window?: number; provider_max_output_tokens?: number } = {
@@ -549,26 +619,34 @@ export class AIConfigPanel {
         body: JSON.stringify(body),
       });
 
+      if (generation !== this.generation) return;
       if (res.ok) {
         this.hasConfiguredKey = true;
         this.savedBaseUrl = baseUrl;
-        if (apiKeyEl) apiKeyEl.value = '';
+        this.savedModel = model;
+        if (apiKeyEl?.value.trim() === apiKey) apiKeyEl.value = '';
+        this.updateKeyHint();
         if (successEl) {
           successEl.textContent = t('aiConfig.saved');
           successEl.classList.remove('hidden');
         }
-        setTimeout(() => this.hide(), 1500);
+        setTimeout(() => { if (generation === this.generation && !this.hasChanges()) this.hide(); }, 1500);
       } else {
         const data = (await res.json()) as any;
-        if (errorEl) {
+        if (generation === this.generation && errorEl) {
           errorEl.textContent = data.code ? responseErrorMessage(data.code) : data.error || t('feedback.danger');
           errorEl.classList.remove('hidden');
         }
       }
     } catch {
-      if (errorEl) {
+      if (generation === this.generation && errorEl) {
         errorEl.textContent = t('aiConfig.networkError');
         errorEl.classList.remove('hidden');
+      }
+    } finally {
+      if (generation === this.generation) {
+        this.savingConfig = false;
+        this.syncSaveButton();
       }
     }
   }
