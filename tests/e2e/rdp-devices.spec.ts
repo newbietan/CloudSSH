@@ -434,7 +434,7 @@ test('the themed workspace stays in the current tab and a saved login is release
   });
   await page.route(`**/rdp/${id}/client`, r => r.fulfill({ contentType: 'text/html', headers: isolation, body: asset('index') }));
   await page.route('**/rdp/assets/desktop.js', r => r.fulfill({ contentType: 'text/javascript', body: asset('desktop') }));
-  await page.route('**/rdp/assets/rdp-socket.js', r => r.fulfill({ contentType: 'text/javascript', body: `window.createCloudSshRdpSocket = () => ({ probe() { this.onRelayRtt(24); }, reportDesktopReady() { this.onDesktopRecorded(); }, close() { sessionStorage.setItem('test-rdp-closed', 'yes'); } })` }));
+  await page.route('**/rdp/assets/rdp-socket.js', r => r.fulfill({ contentType: 'text/javascript', body: `window.createCloudSshRdpSocket = () => ({ probe() { this.onRelayRtt(24); }, takeReceiveBacklog() { return 8192; }, reportDesktopReady() { this.onDesktopRecorded(); }, close() { sessionStorage.setItem('test-rdp-closed', 'yes'); } })` }));
   await page.route('**/rdp/assets/sdl-freerdp.wasm', r => r.fulfill({ contentType: 'application/wasm', body: Buffer.from([0,97,115,109,1,0,0,0]) }));
   await page.route('**/rdp/assets/sdl-freerdp.js', r => r.fulfill({ contentType: 'text/javascript', body: `
     const m = window.Module;
@@ -517,8 +517,10 @@ test('the themed workspace stays in the current tab and a saved login is release
   // Measure the initial viewport at callMain, not after the status line changes on first paint.
   await expect(frame.locator('html')).toHaveAttribute('data-size', (await frame.locator('html').getAttribute('data-initial-viewport'))!);
   await expect(frame.locator('form,input,#connect')).toHaveCount(0);
-  await expect(workspace.locator('header .rdp-latency')).toHaveText('Relay 24 ms · RDP 83 ms');
-  await expect(workspace.locator('header .rdp-latency')).toHaveAttribute('title', /Relay: browser to CloudSSH/);
+  const meter = workspace.locator('.rdp-latency > summary');
+  const metrics = workspace.locator('.rdp-latency-panel');
+  await expect(meter).toHaveText('Relay 24 ms');
+  await expect(metrics).toBeHidden();
   await expect(frame.locator('.status-row')).toHaveCount(0);
   expect(await frame.locator('html').evaluate(e => e.style.getPropertyValue('--accent').trim())).toBe(await page.locator('body').evaluate(e => getComputedStyle(e).getPropertyValue('--accent').trim()));
   await page.setViewportSize({ width: 960, height: 700 });
@@ -527,7 +529,7 @@ test('the themed workspace stays in the current tab and a saved login is release
   const resolution = toolbar.getByRole('combobox', { name: 'Full-screen desktop resolution', includeHidden: true });
   await expect(resolution).toBeHidden();
   await expect(toolbar.getByRole('heading')).toHaveText('Remote Desktop · Office Windows');
-  await expect(toolbar.getByRole('button')).toHaveText(['Full screen', 'Back']);
+  await expect(toolbar.locator(':scope > button')).toHaveText(['Full screen', 'Back']);
   // The certificate prompt has a heading; the desktop frame still has no toolbar of its own.
   await expect(frame.locator('header:not(#certificate header)')).toHaveCount(0);
   const full = toolbar.getByRole('button', { name: 'Full screen' });
@@ -547,6 +549,29 @@ test('the themed workspace stays in the current tab and a saved login is release
     await page.keyboard.up('ShiftRight');
     await expect(canvas).toHaveAttribute('data-keys', 'keydown:Enter;keyup:Enter;keydown:ShiftRight;keydown:KeyD;keyup:KeyD;keyup:ShiftRight;');
     await expect(workspace).toBeVisible();
+  });
+  await test.step('latency details stay accessible on narrow screens without resizing the desktop', async () => {
+    await page.setViewportSize({ width: 320, height: 700 });
+    const viewport = workspace.locator('.rdp-viewport');
+    const before = (await viewport.boundingBox())!;
+    await meter.press('Enter');
+    await expect(metrics).toBeVisible();
+    await expect(metrics.locator('[data-metric="channel"] dd')).toHaveText('24 ms');
+    await expect(metrics.locator('[data-metric="rdp"] dd')).toHaveText('83 ms');
+    await expect(metrics.locator('[data-metric="link"]')).toBeHidden();
+    await expect(metrics.locator('[data-metric="receive"] dd')).toHaveText('8 KiB');
+    const panel = (await metrics.boundingBox())!;
+    expect(panel.x).toBeGreaterThanOrEqual(0);
+    expect(panel.x + panel.width).toBeLessThanOrEqual(320);
+    expect(await viewport.boundingBox()).toEqual(before);
+    await meter.press('Escape');
+    await expect(metrics).toBeHidden();
+    await meter.click();
+    await expect(metrics).toBeVisible();
+    await canvas.click({ position: { x: 12, y: 500 } });
+    await expect(metrics).toBeHidden();
+    await page.setViewportSize({ width: 960, height: 700 });
+    await expect.poll(() => stage.evaluate(e => e.clientWidth)).toBe(960);
   });
   await test.step('a desktop right-click cancels only the browser menu', async () => {
     await canvas.evaluate((el: HTMLCanvasElement) => {
@@ -619,6 +644,11 @@ test('the themed workspace stays in the current tab and a saved login is release
       expect(headerRect.height).toBeLessThanOrEqual(await page.evaluate(() => matchMedia('(pointer: fine)').matches ? 34 : 48));
       if (how === 'back') break; // Back must end the live session even from fullscreen.
       if (how === 'button') {
+        await meter.click();
+        await expect(metrics).toBeVisible();
+        expect(await frameSize()).toEqual(initialSize);
+        await meter.click();
+        await expect(metrics).toBeHidden();
         // CDP cannot resize a fullscreen OS window. Simulate wide and tall display areas inside it.
         // Also model a fixed-resolution canvas already letterboxed inside its document.
         const canvas = frame.locator('#canvas');

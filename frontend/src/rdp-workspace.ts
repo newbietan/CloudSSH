@@ -2,6 +2,7 @@ import { isRdpId } from '../../src/rdp-schema';
 import { t } from './i18n';
 import { confirmAction } from './ui-feedback';
 import { bindRdpFullscreen } from './rdp-fullscreen';
+import { createRdpLatencyMeter } from './rdp-latency';
 import modalCss from './app-modal.css?inline';
 
 const intentKey = 'cloudssh_rdp_open_once'; // Contains no credentials; never sufficient for authorization.
@@ -132,9 +133,13 @@ export class RdpWorkspace {
     const back = button(t('common.back'));
     back.title = t('rdp.disconnectBack');
     back.onclick = () => this.leave();
-    const latency = document.createElement('span');
-    latency.className = 'rdp-latency';
-    bar.append(title, latency, resolution, fullscreen, back);
+    const latency = createRdpLatencyMeter();
+    bar.append(title, latency.element, resolution, fullscreen, back);
+    const dismissOutsideMeter = (event: Event) => {
+      if (event.target instanceof Node && !latency.element.contains(event.target)) latency.close();
+    };
+    dialog.addEventListener('pointerdown', dismissOutsideMeter);
+    dialog.addEventListener('focusin', dismissOutsideMeter);
     const frame = document.createElement('iframe');
     frame.title = t('rdp.open');
     frame.src = `/rdp/${id}/client`;
@@ -153,7 +158,12 @@ export class RdpWorkspace {
       root.dataset.theme = document.documentElement.dataset.theme ?? '';
       root.style.colorScheme = getComputedStyle(document.documentElement).colorScheme;
     };
-    frame.onload = applyTheme;
+    frame.onload = () => {
+      applyTheme();
+      // Pointer actions in an iframe don't bubble to the host toolbar.
+      frame.contentDocument?.addEventListener('pointerdown', latency.close, { capture: true });
+    };
+    frame.addEventListener('focus', latency.close);
     const current = () => this.dialog === dialog && this.returning !== dialog && !this.events.signal.aborted;
     const focusDesktop = () => {
       if (!current() || !dialog.open || document.hidden || !document.hasFocus()) return;
@@ -181,6 +191,7 @@ export class RdpWorkspace {
       if (!Number.isSafeInteger(revision) || revision < 1 || typeof fingerprint !== 'string' ||
           !/^[a-f0-9]{64}$/.test(fingerprint)) return;
       retried = true;
+      latency.update(null);
       presentation.setReady(false);
       frame.dataset.reconnectRevision = String(revision);
       frame.dataset.reconnectFingerprint = fingerprint;
@@ -193,11 +204,7 @@ export class RdpWorkspace {
       if (typeof name === 'string') title.textContent = `${t('rdp.desktopTitle')} · ${name}`;
     });
     frame.addEventListener('cloudssh-rdp-latency', event => {
-      if (!current()) return;
-      const sample = (event as CustomEvent).detail;
-      if (typeof sample?.text !== 'string' || typeof sample.help !== 'string') return;
-      latency.textContent = sample.text;
-      latency.title = sample.help;
+      if (current()) latency.update((event as CustomEvent).detail);
     });
     frame.addEventListener('cloudssh-rdp-display-control', () => {
       if (current()) presentation.enableDisplayControl();
@@ -208,7 +215,9 @@ export class RdpWorkspace {
       focusDesktop();
     });
     frame.addEventListener('cloudssh-rdp-ended', () => {
-      if (current()) presentation.setReady(false);
+      if (!current()) return;
+      latency.update(null);
+      presentation.setReady(false);
     });
     frame.addEventListener('cloudssh-rdp-recorded', () => {
       if (current()) this.onRecorded();

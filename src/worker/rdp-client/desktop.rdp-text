@@ -46,13 +46,6 @@ async function requestFailure(response) {
   const data = await response.json().catch(() => null);
   return failure(data?.code) ?? msg[17];
 }
-const relayLabel = { 'en-US': 'Relay', 'zh-CN': '中继', 'zh-TW': '中繼' }[locale];
-const rttHelp = {
-  'en-US': 'Relay: browser to CloudSSH. RDP: average round trip reported by Windows. A dash means no recent sample. Neither measures screen rendering.',
-  'zh-CN': '中继：浏览器到 CloudSSH 的往返时间。RDP：Windows 上报的平均往返时间。横线表示暂无近期数据，两者都不代表画面响应耗时。',
-  'zh-TW': '中繼：瀏覽器至 CloudSSH 的往返時間。RDP：Windows 回報的平均往返時間。橫線表示暫無近期資料，兩者都不是畫面反應時間。',
-}[locale];
-const peerHelp = { 'en-US': 'WebRTC: browser to connector over the direct data channel (ICE types: browser / connector). RDP: Windows average; neither measures rendering.', 'zh-CN': 'WebRTC：浏览器到连接器的直连数据通道往返时间（ICE 类型：浏览器 / 连接器）。RDP：Windows 上报的平均值；都不是渲染延迟。', 'zh-TW': 'WebRTC：瀏覽器至連接器的直連資料通道往返時間（ICE 類型：瀏覽器 / 連接器）。RDP：Windows 回報的平均值；均非繪製延遲。' }[locale];
 const el = id => document.getElementById(id);
 const tellWorkspace = (type, detail) => window.frameElement?.dispatchEvent(new CustomEvent('cloudssh-rdp-' + type, { detail }));
 const status = el('status');
@@ -164,29 +157,38 @@ async function run(preferDirect) {
   let ticket;
   let timer;
   let ready = false;
-  let activePath, icePath = '';
-  let telemetry, pathMs, remoteMs;
-  let pathAt = -Infinity, remoteAt = -Infinity;
+  let activePath, directCarrier, candidateTypes;
+  let telemetry, ice, rdp, receiveBytes;
+  const channel = [];
   function paintLatency() {
-    // No route label during preflight. A WebRTC attempt that falls back never appeared as a live route.
-    if (!activePath) return tellWorkspace('latency', { text: '', help: '' });
-    const peer = activePath === 'webrtc';
+    // Failed preflight attempts never appear as a live route.
+    if (!ready || stopped || !activePath) return tellWorkspace('latency', null);
     const now = performance.now();
-    const fmt = (ms, age, limit) => ms !== undefined && age < limit ? `${ms} ms` : '—';
-    const text = `${peer ? 'WebRTC' : relayLabel} ${fmt(pathMs, now - pathAt, 10000)} · RDP ${fmt(remoteMs, now - remoteAt, 30000)}`;
-    tellWorkspace('latency', { text, help: peer ? `${peerHelp} ${icePath}` : rttHelp });
+    const recent = (sample, maxAge) => sample && now - sample.at < maxAge ? sample.ms : null;
+    while (channel.length && now - channel[0].at >= 30000) channel.shift();
+    tellWorkspace('latency', {
+      path: activePath, iceMs: recent(ice, 15000), channelMs: recent(channel.at(-1), 10000),
+      channelPeakMs: channel.length ? Math.max(...channel.map(sample => sample.ms)) : null,
+      rdpMs: recent(rdp, 30000), receiveBytes: receiveBytes ?? null, candidateTypes,
+    });
   }
   function sample() {
     if (!ready || stopped || document.hidden) return;
     const value = window.Module?._cloudssh_take_rdp_rtt?.();
-    if (Number.isInteger(value) && value >= 0 && value <= 60000) { remoteMs = value; remoteAt = performance.now(); }
+    if (Number.isInteger(value) && value >= 0 && value <= 60000) rdp = { ms: value, at: performance.now() };
+    receiveBytes = socket?.takeReceiveBacklog?.();
     paintLatency();
     socket?.probe?.();
+    // Browser ICE statistics are independent of the in-band probe. Never await them on the send path.
+    void directCarrier?.sampleLink?.();
   }
   function resetMeter() {
     clearInterval(telemetry); telemetry = undefined;
+    directCarrier?.resetLink?.();
     socket?.cancelProbe?.();
-    pathMs = remoteMs = undefined;
+    void socket?.takeReceiveBacklog?.();
+    channel.length = 0;
+    ice = rdp = receiveBytes = undefined;
     paintLatency();
   }
   paintLatency();
@@ -316,7 +318,6 @@ async function run(preferDirect) {
     watch(30_000, 18);
     let url = new URL('/api/rdp/session', location.origin);
     url.protocol = 'wss:';
-    let directCarrier;
     async function issue(transport) {
       // No key reuse between a direct attempt, its relay fallback, or a fresh certificate reconnect.
       const keys = await crypto.subtle.generateKey(loginCurve, false, ['deriveBits']);
@@ -356,8 +357,11 @@ async function run(preferDirect) {
           if (grant) {
             const peerUrl = new URL('/api/rdp/peer/session', url);
             try {
-              directCarrier = await window.prepareCloudSshPeerCarrier(peerUrl.href, api, clientRevision, grant.ticket, abort.signal, (local, remote) => {
-                icePath = `${local} / ${remote}`; paintLatency();
+              directCarrier = await window.prepareCloudSshPeerCarrier(peerUrl.href, api, clientRevision, grant.ticket, abort.signal, (local, remote, ms) => {
+                if (local && remote) candidateTypes = [local, remote];
+                if (!ready || stopped || document.hidden) return;
+                if (ms !== undefined) ice = ms === null ? undefined : { ms, at: performance.now() };
+                paintLatency();
               });
               if (stopped) { directCarrier.close(); return; }
               url = peerUrl;
@@ -412,7 +416,10 @@ async function run(preferDirect) {
         };
         socket.onRelayRtt = value => {
           if (!ready || stopped || document.hidden) return;
-          pathMs = value; pathAt = performance.now(); paintLatency();
+          // At most one pong per probe. Retain a bounded peak window, never average away spikes.
+          if (channel.length === 8) channel.shift();
+          channel.push({ ms: value, at: performance.now() });
+          paintLatency();
         };
         ticket = undefined;
         return socket;

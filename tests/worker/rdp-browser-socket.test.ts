@@ -18,6 +18,7 @@ interface SocketAdapter {
   onDesktopRecorded?: () => void;
   probe(): void;
   cancelProbe(): void;
+  takeReceiveBacklog(): number | undefined;
   onRelayRtt?: (ms: number) => void;
   onopen?: () => void;
   onmessage?: (event: { data: unknown }) => void;
@@ -71,6 +72,29 @@ describe('FreeRDP browser socket', () => {
       socket.consumed(12);
       await vi.advanceTimersByTimeAsync(20);
       expect(native.send).toHaveBeenLastCalledWith('{"type":"ack","bytes":12}');
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('samples the receive high-water mark without changing read credit', async () => {
+    vi.useFakeTimers();
+    try {
+      const { native, socket } = fixture();
+      expect(socket.takeReceiveBacklog()).toBeUndefined();
+      native.onmessage({ data: ready });
+      expect(socket.takeReceiveBacklog()).toBe(0);
+      native.onmessage({ data: new ArrayBuffer(16 * 1024) });
+      native.onmessage({ data: new ArrayBuffer(16 * 1024) });
+      socket.consumed(24 * 1024);
+      expect(socket.takeReceiveBacklog()).toBe(32 * 1024);
+      expect(socket.takeReceiveBacklog()).toBe(8 * 1024); // Still queued at the next interval's start.
+      socket.consumed(8 * 1024);
+      expect(socket.takeReceiveBacklog()).toBe(8 * 1024);
+      expect(socket.takeReceiveBacklog()).toBe(0);
+      expect(native.send).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(20);
+      expect(native.send).toHaveBeenCalledExactlyOnceWith('{"type":"ack","bytes":32768}');
+      native.onclose({ reason: 'closed' });
+      expect(socket.takeReceiveBacklog()).toBeUndefined();
     } finally { vi.useRealTimers(); }
   });
 

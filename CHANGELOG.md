@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **桌面选路与延迟显示**：「打开桌面」优先 WebRTC；只有在发送 RDP 字节前直连建立失败，才静默切回该设备已配置的公网或隧道中继，不重复发起 Windows 登录。工具栏按实际线路显示「WebRTC」或「中继」延迟，仍另列 Windows 上报的 RDP 延迟。
+- **桌面选路与延迟显示**：「打开桌面」优先 WebRTC；只有在发送 RDP 字节前直连建立失败，才静默切回该设备已配置的公网或隧道中继，不重复发起 Windows 登录。工具栏优先显示 WebRTC 线路 RTT，无近期数据时标明「通道」；中继单独标识。点击可查看通道近期峰值、浏览器待读取峰值和 Windows 上报的 RDP 平均延迟，不拿排队尖峰冒充线路 RTT。
 - **站内弹窗风格统一**：添加服务器、AI 配置、MCP、Windows 引导、认证和编辑等复用同一套主题面板、标题栏与遮罩；保留各主题材质及移动 Liquid Glass 的实底。安装引导只显示当前步骤，时效和校验说明收在「安装须知」，测试包的未签名警示仍直接可见。
 
 ### Fixed

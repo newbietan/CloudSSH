@@ -27,6 +27,8 @@ const fixture = {
   login: { username: 'fixture', domain: '', password: 'synthetic' },
 };
 const exe = 'cloudssh-rdp-connector-windows-amd64.exe';
+const meter = '.rdp-latency > summary';
+const metric = name => `.rdp-latency-panel [data-metric="${name}"] dd`;
 const bindingName = 'cloudssh-binding.cloudssh-rdp.json';
 const upstream = 'https://github.com/newbietan/CloudSSH/releases/download/rdp-connector-v3/cloudssh-rdp-connector-windows-amd64.zip';
 let mf, browser, agent, iceSink;
@@ -130,6 +132,10 @@ try {
         createOffer(...args) { return failing === 'offer' ? Promise.reject(new Error('ICE unavailable fixture')) : super.createOffer(...args); }
         get localDescription() { return failing === 'ice' ? unreachable(super.localDescription) : super.localDescription; }
         setRemoteDescription(desc, ...args) { return super.setRemoteDescription(failing === 'ice' ? unreachable(desc) : desc, ...args); }
+        async getStats(...args) {
+          if (window.__freezeIceStats && this.lastReport) return this.lastReport;
+          return this.lastReport = await super.getStats(...args);
+        }
       };
       const Ws = window.WebSocket;
       window.__wire = { signal: 0, binary: 0, relay: 0, native: 0, events: [] };
@@ -147,6 +153,23 @@ try {
         close(...args) { if (new URL(this.url).pathname === '/api/rdp/peer/session') window.__wire.events.push('stop-peer'); super.close(...args); }
       };
     }, { failing: fault, dropPort });
+    if (!native && !forceFallback) await page.route('**/rdp/assets/rdp-socket.js', r => r.fulfill({
+      contentType: 'text/javascript', body: readFileSync(join(root, 'src/worker/rdp-client/rdp-socket.rdp-text'), 'utf8') + `
+        // Delay one delivered pong without changing ICE, RDP bytes, ACKs or the production adapter.
+        const create = window.createCloudSshRdpSocket;
+        window.createCloudSshRdpSocket = (url, ticket, peer) => {
+          const socket = create(url, ticket, peer);
+          const handle = peer.onmessage;
+          let injected = false;
+          peer.onmessage = event => {
+            if (!injected && typeof event.data === 'string' && JSON.parse(event.data).type === 'pong') {
+              injected = true; setTimeout(() => handle(event), 750); return;
+            }
+            handle(event);
+          };
+          return socket;
+        };`,
+    }));
     if (!native) await page.route('**/rdp/assets/sdl-freerdp.js', r => r.fulfill({ contentType: 'text/javascript', body: `const M=window.Module;
       M.FS={mkdirTree(){},writeFile(){}};M.websocket.on=()=>{};M._cloudssh_take_rdp_rtt=()=>-1;
       M.callMain=args=>{if(!args.includes('/u:fixture')||M.takeWindowsPassword()!=='synthetic'||M.takeWindowsPassword()!==undefined)throw Error('credential handoff failed');
@@ -254,11 +277,34 @@ try {
     await frame.locator('body[data-verified="2097152"]').waitFor({ timeout: 26000 });
     const wire = await inspect(page);
     assert.deepEqual(wire, { signal: 1, binary: 0, relay: 0, native: 1, events: ['peer'] });
-    await page.waitForFunction(() => /^WebRTC \d+ ms · RDP /.test(document.querySelector('.rdp-latency')?.textContent || ''), {}, { timeout: 12000 });
-    const typ = (await page.locator('.rdp-latency').getAttribute('title')).match(/(?:host|srflx|prflx) \/ (?:host|srflx|prflx)$/)?.[0];
-    assert.ok(typ, 'an actual non-relay candidate pair is required');
+    await page.waitForFunction(sel => /^WebRTC (?:· Channel )?\d+ ms$/.test(document.querySelector(sel)?.textContent || ''), meter, { timeout: 12000 });
+    await page.locator(meter).click();
+    await page.waitForFunction(sel => parseInt(document.querySelector(sel)?.textContent || '', 10) >= 740, metric('peak'));
+    const typ = await page.locator(metric('ice')).textContent();
+    assert.match(typ, /^(?:host|srflx|prflx) \/ (?:host|srflx|prflx)$/, 'an actual non-relay candidate pair is required');
+    if (engine === chromium) {
+      // The link comes from the real selected ICE pair, not the artificially delayed desktop pong.
+      await page.waitForFunction(sel => /^\d+ ms$/.test(document.querySelector(sel)?.textContent || ''), metric('link'), { timeout: 16000 });
+    }
+    const quality = await page.evaluate(({ meter, link }) => ({
+      label: document.querySelector(meter)?.textContent, link: document.querySelector(link)?.textContent,
+    }), { meter, link: metric('link') });
+    if (quality.link === '—') assert.match(quality.label, /^WebRTC · Channel \d+ ms$/);
+    else {
+      assert.equal(quality.label, `WebRTC ${quality.link}`);
+      assert.ok(parseInt(quality.link, 10) < 750, 'ICE RTT does not include the delayed pong');
+    }
+    console.log(`${engine.name()}: link ${quality.link}, separate 750 ms channel spike preserved`);
     assert.equal((await api(page, p)).fingerprint, fingerprint);
-    await page.waitForResponse(r => r.url().endsWith('/peer-renew') && r.ok(), { timeout: 16000 });
+    const renewal = page.waitForResponse(r => r.url().endsWith('/peer-renew') && r.ok(), { timeout: 16000 });
+    if (quality.link !== '—') {
+      // Repeat the same RTCStatsReport while the healthy channel keeps delivering new pongs.
+      await frame.locator('html').evaluate(() => { window.__freezeIceStats = true; });
+      await Promise.all([renewal, page.waitForFunction(({ meter, link }) =>
+        document.querySelector(link)?.textContent === '—' && /^WebRTC · Channel \d+ ms$/.test(document.querySelector(meter)?.textContent || ''),
+        { meter, link: metric('link') }, { timeout: 22000 })]);
+      console.log(`${engine.name()}: a stale ICE report expires and the toolbar labels the live channel`);
+    } else await renewal;
     await ctx.close(); await agent.wait('Loopback TCP closed.'); await agent.stop(); agent = undefined;
     const second = await client();
     agent = newAgent(go, site, cert);
@@ -279,10 +325,10 @@ try {
     const [directGrant, relayGrant] = await grants;
     for (const field of ['ticket', 'clientKey', 'senderKey']) assert.notEqual(directGrant[field], relayGrant[field]);
     await three.locator('body[data-verified="relay"]').waitFor({ timeout: 24000 });
-    await fallback.page.waitForFunction(() => /^Relay \d+ ms · RDP /.test(document.querySelector('.rdp-latency')?.textContent || ''), {}, { timeout: 14000, polling: 200 }).catch(async error => {
-      const meter = await fallback.page.locator('.rdp-latency').textContent();
+    await fallback.page.waitForFunction(sel => /^Relay \d+ ms$/.test(document.querySelector(sel)?.textContent || ''), meter, { timeout: 14000, polling: 200 }).catch(async error => {
+      const label = await fallback.page.locator(meter).textContent();
       const visibility = await three.locator('body').evaluate(() => document.visibilityState);
-      throw new Error(`Relay latency not shown: meter=${meter}, visibility=${visibility}, pings=${fallback.relayPings()}`, { cause: error });
+      throw new Error(`Relay latency not shown: meter=${label}, visibility=${visibility}, pings=${fallback.relayPings()}`, { cause: error });
     });
     const fb = await inspect(fallback.page);
     assert.deepEqual(transportRequests, ['device', 'relay']);

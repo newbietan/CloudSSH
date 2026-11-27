@@ -5837,6 +5837,7 @@ html[data-rdp-entry] #app-loading { display: none; }
   background: var(--bg); color: var(--text); overflow: hidden;
 }
 .rdp-workspace header {
+  position: relative; z-index: 1;
   display: flex; flex: none; align-items: center; gap: clamp(.25rem, 1vw, .75rem);
   padding: .4rem max(.8rem, env(safe-area-inset-right)) .4rem max(.8rem, env(safe-area-inset-left));
   border-bottom: 1px solid var(--border); background: var(--bg-elevated); color: var(--accent);
@@ -5848,18 +5849,51 @@ html[data-rdp-entry] #app-loading { display: none; }
 .rdp-workspace header button { flex: none; min-height: 40px; padding: 0 clamp(.4rem, 1.5vw, .9rem); }
 .rdp-shell { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
 .rdp-shell:fullscreen { width: 100%; height: 100%; }
-.rdp-latency {
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font: 12px/1.25 ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--text-muted);
+.rdp-latency { min-width: 2rem; }
+.rdp-latency > summary {
+  display: flex; align-items: center; justify-content: center; gap: .25rem;
+  min-height: 40px; padding-inline: .25rem; border-radius: var(--control-radius);
+  font: 12px/1.25 ui-monospace, monospace; font-variant-numeric: tabular-nums;
+  color: var(--text-muted); cursor: pointer; list-style: none;
+}
+.rdp-latency > summary::-webkit-details-marker { display: none; }
+.rdp-latency > summary > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rdp-latency > summary::after {
+  content: ''; flex: none; width: .4rem; height: .4rem; margin-block-end: .2rem;
+  border: solid currentColor; border-width: 0 1px 1px 0; transform: rotate(45deg);
+}
+.rdp-latency[open] > summary::after { transform: rotate(225deg); margin-block-end: -.2rem; }
+.rdp-latency > summary:hover, .rdp-latency[open] > summary { background: var(--accent-bg); color: var(--accent); }
+.rdp-latency > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rdp-latency-panel {
+  position: absolute; inset-block-start: calc(100% + 4px); inset-inline-end: max(.8rem, env(safe-area-inset-right));
+  width: min(22rem, calc(100% - max(.8rem, env(safe-area-inset-left)) - max(.8rem, env(safe-area-inset-right))));
+  max-height: calc(100dvh - 64px - env(safe-area-inset-bottom)); overflow: auto; overscroll-behavior: contain;
+  background: var(--app-modal-fill); color: var(--on-surface); border: 1px solid var(--border-strong);
+  border-radius: var(--control-radius); box-shadow: var(--shadow-floating); padding: .65rem .85rem;
+  font-size: .8125rem; line-height: 1.5;
+}
+.rdp-latency-title { font-weight: 700; margin-bottom: .35rem; }
+.rdp-latency-panel dl > div:not([hidden]) {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; padding-block: .15rem;
+}
+.rdp-latency-panel dd { font: .8125rem/1.5 ui-monospace, monospace; text-align: end; white-space: nowrap; }
+.rdp-latency-hint {
+  margin-top: .5rem; padding-top: .5rem; border-top: 1px solid var(--border); color: var(--on-surface-variant);
+  font-size: .75rem;
+}
+@media (pointer: coarse), (max-width: 520px) {
+  .rdp-latency { min-width: 44px; }
+  .rdp-latency > summary { min-height: 44px; font-size: 11px; }
 }
 .rdp-resolution {
   flex: none; max-width: min(10rem, 33vw); min-height: 40px;
   padding-inline-start: .35rem; border: 1px solid var(--border); border-radius: 5px;
   background: var(--bg); color: var(--text); font-size: .8125rem;
 }
-.rdp-shell:fullscreen header { padding-block: 2px; }
+.rdp-shell:fullscreen header { padding-block: 1px; }
 @media (pointer: fine) {
-  .rdp-shell:fullscreen header :is(button, select) { min-height: 28px; padding-block: 0; }
+  .rdp-shell:fullscreen header :is(button, select, summary) { min-height: 28px; padding-block: 0; }
 }
 /* Fit the whole Windows canvas below the toolbar. Fullscreen itself does not resize
    the running iframe; an explicit resolution selection may change its logical size. */
