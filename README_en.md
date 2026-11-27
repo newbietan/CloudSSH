@@ -615,6 +615,12 @@ If CloudSSH has been helpful to your workflow or projects, consider sponsoring t
 
 ## Special Thanks
 
+### Open-Source Projects
+
+- [FreeRDP](https://github.com/FreeRDP/FreeRDP) — CloudSSH compiles FreeRDP's SDL client to WebAssembly as the core of its browser-based Windows Remote Desktop client. It handles the RDP protocol, TLS/NLA, and desktop graphics. Thank you to the FreeRDP community for developing and maintaining it.
+
+### Sponsors
+
 Special thanks to those who financially support CloudSSH's ongoing maintenance and development. Your encouragement helps keep the project moving forward!
 
 - <a href="https://github.com/shunia"><img src="https://github.com/shunia.png?size=80" width="40" height="40" alt="shunia" align="middle" /></a> [shunia](https://github.com/shunia) — Thank you for supporting this project through Afdian.

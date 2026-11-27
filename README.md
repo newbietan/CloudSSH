@@ -613,6 +613,12 @@ test 分支（开发/测试）  ──合并──>  main 分支（生产）
 
 ## 特别感谢
 
+### 开源项目
+
+- [FreeRDP](https://github.com/FreeRDP/FreeRDP) — CloudSSH 将 FreeRDP 的 SDL 客户端编译为 WebAssembly，作为浏览器端 Windows 远程桌面的核心，负责 RDP 协议通信、TLS/NLA 和桌面画面处理。感谢 FreeRDP 社区的开发与维护。
+
+### 赞助者
+
 特别感谢以下朋友通过打赏支持 CloudSSH 的持续维护与开发，你们的鼓励是项目不断前进的动力！
 
 - <a href="https://github.com/shunia"><img src="https://github.com/shunia.png?size=80" width="40" height="40" alt="shunia" align="middle" /></a> [shunia](https://github.com/shunia) — 感谢你通过爱发电打赏支持本项目。
