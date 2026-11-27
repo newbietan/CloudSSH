@@ -355,10 +355,10 @@ export class AgentPanel {
 
     this.panelEl.innerHTML = `
       <div class="assistant-panel-surface flex flex-col w-full h-full border-l border-[var(--border)] text-on-surface overflow-hidden relative">
-        <div class="assistant-panel-header agent-panel-header">
+        <div class="app-modal__header app-modal__header--bar assistant-panel-header agent-panel-header">
           <div class="flex items-center gap-2 min-w-0">
             <span class="assistant-panel-icon">${assistantIconMarkup('agent')}</span>
-            <span class="assistant-panel-title agent-panel-title truncate" data-i18n="agent.title">AI Agent 助手</span>
+            <span class="app-modal__title assistant-panel-title agent-panel-title truncate" data-i18n="agent.title">AI Agent 助手</span>
           </div>
           <div class="flex items-center gap-1.5">
             <div id="agent-mode-control" class="agent-mode-segmented" role="radiogroup" aria-label="Agent execution mode" data-active-mode="${this.agentMode}">
@@ -456,7 +456,7 @@ export class AgentPanel {
             <textarea id="agent-input" data-i18n-placeholder="agent.placeholder" placeholder="描述你希望 Agent 完成的任务…"
               rows="1"
               class="terminal-input assistant-field flex-1 resize-none overflow-y-auto"
-              style="max-height: 140px; line-height: 1.5; padding: 8px 12px; border-radius: 8px;"
+              style="max-height: 140px;"
               autocomplete="off"></textarea>
             <button id="agent-send-btn" class="agent-send-btn assistant-accent-control shrink-0" data-i18n-title="agent.send" title="发送">
               <span class="material-symbols-outlined" style="font-size:20px;">arrow_upward</span>

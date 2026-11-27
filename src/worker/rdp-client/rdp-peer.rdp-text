@@ -1,0 +1,223 @@
+// Negotiate an authorized direct carrier before constructing the native RDP socket. No TURN.
+(() => {
+  const protocol = 'cloudssh-rdp-peer-v2', frame = 16 * 1024, limit = 1024 * 1024;
+  const stunUrls = ['stun:stun.cloudflare.com:3478', 'stun:stun.cloudflare.com:53'];
+  const iceStates = ['new', 'checking', 'connected', 'completed', 'disconnected', 'failed', 'closed'];
+  const connectionStates = ['new', 'connecting', 'connected', 'disconnected', 'failed', 'closed'];
+  const channelStates = ['connecting', 'open', 'closing', 'closed'];
+  const debugReasons = ['peer_unavailable', 'peer_timeout', 'peer_failed', 'peer_ended', 'peer_busy',
+    'ticket_rejected', 'lease_ended', 'idle_timeout', 'session_limit', 'profile_changed'];
+  const known = (value, allowed) => allowed.includes(value) ? value : 'unknown';
+  function candidateCounts(sdp) {
+    if (typeof sdp !== 'string' || sdp.length > 12_288) return null;
+    const counts = { host: 0, srflx: 0, prflx: 0, relay: 0 };
+    for (const match of sdp.matchAll(/^a=candidate:[^\r\n]+ typ (host|srflx|prflx|relay)(?:[ \r]|$)/gm)) counts[match[1]]++;
+    return counts;
+  }
+  function selectedIcePair(stats) {
+    // This peer connection has one data transport. Don't guess from nominated, historical or unselected pairs.
+    let id;
+    for (const item of stats.values()) {
+      if (item.type !== 'transport' || typeof item.selectedCandidatePairId !== 'string') continue;
+      if (id !== undefined && id !== item.selectedCandidatePairId) return;
+      id = item.selectedCandidatePairId;
+    }
+    const pair = stats.get(id);
+    return pair?.type === 'candidate-pair' && pair.state === 'succeeded' ? pair : undefined;
+  }
+  window.prepareCloudSshPeerCarrier = (address, api, abi, ticket, signal, pathSample) => {
+    if (signal.aborted || typeof RTCPeerConnection !== 'function') return Promise.reject(new Error('peer_unavailable'));
+    let pc, ws;
+    try { pc = new RTCPeerConnection({ iceServers: [{ urls: stunUrls }] }); }
+    catch { return Promise.reject(new Error('peer_unavailable')); }
+    try { ws = new WebSocket(address, protocol); } catch { pc.close(); return Promise.reject(new Error('peer_failed')); }
+    const abort = new AbortController();
+    let channel, lease, stage = 'ticket', stopped = false, activated = false, busy = false, renewal, iceTimer, lastActivity = -Infinity, didReport = false;
+    let complete, reject;
+    const prepared = new Promise((accept, fail) => { complete = accept; reject = fail; });
+    const startedAt = performance.now();
+    let answerAt;
+    const timer = setTimeout(() => end('peer_timeout', 'deadline'), 14_000);
+    const cancel = () => end('peer_ended', 'cancelled');
+    signal.addEventListener('abort', cancel, { once: true });
+    const carrier = { protocol: 'cloudssh-rdp-v1', send, close: cancel, sampleLink, resetLink, activate() {
+      queueMicrotask(() => {
+        if (activated) return;
+        activated = true;
+        if (stopped || stage !== 'live') return carrier.onclose?.({ reason: 'peer_ended' });
+        forward(JSON.stringify({ type: 'ready', lease, desktopReport: true }));
+      });
+    } };
+    function end(reason, source = 'protocol') {
+      if (stopped) return;
+      stopped = true; ticket = undefined;
+      if (stage !== 'live' && source !== 'cancelled') {
+        // Inspect before closing: the browser may never emit failed after our own deadline.
+        // Local console only. Do not include SDP, candidate addresses, close text, IDs or credentials.
+        try {
+          const now = performance.now();
+          console.debug('[CloudSSH WebRTC] preflight ended', {
+            source, reason: known(reason, debugReasons), phase: stage,
+            elapsedMs: Math.round(now - startedAt),
+            afterAnswerMs: answerAt === undefined ? null : Math.round(now - answerAt),
+            ice: known(pc.iceConnectionState, iceStates), connection: known(pc.connectionState, connectionStates),
+            dataChannel: known(channel?.readyState, channelStates),
+            browserCandidates: candidateCounts(pc.localDescription?.sdp),
+            connectorCandidates: candidateCounts(pc.remoteDescription?.sdp),
+          });
+        } catch { /* Diagnostics must not interfere with closure or fallback. */ }
+      }
+      signal.removeEventListener('abort', cancel);
+      clearTimeout(timer); clearTimeout(iceTimer); clearInterval(renewal); abort.abort();
+      try { channel?.close(); } catch {} try { pc.close(); } catch {} try { ws.close(); } catch {}
+      reject(new Error(reason));
+      if (activated) carrier.onclose?.({ reason });
+    }
+    const forward = data => { if (!stopped) carrier.onmessage?.({ data }); };
+    const rtcSend = data => {
+      if (stage !== 'live' || channel.readyState !== 'open' || channel.bufferedAmount > limit + frame) return end('peer_failed');
+      channel.send(data);
+    };
+    function send(data) {
+      if (stopped) return;
+      try {
+        if (!activated || stage !== 'live') return end('peer_failed');
+        if (typeof data !== 'string') {
+          if (!ArrayBuffer.isView(data) || !data.byteLength || data.byteLength > frame) return end('peer_failed');
+          return rtcSend(data);
+        }
+        const msg = JSON.parse(data);
+        if (msg.type === 'ping' || msg.type === 'ack') return rtcSend(data);
+        if (msg.type === 'cert_wait' || msg.type === 'cert_done') return ws.send(data);
+        if (msg.type === 'desktop_ready' && !didReport) { didReport = true; return ws.send(data); }
+        if (msg.type === 'activity') {
+          if (performance.now() - lastActivity >= 5000) { lastActivity = performance.now(); ws.send(data); }
+          return;
+        }
+        end('peer_failed');
+      } catch { end('peer_failed'); }
+    }
+    async function renew() {
+      if (stopped || busy) return;
+      busy = true;
+      try {
+        const res = await fetch(api + '/peer-renew', { method: 'POST', credentials: 'same-origin', redirect: 'error',
+          headers: { 'Content-Type': 'application/json', 'X-CloudSSH-RDP-Client': abi }, body: JSON.stringify({ lease }),
+          signal: AbortSignal.any([abort.signal, AbortSignal.timeout(6000)]) });
+        if (!res.ok) end('lease_ended');
+      } catch { end('lease_ended'); } finally { busy = false; }
+    }
+    const localType = x => ['host', 'srflx', 'prflx'].includes(x);
+    let readingLink = false, linkGeneration = 0, pairId, replies, lastReadAt = -Infinity;
+    function resetLink() {
+      ++linkGeneration;
+      pairId = replies = undefined;
+      lastReadAt = -Infinity;
+    }
+    function pathChanged() {
+      if (stopped) return;
+      resetLink();
+      pathSample(undefined, undefined, null);
+    }
+    async function sampleLink() {
+      if (stopped || stage !== 'live' || readingLink) return;
+      readingLink = true;
+      const generation = linkGeneration, started = performance.now();
+      try {
+        const native = pc.sctp?.transport?.iceTransport?.getSelectedCandidatePair?.();
+        if (native?.local?.type === 'relay' || native?.remote?.type === 'relay') return end('peer_failed');
+        const stats = await pc.getStats();
+        const now = performance.now();
+        if (stopped || linkGeneration !== generation || now - started >= 5000) return;
+        const gap = now - lastReadAt;
+        lastReadAt = now;
+        const pair = selectedIcePair(stats);
+        const local = stats.get(pair?.localCandidateId)?.candidateType ?? native?.local?.type;
+        const remote = stats.get(pair?.remoteCandidateId)?.candidateType ?? native?.remote?.type;
+        if (local === 'relay' || remote === 'relay') return end('peer_failed');
+        const count = pair?.responsesReceived;
+        let ms;
+        // Re-reading getStats updates its report timestamp even if there was no new ICE response.
+        // Take a baseline on first sight, pair changes and foreground return, then require progress.
+        if (typeof pair?.id !== 'string' || !Number.isSafeInteger(count) || count < 1) {
+          pairId = replies = undefined;
+          ms = null;
+        } else if (pair.id !== pairId || count < replies || gap >= 15000) {
+          pairId = pair.id;
+          replies = count;
+          ms = null;
+        } else if (count > replies) {
+          replies = count;
+          const seconds = pair.currentRoundTripTime;
+          ms = Number.isFinite(seconds) && seconds >= 0 && seconds <= 60 ? Math.round(seconds * 1000) : null;
+        }
+        pathSample(localType(local) ? local : undefined, localType(remote) ? remote : undefined, ms);
+      } catch { /* Not all browsers expose usable ICE metrics. The desktop channel remains usable. */ }
+      finally { readingLink = false; }
+    }
+    async function offer() {
+      channel = pc.createDataChannel(protocol, { ordered: true }); channel.binaryType = 'arraybuffer';
+      channel.onclose = channel.onerror = () => end('peer_failed', 'data-channel');
+      channel.onmessage = ({ data }) => {
+        if (stopped) return;
+        try {
+          if (typeof data !== 'string') {
+            if (!activated || stage !== 'live' || !(data instanceof ArrayBuffer) || !data.byteLength || data.byteLength > frame) return end('peer_failed');
+            return forward(data);
+          }
+          if (data.length > 192) return end('peer_failed');
+          const m = JSON.parse(data);
+          if (stage === 'opening' && m.type === 'direct_ready' && localType(m.local) && localType(m.remote)) {
+            // Pion verified the SELECTED ICE path and local TCP. No RDP bytes can be sent until activation.
+            stage = 'live'; clearTimeout(timer); pathSample(m.remote, m.local);
+            try { pc.sctp?.transport?.iceTransport?.addEventListener?.('selectedcandidatepairchange', pathChanged, { signal: abort.signal }); }
+            catch { /* Missing optional stats events must not prevent a working desktop. */ }
+            complete(carrier); return;
+          }
+          if (activated && stage === 'live' && (m.type === 'ack' || m.type === 'pong')) return forward(data);
+          end('peer_failed');
+        } catch { end('peer_failed'); }
+      };
+      await pc.setLocalDescription(await pc.createOffer());
+      if (pc.iceGatheringState !== 'complete' && !stopped) await new Promise(resolve => {
+        const done = () => { clearTimeout(iceTimer); pc.removeEventListener('icegatheringstatechange', change); abort.signal.removeEventListener('abort', done); resolve(); };
+        const change = () => { if (pc.iceGatheringState === 'complete') done(); };
+        pc.addEventListener('icegatheringstatechange', change); abort.signal.addEventListener('abort', done, { once: true }); iceTimer = setTimeout(done, 3500);
+      });
+      if (stopped) return;
+      const sdp = pc.localDescription?.sdp;
+      if (!sdp || sdp.length > 12_288) return end('peer_failed');
+      stage = 'answer'; ws.send(JSON.stringify({ type: 'offer', sdp }));
+    }
+    ws.onopen = () => {
+      if (ws.protocol !== protocol || stage !== 'ticket') return end('peer_failed');
+      stage = 'pair';
+      try { ws.send(JSON.stringify({ type: 'ticket', ticket })); } catch { end('peer_failed'); }
+      ticket = undefined;
+    };
+    ws.onclose = event => end(event.reason || 'peer_failed', 'signaling-close');
+    ws.onerror = () => end('peer_failed', 'signaling-error');
+    pc.onconnectionstatechange = () => {
+      if (['failed', 'disconnected'].includes(pc.connectionState)) end('peer_failed', 'connection-state');
+    };
+    ws.onmessage = ({ data }) => {
+      void (async () => {
+        if (stopped) return;
+        if (typeof data !== 'string' || data.length > 14_000) return end('peer_failed');
+        const m = JSON.parse(data);
+        if (m.type === 'paired' && stage === 'pair' && /^[a-f0-9-]{36}$/.test(m.lease)) {
+          stage = 'gather'; lease = m.lease; renewal = setInterval(renew, 12_000); return offer();
+        }
+        if (m.type === 'answer' && stage === 'answer' && typeof m.sdp === 'string' && m.sdp.length <= 12_288) {
+          stage = 'opening';
+          try { await pc.setRemoteDescription({ type: 'answer', sdp: m.sdp }); answerAt = performance.now(); }
+          catch { end('peer_failed', 'answer'); }
+          return;
+        }
+        if (m.type === 'desktop_recorded' && stage === 'live' && didReport) return forward(data);
+        end('peer_failed');
+      })().catch(() => end('peer_failed', 'signal-handler'));
+    };
+    return prepared;
+  };
+})();

@@ -171,16 +171,15 @@ class DialogManager {
     if (this.dialog?.isConnected) return;
 
     const dialog = document.createElement('dialog');
-    dialog.className = 'app-dialog';
+    dialog.className = 'app-modal app-modal--motion app-dialog';
     dialog.setAttribute('aria-labelledby', 'app-dialog-title');
     dialog.setAttribute('aria-describedby', 'app-dialog-message');
     dialog.innerHTML = `
-      <form class="app-dialog__panel" method="dialog" novalidate>
-        <div class="app-dialog__accent" aria-hidden="true"></div>
-        <div class="app-dialog__header">
-          <span class="app-dialog__icon material-symbols-outlined" aria-hidden="true"></span>
-          <h2 class="app-dialog__title" id="app-dialog-title"></h2>
-        </div>
+      <form class="app-modal__panel app-modal__inset app-dialog__panel" method="dialog" novalidate>
+        <header class="app-modal__header">
+          <span class="app-modal__icon app-dialog__icon material-symbols-outlined" aria-hidden="true"></span>
+          <h2 class="app-modal__title app-dialog__title" id="app-dialog-title"></h2>
+        </header>
         <p class="app-dialog__message" id="app-dialog-message"></p>
         <div class="app-dialog__input-group" hidden>
           <label class="app-dialog__label" for="app-dialog-input"></label>

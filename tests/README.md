@@ -189,6 +189,19 @@ CI=true pnpm exec playwright test --workers=2
 - 构建可复现性、xterm 生产构建兼容和原生弹窗禁用
 - `workflow-policy.test.ts`：源码级检查所有非同步工作流的每个 job 均有维护者仓库 owner 限制（在分配 runner 前跳过 Fork CI），并保留 Fork 的免变量手动同步与显式开启的定时同步
 
+### WebRTC RDP 连接器（显式运行）
+
+`pnpm run build:frontend && node scripts/test-rdp-peer.mjs`（可加 `--webkit` / `--native` / `--tunnel` / `--blocked-ice`）在回环连接真实浏览器、workerd 签名 DO/UserDBDO 和 Pion。覆盖专用 ZIP 可解压且 EXE 不变、零 Secret 自动绑定、第一次证书指纹、2 MiB 流控、换浏览器/进程重启、续租/编辑撤销、凭据响应没有明文和故障回退换密钥只启动一次客户端，以及所选线路延迟标签。实测浏览器 ICE，另给一个通道 pong 加 750ms 以验证峰值仍可查但不冒充线路 RTT；不推断公网提速。`rdp-peer-latency.test.ts` 验证已选 pair、STUN 新鲜度与迟到统计，`rdp-devices.spec.ts` 验证单行工具栏与无重排详情；`--tunnel` 验证 RTC 初始化不支持时使用已保存的隧道中继（默认公网 TCP；均不对外拨号）。`--blocked-ice` 保留真实 SDP 信令，将候选指向不响应的回环 UDP，覆盖 ICE `checking` 直到应用截止和一次性回退；`--native` 检查随包 FreeRDP 首个协商包。TCP 对端不是真实 Windows；独立 Windows CI 另跑 DPAPI/ACL 与 LocalService SCM 测试。依赖和真机步骤见 [连接器说明](../docs/rdp-peer.md)。
+
+发送队列对照（不需真实 Windows，不改本机网络规则）：
+
+```bash
+cd tools/rdp-peer
+CLOUDSSH_RDP_LATENCY_TEST=1 GOWORK=off go test -mod=readonly -run '^TestLimitedDesktopInteraction$' -count=3 -v
+```
+
+Pion 走本机限速 UDP，测试 4 Mbit/s / 70 ms 和 40 Mbit/s / 28 ms 两组配置。在 2 MiB 连续输出期间插入模拟按键，验证字节完整、顺序不变，比较回显耗时、按键到达连接器时的 SCTP 待发送与未确认字节，以及传输总耗时。旧策略保留整窗，新策略限制读入队列；不以真实 Windows、画面绘制或任意公网承诺解读这些数字。默认 Go/CI 运行软上限的确定性用例，耗时对照显式开启。
+
 ### 真实 SSH 互操作（显式运行）
 
 `pnpm run test:interop` 在 macOS/Linux 上启动 loopback-only OpenSSH 和独立 Go SSH 网关，
@@ -207,6 +220,7 @@ OpenSSH 覆盖七种裸钥/证书协商、PTY/Shell、exec 与 SFTP；Go 网关�
 - 本地字体（`local-fonts.spec.ts`，Chromium + WebKit 移动端）：开发页、实际 Worker 内联 HTML 与 Pages 编辑器相对路径，全部图标连字、字重与 FILL 图形变化、无 Google Fonts 请求、Worker 无独立字体请求。`build/font-assets.test.ts` 验证缺失/外链/独立字体产物会阻断构建，生产构建测试保护定向强制内联策略。
 - 匿名连接表单 axe 检查
 - 服务器弹窗的基本对话框语义、初始焦点和 Escape 关闭
+- 共用弹窗（`modal-themes.spec.ts`，Chromium + WebKit）：实际打开服务器、AI 设置、MCP 和 Windows 安装窗，逐主题比较面板材质、边框圆角、标题和遮罩，并附赛博朋克截图。`rdp-devices.spec.ts` 验证安装须知默认折叠、测试包警示、等待与上线状态、取消及确认解绑。
 - 服务器表单布局（`server-modal-layout.spec.ts`，Chromium + WebKit）：四个内置主题 × 三种语言的桌面双栏与常见高度免滚动；密码/私钥/none/Cloudflare CA、隧道与展开 Service Token、320/390/768px 窄屏、短窗口固定操作栏与重开滚动复位、自定义最大字号回退；端口为五位数字时预留原生数字控件空间，新增/编辑仍以数字保存且保留 1–65535/整数/必填校验；匿名连接页共用端口布局。
 - 服务器标签筛选、分页与配置快速克隆
 - 多标签操作：双击内联重命名、空值与失焦恢复、右键菜单项与外部点击关闭
@@ -224,7 +238,7 @@ OpenSSH 覆盖七种裸钥/证书协商、PTY/Shell、exec 与 SFTP；Go 网关�
 - `terminal-remote-copy` 在 Chromium / 移动 WebKit 以 WebSocket 输出验证 OSC 52 分帧、第一次直接写入、权限拒绝后重试、无本地操作的输出与切标签/断线隔离；同样覆盖 SGR 鼠标释放、键盘焦点恢复和四个内置主题的重试按钮对比度。模拟剪贴板权限不替代真机验收。
 - 视口与认证聚焦时序（`mobile-terminal.spec.ts` / `auth-challenge.spec.ts`）：视口测试使用受控时钟和页面已有的单一控制器/真实标签，逐帧发送键盘动画尺寸，不用固定真实等待推断初始化完成。`browser-timing.ts` 可暂缓 rAF 而继续推进计时器，覆盖旧 fit 立即取消、首帧前键盘变化、旋转基线重置和迟到聚焦不抢验证码/取消按钮；保留双引擎用例与原 CI 重试/失败门禁。
 - 移动端精细操作（`mobile-selection.spec.ts`、`mobile-sftp.spec.ts`、`mobile-terminal-actions.spec.ts`，Chromium + WebKit）：首列/宽字符选区、端点偏移与命中、跨屏本地滚动及取消、字号本机偏好/行数与列数变化；SFTP显式打开/非连续多选/批量删除、传输离开取消与过期批准；工具栏在四主题、三语和320/390px下比较滚动按钮隐藏前后的左侧截图，覆盖普通/多选状态不透字；每个主题×宽度×语言组合独立运行，保留30s单例预算、真实触摸与逐像素断言，避免Linux WebKit较慢的渲染等待在单例中累计三套场景，工具栏截图附件直接使用已核对的视口矩形而不重复滚动/稳定性等待；移动标签菜单与克隆独立令牌；手动粘贴的长度限制、换行/bracketed paste/trzsz、Shell-ready、切标签和旧socket隔离。`terminal-font-preference.test.ts` 覆盖纯策略、存储异常与范围限制。原生菜单/手柄触感与真实软键盘仍需真机验收，见 [移动端交互说明](../docs/mobile-ux.md)。
-- 移动阅读空间与材质（`mobile-glass.spec.ts`、`mcp.spec.ts`、`agent-responses.spec.ts`，Chromium + WebKit）：手机/平板隐藏四个普通建议但保留任务恢复、桌面建议可用；三语短屏更多菜单MCP紧邻Agent，主题/字号与其他行不压缩重叠，入口仍可打开。玻璃主题覆盖15类表面的320/390/900px与桌面往返、其他主题隔离，以及用户菜单、服务器表单、终端菜单、MCP、确认、SFTP、Agent真实截图；终端菜单正文区在隐藏底层终端前后须逐像素一致（不比较圆角/装饰边缘）。
+- 移动阅读空间与材质（`mobile-glass.spec.ts`、`mcp.spec.ts`、`agent-responses.spec.ts`，Chromium + WebKit）：手机/平板隐藏四个普通建议但保留任务恢复、桌面建议可用；三语短屏更多菜单MCP紧邻Agent，主题/字号与其他行不压缩重叠，入口仍可打开。玻璃主题覆盖16类表面的320/390/900px与桌面往返、其他主题隔离，以及用户菜单、服务器表单、终端菜单、MCP、确认、SFTP、Agent真实截图；终端菜单正文区在隐藏底层终端前后须逐像素一致（不比较圆角/装饰边缘）。
 - tmux 触摸滚轮（`terminal-touch-scroll.spec.ts`，Chromium + WebKit）：VT200/drag/any 与 SGR/旧式二进制/像素编码、双向滚动、原始面板坐标、Ctrl 状态保留、Shell/连接门控、选区优先、取消/模式切换/断连清理与报文数量上限
 - 终端焦点报告（`terminal-focus-report.spec.ts`，Chromium + WebKit）：真实 Ctrl/Alt 按钮与焦点切换、DECSET 1004、Ctrl+B/方向键、bracketed paste、Shell/连接门控及 iOS IME 回退/去重
 - UI 与样式回归：Liquid Glass 下 AI 模型下拉面板与设置面板滚动能力（overflow 简写防回归）、窄视口弹窗横向溢出消除、主题化滚动条兜底与 .no-scrollbar 样式

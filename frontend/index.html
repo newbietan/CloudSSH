@@ -546,30 +546,18 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
       <!-- Server Modal (添加/编辑) -->
       <div
         id="server-modal"
-        class="responsive-modal hidden fixed inset-0 z-[100] flex items-center justify-center"
+        class="app-modal responsive-modal hidden fixed inset-0 z-[100] flex items-center justify-center"
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
       >
         <div class="modal-overlay absolute inset-0" id="modal-backdrop"></div>
-        <div
-          class="responsive-modal-panel server-modal-panel cyber-box p-6 shadow-2xl relative z-10 w-full"
-        >
-          <div
-            class="theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent-secondary)] to-transparent opacity-50"
-          ></div>
-          <div
-            class="server-modal-header flex items-center justify-between pb-4 border-b border-dim"
-          >
-            <span
-              id="modal-title"
-              class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]"
-              data-i18n="server.add"
-              >添加服务器</span
-            >
+        <div class="app-modal__panel app-modal__inset responsive-modal-panel server-modal-panel z-10 w-full">
+          <header class="app-modal__header server-modal-header">
+            <h2 id="modal-title" class="app-modal__title" data-i18n="server.add">添加服务器</h2>
             <button
               id="modal-close-btn"
-              class="panel-close-btn"
+              class="app-modal__close"
               data-i18n-aria-label="common.close"
               aria-label="关闭"
             >
@@ -579,7 +567,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
                 >close</span
               >
             </button>
-          </div>
+          </header>
           <form id="server-form" class="server-modal-form">
             <div id="server-kind-switch" class="server-kind-switch hidden" role="group" data-i18n-aria-label="rdp.serverKind" aria-label="服务器类型">
               <button id="server-kind-linux" type="button" aria-pressed="true" aria-controls="server-ssh-fields">Linux</button>

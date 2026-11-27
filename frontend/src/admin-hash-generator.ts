@@ -40,26 +40,24 @@ export function openAdminHashGeneratorDialog(): void {
 
   const dialog = document.createElement('dialog');
   dialog.id = DIALOG_ID;
-  dialog.className = 'auth-challenge-dialog';
+  dialog.className = 'app-modal app-modal--motion auth-challenge-dialog';
+  dialog.setAttribute('aria-labelledby', 'admin-hash-title');
   dialog.setAttribute('aria-modal', 'true');
 
   const form = document.createElement('form');
-  form.className = 'auth-challenge-dialog__panel';
+  form.className = 'app-modal__panel app-modal__inset auth-challenge-dialog__panel';
   form.method = 'dialog';
   form.noValidate = true;
 
-  const accent = document.createElement('div');
-  accent.className = 'auth-challenge-dialog__accent';
-  accent.setAttribute('aria-hidden', 'true');
-
-  const header = document.createElement('div');
-  header.className = 'auth-challenge-dialog__header';
+  const header = document.createElement('header');
+  header.className = 'app-modal__header';
   const icon = document.createElement('span');
-  icon.className = 'auth-challenge-dialog__icon material-symbols-outlined';
+  icon.className = 'app-modal__icon auth-challenge-dialog__icon material-symbols-outlined';
   icon.textContent = 'password';
   icon.setAttribute('aria-hidden', 'true');
   const title = document.createElement('h2');
-  title.className = 'auth-challenge-dialog__title';
+  title.id = 'admin-hash-title';
+  title.className = 'app-modal__title';
   title.textContent = t('auth.adminHashGenTitle');
   header.append(icon, title);
 
@@ -115,7 +113,6 @@ export function openAdminHashGeneratorDialog(): void {
   actions.append(cancelButton, generateButton);
 
   form.append(
-    accent,
     header,
     description,
     errorText,

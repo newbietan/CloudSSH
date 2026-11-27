@@ -4,22 +4,37 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CloudSSH · Remote Desktop</title>
 <style>
-:root{color-scheme:dark;--bg:#0a0a0a;--bg-elevated:#191919;--text:#eaeaea;--text-muted:#b4b4b4;--border:#555;--accent:#93df80}*{box-sizing:border-box}[hidden]{display:none!important}body{display:flex;flex-direction:column;height:100dvh;margin:0;background:var(--bg);color:var(--text);font:14px system-ui}label{display:flex;flex-direction:column;gap:.2rem}button,input{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:5px;min-height:40px;padding:.35rem .65rem}button{cursor:pointer;color:var(--accent);align-self:end}button:disabled{opacity:.55;cursor:default}#status{position:absolute;inset:0 0 auto;z-index:1;margin:0;padding:.25rem .8rem;background:var(--bg);color:var(--text-muted);pointer-events:none}#status:empty{display:none}#status.desktop-ready{inset:auto;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);padding:0}.desktop-stage{flex:1;min-height:0;position:relative;display:grid;place-items:center;overflow:hidden;background:#080808}#canvas{display:block;width:var(--desktop-width,100%)!important;height:var(--desktop-height,100%)!important;max-width:100%;max-height:100%;touch-action:none}#certificate{box-sizing:border-box;position:fixed;inset:0;margin:auto;width:min(34rem,calc(100% - 2rem));max-height:calc(100dvh - 2rem);overflow:auto;padding:1.25rem;color:var(--text);background:var(--bg-elevated);border:1px solid var(--border);border-radius:12px}#certificate::backdrop{background:#0009}#certificate-fingerprint,#certificate-saved{display:block;overflow-wrap:anywhere;font:14px/1.5 ui-monospace,monospace;margin-bottom:.55rem}#certificate .actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.5rem;margin-top:1rem}
+:root{color-scheme:dark;--bg:#0a0a0a;--text:#eaeaea;--text-muted:#b4b4b4}
+*{box-sizing:border-box}[hidden]{display:none!important}
+body{display:flex;flex-direction:column;height:100dvh;margin:0;background:var(--bg);color:var(--text);font:14px system-ui}
+#status{position:absolute;inset:0 0 auto;z-index:1;margin:0;padding:.25rem .8rem;background:var(--bg);color:var(--text-muted);pointer-events:none}
+#status:empty{display:none}#status.desktop-ready{inset:auto;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);padding:0}
+.desktop-stage{flex:1;min-height:0;position:relative;display:grid;place-items:center;overflow:hidden;background:#080808}
+#canvas{display:block;width:var(--desktop-width,100%)!important;height:var(--desktop-height,100%)!important;max-width:100%;max-height:100%;touch-action:none}
+#certificate{--app-modal-width:34rem}
+#certificate-help{line-height:1.6}
+#certificate-fingerprint,#certificate-saved{display:block;overflow-wrap:anywhere;font:14px/1.5 ui-monospace,monospace;margin-bottom:.55rem}
+#certificate .app-modal__actions{margin-top:1rem}
 </style>
+<style id="cloudssh-modal-css"></style>
 <p id="status" role="status" tabindex="-1"></p>
 <div class="desktop-stage" id="stage"><canvas id="canvas" tabindex="0"></canvas></div>
-<dialog id="certificate" aria-labelledby="certificate-title" aria-describedby="certificate-help">
-  <h2 id="certificate-title">Windows certificate</h2>
-  <p id="certificate-help"></p>
-  <strong>SHA-256</strong>
-  <code id="certificate-fingerprint"></code>
-  <div id="certificate-saved-box" hidden>
-    <strong id="certificate-saved-label">Previously saved fingerprint</strong>
-    <code id="certificate-saved"></code>
-  </div>
-  <div class="actions">
-    <button id="certificate-cancel" type="button" autofocus>Cancel</button>
-    <button id="certificate-accept" type="button">Trust and connect</button>
+<dialog id="certificate" class="app-modal" aria-labelledby="certificate-title" aria-describedby="certificate-help">
+  <div class="app-modal__panel app-modal__inset">
+    <header class="app-modal__header">
+      <h2 id="certificate-title" class="app-modal__title">Windows certificate</h2>
+    </header>
+    <p id="certificate-help"></p>
+    <strong>SHA-256</strong>
+    <code id="certificate-fingerprint"></code>
+    <div id="certificate-saved-box" hidden>
+      <strong id="certificate-saved-label">Previously saved fingerprint</strong>
+      <code id="certificate-saved"></code>
+    </div>
+    <div class="app-modal__actions">
+      <button id="certificate-cancel" class="app-modal__button" type="button" autofocus>Cancel</button>
+      <button id="certificate-accept" class="app-modal__button app-modal__button--primary" type="button">Trust and connect</button>
+    </div>
   </div>
 </dialog>
 <script data-cfasync="false" src="/rdp/assets/rdp-socket.js" defer></script>

@@ -310,22 +310,22 @@ class RemoteEditor implements RemoteEditorHandle {
 
   private buildDialog(): HTMLDialogElement {
     const dialog = document.createElement('dialog');
-    dialog.className = 'remote-editor';
+    dialog.className = 'app-modal app-modal--motion remote-editor';
     dialog.setAttribute('aria-label', t('sftp.editorTitle', { name: this.options.filename }));
 
     // 静态模板，动态内容（文件名/路径）一律 textContent 写入
     dialog.innerHTML = `
-      <div class="remote-editor__panel">
-        <div class="remote-editor__header">
-          <span class="material-symbols-outlined remote-editor__icon" aria-hidden="true">edit_note</span>
+      <div class="app-modal__panel remote-editor__panel">
+        <header class="app-modal__header app-modal__header--bar remote-editor__header">
+          <span class="material-symbols-outlined app-modal__icon remote-editor__icon" aria-hidden="true">edit_note</span>
           <div class="remote-editor__titles">
-            <h2 class="remote-editor__title"></h2>
+            <h2 class="app-modal__title remote-editor__title"></h2>
             <span class="remote-editor__path"></span>
           </div>
-          <button type="button" class="remote-editor__close" data-i18n-title="common.close" aria-label="关闭">
+          <button type="button" class="app-modal__close remote-editor__close" data-i18n-title="common.close" aria-label="关闭">
             <span class="material-symbols-outlined" aria-hidden="true">close</span>
           </button>
-        </div>
+        </header>
         <div class="remote-editor__notice" role="note" hidden></div>
         <div class="remote-editor__body"></div>
         <div class="remote-editor__footer">

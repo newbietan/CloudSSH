@@ -36,7 +36,7 @@ describe('reproducible build and deployment gate', () => {
     const buildIndex = deployWorkflow.indexOf('pnpm run build:frontend');
     const e2eIndex = deployWorkflow.indexOf('pnpm run test:e2e');
     const deployIndexes = [...deployWorkflow.matchAll(
-      /run: pnpm exec wrangler deploy(?: --env test)?\r?$/gm
+      /run: pnpm exec wrangler deploy(?: --env test src\/worker\/rdp-preview-entry\.ts)?\r?$/gm
     )].map((match) => match.index ?? -1);
     expect(deployIndexes).toHaveLength(2);
 

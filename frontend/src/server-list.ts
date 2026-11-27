@@ -14,8 +14,9 @@ import { ShareManager } from './share-manager';
 import type { SSHHostInfo } from './terminal';
 import { confirmAction, notify } from './ui-feedback';
 import { formatTimestampWithRelative } from '../../src/server-memory-schema';
-import { RDP_DEFAULT_PORT, isRdpId, type RdpCard, type RdpProfile } from '../../src/rdp-schema';
+import { RDP_DEFAULT_PORT, isRdpId, type RdpCard, type RdpConnector, type RdpProfile } from '../../src/rdp-schema';
 import { RdpManager } from './rdp-manager';
+import { RdpConnectorSetup } from './rdp-connector-setup';
 
 interface UserInfo {
   id: number;
@@ -175,6 +176,7 @@ export class ServerList {
   private servers: ServerConfig[] = [];
   private rdpProfiles: RdpCard[] = [];
   private readonly rdp?: RdpManager;
+  private readonly rdpConnector?: RdpConnectorSetup;
   private readonly modalEvents = new AbortController();
   private disposed = false;
   private modalKind: 'ssh' | 'rdp' = 'ssh';
@@ -218,7 +220,12 @@ export class ServerList {
     this.sharingEnabled = config.sshSharingEnabled === true;
     this.cfSshCaEnabled = config.authMode === 'cf_access';
     const fields = document.querySelector<HTMLFieldSetElement>('#server-rdp-fields');
-    if (config.rdpEnabled === true && fields) this.rdp = new RdpManager(fields, () => this.syncRdpSubmit());
+    if (config.rdpEnabled === true && fields) {
+      if (config.rdpConnectorEnabled === true) this.rdpConnector = new RdpConnectorSetup(
+        id => { if (!this.disposed) this.openRdp?.(id); }, () => { void this.fetchRdpProfiles(); }, config.rdpConnectorPreview === true);
+      this.rdp = new RdpManager(fields, () => this.syncRdpSubmit(), !!this.rdpConnector,
+        row => { if (!this.disposed) this.rdpConnector?.open(row, false); });
+    }
     try {
       const savedSort = localStorage.getItem(SERVER_SORT_STORAGE_KEY) as ServerSortMode | null;
       if (savedSort && ['recent', 'updated', 'created', 'name'].includes(savedSort)) {
@@ -240,6 +247,7 @@ export class ServerList {
     document.getElementById('server-grid')?.replaceChildren();
     document.getElementById('server-list-notice')?.classList.add('hidden');
     this.rdp?.dispose();
+    this.rdpConnector?.dispose();
     this.hideModal();
   }
 
@@ -602,11 +610,8 @@ export class ServerList {
       this.bindHostCopy(entry.row.id, entry.row.host);
       if (entry.kind === 'rdp') {
         const { row } = entry;
-        document.getElementById(`rdp-open-${row.id}`)?.addEventListener('click', () => {
-          if (this.disposed) return;
-          if (!row.hasLogin) this.editRdp(row);
-          else this.openRdp?.(row.id);
-        });
+        const open = document.querySelector<HTMLButtonElement>(`#rdp-open-${row.id}`);
+        open?.addEventListener('click', () => { void this.openWindowsCard(row, open); });
         document.getElementById(`rdp-edit-${row.id}`)?.addEventListener('click', () => this.editRdp(row));
         document.getElementById(`rdp-delete-${row.id}`)?.addEventListener('click', () => { void this.deleteRdp(row); });
         continue;
@@ -699,6 +704,26 @@ export class ServerList {
     </div>`;
   }
 
+  private async openWindowsCard(row: RdpCard, button: HTMLButtonElement): Promise<void> {
+    if (this.disposed || button.disabled) return;
+    if (!row.hasLogin) return this.editRdp(row);
+    if (row.route === 'connector' && this.rdpConnector && (!row.connector || ['unbound', 'waiting', 'other_origin'].includes(row.connector.state))) {
+      // The user may have closed the installer guide before Windows came online. A stale card must not
+      // send them back through setup when they explicitly ask to open the already installed desktop.
+      button.disabled = true;
+      const connector = await fetch(`/api/rdp/profiles/${row.id}/connector`, { cache: 'no-store', redirect: 'error',
+        signal: AbortSignal.any([this.modalEvents.signal, AbortSignal.timeout(4000)]),
+      }).then(res => res.ok ? res.json() as Promise<RdpConnector> : undefined).catch(() => undefined);
+      button.disabled = false;
+      if (this.disposed || !button.isConnected) return;
+      if (connector?.state !== 'online' && connector?.state !== 'offline') {
+        this.rdpConnector.open({ ...row, connector: connector ?? row.connector });
+        return;
+      }
+    }
+    this.openRdp?.(row.id);
+  }
+
   private renderRdpCard(row: RdpCard): string {
     if (!isRdpId(row.id)) return '';
     const connected = row.last_connected_at ? formatTimestampWithRelative(row.last_connected_at, Date.now(), getLocale()) : t('rdp.noConnectionRecord');
@@ -709,9 +734,9 @@ export class ServerList {
         <span class="shrink-0 text-[10px] text-muted border border-dim px-2 py-0.5">RDP</span>
       </div>
       <div class="space-y-1.5 text-xs text-muted mb-4">
-        ${this.renderHostRow(row.id, row.host, row.route === 'direct' ? (row.port ?? RDP_DEFAULT_PORT) : null)}
+        ${row.route !== 'connector' ? this.renderHostRow(row.id, row.host, row.route === 'direct' ? (row.port ?? RDP_DEFAULT_PORT) : null) : ''}
         <div class="server-card-meta-row flex items-center gap-2 min-w-0"><span class="text-dim">${t('server.userLabel')}</span><span class="text-on-surface truncate" title="${this.escapeAttr(row.username ?? '—')}">${this.escapeHtml(row.username ?? '—')}</span></div>
-        <div>${t(row.route === 'tunnel' ? 'rdp.tunnel' : 'rdp.direct')}</div>
+        <div>${t(row.route === 'connector' ? 'rdp.connectorRoute' : row.route === 'tunnel' ? 'rdp.tunnel' : 'rdp.direct')}</div>
         <div class="server-card-meta-row flex items-center gap-2 min-w-0"><span class="text-dim">${t('server.lastConnected')}</span><span class="text-on-surface truncate" title="${this.escapeAttr(connected)}">${this.escapeHtml(connected)}</span></div>
         ${(row.tags ?? []).length ? `<div class="flex flex-wrap gap-1 mt-3">${row.tags.map(tag => `<span class="text-[9px] text-primary border border-[var(--border-strong)] px-1.5 py-0.5">#${this.escapeHtml(tag)}</span>`).join('')}</div>` : ''}
       </div>
@@ -1032,8 +1057,11 @@ export class ServerList {
     const generation = this.modalGeneration;
     this.rdpSaving = submit.disabled = true;
     try {
-      await this.rdp.save();
-      if (generation === this.modalGeneration) this.hideModal();
+      const saved = await this.rdp.save();
+      if (!this.disposed && generation === this.modalGeneration) {
+        this.hideModal();
+        if (saved.revision === 1) this.rdpConnector?.open(saved);
+      }
       await this.fetchRdpProfiles();
     } catch (error) {
       if (!this.disposed && generation === this.modalGeneration) {

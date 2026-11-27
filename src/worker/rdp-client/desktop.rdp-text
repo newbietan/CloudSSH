@@ -5,8 +5,14 @@ const dictionary = {
 };
 // Only these local messages may reach the status line, never an upstream error or close reason.
 const failureText = {
+  peer_unavailable: ['The Windows connector is not online. Check the Windows service and CloudSSH site.', 'Windows 连接器不在线，请检查 Windows 服务和 CloudSSH 站点。', 'Windows 連接器不在線，請檢查 Windows 服務和 CloudSSH 站點。'],
+  peer_timeout: ['The direct connection timed out. Check the connector and UDP network.', '直连超时，请检查连接器和 UDP 网络。', '直連逾時，請檢查連接器和 UDP 網路。'],
+  peer_failed: ['Could not connect directly. Check the connector, UDP connectivity and local RDP.', '无法直连，请检查连接器、UDP 网络和本机 RDP。', '無法直連，請檢查連接器、UDP 網路和本機 RDP。'],
+  peer_busy: ['A direct desktop is already opening or open for this device.', '这台设备已有一个直连桌面正在打开或使用。', '這台裝置已有一個直連桌面正在開啟或使用。'],
+  peer_ended: ['The WebRTC connector or its control channel disconnected.', 'WebRTC 连接器或其控制通道已断开。', 'WebRTC 連接器或其控制通道已中斷。'],
   profile_changed: ['Device settings changed. Return to the list and reopen the device.', '设备配置已更新，请返回列表重新打开。', '裝置設定已更新，請返回清單重新開啟。'],
   refresh_client: ['The desktop client has changed. Refresh CloudSSH.', '桌面客户端已更新，请刷新 CloudSSH。', '桌面用戶端已更新，請重新整理 CloudSSH。'],
+  login_unavailable: ['Could not securely load Windows sign-in details. Refresh CloudSSH and try again.', '无法安全读取 Windows 登录信息，请刷新 CloudSSH 后重试。', '無法安全讀取 Windows 登入資訊，請重新整理 CloudSSH 後再試。'],
   authentication_required: ['Your sign-in has expired. Return and sign in again.', '登录已失效，请返回并重新登录。', '登入已失效，請返回並重新登入。'],
   ticket_rejected: ['Connection ticket is no longer valid. Reopen the device for a new one.', '连接票据已失效，请从列表重新打开设备。', '連線票據已失效，請從清單重新開啟裝置。'],
   ticket_limit: ['Too many connection attempts. Wait a moment, then reopen the device.', '连接请求过多，请稍候再从列表打开设备。', '連線請求過多，請稍候再從清單開啟裝置。'],
@@ -24,8 +30,12 @@ const trustText = {
   'zh-CN': ['首次连接此 Windows 服务器', '请通过可信方式核对证书指纹再确认。意外的指纹可能表示你连接到了另一台服务器。', '取消', '信任并连接', 'Windows 证书已变化', '连接已阻止：收到的证书指纹与已保存的指纹不一致。', '已保存的指纹', '无法保存证书信任，请重新连接。', '等待确认 Windows 证书。', '未接受 Windows 证书。'],
   'zh-TW': ['首次連線至此 Windows 伺服器', '請透過可信方式核對憑證指紋再確認。意外的指紋可能表示你連線到了另一台伺服器。', '取消', '信任並連線', 'Windows 憑證已變更', '連線已阻擋：收到的憑證指紋與已儲存的指紋不一致。', '已儲存的指紋', '無法儲存憑證信任，請重新連線。', '等待確認 Windows 憑證。', '未接受 Windows 憑證。'],
 };
-let requested = navigator.language;
-try { requested = localStorage.getItem('cloudssh_locale') || requested; } catch { /* optional */ }
+// Match the workspace language, including an explicit ?lang override in the parent.
+let requested = window.frameElement?.ownerDocument.documentElement.lang;
+if (!requested || !Object.hasOwn(dictionary, requested)) {
+  requested = navigator.language;
+  try { requested = localStorage.getItem('cloudssh_locale') || requested; } catch { /* optional */ }
+}
 const locale = Object.hasOwn(dictionary, requested) ? requested : /^zh-(TW|HK|Hant)/i.test(requested) ? 'zh-TW' : /^zh/i.test(requested) ? 'zh-CN' : 'en-US';
 document.documentElement.lang = locale;
 const msg = dictionary[locale];
@@ -36,11 +46,6 @@ async function requestFailure(response) {
   const data = await response.json().catch(() => null);
   return failure(data?.code) ?? msg[17];
 }
-const [relayLabel, rttHelp] = {
-  'en-US': ['Relay', 'Relay: browser to CloudSSH. RDP: average round trip reported by Windows. A dash means no recent sample. Neither measures screen rendering.'],
-  'zh-CN': ['中继', '中继：浏览器到 CloudSSH 的往返时间。RDP：Windows 上报的平均往返时间。横线表示暂无近期数据，两者都不代表画面响应耗时。'],
-  'zh-TW': ['中繼', '中繼：瀏覽器至 CloudSSH 的往返時間。RDP：Windows 回報的平均往返時間。橫線表示暫無近期資料，兩者都不是畫面反應時間。'],
-}[locale];
 const el = id => document.getElementById(id);
 const tellWorkspace = (type, detail) => window.frameElement?.dispatchEvent(new CustomEvent('cloudssh-rdp-' + type, { detail }));
 const status = el('status');
@@ -61,7 +66,9 @@ const api = '/api/rdp/profiles/' + deviceId;
 const authErrors = /\bERRCONNECT_(?:AUTHENTICATION_FAILED|LOGON_FAILURE|WRONG_PASSWORD|ACCOUNT_DISABLED|ACCOUNT_EXPIRED|ACCOUNT_LOCKED_OUT|ACCOUNT_RESTRICTION|PASSWORD_CERTAINLY_EXPIRED|PASSWORD_EXPIRED|PASSWORD_MUST_CHANGE|LOGON_TYPE_NOT_GRANTED|NO_OR_MISSING_CREDENTIALS|NTLM_BLOCKED|ACCESS_DENIED|INSUFFICIENT_PRIVILEGES|KDC_UNREACHABLE)\b/;
 const securityErrors = /\bERRCONNECT_(?:SECURITY_NEGO_CONNECT_FAILED|TLS_CONNECT_FAILED|HYBRID_REQUIRED_BY_SERVER)\b/;
 const transportErrors = /\bERRCONNECT_CONNECT_TRANSPORT_FAILED\b/;
-const clientRevision = '5'; // Keep aligned with src/rdp-schema.ts when changing the browser ABI.
+// Keep both ABIs aligned with src/rdp-schema.ts. Existing trust and peer renewal still use v5.
+const clientRevision = '5';
+const connectRevision = '6';
 const trust = trustText[locale];
 const certificate = el('certificate');
 const acceptCertificate = el('certificate-accept');
@@ -77,32 +84,111 @@ function request(url, options) {
   return fetch(url, { credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(10000), ...options });
 }
 
-async function run() {
+const loginCurve = { name: 'ECDH', namedCurve: 'P-256' };
+const loginEncoder = new TextEncoder();
+const loginBase64Url = raw => btoa(raw).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+function decodeLoginPart(value, min, max = min) {
+  if (typeof value !== 'string' || value.length < Math.ceil(min * 4 / 3) ||
+      value.length > Math.ceil(max * 4 / 3) || !/^[A-Za-z0-9_-]+$/.test(value)) throw new Error('invalid envelope');
+  const raw = atob(value.replace(/-/g, '+').replace(/_/g, '/'));
+  if (raw.length < min || raw.length > max || loginBase64Url(raw) !== value) throw new Error('invalid envelope');
+  return Uint8Array.from(raw, c => c.charCodeAt(0));
+}
+
+// Fetch's attempt deadline also bounds reading this body. Never accept legacy plaintext or unbounded JSON.
+async function readConnectGrant(response, revision) {
+  const bytes = new Uint8Array(12 * 1024);
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('missing envelope');
+  let size = 0, value;
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      if (size + chunk.value.length > bytes.length) throw new Error('oversized envelope');
+      bytes.set(chunk.value, size); size += chunk.value.length;
+    }
+    value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, size)));
+  } finally {
+    bytes.fill(0);
+    void reader.cancel().catch(() => {}); reader.releaseLock();
+  }
+  const box = value?.loginEnvelope;
+  if (!value || Object.keys(value).length !== 3 || value.revision !== revision ||
+      typeof value.ticket !== 'string' || !/^[a-f0-9]{64}$/.test(value.ticket) ||
+      !box || Object.keys(box).length !== 4 || box.version !== 1) throw new Error('invalid envelope');
+  const point = decodeLoginPart(box.senderKey, 65);
+  if (point[0] !== 4) throw new Error('invalid envelope');
+  return { ticket: value.ticket, revision, senderKey: box.senderKey, point,
+    iv: decodeLoginPart(box.iv, 12), ciphertext: decodeLoginPart(box.ciphertext, 17, 8192) };
+}
+
+// Keep the authenticated context aligned with src/worker/rdp-connect-crypto.ts.
+async function openConnectLogin(grant) {
+  const aad = loginEncoder.encode(JSON.stringify([
+    'cloudssh-rdp-login-v1', location.origin, deviceId, grant.revision, grant.transport,
+    grant.ticket, grant.clientKey, grant.senderKey,
+  ]));
+  const sender = await crypto.subtle.importKey('raw', grant.point, loginCurve, false, []);
+  const bits = await crypto.subtle.deriveBits({ name: 'ECDH', public: sender }, grant.privateKey, 256);
+  let hkdf;
+  try { hkdf = await crypto.subtle.importKey('raw', bits, 'HKDF', false, ['deriveKey']); }
+  finally { new Uint8Array(bits).fill(0); }
+  const aes = await crypto.subtle.deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt: loginEncoder.encode(grant.ticket), info: aad }, hkdf,
+    { name: 'AES-GCM', length: 256 }, false, ['decrypt'],
+  );
+  const bytes = new Uint8Array(await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: grant.iv, additionalData: aad, tagLength: 128 }, aes, grant.ciphertext,
+  ));
+  try {
+    const login = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    if (!login || Object.keys(login).length !== 3 || !validLogin(login.username, login.domain, login.password)) {
+      throw new Error('invalid login');
+    }
+    return login;
+  } finally { bytes.fill(0); }
+}
+
+async function run(preferDirect) {
   let password;
   const abort = new AbortController();
   let stopped = false;
   let ticket;
   let timer;
   let ready = false;
-  let telemetry, relayMs, remoteMs;
-  let relayAt = -Infinity, remoteAt = -Infinity;
+  let activePath, directCarrier, candidateTypes;
+  let telemetry, ice, rdp, receiveBytes;
+  const channel = [];
   function paintLatency() {
+    // Failed preflight attempts never appear as a live route.
+    if (!ready || stopped || !activePath) return tellWorkspace('latency', null);
     const now = performance.now();
-    const fmt = (ms, age, limit) => ms !== undefined && age < limit ? `${ms} ms` : '—';
-    const text = `${relayLabel} ${fmt(relayMs, now - relayAt, 10000)} · RDP ${fmt(remoteMs, now - remoteAt, 30000)}`;
-    tellWorkspace('latency', { text, help: rttHelp });
+    const recent = (sample, maxAge) => sample && now - sample.at < maxAge ? sample.ms : null;
+    while (channel.length && now - channel[0].at >= 30000) channel.shift();
+    tellWorkspace('latency', {
+      path: activePath, iceMs: recent(ice, 15000), channelMs: recent(channel.at(-1), 10000),
+      channelPeakMs: channel.length ? Math.max(...channel.map(sample => sample.ms)) : null,
+      rdpMs: recent(rdp, 30000), receiveBytes: receiveBytes ?? null, candidateTypes,
+    });
   }
   function sample() {
     if (!ready || stopped || document.hidden) return;
     const value = window.Module?._cloudssh_take_rdp_rtt?.();
-    if (Number.isInteger(value) && value >= 0 && value <= 60000) { remoteMs = value; remoteAt = performance.now(); }
+    if (Number.isInteger(value) && value >= 0 && value <= 60000) rdp = { ms: value, at: performance.now() };
+    receiveBytes = socket?.takeReceiveBacklog?.();
     paintLatency();
     socket?.probe?.();
+    // Browser ICE statistics are independent of the in-band probe. Never await them on the send path.
+    void directCarrier?.sampleLink?.();
   }
   function resetMeter() {
     clearInterval(telemetry); telemetry = undefined;
+    directCarrier?.resetLink?.();
     socket?.cancelProbe?.();
-    relayMs = remoteMs = undefined;
+    void socket?.takeReceiveBacklog?.();
+    channel.length = 0;
+    ice = rdp = receiveBytes = undefined;
     paintLatency();
   }
   paintLatency();
@@ -230,17 +316,91 @@ async function run() {
     if (stopped) return;
     show(12);
     watch(30_000, 18);
-    const url = new URL('/api/rdp/session', location.origin);
+    let url = new URL('/api/rdp/session', location.origin);
     url.protocol = 'wss:';
+    async function issue(transport) {
+      // No key reuse between a direct attempt, its relay fallback, or a fresh certificate reconnect.
+      const keys = await crypto.subtle.generateKey(loginCurve, false, ['deriveBits']);
+      const clientKey = loginBase64Url(String.fromCharCode(...new Uint8Array(await crypto.subtle.exportKey('raw', keys.publicKey))));
+      if (stopped) return {};
+      const response = await request(api + '/connect', {
+        method: 'POST', cache: 'no-store', signal: AbortSignal.any([abort.signal, AbortSignal.timeout(8000)]), headers: {
+          'X-CloudSSH-RDP-Client': connectRevision, 'X-CloudSSH-RDP-Saved-Revision': String(profile.revision),
+          'X-CloudSSH-RDP-Client-Key': clientKey,
+          ...(transport === 'device' ? { 'X-CloudSSH-RDP-Transport': 'device' } : {}),
+        },
+      }).catch(() => null);
+      if (stopped || !response?.ok) return { response };
+      const grant = await readConnectGrant(response, profile.revision);
+      return { grant: { ...grant, clientKey, privateKey: keys.privateKey, transport } };
+    }
+    async function loadPeer() {
+      const script = document.createElement('script');
+      script.src = base + 'rdp-peer.js'; script.setAttribute('data-cfasync', 'false');
+      await new Promise((resolve, reject) => {
+        const cleanup = () => { clearTimeout(deadline); abort.signal.removeEventListener('abort', failed); };
+        const failed = () => { cleanup(); script.remove(); reject(new Error('peer_unavailable')); };
+        const deadline = setTimeout(failed, 5_000);
+        script.onload = () => { cleanup(); resolve(); }; script.onerror = failed;
+        abort.signal.addEventListener('abort', failed, { once: true }); document.head.append(script);
+      });
+    }
+    // This is the only place a transport may be substituted. FreeRDP has not started, and no RDP bytes/NLA were sent.
+    async function selectTicket() {
+      let reason = 'peer_unavailable';
+      if (preferDirect && typeof RTCPeerConnection === 'function') {
+        await loadPeer().catch(() => {});
+        if (stopped) return;
+        if (typeof window.prepareCloudSshPeerCarrier === 'function') {
+          const { response, grant } = await issue('device');
+          if (stopped) return;
+          if (grant) {
+            const peerUrl = new URL('/api/rdp/peer/session', url);
+            try {
+              directCarrier = await window.prepareCloudSshPeerCarrier(peerUrl.href, api, clientRevision, grant.ticket, abort.signal, (local, remote, ms) => {
+                if (local && remote) candidateTypes = [local, remote];
+                if (!ready || stopped || document.hidden) return;
+                if (ms !== undefined) ice = ms === null ? undefined : { ms, at: performance.now() };
+                paintLatency();
+              });
+              if (stopped) { directCarrier.close(); return; }
+              url = peerUrl;
+              window.Module.websocket.url = url.href;
+              return grant;
+            } catch (err) {
+              reason = err?.message;
+              if (!['peer_unavailable', 'peer_timeout', 'peer_failed', 'peer_ended'].includes(reason)) {
+                if (!stopped) finish(failure(reason) || 22);
+                return;
+              }
+            }
+          } else if (response) {
+            const data = await response.json().catch(() => null);
+            if (response.status === 401 || data?.code !== 'peer_unavailable') {
+              finish(failure(response.status === 401 ? 'authentication_required' : data?.code) ?? msg[17]);
+              return;
+            }
+          } else reason = 'peer_failed';
+        }
+      }
+      if (stopped) return;
+      if (profile.route === 'connector') { finish(failure(reason)); return; }
+      const { response, grant } = await issue('relay'); // Fresh relay-only ticket and key.
+      if (stopped) return;
+      if (!grant) { finish(response ? await requestFailure(response) : 17); return; }
+      return grant;
+    }
     window.Module = {
       canvas,
       websocket: { url: url.href, subprotocol: null },
       createRdpSocket(address) {
         if (stopped || address !== url.href || !ticket || socket) throw new Error('socket unavailable');
-        socket = window.createCloudSshRdpSocket(address, ticket);
+        socket = window.createCloudSshRdpSocket(address, ticket, directCarrier);
+        activePath = directCarrier ? 'webrtc' : 'relay';
+        paintLatency();
         socket.onRelayClose = reason => {
           if (stopped) return;
-          if (reason === 'cert_reconnect' && acceptedTrust && !ready) {
+          if (activePath === 'relay' && reason === 'cert_reconnect' && acceptedTrust && !ready) {
             finish(26);
             tellWorkspace('reconnect', acceptedTrust);
             return;
@@ -256,7 +416,10 @@ async function run() {
         };
         socket.onRelayRtt = value => {
           if (!ready || stopped || document.hidden) return;
-          relayMs = value; relayAt = performance.now(); paintLatency();
+          // At most one pong per probe. Retain a bounded peak window, never average away spikes.
+          if (channel.length === 8) channel.shift();
+          channel.push({ ms: value, at: performance.now() });
+          paintLatency();
         };
         ticket = undefined;
         return socket;
@@ -333,19 +496,19 @@ async function run() {
           window.Module.FS.mkdirTree(prefs);
           window.Module.FS.writeFile(prefs + '/sdl-freerdp.json', '{"SDL_KeyModMask":["KMOD_NONE"]}');
           show(13);
-          watch(20_000, 22);
-          const issued = await request(api + '/connect', { method: 'POST', signal: abort.signal, headers: {
-            'X-CloudSSH-RDP-Client': clientRevision, 'X-CloudSSH-RDP-Saved-Revision': String(profile.revision),
-          } });
-          if (!issued.ok) return finish(await requestFailure(issued));
-          const info = await issued.json();
+          watch(preferDirect ? 42_000 : 20_000, 22);
+          let grant, login;
+          try {
+            grant = await selectTicket();
+            if (stopped || !grant) return;
+            // Decrypt only the selected attempt, before FreeRDP starts. Integrity failure never retries.
+            login = await openConnectLogin(grant);
+          } catch { return finish(failure('login_unavailable')); }
           if (stopped) return;
-          if (info.revision !== profile.revision || !/^[a-f0-9]{64}$/.test(info.ticket)) return finish(21);
-          if (!validLogin(info.login?.username, info.login?.domain, info.login?.password)) return finish(10);
-          const { username, domain } = info.login;
-          password = info.login.password;
-          delete info.login;
-          ticket = info.ticket;
+          const { username, domain } = login;
+          password = login.password;
+          ticket = grant.ticket;
+          grant = login = undefined;
           window.Module.websocket.on?.('open', () => { if (!stopped) { show(14); watch(30_000, 19); } });
           window.Module.websocket.on?.('error', () => finish(22));
           window.Module.websocket.on?.('close', () => finish(ready ? 16 : (freerdpError || 19)));
@@ -401,5 +564,7 @@ void (async () => {
   profile = saved;
   if (profile.hasLogin !== true) return show(9);
   tellWorkspace('starting', profile.name);
-  void run();
+  // A certificate-confirmation reconnect is explicitly the same relay and may not change routes.
+  const preferDirect = reconnectRevision === undefined && profile.connector?.state === 'online';
+  void run(preferDirect);
 })().catch(() => show(21));

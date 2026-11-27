@@ -415,6 +415,8 @@ export default {
           githubAuthRequired: isAuthRequired(env) || authMode === 'cf_access',
           sshSharingEnabled: true,
           ...(rdpAssets && url.protocol === 'https:' ? { rdpEnabled: true } : {}),
+          ...(rdpAssets?.peer && url.protocol === 'https:' && authMode !== 'anonymous' && env.RDP_AUTHORITY
+            ? { rdpConnectorEnabled: true, ...(rdpAssets.connectorPreview ? { rdpConnectorPreview: true } : {}) } : {}),
           authMode,
           cfAccessEmail,
           // 浏览器预拉伸公开参数（盐非机密）；坏哈希时为 null

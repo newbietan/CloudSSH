@@ -1,6 +1,7 @@
 node_modules/
 .pnpm-store/
 dist/
+/src/worker/rdp-client/connector-preview.generated.rdp-bin
 .wrangler/
 .dev.vars
 .dev.vars.*

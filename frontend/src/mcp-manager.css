@@ -2,38 +2,12 @@
   display: none;
 }
 .mcp-dialog {
-  width: min(44rem, calc(100vw - 2rem));
-  max-height: calc(100dvh - 2rem);
-  margin: auto;
-  padding: 0;
-  overflow: visible;
-  border: 0;
-  background: transparent;
-  color: var(--on-surface);
-  font: inherit;
-  font-family: var(--font-ui);
-}
-.mcp-dialog[open] {
-  display: flex;
-  flex-direction: column;
+  --app-modal-width: 44rem;
+  --app-modal-panel-overflow: hidden;
 }
 .mcp-dialog__panel {
   display: flex;
   flex-direction: column;
-  width: 100%;
-  min-height: 0;
-  max-height: inherit;
-  overflow: hidden;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--modal-radius);
-  box-shadow: var(--shadow-modal);
-}
-.mcp-dialog::backdrop {
-  background: var(--modal-overlay);
-}
-.mcp-dialog h2 {
-  flex: 1;
-  min-width: 0;
 }
 .mcp-body {
   min-height: 0;
@@ -292,10 +266,6 @@
   }
 }
 @media (max-width: 520px) {
-  .mcp-dialog {
-    width: calc(100vw - 1rem);
-    max-height: calc(100dvh - 1rem);
-  }
   .mcp-body {
     padding: 0.75rem;
   }

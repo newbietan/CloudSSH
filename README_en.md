@@ -186,8 +186,11 @@ flowchart TB
     Client["External MCP client"] <-->|"HTTPS /mcp"| Worker
     Worker <--> MCP_DO
     MCP_DO <-->|"SSH"| SSH
-    RDP <-->|"WebSocket"| Worker
-    Worker <-->|"RDP byte relay: TCP or Tunnel"| Windows
+    RDP <-->|"Authorization / signaling, relay on failure"| Worker
+    Worker <-->|"Fallback relay: TCP or Tunnel"| Windows
+    RDP <-->|"Direct WebRTC"| Connector["Resident Windows connector"]
+    Connector <-->|"Local RDP"| Windows
+    Connector <-->|"Standby / signaling"| Worker
     SSH_DO <-->|"Exec Channel"| AgentCore
     AgentCore <-->|"Work Logs & Knowledge"| User_DO
     AgentCore <-->|"LLM API"| External["External LLM Service"]
@@ -379,11 +382,11 @@ Every server in a jump relation must belong to the same CloudSSH account. Self-r
 
 RDP is built in for both production and test. It requires HTTPS and a signed-in account; anonymous users and one-time share recipients have no RDP access. It does not provide SFTP, Agent, MCP, jump hosts or one-time shares.
 
-1. Choose **Add Server → Windows Server**. For a direct connection, enter a public IPv4 or IPv6 address or a public hostname (including DDNS), plus the TCP port (default `3389`). For private targets, use Cloudflare Tunnel and enter only the published tunnel hostname; set the Windows port in the `cloudflared` service URL (`rdp://<windows-host>:<port>`). Keep NLA enabled.
+1. Choose **Add Server → Windows Server**. The **Connector** route needs no public IP or inbound port and has no relay fallback. To configure a fallback, enter a public IPv4/IPv6 address or hostname (including DDNS) and TCP port (default `3389`), or enter a published Cloudflare Tunnel hostname. Keep RDP and NLA enabled on Windows.
 2. Enter the Windows username (default `Administrator`), password and optional domain. The login is encrypted in your account. Older devices without credentials must be completed before connecting.
 3. Connect from the card. On first use, verify the Windows certificate’s SHA-256 fingerprint before accepting; a changed pin blocks login. The desktop opens in the same tab. **Back** disconnects without signing out of Windows; **Full screen** scales the entire image below the toolbar without renegotiating resolution.
 
-The toolbar shows browser-to-relay RTT and, when Windows reports it, average RDP RTT. See [RDP setup and limits](docs/rdp.md).
+Choose **Download and link this device** on the setup page. Extract the [device-specific ZIP](docs/rdp-peer.md) on the target Windows PC and run the installer. The service links automatically. No binding code, extra confirmation, or Worker secret is required. All three routes can use WebRTC. Open Desktop prefers it and silently uses the configured public TCP or Tunnel relay if direct setup fails before sign-in. The toolbar prefers the selected **WebRTC** link RTT (or explicitly labels the **Channel** sample when unavailable) and labels relayed sessions **Relay**. Open the latency details for the channel peak, browser read backlog, and Windows-reported RDP RTT. See [RDP setup and limits](docs/rdp.md).
 
 ##### Connecting via Cloudflare Tunnel
 
@@ -611,6 +614,12 @@ If CloudSSH has been helpful to your workflow or projects, consider sponsoring t
 <a id="special-thanks"></a>
 
 ## Special Thanks
+
+### Open-Source Projects
+
+- [FreeRDP](https://github.com/FreeRDP/FreeRDP) — CloudSSH compiles FreeRDP's SDL client to WebAssembly as the core of its browser-based Windows Remote Desktop client. It handles the RDP protocol, TLS/NLA, and desktop graphics. Thank you to the FreeRDP community for developing and maintaining it.
+
+### Sponsors
 
 Special thanks to those who financially support CloudSSH's ongoing maintenance and development. Your encouragement helps keep the project moving forward!
 

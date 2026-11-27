@@ -284,27 +284,23 @@ export class ConnectionForm {
     const titleId = `admin-login-title-${sequence}`;
     const dialog = document.createElement('dialog');
     dialog.id = 'admin-login-dialog';
-    dialog.className = 'auth-challenge-dialog';
+    dialog.className = 'app-modal app-modal--motion auth-challenge-dialog';
     dialog.setAttribute('aria-labelledby', titleId);
     dialog.setAttribute('aria-modal', 'true');
 
     const form = document.createElement('form');
-    form.className = 'auth-challenge-dialog__panel';
+    form.className = 'app-modal__panel app-modal__inset auth-challenge-dialog__panel';
     form.method = 'dialog';
     form.noValidate = true;
 
-    const accent = document.createElement('div');
-    accent.className = 'auth-challenge-dialog__accent';
-    accent.setAttribute('aria-hidden', 'true');
-
-    const header = document.createElement('div');
-    header.className = 'auth-challenge-dialog__header';
+    const header = document.createElement('header');
+    header.className = 'app-modal__header';
     const icon = document.createElement('span');
-    icon.className = 'auth-challenge-dialog__icon material-symbols-outlined';
+    icon.className = 'app-modal__icon auth-challenge-dialog__icon material-symbols-outlined';
     icon.textContent = 'admin_panel_settings';
     icon.setAttribute('aria-hidden', 'true');
     const title = document.createElement('h2');
-    title.className = 'auth-challenge-dialog__title';
+    title.className = 'app-modal__title';
     title.textContent = t('auth.adminLoginTitle');
     title.id = titleId;
     header.append(icon, title);
@@ -357,7 +353,7 @@ export class ConnectionForm {
     submitButton.textContent = t('auth.adminLoginSubmit');
     actions.append(cancelButton, submitButton);
 
-    form.append(accent, header, label, passwordInput, turnstileContainer, errorText, actions);
+    form.append(header, label, passwordInput, turnstileContainer, errorText, actions);
     dialog.appendChild(form);
     document.body.appendChild(dialog);
 

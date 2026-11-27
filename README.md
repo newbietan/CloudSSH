@@ -186,8 +186,11 @@ flowchart TB
     Client["外部 MCP 客户端"] <-->|"HTTPS /mcp"| Worker
     Worker <--> MCP_DO
     MCP_DO <-->|"SSH"| SSH
-    RDP <-->|"WebSocket"| Worker
-    Worker <-->|"RDP 字节中继：TCP 或 Tunnel"| Windows
+    RDP <-->|"授权 / 信令，失败时中继"| Worker
+    Worker <-->|"备用中继：TCP 或 Tunnel"| Windows
+    RDP <-->|"WebRTC 直连"| Connector["Windows 常驻连接器"]
+    Connector <-->|"本机 RDP"| Windows
+    Connector <-->|"待机 / 信令"| Worker
     SSH_DO <-->|"Exec Channel"| AgentCore
     AgentCore <-->|"Work Logs & Knowledge"| User_DO
     AgentCore <-->|"LLM API"| External["外部 LLM 服务"]
@@ -377,11 +380,11 @@ SSH 跳板要求先登录并保存服务器，不限定登录方式，也不需�
 
 RDP 是内置功能，生产和测试环境均无需配置开关。仅已登录账户可通过 HTTPS 使用，不开放匿名或一次性分享访问。Windows 卡片不提供 SFTP、Agent、MCP、跳板或一次性分享。
 
-1. 选择「添加服务器 → Windows Server」。直连填写公网 IPv4、IPv6 或域名（含 DDNS）及 TCP 端口（默认 `3389`，可自定义）。内网目标使用 Cloudflare Tunnel，仅填写已发布的隧道域名，实际端口由 `cloudflared` 的 `rdp://<Windows 主机>:<端口>` 决定。Windows 须开启 NLA。
+1. 选择「添加服务器 → Windows Server」。默认「连接器」，无需公网 IP 或入站端口。若要有备用线路，填公网 IPv4、IPv6 或域名（含 DDNS）及 TCP 端口（默认 `3389`），或填写已发布的 Cloudflare Tunnel 域名。Windows 须开启 RDP 和 NLA。
 2. 填写 Windows 用户名（默认 `Administrator`）、密码和可选域。登录凭据按账户加密保存；缺少凭据的旧设备须先补全配置。
 3. 从设备卡片连接。首次使用请核对 Windows 证书的 SHA-256 指纹再确认；之后指纹变化会阻止登录。桌面在同一标签页开启。「返回」只断开桌面，不会注销 Windows 用户；「全屏」会在工具栏下方缩放完整画面，不重新协商分辨率。
 
-工具栏分别显示浏览器到中继的 RTT，以及 Windows 有上报时的 RDP 平均 RTT。参见 [RDP 配置与限制](docs/rdp.md)。
+添加 Windows 后在页面点「下载并绑定此设备」：将[专用安装包](docs/rdp-peer.md)传到目标 Windows，完整解压并运行安装器，服务上线后自动绑定。无需绑定码、额外确认或设置 Worker 密钥。三种线路都能绑定 WebRTC。「打开桌面」优先 WebRTC，登录前直连失败时静默使用已配置的公网或隧道中继。工具栏优先显示实际 WebRTC 线路 RTT，缺少样本时标明「通道」；中继单独标识。点击数值可查看通道峰值、浏览器待读取量及 Windows 上报的 RDP 平均 RTT；参见 [RDP 配置与限制](docs/rdp.md)。
 
 ##### 通过 Cloudflare 隧道连接内网服务器
 
@@ -609,6 +612,12 @@ test 分支（开发/测试）  ──合并──>  main 分支（生产）
 <a id="special-thanks"></a>
 
 ## 特别感谢
+
+### 开源项目
+
+- [FreeRDP](https://github.com/FreeRDP/FreeRDP) — CloudSSH 将 FreeRDP 的 SDL 客户端编译为 WebAssembly，作为浏览器端 Windows 远程桌面的核心，负责 RDP 协议通信、TLS/NLA 和桌面画面处理。感谢 FreeRDP 社区的开发与维护。
+
+### 赞助者
 
 特别感谢以下朋友通过打赏支持 CloudSSH 的持续维护与开发，你们的鼓励是项目不断前进的动力！
 

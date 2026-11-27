@@ -29,18 +29,20 @@ export class AIConfigPanel {
     this.modalEl = document.createElement('div');
     this.modalEl.id = 'ai-config-modal';
     this.modalEl.className =
-      'responsive-modal hidden fixed inset-0 z-[100] flex items-center justify-center';
+      'app-modal responsive-modal hidden fixed inset-0 z-[100] flex items-center justify-center';
+    this.modalEl.setAttribute('role', 'dialog');
+    this.modalEl.setAttribute('aria-modal', 'true');
+    this.modalEl.setAttribute('aria-labelledby', 'ai-modal-title');
     // Static markup and trusted bundled i18n only; user config is assigned through input.value.
     this.modalEl.innerHTML = `
       <div class="modal-overlay absolute inset-0" id="ai-modal-backdrop"></div>
-      <div class="responsive-modal-panel cyber-box p-6 shadow-2xl relative z-10 w-full max-w-md sm:max-w-lg mx-4">
-        <div class="theme-accent-line absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent-secondary)] to-transparent opacity-50"></div>
-        <div class="flex items-center justify-between mb-6 pb-4 border-b border-dim">
-          <span class="text-xs font-bold tracking-[0.1em] text-[var(--accent-secondary)]" data-i18n="aiConfig.title">AI Agent 设置</span>
-          <button id="ai-modal-close-btn" class="panel-close-btn" data-i18n-aria-label="common.close" aria-label="关闭" type="button">
-            <span class="material-symbols-outlined">close</span>
+      <div class="app-modal__panel app-modal__inset responsive-modal-panel z-10 w-full max-w-md sm:max-w-lg mx-4">
+        <header class="app-modal__header mb-6">
+          <h2 id="ai-modal-title" class="app-modal__title" data-i18n="aiConfig.title">AI Agent 设置</h2>
+          <button id="ai-modal-close-btn" class="app-modal__close" data-i18n-aria-label="common.close" aria-label="关闭" type="button">
+            <span class="material-symbols-outlined" aria-hidden="true">close</span>
           </button>
-        </div>
+        </header>
         <form id="ai-config-form" class="space-y-4">
           <div>
             <label class="block text-xs font-bold tracking-[0.1em] text-muted mb-2" data-i18n="aiConfig.baseUrl">接口地址</label>

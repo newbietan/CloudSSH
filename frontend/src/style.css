@@ -1,4 +1,5 @@
 @import './assets/fonts/fonts.css';
+@import './app-modal.css';
 
 @tailwind base;
 @tailwind components;
@@ -1775,12 +1776,6 @@ html[data-ui-motion='none'] .auth-aurora::after {
   }
 }
 
-/* Modal 遮罩 */
-.modal-overlay {
-  background: var(--modal-overlay);
-  -webkit-backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate, 100%));
-  backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate, 100%));
-}
 
 /* ==================== Unified Feedback ==================== */
 
@@ -1886,19 +1881,10 @@ html[data-ui-motion='none'] .auth-aurora::after {
 
 .app-dialog {
   --feedback-color: var(--accent-secondary);
-  width: min(440px, calc(100vw - 32px));
-  max-width: none;
-  margin: auto;
-  padding: 0;
-  color: var(--on-surface);
-  background: transparent;
-  border: 0;
-  overflow: visible;
+  --app-modal-accent: var(--feedback-color);
+  --app-modal-width: 440px;
 }
 
-.terminal-paste-dialog {
-  max-height: calc(var(--visual-viewport-height) - 24px);
-}
 .terminal-paste-dialog .app-dialog__panel {
   display: flex;
   flex-direction: column;
@@ -1943,55 +1929,20 @@ html[data-ui-motion='none'] .auth-aurora::after {
   --feedback-color: var(--error);
 }
 
-.app-dialog::backdrop {
-  background: var(--modal-overlay);
-  -webkit-backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate, 100%));
-  backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate, 100%));
+.app-modal--motion::backdrop {
   animation: app-dialog-backdrop-in var(--motion-normal) ease-out;
 }
 
-.app-dialog[open] .app-dialog__panel {
+.app-modal--motion[open] > .app-modal__panel {
   animation: app-dialog-in var(--motion-normal) var(--spring-ease);
 }
 
 .app-dialog__panel {
-  position: relative;
-  padding: 22px;
-  background: var(--bg-surface);
-  border: 1px solid color-mix(in srgb, var(--feedback-color) 50%, var(--border));
-  border-radius: var(--modal-radius);
-  box-shadow: var(--shadow-modal);
-  overflow: hidden;
-}
-
-.app-dialog__accent {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--feedback-color), transparent);
-}
-
-.app-dialog__header {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--border);
+  --app-modal-inset: 22px;
 }
 
 .app-dialog__icon {
-  color: var(--feedback-color);
-  font-size: 22px;
   font-variation-settings: "FILL" 1;
-}
-
-.app-dialog__title {
-  color: var(--feedback-color);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
 }
 
 .app-dialog__message {
@@ -2098,83 +2049,16 @@ html[data-ui-motion='none'] .auth-aurora::after {
 /* RFC 4256 keyboard-interactive authentication */
 .auth-challenge-dialog {
   --challenge-color: var(--accent-secondary);
-  width: min(540px, calc(100vw - 32px));
-  max-width: none;
-  max-height: min(
-    760px,
-    calc(
-      var(--visual-viewport-height) -
-      32px -
-      env(safe-area-inset-top) -
-      env(safe-area-inset-bottom)
-    )
-  );
-  margin: auto;
-  padding: 0;
-  color: var(--on-surface);
-  background: transparent;
-  border: 0;
-  overflow: visible;
-}
-
-.auth-challenge-dialog::backdrop {
-  background: var(--modal-overlay);
-  -webkit-backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate, 100%));
-  backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate, 100%));
-  animation: app-dialog-backdrop-in var(--motion-normal) ease-out;
-}
-
-.auth-challenge-dialog[open] .auth-challenge-dialog__panel {
-  animation: app-dialog-in var(--motion-normal) var(--spring-ease);
+  --app-modal-width: 540px;
+  --app-modal-height-limit: 760px;
 }
 
 .auth-challenge-dialog__panel {
-  position: relative;
-  max-height: min(
-    760px,
-    calc(
-      var(--visual-viewport-height) -
-      32px -
-      env(safe-area-inset-top) -
-      env(safe-area-inset-bottom)
-    )
-  );
-  padding: 22px;
-  background: var(--bg-surface);
-  border: 1px solid color-mix(in srgb, var(--challenge-color) 50%, var(--border));
-  border-radius: var(--modal-radius);
-  box-shadow: var(--shadow-modal);
-  overflow: auto;
-}
-
-.auth-challenge-dialog__accent {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--challenge-color), transparent);
-}
-
-.auth-challenge-dialog__header {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--border);
+  --app-modal-inset: 22px;
 }
 
 .auth-challenge-dialog__icon {
-  color: var(--challenge-color);
-  font-size: 22px;
   font-variation-settings: "FILL" 1;
-}
-
-.auth-challenge-dialog__title {
-  color: var(--challenge-color);
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
 }
 
 .auth-challenge-dialog__target {
@@ -2367,29 +2251,14 @@ html[data-ui-motion='none'] .auth-aurora::after {
     bottom: max(12px, env(safe-area-inset-bottom));
     width: calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right));
   }
-  .app-dialog {
-    width: calc(100vw - 24px);
-  }
-  .app-dialog__panel {
-    padding: 19px 17px;
+  :is(.app-dialog__panel, .auth-challenge-dialog__panel) {
+    --app-modal-inset: 19px 17px;
   }
   .app-dialog__actions {
     flex-direction: column-reverse;
   }
   .app-dialog__button {
     width: 100%;
-  }
-  .auth-challenge-dialog {
-    width: calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right));
-    max-height: calc(
-      var(--visual-viewport-height) -
-      24px -
-      env(safe-area-inset-top) -
-      env(safe-area-inset-bottom)
-    );
-  }
-  .auth-challenge-dialog__panel {
-    padding: 19px 17px;
   }
   .auth-challenge-dialog__actions {
     flex-direction: column;
@@ -2415,10 +2284,8 @@ html[data-ui-motion='none'] .auth-aurora::after {
 
 @media (prefers-reduced-motion: reduce) {
   .app-toast,
-  .app-dialog[open] .app-dialog__panel,
-  .app-dialog::backdrop,
-  .auth-challenge-dialog[open] .auth-challenge-dialog__panel,
-  .auth-challenge-dialog::backdrop {
+  .app-modal--motion[open] > .app-modal__panel,
+  .app-modal--motion::backdrop {
     animation: none;
     transition: none;
   }
@@ -2933,18 +2800,18 @@ html[data-component-button="soft"] .cyber-button:not(.text-error):hover {
   box-shadow: var(--shadow-card);
 }
 
-html[data-component-card="flat"] :is(.server-card, .cyber-box, .app-dialog__panel) {
+html[data-component-card="flat"] :is(.server-card, .cyber-box) {
   background: var(--bg-surface);
   border-color: transparent;
   box-shadow: none;
 }
 
-html[data-component-card="outlined"] :is(.server-card, .cyber-box, .app-dialog__panel) {
+html[data-component-card="outlined"] :is(.server-card, .cyber-box) {
   border-color: var(--border);
   box-shadow: var(--shadow-card);
 }
 
-html[data-component-card="elevated"] :is(.server-card, .cyber-box, .app-dialog__panel) {
+html[data-component-card="elevated"] :is(.server-card, .cyber-box) {
   background: color-mix(in srgb, var(--bg-surface) 96%, var(--accent) 4%);
   border-color: color-mix(in srgb, var(--border) 72%, transparent);
   box-shadow: var(--shadow-card);
@@ -3569,8 +3436,8 @@ html[data-ui-style="liquid"] :is(.server-card, .cyber-box) {
    贴合圆角，此处仅为防御性双保险）。
    ⚠️ 绝不可把 overflow 简写写进上面的 :is(.server-card, .cyber-box) 规则：
    `overflow: hidden` 会同时把 overflow-x/overflow-y 置为 hidden，且本选择器
-   特异性高于 Tailwind 的 .overflow-y-auto。而 #ai-model-menu（AI 模型下拉）与
-   分享管理列表都带有 .cyber-box 并依赖 overflow-y-auto 滚动，一旦被改成 hidden，
+   特异性高于 Tailwind 的 .overflow-y-auto。而 #ai-model-menu（AI 模型下拉）
+   带有 .cyber-box 并依赖 overflow-y-auto 滚动，一旦被改成 hidden，
    long 列表即无法滚动 / 无法选择（v2.3.0 回归缺陷）。
    另：唯一需要裁剪的 .theme-accent-line 在非 cyberpunk 风格下为 opacity:0，
    故 Liquid Glass 下对 .cyber-box 本就不需要任何裁剪。 */
@@ -3632,17 +3499,6 @@ html[data-ui-style="liquid"] .server-card:active {
   }
 }
 
-html[data-ui-style="liquid"] :is(.app-dialog__panel, .remote-editor__panel, .auth-challenge-dialog__panel, .mcp-dialog__panel) {
-  background: color-mix(in srgb, var(--bg-surface) 60%, rgba(255, 255, 255, 0.35));
-  -webkit-backdrop-filter: blur(32px) saturate(200%) contrast(115%) brightness(108%);
-  backdrop-filter: blur(32px) saturate(200%) contrast(115%) brightness(108%);
-  border: 1px solid rgba(255, 255, 255, 0.55);
-  border-top-color: rgba(255, 255, 255, 1);
-  border-bottom-color: rgba(255, 255, 255, 0.25);
-  border-radius: var(--modal-radius);
-  box-shadow: var(--shadow-modal);
-}
-
 html[data-ui-style="liquid"] :is(#agent-panel, #sftp-panel, #snippet-panel) {
   background: color-mix(in srgb, var(--bg-surface) 15%, rgba(255, 255, 255, 0.78));
   -webkit-backdrop-filter: blur(32px) saturate(200%) contrast(115%) brightness(106%);
@@ -3653,8 +3509,8 @@ html[data-ui-style="liquid"] :is(#agent-panel, #sftp-panel, #snippet-panel) {
     inset 1px 0 0 0 rgba(255, 255, 255, 1);
 }
 
-/* 三大抽屉面板统一高光微透明 Header */
-html[data-ui-style="liquid"] :is(#agent-panel, #sftp-panel, #snippet-panel) :is(.agent-panel-header, .sftp-panel-header) {
+/* SFTP/命令抽屉继续使用独立标题栏；Agent 与 MCP 共用弹窗标题样式。 */
+html[data-ui-style="liquid"] :is(#sftp-panel, #snippet-panel) .sftp-panel-header {
   background: color-mix(in srgb, var(--bg-surface) 25%, rgba(255, 255, 255, 0.5));
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
@@ -4840,12 +4696,6 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   /* These surfaces otherwise use their own translucent color-mix, or the desktop toolbar
      material on coarse-pointer tablets. Keep the glass edges/shadows and page background. */
   html[data-theme="liquid-glass"] body :is(
-    .responsive-modal-panel,
-    .app-dialog__panel,
-    .auth-challenge-dialog__panel,
-    .remote-editor__panel,
-    .mcp-dialog__panel.assistant-shell,
-    #agent-panel.assistant-shell,
     #sftp-panel,
     #snippet-panel,
     #tab-context-menu,
@@ -5371,11 +5221,6 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
     flex-shrink: 0;
   }
 
-  .agent-panel-title {
-    font-size: 11px;
-    letter-spacing: 0.02em;
-  }
-
   .agent-mode-btn {
     padding: 1px 5px;
     gap: 2px;
@@ -5602,60 +5447,20 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 /* SFTP 在线编辑器（CodeMirror 模态） */
 .remote-editor {
   --editor-color: var(--accent);
-  width: min(1100px, calc(100vw - 24px));
-  max-width: none;
-  height: min(
-    760px,
-    calc(
-      var(--visual-viewport-height) -
-      24px -
-      env(safe-area-inset-top) -
-      env(safe-area-inset-bottom)
-    )
-  );
-  margin: auto;
-  padding: 0;
-  color: var(--on-surface);
-  background: transparent;
-  border: 0;
-  overflow: visible;
-}
-
-.remote-editor::backdrop {
-  background: var(--modal-overlay);
-  -webkit-backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate, 100%));
-  backdrop-filter: blur(var(--surface-blur)) saturate(var(--surface-saturate, 100%));
-  animation: app-dialog-backdrop-in var(--motion-normal) ease-out;
-}
-
-.remote-editor[open] .remote-editor__panel {
-  animation: app-dialog-in var(--motion-normal) ease-out;
+  --app-modal-width: 1100px;
+  --app-modal-height-limit: 760px;
+  --app-modal-gutter: 12px;
+  --app-modal-panel-overflow: hidden;
+  height: var(--app-modal-height-limit);
 }
 
 .remote-editor__panel {
   display: flex;
   flex-direction: column;
-  width: 100%;
   height: 100%;
-  background: var(--bg-surface);
-  border: 1px solid color-mix(in srgb, var(--editor-color) 50%, var(--border));
-  border-radius: var(--modal-radius);
-  box-shadow: var(--shadow-modal);
-  overflow: hidden;
-}
-
-.remote-editor__header {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 11px 16px;
-  background: var(--bg-elevated);
-  border-bottom: 1px solid var(--border);
 }
 
 .remote-editor__icon {
-  color: var(--editor-color);
-  font-size: 20px;
   font-variation-settings: "FILL" 1;
 }
 
@@ -5668,9 +5473,6 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 }
 
 .remote-editor__title {
-  color: var(--on-surface);
-  font-size: 13px;
-  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5683,26 +5485,6 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.remote-editor__close {
-  display: flex;
-  flex-shrink: 0;
-  padding: 4px;
-  color: var(--text-muted);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  transition: color var(--motion-fast) ease;
-}
-
-.remote-editor__close .material-symbols-outlined {
-  font-size: 20px;
-  line-height: 1;
-}
-
-.remote-editor__close:hover {
-  color: var(--on-surface);
 }
 
 .remote-editor__notice {
@@ -5872,26 +5654,12 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 /* 移动端适配：窄屏近全屏 + 安全区 + 触摸目标（对齐 auth-challenge-dialog 先例） */
 @media (max-width: 520px) {
   .remote-editor {
-    width: calc(100vw - 16px - env(safe-area-inset-left) - env(safe-area-inset-right));
-    height: calc(
-      var(--visual-viewport-height) -
-      16px -
-      env(safe-area-inset-top) -
-      env(safe-area-inset-bottom)
-    );
+    --app-modal-gutter: 8px;
+    --app-modal-height-limit: 100dvh;
   }
 
   .remote-editor__header {
-    padding: 9px 12px;
-  }
-
-  .remote-editor__close {
-    width: 44px;
-    height: 44px;
-    padding: 0;
-    margin: -6px;
-    align-items: center;
-    justify-content: center;
+    padding-inline: 12px;
   }
 
   .remote-editor__footer {
@@ -6035,12 +5803,41 @@ html[data-ui-motion="none"] :is(.flicker, .scanlines, .scanline) {
 }
 
 html[data-rdp-entry] #app-loading { display: none; }
+.ssh-endpoint-fields[hidden] { display: none; }
+/* Keep the WebRTC action in the connection column, not in a full-width modal row. */
+.rdp-host-group > .ssh-host-field { display: block; }
+.rdp-host-group > .rdp-connector-action:not([hidden]) { margin-top: .375rem; }
+.rdp-connector-action { min-height: 32px; max-width: 100%; padding: .25rem .65rem; font-size: .8125rem; }
+.rdp-connector-action:disabled { opacity: .55; cursor: default; }
+.rdp-connector-details:not([hidden]) { display: flex; flex-wrap: wrap; align-items: center; gap: .375rem .75rem; }
+.rdp-connector-details > p { flex: 1 1 12rem; }
+@media (pointer: coarse), (max-width: 520px) {
+  .rdp-connector-action { min-height: 44px; }
+}
+.rdp-connector-dialog { --app-modal-width: 29rem; }
+.rdp-connector-dialog p { margin: .65rem 0; line-height: 1.55; overflow-wrap: anywhere; }
+.rdp-connector-dialog :is(.rdp-connector-device, .rdp-connector-preview, .rdp-connector-help) {
+  color: var(--on-surface-variant);
+  font-size: .8125rem;
+}
+.rdp-connector-device { font-weight: 600; }
+.rdp-connector-help > summary { cursor: pointer; width: fit-content; }
+.rdp-connector-help > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rdp-connector-dialog code { overflow-wrap: anywhere; }
+.rdp-connector-dialog [role="status"] { color: var(--accent); font-weight: 600; font-size: .8125rem; }
+.rdp-connector-dialog [role="alert"] { color: var(--error); }
+.rdp-connector-dialog :is([role="status"], [role="alert"]):empty { margin: 0; }
+.rdp-connector-actions { margin-top: .9rem; }
+@media (pointer: coarse), (max-width: 520px) {
+  .rdp-connector-help > summary { min-height: 44px; align-content: center; }
+}
 .rdp-workspace[open] {
   position: fixed; inset: 0; width: 100%; height: 100dvh; max-width: none; max-height: none;
   margin: 0; padding: 0; border: 0; display: flex; flex-direction: column;
   background: var(--bg); color: var(--text); overflow: hidden;
 }
 .rdp-workspace header {
+  position: relative; z-index: 1;
   display: flex; flex: none; align-items: center; gap: clamp(.25rem, 1vw, .75rem);
   padding: .4rem max(.8rem, env(safe-area-inset-right)) .4rem max(.8rem, env(safe-area-inset-left));
   border-bottom: 1px solid var(--border); background: var(--bg-elevated); color: var(--accent);
@@ -6052,18 +5849,51 @@ html[data-rdp-entry] #app-loading { display: none; }
 .rdp-workspace header button { flex: none; min-height: 40px; padding: 0 clamp(.4rem, 1.5vw, .9rem); }
 .rdp-shell { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
 .rdp-shell:fullscreen { width: 100%; height: 100%; }
-.rdp-latency {
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font: 12px/1.25 ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--text-muted);
+.rdp-latency { min-width: 2rem; }
+.rdp-latency > summary {
+  display: flex; align-items: center; justify-content: center; gap: .25rem;
+  min-height: 40px; padding-inline: .25rem; border-radius: var(--control-radius);
+  font: 12px/1.25 ui-monospace, monospace; font-variant-numeric: tabular-nums;
+  color: var(--text-muted); cursor: pointer; list-style: none;
+}
+.rdp-latency > summary::-webkit-details-marker { display: none; }
+.rdp-latency > summary > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rdp-latency > summary::after {
+  content: ''; flex: none; width: .4rem; height: .4rem; margin-block-end: .2rem;
+  border: solid currentColor; border-width: 0 1px 1px 0; transform: rotate(45deg);
+}
+.rdp-latency[open] > summary::after { transform: rotate(225deg); margin-block-end: -.2rem; }
+.rdp-latency > summary:hover, .rdp-latency[open] > summary { background: var(--accent-bg); color: var(--accent); }
+.rdp-latency > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rdp-latency-panel {
+  position: absolute; inset-block-start: calc(100% + 4px); inset-inline-end: max(.8rem, env(safe-area-inset-right));
+  width: min(22rem, calc(100% - max(.8rem, env(safe-area-inset-left)) - max(.8rem, env(safe-area-inset-right))));
+  max-height: calc(100dvh - 64px - env(safe-area-inset-bottom)); overflow: auto; overscroll-behavior: contain;
+  background: var(--app-modal-fill); color: var(--on-surface); border: 1px solid var(--border-strong);
+  border-radius: var(--control-radius); box-shadow: var(--shadow-floating); padding: .65rem .85rem;
+  font-size: .8125rem; line-height: 1.5;
+}
+.rdp-latency-title { font-weight: 700; margin-bottom: .35rem; }
+.rdp-latency-panel dl > div:not([hidden]) {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; padding-block: .15rem;
+}
+.rdp-latency-panel dd { font: .8125rem/1.5 ui-monospace, monospace; text-align: end; white-space: nowrap; }
+.rdp-latency-hint {
+  margin-top: .5rem; padding-top: .5rem; border-top: 1px solid var(--border); color: var(--on-surface-variant);
+  font-size: .75rem;
+}
+@media (pointer: coarse), (max-width: 520px) {
+  .rdp-latency { min-width: 44px; }
+  .rdp-latency > summary { min-height: 44px; font-size: 11px; }
 }
 .rdp-resolution {
   flex: none; max-width: min(10rem, 33vw); min-height: 40px;
   padding-inline-start: .35rem; border: 1px solid var(--border); border-radius: 5px;
   background: var(--bg); color: var(--text); font-size: .8125rem;
 }
-.rdp-shell:fullscreen header { padding-block: 2px; }
+.rdp-shell:fullscreen header { padding-block: 1px; }
 @media (pointer: fine) {
-  .rdp-shell:fullscreen header :is(button, select) { min-height: 28px; padding-block: 0; }
+  .rdp-shell:fullscreen header :is(button, select, summary) { min-height: 28px; padding-block: 0; }
 }
 /* Fit the whole Windows canvas below the toolbar. Fullscreen itself does not resize
    the running iframe; an explicit resolution selection may change its logical size. */

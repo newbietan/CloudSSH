@@ -1,0 +1,65 @@
+name: RDP Windows connector
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [test, main]
+    paths:
+      - 'tools/rdp-peer/**'
+      - 'scripts/build-rdp-peer.sh'
+      - 'scripts/package-rdp-connector.sh'
+      - '.github/workflows/rdp-connector.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    if: github.repository_owner == 'newbietan'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.x'
+          cache-dependency-path: tools/rdp-peer/go.sum
+      - name: Verify Go and build Windows installer
+        working-directory: tools/rdp-peer
+        env:
+          GOWORK: 'off'
+        run: |
+          go mod verify
+          go vet -mod=readonly ./...
+          go test -mod=readonly -race ./...
+          bash ../../scripts/build-rdp-peer.sh
+      - name: Package the official Windows ZIP and checksums
+        run: bash scripts/package-rdp-connector.sh dist/rdp-connector dist/rdp-release
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: rdp-connector-release-${{ github.sha }}
+          path: dist/rdp-release/
+          if-no-files-found: error
+          retention-days: 14
+  windows-service:
+    if: github.repository_owner == 'newbietan'
+    runs-on: windows-2025
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: tools/rdp-peer
+    env:
+      GOWORK: 'off'
+      CLOUDSSH_WINDOWS_SCM_TEST: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.x'
+          cache-dependency-path: tools/rdp-peer/go.sum
+      - name: Verify DPAPI, ACL and LocalService start/stop on Windows
+        run: go test -mod=readonly ./...

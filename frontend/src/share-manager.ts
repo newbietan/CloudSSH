@@ -84,19 +84,20 @@ export class ShareManager {
     if (document.getElementById('share-manager-modal')) return;
     const modal = document.createElement('div');
     modal.id = 'share-manager-modal';
-    modal.className = 'responsive-modal hidden fixed inset-0 z-[120] items-center justify-center';
+    modal.className = 'app-modal responsive-modal hidden fixed inset-0 z-[120] items-center justify-center';
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'share-manager-title');
     modal.innerHTML = `
       <div class="modal-overlay absolute inset-0" data-share-close></div>
-      <div class="responsive-modal-panel cyber-box p-6 shadow-2xl relative z-10 w-full max-w-2xl mx-4 max-h-[85vh] overflow-y-auto custom-scrollbar">
-        <div class="flex items-center justify-between mb-5 pb-4 border-b border-dim">
-          <div>
-            <h2 class="text-sm font-bold text-primary">${t('share.manageTitle')}</h2>
+      <div class="app-modal__panel app-modal__inset responsive-modal-panel z-10 w-full max-w-2xl mx-4 max-h-[85vh] overflow-y-auto custom-scrollbar">
+        <header class="app-modal__header mb-5">
+          <div class="min-w-0">
+            <h2 id="share-manager-title" class="app-modal__title">${t('share.manageTitle')}</h2>
             <p id="share-manager-server" class="text-xs text-muted mt-1"></p>
           </div>
-          <button type="button" data-share-close class="panel-close-btn" aria-label="${t('common.close')}"><span class="material-symbols-outlined">close</span></button>
-        </div>
+          <button type="button" data-share-close class="app-modal__close" aria-label="${t('common.close')}"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
+        </header>
         <div id="share-list-view">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             <label class="text-xs text-muted">${t('share.linkExpiry')}

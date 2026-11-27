@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { RDP_CLIENT_REVISION } from '../../src/rdp-schema';
+import { RDP_CLIENT_REVISION, RDP_CONNECT_KEY_HEADER, RDP_CONNECT_REVISION } from '../../src/rdp-schema';
+import type { RdpConnectGrant } from '../../src/worker/rdp-connect-crypto';
+import { openTestRdpEnvelope, testRdpConnectKey, testRdpGrant } from '../fixtures/rdp-connect';
 import worker from '../../src/worker/index';
 import { handleRdp, type RdpAssets } from '../../src/worker/rdp-routes';
 import type { Env } from '../../src/types';
@@ -7,11 +9,16 @@ import type { Env } from '../../src/types';
 const origin = 'https://cloudssh.example';
 const id = '12345678-1234-1234-1234-123456789abc';
 const assets: RdpAssets = { page: 'desktop page', bootstrap: '', socket: '', freerdp: '', wasm: new ArrayBuffer(0), license: '', tags: [] };
-function fixture() {
+const login = { username: 'fixture-user', domain: 'fixture-domain', password: '  test-only password  ' };
+function fixture(ticketReply?: Response) {
   const internal = vi.fn(async (request: Request) => {
     const path = new URL(request.url).pathname;
     if (path === '/internal/session/verify') return Response.json({ id: 5, github_id: 42 });
-    if (path === '/internal/rdp/ticket') return Response.json({ ticket: '1'.repeat(64), revision: 1 });
+    if (path === '/internal/rdp/ticket') {
+      if (ticketReply) return ticketReply;
+      const { clientKey } = await request.clone().json() as { clientKey: string };
+      return Response.json(await testRdpGrant(clientKey, { origin, profile: id, revision: 1, transport: 'relay', ticket: '1'.repeat(64) }, login));
+    }
     if (path === `/internal/rdp/profiles/${id}`) return Response.json({ id });
     if (path === `/internal/rdp/profiles/${id}/trust`) return Response.json({ fingerprint: 'a'.repeat(64) });
     return new Response(null, { status: 404 });
@@ -105,18 +112,34 @@ describe('formal RDP routing', () => {
     expect(await request.json()).toEqual(payload);
   });
 
-  it('binds a connection ticket to the current account and a secure browser cookie', async () => {
+  it('binds a login envelope and one-use ticket to the requested key, account and secure browser cookie', async () => {
     const { handle, internal } = fixture();
-    const headers = { Origin: origin, Cookie: 'session=42:cookie-value', 'X-CloudSSH-RDP-Client': String(RDP_CLIENT_REVISION) };
-    const stale = await handle(`/api/rdp/profiles/${id}/connect`, { method: 'POST', headers: { ...headers, 'X-CloudSSH-RDP-Client': '0' } });
+    const recipient = await testRdpConnectKey();
+    const path = `/api/rdp/profiles/${id}/connect`;
+    const headers = { Origin: origin, Cookie: 'session=42:cookie-value', 'X-CloudSSH-RDP-Client': String(RDP_CONNECT_REVISION) };
+    const post = (extra: Record<string, string>) => handle(path, { method: 'POST', headers: { ...headers, ...extra } });
+    const stale = await post({ 'X-CloudSSH-RDP-Client': String(RDP_CLIENT_REVISION) });
     expect(stale.status).toBe(409);
-    expect((await handle(`/api/rdp/profiles/${id}/connect`, { method: 'POST', headers })).status).toBe(400);
-    const response = await handle(`/api/rdp/profiles/${id}/connect`, { method: 'POST', headers: { ...headers, 'X-CloudSSH-RDP-Saved-Revision': '1' } });
+    expect(await stale.json()).toEqual({ code: 'refresh_client' });
+    expect((await post({})).status).toBe(400);
+    const revision = { 'X-CloudSSH-RDP-Saved-Revision': '1' };
+    expect((await post(revision)).status).toBe(400);
+    expect((await post({ ...revision, [RDP_CONNECT_KEY_HEADER]: 'not-an-ec-point' })).status).toBe(400);
+    expect(internal.mock.calls.every(([r]) => !r.url.includes('/rdp/ticket'))).toBe(true);
+    const response = await post({ ...revision, [RDP_CONNECT_KEY_HEADER]: recipient.clientKey });
     expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    const wire = await response.text();
+    expect(wire).not.toContain(login.password);
+    expect(wire).not.toContain(login.username);
+    expect(wire).not.toContain(login.domain);
+    const grant = JSON.parse(wire) as RdpConnectGrant;
+    expect(Object.keys(grant).sort()).toEqual(['loginEnvelope', 'revision', 'ticket']);
+    expect(await openTestRdpEnvelope(grant.loginEnvelope, recipient, { origin, profile: id, revision: 1, transport: 'relay', ticket: grant.ticket })).toEqual(login);
     expect(response.headers.get('Set-Cookie')).toMatch(/^__Host-cloudssh_rdp=[0-9a-f]{64}; Path=\/; Secure; HttpOnly; SameSite=Strict$/);
     const [request] = internal.mock.calls.at(-1)!;
     expect(request.url).toBe('https://internal/internal/rdp/ticket?user_id=5');
-    expect(await request.json()).toEqual({ profile: id, savedRevision: 1, binding: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    expect(await request.json()).toEqual({ profile: id, savedRevision: 1, clientKey: recipient.clientKey, binding: expect.stringMatching(/^[a-f0-9]{64}$/) });
     expect(response.headers.get('Location')).toBeNull();
     const desktop = await handle(`/rdp/${id}`, { headers });
     expect(desktop.headers.get('X-Frame-Options')).toBe('DENY');
@@ -124,5 +147,26 @@ describe('formal RDP routing', () => {
     expect(await embedded.text()).toBe('desktop page');
     expect(embedded.headers.get('Content-Security-Policy')).toContain("frame-ancestors 'self'");
     expect(desktop.headers.get('Cross-Origin-Embedder-Policy')).toBe('require-corp');
+  });
+
+  it('never forwards old plaintext replies or extra fields from a mixed-version or failed DO', async () => {
+    const recipient = await testRdpConnectKey();
+    const grant = await testRdpGrant(recipient.clientKey, { origin, profile: id, revision: 1, transport: 'relay', ticket: 'c'.repeat(64) }, login);
+    for (const [wire, status, expected] of [
+      [{ ticket: grant.ticket, revision: 1, login }, 200, 'refresh_client'],
+      [{ ...grant, login }, 200, 'refresh_client'],
+      [{ ...grant, loginEnvelope: { ...grant.loginEnvelope, login } }, 200, 'refresh_client'],
+      [{ code: 'peer_unavailable', details: login }, 409, 'peer_unavailable'],
+      [{ code: login.password, login }, 500, 'login_unavailable'],
+    ] as const) {
+      const { handle } = fixture(Response.json(wire, { status }));
+      const response = await handle(`/api/rdp/profiles/${id}/connect`, { method: 'POST', headers: {
+        Origin: origin, Cookie: 'session=42:cookie-value', 'X-CloudSSH-RDP-Client': String(RDP_CONNECT_REVISION),
+        'X-CloudSSH-RDP-Saved-Revision': '1', [RDP_CONNECT_KEY_HEADER]: recipient.clientKey,
+      } });
+      expect(response.ok).toBe(false);
+      expect(response.headers.get('Set-Cookie')).toBeNull();
+      expect(await response.json()).toEqual({ code: expected });
+    }
   });
 });

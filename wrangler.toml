@@ -40,6 +40,10 @@ class_name = "SSHShareDO"
 [[durable_objects.bindings]]
 name = "MCP_EXECUTION"
 class_name = "MCPExecutionDO"
+
+[[durable_objects.bindings]]
+name = "RDP_AUTHORITY"
+class_name = "RdpAuthorityDO"
 # 首次部署及后续迁移通过 migration tag 初始化 SQLite Durable Object 类；
 # 已有环境新增或变更 DO 类时必须追加新的、不可复用的 migration tag
 [[migrations]]
@@ -53,6 +57,10 @@ new_sqlite_classes = ["SSHShareDO"]
 [[migrations]]
 tag = "v3"
 new_sqlite_classes = ["MCPExecutionDO"]
+
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["RdpAuthorityDO"]
 # 浏览器 RDP 资源与 SSH 内联 HTML 分离；避免 Static Assets 路由改变原生 Access 上下文。
 [[rules]]
 type = "Data"
@@ -90,3 +98,6 @@ class_name = "SSHShareDO"
 [[env.test.durable_objects.bindings]]
 name = "MCP_EXECUTION"
 class_name = "MCPExecutionDO"
+[[env.test.durable_objects.bindings]]
+name = "RDP_AUTHORITY"
+class_name = "RdpAuthorityDO"

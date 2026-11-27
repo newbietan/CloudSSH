@@ -6,6 +6,8 @@ export interface AppConfig {
   githubAuthRequired: boolean;
   sshSharingEnabled?: boolean;
   rdpEnabled?: boolean;
+  rdpConnectorEnabled?: boolean;
+  rdpConnectorPreview?: boolean;
   authMode?: 'password' | 'cf_access' | 'github' | 'anonymous';
   cfAccessEmail?: string | null;
   passwordAuth?: { kdf: string; iterations: number; salt: string } | null;

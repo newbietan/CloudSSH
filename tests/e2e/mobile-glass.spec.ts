@@ -50,9 +50,10 @@ test('玻璃阅读表面仅在移动断点增厚，主题切换和桌面恢复�
     root.id = 'glass-style-probes'; root.hidden = true;
     for (const [name, id, className] of [
       ['card', '', 'server-card'], ['box', '', 'cyber-box'],
-      ['settings', '', 'responsive-modal-panel cyber-box'],
-      ['confirm', '', 'app-dialog__panel'], ['auth', '', 'auth-challenge-dialog__panel'],
-      ['editor', '', 'remote-editor__panel'], ['mcp', '', 'mcp-dialog__panel assistant-shell'],
+      ['settings', '', 'app-modal__panel responsive-modal-panel'],
+      ['confirm', '', 'app-modal__panel app-dialog__panel'], ['auth', '', 'app-modal__panel auth-challenge-dialog__panel'],
+      ['editor', '', 'app-modal__panel remote-editor__panel'], ['mcp', '', 'app-modal__panel mcp-dialog__panel assistant-shell'],
+      ['rdp', '', 'app-modal__panel app-modal__inset'],
       ['agent', 'agent-panel', 'assistant-shell'], ['sftp', 'sftp-panel', ''],
       ['snippets', 'snippet-panel', ''], ['menu', '', 'mobile-more-menu'],
       ['userMenu', '', 'user-space-header-actions'],
@@ -69,7 +70,9 @@ test('玻璃阅读表面仅在移动断点增厚，主题切换和桌面恢复�
   await applyTheme(page, 'liquid-glass');
   const desktop = await surfaceAlphas(page);
   expect(desktop.card).toBeLessThan(80);
-  expect(desktop.confirm).toBeLessThan(90);
+  expect(desktop.confirm).toBeLessThan(255);
+  expect(desktop.confirm).toBe(desktop.settings);
+  expect(desktop.rdp).toBe(desktop.settings);
   expect(desktop.sftp).toBeLessThan(190);
   for (const width of [320, 390, 900]) {
     await page.setViewportSize({ width, height: 844 });

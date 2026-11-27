@@ -242,7 +242,7 @@ test('移动端用户空间提供自定义快捷键入口且桌面端隐藏', as
   expect(valueFontSize).toBe('11px');
 
   // 关闭弹窗
-  await page.locator('#mobile-shortcuts-modal .panel-close-btn').click();
+  await modal.getByRole('button', { name: '关闭', exact: true }).click();
   await expect(modal).toBeHidden();
 
   // 2. 切换到桌面端视口（1280x800），该按钮必须被严格隐藏

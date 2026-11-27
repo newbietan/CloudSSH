@@ -1,7 +1,11 @@
 import { DatabaseSync } from 'node:sqlite';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseRdpProfile } from '../../src/rdp-schema';
 import { RdpStore } from '../../src/worker/rdp-store';
+import type { RdpConnectGrant } from '../../src/worker/rdp-connect-crypto';
+import { openTestRdpEnvelope, testRdpConnectKey } from '../fixtures/rdp-connect';
+
+const origin = 'https://rdp.cloudssh.example';
 
 const certificate = '1'.repeat(64);
 const endpoint = { name: 'Workstation', route: 'direct', host: '93.184.215.14' };
@@ -23,9 +27,11 @@ function fixture(database = new DatabaseSync(':memory:')) {
     catch (error) { database.exec('ROLLBACK'); throw error; }
   }, async value => Buffer.from(value).toString('base64'), async value => Buffer.from(value, 'base64').toString());
   const request = (path: string, method: string, body?: unknown, user = 1) => store.handle(new Request(`https://internal/internal/rdp/${path}?user_id=${user}`, {
-    method, body: body === undefined ? undefined : JSON.stringify(body),
+    method, headers: { 'X-RDP-Origin': origin }, body: body === undefined ? undefined : JSON.stringify(body),
   }));
-  return { request, database };
+  const recipient = testRdpConnectKey();
+  const issueTicket = async (body: object, user = 1) => request('ticket', 'POST', { clientKey: (await recipient).clientKey, ...body }, user);
+  return { request, database, issueTicket, recipient };
 }
 
 describe('RDP profiles and connection leases', () => {
@@ -84,14 +90,14 @@ describe('RDP profiles and connection leases', () => {
   });
 
   it('isolates profiles, issues a one-use browser-bound ticket, and revokes leases on edit', async () => {
-    const { request, database } = fixture();
+    const { request, database, issueTicket } = fixture();
     try {
       const saved = await request('profiles', 'POST', target);
       expect(saved.status).toBe(201);
       const { id, revision } = await saved.json() as { id: string; revision: number };
       expect((await request(`profiles/${id}`, 'GET', undefined, 2)).status).toBe(404);
-      expect((await request('ticket', 'POST', { profile: id, binding: bind, savedRevision: revision }, 2)).status).toBe(404);
-      const { ticket } = await (await request('ticket', 'POST', { profile: id, binding: bind, savedRevision: revision })).json() as { ticket: string };
+      expect((await issueTicket({ profile: id, binding: bind, savedRevision: revision }, 2)).status).toBe(404);
+      const { ticket } = await (await issueTicket({ profile: id, binding: bind, savedRevision: revision })).json() as RdpConnectGrant;
       expect(database.prepare('SELECT hash FROM rdp_tickets').get()?.hash).not.toBe(ticket);
       expect((await request('claim', 'POST', { ticket, binding: '3'.repeat(64) })).status).toBe(409);
       const claimed = await request('claim', 'POST', { ticket, binding: bind });
@@ -105,14 +111,14 @@ describe('RDP profiles and connection leases', () => {
   });
 
   it('binds first-use trust to the owner, active lease and destination revision and never overwrites a pin', async () => {
-    const { request, database } = fixture();
+    const { request, database, issueTicket } = fixture();
     try {
       const { id, revision, fingerprint } = await (await request('profiles', 'POST', target)).json() as {
         id: string; revision: number; fingerprint: string | null;
       };
       expect(fingerprint).toBeNull();
       const profile = `profiles/${id}`;
-      const { ticket } = await (await request('ticket', 'POST', { profile: id, binding: bind, savedRevision: revision })).json() as { ticket: string };
+      const { ticket } = await (await issueTicket({ profile: id, binding: bind, savedRevision: revision })).json() as RdpConnectGrant;
       const { id: lease } = await (await request('claim', 'POST', { ticket, binding: bind })).json() as { id: string };
       const payload = { revision, lease, fingerprint: certificate };
       expect((await request(`${profile}/trust`, 'PUT', payload, 2)).status).toBe(404);
@@ -129,14 +135,14 @@ describe('RDP profiles and connection leases', () => {
   });
 
   it('binds credentials and trust to the canonical domain, not an address selected by the relay', async () => {
-    const { request, database } = fixture();
+    const { request, database, issueTicket } = fixture();
     try {
       const host = 'rdp.example.com';
       const saved = await request('profiles', 'POST', { ...target, host: 'RDP.Example.COM.' });
       expect(saved.status).toBe(201);
       const { id, revision } = await saved.json() as { id: string; revision: number };
       const path = `profiles/${id}`;
-      const issue = async (savedRevision: number) => (await (await request('ticket', 'POST', { profile: id, binding: bind, savedRevision })).json()) as { ticket: string };
+      const issue = async (savedRevision: number) => (await (await issueTicket({ profile: id, binding: bind, savedRevision })).json()) as RdpConnectGrant;
       const claim = async (ticket: string) => (await (await request('claim', 'POST', { ticket, binding: bind })).json()) as { id: string; profile: Record<string, unknown> };
       const opened = await claim((await issue(revision)).ticket);
       expect(opened.profile).toMatchObject({ host, port: 3389, fingerprint: null });
@@ -158,16 +164,17 @@ describe('RDP profiles and connection leases', () => {
   });
 
   it('binds credentials, certificate, history and the authoritative relay destination to the direct port', async () => {
-    const { request, database } = fixture();
+    const { request, database, issueTicket, recipient } = fixture();
     try {
       const json = async (route: string, method: string, body?: unknown) => {
         const response = await request(route, method, body);
         expect(response.ok).toBe(true);
         return await response.json() as Record<string, unknown>;
       };
-      const { id } = await json('profiles', 'POST', { ...target, port: 53389 });
+      const { id } = await json('profiles', 'POST', { ...target, port: 53389 }) as { id: string };
       const path = `profiles/${id}`;
-      const ticket = async (revision: number) => (await json('ticket', 'POST', { profile: id, binding: bind, savedRevision: revision })).ticket;
+      const issue = async (savedRevision: number) => (await (await issueTicket({ profile: id, binding: bind, savedRevision })).json()) as RdpConnectGrant;
+      const ticket = async (revision: number) => (await issue(revision)).ticket;
       // Old relays hard-code 3389. They must never receive a lease for a custom destination.
       expect((await request('claim', 'POST', { ticket: await ticket(1), binding: bind })).status).toBe(409);
       const claim = await json('claim', 'POST', { ticket: await ticket(1), binding: bind, supportsDirectPort: true });
@@ -185,22 +192,25 @@ describe('RDP profiles and connection leases', () => {
       expect(await json('profiles', 'GET')).toMatchObject({ profiles: [{ port: 3389, last_connected_at: null }] });
       expect((await request('renew', 'POST', { lease: oldLease.id })).status).toBe(404);
       expect((await request('claim', 'POST', { ticket: staleTicket, binding: bind, supportsDirectPort: true })).status).toBe(409);
-      expect(await json('ticket', 'POST', { profile: id, binding: bind, savedRevision: 3 })).toMatchObject({ login });
+      const grant = await issue(3);
+      expect(await openTestRdpEnvelope(grant.loginEnvelope, await recipient, {
+        origin, profile: id, revision: 3, transport: 'relay', ticket: grant.ticket,
+      })).toEqual(login);
       const tunnel = await json(path, 'PUT', { ...target, route: 'tunnel', host: 'rdp.example.com', revision: 3 });
       expect(tunnel).not.toHaveProperty('port');
       expect(await json(path, 'PUT', { ...target, revision: 4 })).toMatchObject({ port: 3389 });
     } finally { database.close(); }
   });
 
-  it('requires complete login and only returns the password to a matching owner/revision ticket', async () => {
-    const { request, database } = fixture();
+  it('requires complete login and seals it only for an authorized, matching owner/revision ticket', async () => {
+    const { request, database, issueTicket, recipient } = fixture();
     try {
       const login = { username: 'saved-user', domain: 'domain', password: ' secret ' };
       const get = async (route: string, method: string, body?: unknown, user = 1) => (await request(route, method, body, user)).json() as Promise<Record<string, unknown>>;
       for (const input of [endpoint, { ...endpoint, login: null }, { ...endpoint, login: { ...login, password: '' } }]) {
         expect((await request('profiles', 'POST', input)).status).toBe(400);
       }
-      const saved = await get('profiles', 'POST', { ...target, login, tags: ['Work'] });
+      const saved = await get('profiles', 'POST', { ...target, login, tags: ['Work'] }) as { id: string };
       const path = `profiles/${saved.id}`;
       const issue = { profile: saved.id, binding: bind };
       expect(saved).toMatchObject({ hasLogin: true, tags: ['Work'] });
@@ -210,32 +220,78 @@ describe('RDP profiles and connection leases', () => {
       expect(JSON.stringify(cards)).not.toContain(login.domain);
       for (const info of [saved, await get(path, 'GET'), await get('ticket', 'POST', issue)]) expect(JSON.stringify(info)).not.toContain(login.username);
       expect(database.prepare('SELECT login FROM rdp_profile_options').get()?.login).not.toContain(login.password);
-      expect((await request('ticket', 'POST', { ...issue, savedRevision: 1 }, 2)).ok).toBe(false);
-      expect((await request('ticket', 'POST', { ...issue, savedRevision: 2 })).ok).toBe(false);
-      const ticket = await get('ticket', 'POST', { ...issue, savedRevision: 1 });
-      expect(ticket.login).toEqual(login);
+      expect((await issueTicket({ ...issue, savedRevision: 1 }, 2)).status).toBe(404);
+      expect((await issueTicket({ ...issue, savedRevision: 2 })).status).toBe(409);
+      expect((await request('ticket', 'POST', { ...issue, savedRevision: 1 })).status).toBe(400); // Old DO callers get nothing.
+      const offCurve = Buffer.alloc(65); offCurve[0] = 4;
+      expect((await issueTicket({ ...issue, savedRevision: 1, clientKey: offCurve.toString('base64url') })).status).toBe(400);
+      expect(database.prepare('SELECT * FROM rdp_tickets').all()).toHaveLength(0);
+      const issued = await issueTicket({ ...issue, savedRevision: 1 });
+      expect(issued.headers.get('Cache-Control')).toBe('no-store');
+      const wire = await issued.text();
+      for (const value of Object.values(login)) expect(wire).not.toContain(value);
+      const ticket = JSON.parse(wire) as RdpConnectGrant;
+      expect(ticket).not.toHaveProperty('login');
+      const context = { origin, profile: saved.id, revision: 1, transport: 'relay' as const, ticket: ticket.ticket };
+      const owner = await recipient;
+      expect(owner.privateKey.extractable).toBe(false);
+      expect(await openTestRdpEnvelope(ticket.loginEnvelope, owner, context)).toEqual(login);
+      await expect(openTestRdpEnvelope(ticket.loginEnvelope, await testRdpConnectKey(), context)).rejects.toThrow();
+      for (const changed of [{ origin: 'https://other.example' }, { profile: crypto.randomUUID() },
+        { revision: 2 }, { transport: 'device' as const }, { ticket: 'f'.repeat(64) }]) {
+        await expect(openTestRdpEnvelope(ticket.loginEnvelope, owner, { ...context, ...changed })).rejects.toThrow();
+      }
+      const changed = Buffer.from(ticket.loginEnvelope.ciphertext, 'base64url');
+      changed[0] ^= 1;
+      await expect(openTestRdpEnvelope({ ...ticket.loginEnvelope, ciphertext: changed.toString('base64url') }, owner, context)).rejects.toThrow();
       expect(JSON.stringify(await get('claim', 'POST', { ticket: ticket.ticket, binding: bind }))).not.toContain(login.username);
       expect(await get(path + '/login-identity', 'POST', { revision: 1 })).toEqual({ username: login.username, domain: login.domain, revision: 1 });
       expect((await request(path + '/login-identity', 'POST', { revision: 1 }, 2)).status).toBe(404);
       expect(await get(path, 'PUT', { ...endpoint, name: 'Renamed', revision: 1 })).toMatchObject({ hasLogin: true });
       expect((await request(path + '/login-identity', 'POST', { revision: 1 })).status).toBe(409);
       expect((await request(path, 'PUT', { ...endpoint, host: '8.8.8.8', revision: 2 })).status).toBe(400);
-      expect((await request('ticket', 'POST', { ...issue, savedRevision: 3 })).ok).toBe(false);
+      expect((await issueTicket({ ...issue, savedRevision: 3 })).status).toBe(409);
       await request(path, 'DELETE');
       expect(database.prepare('SELECT * FROM rdp_profile_options').all()).toHaveLength(0);
       expect(database.prepare('SELECT * FROM rdp_card_metadata').all()).toHaveLength(0);
     } finally { database.close(); }
   });
 
+  it('does not issue a stale grant when the device is edited during sealing', async () => {
+    const { request, database, issueTicket } = fixture();
+    const original = crypto.subtle.encrypt.bind(crypto.subtle);
+    let entered!: () => void;
+    let resume!: () => void;
+    const sealing = new Promise<void>(resolve => { entered = resolve; });
+    const pending = new Promise<void>(resolve => { resume = resolve; });
+    const encrypt = vi.spyOn(crypto.subtle, 'encrypt').mockImplementationOnce(async (...args) => {
+      entered();
+      await pending;
+      return original(...args);
+    });
+    try {
+      const { id } = await (await request('profiles', 'POST', target)).json() as { id: string };
+      const issue = issueTicket({ profile: id, binding: bind, savedRevision: 1 });
+      try {
+        await Promise.race([sealing, issue.then(() => { throw new Error('expected sealing before issuance'); })]);
+        expect((await request(`profiles/${id}`, 'PUT', { ...target, name: 'Updated', revision: 1 })).status).toBe(200);
+      } finally { resume(); }
+      const response = await issue;
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({ code: 'profile_changed' });
+      expect(database.prepare('SELECT * FROM rdp_tickets').all()).toHaveLength(0);
+    } finally { encrypt.mockRestore(); database.close(); }
+  });
+
   it('records first-frame time only for the live owned lease, independently of edit times', async () => {
-    const { request, database } = fixture();
+    const { request, database, issueTicket } = fixture();
     try {
       const { id } = await (await request('profiles', 'POST', target)).json() as { id: string };
       const path = `profiles/${id}`;
       const card = async () => (await (await request('profiles', 'GET')).json() as { profiles: { revision: number; username: string; created_at: number; updated_at: number; last_connected_at: number | null }[] }).profiles[0];
       const initial = await card();
       expect(initial).toMatchObject({ username: target.login.username, revision: 1, created_at: expect.any(Number), last_connected_at: null });
-      const { ticket } = await (await request('ticket', 'POST', { profile: id, binding: bind, savedRevision: 1 })).json() as { ticket: string };
+      const { ticket } = await (await issueTicket({ profile: id, binding: bind, savedRevision: 1 })).json() as RdpConnectGrant;
       const { id: lease } = await (await request('claim', 'POST', { ticket, binding: bind })).json() as { id: string };
       expect((await request('desktop-ready', 'POST', { lease }, 2)).ok).toBe(false);
       expect(await card()).toEqual(initial);

@@ -3,6 +3,10 @@ import {
 } from '../rdp-schema';
 
 import { parseStoredServerTags } from '../server-tags';
+import { RdpPeerRooms } from './rdp-peer-rooms';
+import { RdpDevices } from './rdp-devices';
+import { deviceLabel, isDeviceKey, isDeviceSignature } from './rdp-device-auth';
+import { importRdpConnectKey, sealRdpLogin, type RdpLoginEnvelope } from './rdp-connect-crypto';
 
 const portColumn = `port INTEGER NOT NULL DEFAULT ${RDP_DEFAULT_PORT} CHECK(typeof(port)='integer' AND port BETWEEN 1 AND 65535)`;
 const withOptions = `SELECT p.*, o.tags, o.login, COALESCE(o.port, ${RDP_DEFAULT_PORT}) AS port, m.username_enc, m.identity_revision,
@@ -30,7 +34,7 @@ interface Row {
   updated_at: number | null;
   last_connected_at: number | null;
 }
-interface TicketRow { profile: string; revision: number; binding: string; expires: number }
+interface TicketRow { profile: string; revision: number; binding: string; expires: number; transport: string; origin: string; device: string }
 export interface RdpLease { id: string; profile: RdpProfile; accessId?: string; accessSecret?: string }
 
 export const rdpJson = (body: unknown, status = 200) => Response.json(body, {
@@ -54,6 +58,7 @@ export class RdpStore {
     private readonly transaction: <T>(callback: () => T) => T,
     private readonly encrypt: (value: string, userId: number) => Promise<string>,
     private readonly decrypt: (value: string, userId: number) => Promise<string>,
+    private readonly state?: DurableObjectState,
   ) {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS rdp_profiles (
       id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, revision INTEGER NOT NULL, name TEXT NOT NULL,
@@ -72,12 +77,46 @@ export class RdpStore {
     )`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS rdp_tickets (
       hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, profile TEXT NOT NULL, revision INTEGER NOT NULL,
-      binding TEXT NOT NULL, expires INTEGER NOT NULL
+      binding TEXT NOT NULL, expires INTEGER NOT NULL, transport TEXT NOT NULL DEFAULT 'relay', origin TEXT NOT NULL DEFAULT '', device TEXT NOT NULL DEFAULT ''
     )`);
+    const ticketColumns = this.sql.exec('PRAGMA table_info(rdp_tickets)').toArray();
+    if (!ticketColumns.some(col => col.name === 'transport')) this.sql.exec(`ALTER TABLE rdp_tickets ADD COLUMN transport TEXT NOT NULL DEFAULT 'relay'`);
+    if (!ticketColumns.some(col => col.name === 'origin')) this.sql.exec(`ALTER TABLE rdp_tickets ADD COLUMN origin TEXT NOT NULL DEFAULT ''`);
+    if (!ticketColumns.some(col => col.name === 'device')) this.sql.exec(`ALTER TABLE rdp_tickets ADD COLUMN device TEXT NOT NULL DEFAULT ''`);
+    this.sql.exec('DROP TABLE IF EXISTS rdp_peer_pairs'); // Retire the hand-entered prototype; no profile data was stored there.
     this.sql.exec(`CREATE TABLE IF NOT EXISTS rdp_leases (
       id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, profile TEXT NOT NULL, revision INTEGER NOT NULL,
       expires INTEGER NOT NULL
     )`);
+  }
+  private deviceRegistry?: RdpDevices;
+  private get devices(): RdpDevices { return this.deviceRegistry ??= new RdpDevices(this.sql, this.transaction, this.state); }
+  private peerRooms?: RdpPeerRooms;
+  private get peers(): RdpPeerRooms {
+    return this.peerRooms ??= new RdpPeerRooms({
+      claim: async (user, ticket, binding, origin) => {
+        const response = await this.claim(user, ticket, binding, true, origin);
+        return response.ok ? response.json<{ lease: string; profile: string; revision: number; device: string }>() : null;
+      },
+      invite: (user, id, revision, origin, device, proof) => this.row(user, id)?.revision === revision &&
+        this.devices.invite(user, id, origin, device, proof),
+      record: (user, lease) => this.recordDesktop(user, lease),
+      renew: (user, lease) => this.renewLease(user, lease),
+      release: (user, lease) => { this.sql.exec('DELETE FROM rdp_leases WHERE user_id=? AND id=?', user, lease); },
+    });
+  }
+  private recordDesktop(userId: number, lease: string): boolean {
+    const now = Date.now();
+    return !!this.sql.exec(`INSERT INTO rdp_card_metadata(user_id,profile,last_connected_at)
+      SELECT p.user_id,p.id,? FROM rdp_leases l JOIN rdp_profiles p ON p.id=l.profile AND p.user_id=l.user_id AND p.revision=l.revision
+      WHERE l.id=? AND l.user_id=? AND l.expires>?
+      ON CONFLICT(user_id,profile) DO UPDATE SET last_connected_at=MAX(COALESCE(last_connected_at,0),excluded.last_connected_at)`, now, lease, userId, now).rowsWritten;
+  }
+  private renewLease(userId: number, lease: string): boolean {
+    const now = Date.now();
+    return !!this.sql.exec(`UPDATE rdp_leases SET expires=? WHERE user_id=? AND id=? AND expires>?
+      AND EXISTS (SELECT 1 FROM rdp_profiles p WHERE p.user_id=rdp_leases.user_id AND p.id=rdp_leases.profile
+        AND p.revision=rdp_leases.revision)`, now + RDP_LEASE_MS, userId, lease, now).rowsWritten;
   }
   private row(userId: number, id: string): Row | undefined {
     return this.sql.exec(`${withOptions} WHERE p.user_id = ? AND p.id = ?`, userId, id).toArray()[0] as unknown as Row | undefined;
@@ -90,7 +129,7 @@ export class RdpStore {
     return Number(this.sql.exec(`SELECT COUNT(*) AS count FROM ${kind} WHERE user_id = ?`, userId).one().count);
   }
 
-  private async cards(userId: number): Promise<Response> {
+  private async cards(userId: number, origin: string): Promise<Response> {
     const rows = () => this.sql.exec(`${withOptions} WHERE p.user_id=? ORDER BY p.name,p.id LIMIT ?`, userId, RDP_MAX_PROFILES).toArray() as unknown as Row[];
     const names = new Map<string, { revision: number; username: string }>();
     // Bounded and sequential: avoid repeated concurrent KDF work on a cold account.
@@ -118,7 +157,8 @@ export class RdpStore {
     const profiles: RdpCard[] = rows().map(row => {
       const name = names.get(row.id);
       return { ...profile(row), username: name?.revision === row.revision ? name.username : null,
-        last_connected_at: row.last_connected_at, created_at: row.created_at, updated_at: row.updated_at };
+        last_connected_at: row.last_connected_at, created_at: row.created_at, updated_at: row.updated_at,
+        ...(origin ? { connector: this.devices.status(userId, row.id, origin) } : {}) };
     });
     return rdpJson({ profiles });
   }
@@ -128,18 +168,63 @@ export class RdpStore {
     const userId = Number(url.searchParams.get('user_id'));
     if (!Number.isSafeInteger(userId) || userId < 1) return error(400, 'invalid_request');
     const route = url.pathname.slice('/internal/rdp/'.length);
+    const origin = request.headers.get('X-RDP-Origin') ?? '';
+    if (route === 'device-register' && request.method === 'POST' && origin) {
+      const body = await readRdpJson(request) as Record<string, unknown> | null;
+      if (body && isRdpId(body.profile) && digestPattern(body.proof) && isDeviceKey(body.key) && deviceLabel(body.label))
+        return this.devices.register(userId, body.profile, origin, body.proof, body.key, body.label);
+      return error(400, 'invalid_request');
+    }
+    if (route === 'device-challenge' || route === 'device-standby' || route === 'device-attach') {
+      const profileId = request.headers.get('X-RDP-Profile'), device = request.headers.get('X-RDP-Device');
+      if (!origin || !isRdpId(profileId) || !isRdpId(device)) return error(400, 'invalid_request');
+      if (route === 'device-challenge' && request.method === 'POST') return this.devices.challenge(userId, profileId, device, origin);
+      const proof = request.headers.get('X-RDP-Device-Proof');
+      if (request.method !== 'GET' || request.headers.get('Upgrade') !== 'websocket' || !digestPattern(proof)) return error(400, 'invalid_request');
+      if (route === 'device-attach') return this.devices.matches(userId, profileId, device, origin)
+        ? this.peers.agent(userId, profileId, device, origin, proof) : error(401, 'connector_unavailable');
+      const signature = request.headers.get('X-RDP-Device-Signature'), token = request.headers.get('X-RDP-Device-Token');
+      if (!isDeviceSignature(signature) || !token || token.length > 280) return error(400, 'invalid_request');
+      return this.devices.standby(userId, profileId, device, origin, proof, signature, token);
+    }
+    if (route === 'peer-browser') {
+      if (request.method !== 'GET' || request.headers.get('Upgrade') !== 'websocket' || !origin) return error(400, 'invalid_request');
+      const digest = request.headers.get('X-RDP-Binding'), idleMs = Number(request.headers.get('X-RDP-Idle'));
+      return digestPattern(digest) && Number.isSafeInteger(idleMs) && idleMs >= 0
+        ? this.peers.browser(userId, digest, idleMs, origin) : error(400, 'invalid_request');
+    }
     if (route === 'profiles') {
-      if (request.method === 'GET') return this.cards(userId);
+      if (request.method === 'GET') return this.cards(userId, origin);
       if (request.method === 'POST') return this.save(userId, null, await readRdpJson(request));
     }
-    const [kind, id] = route.split('/');
+    const [kind, id, action] = route.split('/');
+    if (kind === 'profiles' && isRdpId(id) && ['connector', 'connector-setup'].includes(action) &&
+        route === `profiles/${id}/${action}` && origin) {
+      if (!this.row(userId, id)) return error(404, 'not_found');
+      if (action === 'connector' && request.method === 'GET') return rdpJson(this.devices.status(userId, id, origin));
+      if (action === 'connector' && request.method === 'DELETE') {
+        this.transaction(() => {
+          this.devices.unlink(userId, id); this.peers.invalidate(userId, id);
+          this.sql.exec("DELETE FROM rdp_tickets WHERE user_id=? AND profile=? AND transport='device'", userId, id);
+        });
+        return rdpJson({ ok: true });
+      }
+      const body = request.method === 'POST' ? await readRdpJson(request) as Record<string, unknown> | null : null;
+      if (action === 'connector-setup' && body && digestPattern(body.proof) && typeof body.revision === 'number' &&
+          Number.isSafeInteger(body.revision) && typeof body.expires === 'number' && Number.isSafeInteger(body.expires)) {
+        return this.devices.begin(userId, id, origin, body.revision, body.proof, body.expires);
+      }
+      return error(400, 'invalid_request');
+    }
     if (kind === 'profiles' && isRdpId(id) && route === `profiles/${id}`) {
       const row = this.row(userId, id);
       if (!row) return error(404, 'not_found');
-      if (request.method === 'GET') return rdpJson(profile(row));
+      if (request.method === 'GET') return rdpJson({ ...profile(row), ...(origin ? { connector: this.devices.status(userId, id, origin) } : {}) });
       if (request.method === 'PUT') return this.save(userId, row, await readRdpJson(request));
       if (request.method === 'DELETE') {
         this.transaction(() => {
+          this.peers.invalidate(userId, id);
+          this.devices.unlink(userId, id);
           this.sql.exec('DELETE FROM rdp_card_metadata WHERE user_id=? AND profile=?', userId, id);
           this.sql.exec('DELETE FROM rdp_profile_options WHERE user_id=? AND profile=?', userId, id);
           this.sql.exec('DELETE FROM rdp_profiles WHERE user_id = ? AND id = ?', userId, id);
@@ -168,31 +253,28 @@ export class RdpStore {
     if (request.method !== 'POST') return error(405, 'method_not_allowed');
     const body = await readRdpJson(request) as Record<string, unknown> | null;
     if (!body || typeof body !== 'object') return error(400, 'invalid_request');
+    if (route === 'peer-renew' && isRdpId(body.profile) && digestPattern(body.binding) && origin) {
+      return this.peers.renew(userId, body.profile, body.lease, body.binding, origin);
+    }
     if (route === 'ticket' && isRdpId(body.profile) && digestPattern(body.binding)) {
-      if (typeof body.savedRevision !== 'number' || !Number.isSafeInteger(body.savedRevision) || body.savedRevision < 1) return error(400, 'invalid_request');
-      return this.issue(userId, body.profile, body.binding, body.savedRevision);
+      if (!origin || typeof body.clientKey !== 'string' || typeof body.savedRevision !== 'number' ||
+          !Number.isSafeInteger(body.savedRevision) || body.savedRevision < 1 ||
+          (body.transport !== undefined && body.transport !== 'device')) return error(400, 'invalid_request');
+      return this.issue(userId, body.profile, body.binding, body.savedRevision, origin,
+        body.transport === 'device' ? 'device' : 'relay', body.clientKey);
     }
     if (route === 'claim' && digestPattern(body.ticket) && digestPattern(body.binding)) {
       return this.claim(userId, body.ticket, body.binding, body.supportsDirectPort === true);
     }
     if (route === 'desktop-ready' && isRdpId(body.lease)) {
-      const now = Date.now();
-      const result = this.sql.exec(`INSERT INTO rdp_card_metadata(user_id,profile,last_connected_at)
-        SELECT p.user_id,p.id,? FROM rdp_leases l JOIN rdp_profiles p ON p.id=l.profile AND p.user_id=l.user_id AND p.revision=l.revision
-        WHERE l.id=? AND l.user_id=? AND l.expires>?
-        ON CONFLICT(user_id,profile) DO UPDATE SET last_connected_at=MAX(COALESCE(last_connected_at,0),excluded.last_connected_at)`, now, body.lease, userId, now);
-      return result.rowsWritten ? rdpJson({ success: true }) : error(409, 'session_ended');
+      return this.recordDesktop(userId, body.lease) ? rdpJson({ success: true }) : error(409, 'session_ended');
     }
     if ((route === 'renew' || route === 'release') && isRdpId(body.lease)) {
       if (route === 'release') {
         this.sql.exec('DELETE FROM rdp_leases WHERE user_id = ? AND id = ?', userId, body.lease);
         return rdpJson({ success: true });
       }
-      const now = Date.now();
-      const result = this.sql.exec(`UPDATE rdp_leases SET expires = ? WHERE user_id = ? AND id = ? AND expires > ?
-        AND EXISTS (SELECT 1 FROM rdp_profiles p WHERE p.user_id = rdp_leases.user_id
-          AND p.id = rdp_leases.profile AND p.revision = rdp_leases.revision)`, now + RDP_LEASE_MS, userId, body.lease, now);
-      return result.rowsWritten ? rdpJson({ success: true }) : error(404, 'session_ended');
+      return this.renewLease(userId, body.lease) ? rdpJson({ success: true }) : error(404, 'session_ended');
     }
     return error(404, 'not_found');
   }
@@ -238,6 +320,9 @@ export class RdpStore {
         const result = this.sql.exec(`UPDATE rdp_profiles SET revision=?, name=?, route=?, host=?, fingerprint=?, access=?
           WHERE user_id=? AND id=? AND revision=?`, revision, input.name, input.route, input.host, fingerprint, access, userId, id, existing.revision);
         if (!result.rowsWritten) return error(409, 'profile_changed');
+        this.peers.invalidate(userId, id);
+        if (sameTarget) this.devices.clearPending(userId, id);
+        else this.devices.unlink(userId, id);
         this.sql.exec('DELETE FROM rdp_tickets WHERE user_id = ? AND profile = ?', userId, id);
         this.sql.exec('DELETE FROM rdp_leases WHERE user_id = ? AND profile = ?', userId, id);
       } else {
@@ -268,40 +353,55 @@ export class RdpStore {
     } catch { return error(500, 'login_unavailable'); }
   }
 
-  private async issue(userId: number, id: string, binding: string, savedRevision: number): Promise<Response> {
+  private async issue(userId: number, id: string, binding: string, savedRevision: number,
+    origin: string, transport: 'device' | 'relay', clientKey: string): Promise<Response> {
+    const recipient = await importRdpConnectKey(clientKey);
+    if (!recipient) return error(400, 'invalid_request');
     const ticket = Array.from(crypto.getRandomValues(new Uint8Array(32)), byte => byte.toString(16).padStart(2, '0')).join('');
     const hash = await rdpDigest(ticket);
     const login = await this.readLogin(userId, id, savedRevision);
     if (login instanceof Response) return login;
+    let loginEnvelope: RdpLoginEnvelope;
+    try {
+      loginEnvelope = await sealRdpLogin(login, recipient, { origin, profile: id, revision: savedRevision, transport, ticket });
+    } catch { return error(500, 'login_unavailable'); }
+    const deviceOrigin = transport === 'device' ? origin : '';
+    // Crypto yielded; recheck the profile and connector before minting any usable ticket.
     return this.transaction(() => {
       const now = Date.now();
       this.clean(now);
       const row = this.row(userId, id);
       if (!row) return error(404, 'not_found');
       if (row.revision !== savedRevision) return error(409, 'profile_changed');
+      const device = deviceOrigin ? this.devices.available(userId, id, deviceOrigin) : '';
+      if (deviceOrigin ? !device : row.route === 'connector') return error(409, 'peer_unavailable');
       if (this.count('rdp_tickets', userId) >= MAX_TICKETS) return error(429, 'ticket_limit');
-      this.sql.exec('INSERT INTO rdp_tickets VALUES (?, ?, ?, ?, ?, ?)', hash, userId, id, row.revision, binding, now + TICKET_MS);
-      return rdpJson({ ticket, revision: row.revision, login });
+      this.sql.exec('INSERT INTO rdp_tickets (hash,user_id,profile,revision,binding,expires,transport,origin,device) VALUES (?,?,?,?,?,?,?,?,?)',
+        hash, userId, id, row.revision, binding, now + TICKET_MS, transport, deviceOrigin, device!);
+      return rdpJson({ ticket, revision: row.revision, loginEnvelope });
     });
   }
 
-  private async claim(userId: number, ticket: string, binding: string, supportsDirectPort: boolean): Promise<Response> {
+  private async claim(userId: number, ticket: string, binding: string, supportsDirectPort: boolean, deviceOrigin = ''): Promise<Response> {
     const hash = await rdpDigest(ticket);
     const result = this.transaction(() => {
       this.clean(Date.now());
       const token = this.sql.exec('SELECT * FROM rdp_tickets WHERE user_id = ? AND hash = ?', userId, hash).toArray()[0] as unknown as TicketRow | undefined;
-      if (!token || token.binding !== binding) return null;
+      if (!token || token.binding !== binding || token.transport !== (deviceOrigin ? 'device' : 'relay') || token.origin !== deviceOrigin) return null;
       this.sql.exec('DELETE FROM rdp_tickets WHERE user_id = ? AND hash = ?', userId, hash);
       const row = this.row(userId, token.profile);
       if (!row?.login || row.revision !== token.revision || this.count('rdp_leases', userId) >= MAX_SESSIONS) return null;
       // An older relay always dials 3389; don't let it start TLS/NLA against a different endpoint.
       if (row.route === 'direct' && row.port !== RDP_DEFAULT_PORT && !supportsDirectPort) return null;
+      if (deviceOrigin ? !this.devices.matches(userId, row.id, token.device, deviceOrigin) : row.route === 'connector') return null;
       const lease = crypto.randomUUID();
       this.sql.exec('INSERT INTO rdp_leases VALUES (?, ?, ?, ?, ?)', lease, userId, row.id, row.revision, Date.now() + RDP_LEASE_MS);
-      return { lease, row };
+      return { lease, row, device: token.device };
     });
     if (!result) return error(409, 'ticket_rejected');
     const { lease, row } = result;
+    // Peer signaling never needs the target address, Tunnel service token or Windows login.
+    if (deviceOrigin) return rdpJson({ lease, profile: row.id, revision: row.revision, device: result.device });
     try {
       const access: [string, string] | null = row.access ? JSON.parse(await this.decrypt(row.access, userId)) : null;
       if (this.row(userId, row.id)?.revision !== row.revision) return error(409, 'profile_changed');
