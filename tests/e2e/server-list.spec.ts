@@ -69,6 +69,7 @@ test('list retries distinguish missing and stale data; authorization failure cle
   // Saving an SSH edit refreshes the real combined server list.
   sshStatus = windowsStatus = 503;
   await page.locator('#edit-1').click();
+  await page.locator('#server-name').fill('Edited before refresh failure');
   await page.locator('#server-submit-btn').click();
   await expect(note).toContainText('Could not refresh SSH. Showing the last list.');
   await expect(note).toContainText('Could not refresh Windows. Showing the last list.');
@@ -163,6 +164,8 @@ test('none 与空密码可保存，编辑留空保留旧密码，显式勾选才
   await page.locator('#edit-1').click();
   await expect(page.locator('#server-name')).toBeFocused();
   await expect(page.locator('#server-password')).toHaveValue('');
+  await expect(page.locator('#server-submit-btn')).toBeDisabled();
+  await page.locator('#server-name').fill('Rename without changing the password');
   await page.locator('#server-submit-btn').click();
   await expect.poll(() => updated.length).toBe(4);
   expect(updated[3].auth_method).toBe('password');
@@ -424,8 +427,16 @@ test('CF 隧道模式：表单隐藏端口字段、卡片仅展示域名、保�
   expect(submittedBodies[0]?.transport_type).toBe('cf_tunnel');
   expect(submittedBodies[0]?.cf_tunnel_host).toBe('ssh.homelab.example.com');
 
-  // 编辑既有隧道服务器：端口字段同样隐藏
+  // 编辑既有隧道服务器：折叠凭据面板不算修改，填入凭据再清空恢复初始状态。
   await page.locator('#edit-101').click();
   await expect(page.locator('#server-modal')).toBeVisible();
   await expect(page.locator('#server-port-field')).toBeHidden();
+  const update = page.locator('#server-submit-btn');
+  await expect(update).toBeDisabled();
+  await page.locator('#server-cf-access-toggle').click();
+  await expect(update).toBeDisabled();
+  await page.locator('#server-cf-client-secret').fill('replacement');
+  await expect(update).toBeEnabled();
+  await page.locator('#server-cf-client-secret').fill('');
+  await expect(update).toBeDisabled();
 });

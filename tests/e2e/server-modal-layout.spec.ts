@@ -211,6 +211,16 @@ test('five-digit ports keep native bounds and save numeric values in add/edit fl
     return route.fulfill({ json: { ...savedServer, ...body } });
   });
   await openModal(page, 'liquid-glass');
+  const save = page.locator('#server-submit-btn');
+  await expect(save).toBeDisabled();
+  await page.locator('#server-name').fill(` ${savedServer.name} `);
+  await page.locator('#server-tags').fill('  preview, preview  ');
+  await expect(save).toBeDisabled();
+  await page.locator('#modal-auth-tab-none').click();
+  await expect(save).toBeEnabled();
+  await page.locator('#modal-auth-tab-cf-ca').click();
+  await expect(save).toBeDisabled();
+  await page.locator('#server-form').dispatchEvent('submit');
   for (const value of ['0', '65536', '22.5', '']) {
     await page.locator('#server-port').fill(value);
     expect(await page.locator('#server-port').evaluate((input) => (input as HTMLInputElement).validity.valid)).toBe(false);
@@ -218,7 +228,9 @@ test('five-digit ports keep native bounds and save numeric values in add/edit fl
     expect(requests).toHaveLength(0);
   }
   await page.locator('#server-port').fill('65535');
-  await page.locator('#server-submit-btn').click();
+  await expect(save).toBeDisabled();
+  await page.locator('#server-name').fill('Updated layout preview');
+  await save.click();
   await expect.poll(() => requests.length).toBe(1);
   expect(requests[0].port).toBe(65535);
   await page.locator('#add-server-btn').click();

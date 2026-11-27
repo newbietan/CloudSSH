@@ -9,6 +9,7 @@ import { authenticateMcp, executionName, mcpDatabase, mcpModeTag } from './mcp-a
 import { MCP_TOOLS, hasMcpScope, hasMcpServerScope } from './mcp-tools';
 
 const contextPattern = /^session:\d{10,16}:[0-9a-f-]{36}$/;
+const mcpGenerationPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 function jsonError(error: string, status: number) {
   return Response.json({ error }, { status, headers: { 'Cache-Control': 'no-store' } });
 }
@@ -21,14 +22,31 @@ async function contextRequest(env: Env, session: string, body: Record<string, un
   );
 }
 export async function handleMcpManagement(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const path = url.pathname;
+  const rotates = path === '/api/mcp/config/rotate' && request.method === 'POST';
+  if (rotates && request.headers.get('Origin') !== url.origin) return jsonError('forbidden', 403);
   if (!env.MCP_EXECUTION) return jsonError('mcp_unavailable', 503);
   const user = await getAuthenticatedUser(request, env);
   if (!user) return jsonError('unauthorized', 401);
   const routeKey = await userDbRouteKey(user);
   const modeTag = await mcpModeTag(env, request);
   if (!modeTag) return jsonError('unauthorized', 401);
-  const path = new URL(request.url).pathname;
   const base = { userId: user.id, routeKey, modeTag };
+  if (rotates) {
+    let input: unknown;
+    try {
+      input = await readMcpJson(request, 256);
+    } catch {
+      return jsonError('invalid_arguments', 400);
+    }
+    const expectedId = (input as { expectedId?: unknown } | null)?.expectedId;
+    if (
+      typeof expectedId !== 'string' || !mcpGenerationPattern.test(expectedId) ||
+      Object.keys(input as object).length !== 1
+    ) return jsonError('invalid_arguments', 400);
+    return mcpDatabase(env, routeKey, { ...base, action: 'rotate', expectedId });
+  }
   if (path === '/api/mcp/config' && request.method === 'GET')
     return mcpDatabase(env, routeKey, { ...base, action: 'settings' });
   if (path === '/api/mcp/config/credentials' && request.method === 'POST')

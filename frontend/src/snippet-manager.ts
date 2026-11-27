@@ -102,6 +102,8 @@ export class SnippetManager {
   private backdropElement: HTMLElement | null = null;
   private snippets: CommandSnippet[] = [];
   private editingId: string | null = null;
+  private savedDraft: string | null = null;
+  private formGeneration = 0;
   private busy = false;
   private searchQuery = '';
   private selectedCategory = CATEGORY_ALL;
@@ -562,6 +564,7 @@ export class SnippetManager {
     actions.appendChild(saveBtn);
 
     form.appendChild(actions);
+    for (const event of ['input', 'change']) form.addEventListener(event, () => this.syncSaveButton());
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       void this.save();
@@ -898,6 +901,7 @@ export class SnippetManager {
 
     if (!container) return;
 
+    this.formGeneration++;
     this.formExpanded = true;
     container.classList.remove('hidden');
 
@@ -926,6 +930,8 @@ export class SnippetManager {
       if (newBtnLabel) newBtnLabel.textContent = t('common.cancel');
     }
 
+    this.savedDraft = snippet ? this.draftKey() : null;
+    this.syncSaveButton();
     nameInput?.focus();
   }
 
@@ -934,8 +940,10 @@ export class SnippetManager {
     const newBtnLabel = document.getElementById('snippet-new-btn-label');
     if (container) container.classList.add('hidden');
     if (newBtnLabel) newBtnLabel.textContent = t('snippets.newSnippet');
+    this.formGeneration++;
     this.formExpanded = false;
     this.editingId = null;
+    this.savedDraft = null;
 
     const nameInput = document.getElementById('snippet-name-input') as HTMLInputElement | null;
     const catInput = document.getElementById('snippet-category-input') as HTMLInputElement | null;
@@ -1008,20 +1016,29 @@ export class SnippetManager {
     this.close();
   }
 
+  private readDraft() {
+    const value = (id: string) => (document.getElementById(id) as HTMLInputElement | null)?.value ?? '';
+    return { name: value('snippet-name-input'), category: value('snippet-category-input'), command: value('snippet-command-input') };
+  }
+
+  private draftKey({ name, category, command } = this.readDraft()): string {
+    // Same whitespace normalization as the store; keep internal command whitespace intact.
+    return JSON.stringify([name.trim(), category.trim(), command.trim()]);
+  }
+
+  private syncSaveButton(): void {
+    const save = document.querySelector<HTMLButtonElement>('#snippet-save-btn');
+    if (save) save.disabled = this.busy || this.draftKey() === this.savedDraft;
+  }
+
   private async save(): Promise<void> {
-    if (this.busy) return;
-    const nameInput = document.getElementById('snippet-name-input') as HTMLInputElement | null;
-    const catInput = document.getElementById('snippet-category-input') as HTMLInputElement | null;
-    const cmdInput = document.getElementById('snippet-command-input') as HTMLTextAreaElement | null;
-    const saveBtn = document.getElementById('snippet-save-btn') as HTMLButtonElement | null;
-    if (!nameInput || !cmdInput) return;
-
-    const name = nameInput.value;
-    const category = catInput?.value ?? '';
-    const command = cmdInput.value;
-
+    if (this.busy || !this.formExpanded) return;
+    const draft = this.readDraft();
+    if (this.draftKey(draft) === this.savedDraft) return;
+    const { name, category, command } = draft;
+    const generation = this.formGeneration;
     this.busy = true;
-    if (saveBtn) saveBtn.disabled = true;
+    this.syncSaveButton();
     try {
       if (this.editingId) {
         await this.store.update(this.editingId, name, command, category);
@@ -1029,13 +1046,13 @@ export class SnippetManager {
         await this.store.create(name, command, category);
       }
       notify(t('snippets.saved'), { variant: 'success' });
-      this.collapseForm();
+      if (generation === this.formGeneration) this.collapseForm();
       await this.reload();
     } catch (err) {
       notify(snippetErrorMessage(err), { variant: 'danger' });
     } finally {
       this.busy = false;
-      if (saveBtn) saveBtn.disabled = false;
+      this.syncSaveButton();
     }
   }
 

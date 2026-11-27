@@ -163,8 +163,7 @@
   border: 0;
   padding: 0.5rem 0;
 }
-.mcp-access-fields > label:not(:last-child),
-#mcp-config-preview > label {
+.mcp-access-fields > label:not(:last-child) {
   flex-direction: column;
   align-items: stretch;
 }
@@ -184,13 +183,9 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.mcp-dialog input:not([type="checkbox"]),
-.mcp-dialog textarea {
+.mcp-dialog input:not([type="checkbox"]) {
   width: 100%;
   min-width: 0;
-}
-.mcp-dialog textarea {
-  resize: vertical;
 }
 .mcp-actions {
   display: flex;
@@ -198,6 +193,9 @@
   flex-shrink: 0;
   justify-content: flex-end;
   gap: 0.5rem;
+}
+#mcp-rotate-key[hidden] {
+  display: none;
 }
 .mcp-activity-toolbar {
   display: flex;
@@ -210,16 +208,20 @@
   color: var(--accent);
   border-color: var(--accent);
 }
-.mcp-activity-scope:not([hidden]) {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  max-width: 100%;
-  font-size: 0.8125rem;
+.mcp-activity-scope[hidden] {
+  display: none;
+}
+.mcp-activity-scope {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+.mcp-activity-scope > span {
+  flex: none;
+  white-space: nowrap;
 }
 .mcp-activity-scope select {
-  min-width: 0;
-  max-width: min(13rem, 60vw);
+  min-inline-size: 0;
+  max-inline-size: min(13rem, 60vw);
   cursor: pointer;
 }
 .mcp-activity-scope option {

@@ -18,6 +18,7 @@ export interface McpAccessCredentials {
 }
 export interface McpConfigInfo {
   configured: boolean;
+  /** Opaque credential generation. Changes only when the personal key is rotated. */
   id: string | null;
   grants: McpGrant[];
   hasAccessCredentials: boolean;
@@ -106,8 +107,8 @@ export async function mcpHash(value: string): Promise<string> {
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('');
 }
-export async function readMcpJson(request: Request): Promise<unknown> {
-  if (Number(request.headers.get('Content-Length')) > MCP_MAX_BODY_BYTES)
+export async function readMcpJson(request: Request, maxBytes = MCP_MAX_BODY_BYTES): Promise<unknown> {
+  if (Number(request.headers.get('Content-Length')) > maxBytes)
     throw new Error('body_too_large');
   const reader = request.body?.getReader();
   if (!reader) throw new Error('invalid_arguments');
@@ -123,7 +124,7 @@ export async function readMcpJson(request: Request): Promise<unknown> {
       const { value, done } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > MCP_MAX_BODY_BYTES) throw new Error('body_too_large');
+      if (size > maxBytes) throw new Error('body_too_large');
       chunks.push(value);
     }
     if (timedOut) throw new Error('body_timeout');

@@ -18,15 +18,15 @@ function fixture() {
     return { toArray: () => result };
   } };
   const key = crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']) as Promise<CryptoKey>;
-  const encrypt = async (plain: string) => {
+  const encrypt = vi.fn(async (plain: string) => {
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await key, new TextEncoder().encode(plain)));
     return Buffer.from(iv).toString('base64') + ':' + Buffer.from(encrypted).toString('base64');
-  };
-  const decrypt = async (value: string) => {
+  });
+  const decrypt = vi.fn(async (value: string) => {
     const [iv, data] = value.split(':');
     return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: Buffer.from(iv, 'base64') }, await key, Buffer.from(data, 'base64')));
-  };
+  });
   const store = new McpStore(sql, encrypt, decrypt);
   const execute = vi.fn(async () => Response.json({ stdout: 'ok', stderr: '', exitCode: 0 }));
   const internal = vi.fn(async (request: Request) => {
@@ -44,7 +44,12 @@ function fixture() {
     const info = await store.create(7, route, mode, input);
     return { info, ...(await store.credentials(7, route, mode)) };
   };
-  return { db, store, env, execute, create, internal };
+  return { db, store, env, execute, create, internal, encrypt, decrypt };
+}
+function latch() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => { release = resolve; });
+  return { promise, release };
 }
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 const input = { grants: [{ serverId: 1, scopes: ['read', 'context'] }] };
@@ -133,6 +138,124 @@ describe('singleton encrypted MCP configuration', () => {
     expect(store.activity(8)).toEqual([]);
     vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 86401_000);
     expect(store.cleanup()).toBeNull(); expect(store.activity(7)).toEqual([]);
+    db.close();
+  });
+});
+
+describe('atomic MCP personal key rotation', () => {
+  const route = `cf-${'a'.repeat(32)}`;
+  const access = { clientId: 'service.access', clientSecret: 'ACCESS-SECRET' };
+  const replacement = { clientId: 'new.access', clientSecret: 'NEW-SECRET' };
+
+  it('replaces one key only, preserving grants, Access credentials and the account quota', async () => {
+    const { create, store, db } = fixture();
+    const first = await create({ ...input, access }, route, 'cf_access');
+    const other = await store.create(8, '43', 'github', { grants: [] });
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now());
+    for (let i = 0; i < 120; i++) expect(store.consumeRequest(first.info.id!)).toBe(true);
+    const rotated = await store.rotate(7, route, 'cf_access', first.info.id!);
+    expect(rotated.previousId).toBe(first.info.id);
+    expect(rotated.id).not.toBe(first.info.id);
+    const current = await store.credentials(7, route, 'cf_access');
+    expect(current.token).not.toBe(first.token);
+    expect(current.access).toEqual(access);
+    expect(await store.verify(first.token, 'cf_access')).toBeNull();
+    expect(await store.verify(current.token, 'cf_access')).toMatchObject({
+      id: rotated.id, grants: input.grants, userId: 7,
+    });
+    expect(store.get(7, route, 'cf_access')).toEqual({ ...first.info, id: rotated.id });
+    expect(store.get(8, '43', 'github')).toEqual(other);
+    expect(store.consumeRequest(rotated.id)).toBe(false);
+    const rows = db.prepare('SELECT * FROM mcp_configs WHERE user_id = 7').all();
+    expect(rows).toHaveLength(1);
+    for (const secret of [first.token, current.token, access.clientSecret])
+      expect(JSON.stringify(rows)).not.toContain(secret);
+    db.close();
+  });
+
+  it('accepts only one concurrent rotation per generation and does not recreate a missing row', async () => {
+    const { create, store, db } = fixture();
+    const { info, token } = await create();
+    await expect(store.rotate(8, '43', 'github', info.id!)).rejects.toMatchObject({ code: 'mcp_not_configured' });
+    await expect(store.rotate(7, '43', 'github', info.id!)).rejects.toThrow('invalid_identity');
+    const results = await Promise.allSettled([
+      store.rotate(7, '42', 'github', info.id!),
+      store.rotate(7, '42', 'github', info.id!),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results).toContainEqual({ status: 'rejected', reason: expect.objectContaining({ code: 'mcp_config_changed' }) });
+    await expect(store.rotate(7, '42', 'github', info.id!)).rejects.toMatchObject({ code: 'mcp_config_changed' });
+    expect(await store.verify(token, 'github')).toBeNull();
+    db.close();
+  });
+
+  it('keeps the old binding on encryption or SQLite failure and can rotate after an admin password change', async () => {
+    const { create, store, db, encrypt } = fixture();
+    const { info, token } = await create(input, '-1', 'password:one');
+    const row = () => db.prepare('SELECT * FROM mcp_configs').get();
+    const original = row();
+    encrypt.mockRejectedValueOnce(new Error('encryption failed'));
+    await expect(store.rotate(7, '-1', 'password:two', info.id!)).rejects.toThrow('encryption failed');
+    db.exec(`CREATE TRIGGER fail_rotation BEFORE UPDATE OF token_hash ON mcp_configs
+      BEGIN SELECT RAISE(ABORT, 'rotation failed'); END;`);
+    await expect(store.rotate(7, '-1', 'password:two', info.id!)).rejects.toThrow('rotation failed');
+    expect(row()).toEqual(original);
+    expect(await store.verify(token, 'password:one')).not.toBeNull();
+    expect(await store.verify(token, 'password:two')).toBeNull();
+    db.exec('DROP TRIGGER fail_rotation');
+    await store.rotate(7, '-1', 'password:two', info.id!);
+    const current = await store.credentials(7, '-1', 'password:two');
+    expect(await store.verify(current.token, 'password:two')).not.toBeNull();
+    expect(await store.verify(current.token, 'password:one')).toBeNull();
+    expect(await store.verify(token, 'password:one')).toBeNull();
+    db.close();
+  });
+
+  it.each(['save', 'rotate'] as const)('rejects stale encrypted writes when %s encrypts first but commits last', async (first) => {
+    const { create, store, db, encrypt } = fixture();
+    const saved = await create({ ...input, access }, route, 'cf_access');
+    const entered = latch();
+    const finish = latch();
+    const doEncrypt = encrypt.getMockImplementation()!;
+    encrypt.mockImplementationOnce(async (plain) => {
+      entered.release();
+      await finish.promise;
+      return doEncrypt(plain);
+    });
+    const last = expect(first === 'save'
+      ? store.update(7, route, 'cf_access', { ...input, access: replacement })
+      : store.rotate(7, route, 'cf_access', saved.info.id!)).rejects.toMatchObject({ code: 'mcp_config_changed' });
+    await entered.promise;
+    try {
+      if (first === 'save') await store.rotate(7, route, 'cf_access', saved.info.id!);
+      else await store.update(7, route, 'cf_access', { ...input, access: replacement });
+    } finally { finish.release(); }
+    await last;
+    const current = await store.credentials(7, route, 'cf_access');
+    expect(current.access).toEqual(first === 'save' ? access : replacement);
+    if (first === 'save') expect(current.token).not.toBe(saved.token);
+    else expect(current.token).toBe(saved.token);
+    expect(await store.verify(current.token, 'cf_access')).not.toBeNull();
+    db.close();
+  });
+
+  it('does not export an old key if a pending decryption finishes after rotation', async () => {
+    const { create, store, db, decrypt } = fixture();
+    const { info } = await create();
+    const entered = latch();
+    const finish = latch();
+    const doDecrypt = decrypt.getMockImplementation()!;
+    decrypt.mockImplementationOnce(async (value) => {
+      entered.release();
+      await finish.promise;
+      return doDecrypt(value);
+    });
+    const copy = expect(store.credentials(7, '42', 'github')).rejects.toMatchObject({ code: 'mcp_config_changed' });
+    await entered.promise;
+    try { await store.rotate(7, '42', 'github', info.id!); }
+    finally { finish.release(); }
+    await copy;
+    expect(await store.verify((await store.credentials(7, '42', 'github')).token, 'github')).not.toBeNull();
     db.close();
   });
 });

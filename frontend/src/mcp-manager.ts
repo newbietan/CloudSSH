@@ -6,6 +6,7 @@ import type { McpActivity, McpConfigInfo, McpSavedCredentials } from '../../src/
 import type { AppConfig } from './app-bootstrap';
 import { createAssistantIcon } from './assistant-icons';
 import { createModalHeader } from './modal-ui';
+import { confirmAction } from './ui-feedback';
 import { createMcpActivityView } from './mcp-activity-view';
 import { buildMcpClientConfig, normalizeMcpAccessCredentials } from './mcp-client-config';
 import { createMcpPermissionEditor, type McpServerOption } from './mcp-permission-editor';
@@ -29,7 +30,7 @@ function disclosure(key: TranslationKey): HTMLDetailsElement {
   return node;
 }
 
-/** One account configuration. Plaintext is fetched only for an explicit copy/view action. */
+/** One account configuration. Plaintext is fetched only for an explicit copy. */
 export class McpManager {
   private identity: string | null = null;
   private authMode: AppConfig['authMode'];
@@ -177,16 +178,12 @@ export class McpManager {
       this.authMode === 'cf_access'
         ? this.buildAccessGuide(form, !info.hasAccessCredentials)
         : null;
-    const configArea = element('div');
-    configArea.id = 'mcp-config-preview';
     const footer = element('footer');
     footer.className = 'mcp-actions assistant-panel-footer';
-    const copy = button('mcp.copyConfig', () => void exportConfig(false));
+    const copy = button('mcp.copyConfig', () => void copyConfig());
     copy.id = 'mcp-copy-config';
-    copy.className = 'assistant-action';
-    const view = button('mcp.viewConfig', () => void exportConfig(true));
-    view.id = 'mcp-view-config';
-    view.className = 'assistant-action';
+    const rotate = button('mcp.rotateKey', () => void rotateKey());
+    rotate.id = 'mcp-rotate-key';
     const save = element('button');
     save.type = 'submit';
     save.id = 'mcp-save-config';
@@ -203,9 +200,9 @@ export class McpManager {
           access.clientSecret.value.trim())
       );
     const syncButtons = () => {
-      const exportDisabled = busy || !info.configured;
-      if (copy.disabled !== exportDisabled) copy.disabled = exportDisabled;
-      if (view.disabled !== exportDisabled) view.disabled = exportDisabled;
+      copy.disabled = busy || !info.configured;
+      rotate.hidden = !info.configured;
+      rotate.disabled = busy || !info.id;
       const changed = dirty();
       const saveDisabled = busy || !changed;
       if (save.disabled !== saveDisabled) save.disabled = saveDisabled;
@@ -220,9 +217,9 @@ export class McpManager {
     form.addEventListener('change', syncButtons);
     signal.addEventListener('abort', onLocaleChange(syncButtons), { once: true });
     syncButtons();
-    footer.append(view, copy, save);
-    const exportConfig = async (preview: boolean) => {
-      if (busy) return;
+    footer.append(rotate, copy, save);
+    const copyConfig = async () => {
+      if (copy.disabled) return;
       busy = true;
       syncButtons();
       try {
@@ -237,34 +234,61 @@ export class McpManager {
           );
         });
         void textPromise.catch(() => {});
-        if (preview) {
-          const text = await textPromise;
-          const label = element('label');
-          label.append(element('span', 'mcp.clientConfig'));
-          const output = element('textarea');
-          output.readOnly = true;
-          output.className = 'terminal-input assistant-field';
-          output.id = 'mcp-client-config';
-          output.rows = 9;
-          output.value = text;
-          label.append(output);
-          configArea.replaceChildren(label);
-        } else {
-          // Start the clipboard write during the click, before awaiting the network (Safari).
-          if (navigator.clipboard?.write && typeof ClipboardItem !== 'undefined') {
-            await navigator.clipboard.write([
-              new ClipboardItem({
-                'text/plain': textPromise.then((text) => new Blob([text], { type: 'text/plain' })),
+        // Start the clipboard write during the click, before awaiting the network (Safari).
+        if (navigator.clipboard?.write && typeof ClipboardItem !== 'undefined') {
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              'text/plain': textPromise.then((text) => {
+                signal.throwIfAborted();
+                return new Blob([text], { type: 'text/plain' });
               }),
-            ]);
-          } else if (!(await copyTextToClipboard(await textPromise)))
-            throw new Error('copy_failed');
-          if (generation === this.generation) this.message('mcp.copied');
+            }),
+          ]);
+        } else if (!(await copyTextToClipboard(await textPromise))) {
+          throw new Error('copy_failed');
         }
+        if (generation === this.generation) this.message('mcp.copied');
       } catch {
         if (generation === this.generation) this.message('mcp.error');
       } finally {
         if (generation === this.generation) {
+          busy = false;
+          syncButtons();
+        }
+      }
+    };
+    const rotateKey = async () => {
+      const expectedId = info.id;
+      if (rotate.disabled || !expectedId) return;
+      const confirmed = await confirmAction({
+        title: t('mcp.rotateKey'), message: t('mcp.rotateConfirm'),
+        confirmText: t('mcp.rotateKey'), variant: 'danger',
+      });
+      if (!confirmed || signal.aborted || busy || info.id !== expectedId) return;
+      busy = true;
+      syncButtons();
+      try {
+        const result = await this.api<{ id: string }>('/api/mcp/config/rotate', {
+          method: 'POST', body: JSON.stringify({ expectedId }),
+        });
+        if (signal.aborted) return;
+        if (typeof result.id !== 'string' || !result.id || result.id === expectedId)
+          throw new Error('invalid_rotation_result');
+        info = { ...info, id: result.id };
+        this.message('mcp.keyRotated');
+      } catch {
+        if (signal.aborted) return;
+        // A timed-out request might have committed. Read metadata once; never resubmit a rotation.
+        let changed = false;
+        try {
+          const latest = await this.api<McpConfigInfo>('/api/mcp/config');
+          if (signal.aborted) return;
+          info = { ...info, id: latest.id };
+          changed = !!latest.id && latest.id !== expectedId;
+        } catch { /* The result may still be unknown. */ }
+        if (!signal.aborted) this.message(changed ? 'mcp.keyChanged' : 'mcp.rotationUnconfirmed');
+      } finally {
+        if (!signal.aborted) {
           busy = false;
           syncButtons();
         }
@@ -304,7 +328,6 @@ export class McpManager {
           if (generation !== this.generation) return;
           info = result;
           permissions.reset(info.grants);
-          configArea.replaceChildren();
           if (access) {
             access.clientId.value = access.clientSecret.value = '';
             access.confirmed.checked = false;
@@ -328,7 +351,7 @@ export class McpManager {
         }
       })();
     });
-    parent.append(form, configArea);
+    parent.append(form);
     parent.parentElement?.append(footer);
     return (id: number) => {
       permissions.removeServer(id);

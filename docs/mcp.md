@@ -1,13 +1,13 @@
 # 个人 MCP 配置 / Personal MCP configuration
 
-CloudSSH 为每个登录账户提供**唯一、长期有效**的 MCP 配置。只生成一次，之后可重复复制、修改逐服务器权限；不需要客户端名称或有效天数，不提供多令牌、撤销或轮换入口。无需配置 CloudSSH 内置 AI 的模型。
+CloudSSH 为每个登录账户提供**唯一的 MCP 配置和一把长期有效的个人密钥**。首次生成配置后，可重复复制、修改逐服务器权限或手动轮换个人密钥。无需客户端名称、有效天数或 CloudSSH 内置 AI 模型；不提供多密钥、自动轮换或单独撤销入口。
 
 ## 接入
 
 1. 登录后先在网页连接已保存服务器，确认目标及每个跳板的主机指纹。
 2. 点击连接节点形状的「外部AI助手MCP设置」图标，按服务器勾选读取、写入、执行、终端上下文权限。不同服务器可以不同；未勾选任何权限的服务器不能被 MCP 操作。
 3. **仅 CF Access 登录**：展开 Access 连接，按控制台/官方文档链接为保护**本站**的 Access 应用创建 Service Token，并用 **Service Auth** 策略允许它（不是普通 Allow 或 Bypass）。填写 Client ID / Secret 并确认策略；这些不是 SSH 隧道服务器的凭据。
-4. 点击「生成唯一配置」。以后点击「复制 MCP 配置」即可重复获取相同令牌；需要手动检查时使用「查看配置」。
+4. 点击「生成唯一配置」。以后通过「复制 MCP 配置」获取当前配置；设置窗口不展示密钥明文。
 5. 保存到 Claude Code、Cursor 等支持远程 HTTP 与自定义请求头的客户端**私有配置**中，不要提交到 Git。
 
 普通模式：
@@ -36,7 +36,7 @@ Cloudflare 运行时的原生 `ctx.access`（含有效 `aud`）代表本次 Work
 
 ## 保存与权限修改
 
-- 个人令牌和 Access 凭据按账户使用既有 AES-GCM 机制加密保存在 UserDB SQLite；打开面板只读权限等元数据，明确点击复制/查看时才通过已登录的 POST 接口解密返回。
+- 个人令牌和 Access 凭据按账户使用既有 AES-GCM 机制加密保存在 UserDB SQLite；打开面板只读权限等元数据，明确点击复制时才通过已登录的 POST 接口解密返回。
 - 这是可回读加密，不再是旧版“只保存令牌摘要”和“Access 凭据不上传”的模式。根密钥仍在同一数据库的 `system_config.encryption_secret`，**不是独立 Secret/KMS，也不能抵御整库或运行时失陷**。
 - 不写入浏览器 localStorage/sessionStorage。关闭窗口、退出、换号或认证模式变化会销毁本地明文及中止请求；用户主动复制后的系统剪贴板由用户管理。
 - 「服务器权限」首次配置时展开，之后打开设置只显示已授权台数。展开可按名称或标签搜索；桌面按列对照四项权限，手机点服务器行查看或修改。筛选「已授权 / 未授权」以**上次保存**为准，不会在勾选第一项后突然移走正在编辑的服务器。
@@ -44,7 +44,13 @@ Cloudflare 运行时的原生 `ctx.access`（含有效 `aud`）代表本次 Work
 - 可以取消全部服务器权限，使配置暂时没有远端操作能力；唯一令牌本身保留，之后仍可重新授权。
 - 在用户空间删除服务器后，其 MCP 授权、近期操作记录及服务器记忆随保存记录在同一事务删除。下一次 `server_list` 不再返回它，无需重新生成令牌；即使删的是最后一台，其他账户配置也不改变。已打开的同账户设置页会接收同源删除通知，保留其他机器的未保存修改；不支持跨标签通知时请重新打开。历史版本留下的孤立 MCP 关联在用户库下次启动时清理。
 - 删除会作废该服务器关联的未用连接票据，并尽力关闭相关 MCP 执行连接；这不是远端操作回滚，也不会强制踢下已连接的普通 SSH 终端。删除前仍须解除跳板引用、撤销未结束分享；已结束分享的审计和可供其他连接复用的主机指纹不随服务器记录删除。
-- 长期令牌**没有撤销/轮换接口**，请妥善保护。账号/认证模式/路由及 GitHub allowlist 边界仍检查；管理员密码轮换会先拒绝旧绑定，所有者重新登录后明确复制/查看或保存配置可重新绑定，令牌本身不变。换登录方式不合并不同账号的数据。
+- 账号、认证模式、路由及 GitHub allowlist 的限制不变。管理员密码变更会先拒绝旧绑定；重新登录后明确复制或保存配置可恢复同一个仍有效的个人令牌，读取元数据不会恢复。换登录方式不合并不同账号的数据。
+
+### 轮换个人密钥
+
+在已配置的 MCP 设置中点击「轮换 MCP 密钥」并确认。旧密钥在提交成功后立即失效，没有宽限期；请重新复制 MCP 配置并更新所有使用旧密钥的客户端。服务器权限、Cloudflare Access Service Token、请求限额和操作记录不会改变，不会替你保存未提交的修改。
+
+轮换后系统会尽力关闭旧密钥对应的 MCP 执行连接。已经发往远端的操作可能完成或中断，取消不保证回滚，也不会中断浏览器中的普通 SSH 终端。若没有收到轮换结果，先复制并核对当前配置，不要连续点击轮换。
 
 ### 从旧版迁移
 
@@ -89,7 +95,7 @@ Cloudflare 运行时的原生 `ctx.access`（含有效 `aud`）代表本次 Work
 
 ## 连接、协议与故障排查
 
-每个账户唯一配置对应独立 MCPExecutionDO，最多保留两台服务器的连接，每台一次操作、不建无限队列，约 60 秒空闲释放。配置/凭据/指纹变化重连；一次失败操作不自动重试。每配置最多 120 个 MCP HTTP 请求/分钟，超限 429。
+每个账户的当前个人密钥对应独立的 MCPExecutionDO 池，最多保留两台服务器的连接，每台一次操作、不建无限队列，约 60 秒空闲释放。配置/凭据/指纹变化重连；一次失败操作不自动重试。每配置最多 120 个 MCP HTTP 请求/分钟，超限 429。
 
 端点必须是精确 `/mcp`，使用官方 SDK 的无状态 Streamable HTTP（JSON 响应），不分配持久 MCP session；GET/DELETE 返回 405，不实现 OAuth/旧 SSE/Tasks/重放。只有 OAuth 的客户端不在此版本范围内。协议测试使用官方 SDK Client，不代表已经实机验证所有客户端版本。
 
@@ -105,15 +111,17 @@ Cloudflare 运行时的原生 `ctx.access`（含有效 `aud`）代表本次 Work
 
 沿用 `MCP_EXECUTION → MCPExecutionDO` 绑定和 `v3` migration，不删除 Worker，不改写旧 migration。账户设置新增 `mcp_configs` SQLite 表，`user_id` 主键确保单配置；应用 schema 幂等创建，不需要新的 DO migration。缺少绑定时 MCP 返回 503，原网页 SSH 行为不变。
 
-管理接口：`GET/POST/PUT /api/mcp/config` 读取元数据、首次幂等生成、修改授权；`POST /api/mcp/config/credentials` 明确导出加密保存的客户端凭据；没有 DELETE。旧 `/api/mcp/tokens` 不再使用。终端上下文与近期活动接口保持不变。
+管理接口：`GET/POST/PUT /api/mcp/config` 读取元数据、首次幂等生成、修改授权；`POST /api/mcp/config/credentials` 明确导出加密保存的客户端凭据；`POST /api/mcp/config/rotate` 仅接受所有者的已登录同源请求，传入当前元数据 `id` 作为 `{ "expectedId": "…" }`，原子替换后仅返回新的 `{ "id": "…" }`，若版本冲突返回 409。不新增数据库迁移，不提供 DELETE。旧 `/api/mcp/tokens` 不再使用。终端上下文与近期活动接口保持不变。
 
 ## English summary
 
-Each signed-in account has one permanent MCP configuration, generated once with no client name, expiry, revoke or rotate controls. Assign read/write/exec/context independently to each saved server and save changes without changing the token. Unchecking all grants disables remote operations while retaining the configuration.
+Each signed-in account has one MCP configuration and one long-lived personal key. Assign read/write/exec/context independently to each saved server and save changes without changing the key. Unchecking all grants disables remote operations while retaining the configuration. There are no multi-key, automatic rotation, or standalone revoke controls.
+
+To replace the key, choose **Rotate MCP key** in settings and confirm. The old key stops working immediately after the rotation commits, with no overlap. Copy the current MCP configuration and update every client. Grants, Cloudflare Access credentials, and activity stay unchanged. In-flight operations may be interrupted, but remote effects are not rolled back.
 
 Access admission is separate from browser identity. The exact `/mcp` endpoint requires trusted native `ctx.access` with a valid audience plus the personal token's database verification; it skips user-profile lookup. Browser login, settings/credential export and CA signing still require a verified email. A mode flag or raw request headers cannot establish admission. Debug-only rejection logs contain fixed reason codes and are bounded to 20 entries per isolate per 60 seconds; no credentials, identities or upstream bodies are logged, and public 401 responses stay generic.
 
-The personal token and optional site Access Service Token are stored recoverably with the existing account AES-GCM mechanism. The root key remains in the same database, not an independent KMS. Opening settings fetches metadata only; an explicit copy/view POST decrypts credentials. No browser storage is used, and closing or changing identity/auth mode discards local plaintext. Protect the permanent token and your private client configuration. Cloudflare Service Token expiry is separate: update its credentials and copy again when necessary.
+The personal token and optional site Access Service Token are stored recoverably with the existing account AES-GCM mechanism. The root key remains in the same database, not an independent KMS. Opening settings fetches metadata only; an explicit copy POST decrypts credentials, with no plaintext preview. No browser storage is used, and closing or changing identity/auth mode discards local plaintext. Protect the personal key and your private client configuration. Cloudflare Service Token expiry is separate: update its credentials and copy again when necessary.
 
 Legacy digest-only tokens cannot be recovered and are no longer accepted. Generate the new singleton once and update the client; subsequent generation calls are idempotent. Tool discovery is a union, but authorization is enforced per server and rechecked before dispatch. Permission edits stop old pools best effort, never roll back remote effects.
 

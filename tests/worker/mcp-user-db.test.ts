@@ -2,13 +2,15 @@ import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it, vi } from 'vitest';
 import type { Env } from '../../src/types';
 import { UserDBDO } from '../../src/worker/user-db';
+import worker from '../../src/worker/index';
 import type { McpActivity } from '../../src/mcp-schema';
 
 function fixture(env: Partial<Env> = {}) {
   const database = new DatabaseSync(':memory:');
   const sql = { exec(query: string, ...params: any[]) {
     let result: unknown[] = [];
-    if (/^\s*(SELECT|PRAGMA|WITH)\b/i.test(query)) result = database.prepare(query).all(...params);
+    if (/^\s*(SELECT|PRAGMA|WITH)\b/i.test(query) || /\bRETURNING\b/i.test(query))
+      result = database.prepare(query).all(...params);
     else if (params.length) database.prepare(query).run(...params);
     else database.exec(query);
     return { toArray: () => result };
@@ -21,7 +23,9 @@ function fixture(env: Partial<Env> = {}) {
       catch (error) { database.exec('ROLLBACK'); throw error; }
     },
   };
-  const reopen = () => new UserDBDO({ storage } as unknown as DurableObjectState, env as Env);
+  const background: Promise<unknown>[] = [];
+  const waitUntil = (work: Promise<unknown>) => { background.push(work); };
+  const reopen = () => new UserDBDO({ storage, waitUntil } as unknown as DurableObjectState, env as Env);
   const object = reopen();
   database.exec(`INSERT INTO users(id, github_id, username) VALUES (7,42,'owner'),(8,43,'other');
     INSERT INTO servers(id,user_id,name,host,port,username,credential,auth_method) VALUES
@@ -39,9 +43,75 @@ function fixture(env: Partial<Env> = {}) {
   const consume = (token: string) => object.fetch(new Request('http://internal/internal/connect-token/consume', {
     method: 'POST', body: JSON.stringify({ token }),
   }));
-  return { database, object, call, storage, remove, ticket, consume, reopen, alarm: () => alarm };
+  return { database, object, call, storage, remove, ticket, consume, reopen, background, alarm: () => alarm };
 }
 describe('MCP saved configuration and shared Alarm integration', () => {
+  it('rotates via a same-origin owner session; cleanup failure cannot restore the old Bearer', async () => {
+    let finishCleanup!: () => void;
+    const pending = new Promise<void>(resolve => { finishCleanup = resolve; });
+    const invalidate = vi.fn(async (_request: Request) => {
+      await pending;
+      throw new Error('pool is unavailable');
+    });
+    const idFromName = vi.fn((name: string) => name);
+    const bindings = { GITHUB_CLIENT_ID: 'test', GITHUB_CLIENT_SECRET: 'test',
+      MCP_EXECUTION: { idFromName, get: () => ({ fetch: invalidate }) } as never };
+    const f = fixture(bindings);
+    const env = { ...bindings, USER_DB: { idFromName: (name: string) => name, get: () => f.object } } as unknown as Env;
+    const origin = 'https://cloudssh.test';
+    const session = await f.object.fetch(new Request('http://internal/internal/session/create', {
+      method: 'POST', body: JSON.stringify({ user_id: 7 }),
+    }));
+    const cookie = `session=${(await session.json<{ token: string }>()).token}`;
+    const created = await f.call({ action: 'create', input: { grants: [{ serverId: 1, scopes: ['read'] }] } });
+    const old = await created.json<{ id: string }>();
+    const oldKey = (await (await f.call({ action: 'credentials' })).json<{ token: string }>()).token;
+    const rotate = (headers: Record<string, string>, body: unknown = { expectedId: old.id }) => worker.fetch(
+      new Request(`${origin}/api/mcp/config/rotate`, { method: 'POST', headers, body: JSON.stringify(body) }), env,
+    );
+    const list = (key: string) => worker.fetch(new Request(`${origin}/mcp`, {
+      method: 'POST', headers: {
+        Authorization: `Bearer ${key}`, Accept: 'application/json, text/event-stream', 'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    }), env);
+    try {
+      expect((await rotate({ Cookie: cookie })).status).toBe(403);
+      expect((await rotate({ Cookie: cookie, Origin: 'https://sibling.test' })).status).toBe(403);
+      expect((await rotate({ Authorization: `Bearer ${oldKey}`, Origin: origin })).status).toBe(401);
+      expect((await rotate({ Cookie: cookie, Origin: origin }, { expectedId: old.id, userId: 8 })).status).toBe(400);
+      expect((await rotate({ Cookie: cookie, Origin: origin }, { expectedId: 'a'.repeat(257) })).status).toBe(400);
+      expect((await list(oldKey)).status).toBe(200);
+      expect(invalidate).not.toHaveBeenCalled();
+
+      const rotated = await rotate({ Cookie: cookie, Origin: origin });
+      expect(rotated.status).toBe(200);
+      expect(rotated.headers.get('Cache-Control')).toBe('no-store');
+      const current = await rotated.json<{ id: string }>();
+      expect(Object.keys(current)).toEqual(['id']);
+      expect(current.id).not.toBe(old.id);
+      expect(invalidate).toHaveBeenCalledOnce();
+      expect(idFromName).toHaveBeenCalledExactlyOnceWith(`mcp:42:${old.id}`);
+      expect(invalidate.mock.calls[0][0].url).toBe('https://internal/invalidate');
+      expect(f.background).toHaveLength(1);
+      const credentials = await worker.fetch(new Request(`${origin}/api/mcp/config/credentials`, {
+        method: 'POST', headers: { Cookie: cookie, Origin: origin },
+      }), env);
+      const newKey = (await credentials.json<{ token: string }>()).token;
+      expect(newKey).not.toBe(oldKey);
+      expect((await list(newKey)).status).toBe(200);
+      expect((await list(oldKey)).status).toBe(401);
+      expect((await rotate({ Cookie: cookie, Origin: origin })).status).toBe(409);
+      finishCleanup();
+      await Promise.all(f.background);
+      expect((await list(oldKey)).status).toBe(401);
+      expect(invalidate).toHaveBeenCalledOnce();
+    } finally {
+      finishCleanup();
+      await Promise.all(f.background);
+      f.database.close();
+    }
+  });
   it('upgrades legacy activity rows and only stores and displays whitelisted failure reasons', async () => {
     const f = fixture();
     const now = Date.now();

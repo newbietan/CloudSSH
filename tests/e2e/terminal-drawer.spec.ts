@@ -26,6 +26,45 @@ async function openTerminalTab(page: Page): Promise<void> {
   await expect(page.locator('.terminal-app-header')).toBeVisible();
 }
 
+test('命令片段编辑无改动不保存，改回原文本置灰', async ({ page }) => {
+  let row = { id: '1', name: 'Disk space', command: 'df -h', category: 'Tools' };
+  const writes: unknown[] = [];
+  await page.route('**/api/snippets', route => route.request().method() === 'GET'
+    ? route.fulfill({ json: [row] }) : route.fallback());
+  await page.route('**/api/snippets/1', route => {
+    if (route.request().method() !== 'PUT') return route.fallback();
+    const body = route.request().postDataJSON();
+    writes.push(body);
+    row = { ...row, ...body };
+    return route.fulfill({ json: row });
+  });
+  await page.goto('/?lang=en-US');
+  await expect(page.locator('#app')).toBeVisible();
+  await page.evaluate(async () => {
+    const path = '/src/snippet-manager.ts';
+    const { SnippetManager } = await import(path);
+    await new SnippetManager({ isAuthenticated: () => true, getTerminal: () => null }).open();
+  });
+  const panel = page.locator('#snippet-panel');
+  const edit = panel.locator('[data-snippet-id="1"] [data-action="edit"]');
+  const save = panel.locator('#snippet-save-btn');
+  await edit.click();
+  await expect(save).toBeDisabled();
+  const command = panel.locator('#snippet-command-input');
+  await command.fill('df -h /');
+  await expect(save).toBeEnabled();
+  await command.fill(' df -h ');
+  await expect(save).toBeDisabled();
+  await save.evaluate(button => (button as HTMLButtonElement).form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  await panel.locator('#snippet-category-input').fill('Monitoring');
+  await save.click();
+  await expect(save).toBeHidden();
+  await expect(panel.locator('[data-snippet-id="1"]')).toContainText('Monitoring');
+  expect(writes).toEqual([{ name: 'Disk space', command: 'df -h', category: 'Monitoring' }]);
+  await edit.click();
+  await expect(save).toBeDisabled();
+});
+
 test.describe('桌面视口', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 

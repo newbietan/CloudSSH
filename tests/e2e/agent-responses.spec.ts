@@ -372,6 +372,8 @@ test('model token budgets are derived and saved without resending the API key', 
     writes.push(route.request().postDataJSON());
     return route.fulfill({ json: { success: true } });
   });
+  await page.route('**/api/ai/models', route => route.request().method() === 'POST'
+    ? route.fulfill({ json: { models: [{ id: config.model }, { id: 'gpt-6-luna' }] } }) : route.fallback());
   await page.goto('/?lang=en-US');
   await page.evaluate(async () => {
     const module = await (window as any).eval("import('/src/ai-config.ts')");
@@ -379,8 +381,23 @@ test('model token budgets are derived and saved without resending the API key', 
     (window as any).__aiBudgetPanel.show();
   });
   await expect(page.locator('#ai-budget-note')).toHaveCount(0);
-  await page.locator('#ai-model').fill('gpt-6-luna');
-  await page.locator('#ai-save-btn').click();
+  const save = page.locator('#ai-save-btn');
+  await expect(page.locator('#ai-model')).toHaveValue(config.model);
+  await expect(save).toBeDisabled();
+  await page.locator('#ai-base-url').fill(`${config.base_url}/responses/`);
+  await expect(save).toBeDisabled();
+  await page.locator('#ai-api-key').fill('temporary-key');
+  await expect(save).toBeEnabled();
+  await page.locator('#ai-api-key').fill('');
+  await expect(save).toBeDisabled();
+  await page.locator('#ai-config-form').dispatchEvent('submit');
+  await page.locator('#ai-fetch-models-btn').click();
+  const model = page.locator('#ai-model-options').getByText('gpt-6-luna', { exact: true });
+  await expect(model).toBeVisible();
+  await expect(save).toBeDisabled();
+  await model.click();
+  await expect(save).toBeEnabled();
+  await save.click();
   await expect.poll(() => writes.length).toBe(1);
   expect(writes[0]).toMatchObject({ model: 'gpt-6-luna' });
   expect(writes[0]).not.toHaveProperty('api_key');
@@ -541,6 +558,15 @@ for (const inline of [false, true]) {
         });
         await page.locator('.agent-user-edit-btn').focus();
         await page.locator('.agent-user-edit-btn').press('Enter');
+        const save = page.locator('.agent-user-edit-save');
+        const editor = page.locator('.agent-user-edit-textarea');
+        await expect(save).toBeDisabled();
+        await editor.fill('新问题');
+        await expect(save).toBeEnabled();
+        await editor.fill(' 原问题 ');
+        await expect(save).toBeDisabled();
+        await editor.press('Enter');
+        expect(await page.evaluate(() => (window as any).__responsesAgent.sent)).toEqual([]);
       }
       const input = page.locator(inline ? '.agent-user-edit-textarea' : '#agent-input');
       await input.focus();

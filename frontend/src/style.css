@@ -885,9 +885,18 @@ select optgroup {
   cursor: pointer;
 }
 
-.cyber-button:hover {
+.cyber-button:hover:where(:not(:disabled)) {
   background-color: var(--accent);
   color: var(--on-accent);
+}
+
+.cyber-button:disabled {
+  background: var(--bg-surface);
+  color: var(--on-surface-variant);
+  border-color: var(--border);
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 /* 按压回弹：--press-scale 随 motion 档位收敛（none 时为 1 即禁用） */

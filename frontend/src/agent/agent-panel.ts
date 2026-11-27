@@ -1642,11 +1642,13 @@ export class AgentPanel {
     const textarea = el.querySelector<HTMLTextAreaElement>('.agent-user-edit-textarea')!;
     const cancelBtn = el.querySelector<HTMLButtonElement>('.agent-user-edit-cancel')!;
     const saveBtn = el.querySelector<HTMLButtonElement>('.agent-user-edit-save')!;
+    const baseline = textarea.value.trim();
 
     const autoResize = () => {
       textarea.style.height = 'auto';
       textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 24), 200)}px`;
-      saveBtn.disabled = !textarea.value.trim();
+      const text = textarea.value.trim();
+      saveBtn.disabled = !text || text === baseline;
     };
 
     autoResize();
@@ -1665,7 +1667,7 @@ export class AgentPanel {
 
     const saveAndSubmit = () => {
       const newText = textarea.value.trim();
-      if (!newText) return;
+      if (!newText || newText === baseline) return;
       this.submitInlineEdit(el, newText, options);
     };
 
