@@ -10,13 +10,63 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
+// Pion's BufferedAmount includes unacknowledged SCTP data, not just the unsent queue.
+// Keep a full congestion window fed, but allow only two extra frames of read-ahead.
+func desktopSendBudget(cwnd uint32) uint64 {
+	return min(uint64(window), uint64(cwnd)+2*frame)
+}
+
 // TLS/NLA stays in FreeRDP. Binary messages are an ordered byte stream, not disposable video frames.
-// The browser ACKs WASM reads (not JS delivery). Never enlarge a queue to hide latency.
-func attachStream(ctx context.Context, dc *webrtc.DataChannel, dial func() (net.Conn, error), selected func() (string, string, bool), connected func(), fail func(string)) {
+// The browser ACKs WASM reads (not JS delivery). Keep that credit independent of SCTP's send budget.
+func attachStream(ctx context.Context, dc *webrtc.DataChannel, dial func() (net.Conn, error), selected func() (string, string, bool), congestionWindow func() uint32, connected func(), fail func(string)) {
 	var mu sync.Mutex
 	var tcp net.Conn
 	var sent, ack, received uint64
 	wake := make(chan struct{}, 1)
+	writable := func() {
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
+	}
+	dc.OnBufferedAmountLow(writable)
+	reserveReadCredit := func(bytes uint64) bool {
+		mu.Lock()
+		defer mu.Unlock()
+		if sent-ack+bytes > window {
+			return false
+		}
+		sent += bytes
+		return true
+	}
+	reserve := func(bytes uint64) bool {
+		var timeout <-chan time.Time
+		for ctx.Err() == nil {
+			limit := desktopSendBudget(congestionWindow()) - bytes // At least two frames before reserving.
+			if dc.BufferedAmount() <= limit && reserveReadCredit(bytes) {
+				return true
+			}
+			dc.SetBufferedAmountLowThreshold(limit)
+			// Recheck after installing the threshold: the buffer or read credit may have changed.
+			if dc.BufferedAmount() <= limit && reserveReadCredit(bytes) {
+				return true
+			}
+			if timeout == nil {
+				timer := time.NewTimer(25 * time.Second)
+				defer timer.Stop()
+				timeout = timer.C
+			}
+			select {
+			case <-wake:
+			case <-ctx.Done():
+				return false
+			case <-timeout:
+				fail("desktop flow stalled")
+				return false
+			}
+		}
+		return false
+	}
 	writeControl := func(m any) bool {
 		b, _ := json.Marshal(m)
 		if ctx.Err() != nil || dc.BufferedAmount() > window+frame || dc.SendText(string(b)) != nil {
@@ -60,10 +110,7 @@ func attachStream(ctx context.Context, dc *webrtc.DataChannel, dial func() (net.
 					fail("invalid credit")
 					return
 				}
-				select {
-				case wake <- struct{}{}:
-				default:
-				}
+				writable()
 			case "ping":
 				if v.ID < 1 || v.ID > 0x7fffffff {
 					fail("invalid probe")
@@ -117,28 +164,9 @@ func attachStream(ctx context.Context, dc *webrtc.DataChannel, dial func() (net.
 		for ctx.Err() == nil {
 			n, err := c.Read(buf)
 			if n > 0 {
-				deadline := time.NewTimer(25 * time.Second)
-				for {
-					mu.Lock()
-					credit := sent-ack+uint64(n) <= window
-					if credit {
-						sent += uint64(n)
-					}
-					mu.Unlock()
-					if credit {
-						break
-					}
-					select {
-					case <-wake:
-					case <-ctx.Done():
-						deadline.Stop()
-						return
-					case <-deadline.C:
-						fail("browser credit timed out")
-						return
-					}
+				if !reserve(uint64(n)) {
+					return
 				}
-				deadline.Stop()
 				if dc.BufferedAmount() > window+frame || dc.Send(buf[:n]) != nil {
 					fail("data channel write failed")
 					return

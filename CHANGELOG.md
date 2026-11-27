@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **WebRTC 直连预检**：浏览器和 Windows 连接器支持 Cloudflare STUN 的备用 UDP 53 端口；对等访问受限时仍按配置静默回退。预检失败时可从本地 Console 核对阶段、用时与 ICE 状态，不记录地址、票据或凭据。
+- **WebRTC 交互排队**：Windows 连接器按当前 SCTP 拥塞窗口限制读入发送队列的数据，浏览器更早确认直连已读取的字节。减少弱网下画面突发积压，不改可靠传输、1 MiB 上限、分辨率或中继策略。
 
 ### Security
 

@@ -326,6 +326,8 @@ func desktopEndReason(err error) string {
 		return "no_direct_pair"
 	case "cannot open local RDP":
 		return "local_rdp_unavailable"
+	case "desktop flow stalled":
+		return "desktop_flow_stalled"
 	case "lease expired", "invalid lease or system clock":
 		return "lease_ended"
 	default:

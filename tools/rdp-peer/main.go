@@ -131,6 +131,8 @@ func run(parent context.Context, ws *websocket.Conn, config webrtc.Configuration
 						return "", "", false
 					}
 					return pair.Local.Typ.String(), pair.Remote.Typ.String(), pair.Local.Typ != webrtc.ICECandidateTypeRelay && pair.Remote.Typ != webrtc.ICECandidateTypeRelay
+				}, func() uint32 {
+					return p.SCTP().Stats().CongestionWindow
 				}, func() {
 					signal(control{Type: "connected"})
 					note("Direct data channel open to local RDP (no TURN or Worker desktop relay).")

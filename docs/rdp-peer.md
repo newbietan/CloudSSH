@@ -21,6 +21,7 @@ CloudSSH 的「打开桌面」优先用 WebRTC 将浏览器接到目标 Windows 
 - 连接器离线：先检查 Windows 服务、系统时间、目标 Windows 到实际站点域名的 HTTPS/WSS 连通性及边缘 Access。浏览器和连接器都使用 [Cloudflare STUN 官方端口](https://developers.cloudflare.com/realtime/realtimekit/platform/network-allowlist/) `stun.cloudflare.com:3478/UDP` 与 `53/UDP`；不使用 TURN，STUN 可达不代表对等 UDP 一定可达。STUN 与对端会看到建立连接需要的地址。受限网络有备用中继才可切换。
 - 在线但使用中继：在 Edge 开发者工具 Console 启用「详细」（Verbose）并筛选 `CloudSSH WebRTC`。重新连接后，`source=deadline`、`phase=opening`、`ice=checking` 表示信令已完成，但约 14 秒预检内没有可用路径或未就绪；`afterAnswerMs` 是浏览器实际应用应答后的时长。对比关闭本机代理/TUN 前后、两端候选类型数量和 ICE 状态。没有 `srflx` 可能是 STUN 或策略问题，不足以否定可达的公网 `host` 候选。`source=answer` 表示浏览器拒绝应答；数据通道已 `open` 但未就绪时，再看 Windows「应用程序」事件日志 `CloudSSHRdpConnector`，例如 `local_rdp_unavailable`。诊断只在本地输出阶段、用时、状态、候选类别数量或固定原因，不输出地址、SDP、票据或凭据。
 - 直连路径不用公网 3389，但连接器仍要求本机 RDP 监听 **3389**。卡片内的公网 TCP 端口或 Tunnel 配置只属于备用线路，不会传给连接器。第一次核对证书期间若直连被外部中断，需重新从卡片进入，不会改用中继重新登录。
+- 直连传输以当前 SCTP 拥塞窗口加两片（32KiB）控制 Windows 连接器的发送积压，仍受 1MiB 已读确认窗口限制；靠缓冲低水位和浏览器读取进度继续发送。浏览器直连按 64KiB 已读增量或 8ms 确认，中继维持原节奏。不改变分辨率、不丢弃 RDP 数据、不影响选路。已有连接器仍可使用，完整的发送队列优化需要新版 Windows 安装器。
 - 已绑定的常驻服务、RDP 设备、证书及中继配置升级后继续有效。旧的手动原型和待确认绑定文件不能自动升级成已绑定，请从卡片重新下载 ZIP；若已装过但未绑定，先卸载旧服务。新版不读取旧的 `RDP_P2P_SECRET`。若安装包过期、错发或尚未成功上线，可重新下载作废旧包；已经上线绑定的设备必须先取消绑定，不能覆盖。
 
 ## 维护者打包、发布与验证

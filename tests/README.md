@@ -193,6 +193,15 @@ CI=true pnpm exec playwright test --workers=2
 
 `pnpm run build:frontend && node scripts/test-rdp-peer.mjs`（可加 `--webkit` / `--native` / `--tunnel` / `--blocked-ice`）在回环连接真实浏览器、workerd 签名 DO/UserDBDO 和 Pion。覆盖专用 ZIP 可解压且 EXE 不变、零 Secret 自动绑定、第一次证书指纹、2 MiB 流控、换浏览器/进程重启、续租/编辑撤销、凭据响应没有明文和故障回退换密钥只启动一次客户端，以及所选线路延迟标签。实测浏览器 ICE，另给一个通道 pong 加 750ms 以验证峰值仍可查但不冒充线路 RTT；不推断公网提速。`rdp-peer-latency.test.ts` 验证已选 pair、STUN 新鲜度与迟到统计，`rdp-devices.spec.ts` 验证单行工具栏与无重排详情；`--tunnel` 验证 RTC 初始化不支持时使用已保存的隧道中继（默认公网 TCP；均不对外拨号）。`--blocked-ice` 保留真实 SDP 信令，将候选指向不响应的回环 UDP，覆盖 ICE `checking` 直到应用截止和一次性回退；`--native` 检查随包 FreeRDP 首个协商包。TCP 对端不是真实 Windows；独立 Windows CI 另跑 DPAPI/ACL 与 LocalService SCM 测试。依赖和真机步骤见 [连接器说明](../docs/rdp-peer.md)。
 
+发送队列对照（不需真实 Windows，不改本机网络规则）：
+
+```bash
+cd tools/rdp-peer
+CLOUDSSH_RDP_LATENCY_TEST=1 GOWORK=off go test -mod=readonly -run '^TestLimitedDesktopInteraction$' -count=3 -v
+```
+
+Pion 走本机限速 UDP，测试 4 Mbit/s / 70 ms 和 40 Mbit/s / 28 ms 两组配置。在 2 MiB 连续输出期间插入模拟按键，验证字节完整、顺序不变，比较回显耗时、按键到达连接器时的 SCTP 待发送与未确认字节，以及传输总耗时。旧策略保留整窗，新策略限制读入队列；不以真实 Windows、画面绘制或任意公网承诺解读这些数字。默认 Go/CI 运行软上限的确定性用例，耗时对照显式开启。
+
 ### 真实 SSH 互操作（显式运行）
 
 `pnpm run test:interop` 在 macOS/Linux 上启动 loopback-only OpenSSH 和独立 Go SSH 网关，

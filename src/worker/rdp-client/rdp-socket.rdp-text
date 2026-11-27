@@ -22,10 +22,10 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket, c
     consumed(bytes) {
       if (sink.readyState !== 1 || !Number.isSafeInteger(bytes) || bytes < 0 || consumed + bytes > incoming) return fail();
       consumed += bytes;
-      if (!ackTimer) ackTimer = window.setTimeout(() => {
-        ackTimer = undefined;
-        if (sink.readyState === 1) ws.send(JSON.stringify({ type: 'ack', bytes: consumed }));
-      }, 16);
+      if (consumed === ackSent) return;
+      // Release direct-carrier read credit sooner without ACKing every packet or unconsumed bytes.
+      if (carrier && consumed - ackSent >= 4 * frame) acknowledgeReads();
+      else if (ackTimer === undefined) ackTimer = window.setTimeout(acknowledgeReads, carrier ? 8 : 16);
     },
     probe() {
       if (sink.readyState !== 1) return;
@@ -79,10 +79,18 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket, c
   let pending = 0;
   let incoming = 0;
   let consumed = 0;
+  let ackSent = 0;
   let receivePeak = 0;
   let lastActivity = -Infinity;
   let ackTimer;
   const queue = [];
+  function acknowledgeReads() {
+    clearTimeout(ackTimer);
+    ackTimer = undefined;
+    if (sink.readyState !== 1 || consumed === ackSent) return;
+    ackSent = consumed;
+    try { ws.send(JSON.stringify({ type: 'ack', bytes: ackSent })); } catch { fail(); }
+  }
   function fail() {
     if (sink.readyState >= 2) return;
     sink.close();
