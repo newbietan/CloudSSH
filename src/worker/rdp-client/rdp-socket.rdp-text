@@ -8,6 +8,7 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket, c
   const sink = {
     CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3, readyState: 0,
     binaryType: 'arraybuffer', lease: undefined, certHold: false,
+    get receivedBytes() { return incoming; }, // RDP payload only; controls/ACKs do not count.
     send(value) {
       if (sink.readyState !== 1 || (!(value instanceof ArrayBuffer) && !ArrayBuffer.isView(value))) return fail();
       if (value.byteLength > limit || pending + sent - acknowledged + value.byteLength > limit) return fail();

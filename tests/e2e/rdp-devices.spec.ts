@@ -788,6 +788,7 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'rotate', 'rotate can
     const other = 'cd'.repeat(32);
     const rotate = scenario.startsWith('rotate');
     const direct = scenario === 'rotate';
+    if (scenario === 'accept') await page.clock.install();
     const saved = scenario === 'saved match' ? fingerprint : rotate ? other : null;
     const path = `/api/rdp/profiles/${id}`;
     let attempts = 0;
@@ -814,7 +815,8 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'rotate', 'rotate can
       const m = window.Module;
       m.FS = { mkdirTree() {}, writeFile() {} };
       window.certificateResult = 'not checked';
-      m.callMain = () => {
+      m.callMain = args => {
+        document.documentElement.dataset.policyOk = String(['/timeout:45000', '-multitransport', '/sec:nla', '/cert:deny', '-auto-reconnect'].every(a => args.includes(a)));
         const socket = m.createRdpSocket(m.websocket.url);
         if ('${scenario}' === 'idle timeout') { socket.onRelayClose('idle_timeout'); return; }
         const check = () => { window.certificateResult = m.onWindowsCertificate('${fingerprint}'); };
@@ -870,9 +872,9 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'rotate', 'rotate can
         await expect(dialog.locator('#certificate-saved')).toHaveText(Array(32).fill('CD').join(':'));
         await expect(dialog.locator('#certificate-cancel')).toBeFocused();
         await expect(accept).toHaveText('Update fingerprint and connect');
-        await expect(accept).toBeDisabled();
-        await dialog.getByRole('checkbox').check();
+        await expect(dialog.locator('input')).toHaveCount(0);
       }
+      if (scenario === 'accept') await page.clock.fastForward(40_000); // A human trust decision has its own deadline.
       await expect(accept).toBeEnabled();
       await expect.poll(decision).toBe(0);
       expect(attempts).toBe(0);
@@ -880,6 +882,14 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'rotate', 'rotate can
       else await accept.click();
       await expect(dialog).toBeHidden();
       await expect.poll(decision).toBe(scenario === 'accept' || scenario === 'rotate' ? 1 : -1);
+    }
+    await expect(runner.locator('html')).toHaveAttribute('data-policy-ok', 'true');
+    if (scenario === 'accept') {
+      await page.clock.fastForward(40_000); // Slow activation, past the old first-frame deadline.
+      await expect.poll(decision).toBe(1);
+      await runner.locator('html').evaluate(() => Reflect.get(window, 'Module').onWindowsFirstFrame());
+      await page.clock.fastForward(21_000);
+      await expect(runner.locator('#status')).toContainText('Desktop ready');
     }
     if (direct) expect(await runner.locator('html').evaluate(() => Reflect.get(window, 'peerControls'))).toEqual(['cert_wait', 'cert_done']);
     expect(attempts).toBe(['accept', 'rotate', 'rotate conflict', 'rotate stale reply', 'save failed'].includes(scenario) ? 1 : 0);
@@ -1001,7 +1011,6 @@ for (const scenario of ['reconnect', 'rotate reconnect', 'rotate TLS changed aga
     expect(connectCount).toBe(1);
     return;
   }
-  if (previousFingerprint) await dialog.getByRole('checkbox').check();
   await dialog.locator('#certificate-accept').click();
   if (scenario === 'reconnect' || scenario === 'rotate reconnect') {
     await expect(status).toContainText('Desktop ready');
@@ -1033,7 +1042,9 @@ for (const [errCode, expected] of [
   ['ERRCONNECT_SECURITY_NEGO_CONNECT_FAILED', 'Security negotiation failed'],
   ['ERRCONNECT_CONNECT_TRANSPORT_FAILED', 'The connection to Windows ended before the desktop appeared'],
   ['ERRINFO_GRAPHICS_SUBSYSTEM_FAILED', 'RDP reported a graphics or decoding error'],
-  ['ERRCONNECT_ACTIVATION_TIMEOUT', 'FreeRDP timed out activating the Windows session'],
+  ['ERRCONNECT_ACTIVATION_TIMEOUT', 'ERRCONNECT_ACTIVATION_TIMEOUT'],
+  ['activation timeout without further data', 'No new RDP data reached the browser'],
+  ['activation timeout after further data', 'More RDP data reached the browser'],
   ['timeout before certificate', 'FreeRDP did not verify a Windows certificate'],
   ['timeout after certificate', 'Sign-in is not confirmed'],
   ['timeout after display control', 'Windows display control was negotiated, but no desktop frame was drawn'],
@@ -1044,24 +1055,36 @@ for (const [errCode, expected] of [
   test(`reports distinct safe error message for ${errCode}`, async ({ page }) => {
     const invalidEnvelope = errCode === 'legacy plaintext' || errCode === 'tampered envelope';
     const timeout = errCode.startsWith('timeout ');
-    if (timeout) await page.clock.install();
+    const nativeTimeout = errCode.startsWith('activation timeout ');
+    if (timeout || nativeTimeout) await page.clock.install();
     let attempts = 0;
     const asset = (name: string) => readFileSync(`${__dirname}/../../src/worker/rdp-client/${name}.rdp-text`, 'utf8');
     const isolation = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' };
     await page.route(`**/rdp/${id}`, r => r.fulfill({ contentType: 'text/html', body: `<iframe src="/rdp/${id}/client" data-connect-saved="true"></iframe>` }));
     await page.route(`**/rdp/${id}/client`, r => r.fulfill({ contentType: 'text/html', headers: isolation, body: asset('index') }));
     await page.route('**/rdp/assets/desktop.js', r => r.fulfill({ contentType: 'text/javascript', body: asset('desktop') }));
-    await page.route('**/rdp/assets/rdp-socket.js', r => r.fulfill({ contentType: 'text/javascript', body: `window.createCloudSshRdpSocket = () => ({ lease: '${id}', close() { this.lease = undefined; } });` }));
+    await page.route('**/rdp/assets/rdp-socket.js', r => r.fulfill({ contentType: 'text/javascript', body: `window.createCloudSshRdpSocket = () => ({ lease: '${id}', receivedBytes: 512, close() { this.lease = undefined; } });` }));
     await page.route('**/rdp/assets/sdl-freerdp.wasm', r => r.fulfill({ contentType: 'application/wasm', body: Buffer.from([0, 97, 115, 109, 1, 0, 0, 0]) }));
     await page.route('**/rdp/assets/sdl-freerdp.js', r => r.fulfill({ contentType: 'text/javascript', body: `
       const m = window.Module;
       m.FS = { mkdirTree() {}, writeFile() {} };
       const events = {};
       m.websocket.on = (name, fn) => { events[name] = fn; };
-      m.callMain = () => {
-        m.createRdpSocket(m.websocket.url);
+      m.callMain = args => {
+        const socket = m.createRdpSocket(m.websocket.url);
         events.open();
-        if ('${errCode}'.startsWith('timeout after')) m.onWindowsCertificate('${'ab'.repeat(32)}');
+        document.documentElement.dataset.rdpStarted = 'true';
+        if (${nativeTimeout} || '${errCode}'.startsWith('timeout after')) m.onWindowsCertificate('${'ab'.repeat(32)}');
+        if (${nativeTimeout}) {
+          if ('${errCode}' === 'activation timeout after further data') socket.receivedBytes += 64;
+          const ms = Number(args.find(a => a.startsWith('/timeout:')).split(':')[1]);
+          setTimeout(() => {
+            m.printErr('ERRCONNECT_ACTIVATION_TIMEOUT private-host-secret');
+            m.printErr('ERRCONNECT_CONNECT_TRANSPORT_FAILED');
+            m.onExit(1);
+          }, ms);
+          return;
+        }
         if ('${errCode}' === 'timeout after display control') m.onWindowsDisplayControl();
         if ('${errCode}' === 'timeout after NTLM rejection') {
           m.printErr('ERRCONNECT_NTLM_BLOCKED');
@@ -1069,7 +1092,6 @@ for (const [errCode, expected] of [
           m.printErr('ERRCONNECT_CONNECT_TRANSPORT_FAILED');
         }
         m.printErr('[ERROR][com.freerdp.core] - ${errCode} [0x00020000] private-host-secret');
-        document.documentElement.dataset.rdpStarted = 'true';
         if (!${timeout}) m.onExit(0);
       };
       m.onRuntimeInitialized();
@@ -1097,11 +1119,18 @@ for (const [errCode, expected] of [
     await page.goto(`/rdp/${id}`);
     const frame = page.frameLocator('iframe');
     const status = frame.locator('#status');
-    if (timeout) {
+    if (timeout || nativeTimeout) {
       await expect(frame.locator('html')).toHaveAttribute('data-rdp-started', 'true');
       await page.clock.fastForward(30_000);
+      if (errCode !== 'timeout before certificate') {
+        await expect(status).toContainText('Checking the Windows certificate and signing in');
+        // Neither a repeated saved-pin callback nor DISP grants another activation window.
+        await frame.locator('html').evaluate((_, fp) => Reflect.get(window, 'Module').onWindowsCertificate(fp), 'ab'.repeat(32));
+        await page.clock.fastForward(nativeTimeout ? 15_000 : 30_000);
+      }
     }
     await expect(status).toContainText(expected);
+    if (nativeTimeout) await expect(status).toContainText('ERRCONNECT_ACTIVATION_TIMEOUT');
     await expect(status).not.toContainText('private-host-secret');
     if (invalidEnvelope) await expect(frame.locator('html')).not.toHaveAttribute('data-rdp-started', 'true');
     expect(attempts).toBe(1);

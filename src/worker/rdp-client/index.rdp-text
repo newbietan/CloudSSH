@@ -31,9 +31,6 @@ body{display:flex;flex-direction:column;height:100dvh;margin:0;background:var(--
       <strong id="certificate-saved-label">Previously saved fingerprint</strong>
       <code id="certificate-saved"></code>
     </div>
-    <label id="certificate-verify-box" hidden>
-      <span id="certificate-verify-label"></span>
-    </label>
     <div class="app-modal__actions">
       <button id="certificate-cancel" class="app-modal__button" type="button" autofocus>Cancel</button>
       <button id="certificate-accept" class="app-modal__button app-modal__button--primary" type="button">Trust and connect</button>

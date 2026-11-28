@@ -9,7 +9,9 @@ const failureText = {
   display_no_frame: ['Windows display control was negotiated, but no desktop frame was drawn. Check the Windows RDP graphics events and OS build.', '已与 Windows 协商显示控制，但未绘制桌面首帧。请检查 Windows 的 RDP 图形事件和系统内部版本。', '已與 Windows 協商顯示控制，但未繪製桌面首幀。請檢查 Windows 的 RDP 圖形事件及系統組建。'],
   ntlm_blocked: ['Windows policy blocked NTLM. This browser client does not support Kerberos. Use a client approved for that policy.', 'Windows 策略阻止了 NTLM；此浏览器客户端不支持 Kerberos。请使用符合该策略的客户端。', 'Windows 原則封鎖了 NTLM；此瀏覽器用戶端不支援 Kerberos。請使用符合該原則的用戶端。'],
   graphics_failed: ['RDP reported a graphics or decoding error before the first frame. Check the RdpCoreTS events and try a current browser.', '首帧前 RDP 报告了图形或解码错误。请检查 Windows 的 RdpCoreTS 事件，并用更新的浏览器对照。', '首幀前 RDP 回報了圖形或解碼錯誤。請檢查 Windows 的 RdpCoreTS 事件，並用更新的瀏覽器對照。'],
-  activation_timeout: ['FreeRDP timed out activating the Windows session. Check the Remote Desktop session events and OS build.', 'FreeRDP 等待 Windows 会话激活超时。请检查远程桌面会话事件和系统内部版本。', 'FreeRDP 等待 Windows 工作階段啟用逾時。請檢查遠端桌面工作階段事件及系統組建。'],
+  activation_timeout: ['FreeRDP timed out activating the Windows session (ERRCONNECT_ACTIVATION_TIMEOUT). Check RemoteConnectionManager and RdpCoreTS events at the time of this attempt.', 'Windows 的 RDP 协商未在时限内进入活动状态（ERRCONNECT_ACTIVATION_TIMEOUT）。请按本次连接时间核对 RemoteConnectionManager 和 RdpCoreTS 事件。', 'Windows 的 RDP 協商未在時限內進入使用中狀態（ERRCONNECT_ACTIVATION_TIMEOUT）。請依本次連線時間核對 RemoteConnectionManager 與 RdpCoreTS 事件。'],
+  activation_rx: ['More RDP data reached the browser after certificate verification.', '核验证书后，浏览器仍收到了新的 RDP 数据。', '核對憑證後，瀏覽器仍收到了新的 RDP 資料。'],
+  activation_no_rx: ['No new RDP data reached the browser after certificate verification.', '核验证书后，浏览器未再收到新的 RDP 数据。', '核對憑證後，瀏覽器未再收到新的 RDP 資料。'],
   peer_unavailable: ['The Windows connector is not online. Check the Windows service and CloudSSH site.', 'Windows 连接器不在线，请检查 Windows 服务和 CloudSSH 站点。', 'Windows 連接器不在線，請檢查 Windows 服務和 CloudSSH 站點。'],
   peer_timeout: ['The direct connection timed out. Check the connector and UDP network.', '直连超时，请检查连接器和 UDP 网络。', '直連逾時，請檢查連接器和 UDP 網路。'],
   peer_failed: ['Could not connect directly. Check the connector, UDP connectivity and local RDP.', '无法直连，请检查连接器、UDP 网络和本机 RDP。', '無法直連，請檢查連接器、UDP 網路和本機 RDP。'],
@@ -34,21 +36,21 @@ const trustText = {
   'en-US': {
     first: 'First connection to Windows', help: 'Verify this certificate fingerprint through a trusted source before accepting.',
     changed: 'Windows certificate changed', warning: 'Windows sign-in is blocked. This may be a different server or an intercepted connection. Cancel unless you can verify the new fingerprint independently, for example at the Windows console.',
-    received: 'Received certificate · SHA-256', saved: 'Previously saved fingerprint · SHA-256', verified: 'I independently verified the new fingerprint.',
+    received: 'Received certificate · SHA-256', saved: 'Previously saved fingerprint · SHA-256',
     cancel: 'Cancel', accept: 'Trust and connect', replace: 'Update fingerprint and connect', failed: 'Could not record certificate trust. Reopen the device and check again.',
     waiting: 'Waiting for certificate confirmation.', rejected: 'Certificate was not accepted.',
   },
   'zh-CN': {
     first: '首次连接此 Windows 服务器', help: '请通过可信渠道核对证书指纹再确认。',
     changed: 'Windows 证书已变化', warning: '已阻止 Windows 登录。这可能是另一台服务器，也可能是连接被拦截。请通过 Windows 管理控制台等独立渠道核对新指纹；无法确认请取消。',
-    received: '本次收到的证书 · SHA-256', saved: '已保存的指纹 · SHA-256', verified: '我已通过独立渠道核对新指纹。',
+    received: '本次收到的证书 · SHA-256', saved: '已保存的指纹 · SHA-256',
     cancel: '取消', accept: '信任并连接', replace: '更新指纹并连接', failed: '无法保存证书信任，请重新打开设备并核对。',
     waiting: '等待确认 Windows 证书。', rejected: '未接受 Windows 证书。',
   },
   'zh-TW': {
     first: '首次連線至此 Windows 伺服器', help: '請透過可信管道核對憑證指紋再確認。',
     changed: 'Windows 憑證已變更', warning: '已阻擋 Windows 登入。這可能是另一台伺服器，也可能是連線遭攔截。請透過 Windows 管理主控台等獨立管道核對新指紋；無法確認請取消。',
-    received: '本次收到的憑證 · SHA-256', saved: '已儲存的指紋 · SHA-256', verified: '我已透過獨立管道核對新指紋。',
+    received: '本次收到的憑證 · SHA-256', saved: '已儲存的指紋 · SHA-256',
     cancel: '取消', accept: '信任並連線', replace: '更新指紋並連線', failed: '無法儲存憑證信任，請重新開啟裝置並核對。',
     waiting: '等待確認 Windows 憑證。', rejected: '未接受 Windows 憑證。',
   },
@@ -94,13 +96,14 @@ const graphicsErrors = /\b(?:ERRINFO_GRAPHICS_(?:MODE_NOT_SUPPORTED|SUBSYSTEM_(?
 // Keep both ABIs aligned with src/rdp-schema.ts. Existing trust and peer renewal still use v5.
 const clientRevision = '5';
 const connectRevision = '6';
+// FreeRDP 3.33.1 uses TcpAckTimeout (default 9000 ms) for the whole event-driven
+// activation, including CredSSP, channel joins and finalization; it is not a first-paint timer.
+const activationTimeoutMs = 45_000;
+const postTrustFrameMs = activationTimeoutMs + 15_000;
 const trust = trustText[locale];
 const certificate = el('certificate');
 const acceptCertificate = el('certificate-accept');
 const cancelCertificate = el('certificate-cancel');
-// Mount this input only in an active rotation prompt; the desktop itself has no input fields.
-const verifiedCertificate = document.createElement('input');
-verifiedCertificate.type = 'checkbox';
 const formatFingerprint = value => value.toUpperCase().match(/../g).join(':');
 const base = '/rdp/assets/';
 let socket;
@@ -262,7 +265,7 @@ async function run(preferDirect, reconnectFingerprint) {
   let pendingTrust;
   let decision = -1;
   let acceptedTrust;
-  let freerdpError;
+  let freerdpError, receivedAtTrust;
   // No first paint is an observation, not a diagnosis. DISP is optional; certificate acceptance
   // precedes CredSSP and alone cannot prove either a successful logon or a graphics failure.
   const beforeFrame = () => freerdpError ?? (negotiatedResize ? failure('display_no_frame')
@@ -272,6 +275,23 @@ async function run(preferDirect, reconnectFingerprint) {
     timer = setTimeout(() => finish(typeof reason === 'function' ? reason() : reason), ms);
   };
   const runtimeExit = code => finish(ready ? (code ? 22 : 16) : beforeFrame());
+  function trustForActivation() {
+    // The native activation loop starts after TLS. Give both matched and newly accepted
+    // pins the same budget. Repeated callbacks or arriving bytes must not extend it.
+    if (decision !== 1 && !ready) {
+      receivedAtTrust = socket.receivedBytes;
+      watch(postTrustFrameMs);
+    }
+    decision = 1;
+    return decision;
+  }
+  function activationFailure() {
+    const text = failure('activation_timeout');
+    const received = socket?.receivedBytes;
+    if (!Number.isSafeInteger(receivedAtTrust) || !Number.isSafeInteger(received) || received < receivedAtTrust) return text;
+    // A transport observation, not a CredSSP/MCS state. Never inspect or retain the bytes.
+    return text + (locale === 'en-US' ? ' ' : '') + failure(received > receivedAtTrust ? 'activation_rx' : 'activation_no_rx');
+  }
   function finish(reason) {
     if (stopped) return;
     stopped = true;
@@ -287,13 +307,9 @@ async function run(preferDirect, reconnectFingerprint) {
     acceptCertificate.disabled = true;
     cancelCertificate.disabled = false;
     pendingTrust = undefined;
-    dismissCertificate();
+    if (certificate.open) certificate.close();
     if (typeof reason === 'number') show(reason);
     else { status.classList.remove('desktop-ready'); status.textContent = reason; }
-  }
-  function dismissCertificate() {
-    if (certificate.open) certificate.close();
-    verifiedCertificate.remove();
   }
   function displayCertificate(fingerprint, saved) {
     el('certificate-title').textContent = saved ? trust.changed : trust.first;
@@ -303,19 +319,9 @@ async function run(preferDirect, reconnectFingerprint) {
     el('certificate-saved-box').hidden = !saved;
     el('certificate-saved-label').textContent = trust.saved;
     el('certificate-saved').textContent = saved ? formatFingerprint(saved) : '';
-    const verifyBox = el('certificate-verify-box');
-    verifyBox.hidden = !saved;
-    if (saved) verifyBox.prepend(verifiedCertificate);
-    el('certificate-verify-label').textContent = trust.verified;
-    verifiedCertificate.checked = false;
-    verifiedCertificate.disabled = !saved;
-    verifiedCertificate.onchange = () => {
-      if (!verifiedCertificate.disabled) acceptCertificate.disabled = stopped || !verifiedCertificate.checked;
-    };
     acceptCertificate.textContent = saved ? trust.replace : trust.accept;
     cancelCertificate.textContent = trust.cancel;
-    acceptCertificate.disabled = !!saved;
-    cancelCertificate.disabled = false;
+    acceptCertificate.disabled = cancelCertificate.disabled = false;
     if (!certificate.open) certificate.showModal();
   }
   cancelCertificate.onclick = () => {
@@ -325,10 +331,9 @@ async function run(preferDirect, reconnectFingerprint) {
   certificate.oncancel = event => { event.preventDefault(); if (!cancelCertificate.disabled) cancelCertificate.click(); };
   acceptCertificate.onclick = () => {
     const prompt = pendingTrust;
-    if (stopped || !certificate.open || !prompt || decision !== 0 || socket?.lease !== prompt.lease || acceptCertificate.disabled ||
-        (prompt.previousFingerprint && !verifiedCertificate.checked)) return;
+    if (stopped || !certificate.open || !prompt || decision !== 0 || socket?.lease !== prompt.lease || acceptCertificate.disabled) return;
     const { fingerprint, revision, lease, previousFingerprint } = prompt;
-    acceptCertificate.disabled = cancelCertificate.disabled = verifiedCertificate.disabled = true;
+    acceptCertificate.disabled = cancelCertificate.disabled = true;
     void (async () => {
       const response = await request(api + '/trust', {
         method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-CloudSSH-RDP-Client': clientRevision },
@@ -349,16 +354,15 @@ async function run(preferDirect, reconnectFingerprint) {
       acceptedTrust = { revision: profile.revision, fingerprint };
       socket.endCertWait?.();
       if (stopped) return;
-      dismissCertificate();
+      certificate.close();
       if (socket.certHold) {
         // Keep native TLS waiting. Only the relay can confirm this held socket needs a retry.
         show(13);
         watch(5_000, 26);
         return;
       }
-      decision = 1;
+      trustForActivation();
       show(14);
-      watch(30_000);
     })().catch(() => finish(trust.failed));
   };
   terminate = finish;
@@ -491,7 +495,7 @@ async function run(preferDirect, reconnectFingerprint) {
           return -1;
         }
         if (pendingTrust) return decision;
-        if (fingerprint === profile.fingerprint) { decision = 1; return 1; }
+        if (fingerprint === profile.fingerprint) return trustForActivation();
         if (decision === 1 || ready) { finish(trust.rejected); return -1; }
         pendingTrust = { fingerprint, previousFingerprint: profile.fingerprint ?? undefined, revision: profile.revision, lease: socket.lease };
         decision = 0; // The native TLS thread waits here, before it can send Windows credentials.
@@ -543,7 +547,7 @@ async function run(preferDirect, reconnectFingerprint) {
         else if (!freerdpError || freerdpError === msg[26]) {
           if (authErrors.test(line)) freerdpError = msg[24];
           else if (securityErrors.test(line)) freerdpError = msg[25];
-          else if (/\bERRCONNECT_ACTIVATION_TIMEOUT\b/.test(line)) freerdpError = failure('activation_timeout');
+          else if (/\bERRCONNECT_ACTIVATION_TIMEOUT\b/.test(line)) freerdpError = activationFailure();
           else if (transportErrors.test(line)) freerdpError = msg[26];
         }
       },
@@ -572,13 +576,18 @@ async function run(preferDirect, reconnectFingerprint) {
           password = login.password;
           ticket = grant.ticket;
           grant = login = undefined;
-          window.Module.websocket.on?.('open', () => { if (!stopped) { show(14); watch(30_000); } });
+          window.Module.websocket.on?.('open', () => {
+            if (!stopped && !ready && decision === -1) { show(14); watch(30_000); } // Waiting for TLS, not activation yet.
+          });
           window.Module.websocket.on?.('error', () => finish(freerdpError ?? 22));
           window.Module.websocket.on?.('close', () => runtimeExit(0));
           initialSize = viewportSize();
           layout(true);
           // Local placeholder for the WASM socket adapter. Only the Worker's claimed profile selects the TCP destination.
+          // Both carriers expose one reliable stream. This WASM is built WITH_RDPEUDP=OFF;
+          // negotiate zero RDP multitransport flags instead of advertising UDP and later declining it.
           const args = ['/v:127.0.0.1:3389', '/u:' + username, '/sec:nla', '/cert:deny',
+            '/timeout:' + activationTimeoutMs, '-multitransport',
             '/size:' + initialSize.join('x'), '/dynamic-resolution', '-clipboard', '-auto-reconnect', '/audio-mode:2', '/log-level:ERROR'];
           if (domain) args.push('/d:' + domain);
           const result = window.Module.callMain(args);

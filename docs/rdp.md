@@ -8,7 +8,7 @@
 2. **连接器**（默认）无需公网地址或入站端口。先保存设备，再按页面提示下载、安装和绑定；此模式没有备用中继。若希望配置备用 **公网直连** 线路，填写公网 IPv4、全球可路由 IPv6（可带方括号）或公网域名/DDNS。域名需要 DNS-only 的 A 和/或 AAAA 记录指向 Windows 的公网入口，不能使用解析到 Cloudflare 代理 IP 的普通橙云记录当作 RDP 直连；用隧道时请选择 Tunnel 模式。端口在独立字段填写，默认 `3389`（1–65535 的整数，沿用 SSH 直连的受限端口规则）；地址不能带端口、协议或路径。已有设备无需修改。标准 Workers 出站不提供实例独享固定公网 IP，也不能直接访问内网目标；不要为测试向全网开放 RDP，有入站白名单要求时优先使用 Tunnel。
 3. **Cloudflare Tunnel** 只填写已发布应用的主机名。实际 Windows 端口在 `cloudflared` 服务地址设置（如 `rdp://127.0.0.1:3389` 或 `rdp://127.0.0.1:53389`），CloudSSH 不显示、也不提交端口。它不是 SSH 路由或 Access 浏览器桌面入口。推荐用独立的 Access **Service Auth** 保护该主机名，在设备配置中填该应用的 Client ID / Secret，而不是 Tunnel 安装令牌。
 4. 填写 Windows 用户名（默认 Administrator）、密码和可选域（本地账号通常留空）。三种线路都可绑定 WebRTC；已有公网直连或 Cloudflare Tunnel 设备，在编辑时点击主机输入框下方的「WebRTC直连配置」。连接器在线时优先 WebRTC，建立失败且还未到 RDP 登录阶段时静默使用原线路。保存后点击卡片连接；旧设备缺凭据时先「补全配置」。只有身份、主机、线路和直连端口都不变时，密码留空才会保留原值。更改端口视为更换 Windows 目标：须重填密码、重新核对证书指纹，旧票据及租约失效，最近连接时间清空。刷新或打开书签不会自动取回已保存的登录信息。
-5. 首次连接应从可信 Windows 管理控制台独立核对证书 **DER SHA-256** 指纹，再点「信任并连接」；Windows 常见的 SHA-1 `Thumbprint` 不能直接比较。指纹变化时会在发送 Windows 登录信息前暂停，显示本次收到的指纹和已保存的指纹，默认焦点为「取消」。确认是计划内换证且已独立核对新指纹，才勾选确认并点「更新指纹并连接」。无需删除设备，也不用重新绑定 WebRTC 连接器。无法核实请取消，切勿只凭弹窗中显示的值信任。
+5. 首次连接应从可信 Windows 管理控制台独立核对证书 **DER SHA-256** 指纹，再点「信任并连接」；Windows 常见的 SHA-1 `Thumbprint` 不能直接比较。指纹变化时会在发送 Windows 登录信息前暂停，显示本次收到的指纹和已保存的指纹，默认焦点为「取消」。确认是计划内换证且已独立核对新指纹，才点「更新指纹并连接」。无需删除设备，也不用重新绑定 WebRTC 连接器。无法核实请取消，切勿只凭弹窗中显示的值信任。
 
 ### 在可信 Windows 控制台核对监听证书
 
@@ -44,18 +44,24 @@ try { [BitConverter]::ToString($sha.ComputeHash($cert.RawData)).Replace('-', ':'
 
 WebRTC 和中继只改变 RDP 字节的运输方式。之后都是同一份 FreeRDP 3.33.1 WASM 完成 TLS、CredSSP/NLA、会话激活和图形解码；只有 SDL 真正绘制了非空更新区域才算首帧。旧版的「未收到桌面画面」也用于 30 秒超时，不代表 Windows 已接受凭据，更不能单凭它判定 WebRTC 或 H.264 有问题。
 
+`ERRCONNECT_ACTIVATION_TIMEOUT` 与网页「无首帧」不同：[FreeRDP 的激活循环](https://github.com/FreeRDP/FreeRDP/blob/65bcca1913a28cbdd7eb913599f692bd2b707991/libfreerdp/core/connection.c#L240-L298) 在安全协商启动后，用 `TcpAckTimeout` 作为**进入 ACTIVE 的总期限**，并非每收到一包重新计时。旧配置默认只有 9 秒；CredSSP、通道加入、能力协商或激活收尾都可能耗尽它，错误码本身不能区分哪一步最慢。
+
+- 两条线路现均传 `/timeout:45000`：该版本的原生参数同时设置激活所用的 `TcpAckTimeout` 和虚拟 TCP 的 `TcpConnectTimeout`，不改变 Worker 拨号或 WebRTC 预检的独立上限。浏览器在传输就绪后仍限 30 秒等 TLS 证书，人工确认另限 85 秒；已保存指纹匹配或确认写入成功后重新给首帧 **60 秒**，不因流量或重复回调续期。运行时退出或连接关闭时不必等满 60 秒；激活超时也不自动重试登录。
+- 随包构建为 `WITH_RDPEUDP=OFF`。`-multitransport` 将 RDP UDP 能力标志置零，不再向 Windows 宣告无法使用的额外通道；FreeRDP 相应宣告重定向协议 v5 而非 v6。这不关闭 WebRTC 的 UDP、改变中继路线或降低图形能力。以上改动消除了短时限和能力声明这两个已知差异，不证明目标机一定因其中之一超时。
+
 | 当前提示或证据 | 下一步（在同一次连接的时间点核对） |
 | --- | --- |
 | 尚未验证 Windows 证书、TLS/安全协商失败 | 确认两条线路确实指向预期的 RDP 监听器；查看 Windows **System → Schannel**。证书变化先按上文核对，不要用换信处理密码或图形错误。 |
 | 证书已验证、无首帧；或明确拒绝登录/阻止 NTLM | 查看 **Security** 的失败登录（启用审核时如 4625）与 **TerminalServices-RemoteConnectionManager/Operational**。证书核验早于 CredSSP；不能据此断言密码对错。随包构建未启用 Kerberos；若目标只允许 Kerberos，应使用符合策略的客户端，不要放宽域策略或关闭 NLA。 |
-| 已协商显示控制（DISP）、明确的图形错误或会话激活超时 | 查看 **TerminalServices-LocalSessionManager/Operational** 的会话/桌面启动记录，以及 **RemoteDesktopServices-RdpCoreTS/Operational** 的图形、连接或断开事件。随包构建的 H.264 使用浏览器 WebCodecs，不是 FFmpeg/OpenH264；能协商 DISP 不表示已绘制，也不能证明是编解码器故障。 |
+| `ERRCONNECT_ACTIVATION_TIMEOUT` | 先按同一分钟对照 **TerminalServices-RemoteConnectionManager/Operational** 和 **RemoteDesktopServices-RdpCoreTS/Operational**。新版另报「核验证书后是否收到新的 RDP 数据」：若没有，核对目标监听器及所用线路；若有，进一步看 **TerminalServices-LocalSessionManager/Operational** 是否创建了会话。该观察只比较浏览器接收计数，不含控制帧，不解释流量内容，也不排除先前已有数据在缓冲。 |
+| 已协商显示控制（DISP）但无首帧、或明确的图形错误 | 查看 **TerminalServices-LocalSessionManager/Operational** 的会话/桌面启动记录，以及 **RemoteDesktopServices-RdpCoreTS/Operational** 的图形、连接或断开事件。随包构建的 H.264 使用浏览器 WebCodecs，不是 FFmpeg/OpenH264；能协商 DISP 不表示已绘制，也不能证明是编解码器故障。 |
 
 对照时记录 `winver` 的完整内部版本（含累积更新）、浏览器及其版本，并在同一台主机、同一账号上用原生 `mstsc` 验证能否进入桌面。若原生也失败，先查 Windows 侧；若仅网页失败，对照另一个当前版本的浏览器以及同条件下的 2022 结果。原生客户端可能使用 Kerberos 或不同图形能力，它的成功也不能单独确定根因。早期 Server 2025 / Windows 11 24H2 有[登录画面冻结的 FreeRDP 上游报告](https://github.com/FreeRDP/FreeRDP/issues/10864)，部分主机应用累积更新后恢复；不要将历史问题等同于本机诊断。反馈仅需上述版本、页面的固定提示、相关事件 ID/状态码及原生客户端结果，不要发送密码、票据、HAR 或完整日志。
 
 ## 维护与真机验收
 
 - `bash scripts/build-freerdp.sh` 用于显式重建随仓库分发的客户端。常规构建不运行 Docker 或下载 FreeRDP。更新时审核依赖、许可证与 JS/C++ 钩子，用 `tests/build/rdp-assets.test.ts` 验证模块、摘要和大小；不要手改压缩产物。
-- `rdp-devices.spec.ts` 覆盖画布焦点、工具栏、鼠标侧键与首次证书确认（模拟中继和 FreeRDP，使用真实浏览器适配器）；`rdp-native-input.spec.ts` 在 Chromium 中加载随包的真实 WASM，验证 FreeRDP 从内存文件系统读取禁用本地快捷键的配置，不需要 Windows 凭据。`rdp-relay-rtt.test.ts` 覆盖证书等待期间读写中断的顺序、租约失效与超时。自动化不能代替真实 Windows 首帧和键鼠验收。
+- `rdp-devices.spec.ts` 覆盖画布焦点、工具栏、鼠标侧键与首次证书确认（模拟中继和 FreeRDP，使用真实浏览器适配器）；`rdp-native-input.spec.ts` 在 Chromium 中加载随包的真实 WASM，验证 FreeRDP 从内存文件系统读取禁用本地快捷键的配置，以及实际启动参数可发出携带 NLA 的 X.224 协商请求；只使用合成凭据和内存接收端，不接触 Windows。`rdp-relay-rtt.test.ts` 覆盖证书等待期间读写中断的顺序、租约失效与超时。自动化不能代替真实 Windows 首帧和键鼠验收。
 - 用授权的 Windows 主机和已部署的 Cloudflare 测试 Worker 验证，而不是用本地 mock 代替。分别以公网 IPv4、IPv6 字面量、仅 A 域名、仅 AAAA 域名及双栈域名确认 NLA 与桌面首帧，覆盖自定义端口及一条 TCP 路径不可达；DDNS 改址后验证同证书可用、不同证书在登录前被阻止。记录所用地区、线路、证书和首帧结果，不记录密码或未脱敏的地址。
 - 另测 Tunnel（包括 Access Service Auth）的 NLA、证书信任与换证、错误密码、桌面首帧和键鼠，并回归断线、1080p 持续操作及弱网；分开记录连通、认证、首帧和延迟。在支持和不支持 DISP 的 Windows 上分别验证默认全屏、适配与固定分辨率（以 Windows 内部显示设置为准）、Esc 返回和画面四角的键鼠定位。
 

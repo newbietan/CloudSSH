@@ -10,6 +10,7 @@ interface SocketAdapter {
   readyState: number;
   lease?: string;
   certHold: boolean;
+  readonly receivedBytes: number;
   beginCertWait(): void;
   endCertWait(): void;
   reportDesktopReady(): void;
@@ -64,8 +65,10 @@ describe('FreeRDP browser socket', () => {
       native.onmessage({ data: ready });
       expect(onOpen).toHaveBeenCalledOnce();
       expect(socket.lease).toBe(lease);
+      expect(socket.receivedBytes).toBe(0); // The ready control is not post-trust RDP traffic.
       const incoming = new ArrayBuffer(12);
       native.onmessage({ data: incoming });
+      expect(socket.receivedBytes).toBe(12);
       expect(onData).toHaveBeenCalledExactlyOnceWith({ data: incoming });
       await vi.advanceTimersByTimeAsync(20);
       expect(native.send).toHaveBeenCalledOnce();
@@ -74,6 +77,7 @@ describe('FreeRDP browser socket', () => {
       expect(native.send).toHaveBeenCalledOnce();
       await vi.advanceTimersByTimeAsync(1);
       expect(native.send).toHaveBeenLastCalledWith('{"type":"ack","bytes":12}');
+      expect(socket.receivedBytes).toBe(12);
     } finally { vi.useRealTimers(); }
   });
 
