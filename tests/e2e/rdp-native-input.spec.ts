@@ -1,4 +1,7 @@
+import { X509Certificate } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { Duplex } from 'node:stream';
+import { createSecureContext, TLSSocket } from 'node:tls';
 import { gunzipSync } from 'node:zlib';
 import { RDP_CONNECT_KEY_HEADER } from '../../src/rdp-schema';
 import { testRdpGrant } from '../fixtures/rdp-connect';
@@ -75,4 +78,50 @@ test('the bundled FreeRDP accepts the activation policy and emits an NLA negotia
   ` }));
   await page.goto(path);
   await expect(page.frameLocator('iframe').locator('html')).toHaveAttribute('data-nla-request', 'yes', { timeout: 12_000 });
+});
+
+test('the real WASM reports its NLA substate on an activation timeout', async ({ page }) => {
+  // Standard X.224 + TLS on an in-memory wire. No TCP listener, Windows target, NTLM challenge
+  // or completed login. The pin is for a certificate made with a public protocol-test key.
+  const cert = readFileSync(`${__dirname}/../fixtures/rdp-nla-test-cert.pem`);
+  const secureContext = createSecureContext({ cert, key: readFileSync(`${__dirname}/../ssh/fixtures/id_rsa_2048_pkcs1.pem`) });
+  const fingerprint = new X509Certificate(cert).fingerprint256.replaceAll(':', '').toLowerCase();
+  await page.route(`**${api}`, r => r.request().method() === 'GET' ? r.fulfill({ json: {
+    id, name: 'TLS fixture', revision: 1, hasLogin: true, fingerprint,
+  } }) : r.fallback());
+  let attempts = 0, sawToken = false;
+  await page.route(`**${api}/connect`, async r => {
+    if (r.request().method() !== 'POST') return r.fallback();
+    attempts++;
+    return r.fulfill({ json: await testRdpGrant(r.request().headers()[RDP_CONNECT_KEY_HEADER.toLowerCase()], {
+      origin: new URL(r.request().url()).origin, profile: id, revision: 1, transport: 'relay', ticket: '2'.repeat(64),
+    }, { username: 'tester', domain: '', password: 'synthetic' }) });
+  });
+  await page.route('**/rdp/assets/desktop.js', r => r.fulfill({ contentType: 'text/javascript', body:
+    readFileSync(`${__dirname}/../../src/worker/rdp-client/desktop.rdp-text`, 'utf8')
+      .replace('const activationTimeoutMs = 45_000;', 'const activationTimeoutMs = 2000;'), // Test time only.
+  }));
+  await page.routeWebSocket('**/api/rdp/session', ws => {
+    let negotiated = false;
+    const wire = new Duplex({ read() {}, write(bytes, _, done) { ws.send(Buffer.from(bytes)); done(); } });
+    const tls = new TLSSocket(wire, { isServer: true, secureContext });
+    tls.on('data', () => { sawToken = true; }); // Discard the first CredSSP request, never answer it.
+    tls.on('error', () => ws.close());
+    ws.onClose(() => { tls.destroy(); wire.destroy(); });
+    ws.onMessage(message => {
+      if (typeof message === 'string') {
+        if (JSON.parse(message).type === 'ticket') ws.send(JSON.stringify({ type: 'ready', lease: id }));
+      } else if (negotiated) wire.push(message);
+      else {
+        negotiated = true;
+        ws.send(Buffer.from('030000130ed000000000000200080002000000', 'hex')); // PROTOCOL_HYBRID
+      }
+    });
+  });
+  await page.goto(path);
+  const status = page.frameLocator('iframe').locator('#status');
+  await expect(status).toContainText('FreeRDP state at timeout: NLA / NEGO_TOKEN.', { timeout: 16_000 });
+  await expect(status).toContainText('ERRCONNECT_ACTIVATION_TIMEOUT');
+  expect(sawToken).toBe(true);
+  expect(attempts).toBe(1);
 });

@@ -216,6 +216,30 @@ patch('sdl_disp.cpp', '#include "sdl_disp.hpp"', '#include "sdl_disp.hpp"\n#ifde
 patch('sdl_disp.cpp', '\t_activated = true;', '\t_activated = true;\n#ifdef __EMSCRIPTEN__\n\tMAIN_THREAD_EM_ASM({ Module["onWindowsDisplayControl"]?.(); });\n#endif')
 PY
 
+# Snapshot the local state machine only on its actual activation timeout, before the
+# existing error/teardown. No per-PDU logging, protocol change or timeout extension.
+python3 - "$source_dir/libfreerdp/core/connection.c" <<'PY'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1]); text = p.read_text()
+include = '#include <freerdp/config.h>\n'
+headers = '#ifdef __EMSCRIPTEN__\n#include <emscripten.h>\n#endif\n'
+anchor = '\tWLog_ERR(TAG, "Timeout waiting for activation");\n\tfreerdp_set_last_error_if_not(rdp->context, FREERDP_ERROR_CONNECT_ACTIVATION_TIMEOUT);'
+snapshot = '''#ifdef __EMSCRIPTEN__
+	const char* nlaState = nullptr;
+	if ((rdp_get_state(rdp) == CONNECTION_STATE_NLA) && rdp->nla)
+		nlaState = nla_get_state_str(nla_get_state(rdp->nla));
+	MAIN_THREAD_EM_ASM({
+		Module["onWindowsActivationTimeout"]?.(UTF8ToString($0), $1 ? UTF8ToString($1) : null);
+	}, rdp_get_state_string(rdp), nlaState);
+#endif
+'''
+if include + headers not in text or snapshot + anchor not in text:
+    if text.count(include) != 1 or text.count(anchor) != 1 or headers in text or snapshot in text:
+        sys.exit('FreeRDP activation timeout hook mismatch')
+    p.write_text(text.replace(include, include + headers).replace(anchor, snapshot + anchor))
+PY
+
 # Optional, server-measured end-to-end RTT (MS-RDPBCGR Network Characteristics Result).
 # Keep just one sample across pthreads; receiving these PDUs never schedules UI work.
 python3 - "$source_dir/libfreerdp/core/autodetect.c" <<'PY'
@@ -289,15 +313,16 @@ with zipfile.ZipFile(archive) as zip:
 bin.chmod(0o700)
 PY
 
-build_args=()
+# Include the bash -c $0 below so even a fresh build has a nonempty array on macOS Bash 3.2 (-u).
+sdk_args=(build)
 if [[ $fresh == 0 ]]; then
-  build_args+=(--no-deps)
+  sdk_args+=(--no-deps)
   rm -f -- "$source_dir/build-emscripten/build/freerdp/CMakeCache.txt"
 fi
 run_sdk bash -euc '
   export PATH="/src/.cloudssh-build-tools:$PATH"
   bash -e scripts/emscripten.sh --no-clone "$@"
-' build "${build_args[@]}"
+' "${sdk_args[@]}"
 
 package_dir=$(mktemp -d "${TMPDIR:-/tmp}/cloudssh-freerdp-package.XXXXXXXX")
 trap 'rm -rf -- "$package_dir"; if [[ $fresh == 1 ]]; then cleanup; fi' EXIT

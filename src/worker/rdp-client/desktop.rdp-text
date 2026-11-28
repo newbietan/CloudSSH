@@ -9,7 +9,7 @@ const failureText = {
   display_no_frame: ['Windows display control was negotiated, but no desktop frame was drawn. Check the Windows RDP graphics events and OS build.', '已与 Windows 协商显示控制，但未绘制桌面首帧。请检查 Windows 的 RDP 图形事件和系统内部版本。', '已與 Windows 協商顯示控制，但未繪製桌面首幀。請檢查 Windows 的 RDP 圖形事件及系統組建。'],
   ntlm_blocked: ['Windows policy blocked NTLM. This browser client does not support Kerberos. Use a client approved for that policy.', 'Windows 策略阻止了 NTLM；此浏览器客户端不支持 Kerberos。请使用符合该策略的客户端。', 'Windows 原則封鎖了 NTLM；此瀏覽器用戶端不支援 Kerberos。請使用符合該原則的用戶端。'],
   graphics_failed: ['RDP reported a graphics or decoding error before the first frame. Check the RdpCoreTS events and try a current browser.', '首帧前 RDP 报告了图形或解码错误。请检查 Windows 的 RdpCoreTS 事件，并用更新的浏览器对照。', '首幀前 RDP 回報了圖形或解碼錯誤。請檢查 Windows 的 RdpCoreTS 事件，並用更新的瀏覽器對照。'],
-  activation_timeout: ['FreeRDP timed out activating the Windows session (ERRCONNECT_ACTIVATION_TIMEOUT). Check RemoteConnectionManager and RdpCoreTS events at the time of this attempt.', 'Windows 的 RDP 协商未在时限内进入活动状态（ERRCONNECT_ACTIVATION_TIMEOUT）。请按本次连接时间核对 RemoteConnectionManager 和 RdpCoreTS 事件。', 'Windows 的 RDP 協商未在時限內進入使用中狀態（ERRCONNECT_ACTIVATION_TIMEOUT）。請依本次連線時間核對 RemoteConnectionManager 與 RdpCoreTS 事件。'],
+  activation_timeout: ['FreeRDP timed out activating the Windows session (ERRCONNECT_ACTIVATION_TIMEOUT).', 'Windows 的 RDP 协商未在时限内进入活动状态（ERRCONNECT_ACTIVATION_TIMEOUT）。', 'Windows 的 RDP 協商未在時限內進入使用中狀態（ERRCONNECT_ACTIVATION_TIMEOUT）。'],
   activation_rx: ['More RDP data reached the browser after certificate verification.', '核验证书后，浏览器仍收到了新的 RDP 数据。', '核對憑證後，瀏覽器仍收到了新的 RDP 資料。'],
   activation_no_rx: ['No new RDP data reached the browser after certificate verification.', '核验证书后，浏览器未再收到新的 RDP 数据。', '核對憑證後，瀏覽器未再收到新的 RDP 資料。'],
   peer_unavailable: ['The Windows connector is not online. Check the Windows service and CloudSSH site.', 'Windows 连接器不在线，请检查 Windows 服务和 CloudSSH 站点。', 'Windows 連接器不在線，請檢查 Windows 服務和 CloudSSH 站點。'],
@@ -31,6 +31,21 @@ const failureText = {
   direct_dns_failed: ['Could not resolve the hostname. Check its public A or AAAA records and try again.', '无法解析域名，请检查公网 A 或 AAAA 记录后重试。', '無法解析網域，請檢查公網 A 或 AAAA 記錄後重試。'],
   direct_dns_blocked: ['This hostname resolved to a non-public or unsupported address. Use Cloudflare Tunnel for private targets.', '域名解析到了非公网或不支持的地址；内网目标请使用 Cloudflare Tunnel。', '網域解析到非公網或不支援的位址；內網目標請使用 Cloudflare Tunnel。'],
   slow_connection: ['Data transfer stalled. Check your network and reconnect.', '数据传输停滞，请检查网络后重新连接。', '資料傳輸停滯，請檢查網路後重新連線。'],
+};
+// Fixed enum names from the bundled FreeRDP connection.c and nla.c. Never display an
+// unknown value or guess a protocol state from traffic, Windows events or log text.
+const connectionStates = new Set(`INITIAL NEGO NLA AAD MCS_CREATE_REQUEST MCS_CREATE_RESPONSE MCS_ERECT_DOMAIN
+  MCS_ATTACH_USER MCS_ATTACH_USER_CONFIRM MCS_CHANNEL_JOIN_REQUEST MCS_CHANNEL_JOIN_RESPONSE
+  RDP_SECURITY_COMMENCEMENT SECURE_SETTINGS_EXCHANGE CONNECT_TIME_AUTO_DETECT_REQUEST
+  CONNECT_TIME_AUTO_DETECT_RESPONSE LICENSING MULTITRANSPORT_BOOTSTRAPPING_REQUEST MULTITRANSPORT_BOOTSTRAPPING_RESPONSE
+  CAPABILITIES_EXCHANGE_DEMAND_ACTIVE CAPABILITIES_EXCHANGE_MONITOR_LAYOUT CAPABILITIES_EXCHANGE_CONFIRM_ACTIVE
+  FINALIZATION_SYNC FINALIZATION_COOPERATE FINALIZATION_REQUEST_CONTROL FINALIZATION_PERSISTENT_KEY_LIST
+  FINALIZATION_FONT_LIST FINALIZATION_CLIENT_SYNC FINALIZATION_CLIENT_COOPERATE FINALIZATION_CLIENT_GRANTED_CONTROL
+  FINALIZATION_CLIENT_FONT_MAP ACTIVE`.split(/\s+/).map(name => 'CONNECTION_STATE_' + name));
+const nlaStates = new Set(['INITIAL', 'NEGO_TOKEN', 'PUB_KEY_AUTH', 'EARLY_USER_AUTH', 'AUTH_INFO', 'POST_NEGO', 'FINAL']
+  .map(name => 'NLA_STATE_' + name));
+const stateAtTimeout = {
+  'en-US': ' FreeRDP state at timeout: {state}.', 'zh-CN': '超时时的 FreeRDP 状态：{state}。', 'zh-TW': '逾時的 FreeRDP 狀態：{state}。',
 };
 const trustText = {
   'en-US': {
@@ -265,7 +280,7 @@ async function run(preferDirect, reconnectFingerprint) {
   let pendingTrust;
   let decision = -1;
   let acceptedTrust;
-  let freerdpError, receivedAtTrust;
+  let freerdpError, receivedAtTrust, activationStage;
   // No first paint is an observation, not a diagnosis. DISP is optional; certificate acceptance
   // precedes CredSSP and alone cannot prove either a successful logon or a graphics failure.
   const beforeFrame = () => freerdpError ?? (negotiatedResize ? failure('display_no_frame')
@@ -286,7 +301,8 @@ async function run(preferDirect, reconnectFingerprint) {
     return decision;
   }
   function activationFailure() {
-    const text = failure('activation_timeout');
+    let text = failure('activation_timeout');
+    if (activationStage) text += stateAtTimeout[locale].replace('{state}', activationStage);
     const received = socket?.receivedBytes;
     if (!Number.isSafeInteger(receivedAtTrust) || !Number.isSafeInteger(received) || received < receivedAtTrust) return text;
     // A transport observation, not a CredSSP/MCS state. Never inspect or retain the bytes.
@@ -505,6 +521,13 @@ async function run(preferDirect, reconnectFingerprint) {
         status.textContent = trust.waiting;
         watch(85_000, failure('cert_timeout'));
         return 0;
+      },
+      onWindowsActivationTimeout(state, nla) {
+        // The pthread calls this once at the deadline, before publishing its last error.
+        // Only ERRCONNECT_ACTIVATION_TIMEOUT consumes it; do not override trust, auth or teardown.
+        if (stopped || ready || activationStage || !connectionStates.has(state)) return;
+        activationStage = state.slice('CONNECTION_STATE_'.length);
+        if (state === 'CONNECTION_STATE_NLA' && nlaStates.has(nla)) activationStage += ' / ' + nla.slice('NLA_STATE_'.length);
       },
       onWindowsDisplayControl() {
         if (stopped) return;

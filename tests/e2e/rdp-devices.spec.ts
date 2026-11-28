@@ -1045,6 +1045,11 @@ for (const [errCode, expected] of [
   ['ERRCONNECT_ACTIVATION_TIMEOUT', 'ERRCONNECT_ACTIVATION_TIMEOUT'],
   ['activation timeout without further data', 'No new RDP data reached the browser'],
   ['activation timeout after further data', 'More RDP data reached the browser'],
+  ['activation timeout in NLA', 'FreeRDP state at timeout: NLA / EARLY_USER_AUTH.'],
+  ['activation timeout at monitor layout', 'FreeRDP state at timeout: CAPABILITIES_EXCHANGE_MONITOR_LAYOUT.'],
+  ['activation timeout with unknown NLA substate', 'FreeRDP state at timeout: NLA.'],
+  ['activation timeout with unknown state', 'ERRCONNECT_ACTIVATION_TIMEOUT'],
+  ['activation timeout with auth rejection', 'Windows rejected the sign-in credentials'],
   ['timeout before certificate', 'FreeRDP did not verify a Windows certificate'],
   ['timeout after certificate', 'Sign-in is not confirmed'],
   ['timeout after display control', 'Windows display control was negotiated, but no desktop frame was drawn'],
@@ -1079,6 +1084,19 @@ for (const [errCode, expected] of [
           if ('${errCode}' === 'activation timeout after further data') socket.receivedBytes += 64;
           const ms = Number(args.find(a => a.startsWith('/timeout:')).split(':')[1]);
           setTimeout(() => {
+            if ('${errCode}' === 'activation timeout in NLA') {
+              m.onWindowsActivationTimeout('CONNECTION_STATE_NLA', 'NLA_STATE_EARLY_USER_AUTH');
+              m.onWindowsActivationTimeout('CONNECTION_STATE_ACTIVE', null); // Cannot replace the first snapshot.
+            } else if ('${errCode}' === 'activation timeout at monitor layout') {
+              m.onWindowsActivationTimeout('CONNECTION_STATE_CAPABILITIES_EXCHANGE_MONITOR_LAYOUT', 'NLA_STATE_FINAL');
+            } else if ('${errCode}' === 'activation timeout with unknown NLA substate') {
+              m.onWindowsActivationTimeout('CONNECTION_STATE_NLA', 'NLA_STATE_private-host-secret');
+            } else if ('${errCode}' === 'activation timeout with unknown state') {
+              m.onWindowsActivationTimeout('CONNECTION_STATE_private-host-secret', 'NLA_STATE_FINAL');
+            } else if ('${errCode}' === 'activation timeout with auth rejection') {
+              m.onWindowsActivationTimeout('CONNECTION_STATE_NLA', 'NLA_STATE_AUTH_INFO');
+              m.printErr('ERRCONNECT_AUTHENTICATION_FAILED');
+            }
             m.printErr('ERRCONNECT_ACTIVATION_TIMEOUT private-host-secret');
             m.printErr('ERRCONNECT_CONNECT_TRANSPORT_FAILED');
             m.onExit(1);
@@ -1130,7 +1148,11 @@ for (const [errCode, expected] of [
       }
     }
     await expect(status).toContainText(expected);
-    if (nativeTimeout) await expect(status).toContainText('ERRCONNECT_ACTIVATION_TIMEOUT');
+    if (nativeTimeout && errCode !== 'activation timeout with auth rejection') await expect(status).toContainText('ERRCONNECT_ACTIVATION_TIMEOUT');
+    if (!expected.startsWith('FreeRDP state at timeout')) {
+      await expect(status).not.toContainText('FreeRDP state at timeout');
+    }
+    await expect(status).not.toContainText(' / FINAL');
     await expect(status).not.toContainText('private-host-secret');
     if (invalidEnvelope) await expect(frame.locator('html')).not.toHaveAttribute('data-rdp-started', 'true');
     expect(attempts).toBe(1);
