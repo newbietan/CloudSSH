@@ -134,6 +134,53 @@ describe('RDP profiles and connection leases', () => {
     } finally { database.close(); }
   });
 
+  it('rotates only a verified old pin on the live owned revision; retires stale tickets, leases and edits', async () => {
+    const { request, database, issueTicket } = fixture();
+    try {
+      const create = () => request('profiles', 'POST', { ...target, tags: ['prod'] }).then(async r => await r.json() as { id: string });
+      const { id } = await create(), other = await create();
+      const path = `profiles/${id}`;
+      const issue = (savedRevision = 1) => issueTicket({ profile: id, binding: bind, savedRevision });
+      const ticket = async () => (await (await issue()).json() as RdpConnectGrant).ticket;
+      const claim = (ticket: string) => request('claim', 'POST', { ticket, binding: bind });
+      const lease = (await (await claim(await ticket())).json() as { id: string }).id;
+      const trust = (p: object, user = 1) => request(`${path}/trust`, 'PUT', p, user);
+      const first = { fingerprint: certificate, revision: 1, lease };
+      const rotation = { ...first, fingerprint: bind, previousFingerprint: certificate };
+      expect((await trust(rotation)).status).toBe(409); // Not a first-use write.
+      expect((await trust(first)).ok).toBe(true);
+      const second = (await (await claim(await ticket())).json() as { id: string }).id;
+      const outstanding = await ticket();
+      expect((await trust(rotation, 2)).status).toBe(404);
+      expect((await request(`profiles/${other.id}/trust`, 'PUT', rotation)).status).toBe(409);
+      expect((await trust({ ...rotation, lease: other.id })).status).toBe(409);
+      expect((await trust({ ...rotation, previousFingerprint: '3'.repeat(64) })).status).toBe(409);
+      for (const previousFingerprint of [null, '', 'bad', bind]) {
+        expect((await trust({ ...rotation, previousFingerprint })).status).toBe(400);
+      }
+      database.prepare('UPDATE rdp_leases SET expires=0 WHERE id=?').run(second);
+      expect((await trust({ ...rotation, lease: second })).status).toBe(409);
+      database.prepare('UPDATE rdp_leases SET expires=? WHERE id=?').run(Date.now() + 45000, second);
+      expect((await request(path, 'GET')).ok).toBe(true); // Initialize registry before seeding a bound connector.
+      database.prepare('INSERT INTO rdp_devices VALUES(1,?,?,?,?,?,?)').run(id, crypto.randomUUID(), origin, 'key', 'WIN', 'd'.repeat(64));
+      const competing = await Promise.all([trust(rotation), trust({ ...rotation, fingerprint: '4'.repeat(64), lease: second })]);
+      expect(competing.map(r => r.status).sort()).toEqual([200, 409]);
+      const winner = competing[0].ok ? 0 : 1;
+      const newPin = winner === 0 ? bind : '4'.repeat(64);
+      expect(await competing[winner].json()).toEqual({ fingerprint: newPin, revision: 2 });
+      expect((await trust(rotation)).status).toBe(409);
+      expect((await trust({ ...first, revision: 2 })).status).toBe(409); // Old client cannot restore the pin.
+      expect((await request(path, 'PUT', { ...target, revision: 1 })).status).toBe(409);
+      expect((await claim(outstanding)).status).toBe(409);
+      expect((await issue()).status).toBe(409);
+      expect((await request('renew', 'POST', { lease: winner === 0 ? second : lease })).status).toBe(404);
+      expect((await request('renew', 'POST', { lease: winner === 0 ? lease : second })).ok).toBe(true);
+      expect((await issue(2)).ok).toBe(true);
+      expect(await (await request(path, 'GET')).json()).toMatchObject({ id, revision: 2, fingerprint: newPin, tags: ['prod'],
+        hasLogin: true, connector: { state: 'offline', label: 'WIN', fingerprint: 'd'.repeat(64) } });
+    } finally { database.close(); }
+  });
+
   it('binds credentials and trust to the canonical domain, not an address selected by the relay', async () => {
     const { request, database, issueTicket } = fixture();
     try {

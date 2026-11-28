@@ -122,7 +122,7 @@ export function startRdpRelay(hooks: SessionHooks): Response {
       ws.send(frame);
     }
   }
-  async function establish(ticket: string) {
+  async function establish(ticket: string, certRotation: boolean) {
     stage = 'opening';
     clearTimeout(phaseTimer);
     phaseTimer = setTimeout(() => finish(1011, 'connect_timeout'), 10_000);
@@ -131,7 +131,9 @@ export function startRdpRelay(hooks: SessionHooks): Response {
       if (!claimed) return finish(1008, 'ticket_rejected');
       if (abort.signal.aborted) return release(claimed.id);
       lease = claimed;
-      certificate = claimed.profile.fingerprint === null ? 'pending' : 'resolved';
+      // A stored pin is not evidence that it matched this TLS handshake. New clients may
+      // need the same bounded pre-frame hold for an explicitly confirmed certificate change.
+      certificate = claimed.profile.fingerprint === null || certRotation ? 'pending' : 'resolved';
       transport = await openRdpTransport(claimed, abort.signal);
       if (abort.signal.aborted) return transport.close();
       if (!(await hooks.renew(claimed.id).catch(() => false)) || abort.signal.aborted) {
@@ -159,7 +161,7 @@ export function startRdpRelay(hooks: SessionHooks): Response {
         if (data.length > 256 || ++controls > 256) return finish(1008, 'invalid_frame');
         const msg = JSON.parse(data);
         if (stage === 'ticket' && msg?.type === 'ticket' && typeof msg.ticket === 'string' && /^[a-f0-9]{64}$/.test(msg.ticket)) {
-          void establish(msg.ticket);
+          void establish(msg.ticket, msg.certRotation === true);
           return;
         }
         if (stage !== 'ready') return finish(1008, 'invalid_frame');

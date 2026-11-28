@@ -98,14 +98,16 @@ describe('formal RDP routing', () => {
     expect((await home('expired')).headers.has('Cross-Origin-Embedder-Policy')).toBe(false);
   });
 
-  it('only forwards trust from an authenticated same-origin client with the current ABI', async () => {
+  it.each([undefined, 'b'.repeat(64)])('requires a signed-in same-origin client for first use or rotation (%s)', async previousFingerprint => {
     const { handle, internal } = fixture();
     const path = `/api/rdp/profiles/${id}/trust`;
     const headers = { Origin: origin, Cookie: 'session=42:cookie-value', 'X-CloudSSH-RDP-Client': '1' };
-    const payload = { fingerprint: 'a'.repeat(64), lease: id, revision: 1 };
+    const payload = { fingerprint: 'a'.repeat(64), lease: id, revision: 1, ...(previousFingerprint ? { previousFingerprint } : {}) };
     expect((await handle(path, { method: 'PUT', headers })).status).toBe(409);
     headers['X-CloudSSH-RDP-Client'] = String(RDP_CLIENT_REVISION);
-    expect((await handle(path, { method: 'PUT', headers: { ...headers, Origin: 'https://other.example' } })).status).toBe(403);
+    expect((await handle(path, { method: 'PUT', headers: { ...headers, Origin: 'https://other.example' }, body: JSON.stringify(payload) })).status).toBe(403);
+    expect((await handle(path, { method: 'PUT', headers: { ...headers, Cookie: '' }, body: JSON.stringify(payload) })).status).toBe(401);
+    expect(internal.mock.calls.some(([r]) => r.url.includes('/trust'))).toBe(false);
     expect((await handle(path, { method: 'PUT', headers, body: JSON.stringify(payload) })).status).toBe(200);
     const [request] = internal.mock.calls.at(-1)!;
     expect(request.url).toBe(`https://internal/internal/rdp/profiles/${id}/trust?user_id=5`);

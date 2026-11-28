@@ -8,13 +8,26 @@
 2. **连接器**（默认）无需公网地址或入站端口。先保存设备，再按页面提示下载、安装和绑定；此模式没有备用中继。若希望配置备用 **公网直连** 线路，填写公网 IPv4、全球可路由 IPv6（可带方括号）或公网域名/DDNS。域名需要 DNS-only 的 A 和/或 AAAA 记录指向 Windows 的公网入口，不能使用解析到 Cloudflare 代理 IP 的普通橙云记录当作 RDP 直连；用隧道时请选择 Tunnel 模式。端口在独立字段填写，默认 `3389`（1–65535 的整数，沿用 SSH 直连的受限端口规则）；地址不能带端口、协议或路径。已有设备无需修改。标准 Workers 出站不提供实例独享固定公网 IP，也不能直接访问内网目标；不要为测试向全网开放 RDP，有入站白名单要求时优先使用 Tunnel。
 3. **Cloudflare Tunnel** 只填写已发布应用的主机名。实际 Windows 端口在 `cloudflared` 服务地址设置（如 `rdp://127.0.0.1:3389` 或 `rdp://127.0.0.1:53389`），CloudSSH 不显示、也不提交端口。它不是 SSH 路由或 Access 浏览器桌面入口。推荐用独立的 Access **Service Auth** 保护该主机名，在设备配置中填该应用的 Client ID / Secret，而不是 Tunnel 安装令牌。
 4. 填写 Windows 用户名（默认 Administrator）、密码和可选域（本地账号通常留空）。三种线路都可绑定 WebRTC；已有公网直连或 Cloudflare Tunnel 设备，在编辑时点击主机输入框下方的「WebRTC直连配置」。连接器在线时优先 WebRTC，建立失败且还未到 RDP 登录阶段时静默使用原线路。保存后点击卡片连接；旧设备缺凭据时先「补全配置」。只有身份、主机、线路和直连端口都不变时，密码留空才会保留原值。更改端口视为更换 Windows 目标：须重填密码、重新核对证书指纹，旧票据及租约失效，最近连接时间清空。刷新或打开书签不会自动取回已保存的登录信息。
-5. 首次连接应从可信 Windows 管理控制台独立核对证书 **DER SHA-256** 指纹，再点「信任并连接」；Windows 常见的 SHA-1 `Thumbprint` 不能直接比较。指纹变化会停止连接，不能在警告中覆盖。若独立确认是计划内换证，同一主机可删除并重建设备，再核对新指纹。
+5. 首次连接应从可信 Windows 管理控制台独立核对证书 **DER SHA-256** 指纹，再点「信任并连接」；Windows 常见的 SHA-1 `Thumbprint` 不能直接比较。指纹变化时会在发送 Windows 登录信息前暂停，显示本次收到的指纹和已保存的指纹，默认焦点为「取消」。确认是计划内换证且已独立核对新指纹，才勾选确认并点「更新指纹并连接」。无需删除设备，也不用重新绑定 WebRTC 连接器。无法核实请取消，切勿只凭弹窗中显示的值信任。
+
+### 在可信 Windows 控制台核对监听证书
+
+在目标机本地或独立的管理控制台执行以下只读 PowerShell。用监听器的 SHA-1 标识找到实际绑定的证书，再对证书 DER 计算 **SHA-256**。不要随意选择证书库中最新的一张，也不要从当前未受信的 RDP 连接取值作为验证依据。
+
+```powershell
+$listener = Get-CimInstance -Namespace root/cimv2/terminalservices -ClassName Win32_TSGeneralSetting -Filter "TerminalName='RDP-tcp'"
+$cert = Get-ChildItem 'Cert:\LocalMachine\Remote Desktop','Cert:\LocalMachine\My' |
+    Where-Object Thumbprint -eq $listener.SSLCertificateSHA1Hash | Select-Object -First 1
+if (-not $cert) { throw '未找到监听器绑定的证书，请由管理员核实，不要替换指纹。' }
+$sha = [System.Security.Cryptography.SHA256]::Create()
+try { [BitConverter]::ToString($sha.ComputeHash($cert.RawData)).Replace('-', ':') } finally { $sha.Dispose() }
+```
 
 ## 使用与安全限制
 
 - 域名每次连接都向 Cloudflare DoH 查询 A 与 AAAA（DNS 递归解析器仍遵守记录 TTL）。解析失败、无可用结果，或任一地址为私网、保留或不支持的地址时拒绝；只向本次校验过的地址拨号，不再用域名做第二次解析。双栈优先尝试 IPv4；TCP 未建立时可在预算内换地址，一旦建立不因证书错误或登录失败重试另一台机器。
 - 同一 DDNS 域名换 IP 不会改变保存的主机、凭据或指纹；只要仍是同一 Windows 证书，无需重填密码。指纹变化仍在登录前阻止；手动修改所保存的主机或直连端口仍视为更换目标。
-- 中继首次确认时，即使上游已断开，确认框也会在有界等待期内保持可用（浏览器确认窗口 85 秒；会话租约仍须有效）。只有成功保存指纹、且中继确认原上游在等待期间已断开时，工作区才会用新票据重连一次；设备修订或指纹变化时不会重连。会话失效、确认超时和连接中断分别提示，不会因普通握手或登录失败自动重试。
+- 中继首次信任或换证确认时，即使上游已断开，确认框也会在有界等待期内保持可用（浏览器确认窗口 85 秒；会话租约仍须有效）。只有成功保存指纹、且中继确认原上游在等待期间已断开时，工作区才会用新票据重连一次；若设备修订或指纹与刚刚确认的结果不符则拒绝，重连中再次换证也不会弹出第二次信任。会话失效、确认超时和连接中断分别提示，不会因普通握手或登录失败自动重试。
 - Windows 与 SSH 设备共用服务器列表、标签、排序和分页，可用 Windows 用户名搜索。直连卡片显示掩码 IP 或域名及已保存的端口，复制仅包含完整主机（不含端口）；Tunnel 只显示和复制域名。收到首帧桌面画面才记录最近连接时间。
 - 桌面在同一标签打开。「返回」会断开桌面连接，但不会注销 Windows。全屏默认「仅缩放」，不裁剪桌面，也不主动更改 Windows 分辨率。若 Windows 协商了动态分辨率（RDP Display Control），全屏工具栏也可选「适配全屏」、1280 × 720 或 1920 × 1080。自适应使用工具栏下方的 CSS 像素，不按 DPR 放大，最高 3840 × 2160；Windows 可拒绝调整。切回「仅缩放」时请求恢复入全屏前的大小；退出后恢复普通窗口的自适应，不保存全屏选项。弱网可先试 720p，画面像素更少，但流畅度仍取决于线路及画面变化。
 - 桌面就绪或切换全屏后，可直接打字，不必先点击画面；若已主动选中「返回」或正在核对证书，会保留当前焦点。需要时点击画面即可继续输入。在 RDP 工具栏按 `Esc` 不会切换到底层 SSH 标签。
@@ -26,6 +39,18 @@
 - RDP 设备独立于 SSH 跳板、分享、SFTP、Agent 和 MCP。不提供剪贴板、驱动器挂载、音频转发；不承诺 Kerberos-only、RD Gateway、多屏或完整移动端键盘支持。会话受 `IDLE_TIMEOUT` 及 2 小时上限约束。
 
 若 Edge 显示「已阻止该站点」或「恐吓软件」，这是浏览器的 [Scareware blocker](https://support.microsoft.com/en-us/edge/prevent-online-scams-with-the-scareware-blocker-in-microsoft-edge)，不是 RDP 证书弹窗。先核实站点、部署、配置的 Windows 设备和证书；不可仅凭截图认定误报。确认正常后可向 Microsoft 提交不含凭据及桌面隐私的反馈，不建议关闭保护或绕过拦截。
+
+## Server 2025 / Windows 11：两条线路都没有桌面首帧
+
+WebRTC 和中继只改变 RDP 字节的运输方式。之后都是同一份 FreeRDP 3.33.1 WASM 完成 TLS、CredSSP/NLA、会话激活和图形解码；只有 SDL 真正绘制了非空更新区域才算首帧。旧版的「未收到桌面画面」也用于 30 秒超时，不代表 Windows 已接受凭据，更不能单凭它判定 WebRTC 或 H.264 有问题。
+
+| 当前提示或证据 | 下一步（在同一次连接的时间点核对） |
+| --- | --- |
+| 尚未验证 Windows 证书、TLS/安全协商失败 | 确认两条线路确实指向预期的 RDP 监听器；查看 Windows **System → Schannel**。证书变化先按上文核对，不要用换信处理密码或图形错误。 |
+| 证书已验证、无首帧；或明确拒绝登录/阻止 NTLM | 查看 **Security** 的失败登录（启用审核时如 4625）与 **TerminalServices-RemoteConnectionManager/Operational**。证书核验早于 CredSSP；不能据此断言密码对错。随包构建未启用 Kerberos；若目标只允许 Kerberos，应使用符合策略的客户端，不要放宽域策略或关闭 NLA。 |
+| 已协商显示控制（DISP）、明确的图形错误或会话激活超时 | 查看 **TerminalServices-LocalSessionManager/Operational** 的会话/桌面启动记录，以及 **RemoteDesktopServices-RdpCoreTS/Operational** 的图形、连接或断开事件。随包构建的 H.264 使用浏览器 WebCodecs，不是 FFmpeg/OpenH264；能协商 DISP 不表示已绘制，也不能证明是编解码器故障。 |
+
+对照时记录 `winver` 的完整内部版本（含累积更新）、浏览器及其版本，并在同一台主机、同一账号上用原生 `mstsc` 验证能否进入桌面。若原生也失败，先查 Windows 侧；若仅网页失败，对照另一个当前版本的浏览器以及同条件下的 2022 结果。原生客户端可能使用 Kerberos 或不同图形能力，它的成功也不能单独确定根因。早期 Server 2025 / Windows 11 24H2 有[登录画面冻结的 FreeRDP 上游报告](https://github.com/FreeRDP/FreeRDP/issues/10864)，部分主机应用累积更新后恢复；不要将历史问题等同于本机诊断。反馈仅需上述版本、页面的固定提示、相关事件 ID/状态码及原生客户端结果，不要发送密码、票据、HAR 或完整日志。
 
 ## 维护与真机验收
 

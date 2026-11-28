@@ -86,9 +86,9 @@ export class RdpPeerRooms {
   private rooms = new Map<string, Room>();
   private pending = 0;
   constructor(private readonly hooks: Hooks) {}
-  invalidate(user: number, id: string) {
+  invalidate(user: number, id: string, exceptLease?: string) {
     const room = this.rooms.get(id);
-    if (room?.user === user) this.end(room, 'lease_ended');
+    if (room?.user === user && room.lease !== exceptLease) this.end(room, 'lease_ended');
   }
   agent(user: number, id: string, device: string, origin: string, proof: string): Response {
     const r = this.rooms.get(id);

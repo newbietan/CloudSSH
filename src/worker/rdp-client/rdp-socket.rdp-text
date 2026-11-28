@@ -106,7 +106,7 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket, c
   }
   ws.onopen = () => {
     if (ws.protocol !== 'cloudssh-rdp-v1') return fail();
-    ws.send(JSON.stringify({ type: 'ticket', ticket }));
+    ws.send(JSON.stringify({ type: 'ticket', ticket, certRotation: true }));
     ticket = undefined;
   };
   ws.onmessage = ({ data }) => {

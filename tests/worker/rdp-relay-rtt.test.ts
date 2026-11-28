@@ -116,7 +116,7 @@ it('keeps the lease and socket alive on upstream EOF during first-time cert conf
   } finally { vi.unstubAllGlobals(); vi.useRealTimers(); }
 });
 
-it('handles the race where upstream closes right after sending TLS bytes before cert_wait arrives, and bounds hold to 90s', async () => {
+it.each([null, 'ab'.repeat(32)])('bounds EOF before cert_wait for first use or rotation (saved %s)', async fingerprint => {
   vi.useFakeTimers();
   try {
     const ws = Object.assign(new EventTarget(), { accept: vi.fn(), send: vi.fn(), close: vi.fn() });
@@ -134,11 +134,11 @@ it('handles the race where upstream closes right after sending TLS bytes before 
       claim: async () => ({
         id: lease,
         profile: { id: lease, revision: 1, name: 'test', host: 'rdp.example.com', port: 53389, route: 'direct',
-          hasLogin: true, hasAccessToken: false, tags: [], fingerprint: null },
+          hasLogin: true, hasAccessToken: false, tags: [], fingerprint },
       }),
     });
     const send = (data: object) => ws.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(data) }));
-    send({ type: 'ticket', ticket: 'a'.repeat(64) });
+    send({ type: 'ticket', ticket: 'a'.repeat(64), certRotation: !!fingerprint });
     await vi.advanceTimersByTimeAsync(0);
     expect(ws.send).toHaveBeenLastCalledWith('{"type":"cert_hold"}');
     expect(ws.close).not.toHaveBeenCalled();
@@ -152,7 +152,7 @@ it('handles the race where upstream closes right after sending TLS bytes before 
   } finally { vi.unstubAllGlobals(); vi.useRealTimers(); }
 });
 
-it('closes immediately with upstream_closed on EOF when the certificate fingerprint is already trusted', async () => {
+it('keeps immediate close semantics for older clients with a stored pin', async () => {
   vi.useFakeTimers();
   try {
     const ws = Object.assign(new EventTarget(), { accept: vi.fn(), send: vi.fn(), close: vi.fn() });

@@ -73,6 +73,15 @@ describe('installed-device direct signaling', () => {
     browser.receive({ type: 'cert_wait' });
     expect(agent.close).toHaveBeenLastCalledWith(1000, 'peer_failed');
   });
+  it('keeps only the peer performing the confirmed pin change', async () => {
+    const { connect, hooks, rooms } = fixture(); const { agent } = await connect();
+    rooms.invalidate(1, id, lease);
+    expect(rooms.renew(1, id, lease, binding, origin).ok).toBe(true);
+    expect(agent.close).not.toHaveBeenCalled();
+    rooms.invalidate(1, id, crypto.randomUUID()); // A relay performed the rotation instead.
+    expect(agent.close).toHaveBeenCalledWith(1000, 'lease_ended');
+    expect(hooks.release).toHaveBeenCalledExactlyOnceWith(1, lease);
+  });
   it('checks exact lease binding; renewal is not user activity and does not extend the fixed certificate limit', async () => {
     const { connect, hooks, rooms } = fixture(); const { browser, agent } = await connect();
     browser.receive({ type: 'cert_wait' });

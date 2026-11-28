@@ -59,7 +59,7 @@ describe('FreeRDP browser socket', () => {
       const onOpen = socket.onopen = vi.fn();
       const onData = socket.onmessage = vi.fn();
       native.onopen();
-      expect(native.send).toHaveBeenLastCalledWith('{"type":"ticket","ticket":"token"}');
+      expect(native.send).toHaveBeenLastCalledWith('{"type":"ticket","ticket":"token","certRotation":true}');
       expect(onOpen).not.toHaveBeenCalled();
       native.onmessage({ data: ready });
       expect(onOpen).toHaveBeenCalledOnce();

@@ -38,7 +38,7 @@ run_sdk() {
 }
 
 # Independently verify the actual leaf certificate after TLS and before CredSSP.
-# The browser either checks a saved pin or asks for confirmed first-use trust.
+# The browser checks the saved pin or waits for explicit first-use / replacement trust.
 python3 - "$source_dir/libfreerdp/crypto/tls.c" <<'PY'
 from pathlib import Path
 import sys

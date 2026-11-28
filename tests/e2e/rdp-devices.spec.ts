@@ -782,11 +782,13 @@ test('isolated desktop entry hides the home loader before JS; Back also works be
   expect(await page.evaluate(() => sessionStorage.getItem('cloudssh_rdp_open_once'))).toBeNull();
 });
 
-for (const scenario of ['accept', 'cancel', 'saved match', 'saved mismatch', 'save failed', 'ticket limit', 'unknown error', 'idle timeout'] as const) {
+for (const scenario of ['accept', 'cancel', 'saved match', 'rotate', 'rotate cancelled', 'rotate conflict', 'rotate stale reply', 'save failed', 'ticket limit', 'unknown error', 'idle timeout'] as const) {
   test(`Windows connection: ${scenario}`, async ({ page }) => {
     const fingerprint = 'ab'.repeat(32);
     const other = 'cd'.repeat(32);
-    const saved = scenario === 'saved match' ? fingerprint : scenario === 'saved mismatch' ? other : null;
+    const rotate = scenario.startsWith('rotate');
+    const direct = scenario === 'rotate';
+    const saved = scenario === 'saved match' ? fingerprint : rotate ? other : null;
     const path = `/api/rdp/profiles/${id}`;
     let attempts = 0;
     const asset = (name: string) => readFileSync(`${__dirname}/../../src/worker/rdp-client/${name}.rdp-text`, 'utf8');
@@ -796,7 +798,13 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'saved mismatch', 'sa
       headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' },
     }));
     await page.route('**/rdp/assets/desktop.js', route => route.fulfill({ contentType: 'text/javascript', body: asset('desktop') }));
-    await page.route('**/rdp/assets/rdp-socket.js', route => route.fulfill({ contentType: 'text/javascript', body: `
+    if (direct) await page.route('**/rdp/assets/rdp-peer.js', r => r.fulfill({ contentType: 'text/javascript', body: `
+      window.prepareCloudSshPeerCarrier = async () => ({
+        activate() { queueMicrotask(() => this.onmessage({ data: JSON.stringify({ type: 'ready', lease: '${id}' }) })); },
+        send(data) { (window.peerControls ??= []).push(JSON.parse(data).type); }, close() {}
+      });
+    ` }));
+    await page.route('**/rdp/assets/rdp-socket.js', route => route.fulfill({ contentType: 'text/javascript', body: direct ? asset('rdp-socket') : `
       window.createCloudSshRdpSocket = () => ({ lease: '${id}', close() { this.lease = undefined; } });
     ` }));
     await page.route('**/rdp/assets/sdl-freerdp.wasm', route => route.fulfill({
@@ -809,14 +817,16 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'saved mismatch', 'sa
       m.callMain = () => {
         const socket = m.createRdpSocket(m.websocket.url);
         if ('${scenario}' === 'idle timeout') { socket.onRelayClose('idle_timeout'); return; }
-        window.certificateResult = m.onWindowsCertificate('${fingerprint}');
+        const check = () => { window.certificateResult = m.onWindowsCertificate('${fingerprint}'); };
+        if (${direct}) socket.onopen = check; else check();
       };
       m.onRuntimeInitialized();
     ` }));
     await page.route(`**${path}`, route => route.request().method() === 'GET'
-      ? route.fulfill({ json: { id, name: 'Windows workstation', revision: 1, hasLogin: true, fingerprint: saved } }) : route.fallback());
+      ? route.fulfill({ json: { id, name: 'Windows workstation', revision: 1, hasLogin: true, fingerprint: saved, ...(direct ? { connector: { state: 'online' } } : {}) } }) : route.fallback());
     await page.route(`**${path}/connect`, async route => {
       if (route.request().method() !== 'POST') return route.fallback();
+      expect(route.request().headers()['x-cloudssh-rdp-transport']).toBe(direct ? 'device' : undefined);
       if (scenario === 'ticket limit' || scenario === 'unknown error') return route.fulfill({ status: 429,
         json: { code: scenario === 'ticket limit' ? 'ticket_limit' : 'unrecognized', detail: 'private upstream detail' } });
       return route.fulfill({ json: await connectReply(route.request(), '1'.repeat(64), 1, { ...syntheticLogin, username: 'test-user' }) });
@@ -824,8 +834,9 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'saved mismatch', 'sa
     await page.route(`**${path}/trust`, route => {
       if (route.request().method() !== 'PUT') return route.fallback();
       attempts++;
-      expect(route.request().postDataJSON()).toEqual({ fingerprint, lease: id, revision: 1 });
-      return route.fulfill({ status: scenario === 'save failed' ? 409 : 200, json: { fingerprint } });
+      expect(route.request().postDataJSON()).toEqual({ fingerprint, lease: id, revision: 1, ...(rotate ? { previousFingerprint: other } : {}) });
+      return route.fulfill({ status: scenario === 'save failed' || scenario === 'rotate conflict' ? 409 : 200,
+        json: { fingerprint, ...(rotate && scenario !== 'rotate stale reply' ? { revision: 2 } : {}) } });
     });
     await page.addInitScript(() => {
       localStorage.setItem('cloudssh_locale', 'en-US');
@@ -853,30 +864,36 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'saved mismatch', 'sa
     } else {
       await expect(dialog).toBeVisible();
       await expect(dialog.locator('#certificate-fingerprint')).toHaveText(Array(32).fill('AB').join(':'));
-      if (scenario === 'saved mismatch') {
-        await expect.poll(result).toBe(-1);
+      await expect.poll(result).toBe(0);
+      const accept = dialog.locator('#certificate-accept');
+      if (rotate) {
         await expect(dialog.locator('#certificate-saved')).toHaveText(Array(32).fill('CD').join(':'));
-        await expect(dialog.getByRole('button', { name: 'Trust and connect' })).toBeHidden();
-      } else {
-        await expect.poll(decision).toBe(0);
-        expect(attempts).toBe(0);
-        if (scenario === 'cancel') await dialog.locator('#certificate-cancel').press('Escape');
-        else await dialog.getByRole('button', { name: 'Trust and connect' }).click();
-        await expect(dialog).toBeHidden();
-        await expect.poll(decision).toBe(scenario === 'accept' ? 1 : -1);
+        await expect(dialog.locator('#certificate-cancel')).toBeFocused();
+        await expect(accept).toHaveText('Update fingerprint and connect');
+        await expect(accept).toBeDisabled();
+        await dialog.getByRole('checkbox').check();
       }
+      await expect(accept).toBeEnabled();
+      await expect.poll(decision).toBe(0);
+      expect(attempts).toBe(0);
+      if (scenario === 'cancel' || scenario === 'rotate cancelled') await dialog.locator('#certificate-cancel').press('Escape');
+      else await accept.click();
+      await expect(dialog).toBeHidden();
+      await expect.poll(decision).toBe(scenario === 'accept' || scenario === 'rotate' ? 1 : -1);
     }
-    expect(attempts).toBe(scenario === 'accept' || scenario === 'save failed' ? 1 : 0);
+    if (direct) expect(await runner.locator('html').evaluate(() => Reflect.get(window, 'peerControls'))).toEqual(['cert_wait', 'cert_done']);
+    expect(attempts).toBe(['accept', 'rotate', 'rotate conflict', 'rotate stale reply', 'save failed'].includes(scenario) ? 1 : 0);
   });
 }
 
-for (const scenario of ['reconnect', 'revision changed', 'fingerprint changed', 'lease ended', 'upstream write failed',
-  'confirmation timeout'] as const) test(`first-use certificate recovery: ${scenario}`, async ({ page }) => {
+for (const scenario of ['reconnect', 'rotate reconnect', 'rotate TLS changed again', 'revision changed', 'fingerprint changed',
+  'lease ended', 'upstream write failed', 'confirmation timeout'] as const) test(`certificate recovery: ${scenario}`, async ({ page }) => {
   const fingerprint = 'ef'.repeat(32);
-  let savedFingerprint: string | null = null;
+  const previousFingerprint = scenario.startsWith('rotate') ? 'ab'.repeat(32) : undefined;
+  let savedFingerprint: string | null = previousFingerprint ?? null;
   let revision = 1;
   let connectCount = 0;
-  let trustCount = 0;
+  let trustCount = 0, listsAfterRotation = 0;
   const clientKeys = new Set<string>();
   if (scenario === 'confirmation timeout') await page.clock.install();
   const asset = (name: string) => readFileSync(`${__dirname}/../../src/worker/rdp-client/${name}.rdp-text`, 'utf8');
@@ -887,26 +904,29 @@ for (const scenario of ['reconnect', 'revision changed', 'fingerprint changed', 
   await page.route('**/api/auth/me', r => r.request().method() === 'GET'
     ? r.fulfill({ json: { id: 1, github_id: 42, username: 'tester', avatar_url: null } }) : r.fallback());
   await page.route('**/api/servers', r => r.request().method() === 'GET' ? r.fulfill({ json: [] }) : r.fallback());
-  await page.route('**/api/rdp/profiles', r => r.request().method() === 'GET' ? r.fulfill({ json: { profiles: [
-    { id, name: 'Domain Win', revision: 1, tags: [], route: 'direct', host: 'rdp.example.com', port: 53389, hasLogin: true, fingerprint: savedFingerprint, username: 'Administrator', last_connected_at: null, created_at: null, updated_at: null },
-  ] } }) : r.fallback());
+  await page.route('**/api/rdp/profiles', r => {
+    if (r.request().method() !== 'GET') return r.fallback();
+    if (trustCount && previousFingerprint) listsAfterRotation++;
+    return r.fulfill({ json: { profiles: [
+      { id, name: 'Domain Win', revision, tags: [], route: 'direct', host: 'rdp.example.com', port: 53389, hasLogin: true, fingerprint: savedFingerprint, username: 'Administrator', last_connected_at: null, created_at: null, updated_at: null },
+    ] } });
+  });
   await page.route(`**/api/rdp/profiles/${id}`, r => r.request().method() === 'GET'
     ? r.fulfill({ json: { id, name: 'Domain Win', revision, route: 'direct', host: 'rdp.example.com', port: 53389, hasLogin: true, fingerprint: savedFingerprint } }) : r.fallback());
   await page.route(`**/api/rdp/profiles/${id}/connect`, async r => {
     if (r.request().method() !== 'POST') return r.fallback();
-    expect(r.request().headers()['x-cloudssh-rdp-saved-revision']).toBe('1');
+    expect(r.request().headers()['x-cloudssh-rdp-saved-revision']).toBe(String(revision));
     connectCount++;
     clientKeys.add(r.request().headers()[keyHeader]);
-    return r.fulfill({ json: await connectReply(r.request(), String(connectCount).repeat(64), 1) });
+    return r.fulfill({ json: await connectReply(r.request(), String(connectCount).repeat(64), revision) });
   });
   await page.route(`**/api/rdp/profiles/${id}/trust`, r => {
     if (r.request().method() !== 'PUT') return r.fallback();
-    expect(r.request().postDataJSON()).toEqual({ fingerprint, revision: 1, lease: id });
+    expect(r.request().postDataJSON()).toEqual({ fingerprint, revision: 1, lease: id, ...(previousFingerprint ? { previousFingerprint } : {}) });
     trustCount++;
-    // The competing edit lands after the original pin was saved and before the retry reads the row.
-    if (scenario === 'revision changed') revision++;
+    if (previousFingerprint || scenario === 'revision changed') revision++;
     savedFingerprint = scenario === 'fingerprint changed' ? 'cd'.repeat(32) : fingerprint;
-    return r.fulfill({ json: { fingerprint } });
+    return r.fulfill({ json: previousFingerprint ? { fingerprint, revision } : { fingerprint } });
   });
   await page.route('**/?lang=en-US', async r => {
     const response = await r.fetch();
@@ -950,7 +970,8 @@ for (const scenario of ['reconnect', 'revision changed', 'fingerprint changed', 
     m.callMain = () => {
       const socket = m.createRdpSocket(m.websocket.url);
       socket.onopen = () => {
-        if (m.onWindowsCertificate('${fingerprint}') === 1) {
+        const leaf = '${scenario}' === 'rotate TLS changed again' && window.__lastTicket.startsWith('2') ? '${'dd'.repeat(32)}' : '${fingerprint}';
+        if (m.onWindowsCertificate(leaf) === 1) {
           m.onWindowsDisplayControl();
           m.onWindowsFirstFrame();
         }
@@ -980,8 +1001,9 @@ for (const scenario of ['reconnect', 'revision changed', 'fingerprint changed', 
     expect(connectCount).toBe(1);
     return;
   }
-  await dialog.getByRole('button', { name: 'Trust and connect' }).click();
-  if (scenario === 'reconnect') {
+  if (previousFingerprint) await dialog.getByRole('checkbox').check();
+  await dialog.locator('#certificate-accept').click();
+  if (scenario === 'reconnect' || scenario === 'rotate reconnect') {
     await expect(status).toContainText('Desktop ready');
     expect(await fromFrame('__lastTicket')).toBe('2'.repeat(64));
     const launchedAgain = await iframe.evaluate((node, fingerprint) => {
@@ -990,6 +1012,8 @@ for (const scenario of ['reconnect', 'revision changed', 'fingerprint changed', 
       return frame.dataset.connectSaved;
     }, fingerprint);
     expect(launchedAgain).toBeUndefined();
+  } else if (scenario === 'rotate TLS changed again') {
+    await expect(status).toHaveText('Certificate was not accepted.');
   } else if (scenario === 'lease ended') {
     await expect(status).toContainText('This desktop session is no longer valid');
   } else if (scenario === 'upstream write failed') {
@@ -999,7 +1023,8 @@ for (const scenario of ['reconnect', 'revision changed', 'fingerprint changed', 
   }
   await expect(dialog).toBeHidden();
   expect(trustCount).toBe(1);
-  expect(connectCount).toBe(scenario === 'reconnect' ? 2 : 1);
+  if (previousFingerprint) await expect.poll(() => listsAfterRotation).toBe(1);
+  expect(connectCount).toBe(scenario === 'reconnect' || previousFingerprint ? 2 : 1);
   expect(clientKeys.size).toBe(connectCount);
 });
 
@@ -1007,11 +1032,19 @@ for (const [errCode, expected] of [
   ['ERRCONNECT_AUTHENTICATION_FAILED', 'Windows rejected the sign-in credentials'],
   ['ERRCONNECT_SECURITY_NEGO_CONNECT_FAILED', 'Security negotiation failed'],
   ['ERRCONNECT_CONNECT_TRANSPORT_FAILED', 'The connection to Windows ended before the desktop appeared'],
+  ['ERRINFO_GRAPHICS_SUBSYSTEM_FAILED', 'RDP reported a graphics or decoding error'],
+  ['ERRCONNECT_ACTIVATION_TIMEOUT', 'FreeRDP timed out activating the Windows session'],
+  ['timeout before certificate', 'FreeRDP did not verify a Windows certificate'],
+  ['timeout after certificate', 'Sign-in is not confirmed'],
+  ['timeout after display control', 'Windows display control was negotiated, but no desktop frame was drawn'],
+  ['timeout after NTLM rejection', 'Windows policy blocked NTLM'],
   ['legacy plaintext', 'Could not securely load Windows sign-in details'],
   ['tampered envelope', 'Could not securely load Windows sign-in details'],
 ] as const) {
   test(`reports distinct safe error message for ${errCode}`, async ({ page }) => {
-    const invalidEnvelope = !errCode.startsWith('ERRCONNECT_');
+    const invalidEnvelope = errCode === 'legacy plaintext' || errCode === 'tampered envelope';
+    const timeout = errCode.startsWith('timeout ');
+    if (timeout) await page.clock.install();
     let attempts = 0;
     const asset = (name: string) => readFileSync(`${__dirname}/../../src/worker/rdp-client/${name}.rdp-text`, 'utf8');
     const isolation = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' };
@@ -1023,11 +1056,21 @@ for (const [errCode, expected] of [
     await page.route('**/rdp/assets/sdl-freerdp.js', r => r.fulfill({ contentType: 'text/javascript', body: `
       const m = window.Module;
       m.FS = { mkdirTree() {}, writeFile() {} };
+      const events = {};
+      m.websocket.on = (name, fn) => { events[name] = fn; };
       m.callMain = () => {
-        document.documentElement.dataset.rdpStarted = 'true';
         m.createRdpSocket(m.websocket.url);
+        events.open();
+        if ('${errCode}'.startsWith('timeout after')) m.onWindowsCertificate('${'ab'.repeat(32)}');
+        if ('${errCode}' === 'timeout after display control') m.onWindowsDisplayControl();
+        if ('${errCode}' === 'timeout after NTLM rejection') {
+          m.printErr('ERRCONNECT_NTLM_BLOCKED');
+          m.printErr('ERRCONNECT_AUTHENTICATION_FAILED');
+          m.printErr('ERRCONNECT_CONNECT_TRANSPORT_FAILED');
+        }
         m.printErr('[ERROR][com.freerdp.core] - ${errCode} [0x00020000] private-host-secret');
-        m.onExit(0);
+        document.documentElement.dataset.rdpStarted = 'true';
+        if (!${timeout}) m.onExit(0);
       };
       m.onRuntimeInitialized();
     ` }));
@@ -1054,6 +1097,10 @@ for (const [errCode, expected] of [
     await page.goto(`/rdp/${id}`);
     const frame = page.frameLocator('iframe');
     const status = frame.locator('#status');
+    if (timeout) {
+      await expect(frame.locator('html')).toHaveAttribute('data-rdp-started', 'true');
+      await page.clock.fastForward(30_000);
+    }
     await expect(status).toContainText(expected);
     await expect(status).not.toContainText('private-host-secret');
     if (invalidEnvelope) await expect(frame.locator('html')).not.toHaveAttribute('data-rdp-started', 'true');

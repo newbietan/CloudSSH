@@ -28,7 +28,7 @@ export class RdpWorkspace {
   private returning?: HTMLDialogElement;
   private accountUrl = '/';
 
-  constructor(private readonly hasSshTabs: () => boolean, private readonly onRecorded: () => void,
+  constructor(private readonly hasSshTabs: () => boolean, private readonly refreshCard: () => void,
     private readonly standalone = false, private readonly sameOwner?: () => Promise<boolean>) {
     window.addEventListener('popstate', () => {
       if (this.dialog) void this.leave(); else this.restore(false);
@@ -219,9 +219,10 @@ export class RdpWorkspace {
       latency.update(null);
       presentation.setReady(false);
     });
-    frame.addEventListener('cloudssh-rdp-recorded', () => {
-      if (current()) this.onRecorded();
-    }, { once: true });
+    // Both events change card metadata, but only a real first frame may record a connection.
+    const refreshCard = () => { if (current()) this.refreshCard(); };
+    frame.addEventListener('cloudssh-rdp-recorded', refreshCard, { once: true });
+    frame.addEventListener('cloudssh-rdp-trust-updated', refreshCard, { once: true });
     this.observer = new MutationObserver(applyTheme);
     this.observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-theme', 'data-ui-style'] });
     dialog.oncancel = event => { event.preventDefault(); }; // Don't drop a desktop on an accidental Esc.

@@ -237,10 +237,12 @@ export class RdpStore {
     if (kind === 'profiles' && isRdpId(id) && route === `profiles/${id}/trust` && request.method === 'PUT') {
       const payload = await readRdpJson(request) as Record<string, unknown> | null;
       if (!payload || !digestPattern(payload.fingerprint) || !isRdpId(payload.lease) ||
-          typeof payload.revision !== 'number' || !Number.isSafeInteger(payload.revision)) {
+          typeof payload.revision !== 'number' || !Number.isSafeInteger(payload.revision) || payload.revision < 1 ||
+          (payload.previousFingerprint !== undefined && (!digestPattern(payload.previousFingerprint) ||
+            payload.previousFingerprint === payload.fingerprint))) {
         return error(400, 'invalid_request');
       }
-      return this.trust(userId, id, payload.revision, payload.lease, payload.fingerprint);
+      return this.trust(userId, id, payload.revision, payload.lease, payload.fingerprint, payload.previousFingerprint);
     }
     if (kind === 'profiles' && isRdpId(id) && route === `profiles/${id}/login-identity` && request.method === 'POST') {
       const body = await readRdpJson(request) as { revision?: number } | null;
@@ -279,18 +281,36 @@ export class RdpStore {
     return error(404, 'not_found');
   }
 
-  private trust(userId: number, id: string, revision: number, lease: string, fingerprint: string): Response {
+  private trust(userId: number, id: string, revision: number, lease: string, fingerprint: string,
+    previousFingerprint?: string): Response {
     return this.transaction(() => {
       const row = this.row(userId, id);
       if (!row) return error(404, 'not_found');
-      if (row.revision !== revision || (row.fingerprint && row.fingerprint !== fingerprint)) return error(409, 'trust_changed');
+      if (row.revision !== revision) return error(409, 'trust_changed');
       const active = this.sql.exec(`SELECT id FROM rdp_leases
         WHERE user_id=? AND profile=? AND revision=? AND id=? AND expires>?`, userId, id, revision, lease, Date.now()).toArray();
       if (!active.length) return error(409, 'session_ended');
+      if (previousFingerprint !== undefined) {
+        // Compare against exactly the pin shown in the warning, never clear it to re-enter TOFU.
+        const changed = this.sql.exec(`UPDATE rdp_profiles SET fingerprint=?, revision=revision+1
+          WHERE user_id=? AND id=? AND revision=? AND fingerprint=?`, fingerprint, userId, id, revision, previousFingerprint);
+        if (!changed.rowsWritten) return error(409, 'trust_changed');
+        // A tab holding the old profile may not mint or claim another ticket for the retired pin.
+        // Only the TLS handshake the user just verified may continue on the new revision.
+        this.sql.exec('UPDATE rdp_leases SET revision=? WHERE user_id=? AND profile=? AND id=?', revision + 1, userId, id, lease);
+        this.sql.exec('DELETE FROM rdp_leases WHERE user_id=? AND profile=? AND id<>?', userId, id, lease);
+        this.sql.exec('DELETE FROM rdp_tickets WHERE user_id=? AND profile=?', userId, id);
+        this.sql.exec('UPDATE rdp_card_metadata SET identity_revision=? WHERE user_id=? AND profile=? AND identity_revision=?',
+          revision + 1, userId, id, revision);
+        this.devices.clearPending(userId, id); // Retire revision-bound setup grants, not registered connectors.
+        this.peers.invalidate(userId, id, lease);
+        return rdpJson({ fingerprint, revision: revision + 1 });
+      }
+      // Old clients and first-use confirmations can never replace an existing pin.
+      if (row.fingerprint && row.fingerprint !== fingerprint) return error(409, 'trust_changed');
       if (!row.fingerprint) {
         this.sql.exec('UPDATE rdp_profiles SET fingerprint=? WHERE user_id=? AND id=? AND revision=? AND fingerprint=?', fingerprint, userId, id, revision, '');
       }
-      // First acceptance does not change the destination revision during a live TLS handshake.
       return rdpJson({ fingerprint });
     });
   }
@@ -314,7 +334,7 @@ export class RdpStore {
     return this.transaction(() => {
       const id = existing?.id ?? crypto.randomUUID();
       const revision = (existing?.revision ?? 0) + 1;
-      // Preserve newer first-use acceptance made while encryption or body parsing awaited.
+      // Preserve first-use acceptance during encryption/body parsing. A concurrent rotation changes revision.
       const fingerprint = sameTarget && existing ? this.row(userId, id)?.fingerprint ?? '' : '';
       if (existing) {
         const result = this.sql.exec(`UPDATE rdp_profiles SET revision=?, name=?, route=?, host=?, fingerprint=?, access=?

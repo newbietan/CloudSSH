@@ -1,10 +1,15 @@
 const dictionary = {
-  'en-US': ['Back to CloudSSH', 'Remote Desktop', 'Username', 'Domain (optional)', 'Windows password', 'Connect', 'Disconnect', 'Full screen', 'Loading the saved desktop…', 'Open this desktop from the server list after completing its settings.', 'Saved Windows sign-in details are incomplete. Edit the device and try again.', 'Downloading the desktop client…', 'Starting the desktop client…', 'Connecting to Windows…', 'Checking the Windows certificate and signing in…', 'Desktop ready. Click the desktop to control it.', 'Connection ended. Return to the server list to reconnect.', 'Could not start the desktop. Return to the server list to retry.', 'Desktop startup timed out.', 'No desktop appeared. Verify the certificate and Windows credentials, then retry.', 'This browser does not support the required shared memory.', 'Device or session changed. Refresh the page.', 'The connection is too slow or ended.', 'Full screen is unavailable.', 'Windows rejected the sign-in credentials, or NLA sign-in is not allowed for this account.', 'Security negotiation failed. Ensure Windows Remote Desktop enables NLA (CredSSP) and no proxy alters TLS.', 'The connection to Windows ended before the desktop appeared. Check NLA, credentials, or any port forwarder.'],
-  'zh-CN': ['返回 CloudSSH', '远程桌面', '用户名', '域（可选）', 'Windows 密码', '连接', '断开', '全屏', '正在读取已保存的桌面…', '请先补全设备配置，再从服务器列表打开桌面。', '保存的 Windows 登录信息不完整，请编辑设备后重试。', '正在下载桌面客户端…', '正在启动桌面客户端…', '正在连接 Windows…', '正在验证 Windows 证书并登录…', 'Windows 桌面已显示，点击画布可操作。', '连接已断开，可返回服务器列表重新连接。', '桌面启动失败，请返回服务器列表重试。', '桌面客户端启动超时。', '未收到桌面画面，请核对证书和 Windows 凭据后重试。', '当前浏览器不支持所需的共享内存。', '设备或登录已变化，请刷新页面。', '连接过慢或已断开。', '当前无法进入全屏。', 'Windows 拒绝了当前登录凭据，或该账号不允许通过 NLA 远程登录。', '安全协商失败：请确认 Windows 远程桌面已启用 NLA（CredSSP），且链路未替换 TLS 证书。', '与 Windows 的连接在显示桌面前中断，请核对 NLA、Windows 凭据或端口转发/代理设置。'],
-  'zh-TW': ['返回 CloudSSH', '遠端桌面', '使用者名稱', '網域（選填）', 'Windows 密碼', '連線', '中斷', '全螢幕', '正在讀取已儲存的桌面…', '請先補全裝置設定，再從伺服器清單開啟桌面。', '儲存的 Windows 登入資訊不完整，請編輯裝置後重試。', '正在下載桌面客戶端…', '正在啟動桌面客戶端…', '正在連線至 Windows…', '正在驗證 Windows 憑證並登入…', 'Windows 桌面已顯示，點擊畫布即可操作。', '連線已中斷，可返回伺服器清單重新連線。', '桌面啟動失敗，請返回伺服器清單重試。', '桌面客戶端啟動逾時。', '未收到桌面畫面，請核對憑證和 Windows 登入資訊後重試。', '目前瀏覽器不支援所需的共享記憶體。', '裝置或登入已變更，請重新整理。', '連線過慢或已中斷。', '目前無法使用全螢幕。', 'Windows 拒絕了目前的登入憑證，或該帳號不允許透過 NLA 遠端登入。', '安全協商失敗：請確認 Windows 遠端桌面已啟用 NLA（CredSSP），且連線未替換 TLS 憑證。', '與 Windows 的連線在顯示桌面前中斷，請核對 NLA、Windows 登入資訊或連接埠轉發/代理設定。'],
+  'en-US': ['Back to CloudSSH', 'Remote Desktop', 'Username', 'Domain (optional)', 'Windows password', 'Connect', 'Disconnect', 'Full screen', 'Loading the saved desktop…', 'Open this desktop from the server list after completing its settings.', 'Saved Windows sign-in details are incomplete. Edit the device and try again.', 'Downloading the desktop client…', 'Starting the desktop client…', 'Connecting to Windows…', 'Checking the Windows certificate and signing in…', 'Desktop ready. Click the desktop to control it.', 'Connection ended. Return to the server list to reconnect.', 'Could not start the desktop. Return to the server list to retry.', 'Desktop startup timed out.', 'No desktop appeared. FreeRDP did not verify a Windows certificate. Check the RDP listener and TLS/NLA negotiation.', 'This browser does not support the required shared memory.', 'Device or session changed. Refresh the page.', 'The connection is too slow or ended.', 'Full screen is unavailable.', 'Windows rejected the sign-in credentials, or NLA sign-in is not allowed for this account.', 'Security negotiation failed. Ensure Windows Remote Desktop enables NLA (CredSSP) and no proxy alters TLS.', 'The connection to Windows ended before the desktop appeared. Check NLA, credentials, or any port forwarder.'],
+  'zh-CN': ['返回 CloudSSH', '远程桌面', '用户名', '域（可选）', 'Windows 密码', '连接', '断开', '全屏', '正在读取已保存的桌面…', '请先补全设备配置，再从服务器列表打开桌面。', '保存的 Windows 登录信息不完整，请编辑设备后重试。', '正在下载桌面客户端…', '正在启动桌面客户端…', '正在连接 Windows…', '正在验证 Windows 证书并登录…', 'Windows 桌面已显示，点击画布可操作。', '连接已断开，可返回服务器列表重新连接。', '桌面启动失败，请返回服务器列表重试。', '桌面客户端启动超时。', '未收到桌面画面：FreeRDP 尚未验证 Windows 证书，请检查 RDP 监听服务和 TLS/NLA 协商。', '当前浏览器不支持所需的共享内存。', '设备或登录已变化，请刷新页面。', '连接过慢或已断开。', '当前无法进入全屏。', 'Windows 拒绝了当前登录凭据，或该账号不允许通过 NLA 远程登录。', '安全协商失败：请确认 Windows 远程桌面已启用 NLA（CredSSP），且链路未替换 TLS 证书。', '与 Windows 的连接在显示桌面前中断，请核对 NLA、Windows 凭据或端口转发/代理设置。'],
+  'zh-TW': ['返回 CloudSSH', '遠端桌面', '使用者名稱', '網域（選填）', 'Windows 密碼', '連線', '中斷', '全螢幕', '正在讀取已儲存的桌面…', '請先補全裝置設定，再從伺服器清單開啟桌面。', '儲存的 Windows 登入資訊不完整，請編輯裝置後重試。', '正在下載桌面客戶端…', '正在啟動桌面客戶端…', '正在連線至 Windows…', '正在驗證 Windows 憑證並登入…', 'Windows 桌面已顯示，點擊畫布即可操作。', '連線已中斷，可返回伺服器清單重新連線。', '桌面啟動失敗，請返回伺服器清單重試。', '桌面客戶端啟動逾時。', '未收到桌面畫面：FreeRDP 尚未驗證 Windows 憑證，請檢查 RDP 接聽服務及 TLS/NLA 協商。', '目前瀏覽器不支援所需的共享記憶體。', '裝置或登入已變更，請重新整理。', '連線過慢或已中斷。', '目前無法使用全螢幕。', 'Windows 拒絕了目前的登入憑證，或該帳號不允許透過 NLA 遠端登入。', '安全協商失敗：請確認 Windows 遠端桌面已啟用 NLA（CredSSP），且連線未替換 TLS 憑證。', '與 Windows 的連線在顯示桌面前中斷，請核對 NLA、Windows 登入資訊或連接埠轉發/代理設定。'],
 };
 // Only these local messages may reach the status line, never an upstream error or close reason.
 const failureText = {
+  verified_no_frame: ['Windows certificate verified, but no desktop frame was drawn. Sign-in is not confirmed. Check Windows sign-in and Remote Desktop session events.', 'Windows 证书已验证，但未绘制桌面首帧；这不能证明登录成功。请检查 Windows 登录和远程桌面会话事件。', 'Windows 憑證已驗證，但未繪製桌面首幀；這不能證明登入成功。請檢查 Windows 登入及遠端桌面工作階段事件。'],
+  display_no_frame: ['Windows display control was negotiated, but no desktop frame was drawn. Check the Windows RDP graphics events and OS build.', '已与 Windows 协商显示控制，但未绘制桌面首帧。请检查 Windows 的 RDP 图形事件和系统内部版本。', '已與 Windows 協商顯示控制，但未繪製桌面首幀。請檢查 Windows 的 RDP 圖形事件及系統組建。'],
+  ntlm_blocked: ['Windows policy blocked NTLM. This browser client does not support Kerberos. Use a client approved for that policy.', 'Windows 策略阻止了 NTLM；此浏览器客户端不支持 Kerberos。请使用符合该策略的客户端。', 'Windows 原則封鎖了 NTLM；此瀏覽器用戶端不支援 Kerberos。請使用符合該原則的用戶端。'],
+  graphics_failed: ['RDP reported a graphics or decoding error before the first frame. Check the RdpCoreTS events and try a current browser.', '首帧前 RDP 报告了图形或解码错误。请检查 Windows 的 RdpCoreTS 事件，并用更新的浏览器对照。', '首幀前 RDP 回報了圖形或解碼錯誤。請檢查 Windows 的 RdpCoreTS 事件，並用更新的瀏覽器對照。'],
+  activation_timeout: ['FreeRDP timed out activating the Windows session. Check the Remote Desktop session events and OS build.', 'FreeRDP 等待 Windows 会话激活超时。请检查远程桌面会话事件和系统内部版本。', 'FreeRDP 等待 Windows 工作階段啟用逾時。請檢查遠端桌面工作階段事件及系統組建。'],
   peer_unavailable: ['The Windows connector is not online. Check the Windows service and CloudSSH site.', 'Windows 连接器不在线，请检查 Windows 服务和 CloudSSH 站点。', 'Windows 連接器不在線，請檢查 Windows 服務和 CloudSSH 站點。'],
   peer_timeout: ['The direct connection timed out. Check the connector and UDP network.', '直连超时，请检查连接器和 UDP 网络。', '直連逾時，請檢查連接器和 UDP 網路。'],
   peer_failed: ['Could not connect directly. Check the connector, UDP connectivity and local RDP.', '无法直连，请检查连接器、UDP 网络和本机 RDP。', '無法直連，請檢查連接器、UDP 網路和本機 RDP。'],
@@ -26,9 +31,27 @@ const failureText = {
   slow_connection: ['Data transfer stalled. Check your network and reconnect.', '数据传输停滞，请检查网络后重新连接。', '資料傳輸停滯，請檢查網路後重新連線。'],
 };
 const trustText = {
-  'en-US': ['First connection to Windows', 'Verify this certificate fingerprint through a trusted source before accepting. An unexpected fingerprint may mean you reached a different server.', 'Cancel', 'Trust and connect', 'Windows certificate changed', 'Connection blocked. The received fingerprint differs from the one you saved.', 'Previously saved fingerprint', 'Could not record certificate trust. Reconnect and try again.', 'Waiting for certificate confirmation.', 'Certificate was not accepted.'],
-  'zh-CN': ['首次连接此 Windows 服务器', '请通过可信方式核对证书指纹再确认。意外的指纹可能表示你连接到了另一台服务器。', '取消', '信任并连接', 'Windows 证书已变化', '连接已阻止：收到的证书指纹与已保存的指纹不一致。', '已保存的指纹', '无法保存证书信任，请重新连接。', '等待确认 Windows 证书。', '未接受 Windows 证书。'],
-  'zh-TW': ['首次連線至此 Windows 伺服器', '請透過可信方式核對憑證指紋再確認。意外的指紋可能表示你連線到了另一台伺服器。', '取消', '信任並連線', 'Windows 憑證已變更', '連線已阻擋：收到的憑證指紋與已儲存的指紋不一致。', '已儲存的指紋', '無法儲存憑證信任，請重新連線。', '等待確認 Windows 憑證。', '未接受 Windows 憑證。'],
+  'en-US': {
+    first: 'First connection to Windows', help: 'Verify this certificate fingerprint through a trusted source before accepting.',
+    changed: 'Windows certificate changed', warning: 'Windows sign-in is blocked. This may be a different server or an intercepted connection. Cancel unless you can verify the new fingerprint independently, for example at the Windows console.',
+    received: 'Received certificate · SHA-256', saved: 'Previously saved fingerprint · SHA-256', verified: 'I independently verified the new fingerprint.',
+    cancel: 'Cancel', accept: 'Trust and connect', replace: 'Update fingerprint and connect', failed: 'Could not record certificate trust. Reopen the device and check again.',
+    waiting: 'Waiting for certificate confirmation.', rejected: 'Certificate was not accepted.',
+  },
+  'zh-CN': {
+    first: '首次连接此 Windows 服务器', help: '请通过可信渠道核对证书指纹再确认。',
+    changed: 'Windows 证书已变化', warning: '已阻止 Windows 登录。这可能是另一台服务器，也可能是连接被拦截。请通过 Windows 管理控制台等独立渠道核对新指纹；无法确认请取消。',
+    received: '本次收到的证书 · SHA-256', saved: '已保存的指纹 · SHA-256', verified: '我已通过独立渠道核对新指纹。',
+    cancel: '取消', accept: '信任并连接', replace: '更新指纹并连接', failed: '无法保存证书信任，请重新打开设备并核对。',
+    waiting: '等待确认 Windows 证书。', rejected: '未接受 Windows 证书。',
+  },
+  'zh-TW': {
+    first: '首次連線至此 Windows 伺服器', help: '請透過可信管道核對憑證指紋再確認。',
+    changed: 'Windows 憑證已變更', warning: '已阻擋 Windows 登入。這可能是另一台伺服器，也可能是連線遭攔截。請透過 Windows 管理主控台等獨立管道核對新指紋；無法確認請取消。',
+    received: '本次收到的憑證 · SHA-256', saved: '已儲存的指紋 · SHA-256', verified: '我已透過獨立管道核對新指紋。',
+    cancel: '取消', accept: '信任並連線', replace: '更新指紋並連線', failed: '無法儲存憑證信任，請重新開啟裝置並核對。',
+    waiting: '等待確認 Windows 憑證。', rejected: '未接受 Windows 憑證。',
+  },
 };
 // Match the workspace language, including an explicit ?lang override in the parent.
 let requested = window.frameElement?.ownerDocument.documentElement.lang;
@@ -63,9 +86,11 @@ const viewportSize = () => {
 };
 const deviceId = location.pathname.split('/')[2];
 const api = '/api/rdp/profiles/' + deviceId;
-const authErrors = /\bERRCONNECT_(?:AUTHENTICATION_FAILED|LOGON_FAILURE|WRONG_PASSWORD|ACCOUNT_DISABLED|ACCOUNT_EXPIRED|ACCOUNT_LOCKED_OUT|ACCOUNT_RESTRICTION|PASSWORD_CERTAINLY_EXPIRED|PASSWORD_EXPIRED|PASSWORD_MUST_CHANGE|LOGON_TYPE_NOT_GRANTED|NO_OR_MISSING_CREDENTIALS|NTLM_BLOCKED|ACCESS_DENIED|INSUFFICIENT_PRIVILEGES|KDC_UNREACHABLE)\b/;
+const authErrors = /\bERRCONNECT_(?:AUTHENTICATION_FAILED|LOGON_FAILURE|WRONG_PASSWORD|ACCOUNT_DISABLED|ACCOUNT_EXPIRED|ACCOUNT_LOCKED_OUT|ACCOUNT_RESTRICTION|PASSWORD_CERTAINLY_EXPIRED|PASSWORD_EXPIRED|PASSWORD_MUST_CHANGE|LOGON_TYPE_NOT_GRANTED|NO_OR_MISSING_CREDENTIALS|ACCESS_DENIED|INSUFFICIENT_PRIVILEGES|KDC_UNREACHABLE)\b/;
 const securityErrors = /\bERRCONNECT_(?:SECURITY_NEGO_CONNECT_FAILED|TLS_CONNECT_FAILED|HYBRID_REQUIRED_BY_SERVER)\b/;
 const transportErrors = /\bERRCONNECT_CONNECT_TRANSPORT_FAILED\b/;
+const ntlmErrors = /\b(?:ERRCONNECT|STATUS)_NTLM_BLOCKED\b/;
+const graphicsErrors = /\b(?:ERRINFO_GRAPHICS_(?:MODE_NOT_SUPPORTED|SUBSYSTEM_(?:RESET_)?FAILED)|H264 decompress failed|rdpgfx_decode_AVC(?:420|444) failed)\b/;
 // Keep both ABIs aligned with src/rdp-schema.ts. Existing trust and peer renewal still use v5.
 const clientRevision = '5';
 const connectRevision = '6';
@@ -73,6 +98,9 @@ const trust = trustText[locale];
 const certificate = el('certificate');
 const acceptCertificate = el('certificate-accept');
 const cancelCertificate = el('certificate-cancel');
+// Mount this input only in an active rotation prompt; the desktop itself has no input fields.
+const verifiedCertificate = document.createElement('input');
+verifiedCertificate.type = 'checkbox';
 const formatFingerprint = value => value.toUpperCase().match(/../g).join(':');
 const base = '/rdp/assets/';
 let socket;
@@ -150,7 +178,7 @@ async function openConnectLogin(grant) {
   } finally { bytes.fill(0); }
 }
 
-async function run(preferDirect) {
+async function run(preferDirect, reconnectFingerprint) {
   let password;
   const abort = new AbortController();
   let stopped = false;
@@ -231,15 +259,20 @@ async function run(preferDirect) {
     if (event !== settledResize) { event.stopImmediatePropagation(); scheduleLayout(); }
   }, { capture: true, signal: abort.signal });
   layout();
-  let pendingFingerprint;
+  let pendingTrust;
   let decision = -1;
   let acceptedTrust;
-  let freerdpError = 0;
-  const watch = (ms, reason) => {
+  let freerdpError;
+  // No first paint is an observation, not a diagnosis. DISP is optional; certificate acceptance
+  // precedes CredSSP and alone cannot prove either a successful logon or a graphics failure.
+  const beforeFrame = () => freerdpError ?? (negotiatedResize ? failure('display_no_frame')
+    : decision === 1 ? failure('verified_no_frame') : msg[19]);
+  const watch = (ms, reason = beforeFrame) => {
     clearTimeout(timer);
-    timer = setTimeout(() => finish(reason), ms);
+    timer = setTimeout(() => finish(typeof reason === 'function' ? reason() : reason), ms);
   };
-  function finish(reason, keepDialog = false) {
+  const runtimeExit = code => finish(ready ? (code ? 22 : 16) : beforeFrame());
+  function finish(reason) {
     if (stopped) return;
     stopped = true;
     password = ticket = undefined;
@@ -253,58 +286,80 @@ async function run(preferDirect) {
     decision = -1;
     acceptCertificate.disabled = true;
     cancelCertificate.disabled = false;
-    if (!keepDialog && certificate.open) certificate.close();
+    pendingTrust = undefined;
+    dismissCertificate();
     if (typeof reason === 'number') show(reason);
     else { status.classList.remove('desktop-ready'); status.textContent = reason; }
   }
+  function dismissCertificate() {
+    if (certificate.open) certificate.close();
+    verifiedCertificate.remove();
+  }
   function displayCertificate(fingerprint, saved) {
-    el('certificate-title').textContent = trust[saved ? 4 : 0];
-    el('certificate-help').textContent = trust[saved ? 5 : 1];
+    el('certificate-title').textContent = saved ? trust.changed : trust.first;
+    el('certificate-help').textContent = saved ? trust.warning : trust.help;
+    el('certificate-received-label').textContent = trust.received;
     el('certificate-fingerprint').textContent = formatFingerprint(fingerprint);
     el('certificate-saved-box').hidden = !saved;
-    el('certificate-saved-label').textContent = trust[6];
+    el('certificate-saved-label').textContent = trust.saved;
     el('certificate-saved').textContent = saved ? formatFingerprint(saved) : '';
-    acceptCertificate.textContent = trust[3];
-    cancelCertificate.textContent = trust[2];
-    acceptCertificate.hidden = !!saved;
+    const verifyBox = el('certificate-verify-box');
+    verifyBox.hidden = !saved;
+    if (saved) verifyBox.prepend(verifiedCertificate);
+    el('certificate-verify-label').textContent = trust.verified;
+    verifiedCertificate.checked = false;
+    verifiedCertificate.disabled = !saved;
+    verifiedCertificate.onchange = () => {
+      if (!verifiedCertificate.disabled) acceptCertificate.disabled = stopped || !verifiedCertificate.checked;
+    };
+    acceptCertificate.textContent = saved ? trust.replace : trust.accept;
+    cancelCertificate.textContent = trust.cancel;
     acceptCertificate.disabled = !!saved;
     cancelCertificate.disabled = false;
     if (!certificate.open) certificate.showModal();
   }
   cancelCertificate.onclick = () => {
     if (stopped) return certificate.close();
-    finish(trust[9]);
+    finish(trust.rejected);
   };
   certificate.oncancel = event => { event.preventDefault(); if (!cancelCertificate.disabled) cancelCertificate.click(); };
   acceptCertificate.onclick = () => {
-    if (stopped || !pendingFingerprint || !socket?.lease || acceptCertificate.disabled) return;
-    const fingerprint = pendingFingerprint;
-    const lease = socket.lease;
-    const revision = profile.revision;
-    acceptCertificate.disabled = cancelCertificate.disabled = true;
+    const prompt = pendingTrust;
+    if (stopped || !certificate.open || !prompt || decision !== 0 || socket?.lease !== prompt.lease || acceptCertificate.disabled ||
+        (prompt.previousFingerprint && !verifiedCertificate.checked)) return;
+    const { fingerprint, revision, lease, previousFingerprint } = prompt;
+    acceptCertificate.disabled = cancelCertificate.disabled = verifiedCertificate.disabled = true;
     void (async () => {
       const response = await request(api + '/trust', {
         method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-CloudSSH-RDP-Client': clientRevision },
         signal: AbortSignal.any([abort.signal, AbortSignal.timeout(10_000)]),
-        body: JSON.stringify({ fingerprint, revision, lease }),
+        body: JSON.stringify({ fingerprint, revision, lease, previousFingerprint }),
       });
-      if (!response.ok || (await response.json()).fingerprint !== fingerprint) throw new Error('trust rejected');
-      if (stopped || pendingFingerprint !== fingerprint || socket.lease !== lease) return;
-      acceptedTrust = { revision, fingerprint };
+      const result = response.ok && await response.json();
+      // Older backends cannot acknowledge a rotation. Never release CredSSP on a stale or partial result.
+      if (result?.fingerprint !== fingerprint || (previousFingerprint && result.revision !== revision + 1)) {
+        throw new Error('trust rejected');
+      }
+      if (stopped || pendingTrust !== prompt || socket.lease !== lease) return;
+      if (previousFingerprint) {
+        profile.revision = result.revision;
+        tellWorkspace('trust-updated'); // The card revision also changed if NLA later fails to sign in.
+      }
+      profile.fingerprint = fingerprint;
+      acceptedTrust = { revision: profile.revision, fingerprint };
       socket.endCertWait?.();
       if (stopped) return;
-      certificate.close();
+      dismissCertificate();
       if (socket.certHold) {
         // Keep native TLS waiting. Only the relay can confirm this held socket needs a retry.
         show(13);
         watch(5_000, 26);
         return;
       }
-      profile.fingerprint = fingerprint;
       decision = 1;
       show(14);
-      watch(30_000, 19);
-    })().catch(() => finish(trust[7]));
+      watch(30_000);
+    })().catch(() => finish(trust.failed));
   };
   terminate = finish;
   show(11);
@@ -406,9 +461,10 @@ async function run(preferDirect) {
             return;
           }
           const detail = failure(reason === 'connect_timeout' ? 'upstream_unavailable' : reason);
-          if (detail) finish(detail);
+          if (!ready && freerdpError && (reason === 'peer_failed' || reason === 'peer_ended')) finish(freerdpError);
+          else if (detail) finish(detail);
           else if (!ready && (reason === 'upstream_closed' || reason === 'upstream_read_failed' || reason === 'upstream_write_failed')) {
-            finish(freerdpError || 26);
+            finish(freerdpError ?? 26);
           }
         };
         socket.onDesktopRecorded = () => {
@@ -428,19 +484,21 @@ async function run(preferDirect) {
       onWindowsCertificate(fingerprint) {
         if (stopped) return -1;
         if (fingerprint === null) return decision;
-        if (!/^[a-f0-9]{64}$/.test(fingerprint) || !socket?.lease) return -1;
-        if (profile.fingerprint) {
-          if (fingerprint === profile.fingerprint) return 1;
-          displayCertificate(fingerprint, profile.fingerprint);
-          finish(trust[5], true);
+        if (typeof fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(fingerprint) || !socket?.lease ||
+            (reconnectFingerprint && fingerprint !== reconnectFingerprint) ||
+            (pendingTrust && (fingerprint !== pendingTrust.fingerprint || socket.lease !== pendingTrust.lease))) {
+          finish(trust.rejected);
           return -1;
         }
-        if (pendingFingerprint) return fingerprint === pendingFingerprint ? decision : -1;
-        pendingFingerprint = fingerprint;
-        decision = 0;
-        socket?.beginCertWait?.();
-        displayCertificate(fingerprint);
-        status.textContent = trust[8];
+        if (pendingTrust) return decision;
+        if (fingerprint === profile.fingerprint) { decision = 1; return 1; }
+        if (decision === 1 || ready) { finish(trust.rejected); return -1; }
+        pendingTrust = { fingerprint, previousFingerprint: profile.fingerprint ?? undefined, revision: profile.revision, lease: socket.lease };
+        decision = 0; // The native TLS thread waits here, before it can send Windows credentials.
+        socket.beginCertWait?.();
+        if (stopped) return -1;
+        displayCertificate(fingerprint, pendingTrust.previousFingerprint);
+        status.textContent = trust.waiting;
         watch(85_000, failure('cert_timeout'));
         return 0;
       },
@@ -452,7 +510,7 @@ async function run(preferDirect) {
         tellWorkspace('display-control');
       },
       onWindowsFirstFrame() {
-        if (stopped || ready) return;
+        if (stopped || ready || decision === 0) return;
         clearTimeout(timer);
         ready = true;
         // Cancel browser defaults only on the live canvas. SDL receives the original pointer events.
@@ -477,15 +535,20 @@ async function run(preferDirect) {
       },
       print() {},
       printErr(line) {
-        if (typeof line !== 'string') return;
-        if (authErrors.test(line)) freerdpError = 24;
-        else if (securityErrors.test(line)) freerdpError = 25;
-        else if (!freerdpError && transportErrors.test(line)) freerdpError = 26;
+        if (ready || stopped || typeof line !== 'string') return;
+        // Keep only a local message; neither retain nor print raw FreeRDP output. A secondary
+        // transport/negotiation failure must not erase a specific Windows policy/codec error.
+        if (ntlmErrors.test(line)) freerdpError = failure('ntlm_blocked');
+        else if (graphicsErrors.test(line)) freerdpError = failure('graphics_failed');
+        else if (!freerdpError || freerdpError === msg[26]) {
+          if (authErrors.test(line)) freerdpError = msg[24];
+          else if (securityErrors.test(line)) freerdpError = msg[25];
+          else if (/\bERRCONNECT_ACTIVATION_TIMEOUT\b/.test(line)) freerdpError = failure('activation_timeout');
+          else if (transportErrors.test(line)) freerdpError = msg[26];
+        }
       },
-      onExit(code) {
-        finish(code ? (ready ? 22 : (freerdpError || 19)) : (ready ? 16 : (freerdpError || 19)));
-      },
-      onAbort() { finish(17); },
+      onExit: runtimeExit,
+      onAbort() { finish(freerdpError ?? 17); },
       onRuntimeInitialized() {
         if (stopped) return;
         void (async () => {
@@ -509,9 +572,9 @@ async function run(preferDirect) {
           password = login.password;
           ticket = grant.ticket;
           grant = login = undefined;
-          window.Module.websocket.on?.('open', () => { if (!stopped) { show(14); watch(30_000, 19); } });
-          window.Module.websocket.on?.('error', () => finish(22));
-          window.Module.websocket.on?.('close', () => finish(ready ? 16 : (freerdpError || 19)));
+          window.Module.websocket.on?.('open', () => { if (!stopped) { show(14); watch(30_000); } });
+          window.Module.websocket.on?.('error', () => finish(freerdpError ?? 22));
+          window.Module.websocket.on?.('close', () => runtimeExit(0));
           initialSize = viewportSize();
           layout(true);
           // Local placeholder for the WASM socket adapter. Only the Worker's claimed profile selects the TCP destination.
@@ -520,7 +583,7 @@ async function run(preferDirect) {
           if (domain) args.push('/d:' + domain);
           const result = window.Module.callMain(args);
           if (result && typeof result.then === 'function') {
-            result.then(code => finish(code ? (ready ? 22 : (freerdpError || 19)) : (ready ? 16 : (freerdpError || 19))), () => finish(17));
+            result.then(runtimeExit, () => finish(freerdpError ?? 17));
           }
         })().catch(() => finish(17));
       },
@@ -566,5 +629,5 @@ void (async () => {
   tellWorkspace('starting', profile.name);
   // A certificate-confirmation reconnect is explicitly the same relay and may not change routes.
   const preferDirect = reconnectRevision === undefined && profile.connector?.state === 'online';
-  void run(preferDirect);
+  void run(preferDirect, reconnectFingerprint);
 })().catch(() => show(21));
