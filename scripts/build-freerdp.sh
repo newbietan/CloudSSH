@@ -303,6 +303,60 @@ patch('nla.c', '\tnla->state = state;\n\treturn TRUE;', '''\tnla->state = state;
 \treturn TRUE;''')
 PY
 
+# Bracket just the client's pubKeyAuth write and decoded reply. Cross the pthread boundary
+# with fixed integers only; observe the existing write result, never flush/retry it ourselves.
+python3 - "$source_dir/libfreerdp/core/nla.c" <<'PY'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1]); text = p.read_text()
+def patch(before, after):
+    global text
+    if after in text: return
+    if text.count(before) != 1: sys.exit('FreeRDP binding observation hook mismatch')
+    text = text.replace(before, after)
+patch('#include <freerdp/config.h>', '#include <freerdp/config.h>\n#ifdef __EMSCRIPTEN__\n#include <emscripten.h>\n#endif')
+patch('struct rdp_nla\n{', '''struct rdp_nla
+{
+#ifdef __EMSCRIPTEN__
+    BOOL cloudsshObserveBinding;
+#endif''')
+entry = 'BOOL nla_send(rdpNla* nla)\n{'
+patch(entry, entry + '''
+#ifdef __EMSCRIPTEN__
+    /* pubKeyAuth is freed by the encoder. Identify the request before encoding. */
+    const BOOL binding = nla && !nla->server && nla_get_state(nla) == NLA_STATE_NEGO_TOKEN &&
+                         nla->pubKeyAuth.cbBuffer > 0;
+#endif''')
+write = '\tWLog_DBG(TAG, "[%" PRIuz " bytes]", length);\n'
+patch(write + '\tif (transport_write(nla->transport, s) < 0)', write + '''#ifdef __EMSCRIPTEN__
+    if (binding)
+        nla->cloudsshObserveBinding = MAIN_THREAD_EM_ASM_INT({
+            return Module["onWindowsBindingStep"]?.(0) === true ? 1 : 0;
+        });
+#endif
+    const int written = transport_write(nla->transport, s);
+#ifdef __EMSCRIPTEN__
+    if (binding && nla->cloudsshObserveBinding)
+    {
+        const BOOL complete = written > 0 && Stream_GetPosition(s) == length &&
+                              !transport_is_write_blocked(nla->transport);
+        MAIN_THREAD_EM_ASM({ Module["onWindowsBindingStep"]?.($0); }, complete ? 1 : 2);
+    }
+#endif
+    if (written < 0)''')
+decoded = '\t\tif (nla_decode_ts_request(nla, s) < 1)\n\t\t\treturn -1;'
+patch(decoded, decoded + '''
+#ifdef __EMSCRIPTEN__
+        if (nla->cloudsshObserveBinding && nla_get_state(nla) == NLA_STATE_PUB_KEY_AUTH)
+        {
+            /* A complete TSRequest, including a server error, not proof of acceptance. */
+            nla->cloudsshObserveBinding = FALSE;
+            MAIN_THREAD_EM_ASM({ Module["onWindowsBindingStep"]?.(3); });
+        }
+#endif''')
+p.write_text(text)
+PY
+
 # Optional, server-measured end-to-end RTT (MS-RDPBCGR Network Characteristics Result).
 # Keep just one sample across pthreads; receiving these PDUs never schedules UI work.
 python3 - "$source_dir/libfreerdp/core/autodetect.c" <<'PY'

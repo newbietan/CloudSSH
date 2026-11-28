@@ -821,6 +821,7 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'rotate', 'rotate can
         // Neither a bound WebRTC connection nor a Tunnel relay has an authoritative public TCP peer name.
         document.documentElement.dataset.policyOk = String(['/v:127.0.0.1:3389', '/timeout:45000', '-multitransport', '/sec:nla', '/cert:deny', '-auto-reconnect'].every(a => args.includes(a)) && !args.some(a => a.startsWith('/server-name:')));
         const socket = m.createRdpSocket(m.websocket.url);
+        socket.beginBindingWrite = () => true; // Exercise the route gate independently of adapter support.
         if ('${scenario}' === 'idle timeout') { socket.onRelayClose('idle_timeout'); return; }
         const check = () => { window.certificateResult = m.onWindowsCertificate('${fingerprint}'); };
         if (${direct}) socket.onopen = check; else check();
@@ -888,6 +889,7 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'rotate', 'rotate can
       await expect.poll(decision).toBe(scenario === 'accept' || scenario === 'rotate' ? 1 : -1);
     }
     await expect(runner.locator('html')).toHaveAttribute('data-policy-ok', 'true');
+    expect(await runner.locator('html').evaluate(() => Reflect.get(window, 'Module').onWindowsBindingStep(0))).toBe(false);
     if (scenario === 'accept') {
       await page.clock.fastForward(40_000); // Slow activation, past the old first-frame deadline.
       await expect.poll(decision).toBe(1);
@@ -1064,6 +1066,7 @@ for (const [errCode, expected] of [
   ['unknown relay close', 'The desktop transport closed. Last FreeRDP state: NLA / PUB_KEY_AUTH.'],
   ['runtime abort before first frame', 'The desktop runtime stopped unexpectedly. Last FreeRDP state: unavailable.'],
   ['deadline without a logged error', 'FreeRDP reached its activation deadline. FreeRDP state at timeout: NLA / PUB_KEY_AUTH.'],
+  ['binding cutoff', 'FreeRDP state at timeout: NLA / PUB_KEY_AUTH. Binding request — relay TCP write ACK: not observed; new inbound bytes after send: not observed; FreeRDP decoded a complete CredSSP reply: not observed.'],
   ['timeout after display control', 'Windows display control was negotiated, but no desktop frame was drawn'],
   ['timeout after NTLM rejection', 'Windows policy blocked NTLM'],
   ['legacy plaintext', 'Could not securely load Windows sign-in details'],
@@ -1113,6 +1116,18 @@ for (const [errCode, expected] of [
             m.printErr('ERRCONNECT_CONNECT_TRANSPORT_FAILED');
             m.onExit(1);
           }, ms);
+          return;
+        }
+        if ('${errCode}' === 'binding cutoff') {
+          let late = false;
+          socket.beginBindingWrite = () => true;
+          socket.bindingProgress = () => ({ write: late, rx: late });
+          if (m.onWindowsBindingStep(0)) throw new Error('binding before trust');
+          m.onWindowsCertificate('${'ab'.repeat(32)}');
+          m._cloudssh_read_rdp_state = () => 0x0203;
+          m.onWindowsBindingStep(0); m.onWindowsBindingStep(1);
+          m.onWindowsActivationTimeout('CONNECTION_STATE_NLA', 'NLA_STATE_PUB_KEY_AUTH');
+          late = true; m.onWindowsBindingStep(3); events.close();
           return;
         }
         if ('${errCode}'.startsWith('upstream_') || '${errCode}' === 'unknown relay close') {

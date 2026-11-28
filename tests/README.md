@@ -45,7 +45,7 @@ tests/
 └── README.md
 ```
 
-`tests/ssh/fixtures/` 中的私钥只用于公开的协议测试，不得用于生产服务器或真实账号。
+`tests/ssh/fixtures/` 中的私钥只用于公开的协议测试，不得用于生产服务器或真实账号。RDP 的 `tests/fixtures/rdp-nla-server-nego.hex` 是[固定 FreeRDP 版本的公开 `TEST_NTLM_CHALLENGE`](https://github.com/FreeRDP/FreeRDP/blob/65bcca1913a28cbdd7eb913599f692bd2b707991/winpr/libwinpr/sspi/test/TestSspiNTLM.c) 封装的测试消息，不是 Windows 抓包。`rdp-native-input.spec.ts` 仅在内存 TLS 对端使用它和合成登录，不监听端口，不存储、解析或验证客户端的认证令牌。
 Go 工作区（`go.work` / `go.work.sum`）与网关模块统一位于 `tests/interop/`，用途与运行方式见 [互操作测试说明](./interop/README.md)。
 
 ## 运行命令

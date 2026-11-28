@@ -131,21 +131,31 @@ const nativeCases = [
   { end: 'activation timeout', host: '93.184.215.14' },
   { end: 'browser deadline', host: '2606:4700:4700::1111' },
   { end: 'transport close', host: 'rdp.example.net' },
+  { end: 'binding silence', host: 'rdp.example.net' },
+  { end: 'binding partial reply', host: 'rdp.example.net' },
+  { end: 'binding error reply', host: 'rdp.example.net' },
+  { end: 'binding unacknowledged close', host: 'rdp.example.net' },
 ] as const;
 for (const { end, host } of nativeCases) {
   test(`the real WASM reports its NLA substate on ${end}`, ({ page }) => exerciseNlaEnd(page, end, host));
 }
 
 async function exerciseNlaEnd(page: Page, end: typeof nativeCases[number]['end'], host: string) {
-  // Standard X.224 + TLS on an in-memory wire. No TCP listener, Windows target, NTLM challenge
-  // or completed login. The pin is for a certificate made with a public protocol-test key.
+  // Only an in-memory TLS peer and the hard-coded synthetic login below. For binding cases,
+  // replay FreeRDP 3.33.1 TestSspiNTLM.c's public TEST_NTLM_CHALLENGE in a v6 TSRequest.
+  // Never listen on TCP, inspect/store a client token, delegate credentials or complete login.
+  const binding = end.startsWith('binding ');
+  const locale = end === 'binding silence' ? 'zh-CN' : end === 'binding partial reply' ? 'zh-TW' : 'en-US';
+  await page.addInitScript(lang => localStorage.setItem('cloudssh_locale', lang), locale);
+  const publicStep = Buffer.from(readFileSync(`${__dirname}/../fixtures/rdp-nla-server-nego.hex`, 'utf8').replace(/\s/g, ''), 'hex');
+  const statusReply = Buffer.from('300da003020106a4060204c000006d', 'hex'); // STATUS_LOGON_FAILURE.
   const cert = readFileSync(`${__dirname}/../fixtures/rdp-nla-test-cert.pem`);
   const secureContext = createSecureContext({ cert, key: readFileSync(`${__dirname}/../ssh/fixtures/id_rsa_2048_pkcs1.pem`) });
   const fingerprint = new X509Certificate(cert).fingerprint256.replaceAll(':', '').toLowerCase();
   await page.route(`**${api}`, r => r.request().method() === 'GET' ? r.fulfill({ json: {
     id, name: 'TLS fixture', route: 'direct', host, port: 53389, revision: 1, hasLogin: true, fingerprint,
   } }) : r.fallback());
-  let attempts = 0, sawToken = false, sawSni = false, matchingSni = false;
+  let attempts = 0, sawToken = false, sawBinding = false, sawSni = false, matchingSni = false;
   await page.route(`**${api}/connect`, async r => {
     if (r.request().method() !== 'POST') return r.fallback();
     attempts++;
@@ -155,10 +165,11 @@ async function exerciseNlaEnd(page: Page, end: typeof nativeCases[number]['end']
   });
   const client = readFileSync(`${__dirname}/../../src/worker/rdp-client/desktop.rdp-text`, 'utf8');
   // Shorten just the deadline under test, leaving the *other* clock alone.
-  const body = end === 'activation timeout' ? client.replace('const activationTimeoutMs = 45_000;', 'const activationTimeoutMs = 2000;')
+  const nativeDeadline = ['activation timeout', 'binding silence', 'binding partial reply'].includes(end);
+  const body = nativeDeadline ? client.replace('const activationTimeoutMs = 45_000;', 'const activationTimeoutMs = 4000;')
     : end === 'browser deadline' ? client.replace('const postTrustFrameMs = activationTimeoutMs + 15_000;', 'const postTrustFrameMs = 2000;') : client;
   await page.route('**/rdp/assets/desktop.js', r => r.fulfill({ contentType: 'text/javascript', body }));
-  let closeTransport: (() => Promise<void>) | undefined;
+  let closeTransport: (() => Promise<void>) | undefined, deliverReply: (() => void) | undefined;
   await page.routeWebSocket('**/api/rdp/session', ws => {
     let negotiated = false;
     closeTransport = () => ws.close({ code: 1000 });
@@ -168,30 +179,62 @@ async function exerciseNlaEnd(page: Page, end: typeof nativeCases[number]['end']
       matchingSni = name === host;
       done(null, secureContext);
     } });
-    tls.on('data', () => { sawToken = true; }); // Discard the first CredSSP request, never answer it.
+    tls.once('data', () => {
+      sawToken = true;
+      if (binding) {
+        tls.once('data', () => { sawBinding = true; }); // Observe delivery only; discard the bytes.
+        tls.write(publicStep);
+      }
+    });
+    deliverReply = () => tls.write(end === 'binding partial reply' ? statusReply.subarray(0, 1) : statusReply);
+    let written = 0;
     tls.on('error', () => ws.close());
     ws.onClose(() => { tls.destroy(); wire.destroy(); });
     ws.onMessage(message => {
       if (typeof message === 'string') {
         if (JSON.parse(message).type === 'ticket') ws.send(JSON.stringify({ type: 'ready', lease: id }));
-      } else if (negotiated) wire.push(message);
+        return;
+      }
+      if (negotiated) wire.push(message);
       else {
         negotiated = true;
         ws.send(Buffer.from('030000130ed000000000000200080002000000', 'hex')); // PROTOCOL_HYBRID
       }
+      written += message.byteLength;
+      if (binding && end !== 'binding unacknowledged close') ws.send(JSON.stringify({ type: 'ack', bytes: written }));
     });
   });
   await page.goto(path);
   const status = page.frameLocator('iframe').locator('#status');
-  if (end === 'transport close') {
+  if (binding) {
+    await expect.poll(() => sawBinding, { timeout: 12_000 }).toBe(true);
+    await expect.poll(() => status.evaluate(() => Reflect.get(window, 'Module')?._cloudssh_read_rdp_state?.())).toBe(0x0203);
+    if (end === 'binding unacknowledged close') await closeTransport!();
+    if (end === 'binding error reply' || end === 'binding partial reply') deliverReply!();
+  } else if (end === 'transport close') {
     await expect.poll(() => sawToken, { timeout: 12_000 }).toBe(true);
     // Arrange close at a known native state, without using a machine-dependent sleep.
     await expect.poll(() => status.evaluate(() => Reflect.get(window, 'Module')?._cloudssh_read_rdp_state?.())).toBe(0x0202);
     await closeTransport!();
   }
-  if (end === 'activation timeout') {
+  if (binding) {
+    const write = end === 'binding unacknowledged close' ? 'not observed' : 'observed';
+    const rx = end.includes('reply') ? 'observed' : 'not observed';
+    const decoded = end === 'binding error reply' ? 'observed' : 'not observed';
+    const line = locale === 'zh-CN' ? '绑定请求：中继 TCP 写入确认：已观测；发送后有新入站字节：未观测；FreeRDP 已解析完整 CredSSP 回复：未观测。'
+      : locale === 'zh-TW' ? '繫結請求：中繼 TCP 寫入確認：已觀測；送出後有新傳入位元組：已觀測；FreeRDP 已解析完整 CredSSP 回覆：未觀測。'
+      : `Binding request — relay TCP write ACK: ${write}; new inbound bytes after send: ${rx}; FreeRDP decoded a complete CredSSP reply: ${decoded}.`;
+    await expect(status).toContainText(line, { timeout: 16_000 });
+    if (nativeDeadline) {
+      await expect(status).toContainText('ERRCONNECT_ACTIVATION_TIMEOUT');
+      await expect(status).toContainText('NLA / PUB_KEY_AUTH');
+    }
+    if (end === 'binding error reply') await expect(status).not.toContainText('Desktop ready');
+    await expect(status).not.toContainText('after certificate verification');
+  } else if (end === 'activation timeout') {
     await expect(status).toContainText('FreeRDP state at timeout: NLA / NEGO_TOKEN.', { timeout: 16_000 });
     await expect(status).toContainText('ERRCONNECT_ACTIVATION_TIMEOUT');
+    await expect(status).not.toContainText('Binding request');
   } else {
     const source = end === 'browser deadline' ? 'The browser stopped waiting for the first frame.' : 'The desktop transport closed.';
     await expect(status).toContainText(`${source} Last FreeRDP state: NLA / NEGO_TOKEN.`, { timeout: 16_000 });

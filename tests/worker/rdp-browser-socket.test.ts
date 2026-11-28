@@ -11,6 +11,10 @@ interface SocketAdapter {
   lease?: string;
   certHold: boolean;
   readonly receivedBytes: number;
+  beginBindingWrite(): boolean;
+  endBindingWrite(complete: boolean): void;
+  bindingProgress(): { write: boolean; rx: boolean } | undefined;
+  clearBindingProgress(): void;
   beginCertWait(): void;
   endCertWait(): void;
   reportDesktopReady(): void;
@@ -79,6 +83,47 @@ describe('FreeRDP browser socket', () => {
       expect(native.send).toHaveBeenLastCalledWith('{"type":"ack","bytes":12}');
       expect(socket.receivedBytes).toBe(12);
     } finally { vi.useRealTimers(); }
+  });
+
+  it('binds write credit and inbound bytes to the final send of this binding request only', () => {
+    const { native, socket } = fixture();
+    const ack = (bytes: number) => native.onmessage({ data: JSON.stringify({ type: 'ack', bytes }) });
+    const receive = () => native.onmessage({ data: new ArrayBuffer(11) });
+    expect(socket.beginBindingWrite()).toBe(false); // No open relay yet.
+    native.onmessage({ data: ready });
+    socket.send(new ArrayBuffer(5)); ack(5); receive(); // Earlier TLS/Negotiate traffic.
+    expect(socket.beginBindingWrite()).toBe(true);
+    expect(socket.beginBindingWrite()).toBe(false);
+    socket.send(new ArrayBuffer(19)); receive(); ack(24);
+    socket.send(new ArrayBuffer(16 * 1024 + 2));
+    const end = 24 + 16 * 1024 + 2;
+    ack(end - 1);
+    socket.endBindingWrite(true);
+    expect(socket.bindingProgress()).toEqual({ write: false, rx: false });
+    socket.send(new ArrayBuffer(8)); // Later writes do not move the watermark.
+    ack(end); ack(end);
+    expect(socket.bindingProgress()).toEqual({ write: true, rx: false });
+    receive();
+    native.onclose({ reason: 'upstream_closed' });
+    expect(socket.bindingProgress()).toEqual({ write: true, rx: true });
+    socket.clearBindingProgress();
+    expect(socket.bindingProgress()).toBeUndefined();
+  });
+
+  it('includes fast inbound bytes before native write return, but never guesses on partial writes', () => {
+    for (const outcome of ['fast', 'partial', 'no send', 'peer'] as const) {
+      const { native, socket } = fixture(performance, outcome === 'peer');
+      native.onmessage({ data: ready });
+      expect(socket.beginBindingWrite()).toBe(outcome !== 'peer');
+      if (outcome !== 'no send') {
+        socket.send(new ArrayBuffer(10));
+        native.onmessage({ data: JSON.stringify({ type: 'ack', bytes: 10 }) });
+        native.onmessage({ data: new ArrayBuffer(10) });
+      }
+      socket.endBindingWrite(outcome !== 'partial');
+      if (outcome === 'fast') expect(socket.bindingProgress()).toEqual({ write: true, rx: true });
+      else expect(socket.bindingProgress()).toBeUndefined();
+    }
   });
 
   it('releases direct read credit after 8 ms or 64 KiB without duplicate or delivery-only ACKs', async () => {

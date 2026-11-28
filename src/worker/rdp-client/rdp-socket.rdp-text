@@ -9,6 +9,21 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket, c
     CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3, readyState: 0,
     binaryType: 'arraybuffer', lease: undefined, certHold: false,
     get receivedBytes() { return incoming; }, // RDP payload only; controls/ACKs do not count.
+    beginBindingWrite() {
+      if (carrier || binding || sink.readyState !== 1 || pending !== 0) return false;
+      binding = { writing: true };
+      return true;
+    },
+    endBindingWrite(complete) {
+      if (!binding?.writing) return;
+      binding.writing = false;
+      binding.known = complete === true && binding.end !== undefined && binding.end === sent && pending === 0;
+    },
+    clearBindingProgress() { binding = undefined; },
+    bindingProgress() {
+      if (!binding?.known) return; // A partial/buffered/unobserved write has no usable boundary.
+      return { write: acknowledged >= binding.end, rx: incoming > binding.incoming };
+    },
     send(value) {
       if (sink.readyState !== 1 || (!(value instanceof ArrayBuffer) && !ArrayBuffer.isView(value))) return fail();
       if (value.byteLength > limit || pending + sent - acknowledged + value.byteLength > limit) return fail();
@@ -83,7 +98,7 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket, c
   let ackSent = 0;
   let receivePeak = 0;
   let lastActivity = -Infinity;
-  let ackTimer;
+  let binding, ackTimer;
   const queue = [];
   function acknowledgeReads() {
     clearTimeout(ackTimer);
@@ -103,6 +118,9 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket, c
       pending -= next.length;
       sent += next.length;
       ws.send(next);
+      // Only while native pubKeyAuth is writing. The final successful binary send wins;
+      // a fast ACK/reply before the native thread returns must not be mistaken for no data.
+      if (binding?.writing) { binding.end = sent; binding.incoming = incoming; }
     }
   }
   ws.onopen = () => {
