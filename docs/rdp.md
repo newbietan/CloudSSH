@@ -44,6 +44,8 @@ try { [BitConverter]::ToString($sha.ComputeHash($cert.RawData)).Replace('-', ':'
 
 WebRTC 和中继只改变 RDP 字节的运输方式。之后都是同一份 FreeRDP 3.33.1 WASM 完成 TLS、CredSSP/NLA、会话激活和图形解码；只有 SDL 真正绘制了非空更新区域才算首帧。旧版的「未收到桌面画面」也用于 30 秒超时，不代表 Windows 已接受凭据，更不能单凭它判定 WebRTC 或 H.264 有问题。
 
+**公网直连（TCP）实际走 Worker 中继时**，FreeRDP 用保存的规范主机（IPv4、裸 IPv6 或域名，不含端口）作为 `/server-name`，由 CredSSP 构造 `TERMSRV/<主机>`。此前这个名称误用了 WASM 的拨号占位 `127.0.0.1`。域名也用于 TLS SNI，随包客户端对 IP 字面量不发 SNI。Windows 是否接受这个名称由其策略决定；这不能证明先前断开就是服务名不匹配。真实 TCP 目标与端口仍由 Worker 校验，仍须核验实际叶证书再进行 NLA。已选 WebRTC、连接器和 Tunnel 不从公网配置、隧道入口、证书或反向 DNS 推断 Windows 名称。
+
 `ERRCONNECT_ACTIVATION_TIMEOUT` 与网页「无首帧」不同：[FreeRDP 的激活循环](https://github.com/FreeRDP/FreeRDP/blob/65bcca1913a28cbdd7eb913599f692bd2b707991/libfreerdp/core/connection.c#L240-L298) 在安全协商启动后，用 `TcpAckTimeout` 作为**进入 ACTIVE 的总期限**，并非每收到一包重新计时。旧配置默认只有 9 秒；CredSSP、通道加入、能力协商或激活收尾都可能耗尽它，错误码本身不能区分哪一步最慢。
 
 - 两条线路现均传 `/timeout:45000`：该版本的原生参数同时设置激活所用的 `TcpAckTimeout` 和虚拟 TCP 的 `TcpConnectTimeout`，不改变 Worker 拨号或 WebRTC 预检的独立上限。浏览器在传输就绪后仍限 30 秒等 TLS 证书，人工确认另限 85 秒；已保存指纹匹配或确认写入成功后重新给首帧 **60 秒**，不因流量或重复回调续期。运行时退出或连接关闭时不必等满 60 秒；激活超时也不自动重试登录。
@@ -53,6 +55,7 @@ WebRTC 和中继只改变 RDP 字节的运输方式。之后都是同一份 Free
 | --- | --- |
 | 尚未验证 Windows 证书、TLS/安全协商失败 | 确认两条线路确实指向预期的 RDP 监听器；查看 Windows **System → Schannel**。证书变化先按上文核对，不要用换信处理密码或图形错误。 |
 | 证书已验证、无首帧，但没有原生激活超时 | 反馈提示末尾的**结束来源和「最后观测的 FreeRDP 状态」**。网页等待首帧到期、桌面客户端退出和传输通道关闭并非同一件事。`NLA / …` 表示最后观测到认证阶段；若为 `ACTIVE`，则客户端已进入活动状态，应转查显示更新到 SDL 首帧，而不是再查密码。`不可用` 表示没有可展示的状态，不能反推哪一端断开。 |
+| 传输关闭，最后为 `NLA / PUB_KEY_AUTH` | 客户端把公钥绑定请求交给了自己的传输层，不代表 Windows 收到或接受了请求。若公网 TCP 中继返回了明确结果，网页会区分读到 EOF、读取失败和写入失败；EOF 不说明哪一端先关闭。若同次 **NTLM/Operational** 没有新增 `4022/4023`，就没有可关联的 NTLM 结果，不要借用原生客户端的 `STATUS_SUCCESS`，也不用为此修改密码或策略。 |
 | 明确拒绝登录/阻止 NTLM | 查看 **Security** 的失败登录（启用审核时如 4625）与 **TerminalServices-RemoteConnectionManager/Operational**。证书核验早于 CredSSP；不能据此断言密码对错。随包构建未启用 Kerberos；若目标只允许 Kerberos，应使用符合策略的客户端，不要放宽域策略或关闭 NLA。 |
 | `ERRCONNECT_ACTIVATION_TIMEOUT` | 反馈页面的 **「超时时的 FreeRDP 状态」** 即可。这个状态直接来自原生等待循环退出时的快照：`NLA / …` 表示正在进行 CredSSP；`MCS_…` 表示连接／通道建立；`LICENSING` 是 RDP 许可阶段；`CAPABILITIES_EXCHANGE_…` 和 `FINALIZATION_…` 是能力交换和进入活动状态前的收尾。它反映的是客户端停留的位置，不代表 Windows 拒绝了请求或某个包在网络上丢失。旧客户端或未知状态不显示。若只观测到原生循环的截止回调，呈现「FreeRDP 的激活等待已到期」而不虚构错误码。核验证书后有无新数据是独立的传输观察，不解释数据内容。 |
 | 已协商显示控制（DISP）但无首帧、或明确的图形错误 | 查看 **TerminalServices-LocalSessionManager/Operational** 的会话/桌面启动记录，以及 **RemoteDesktopServices-RdpCoreTS/Operational** 的图形、连接或断开事件。随包构建的 H.264 使用浏览器 WebCodecs，不是 FFmpeg/OpenH264；能协商 DISP 不表示已绘制，也不能证明是编解码器故障。 |
@@ -64,7 +67,7 @@ WebRTC 和中继只改变 RDP 字节的运输方式。之后都是同一份 Free
 ## 维护与真机验收
 
 - `bash scripts/build-freerdp.sh` 用于显式重建随仓库分发的客户端。常规构建不运行 Docker 或下载 FreeRDP。更新时审核依赖、许可证与 JS/C++ 钩子，用 `tests/build/rdp-assets.test.ts` 验证模块、摘要和大小；不要手改压缩产物。
-- `rdp-devices.spec.ts` 覆盖画布焦点、工具栏、鼠标侧键与首次证书确认（模拟中继和 FreeRDP，使用真实浏览器适配器）；`rdp-native-input.spec.ts` 在 Chromium 中加载随包的真实 WASM，验证 FreeRDP 从内存文件系统读取禁用本地快捷键的配置，以及实际启动参数可发出携带 NLA 的 X.224 协商请求；另用固定测试证书、仅内存的 TLS 对端（不回应 CredSSP），分别让原生激活等待到期、网页先停止等待、传输先关闭，检验三条路径均能保留 `NLA / NEGO_TOKEN`，但不把后两种冒充原生超时。使用合成凭据，不接触 Windows，不验证真实登录或首帧。`rdp-relay-rtt.test.ts` 覆盖证书等待期间读写中断的顺序、租约失效与超时。自动化不能代替真实 Windows 首帧和键鼠验收。
+- `rdp-devices.spec.ts` 覆盖画布焦点、工具栏、鼠标侧键与首次证书确认（模拟中继和 FreeRDP，使用真实浏览器适配器）；`rdp-native-input.spec.ts` 在 Chromium 中加载随包的真实 WASM，验证 FreeRDP 从内存文件系统读取禁用本地快捷键的配置，以及实际启动参数可发出携带 NLA 的 X.224 协商请求；另用固定测试证书、仅内存的 TLS 对端（不回应 CredSSP），分别让原生激活等待到期、网页先停止等待、传输先关闭，检验三条路径均能保留 `NLA / NEGO_TOKEN`，但不把后两种冒充原生超时。同一 TLS 夹具检查保存的 DNS 名是否出现在 SNI、IPv4/IPv6 是否省略 SNI；启动回归还检查公网中继回退和连接器路径实际传入的参数。使用合成凭据，不接触 Windows，不验证真实登录或首帧。`rdp-relay-rtt.test.ts` 覆盖证书等待期间读写中断的顺序、租约失效与超时。自动化不能代替真实 Windows 首帧和键鼠验收。
 - 用授权的 Windows 主机和已部署的 Cloudflare 测试 Worker 验证，而不是用本地 mock 代替。分别以公网 IPv4、IPv6 字面量、仅 A 域名、仅 AAAA 域名及双栈域名确认 NLA 与桌面首帧，覆盖自定义端口及一条 TCP 路径不可达；DDNS 改址后验证同证书可用、不同证书在登录前被阻止。记录所用地区、线路、证书和首帧结果，不记录密码或未脱敏的地址。
 - 另测 Tunnel（包括 Access Service Auth）的 NLA、证书信任与换证、错误密码、桌面首帧和键鼠，并回归断线、1080p 持续操作及弱网；分开记录连通、认证、首帧和延迟。在支持和不支持 DISP 的 Windows 上分别验证默认全屏、适配与固定分辨率（以 Windows 内部显示设置为准）、Esc 返回和画面四角的键鼠定位。
 

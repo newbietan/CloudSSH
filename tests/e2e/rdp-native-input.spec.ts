@@ -1,5 +1,6 @@
 import { X509Certificate } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { isIP } from 'node:net';
 import { Duplex } from 'node:stream';
 import { createSecureContext, TLSSocket } from 'node:tls';
 import { gunzipSync } from 'node:zlib';
@@ -24,7 +25,7 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/rdp/assets/sdl-freerdp.wasm', r => r.fulfill({ contentType: 'application/wasm',
     headers: isolation, body: gunzipSync(asset('vendor/sdl-freerdp-gzip.rdp-bin')) }));
   await page.route(`**${api}`, r => r.request().method() === 'GET' ? r.fulfill({ json: {
-    id, name: 'Local test', revision: 1, hasLogin: true, fingerprint: null,
+    id, name: 'Local test', route: 'direct', host: 'rdp.example.net', revision: 1, hasLogin: true, fingerprint: null,
   } }) : r.fallback());
 });
 
@@ -80,21 +81,71 @@ test('the bundled FreeRDP accepts the activation policy and emits an NLA negotia
   await expect(page.frameLocator('iframe').locator('html')).toHaveAttribute('data-nla-request', 'yes', { timeout: 12_000 });
 });
 
-const nativeEndings = ['activation timeout', 'browser deadline', 'transport close'] as const;
-for (const end of nativeEndings) {
-  test(`the real WASM reports its NLA substate on ${end}`, ({ page }) => exerciseNlaEnd(page, end));
+for (const fallback of [true, false]) {
+  test(fallback ? 'a failed peer preflight uses the saved IPv6 name on the TCP relay'
+    : 'a connector-only session never supplies a public authentication name', async ({ page }) => {
+    const host = '2606:4700:4700::1111';
+    const target = fallback ? { route: 'direct', host, port: 53389 } : { route: 'connector', host: '' };
+    await page.route(`**${api}`, r => r.request().method() === 'GET' ? r.fulfill({ json: {
+      id, ...target, revision: 3, name: 'Bound fixture', hasLogin: true, fingerprint: null, connector: { state: 'online' },
+    } }) : r.fallback());
+    const requests: string[] = [];
+    await page.route(`**${api}/connect`, async r => {
+      if (r.request().method() !== 'POST') return r.fallback();
+      const headers = r.request().headers();
+      expect(headers['x-cloudssh-rdp-saved-revision']).toBe('3');
+      const transport = headers['x-cloudssh-rdp-transport'] === 'device' ? 'device' : 'relay';
+      requests.push(transport);
+      return r.fulfill({ json: await testRdpGrant(headers[RDP_CONNECT_KEY_HEADER.toLowerCase()], {
+        origin: new URL(r.request().url()).origin, profile: id, revision: 3, transport, ticket: String(requests.length).repeat(64),
+      }, { username: 'tester', domain: '', password: 'synthetic' }) });
+    });
+    await page.route('**/rdp/assets/rdp-peer.js', r => r.fulfill({ contentType: 'text/javascript', body: `
+      window.prepareCloudSshPeerCarrier = async () => { if (${fallback}) throw new Error('peer_unavailable'); return { close() {} }; };` }));
+    await page.route('**/rdp/assets/sdl-freerdp.js', r => r.fulfill({ contentType: 'text/javascript', body: `
+      const m = window.Module; m.FS = { mkdirTree() {}, writeFile() {} };
+      m.callMain = args => { document.documentElement.dataset.targets = args.filter(a => a.startsWith('/v:') || a.startsWith('/server-name:')).join(' '); };
+      m.onRuntimeInitialized();` }));
+    await page.goto(path);
+    await expect(page.frameLocator('iframe').locator('html')).toHaveAttribute('data-targets',
+      fallback ? '/v:127.0.0.1:3389 /server-name:' + host : '/v:127.0.0.1:3389');
+    expect(requests).toEqual(fallback ? ['device', 'relay'] : ['device']);
+  });
 }
 
-async function exerciseNlaEnd(page: Page, end: typeof nativeEndings[number]) {
+test('a mismatched profile or malformed TCP authority stops before requesting credentials', async ({ page }) => {
+  const saved = { id, route: 'direct', host: 'rdp.example.net', revision: 3, hasLogin: true, fingerprint: null };
+  let profile = saved;
+  await page.route(`**${api}`, r => r.request().method() === 'GET' ? r.fulfill({ json: profile }) : r.fallback());
+  // No connect mock: the strict fixture fails the test on any attempted ticket request.
+  for (const override of [{ id: '12345678-1234-1234-1234-123456789abd' }, { route: 'unknown' },
+    ...['', 'rdp.example.net:53389', '[2606:4700:4700::1111]', 'rdp.example.net /cert:ignore',
+      'rdp.example.net/path', 'rdp.example.net\n', 'host..example.net', 'a'.repeat(254)].map(host => ({ host }))]) {
+    profile = { ...saved, ...override };
+    await page.goto(path);
+    await expect(page.frameLocator('iframe').locator('#status')).toContainText('Device or session changed');
+  }
+});
+
+const nativeCases = [
+  { end: 'activation timeout', host: '93.184.215.14' },
+  { end: 'browser deadline', host: '2606:4700:4700::1111' },
+  { end: 'transport close', host: 'rdp.example.net' },
+] as const;
+for (const { end, host } of nativeCases) {
+  test(`the real WASM reports its NLA substate on ${end}`, ({ page }) => exerciseNlaEnd(page, end, host));
+}
+
+async function exerciseNlaEnd(page: Page, end: typeof nativeCases[number]['end'], host: string) {
   // Standard X.224 + TLS on an in-memory wire. No TCP listener, Windows target, NTLM challenge
   // or completed login. The pin is for a certificate made with a public protocol-test key.
   const cert = readFileSync(`${__dirname}/../fixtures/rdp-nla-test-cert.pem`);
   const secureContext = createSecureContext({ cert, key: readFileSync(`${__dirname}/../ssh/fixtures/id_rsa_2048_pkcs1.pem`) });
   const fingerprint = new X509Certificate(cert).fingerprint256.replaceAll(':', '').toLowerCase();
   await page.route(`**${api}`, r => r.request().method() === 'GET' ? r.fulfill({ json: {
-    id, name: 'TLS fixture', revision: 1, hasLogin: true, fingerprint,
+    id, name: 'TLS fixture', route: 'direct', host, port: 53389, revision: 1, hasLogin: true, fingerprint,
   } }) : r.fallback());
-  let attempts = 0, sawToken = false;
+  let attempts = 0, sawToken = false, sawSni = false, matchingSni = false;
   await page.route(`**${api}/connect`, async r => {
     if (r.request().method() !== 'POST') return r.fallback();
     attempts++;
@@ -112,7 +163,11 @@ async function exerciseNlaEnd(page: Page, end: typeof nativeEndings[number]) {
     let negotiated = false;
     closeTransport = () => ws.close({ code: 1000 });
     const wire = new Duplex({ read() {}, write(bytes, _, done) { ws.send(Buffer.from(bytes)); done(); } });
-    const tls = new TLSSocket(wire, { isServer: true, secureContext });
+    const tls = new TLSSocket(wire, { isServer: true, secureContext, SNICallback(name, done) {
+      sawSni = true;
+      matchingSni = name === host;
+      done(null, secureContext);
+    } });
     tls.on('data', () => { sawToken = true; }); // Discard the first CredSSP request, never answer it.
     tls.on('error', () => ws.close());
     ws.onClose(() => { tls.destroy(); wire.destroy(); });
@@ -142,6 +197,10 @@ async function exerciseNlaEnd(page: Page, end: typeof nativeEndings[number]) {
     await expect(status).toContainText(`${source} Last FreeRDP state: NLA / NEGO_TOKEN.`, { timeout: 16_000 });
     await expect(status).not.toContainText('ERRCONNECT_ACTIVATION_TIMEOUT');
   }
+  // /server-name is consumed by the native client (also used for NLA's TERMSRV target).
+  // DNS names appear in TLS SNI; the bundled LibreSSL omits SNI for IP literals (RFC 6066).
+  expect(sawSni).toBe(!isIP(host));
+  expect(matchingSni).toBe(!isIP(host));
   expect(sawToken).toBe(true);
   expect(attempts).toBe(1);
 }

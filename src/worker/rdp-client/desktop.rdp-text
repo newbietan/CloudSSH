@@ -57,9 +57,12 @@ function lastNativeState() {
   return nla ? phase + ' / ' + nla : phase;
 }
 const frameEnd = {
-  'en-US': { activation: 'FreeRDP reached its activation deadline.', deadline: ' The browser stopped waiting for the first frame.', exit: ' The desktop client exited.', close: ' The desktop transport closed.', error: ' The desktop transport reported an error.', abort: ' The desktop runtime stopped unexpectedly.', state: ' Last FreeRDP state: {state}.', unknown: 'unavailable' },
-  'zh-CN': { activation: 'FreeRDP 的激活等待已到期。', deadline: '网页等待首帧到期。', exit: '桌面客户端已退出。', close: '桌面传输通道已关闭。', error: '桌面传输通道报错。', abort: '桌面运行时异常终止。', state: '最后观测的 FreeRDP 状态：{state}。', unknown: '不可用' },
-  'zh-TW': { activation: 'FreeRDP 的啟用等待已到期。', deadline: '網頁等待首幀逾時。', exit: '桌面用戶端已結束。', close: '桌面傳輸通道已關閉。', error: '桌面傳輸通道發生錯誤。', abort: '桌面執行階段異常終止。', state: '最後觀測的 FreeRDP 狀態：{state}。', unknown: '無法取得' },
+  'en-US': { activation: 'FreeRDP reached its activation deadline.', deadline: ' The browser stopped waiting for the first frame.', exit: ' The desktop client exited.', close: ' The desktop transport closed.', error: ' The desktop transport reported an error.', abort: ' The desktop runtime stopped unexpectedly.', state: ' Last FreeRDP state: {state}.', unknown: 'unavailable',
+    upstream_closed: ' The TCP relay read end of stream (EOF).', upstream_read_failed: ' The TCP relay read failed.', upstream_write_failed: ' The TCP relay write failed.' },
+  'zh-CN': { activation: 'FreeRDP 的激活等待已到期。', deadline: '网页等待首帧到期。', exit: '桌面客户端已退出。', close: '桌面传输通道已关闭。', error: '桌面传输通道报错。', abort: '桌面运行时异常终止。', state: '最后观测的 FreeRDP 状态：{state}。', unknown: '不可用',
+    upstream_closed: '公网 TCP 中继读到流末尾（EOF）。', upstream_read_failed: '公网 TCP 中继读取失败。', upstream_write_failed: '公网 TCP 中继写入失败。' },
+  'zh-TW': { activation: 'FreeRDP 的啟用等待已到期。', deadline: '網頁等待首幀逾時。', exit: '桌面用戶端已結束。', close: '桌面傳輸通道已關閉。', error: '桌面傳輸通道發生錯誤。', abort: '桌面執行階段異常終止。', state: '最後觀測的 FreeRDP 狀態：{state}。', unknown: '無法取得',
+    upstream_closed: '公網 TCP 中繼讀到串流結尾（EOF）。', upstream_read_failed: '公網 TCP 中繼讀取失敗。', upstream_write_failed: '公網 TCP 中繼寫入失敗。' },
 };
 const stateAtTimeout = {
   'en-US': ' FreeRDP state at timeout: {state}.', 'zh-CN': '超时时的 FreeRDP 状态：{state}。', 'zh-TW': '逾時的 FreeRDP 狀態：{state}。',
@@ -509,7 +512,8 @@ async function run(preferDirect, reconnectFingerprint) {
           if (!ready && (reason === 'peer_failed' || reason === 'peer_ended')) finish(beforeFrame('close', detail));
           else if (detail) finish(detail);
           else if (!ready && (reason === 'upstream_closed' || reason === 'upstream_read_failed' || reason === 'upstream_write_failed')) {
-            finish(beforeFrame('close', msg[26]));
+            // These three fixed Worker outcomes describe its I/O, not who initiated a close.
+            finish(beforeFrame(activePath === 'relay' && profile.route === 'direct' ? reason : 'close', msg[26]));
           }
         };
         socket.onDesktopRecorded = () => {
@@ -621,6 +625,8 @@ async function run(preferDirect, reconnectFingerprint) {
             login = await openConnectLogin(grant);
           } catch { return finish(failure('login_unavailable')); }
           if (stopped) return;
+          // The selected grant, not a WebRTC preflight attempt, identifies the actual carrier.
+          const serverName = grant.transport === 'relay' && profile.route === 'direct' ? profile.host : undefined;
           const { username, domain } = login;
           password = login.password;
           ticket = grant.ticket;
@@ -638,6 +644,9 @@ async function run(preferDirect, reconnectFingerprint) {
           const args = ['/v:127.0.0.1:3389', '/u:' + username, '/sec:nla', '/cert:deny',
             '/timeout:' + activationTimeoutMs, '-multitransport',
             '/size:' + initialSize.join('x'), '/dynamic-resolution', '-clipboard', '-auto-reconnect', '/audio-mode:2', '/log-level:ERROR'];
+          // /server-name sets the TLS/CredSSP peer name, not the socket destination. FreeRDP
+          // builds TERMSRV/<name> itself. Never use a Tunnel ingress or guess a connector name.
+          if (serverName) args.push('/server-name:' + serverName);
           if (domain) args.push('/d:' + domain);
           const result = window.Module.callMain(args);
           if (result && typeof result.then === 'function') {
@@ -652,6 +661,20 @@ async function run(preferDirect, reconnectFingerprint) {
     script.onerror = () => finish(17);
     document.head.append(script);
   } catch { finish(17); }
+}
+
+// UserDB stores parseRdpDirectHost's canonical host. Check only the bare argv value here;
+// the Worker's public-address/DNS and port checks remain authoritative for the TCP dial.
+function isSavedServerName(host) {
+  if (typeof host !== 'string' || !host || host.length > 253 || /[^a-z0-9.:-]/.test(host)) return false;
+  const ipv6 = host.includes(':');
+  if (!ipv6) {
+    const labels = host.split('.');
+    if (labels.length < 2 || labels.some(label => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))) return false;
+  }
+  const authority = ipv6 ? '[' + host + ']' : host;
+  try { return new URL('https://' + authority + '/').hostname === authority; }
+  catch { return false; }
 }
 
 function validLogin(username, domain, password) {
@@ -675,7 +698,9 @@ void (async () => {
   const response = await request(api, { cache: 'no-store' });
   if (!response.ok) { status.textContent = await requestFailure(response); return; }
   const saved = await response.json();
-  if ((saved.fingerprint !== null && (typeof saved.fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(saved.fingerprint))) ||
+  if (!saved || saved.id !== deviceId || !['direct', 'tunnel', 'connector'].includes(saved.route) ||
+      (saved.route === 'direct' && !isSavedServerName(saved.host)) ||
+      (saved.fingerprint !== null && (typeof saved.fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(saved.fingerprint))) ||
       !Number.isSafeInteger(saved.revision) || saved.revision < 1) return show(21);
   if ((reconnectRevision !== undefined || reconnectFingerprint !== undefined) &&
       (reconnectRevision !== String(saved.revision) || reconnectFingerprint !== saved.fingerprint)) {

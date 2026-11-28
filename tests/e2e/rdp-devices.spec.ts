@@ -441,6 +441,7 @@ test('the themed workspace stays in the current tab and a saved login is release
     m.FS = { mkdirTree() {}, writeFile() {} };
     m.callMain = args => {
       document.documentElement.dataset.loginOk = String(args.includes('/u:test-user') && m.takeWindowsPassword() === 'synthetic' && !m.takeWindowsPassword());
+      document.documentElement.dataset.targets = args.filter(a => a.startsWith('/v:') || a.startsWith('/server-name:')).join(' ');
       const stage = document.getElementById('stage');
       document.documentElement.dataset.initialViewport = '/size:' + (stage.clientWidth & ~1) + 'x' + (stage.clientHeight & ~1);
       document.documentElement.dataset.size = args.find(a => a.startsWith('/size:'));
@@ -510,6 +511,7 @@ test('the themed workspace stays in the current tab and a saved login is release
   const frame = workspace.frameLocator('iframe');
   await expect.poll(() => frame.locator('html').evaluate(() => [window.crossOriginIsolated, window.isSecureContext])).toEqual([true, true]);
   await expect(frame.locator('html')).toHaveAttribute('data-login-ok', 'true');
+  await expect(frame.locator('html')).toHaveAttribute('data-targets', '/v:127.0.0.1:3389 /server-name:8.8.8.8');
   await expect(page.locator('#app-loading')).toHaveCount(0);
   expect(redundant).toEqual([]);
   await expect(frame.locator('html')).toHaveAttribute('data-dynamic', 'true');
@@ -816,7 +818,8 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'rotate', 'rotate can
       m.FS = { mkdirTree() {}, writeFile() {} };
       window.certificateResult = 'not checked';
       m.callMain = args => {
-        document.documentElement.dataset.policyOk = String(['/timeout:45000', '-multitransport', '/sec:nla', '/cert:deny', '-auto-reconnect'].every(a => args.includes(a)));
+        // Neither a bound WebRTC connection nor a Tunnel relay has an authoritative public TCP peer name.
+        document.documentElement.dataset.policyOk = String(['/v:127.0.0.1:3389', '/timeout:45000', '-multitransport', '/sec:nla', '/cert:deny', '-auto-reconnect'].every(a => args.includes(a)) && !args.some(a => a.startsWith('/server-name:')));
         const socket = m.createRdpSocket(m.websocket.url);
         if ('${scenario}' === 'idle timeout') { socket.onRelayClose('idle_timeout'); return; }
         const check = () => { window.certificateResult = m.onWindowsCertificate('${fingerprint}'); };
@@ -825,7 +828,8 @@ for (const scenario of ['accept', 'cancel', 'saved match', 'rotate', 'rotate can
       m.onRuntimeInitialized();
     ` }));
     await page.route(`**${path}`, route => route.request().method() === 'GET'
-      ? route.fulfill({ json: { id, name: 'Windows workstation', revision: 1, hasLogin: true, fingerprint: saved, ...(direct ? { connector: { state: 'online' } } : {}) } }) : route.fallback());
+      ? route.fulfill({ json: { id, name: 'Windows workstation', revision: 1, hasLogin: true, fingerprint: saved,
+        ...(direct ? { route: 'direct', host: 'rdp.example.net', connector: { state: 'online' } } : { route: 'tunnel', host: 'ingress.example.net' }) } }) : route.fallback());
     await page.route(`**${path}/connect`, async route => {
       if (route.request().method() !== 'POST') return route.fallback();
       expect(route.request().headers()['x-cloudssh-rdp-transport']).toBe(direct ? 'device' : undefined);
@@ -1054,6 +1058,10 @@ for (const [errCode, expected] of [
   ['timeout after certificate', 'The browser stopped waiting for the first frame. Last FreeRDP state: unavailable.'],
   ['client exit before first frame', 'The desktop client exited. Last FreeRDP state: ACTIVE.'],
   ['socket error before first frame', 'The desktop transport reported an error. Last FreeRDP state: MCS_CREATE_RESPONSE.'],
+  ['upstream_closed', 'The TCP relay read end of stream (EOF). Last FreeRDP state: NLA / PUB_KEY_AUTH.'],
+  ['upstream_read_failed', 'The TCP relay read failed. Last FreeRDP state: NLA / PUB_KEY_AUTH.'],
+  ['upstream_write_failed', 'The TCP relay write failed. Last FreeRDP state: NLA / PUB_KEY_AUTH.'],
+  ['unknown relay close', 'The desktop transport closed. Last FreeRDP state: NLA / PUB_KEY_AUTH.'],
   ['runtime abort before first frame', 'The desktop runtime stopped unexpectedly. Last FreeRDP state: unavailable.'],
   ['deadline without a logged error', 'FreeRDP reached its activation deadline. FreeRDP state at timeout: NLA / PUB_KEY_AUTH.'],
   ['timeout after display control', 'Windows display control was negotiated, but no desktop frame was drawn'],
@@ -1107,6 +1115,13 @@ for (const [errCode, expected] of [
           }, ms);
           return;
         }
+        if ('${errCode}'.startsWith('upstream_') || '${errCode}' === 'unknown relay close') {
+          m.onWindowsCertificate('${'ab'.repeat(32)}');
+          m._cloudssh_read_rdp_state = () => 0x0203;
+          socket.onRelayClose('${errCode}' === 'unknown relay close' ? 'private-host-secret' : '${errCode}');
+          events.close(); // The generic Emscripten event follows the close reason, when there is one.
+          return;
+        }
         if ('${errCode}'.endsWith('before first frame') || '${errCode}' === 'deadline without a logged error') {
           m.onWindowsCertificate('${'ab'.repeat(32)}');
           if ('${errCode}' === 'client exit before first frame') {
@@ -1134,7 +1149,7 @@ for (const [errCode, expected] of [
       m.onRuntimeInitialized();
     ` }));
     await page.route(`**/api/rdp/profiles/${id}`, r => r.request().method() === 'GET'
-      ? r.fulfill({ json: { id, name: 'Win', revision: 1, hasLogin: true, fingerprint: 'ab'.repeat(32) } }) : r.fallback());
+      ? r.fulfill({ json: { id, name: 'Win', route: 'direct', host: '93.184.215.14', revision: 1, hasLogin: true, fingerprint: 'ab'.repeat(32) } }) : r.fallback());
     await page.route(`**/api/rdp/profiles/${id}/connect`, async r => {
       if (r.request().method() !== 'POST') return r.fallback();
       attempts++;
