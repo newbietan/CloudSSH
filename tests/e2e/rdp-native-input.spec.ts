@@ -5,7 +5,7 @@ import { createSecureContext, TLSSocket } from 'node:tls';
 import { gunzipSync } from 'node:zlib';
 import { RDP_CONNECT_KEY_HEADER } from '../../src/rdp-schema';
 import { testRdpGrant } from '../fixtures/rdp-connect';
-import { expect, test } from './fixtures';
+import { expect, test, type Page } from './fixtures';
 
 // Actual pthreads/WASM require cross-origin isolation. The mobile WebKit suite uses the
 // SDL stub for workspace gestures. These Chromium cases exercise the shipped native parser.
@@ -80,7 +80,12 @@ test('the bundled FreeRDP accepts the activation policy and emits an NLA negotia
   await expect(page.frameLocator('iframe').locator('html')).toHaveAttribute('data-nla-request', 'yes', { timeout: 12_000 });
 });
 
-test('the real WASM reports its NLA substate on an activation timeout', async ({ page }) => {
+const nativeEndings = ['activation timeout', 'browser deadline', 'transport close'] as const;
+for (const end of nativeEndings) {
+  test(`the real WASM reports its NLA substate on ${end}`, ({ page }) => exerciseNlaEnd(page, end));
+}
+
+async function exerciseNlaEnd(page: Page, end: typeof nativeEndings[number]) {
   // Standard X.224 + TLS on an in-memory wire. No TCP listener, Windows target, NTLM challenge
   // or completed login. The pin is for a certificate made with a public protocol-test key.
   const cert = readFileSync(`${__dirname}/../fixtures/rdp-nla-test-cert.pem`);
@@ -97,12 +102,15 @@ test('the real WASM reports its NLA substate on an activation timeout', async ({
       origin: new URL(r.request().url()).origin, profile: id, revision: 1, transport: 'relay', ticket: '2'.repeat(64),
     }, { username: 'tester', domain: '', password: 'synthetic' }) });
   });
-  await page.route('**/rdp/assets/desktop.js', r => r.fulfill({ contentType: 'text/javascript', body:
-    readFileSync(`${__dirname}/../../src/worker/rdp-client/desktop.rdp-text`, 'utf8')
-      .replace('const activationTimeoutMs = 45_000;', 'const activationTimeoutMs = 2000;'), // Test time only.
-  }));
+  const client = readFileSync(`${__dirname}/../../src/worker/rdp-client/desktop.rdp-text`, 'utf8');
+  // Shorten just the deadline under test, leaving the *other* clock alone.
+  const body = end === 'activation timeout' ? client.replace('const activationTimeoutMs = 45_000;', 'const activationTimeoutMs = 2000;')
+    : end === 'browser deadline' ? client.replace('const postTrustFrameMs = activationTimeoutMs + 15_000;', 'const postTrustFrameMs = 2000;') : client;
+  await page.route('**/rdp/assets/desktop.js', r => r.fulfill({ contentType: 'text/javascript', body }));
+  let closeTransport: (() => Promise<void>) | undefined;
   await page.routeWebSocket('**/api/rdp/session', ws => {
     let negotiated = false;
+    closeTransport = () => ws.close({ code: 1000 });
     const wire = new Duplex({ read() {}, write(bytes, _, done) { ws.send(Buffer.from(bytes)); done(); } });
     const tls = new TLSSocket(wire, { isServer: true, secureContext });
     tls.on('data', () => { sawToken = true; }); // Discard the first CredSSP request, never answer it.
@@ -120,8 +128,20 @@ test('the real WASM reports its NLA substate on an activation timeout', async ({
   });
   await page.goto(path);
   const status = page.frameLocator('iframe').locator('#status');
-  await expect(status).toContainText('FreeRDP state at timeout: NLA / NEGO_TOKEN.', { timeout: 16_000 });
-  await expect(status).toContainText('ERRCONNECT_ACTIVATION_TIMEOUT');
+  if (end === 'transport close') {
+    await expect.poll(() => sawToken, { timeout: 12_000 }).toBe(true);
+    // Arrange close at a known native state, without using a machine-dependent sleep.
+    await expect.poll(() => status.evaluate(() => Reflect.get(window, 'Module')?._cloudssh_read_rdp_state?.())).toBe(0x0202);
+    await closeTransport!();
+  }
+  if (end === 'activation timeout') {
+    await expect(status).toContainText('FreeRDP state at timeout: NLA / NEGO_TOKEN.', { timeout: 16_000 });
+    await expect(status).toContainText('ERRCONNECT_ACTIVATION_TIMEOUT');
+  } else {
+    const source = end === 'browser deadline' ? 'The browser stopped waiting for the first frame.' : 'The desktop transport closed.';
+    await expect(status).toContainText(`${source} Last FreeRDP state: NLA / NEGO_TOKEN.`, { timeout: 16_000 });
+    await expect(status).not.toContainText('ERRCONNECT_ACTIVATION_TIMEOUT');
+  }
   expect(sawToken).toBe(true);
   expect(attempts).toBe(1);
-});
+}

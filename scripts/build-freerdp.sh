@@ -240,6 +240,69 @@ if include + headers not in text or snapshot + anchor not in text:
     p.write_text(text.replace(include, include + headers).replace(anchor, snapshot + anchor))
 PY
 
+# One atomic word per WASM instance, updated only on local state transitions. The UI
+# can read it at a browser deadline or close, even after native disconnect freed rdp/nla.
+python3 - "$source_dir/libfreerdp/core" "$here/../src/worker/rdp-client/desktop.rdp-text" <<'PY'
+from pathlib import Path
+import re, sys
+root = Path(sys.argv[1]); ui = Path(sys.argv[2]).read_text()
+# Fail the manual build on reordered or explicitly renumbered native enums. A shifted
+# ordinal must never turn an authentication wait into a misleading graphics diagnosis.
+for header, enum, table in ((root.parents[1] / 'include/freerdp/types.h', 'CONNECTION_STATE', 'connectionById'),
+                            (root / 'nla.h', 'NLA_STATE', 'nlaById')):
+    fields = re.search(r'typedef enum\s*\{([^{}]*)\}\s*' + enum + r'\s*;', header.read_text())
+    labels = re.search(r'const ' + table + r' = `([^`]+)`\.split', ui)
+    if not fields or not labels or [s.strip() for s in fields[1].split(',') if s.strip()] != [
+            enum + '_' + name for name in labels[1].split()]:
+        sys.exit('FreeRDP diagnostic state table mismatch: ' + enum)
+def patch(file, before, after):
+    p = root / file; text = p.read_text()
+    if after in text: return
+    if text.count(before) != 1: sys.exit('FreeRDP startup state patch mismatch: ' + file)
+    p.write_text(text.replace(before, after))
+patch('connection.h', 'enum CLIENT_CONNECTION_STATE', '''#ifdef __EMSCRIPTEN__
+FREERDP_LOCAL void cloudssh_remember_rdp_state(const rdpRdp* rdp);
+#endif
+
+enum CLIENT_CONNECTION_STATE''')
+entry = 'BOOL rdp_client_transition_to_state(rdpRdp* rdp, CONNECTION_STATE state)\n{'
+patch('connection.c', entry, '''#ifdef __EMSCRIPTEN__
+#include <winpr/interlocked.h>
+static volatile LONG cloudssh_last_state = 0;
+EMSCRIPTEN_KEEPALIVE int cloudssh_read_rdp_state(void)
+{
+    return InterlockedCompareExchange(&cloudssh_last_state, 0, 0);
+}
+void cloudssh_remember_rdp_state(const rdpRdp* rdp)
+{
+    const CONNECTION_STATE state = rdp_get_state(rdp);
+    // INITIAL is also the disconnect/reset transition; it must not erase the diagnosis.
+    if ((state <= CONNECTION_STATE_INITIAL) || (state > CONNECTION_STATE_ACTIVE))
+        return;
+    LONG progress = (LONG)state << 8;
+    if ((state == CONNECTION_STATE_NLA) && rdp->nla)
+    {
+        const NLA_STATE sub = nla_get_state(rdp->nla);
+        if ((sub >= NLA_STATE_INITIAL) && (sub <= NLA_STATE_FINAL))
+            progress |= (LONG)sub + 1;
+    }
+    (void)InterlockedExchange(&cloudssh_last_state, progress);
+}
+#endif
+
+''' + entry)
+transition = '\tif (!rdp_set_state(rdp, state))\n\t\treturn FALSE;\n\n\tswitch (state)'
+patch('connection.c', transition, transition.replace('\n\n\tswitch', '\n#ifdef __EMSCRIPTEN__\n\tcloudssh_remember_rdp_state(rdp);\n#endif\n\n\tswitch'))
+patch('nla.c', '#include "credssp_auth.h"', '#include "credssp_auth.h"\n#ifdef __EMSCRIPTEN__\n#include "connection.h"\n#endif')
+patch('nla.c', '\tnla->state = state;\n\treturn TRUE;', '''\tnla->state = state;
+#ifdef __EMSCRIPTEN__
+    rdpRdp* rdp = nla->rdpcontext ? nla->rdpcontext->rdp : nullptr;
+    if (rdp && (rdp->nla == nla) && (rdp_get_state(rdp) == CONNECTION_STATE_NLA))
+        cloudssh_remember_rdp_state(rdp);
+#endif
+\treturn TRUE;''')
+PY
+
 # Optional, server-measured end-to-end RTT (MS-RDPBCGR Network Characteristics Result).
 # Keep just one sample across pthreads; receiving these PDUs never schedules UI work.
 python3 - "$source_dir/libfreerdp/core/autodetect.c" <<'PY'

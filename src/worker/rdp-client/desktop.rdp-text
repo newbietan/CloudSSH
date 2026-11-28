@@ -5,7 +5,7 @@ const dictionary = {
 };
 // Only these local messages may reach the status line, never an upstream error or close reason.
 const failureText = {
-  verified_no_frame: ['Windows certificate verified, but no desktop frame was drawn. Sign-in is not confirmed. Check Windows sign-in and Remote Desktop session events.', 'Windows 证书已验证，但未绘制桌面首帧；这不能证明登录成功。请检查 Windows 登录和远程桌面会话事件。', 'Windows 憑證已驗證，但未繪製桌面首幀；這不能證明登入成功。請檢查 Windows 登入及遠端桌面工作階段事件。'],
+  verified_no_frame: ['Windows certificate verified, but no desktop frame was drawn. Sign-in is not confirmed.', 'Windows 证书已验证，但未绘制桌面首帧；这不能证明登录成功。', 'Windows 憑證已驗證，但未繪製桌面首幀；這不能證明登入成功。'],
   display_no_frame: ['Windows display control was negotiated, but no desktop frame was drawn. Check the Windows RDP graphics events and OS build.', '已与 Windows 协商显示控制，但未绘制桌面首帧。请检查 Windows 的 RDP 图形事件和系统内部版本。', '已與 Windows 協商顯示控制，但未繪製桌面首幀。請檢查 Windows 的 RDP 圖形事件及系統組建。'],
   ntlm_blocked: ['Windows policy blocked NTLM. This browser client does not support Kerberos. Use a client approved for that policy.', 'Windows 策略阻止了 NTLM；此浏览器客户端不支持 Kerberos。请使用符合该策略的客户端。', 'Windows 原則封鎖了 NTLM；此瀏覽器用戶端不支援 Kerberos。請使用符合該原則的用戶端。'],
   graphics_failed: ['RDP reported a graphics or decoding error before the first frame. Check the RdpCoreTS events and try a current browser.', '首帧前 RDP 报告了图形或解码错误。请检查 Windows 的 RdpCoreTS 事件，并用更新的浏览器对照。', '首幀前 RDP 回報了圖形或解碼錯誤。請檢查 Windows 的 RdpCoreTS 事件，並用更新的瀏覽器對照。'],
@@ -34,16 +34,33 @@ const failureText = {
 };
 // Fixed enum names from the bundled FreeRDP connection.c and nla.c. Never display an
 // unknown value or guess a protocol state from traffic, Windows events or log text.
-const connectionStates = new Set(`INITIAL NEGO NLA AAD MCS_CREATE_REQUEST MCS_CREATE_RESPONSE MCS_ERECT_DOMAIN
+// Ordinals of CONNECTION_STATE (types.h) and NLA_STATE (nla.h), in wire-independent native order.
+const connectionById = `INITIAL NEGO NLA AAD MCS_CREATE_REQUEST MCS_CREATE_RESPONSE MCS_ERECT_DOMAIN
   MCS_ATTACH_USER MCS_ATTACH_USER_CONFIRM MCS_CHANNEL_JOIN_REQUEST MCS_CHANNEL_JOIN_RESPONSE
   RDP_SECURITY_COMMENCEMENT SECURE_SETTINGS_EXCHANGE CONNECT_TIME_AUTO_DETECT_REQUEST
   CONNECT_TIME_AUTO_DETECT_RESPONSE LICENSING MULTITRANSPORT_BOOTSTRAPPING_REQUEST MULTITRANSPORT_BOOTSTRAPPING_RESPONSE
   CAPABILITIES_EXCHANGE_DEMAND_ACTIVE CAPABILITIES_EXCHANGE_MONITOR_LAYOUT CAPABILITIES_EXCHANGE_CONFIRM_ACTIVE
   FINALIZATION_SYNC FINALIZATION_COOPERATE FINALIZATION_REQUEST_CONTROL FINALIZATION_PERSISTENT_KEY_LIST
   FINALIZATION_FONT_LIST FINALIZATION_CLIENT_SYNC FINALIZATION_CLIENT_COOPERATE FINALIZATION_CLIENT_GRANTED_CONTROL
-  FINALIZATION_CLIENT_FONT_MAP ACTIVE`.split(/\s+/).map(name => 'CONNECTION_STATE_' + name));
-const nlaStates = new Set(['INITIAL', 'NEGO_TOKEN', 'PUB_KEY_AUTH', 'EARLY_USER_AUTH', 'AUTH_INFO', 'POST_NEGO', 'FINAL']
-  .map(name => 'NLA_STATE_' + name));
+  FINALIZATION_CLIENT_FONT_MAP ACTIVE`.split(/\s+/);
+const nlaById = `INITIAL NEGO_TOKEN PUB_KEY_AUTH EARLY_USER_AUTH AUTH_INFO POST_NEGO FINAL`.split(/\s+/);
+const connectionStates = new Set(connectionById.map(name => 'CONNECTION_STATE_' + name));
+const nlaStates = new Set(nlaById.map(name => 'NLA_STATE_' + name));
+function lastNativeState() {
+  // One atomic load from static WASM memory; no RDP object, polling or callback into a pthread.
+  let word;
+  try { word = window.Module?._cloudssh_read_rdp_state?.(); } catch { return; }
+  if (!Number.isInteger(word) || word < 256 || word > 0xffff) return;
+  const phase = connectionById[word >>> 8], sub = word & 255;
+  if (!phase || (phase !== 'NLA' && sub)) return;
+  const nla = sub && nlaById[sub - 1];
+  return nla ? phase + ' / ' + nla : phase;
+}
+const frameEnd = {
+  'en-US': { activation: 'FreeRDP reached its activation deadline.', deadline: ' The browser stopped waiting for the first frame.', exit: ' The desktop client exited.', close: ' The desktop transport closed.', error: ' The desktop transport reported an error.', abort: ' The desktop runtime stopped unexpectedly.', state: ' Last FreeRDP state: {state}.', unknown: 'unavailable' },
+  'zh-CN': { activation: 'FreeRDP 的激活等待已到期。', deadline: '网页等待首帧到期。', exit: '桌面客户端已退出。', close: '桌面传输通道已关闭。', error: '桌面传输通道报错。', abort: '桌面运行时异常终止。', state: '最后观测的 FreeRDP 状态：{state}。', unknown: '不可用' },
+  'zh-TW': { activation: 'FreeRDP 的啟用等待已到期。', deadline: '網頁等待首幀逾時。', exit: '桌面用戶端已結束。', close: '桌面傳輸通道已關閉。', error: '桌面傳輸通道發生錯誤。', abort: '桌面執行階段異常終止。', state: '最後觀測的 FreeRDP 狀態：{state}。', unknown: '無法取得' },
+};
 const stateAtTimeout = {
   'en-US': ' FreeRDP state at timeout: {state}.', 'zh-CN': '超时时的 FreeRDP 状态：{state}。', 'zh-TW': '逾時的 FreeRDP 狀態：{state}。',
 };
@@ -280,16 +297,23 @@ async function run(preferDirect, reconnectFingerprint) {
   let pendingTrust;
   let decision = -1;
   let acceptedTrust;
-  let freerdpError, receivedAtTrust, activationStage;
-  // No first paint is an observation, not a diagnosis. DISP is optional; certificate acceptance
-  // precedes CredSSP and alone cannot prove either a successful logon or a graphics failure.
-  const beforeFrame = () => freerdpError ?? (negotiatedResize ? failure('display_no_frame')
-    : decision === 1 ? failure('verified_no_frame') : msg[19]);
-  const watch = (ms, reason = beforeFrame) => {
+  let freerdpError, receivedAtTrust, activationStage, nativeDeadline = false, activationCode = false;
+  // Name the local observation, not who closed the connection or whether Windows accepted a login.
+  function beforeFrame(source, fallback) {
+    if (freerdpError && freerdpError !== msg[26]) return freerdpError;
+    if (nativeDeadline || activationCode) return activationFailure();
+    const text = freerdpError ?? fallback ?? (negotiatedResize ? failure('display_no_frame')
+      : decision === 1 ? failure('verified_no_frame') : msg[19]);
+    if (decision !== 1 || ready || stopped) return text;
+    const copy = frameEnd[locale];
+    return text + copy[source] + copy.state.replace('{state}', lastNativeState() ?? copy.unknown);
+  }
+  const watch = (ms, reason = () => beforeFrame('deadline')) => {
     clearTimeout(timer);
     timer = setTimeout(() => finish(typeof reason === 'function' ? reason() : reason), ms);
   };
-  const runtimeExit = code => finish(ready ? (code ? 22 : 16) : beforeFrame());
+  const runtimeExit = (code, source = 'exit') => finish(ready ? (code ? 22 : 16) : beforeFrame(source));
+  const runtimeFailure = (code, source) => finish(ready ? code : beforeFrame(source, msg[code]));
   function trustForActivation() {
     // The native activation loop starts after TLS. Give both matched and newly accepted
     // pins the same budget. Repeated callbacks or arriving bytes must not extend it.
@@ -301,7 +325,8 @@ async function run(preferDirect, reconnectFingerprint) {
     return decision;
   }
   function activationFailure() {
-    let text = failure('activation_timeout');
+    // The hook proves the loop reached its deadline; only a matching error confirms its code.
+    let text = activationCode ? failure('activation_timeout') : frameEnd[locale].activation;
     if (activationStage) text += stateAtTimeout[locale].replace('{state}', activationStage);
     const received = socket?.receivedBytes;
     if (!Number.isSafeInteger(receivedAtTrust) || !Number.isSafeInteger(received) || received < receivedAtTrust) return text;
@@ -481,10 +506,10 @@ async function run(preferDirect, reconnectFingerprint) {
             return;
           }
           const detail = failure(reason === 'connect_timeout' ? 'upstream_unavailable' : reason);
-          if (!ready && freerdpError && (reason === 'peer_failed' || reason === 'peer_ended')) finish(freerdpError);
+          if (!ready && (reason === 'peer_failed' || reason === 'peer_ended')) finish(beforeFrame('close', detail));
           else if (detail) finish(detail);
           else if (!ready && (reason === 'upstream_closed' || reason === 'upstream_read_failed' || reason === 'upstream_write_failed')) {
-            finish(freerdpError ?? 26);
+            finish(beforeFrame('close', msg[26]));
           }
         };
         socket.onDesktopRecorded = () => {
@@ -523,9 +548,10 @@ async function run(preferDirect, reconnectFingerprint) {
         return 0;
       },
       onWindowsActivationTimeout(state, nla) {
-        // The pthread calls this once at the deadline, before publishing its last error.
-        // Only ERRCONNECT_ACTIVATION_TIMEOUT consumes it; do not override trust, auth or teardown.
-        if (stopped || ready || activationStage || !connectionStates.has(state)) return;
+        // The socket may close before printErr. Keep the real deadline without inventing a last error.
+        if (stopped || ready || nativeDeadline) return;
+        nativeDeadline = true;
+        if (!connectionStates.has(state)) return;
         activationStage = state.slice('CONNECTION_STATE_'.length);
         if (state === 'CONNECTION_STATE_NLA' && nlaStates.has(nla)) activationStage += ' / ' + nla.slice('NLA_STATE_'.length);
       },
@@ -570,12 +596,12 @@ async function run(preferDirect, reconnectFingerprint) {
         else if (!freerdpError || freerdpError === msg[26]) {
           if (authErrors.test(line)) freerdpError = msg[24];
           else if (securityErrors.test(line)) freerdpError = msg[25];
-          else if (/\bERRCONNECT_ACTIVATION_TIMEOUT\b/.test(line)) freerdpError = activationFailure();
+          else if (/\bERRCONNECT_ACTIVATION_TIMEOUT\b/.test(line)) activationCode = true;
           else if (transportErrors.test(line)) freerdpError = msg[26];
         }
       },
-      onExit: runtimeExit,
-      onAbort() { finish(freerdpError ?? 17); },
+      onExit: code => runtimeExit(code),
+      onAbort() { runtimeFailure(17, 'abort'); },
       onRuntimeInitialized() {
         if (stopped) return;
         void (async () => {
@@ -602,8 +628,8 @@ async function run(preferDirect, reconnectFingerprint) {
           window.Module.websocket.on?.('open', () => {
             if (!stopped && !ready && decision === -1) { show(14); watch(30_000); } // Waiting for TLS, not activation yet.
           });
-          window.Module.websocket.on?.('error', () => finish(freerdpError ?? 22));
-          window.Module.websocket.on?.('close', () => runtimeExit(0));
+          window.Module.websocket.on?.('error', () => runtimeFailure(22, 'error'));
+          window.Module.websocket.on?.('close', () => runtimeExit(0, 'close'));
           initialSize = viewportSize();
           layout(true);
           // Local placeholder for the WASM socket adapter. Only the Worker's claimed profile selects the TCP destination.
@@ -615,9 +641,9 @@ async function run(preferDirect, reconnectFingerprint) {
           if (domain) args.push('/d:' + domain);
           const result = window.Module.callMain(args);
           if (result && typeof result.then === 'function') {
-            result.then(runtimeExit, () => finish(freerdpError ?? 17));
+            result.then(runtimeExit, () => runtimeFailure(17, 'abort'));
           }
-        })().catch(() => finish(17));
+        })().catch(() => runtimeFailure(17, 'abort'));
       },
     };
     const script = document.createElement('script');

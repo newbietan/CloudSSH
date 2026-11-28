@@ -1051,7 +1051,11 @@ for (const [errCode, expected] of [
   ['activation timeout with unknown state', 'ERRCONNECT_ACTIVATION_TIMEOUT'],
   ['activation timeout with auth rejection', 'Windows rejected the sign-in credentials'],
   ['timeout before certificate', 'FreeRDP did not verify a Windows certificate'],
-  ['timeout after certificate', 'Sign-in is not confirmed'],
+  ['timeout after certificate', 'The browser stopped waiting for the first frame. Last FreeRDP state: unavailable.'],
+  ['client exit before first frame', 'The desktop client exited. Last FreeRDP state: ACTIVE.'],
+  ['socket error before first frame', 'The desktop transport reported an error. Last FreeRDP state: MCS_CREATE_RESPONSE.'],
+  ['runtime abort before first frame', 'The desktop runtime stopped unexpectedly. Last FreeRDP state: unavailable.'],
+  ['deadline without a logged error', 'FreeRDP reached its activation deadline. FreeRDP state at timeout: NLA / PUB_KEY_AUTH.'],
   ['timeout after display control', 'Windows display control was negotiated, but no desktop frame was drawn'],
   ['timeout after NTLM rejection', 'Windows policy blocked NTLM'],
   ['legacy plaintext', 'Could not securely load Windows sign-in details'],
@@ -1103,6 +1107,21 @@ for (const [errCode, expected] of [
           }, ms);
           return;
         }
+        if ('${errCode}'.endsWith('before first frame') || '${errCode}' === 'deadline without a logged error') {
+          m.onWindowsCertificate('${'ab'.repeat(32)}');
+          if ('${errCode}' === 'client exit before first frame') {
+            m._cloudssh_read_rdp_state = () => 30 << 8; m.onExit(0);
+          } else if ('${errCode}' === 'socket error before first frame') {
+            m._cloudssh_read_rdp_state = () => 5 << 8; events.error();
+          } else if ('${errCode}' === 'runtime abort before first frame') {
+            m._cloudssh_read_rdp_state = () => 65535; m.onAbort();
+          } else {
+            m.onWindowsActivationTimeout('CONNECTION_STATE_NLA', 'NLA_STATE_PUB_KEY_AUTH');
+            events.close(); // Was the same generic verified_no_frame as the browser deadline.
+          }
+          m.printErr('ERRCONNECT_ACTIVATION_TIMEOUT private-host-secret');
+          return;
+        }
         if ('${errCode}' === 'timeout after display control') m.onWindowsDisplayControl();
         if ('${errCode}' === 'timeout after NTLM rejection') {
           m.printErr('ERRCONNECT_NTLM_BLOCKED');
@@ -1149,8 +1168,9 @@ for (const [errCode, expected] of [
     }
     await expect(status).toContainText(expected);
     if (nativeTimeout && errCode !== 'activation timeout with auth rejection') await expect(status).toContainText('ERRCONNECT_ACTIVATION_TIMEOUT');
-    if (!expected.startsWith('FreeRDP state at timeout')) {
-      await expect(status).not.toContainText('FreeRDP state at timeout');
+    if (!expected.includes('FreeRDP state at timeout')) await expect(status).not.toContainText('FreeRDP state at timeout');
+    if (errCode.endsWith('before first frame') || errCode === 'deadline without a logged error' || errCode === 'timeout after certificate') {
+      await expect(status).not.toContainText('ERRCONNECT_ACTIVATION_TIMEOUT');
     }
     await expect(status).not.toContainText(' / FINAL');
     await expect(status).not.toContainText('private-host-secret');
