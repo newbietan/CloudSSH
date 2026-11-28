@@ -132,6 +132,7 @@ const nativeCases = [
   { end: 'browser deadline', host: '2606:4700:4700::1111' },
   { end: 'transport close', host: 'rdp.example.net' },
   { end: 'binding silence', host: 'rdp.example.net' },
+  { end: 'binding silence on old relay', host: 'rdp.example.net' },
   { end: 'binding partial reply', host: 'rdp.example.net' },
   { end: 'binding error reply', host: 'rdp.example.net' },
   { end: 'binding unacknowledged close', host: 'rdp.example.net' },
@@ -165,7 +166,7 @@ async function exerciseNlaEnd(page: Page, end: typeof nativeCases[number]['end']
   });
   const client = readFileSync(`${__dirname}/../../src/worker/rdp-client/desktop.rdp-text`, 'utf8');
   // Shorten just the deadline under test, leaving the *other* clock alone.
-  const nativeDeadline = ['activation timeout', 'binding silence', 'binding partial reply'].includes(end);
+  const nativeDeadline = end.startsWith('binding silence') || ['activation timeout', 'binding partial reply'].includes(end);
   const body = nativeDeadline ? client.replace('const activationTimeoutMs = 45_000;', 'const activationTimeoutMs = 4000;')
     : end === 'browser deadline' ? client.replace('const postTrustFrameMs = activationTimeoutMs + 15_000;', 'const postTrustFrameMs = 2000;') : client;
   await page.route('**/rdp/assets/desktop.js', r => r.fulfill({ contentType: 'text/javascript', body }));
@@ -192,7 +193,13 @@ async function exerciseNlaEnd(page: Page, end: typeof nativeCases[number]['end']
     ws.onClose(() => { tls.destroy(); wire.destroy(); });
     ws.onMessage(message => {
       if (typeof message === 'string') {
-        if (JSON.parse(message).type === 'ticket') ws.send(JSON.stringify({ type: 'ready', lease: id }));
+        const m = JSON.parse(message);
+        if (m.type === 'ticket') ws.send(JSON.stringify({ type: 'ready', lease: id, bindingReturn: end === 'binding silence' && m.bindingReturn === true }));
+        if (m.type === 'binding_watch') {
+          expect(end).toBe('binding silence'); expect(m.bytes).toBe(written);
+          // Synthetic renewal sample; the real relay scheduling/credit transitions use fake-clock Worker tests.
+          ws.send(JSON.stringify({ type: 'binding_return', bytes: written, seconds: 2, state: 'no_read' }));
+        }
         return;
       }
       if (negotiated) wire.push(message);
@@ -225,6 +232,9 @@ async function exerciseNlaEnd(page: Page, end: typeof nativeCases[number]['end']
       : locale === 'zh-TW' ? '繫結請求：中繼 TCP 寫入確認：已觀測；送出後有新傳入位元組：已觀測；FreeRDP 已解析完整 CredSSP 回覆：未觀測。'
       : `Binding request — relay TCP write ACK: ${write}; new inbound bytes after send: ${rx}; FreeRDP decoded a complete CredSSP reply: ${decoded}.`;
     await expect(status).toContainText(line, { timeout: 16_000 });
+    if (end === 'binding silence') await expect(status).toContainText('中继回程（绑定标记后 2 秒采样）：未读到新的 TCP 字节。');
+    else if (end === 'binding silence on old relay') await expect(status).toContainText('Relay return path: no matching relay sample.');
+    else await expect(status).not.toContainText(/Relay return path|中繼回程/);
     if (nativeDeadline) {
       await expect(status).toContainText('ERRCONNECT_ACTIVATION_TIMEOUT');
       await expect(status).toContainText('NLA / PUB_KEY_AUTH');

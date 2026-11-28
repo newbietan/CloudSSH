@@ -69,6 +69,12 @@ const bindingCopy = {
   'zh-CN': ['绑定请求：中继 TCP 写入确认：{w}；发送后有新入站字节：{i}；FreeRDP 已解析完整 CredSSP 回复：{r}。', '已观测', '未观测', '未知'],
   'zh-TW': ['繫結請求：中繼 TCP 寫入確認：{w}；送出後有新傳入位元組：{i}；FreeRDP 已解析完整 CredSSP 回覆：{r}。', '已觀測', '未觀測', '未知'],
 };
+// Emitted only if TCP write was acknowledged but no later browser payload or decoded reply.
+const relayReturnCopy = {
+  'en-US': { at: 'Relay return path ({s}s after the binding marker): ', unknown: 'Relay return path: no matching relay sample.', no_read: 'no new TCP bytes read.', prior_window: 'still draining older data; waiting for browser read credit.', read: 'new TCP bytes read; WebSocket forwarding not observed.', read_window: 'new TCP bytes read; waiting for browser read credit before forwarding.', forwarded: 'new TCP bytes read and handed to the WebSocket.' },
+  'zh-CN': { at: '中继回程（绑定标记后 {s} 秒采样）：', unknown: '中继回程：没有覆盖这次绑定写入的中继采样。', no_read: '未读到新的 TCP 字节。', prior_window: '旧数据仍在等待浏览器确认读取，尚未读到新字节。', read: '已读到新的 TCP 字节，未观测到交给 WebSocket。', read_window: '已读到新的 TCP 字节，正在等待浏览器确认读取，尚未交给 WebSocket。', forwarded: '已读到新的 TCP 字节，并已交给 WebSocket。' },
+  'zh-TW': { at: '中繼回程（繫結標記後 {s} 秒取樣）：', unknown: '中繼回程：沒有涵蓋這次繫結寫入的中繼取樣。', no_read: '未讀到新的 TCP 位元組。', prior_window: '舊資料仍在等待瀏覽器確認讀取，尚未讀到新位元組。', read: '已讀到新的 TCP 位元組，未觀測到交給 WebSocket。', read_window: '已讀到新的 TCP 位元組，正在等待瀏覽器確認讀取，尚未交給 WebSocket。', forwarded: '已讀到新的 TCP 位元組，並已交給 WebSocket。' },
+};
 const stateAtTimeout = {
   'en-US': ' FreeRDP state at timeout: {state}.', 'zh-CN': '超时时的 FreeRDP 状态：{state}。', 'zh-TW': '逾時的 FreeRDP 狀態：{state}。',
 };
@@ -315,7 +321,13 @@ async function run(preferDirect, reconnectFingerprint) {
     const p = socket.bindingProgress?.();
     const [template, yes, unseen, unknown] = bindingCopy[locale];
     const label = value => value === true ? yes : value === false ? unseen : unknown;
-    return '\n' + template.replace('{w}', label(p?.write)).replace('{i}', label(p?.rx)).replace('{r}', label(bindingDecoded));
+    let note = '\n' + template.replace('{w}', label(p?.write)).replace('{i}', label(p?.rx)).replace('{r}', label(bindingDecoded));
+    if (p?.write && p.rx === false && !bindingDecoded) {
+      const copy = relayReturnCopy[locale];
+      const sample = p.sample;
+      note += '\n' + (sample ? copy.at.replace('{s}', String(sample.seconds)) + copy[sample.state] : copy.unknown);
+    }
+    return note;
   }
   function clearBinding() {
     socket?.clearBindingProgress?.();
@@ -522,8 +534,8 @@ async function run(preferDirect, reconnectFingerprint) {
       websocket: { url: url.href, subprotocol: null },
       createRdpSocket(address) {
         if (stopped || address !== url.href || !ticket || socket) throw new Error('socket unavailable');
-        socket = window.createCloudSshRdpSocket(address, ticket, directCarrier);
         activePath = directCarrier ? 'webrtc' : 'relay';
+        socket = window.createCloudSshRdpSocket(address, ticket, directCarrier, activePath === 'relay' && profile.route === 'direct');
         paintLatency();
         socket.onRelayClose = reason => {
           if (stopped) return;

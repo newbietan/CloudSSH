@@ -17,6 +17,16 @@ const CERT_HOLD_GRACE_MS = 5_000;
 
 type UpstreamEnd = 'upstream_closed' | 'upstream_read_failed' | 'upstream_write_failed';
 
+// All three cursors are offsets in the *outbound* TCP stream. Tag each non-empty read
+// with the write in progress when read() returned; draining an older blocked chunk later
+// must not turn it into a new read. No RDP contents, additional reads or TCP probes.
+interface BindingReturn {
+  writing: number;
+  readAt: number;
+  forwardedAt: number;
+  watch?: { end: number; at: number; samples: number };
+}
+
 /** One ordered, binary socket per desktop. Control frames never enter the RDP/TLS stream. */
 export function startRdpRelay(hooks: SessionHooks): Response {
   const [client, ws] = Object.values(new WebSocketPair());
@@ -42,6 +52,7 @@ export function startRdpRelay(hooks: SessionHooks): Response {
   let lastProbe = -Infinity;
   let creditWake: (() => void) | undefined;
   let writes = Promise.resolve();
+  let bindingReturn: BindingReturn | undefined;
   let certTimer: ReturnType<typeof setTimeout> | undefined;
   let phaseTimer = setTimeout(() => finish(1008, 'ticket_timeout'), 5000);
   // Two internal requests per 15 s renewal stay below the Workers Free 1,000-request
@@ -59,11 +70,26 @@ export function startRdpRelay(hooks: SessionHooks): Response {
       renewing = true;
       void hooks.renew(lease.id).then(ok => {
         if (!ok) finish(1000, 'lease_ended');
-        else lastRenew = Date.now();
+        else {
+          lastRenew = Date.now();
+          sampleBindingReturn(lastRenew);
+        }
       }, () => finish(1000, 'lease_ended')).finally(() => { renewing = false; });
     }
   }, 1000);
 
+  function sampleBindingReturn(now: number) {
+    const trace = bindingReturn, watch = trace?.watch;
+    if (!trace || !watch || inAck < watch.end || stage !== 'ready' || certificate === 'waiting') return;
+    const seconds = Math.max(0, Math.floor((now - watch.at) / 1000));
+    if (seconds > 90) { bindingReturn = undefined; return; }
+    const state = trace.forwardedAt >= watch.end ? 'forwarded'
+      : trace.readAt >= watch.end ? (creditWake ? 'read_window' : 'read')
+      : creditWake ? 'prior_window' : 'no_read';
+    // Only on an already successful lease renewal. Not a sample at the native deadline.
+    try { control({ type: 'binding_return', bytes: watch.end, state, seconds }); } catch { /* best effort */ }
+    if (++watch.samples >= 4) bindingReturn = undefined;
+  }
   function clearCertTimer() {
     if (certTimer !== undefined) {
       clearTimeout(certTimer);
@@ -77,6 +103,7 @@ export function startRdpRelay(hooks: SessionHooks): Response {
   function finish(code: number, reason: string) {
     if (stage === 'closed') return;
     stage = 'closed';
+    bindingReturn = undefined;
     clearTimeout(life);
     clearTimeout(phaseTimer);
     clearCertTimer();
@@ -100,6 +127,7 @@ export function startRdpRelay(hooks: SessionHooks): Response {
       return finish(code, reason);
     }
     upstreamClosed = true;
+    bindingReturn = undefined;
     const closed = transport;
     transport = undefined; // A write aborted by close must not tear down the held lease.
     creditWake?.();
@@ -111,6 +139,9 @@ export function startRdpRelay(hooks: SessionHooks): Response {
     }
   }
   async function deliver(data: Uint8Array): Promise<void> {
+    const trace = bindingReturn;
+    const readAt = trace?.writing ?? 0;
+    if (trace && data.length) trace.readAt = readAt;
     for (let offset = 0; offset < data.length; offset += RDP_FRAME) {
       const frame = data.subarray(offset, offset + RDP_FRAME);
       while (stage === 'ready' && !upstreamClosed && outSent - outAck + frame.length > RDP_WINDOW) {
@@ -120,9 +151,10 @@ export function startRdpRelay(hooks: SessionHooks): Response {
       if (outSent === outAck) lastOutputProgress = Date.now();
       outSent += frame.length;
       ws.send(frame);
+      if (trace && offset === 0) trace.forwardedAt = readAt;
     }
   }
-  async function establish(ticket: string, certRotation: boolean) {
+  async function establish(ticket: string, certRotation: boolean, returnSamples: boolean) {
     stage = 'opening';
     clearTimeout(phaseTimer);
     phaseTimer = setTimeout(() => finish(1011, 'connect_timeout'), 10_000);
@@ -142,7 +174,8 @@ export function startRdpRelay(hooks: SessionHooks): Response {
       clearTimeout(phaseTimer);
       lastInputProgress = lastOutputProgress = lastActivity = lastRenew = Date.now();
       stage = 'ready';
-      control({ type: 'ready', lease: claimed.id, desktopReport: true });
+      if (returnSamples && claimed.profile.route === 'direct') bindingReturn = { writing: 0, readAt: 0, forwardedAt: 0 };
+      control({ type: 'ready', lease: claimed.id, desktopReport: true, bindingReturn: bindingReturn ? true : undefined });
       try {
         await transport.read(deliver);
       } catch {
@@ -161,10 +194,19 @@ export function startRdpRelay(hooks: SessionHooks): Response {
         if (data.length > 256 || ++controls > 256) return finish(1008, 'invalid_frame');
         const msg = JSON.parse(data);
         if (stage === 'ticket' && msg?.type === 'ticket' && typeof msg.ticket === 'string' && /^[a-f0-9]{64}$/.test(msg.ticket)) {
-          void establish(msg.ticket, msg.certRotation === true);
+          void establish(msg.ticket, msg.certRotation === true, msg.bindingReturn === true);
           return;
         }
         if (stage !== 'ready') return finish(1008, 'invalid_frame');
+        if (msg?.type === 'binding_watch') {
+          // Ordered after the final binding slice on this WebSocket. A stale, duplicate or
+          // unsupported observation neither affects the live stream nor refreshes any clock.
+          if (bindingReturn && !bindingReturn.watch && certificate !== 'waiting' &&
+              Number.isSafeInteger(msg.bytes) && msg.bytes > 0 && msg.bytes === inSent) {
+            bindingReturn.watch = { end: inSent, at: Date.now(), samples: 0 };
+          }
+          return;
+        }
         if (msg?.type === 'cert_wait') {
           if (certificate === 'resolved') return finish(1008, 'invalid_frame');
           if (certificate === 'pending') {
@@ -186,6 +228,7 @@ export function startRdpRelay(hooks: SessionHooks): Response {
           if (reportedDesktop) return;
           if (upstreamClosed || certificate === 'waiting') return finish(1008, 'invalid_frame');
           reportedDesktop = true;
+          bindingReturn = undefined;
           certificate = 'resolved';
           clearCertTimer();
           // Metadata is best-effort and once per live lease. Never block the byte stream or count activity.
@@ -220,6 +263,7 @@ export function startRdpRelay(hooks: SessionHooks): Response {
       writes = writes.then(async () => {
         const active = transport;
         if (stage !== 'ready' || !active) return;
+        if (bindingReturn) bindingReturn.writing = inAck + data.byteLength;
         try { await active.write(new Uint8Array(data)); }
         catch { return endUpstream('upstream_write_failed'); }
         if (stage !== 'ready' || transport !== active) return;

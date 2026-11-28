@@ -1,6 +1,6 @@
 // Local adapter for the pinned FreeRDP browser build. It intentionally does not
 // modify the global WebSocket constructor, and never forwards relay controls to WASM.
-window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket, carrier) {
+window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket, carrier, returnSamples = false) {
   const limit = 1024 * 1024;
   const frame = 16 * 1024;
   const ws = carrier ?? new WebSocket(url, 'cloudssh-rdp-v1');
@@ -18,11 +18,14 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket, c
       if (!binding?.writing) return;
       binding.writing = false;
       binding.known = complete === true && binding.end !== undefined && binding.end === sent && pending === 0;
+      if (canWatchReturn && binding.known && sink.readyState === 1) {
+        try { ws.send(JSON.stringify({ type: 'binding_watch', bytes: binding.end })); } catch { /* diagnostic only */ }
+      }
     },
     clearBindingProgress() { binding = undefined; },
     bindingProgress() {
       if (!binding?.known) return; // A partial/buffered/unobserved write has no usable boundary.
-      return { write: acknowledged >= binding.end, rx: incoming > binding.incoming };
+      return { write: acknowledged >= binding.end, rx: incoming > binding.incoming, sample: binding.sample };
     },
     send(value) {
       if (sink.readyState !== 1 || (!(value instanceof ArrayBuffer) && !ArrayBuffer.isView(value))) return fail();
@@ -88,7 +91,7 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket, c
       }
     },
   };
-  let canReport = false, reported = false, certWaitSent = false;
+  let canReport = false, reported = false, certWaitSent = false, canWatchReturn = false;
   let sequence = 0, probe;
   let sent = 0;
   let acknowledged = 0;
@@ -125,7 +128,7 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket, c
   }
   ws.onopen = () => {
     if (ws.protocol !== 'cloudssh-rdp-v1') return fail();
-    ws.send(JSON.stringify({ type: 'ticket', ticket, certRotation: true }));
+    ws.send(JSON.stringify({ type: 'ticket', ticket, certRotation: true, bindingReturn: !carrier && returnSamples === true ? true : undefined }));
     ticket = undefined;
   };
   ws.onmessage = ({ data }) => {
@@ -137,6 +140,7 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket, c
         if (value?.type === 'ready' && sink.readyState === 0 &&
             typeof value.lease === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value.lease)) {
           canReport = value.desktopReport === true;
+          canWatchReturn = !carrier && returnSamples === true && value.bindingReturn === true;
           sink.lease = value.lease;
           sink.readyState = 1;
           sink.onopen?.(new Event('open'));
@@ -144,6 +148,14 @@ window.createCloudSshRdpSocket = function createCloudSshRdpSocket(url, ticket, c
           sink.certHold = true;
         } else if (value?.type === 'desktop_recorded' && sink.readyState === 1 && reported) {
           sink.onDesktopRecorded?.();
+        } else if (value?.type === 'binding_return' && sink.readyState === 1) {
+          // Separate from incoming bytes, write ACKs, activity and the WASM stream. A missing
+          // or mismatched sample says nothing about the TCP peer. Never display a wire string.
+          if (canWatchReturn && binding?.known && value.bytes === binding.end && acknowledged >= binding.end &&
+              Number.isSafeInteger(value.seconds) && value.seconds >= 0 && value.seconds <= 90 &&
+              ['no_read', 'prior_window', 'read', 'read_window', 'forwarded'].includes(value.state)) {
+            binding.sample = { state: value.state, seconds: value.seconds };
+          }
         } else if (value?.type === 'pong' && sink.readyState === 1) {
           if (probe && value.id === probe.id) {
             const ms = performance.now() - probe.at;

@@ -13,7 +13,7 @@ interface SocketAdapter {
   readonly receivedBytes: number;
   beginBindingWrite(): boolean;
   endBindingWrite(complete: boolean): void;
-  bindingProgress(): { write: boolean; rx: boolean } | undefined;
+  bindingProgress(): { write: boolean; rx: boolean; sample?: { state: string; seconds: number } } | undefined;
   clearBindingProgress(): void;
   beginCertWait(): void;
   endCertWait(): void;
@@ -30,19 +30,19 @@ interface SocketAdapter {
 }
 const lease = '12345678-1234-1234-1234-123456789abc';
 const ready = JSON.stringify({ type: 'ready', lease });
-function fixture(clock = performance, direct = false) {
+function fixture(clock = performance, direct = false, returnSamples = false) {
   const native = {
     protocol: 'cloudssh-rdp-v1',
     send: vi.fn(), close: vi.fn(),
     onclose: (_event: { reason: string }) => {},
     onopen: () => {}, onmessage: (_event: { data: unknown }) => {},
   };
-  const browser = { setTimeout, createCloudSshRdpSocket: (_url: string, _token: string, _carrier?: typeof native) => ({}) as SocketAdapter };
+  const browser = { setTimeout, createCloudSshRdpSocket: (_url: string, _token: string, _carrier?: typeof native, _returnSamples?: boolean) => ({}) as SocketAdapter };
   class FakeWebSocket {
     constructor() { return native; }
   }
   runInNewContext(code, { window: browser, WebSocket: FakeWebSocket, Event, ArrayBuffer, Uint8Array, performance: clock, clearTimeout });
-  const socket = browser.createCloudSshRdpSocket('wss://example.com/api/rdp/session', 'token', direct ? native : undefined);
+  const socket = browser.createCloudSshRdpSocket('wss://example.com/api/rdp/session', 'token', direct ? native : undefined, returnSamples);
   return { native, socket };
 }
 
@@ -107,6 +107,30 @@ describe('FreeRDP browser socket', () => {
     native.onclose({ reason: 'upstream_closed' });
     expect(socket.bindingProgress()).toEqual({ write: true, rx: true });
     socket.clearBindingProgress();
+    expect(socket.bindingProgress()).toBeUndefined();
+  });
+
+  it.each(['negotiated', 'old relay', 'opted out', 'peer'] as const)('keeps %s return samples separate from payloads and ACKs', mode => {
+    const { native, socket } = fixture(performance, mode === 'peer', mode !== 'opted out');
+    const onData = socket.onmessage = vi.fn();
+    const control = (msg: object) => native.onmessage({ data: JSON.stringify(msg) });
+    native.onopen();
+    expect(JSON.parse(native.send.mock.lastCall![0]).bindingReturn).toBe(mode === 'negotiated' || mode === 'old relay' ? true : undefined);
+    control({ type: 'ready', lease, bindingReturn: mode !== 'old relay' });
+    socket.beginBindingWrite(); socket.send(new ArrayBuffer(12)); socket.endBindingWrite(true); socket.endBindingWrite(true);
+    const watch = native.send.mock.calls.filter(([msg]) => typeof msg === 'string' && JSON.parse(msg).type === 'binding_watch');
+    expect(watch).toHaveLength(mode === 'negotiated' ? 1 : 0);
+    const sample = { type: 'binding_return', bytes: 12, seconds: 17, state: 'no_read' };
+    control(sample);
+    expect(socket.bindingProgress()?.sample).toBeUndefined(); // A sample is never itself write credit.
+    control({ type: 'ack', bytes: 12 });
+    for (const bad of [{ bytes: 11 }, { bytes: 13 }, { seconds: -1 }, { seconds: 91 }, { seconds: 1.5 }, { state: '__proto__' }]) control({ ...sample, ...bad });
+    expect(socket.bindingProgress()?.sample).toBeUndefined();
+    control(sample);
+    expect(socket.bindingProgress()?.sample).toEqual(mode === 'negotiated' ? { state: 'no_read', seconds: 17 } : undefined);
+    expect(onData).not.toHaveBeenCalled(); expect(socket.receivedBytes).toBe(0);
+    expect(socket.readyState).toBe(1);
+    socket.clearBindingProgress(); control(sample);
     expect(socket.bindingProgress()).toBeUndefined();
   });
 
